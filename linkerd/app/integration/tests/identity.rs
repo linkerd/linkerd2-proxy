@@ -21,7 +21,10 @@ async fn nonblocking_identity_detection() {
     } = identity::Identity::new("foo-ns1", id.to_string());
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
-    let id_svc = controller::identity().certify(move |_| certify_rsp).run();
+    let id_svc = controller::identity()
+        .certify(move |_| certify_rsp)
+        .run()
+        .await;
     let proxy = proxy::new().identity(id_svc);
 
     let msg1 = "custom tcp hello";
@@ -34,7 +37,7 @@ async fn nonblocking_identity_detection() {
         .run()
         .await;
 
-    let proxy = proxy.inbound(srv).run_with_test_env(env);
+    let proxy = proxy.inbound(srv).run_with_test_env(env).await;
     let client = client::tcp(proxy.inbound);
 
     // Create an idle connection and then an active connection. Ensure that
@@ -56,8 +59,9 @@ macro_rules! generate_tls_accept_test {
         let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
         let id_svc = identity::Identity::new("foo-ns1", id.to_string());
         let proxy = proxy::new()
-            .identity(id_svc.service().run())
-            .run_with_test_env(id_svc.env);
+            .identity(id_svc.service().run().await)
+            .run_with_test_env(id_svc.env)
+            .await;
 
         println!("non-tls request to {}", proxy.metrics);
         let non_tls_client = $make_client_non_tls(proxy.metrics, "localhost");
@@ -101,9 +105,12 @@ macro_rules! generate_tls_reject_test {
         certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
         let (_tx, rx) = oneshot::channel();
-        let id_svc = controller::identity().certify_async(move |_| rx).run();
+        let id_svc = controller::identity()
+            .certify_async(move |_| rx)
+            .run()
+            .await;
 
-        let proxy = proxy::new().identity(id_svc).run_with_test_env(env);
+        let proxy = proxy::new().identity(id_svc).run_with_test_env(env).await;
 
         let client = $make_client(
             proxy.metrics,
@@ -155,7 +162,10 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
         let proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
 
         let (_tx, rx) = oneshot::channel();
-        let id_svc = controller::identity().certify_async(move |_| rx).run();
+        let id_svc = controller::identity()
+            .certify_async(move |_| rx)
+            .run()
+            .await;
 
         let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
         let srv = $make_server(app_identity.server_config)
@@ -166,7 +176,8 @@ macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
         let proxy = proxy::new()
             .outbound(srv)
             .identity(id_svc)
-            .run_with_test_env(proxy_identity.env);
+            .run_with_test_env(proxy_identity.env)
+            .await;
 
         let client = $make_client(
             proxy.outbound,
@@ -214,9 +225,12 @@ async fn ready() {
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
 
     let (tx, rx) = oneshot::channel();
-    let id_svc = controller::identity().certify_async(move |_| rx).run();
+    let id_svc = controller::identity()
+        .certify_async(move |_| rx)
+        .run()
+        .await;
 
-    let proxy = proxy::new().identity(id_svc).run_with_test_env(env);
+    let proxy = proxy::new().identity(id_svc).run_with_test_env(env).await;
 
     let client = client::http1(proxy.metrics, "localhost");
 
@@ -269,11 +283,12 @@ async fn refresh() {
             refreshed2.store(true, Ordering::SeqCst);
             rsp
         })
-        .run();
+        .run()
+        .await;
 
     // Disable the minimum bound on when to refresh identity for this test.
     env.put(app::env::ENV_IDENTITY_MIN_REFRESH, "0ms".into());
-    let _proxy = proxy::new().identity(id_svc).run_with_test_env(env);
+    let _proxy = proxy::new().identity(id_svc).run_with_test_env(env).await;
 
     let expiry = expiry_rx.await.expect("wait for expiry");
     let how_long = expiry.duration_since(SystemTime::now()).unwrap();
@@ -311,8 +326,9 @@ mod require_id_header {
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
                     .outbound(srv)
-                    .identity(proxy_identity.service().run())
-                    .run_with_test_env(proxy_identity.env);
+                    .identity(proxy_identity.service().run().await)
+                    .run_with_test_env(proxy_identity.env)
+                    .await;
 
                 // Make a non-TLS client
                 let client = $make_client(proxy.outbound, app_name);
@@ -378,9 +394,10 @@ mod require_id_header {
                 // Make a proxy that has `proxy_identity` identity and no
                 // SO_ORIGINAL_DST backup
                 let proxy = proxy::new()
-                    .controller(ctrl.run())
-                    .identity(proxy_identity.service().run())
-                    .run_with_test_env(proxy_identity.env);
+                    .controller(ctrl.run().await)
+                    .identity(proxy_identity.service().run().await)
+                    .run_with_test_env(proxy_identity.env)
+                    .await;
 
                 // Make a non-TLS client
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
@@ -442,8 +459,9 @@ mod require_id_header {
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
                     .outbound(srv)
-                    .identity(proxy_identity.service().run())
-                    .run_with_test_env(proxy_identity.env);
+                    .identity(proxy_identity.service().run().await)
+                    .run_with_test_env(proxy_identity.env)
+                    .await;
 
                 // Make a non-TLS client
                 let client = $make_client(proxy.outbound, "localhost");
