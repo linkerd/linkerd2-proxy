@@ -1,9 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
-pub mod listen;
+mod accept;
 pub mod resolve;
 
 pub use self::{
-    listen::{Accept, Listen},
+    accept::Accept,
     resolve::{Resolution, Resolve},
 };

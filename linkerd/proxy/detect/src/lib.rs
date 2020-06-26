@@ -50,7 +50,7 @@ where
     T: Send + 'static,
     D: Detect<T> + Clone + Send + 'static,
     D::Target: Send,
-    A: core::listen::Accept<(D::Target, BoxedIo)> + Send + Clone + 'static,
+    A: core::Accept<(D::Target, BoxedIo)> + Send + Clone + 'static,
     A::Future: Send,
 {
     type Response = A::ConnectionFuture;

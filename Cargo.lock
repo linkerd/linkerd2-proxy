@@ -1502,6 +1502,7 @@ dependencies = [
 name = "linkerd2-proxy-transport"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "bytes 0.5.4",
  "futures 0.3.5",
  "indexmap",

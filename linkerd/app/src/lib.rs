@@ -17,7 +17,6 @@ pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
-    proxy::core::listen::{Bind, Listen},
     svc::{self, NewService},
     Error,
 };
@@ -144,12 +143,12 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
 
-        let inbound_listen = inbound.proxy.server.bind.bind()?;
-        let inbound_addr = inbound_listen.listen_addr();
+        let (inbound_addr, inbound_listen) =
+            inbound.proxy.server.bind.bind(drain_rx.clone().signal())?;
         let inbound_metrics = metrics.inbound;
 
-        let outbound_listen = outbound.proxy.server.bind.bind()?;
-        let outbound_addr = outbound_listen.listen_addr();
+        let (outbound_addr, outbound_listen) =
+            outbound.proxy.server.bind.bind(drain_rx.clone().signal())?;
         let outbound_metrics = metrics.outbound;
 
         let resolver = dns.resolver;
@@ -181,8 +180,8 @@ impl Config {
             tokio::spawn(
                 outbound
                     .build_server(
+                        outbound_addr,
                         outbound_listen,
-                        outbound_addr.port(),
                         svc::stack(refine.clone())
                             .push_map_response(|(n, _)| n)
                             .into_inner(),
@@ -205,6 +204,7 @@ impl Config {
             tokio::spawn(
                 inbound
                     .build(
+                        inbound_addr,
                         inbound_listen,
                         local_identity,
                         svc::stack(http_gateway)

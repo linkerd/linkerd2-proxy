@@ -1,8 +1,6 @@
-use linkerd2_proxy_core::listen;
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::Duration;
+use async_stream::try_stream;
+use futures::prelude::*;
+use std::{future::Future, io, net::SocketAddr, time::Duration};
 use tokio::net::TcpStream;
 use tracing::trace;
 
@@ -16,14 +14,6 @@ pub struct Bind<O: OrigDstAddr = NoOrigDstAddr> {
     bind_addr: SocketAddr,
     keepalive: Option<Duration>,
     orig_dst_addr: O,
-}
-
-#[derive(Debug)]
-pub struct Listen<O: OrigDstAddr = NoOrigDstAddr> {
-    listen_addr: SocketAddr,
-    keepalive: Option<Duration>,
-    orig_dst_addr: O,
-    state: State,
 }
 
 pub type Connection = (Addrs, TcpStream);
@@ -46,12 +36,6 @@ pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 
 #[cfg(feature = "mock-orig-dst")]
 pub use self::mock::MockOrigDstAddr as DefaultOrigDstAddr;
-
-#[derive(Debug)]
-enum State {
-    Init(Option<std::net::TcpListener>),
-    Bound(tokio::net::TcpListener),
-}
 
 impl Bind {
     pub fn new(bind_addr: SocketAddr, keepalive: Option<Duration>) -> Self {
@@ -79,68 +63,42 @@ impl<A: OrigDstAddr> Bind<A> {
     pub fn keepalive(&self) -> Option<Duration> {
         self.keepalive
     }
-}
 
-impl<O: OrigDstAddr> listen::Bind for Bind<O> {
-    type Connection = Connection;
-    type Listen = Listen<O>;
+    pub fn bind<S: Future>(
+        &self,
+        shutdown: S,
+    ) -> std::io::Result<(SocketAddr, impl Stream<Item = io::Result<Connection>>)> {
+        let listen = std::net::TcpListener::bind(self.bind_addr)?;
+        let addr = listen.local_addr()?;
+        let keepalive = self.keepalive;
+        let get_orig = self.orig_dst_addr.clone();
 
-    fn bind(&self) -> std::io::Result<Listen<O>> {
-        let tcp = std::net::TcpListener::bind(self.bind_addr)?;
-        let listen_addr = tcp.local_addr()?;
-        Ok(Listen {
-            listen_addr,
-            keepalive: self.keepalive,
-            orig_dst_addr: self.orig_dst_addr.clone(),
-            state: State::Init(Some(tcp)),
-        })
-    }
-}
+        let accept = try_stream! {
+            // The tokio listener is built lazily so that it is initialized on
+            // the proper runtime.
+            let listen = tokio::net::TcpListener::from_std(listen).expect("listener must be valid");
 
-impl<O> listen::Listen for Listen<O>
-where
-    O: OrigDstAddr,
-{
-    type Connection = Connection;
-    type Error = std::io::Error;
+            futures::pin_mut!(listen);
+            futures::pin_mut!(shutdown);
+            loop {
+                let accept = tokio::select! {
+                    accept = listen.accept() => { accept }
+                    _ = &mut shutdown => { return; }
+                };
 
-    fn listen_addr(&self) -> SocketAddr {
-        self.listen_addr
-    }
+                let (tcp, local_addr) = accept?;
+                super::set_nodelay_or_warn(&tcp);
+                super::set_keepalive_or_warn(&tcp, keepalive);
 
-    fn poll_accept(&mut self, cx: &mut Context<'_>) -> Poll<Result<Self::Connection, Self::Error>> {
-        loop {
-            self.state = match self.state {
-                State::Init(ref mut std) => {
-                    // Create the TCP listener lazily, so that it's not bound to a
-                    // reactor until the future is run. This will avoid
-                    // `Handle::default()` creating a new thread for the global
-                    // background reactor if `polled before the runtime is
-                    // initialized.
-                    trace!("listening");
-                    let listener =
-                        tokio::net::TcpListener::from_std(std.take().expect("illegal state"))?;
-                    State::Bound(listener)
-                }
-                State::Bound(ref mut listener) => {
-                    let (tcp, peer_addr) = futures::ready!(Pin::new(listener).poll_accept(cx))?;
-                    let orig_dst = self.orig_dst_addr.orig_dst_addr(&tcp);
-                    trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
-                    // TODO: On Linux and most other platforms it would be better
-                    // to set the `TCP_NODELAY` option on the bound socket and
-                    // then have the listening sockets inherit it. However, that
-                    // doesn't work on all platforms and also the underlying
-                    // libraries don't have the necessary API for that, so just
-                    // do it here.
-                    super::set_nodelay_or_warn(&tcp);
-                    super::set_keepalive_or_warn(&tcp, self.keepalive);
+                let peer_addr = tcp.peer_addr()?;
+                let orig_dst = get_orig.orig_dst_addr(&tcp);
+                trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
+                let addrs = Addrs::new(local_addr, peer_addr, orig_dst);
+                yield (addrs, tcp);
+            }
+        };
 
-                    let addrs = Addrs::new(tcp.local_addr()?, peer_addr, orig_dst);
-
-                    return Poll::Ready(Ok((addrs, tcp)));
-                }
-            };
-        }
+        Ok((addr, accept))
     }
 }
 

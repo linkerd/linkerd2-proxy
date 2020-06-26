@@ -14,6 +14,7 @@ This should probably be decomposed into smaller, decoupled crates.
 mock-orig-dst  = []
 
 [dependencies]
+async-stream = "0.2.1"
 bytes = "0.5"
 futures = "0.3"
 indexmap = "1.0.0"

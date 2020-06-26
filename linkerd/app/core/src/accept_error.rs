@@ -1,6 +1,6 @@
 use futures::{future, FutureExt, TryFutureExt};
 use linkerd2_error::{Error, Never};
-use linkerd2_proxy_core::listen::Accept;
+use linkerd2_proxy_core::Accept;
 use std::task::{Context, Poll};
 use tracing;
 

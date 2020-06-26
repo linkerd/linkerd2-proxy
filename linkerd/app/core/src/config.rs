@@ -1,7 +1,7 @@
 pub use super::control::ControlAddr;
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::h2;
-pub use crate::transport::{Bind, DefaultOrigDstAddr, Listen, NoOrigDstAddr, OrigDstAddr};
+pub use crate::transport::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr};
 use indexmap::IndexSet;
 use std::sync::Arc;
 use std::time::Duration;

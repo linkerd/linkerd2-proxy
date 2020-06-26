@@ -4,13 +4,14 @@
 //! application to external network endpoints.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(warnings)]
 
 pub use self::endpoint::{
     Concrete, HttpEndpoint, Logical, LogicalPerRequest, Profile, ProfilePerTarget, Target,
     TcpEndpoint,
 };
 use ::http::header::HOST;
-use futures::future;
+use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
@@ -35,7 +36,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::info_span;
+use tracing::{info, info_span};
 
 // #[allow(dead_code)] // TODO #2597
 // mod add_remote_ip_on_rsp;
@@ -438,8 +439,8 @@ impl Config {
 
     pub fn build_server<C, R, H, S>(
         self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
-        prevent_loop: impl Into<PreventLoop>,
+        listen_addr: std::net::SocketAddr,
+        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
         refine: R,
         tcp_connect: C,
         http_router: H,
@@ -489,7 +490,9 @@ impl Config {
         // same runtime as the proxy.
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
+            .push(admit::AdmitLayer::new(PreventLoop::from(
+                listen_addr.port(),
+            )))
             .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
             .push(svc::layer::mk(tcp::Forward::new));
 
@@ -559,7 +562,8 @@ impl Config {
             // detection. Ensures that connections that never emit data are dropped eventually.
             .push_timeout(detect_protocol_timeout);
 
-        Box::pin(serve::serve(listen, tcp_detect.into_inner(), drain))
+        info!(addr = %listen_addr, "Serving");
+        Box::pin(serve::serve(listen, tcp_detect.into_inner()))
     }
 }
 

@@ -1,10 +1,11 @@
 use super::accept_error::AcceptError;
-use linkerd2_drain as drain;
+use futures::prelude::*;
 use linkerd2_error::Error;
-use linkerd2_proxy_core::listen::{Accept, Listen};
+use linkerd2_proxy_core::Accept;
 use linkerd2_proxy_transport::listen::Addrs;
 use std::task::{Context, Poll};
-use tracing::{debug, info_span, Span};
+use tower::{util::ServiceExt, Service};
+use tracing::{info_span, Span};
 use tracing_futures::{Instrument, Instrumented};
 
 pub trait HasSpan {
@@ -15,36 +16,47 @@ pub trait HasSpan {
 /// connection-accepting service.
 ///
 /// The task is driven until the provided `drain` is notified.
-pub async fn serve<L, A>(listen: L, accept: A, drain: drain::Watch) -> Result<(), Error>
+pub async fn serve<A, C>(
+    listen: impl Stream<Item = std::io::Result<C>>,
+    accept: A,
+) -> Result<(), Error>
 where
-    L: Listen + Send + 'static,
-    L::Connection: HasSpan,
-    L::Error: std::error::Error + Send + 'static,
-    A: Accept<L::Connection> + Send + 'static,
-    A::Error: Send + 'static,
+    C: HasSpan,
+    A: Accept<C> + Send + 'static,
     A::Future: Send + 'static,
-    A::Error: Into<Error>,
+    A::Error: Into<Error> + Send + 'static,
     A::ConnectionFuture: Send + 'static,
+    A::ConnectionError: Send + 'static,
 {
-    // As soon as we get a shutdown signal, the listener task completes and
-    // stops accepting new connections.
-    debug!(listen.addr = %listen.listen_addr(), "serving");
-
     // Initialize tracing & log errors on the accept stack.
-    let accept = TraceAccept {
+    let mut accept = TraceAccept {
         accept: AcceptError::new(accept),
         span: Span::current(),
-    };
+    }
+    .into_service();
 
-    // Drive connections from the listener into the accept stack until a drain
-    // is signaled.
-    tokio::select! {
-        err = listen.serve(accept) => {
-            // The listener may fail but it may not complete otherwise.
-            match err? {}
+    futures::pin_mut!(listen);
+    loop {
+        let ready = accept.ready_and().await.map_err(Into::<Error>::into)?;
+        match listen.next().await {
+            None => return Ok(()),
+            Some(conn) => {
+                let conn = conn.map_err(Into::<Error>::into)?;
+                let accept = ready.call(conn);
+                tokio::spawn(
+                    async move {
+                        match accept.await {
+                            Ok(serve) => match serve.await {
+                                Ok(()) => {}
+                                Err(e) => match e {},
+                            },
+                            Err(e) => match e {},
+                        }
+                    }
+                    .in_current_span(),
+                );
+            }
         }
-        // Stop processing new connections and release the shutdown handle immediately.
-        _ = drain.signal() => { Ok(()) }
     }
 }
 

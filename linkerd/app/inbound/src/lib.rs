@@ -9,7 +9,7 @@ pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
 use self::require_identity_for_ports::RequireIdentityForPorts;
-use futures::future;
+use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
@@ -17,7 +17,6 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        core::Listen,
         detect::DetectProtocolLayer,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
@@ -56,7 +55,8 @@ pub struct Config {
 impl Config {
     pub fn build<L, S, P>(
         self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        listen_addr: std::net::SocketAddr,
+        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
         local_identity: tls::Conditional<identity::Local>,
         http_loopback: L,
         profiles_client: P,
@@ -81,7 +81,7 @@ impl Config {
         P::Future: Unpin + Send,
     {
         let tcp_connect = self.build_tcp_connect(&metrics);
-        let prevent_loop = PreventLoop::from(listen.listen_addr().port());
+        let prevent_loop = PreventLoop::from(listen_addr.port());
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
@@ -92,6 +92,7 @@ impl Config {
             span_sink.clone(),
         );
         self.build_server(
+            listen_addr,
             listen,
             prevent_loop,
             tcp_connect,
@@ -299,7 +300,8 @@ impl Config {
 
     pub fn build_server<C, H, S>(
         self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        listen_addr: std::net::SocketAddr,
+        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
@@ -428,8 +430,8 @@ impl Config {
             // eventually.
             .push_timeout(detect_protocol_timeout);
 
-        info!(listen.addr = %listen.listen_addr(), "Serving");
-        Box::pin(serve::serve(listen, tcp_detect.into_inner(), drain))
+        info!(addr = %listen_addr, "Serving");
+        Box::pin(serve::serve(listen, tcp_detect.into_inner()))
     }
 }
 
