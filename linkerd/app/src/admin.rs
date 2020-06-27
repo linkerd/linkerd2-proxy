@@ -30,12 +30,12 @@ impl Config {
     where
         R: FmtMetrics + Clone + Send + 'static,
     {
-        let (listen_addr, listen) = self.server.bind.bind(drain.signal()).map_err(Error::from)?;
+        let (listen_addr, listen) = self.server.bind.bind()?;
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, log_level);
         let accept = tls::AcceptTls::new(identity, admin.into_accept());
-        let serve = Box::pin(serve::serve(listen, accept));
+        let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
         Ok(Admin {
             listen_addr,
             latch,

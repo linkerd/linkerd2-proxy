@@ -4,7 +4,8 @@ use linkerd2_error::Error;
 use linkerd2_proxy_core::Accept;
 use linkerd2_proxy_transport::listen::Addrs;
 use std::task::{Context, Poll};
-use tower::{util::ServiceExt, Service};
+use tower::util::ServiceExt;
+use tower::Service;
 use tracing::{info_span, Span};
 use tracing_futures::{Instrument, Instrumented};
 
@@ -15,48 +16,66 @@ pub trait HasSpan {
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
 ///
-/// The task is driven until the provided `drain` is notified.
+/// The task is driven until shutdown is signaled.
 pub async fn serve<A, C>(
     listen: impl Stream<Item = std::io::Result<C>>,
     accept: A,
+    shutdown: impl Future,
 ) -> Result<(), Error>
 where
     C: HasSpan,
     A: Accept<C> + Send + 'static,
     A::Future: Send + 'static,
-    A::Error: Into<Error> + Send + 'static,
-    A::ConnectionFuture: Send + 'static,
+    A::Error: Send + 'static,
     A::ConnectionError: Send + 'static,
+    A::ConnectionFuture: Send + 'static,
 {
     // Initialize tracing & log errors on the accept stack.
-    let mut accept = TraceAccept {
+    let mut service = TraceAccept {
         accept: AcceptError::new(accept),
         span: Span::current(),
     }
     .into_service();
 
-    futures::pin_mut!(listen);
-    loop {
-        let ready = accept.ready_and().await.map_err(Into::<Error>::into)?;
-        match listen.next().await {
-            None => return Ok(()),
-            Some(conn) => {
-                let conn = conn.map_err(Into::<Error>::into)?;
-                let accept = ready.call(conn);
-                tokio::spawn(
-                    async move {
-                        match accept.await {
-                            Ok(serve) => match serve.await {
-                                Ok(()) => {}
+    let accept = async move {
+        futures::pin_mut!(listen);
+        loop {
+            match listen.next().await {
+                None => return Ok(()),
+                Some(conn) => {
+                    // If the listener returned an error, complete the task
+                    let conn = conn?;
+
+                    // Ready the service before dispatching the request to it.
+                    //
+                    // This allows the service to propagate errors and to exert backpressure on the
+                    // listener. It also avoids a `Clone` requirement.
+                    let accept = service.ready_and().await?.call(conn);
+
+                    // Dispatch all of the work for a given connection onto a connection-specific task.
+                    tokio::spawn(
+                        async move {
+                            match accept.await {
+                                Ok(serve) => match serve.await {
+                                    Ok(()) => {}
+                                    Err(e) => match e {},
+                                },
                                 Err(e) => match e {},
-                            },
-                            Err(e) => match e {},
+                            }
                         }
-                    }
-                    .in_current_span(),
-                );
+                        .in_current_span(),
+                    );
+                }
             }
         }
+    };
+
+    // Stop the accept loop when the shutdown signal fires.
+    //
+    // This ensures that the accept service's readiness can't block shutdown.
+    tokio::select! {
+        res = accept => { res }
+        _ = shutdown => { Ok(()) }
     }
 }
 

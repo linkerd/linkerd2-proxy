@@ -4,7 +4,6 @@
 //! application to external network endpoints.
 
 #![deny(warnings, rust_2018_idioms)]
-#![allow(warnings)]
 
 pub use self::endpoint::{
     Concrete, HttpEndpoint, Logical, LogicalPerRequest, Profile, ProfilePerTarget, Target,
@@ -31,9 +30,7 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::IpAddr;
-use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
@@ -437,7 +434,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<C, R, H, S>(
+    pub async fn build_server<C, R, H, S>(
         self,
         listen_addr: std::net::SocketAddr,
         listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
@@ -447,7 +444,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
+    ) -> Result<(), Error>
     where
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
             + Unpin
@@ -563,7 +560,7 @@ impl Config {
             .push_timeout(detect_protocol_timeout);
 
         info!(addr = %listen_addr, "Serving");
-        Box::pin(serve::serve(listen, tcp_detect.into_inner()))
+        serve::serve(listen, tcp_detect.into_inner(), drain.signal()).await
     }
 }
 

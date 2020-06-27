@@ -31,8 +31,6 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
@@ -53,7 +51,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build<L, S, P>(
+    pub async fn build<L, S, P>(
         self,
         listen_addr: std::net::SocketAddr,
         listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
@@ -64,7 +62,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
+    ) -> Result<(), Error>
     where
         L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
@@ -102,6 +100,7 @@ impl Config {
             span_sink,
             drain,
         )
+        .await
     }
 
     pub fn build_tcp_connect(
@@ -298,7 +297,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<C, H, S>(
+    pub async fn build_server<C, H, S>(
         self,
         listen_addr: std::net::SocketAddr,
         listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
@@ -309,7 +308,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
+    ) -> Result<(), Error>
     where
         C: tower::Service<TcpEndpoint> + Unpin + Clone + Send + Sync + 'static,
         C::Error: Into<Error>,
@@ -431,7 +430,7 @@ impl Config {
             .push_timeout(detect_protocol_timeout);
 
         info!(addr = %listen_addr, "Serving");
-        Box::pin(serve::serve(listen, tcp_detect.into_inner()))
+        serve::serve(listen, tcp_detect.into_inner(), drain.signal()).await
     }
 }
 

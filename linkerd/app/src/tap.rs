@@ -48,15 +48,14 @@ impl Config {
                 server,
                 permitted_peer_identities,
             } => {
-                let (listen_addr, listen) =
-                    server.bind.bind(drain.signal()).map_err(Error::from)?;
+                let (listen_addr, listen) = server.bind.bind()?;
 
                 let accept = tls::AcceptTls::new(
                     identity,
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), grpc),
                 );
 
-                let serve = Box::pin(serve::serve(listen, accept));
+                let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
 
                 Ok(Tap::Enabled {
                     layer,

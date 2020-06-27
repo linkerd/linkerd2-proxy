@@ -1,11 +1,11 @@
 #![cfg(test)]
-#![type_length_limit = "3659323"]
+
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_core::Accept;
@@ -145,9 +145,7 @@ where
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
 
-        let (listen_addr, listen) = Bind::new(addr, None)
-            .bind(future::pending::<()>())
-            .expect("must bind");
+        let (listen_addr, listen) = Bind::new(addr, None).bind().expect("must bind");
 
         let mut accept = AcceptTls::new(
             server_tls,

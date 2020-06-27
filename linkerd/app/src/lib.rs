@@ -143,12 +143,10 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
 
-        let (inbound_addr, inbound_listen) =
-            inbound.proxy.server.bind.bind(drain_rx.clone().signal())?;
+        let (inbound_addr, inbound_listen) = inbound.proxy.server.bind.bind()?;
         let inbound_metrics = metrics.inbound;
 
-        let (outbound_addr, outbound_listen) =
-            outbound.proxy.server.bind.bind(drain_rx.clone().signal())?;
+        let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
         let outbound_metrics = metrics.outbound;
 
         let resolver = dns.resolver;

@@ -38,6 +38,7 @@ pub struct Meta {
 
 pub type Connection = (Meta, BoxedIo);
 
+#[derive(Clone)]
 pub struct AcceptTls<A: Accept<Connection>, T> {
     accept: A,
     tls: super::Conditional<T>,

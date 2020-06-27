@@ -1,6 +1,6 @@
 use async_stream::try_stream;
 use futures::prelude::*;
-use std::{future::Future, io, net::SocketAddr, time::Duration};
+use std::{io, net::SocketAddr, time::Duration};
 use tokio::net::TcpStream;
 use tracing::trace;
 
@@ -64,37 +64,27 @@ impl<A: OrigDstAddr> Bind<A> {
         self.keepalive
     }
 
-    pub fn bind<S: Future>(
-        &self,
-        shutdown: S,
-    ) -> std::io::Result<(SocketAddr, impl Stream<Item = io::Result<Connection>>)> {
+    pub fn bind(&self) -> io::Result<(SocketAddr, impl Stream<Item = io::Result<Connection>>)> {
         let listen = std::net::TcpListener::bind(self.bind_addr)?;
         let addr = listen.local_addr()?;
         let keepalive = self.keepalive;
         let get_orig = self.orig_dst_addr.clone();
 
         let accept = try_stream! {
-            // The tokio listener is built lazily so that it is initialized on
-            // the proper runtime.
-            let listen = tokio::net::TcpListener::from_std(listen).expect("listener must be valid");
+            tokio::pin! {
+                // The tokio listener is built lazily so that it is initialized on
+                // the proper runtime.
+                let listen = tokio::net::TcpListener::from_std(listen).expect("listener must be valid");
+            };
 
-            futures::pin_mut!(listen);
-            futures::pin_mut!(shutdown);
-            loop {
-                let accept = tokio::select! {
-                    accept = listen.accept() => { accept }
-                    _ = &mut shutdown => { return; }
-                };
-
-                let (tcp, local_addr) = accept?;
+            while let (tcp, local_addr) = listen.accept().await? {
                 super::set_nodelay_or_warn(&tcp);
                 super::set_keepalive_or_warn(&tcp, keepalive);
 
                 let peer_addr = tcp.peer_addr()?;
                 let orig_dst = get_orig.orig_dst_addr(&tcp);
-                trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "accepted");
-                let addrs = Addrs::new(local_addr, peer_addr, orig_dst);
-                yield (addrs, tcp);
+                trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "Accepted");
+                yield (Addrs::new(local_addr, peer_addr, orig_dst), tcp);
             }
         };
 
