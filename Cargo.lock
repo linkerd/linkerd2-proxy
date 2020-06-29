@@ -904,7 +904,6 @@ dependencies = [
  "linkerd2-exp-backoff",
  "linkerd2-http-classify",
  "linkerd2-http-metrics",
- "linkerd2-lock",
  "linkerd2-metrics",
  "linkerd2-opencensus",
  "linkerd2-proxy-api 0.1.13",
@@ -1065,7 +1064,6 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "linkerd2-error",
- "linkerd2-lock",
  "linkerd2-stack",
  "tokio 0.2.21",
  "tower 0.3.1",
@@ -1243,23 +1241,6 @@ dependencies = [
  "tokio 0.2.21",
  "tokio-rustls",
  "tokio-test",
-]
-
-[[package]]
-name = "linkerd2-lock"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.5",
- "linkerd2-error",
- "rand 0.7.2",
- "tokio 0.2.21",
- "tokio-test",
- "tower 0.3.1",
- "tower-test",
- "tracing",
- "tracing-futures",
- "tracing-log",
- "tracing-subscriber",
 ]
 
 [[package]]
