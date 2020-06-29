@@ -5,8 +5,8 @@ use linkerd2_app_integration::tap::TapEventExt;
 use linkerd2_app_integration::*;
 use std::time::SystemTime;
 
-#[test]
-fn tap_enabled_when_identity_enabled() {
+#[tokio::test]
+async fn tap_enabled_when_identity_enabled() {
     let _trace = trace_init();
 
     let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
@@ -19,16 +19,16 @@ fn tap_enabled_when_identity_enabled() {
     assert!(proxy.tap.is_some())
 }
 
-#[test]
-fn tap_disabled_when_identity_disabled() {
+#[tokio::test]
+async fn tap_disabled_when_identity_disabled() {
     let _trace = trace_init();
     let proxy = proxy::new().disable_identity().run();
 
     assert!(proxy.tap.is_none())
 }
 
-#[test]
-fn can_disable_tap() {
+#[tokio::test]
+async fn can_disable_tap() {
     let _trace = trace_init();
     let mut env = TestEnv::new();
     env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());
@@ -49,7 +49,7 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
     let mut expected_identity_env = identity_env.env.clone();
     expected_identity_env.put(app::env::ENV_TAP_SVC_NAME, expected_identity.to_owned());
 
-    let srv = server::http1().route("/", "hello").run();
+    let srv = server::http1().route("/", "hello").run().await;
 
     let in_proxy = proxy::new()
         .inbound(srv)
@@ -65,7 +65,7 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
     let mut events = tap.observe(tap::observe_request()).await.take(1);
 
     let client = client::http1(in_proxy.inbound, "localhost");
-    assert_eq!(client.get_async("/").await, "hello");
+    assert_eq!(client.get("/").await, "hello");
 
     assert!(events.next().await.expect("next1").is_err());
 }
@@ -100,7 +100,7 @@ async fn inbound_http1() {
         client_proxy_authority.to_owned(),
     );
 
-    let srv = server::http1().route("/", "hello").run();
+    let srv = server::http1().route("/", "hello").run().await;
 
     // Run server proxy with server proxy identity service
     let srv_proxy = proxy::new()
@@ -118,7 +118,7 @@ async fn inbound_http1() {
     let client = client::http1(srv_proxy.metrics, "localhost");
     let ready = || async {
         client
-            .request_async(client.request_builder("/ready").method("GET"))
+            .request(client.request_builder("/ready").method("GET"))
             .await
             .unwrap()
     };
@@ -131,7 +131,7 @@ async fn inbound_http1() {
 
     // Send a request that will be observed via the tap client
     let client = client::http1(srv_proxy.inbound, "localhost");
-    assert_eq!(client.get_async("/").await, "hello");
+    assert_eq!(client.get("/").await, "hello");
 
     let mut events = events.take(3);
 
@@ -183,7 +183,8 @@ async fn grpc_headers_end() {
                 .body(Default::default())
                 .unwrap()
         })
-        .run();
+        .run()
+        .await;
 
     // Run server proxy with server proxy identity service
     let srv_proxy = proxy::new()
@@ -201,7 +202,7 @@ async fn grpc_headers_end() {
     let client = client::http2(srv_proxy.metrics, "localhost");
     let ready = || async {
         client
-            .request_async(client.request_builder("/ready").method("GET"))
+            .request(client.request_builder("/ready").method("GET"))
             .await
             .expect("ready")
     };
@@ -215,7 +216,7 @@ async fn grpc_headers_end() {
     // Send a request that will be observed via the tap client
     let client = client::http2(srv_proxy.inbound, "localhost");
     let res = client
-        .request_async(
+        .request(
             client
                 .request_builder("/")
                 .header("content-type", "application/grpc+nope"),
