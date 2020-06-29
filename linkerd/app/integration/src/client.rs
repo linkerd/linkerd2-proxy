@@ -2,10 +2,10 @@ use super::*;
 use linkerd2_app_core::proxy::http::trace;
 use rustls::ClientConfig;
 use std::io;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tracing::info_span;
 use tracing_futures::Instrument;
 use webpki::{DNSName, DNSNameRef};
@@ -82,13 +82,13 @@ pub fn http2_tls<T: Into<String>>(addr: SocketAddr, auth: T, tls: TlsConfig) -> 
 pub fn tcp(addr: SocketAddr) -> tcp::TcpClient {
     tcp::client(addr)
 }
-
 pub struct Client {
     authority: String,
     /// This is a future that completes when the associated connection for
     /// this Client has been dropped.
     running: Running,
     tx: Sender,
+    task: JoinHandle<()>,
     version: http::Version,
     tls: Option<TlsConfig>,
 }
@@ -99,27 +99,20 @@ impl Client {
             Run::Http1 { .. } => http::Version::HTTP_11,
             Run::Http2 => http::Version::HTTP_2,
         };
-        let (tx, running) = run(addr, r, tls.clone());
+        let (tx, task, running) = run(addr, r, tls.clone());
         Client {
             authority,
             running,
+            task,
             tx,
             version: v,
             tls: tls,
         }
     }
 
-    #[tokio::main]
     pub async fn get(&self, path: &str) -> String {
-        self.get_async(path).await
-    }
-
-    pub async fn get_async(&self, path: &str) -> String {
         let req = self.request_builder(path);
-        let res = self
-            .request_async(req.method("GET"))
-            .await
-            .expect("response");
+        let res = self.request(req.method("GET")).await.expect("response");
         assert!(
             res.status().is_success(),
             "client.get({:?}) expects 2xx, got \"{}\"",
@@ -133,24 +126,14 @@ impl Client {
             .to_string()
     }
 
-    pub fn request_async(
+    pub fn request(
         &self,
         builder: http::request::Builder,
     ) -> impl Future<Output = Result<Response, ClientError>> + Send + Sync + 'static {
         self.send_req(builder.body(Bytes::new()).unwrap())
     }
 
-    #[tokio::main]
-    pub async fn request(&self, builder: http::request::Builder) -> Response {
-        self.request_async(builder).await.expect("response")
-    }
-
-    #[tokio::main]
     pub async fn request_body(&self, req: Request) -> Response {
-        self.request_body_async(req).await
-    }
-
-    pub async fn request_body_async(&self, req: Request) -> Response {
         self.send_req(req).await.expect("response")
     }
 
@@ -188,8 +171,18 @@ impl Client {
         async { rx.await.expect("request cancelled") }.in_current_span()
     }
 
-    pub fn wait_for_closed(self) {
-        futures::executor::block_on(self.running)
+    pub async fn wait_for_closed(self) {
+        self.running.await
+    }
+
+    pub async fn shutdown(self) {
+        let Self {
+            tx, task, running, ..
+        } = self;
+        // signal the client task to shut down now.
+        drop(tx);
+        task.await.unwrap();
+        running.await;
     }
 }
 
@@ -199,79 +192,78 @@ enum Run {
     Http2,
 }
 
-fn run(addr: SocketAddr, version: Run, tls: Option<TlsConfig>) -> (Sender, Running) {
+fn run(
+    addr: SocketAddr,
+    version: Run,
+    tls: Option<TlsConfig>,
+) -> (Sender, JoinHandle<()>, Running) {
     let (tx, rx) =
         mpsc::unbounded_channel::<(Request, oneshot::Sender<Result<Response, ClientError>>)>();
-    let (running_tx, running_rx) = running();
 
     let test_name = thread_name();
-    let tname = format!("support {:?} client (test={})", version, test_name);
+    let absolute_uris = if let Run::Http1 { absolute_uris } = version {
+        absolute_uris
+    } else {
+        false
+    };
 
-    ::std::thread::Builder::new()
-        .name(tname)
-        .spawn(move || {
-            let _trace = trace_init();
-            tracing::info!("support client running");
+    let (running_tx, running) = running();
+    let conn = Conn {
+        addr,
+        absolute_uris,
+        running: Arc::new(Mutex::new(Some(running_tx))),
+        tls,
+    };
 
-            let mut runtime = tokio::runtime::Builder::new()
-                .enable_all()
-                .basic_scheduler()
-                .build()
-                .expect("initialize support client runtime");
+    let http2_only = match version {
+        Run::Http1 { .. } => false,
+        Run::Http2 => true,
+    };
 
-            let absolute_uris = if let Run::Http1 { absolute_uris } = version {
-                absolute_uris
-            } else {
-                false
-            };
-            let conn = Conn {
-                addr,
-                running: Arc::new(Mutex::new(Some(running_tx))),
-                absolute_uris,
-                tls,
-            };
+    let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
+    let work = async move {
+        let client = hyper::Client::builder()
+            .http2_only(http2_only)
+            .executor(trace::Executor::new())
+            .build::<Conn, hyper::Body>(conn);
+        tracing::trace!("client task started");
+        let mut rx = rx;
+        let (drain_tx, drain) = drain::channel();
+        // Scope so that the original `Watch` side of the `drain` channel which
+        // is cloned into spawned tasks is dropped when the client loop ends.
+        // Otherwise, the `drain().await` would never finish, since one `Watch`
+        // instance would remain un-dropped.
+        async move {
+            while let Some((req, cb)) = rx.recv().await {
+                let req = req.map(hyper::Body::from);
+                tracing::trace!(?req);
+                let req = client.request(req);
+                tokio::spawn(
+                    cancelable(drain.clone(), async move {
+                        let result = req.await;
+                        let _ = cb.send(result);
+                        Ok::<(), ()>(())
+                    })
+                    .in_current_span(),
+                );
+            }
+        }
+        .await;
 
-            let http2_only = match version {
-                Run::Http1 { .. } => false,
-                Run::Http2 => true,
-            };
-
-            let span = info_span!("test client", peer_addr = %addr, ?version, test = %test_name);
-            let work = async move {
-                let client = hyper::Client::builder()
-                    .http2_only(http2_only)
-                    .executor(trace::Executor::new())
-                    .build::<Conn, hyper::Body>(conn);
-                tracing::trace!("client task started");
-                let mut rx = rx;
-                while let Some((req, cb)) = rx.recv().await {
-                    let req = req.map(hyper::Body::from);
-                    tracing::trace!(?req);
-                    let req = client.request(req);
-                    let res = tokio::spawn(
-                        async move {
-                            let result = req.await;
-                            let _ = cb.send(result);
-                        }
-                        .in_current_span(),
-                    )
-                    .await;
-                    tracing::trace!(?res);
-                }
-            };
-
-            runtime.block_on(work.instrument(span));
-        })
-        .expect("thread spawn");
-    (tx, running_rx)
+        tracing::trace!("client task shutting down");
+        drain_tx.drain().await;
+        tracing::trace!("client shutdown completed");
+    };
+    let task = tokio::spawn(work.instrument(span));
+    (tx, task, running)
 }
 
 #[derive(Clone)]
 struct Conn {
     addr: SocketAddr,
-    running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     absolute_uris: bool,
     tls: Option<TlsConfig>,
+    running: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
 impl tower::Service<hyper::Uri> for Conn {
@@ -285,10 +277,15 @@ impl tower::Service<hyper::Uri> for Conn {
     }
 
     fn call(&mut self, _: hyper::Uri) -> Self::Future {
-        let running = self.running.clone();
         let tls = self.tls.clone();
         let conn = TcpStream::connect(self.addr.clone());
         let abs_form = self.absolute_uris;
+        let running = self
+            .running
+            .lock()
+            .unwrap()
+            .take()
+            .expect("test client cannot connect twice");
         Box::pin(async move {
             let io = conn.await?;
 
@@ -304,12 +301,6 @@ impl tower::Service<hyper::Uri> for Conn {
             } else {
                 Box::pin(io) as Pin<Box<dyn Io + Send + 'static>>
             };
-
-            let running = running
-                .lock()
-                .expect("running lock")
-                .take()
-                .expect("support client cannot connect more than once");
             Ok(RunningIo {
                 io,
                 abs_form,

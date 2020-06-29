@@ -2,6 +2,8 @@ use super::*;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Poll;
+use std::thread;
+use tracing_futures::Instrument;
 
 pub fn new() -> Proxy {
     Proxy::new()
@@ -37,6 +39,8 @@ pub struct Listening {
     pub inbound_server: Option<server::Listening>,
 
     _shutdown: Shutdown,
+
+    thread: thread::JoinHandle<()>,
 }
 
 impl Proxy {
@@ -147,6 +151,25 @@ impl Proxy {
     }
 }
 
+impl Listening {
+    pub async fn join_servers(self) {
+        let Self {
+            inbound_server,
+            outbound_server,
+            thread,
+            ..
+        } = self;
+        drop(thread);
+        if let Some(srv) = outbound_server {
+            srv.join().instrument(tracing::info_span!("outbound")).await;
+        }
+
+        if let Some(srv) = inbound_server {
+            srv.join().instrument(tracing::info_span!("inbound")).await;
+        }
+    }
+}
+
 fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     use app::env::Strings;
 
@@ -250,7 +273,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         });
     }
 
-    std::thread::Builder::new()
+    let thread = thread::Builder::new()
         .name(format!("{}:proxy", thread_name()))
         .spawn(move || {
             tracing::dispatcher::with_default(&trace, || {
@@ -288,7 +311,10 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
                         let drain = main.spawn();
                         on_shutdown.await;
+                        debug!("after on_shutdown");
                         drain.drain().await;
+
+                        debug!("after on_shutdown");
                     });
             })
         })
@@ -328,5 +354,6 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         inbound_server: proxy.inbound_server,
 
         _shutdown: tx,
+        thread,
     }
 }

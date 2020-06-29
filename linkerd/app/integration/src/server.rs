@@ -10,9 +10,9 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::thread;
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 use tracing_futures::Instrument;
 
@@ -48,17 +48,19 @@ pub struct Server {
 
 pub struct Listening {
     pub addr: SocketAddr,
-    pub(super) _shutdown: Shutdown,
+    pub(super) drain: drain::Signal,
     pub(super) conn_count: Arc<AtomicUsize>,
+    pub(super) task: Option<JoinHandle<Result<(), io::Error>>>,
 }
 
 pub fn mock_listening(a: SocketAddr) -> Listening {
-    let (tx, _rx) = shutdown_signal();
+    let (tx, _rx) = drain::channel();
     let conn_count = Arc::new(AtomicUsize::from(0));
     Listening {
         addr: a,
-        _shutdown: tx,
+        drain: tx,
         conn_count,
+        task: Some(tokio::spawn(async { Ok(()) })),
     }
 }
 
@@ -66,11 +68,33 @@ impl Listening {
     pub fn connections(&self) -> usize {
         self.conn_count.load(Ordering::Acquire)
     }
-}
 
-impl Drop for Listening {
-    fn drop(&mut self) {
-        println!("server Listening dropped; addr={}", self.addr);
+    /// Wait for the server task to join, and propagate panics.
+    pub async fn join(mut self) {
+        tracing::info!(addr = %self.addr, "trying to shut down support server...");
+        tracing::debug!("draining...");
+        self.drain.drain().await;
+        tracing::debug!("drained!");
+
+        if let Some(task) = self.task.take() {
+            tracing::debug!("waiting for task to complete...");
+            match task.await {
+                Ok(res) => res.expect("support server failed"),
+                // If the task panicked, propagate the panic so that the test can
+                // fail nicely.
+                Err(err) if err.is_panic() => {
+                    tracing::error!("support server on {} panicked!", self.addr);
+                    std::panic::resume_unwind(err.into_panic());
+                }
+                // If the task was already canceled, it was probably shut down
+                // explicitly, that's fine.
+                Err(_) => tracing::debug!("support server task already canceled"),
+            }
+
+            tracing::debug!("support server on {} terminated cleanly", self.addr);
+        } else {
+            tracing::debug!("support server task already joined");
+        }
     }
 }
 
@@ -109,7 +133,7 @@ impl Server {
     /// to send back.
     pub fn route_fn<F>(self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + 'static,
+        F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + Sync + 'static,
     {
         self.route_async(path, move |req| {
             let res = cb(req);
@@ -121,7 +145,7 @@ impl Server {
     /// a response to send back.
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<ReqBody>) -> U + Send + 'static,
+        F: Fn(Request<ReqBody>) -> U + Send + Sync + 'static,
         U: TryFuture<Ok = Response<Bytes>> + Send + Sync + 'static,
         U::Error: Into<BoxError> + Send + 'static,
     {
@@ -142,48 +166,51 @@ impl Server {
 
     pub fn route_with_latency(self, path: &str, resp: &str, latency: Duration) -> Self {
         let resp = Bytes::from(resp.to_string());
-        self.route_fn(path, move |_| {
-            thread::sleep(latency);
-            http::Response::builder()
-                .status(200)
-                .body(resp.clone())
-                .unwrap()
+        self.route_async(path, move |_| {
+            let resp = resp.clone();
+            async move {
+                tokio::time::delay_for(latency).await;
+                Ok::<_, BoxError>(
+                    http::Response::builder()
+                        .status(200)
+                        .body(resp.clone())
+                        .unwrap(),
+                )
+            }
         })
     }
 
-    pub fn delay_listen<F>(self, f: F) -> Listening
+    pub async fn delay_listen<F>(self, f: F) -> Listening
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        self.run_inner(Some(Box::pin(f)))
+        self.run_inner(Some(Box::pin(f))).await
     }
 
-    pub fn run(self) -> Listening {
-        self.run_inner(None)
+    pub async fn run(self) -> Listening {
+        self.run_inner(None).await
     }
 
-    fn run_inner(
+    async fn run_inner(
         self,
         delay: Option<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>,
     ) -> Listening {
-        let (tx, rx) = shutdown_signal();
         let (listening_tx, listening_rx) = oneshot::channel();
         let mut listening_tx = Some(listening_tx);
         let conn_count = Arc::new(AtomicUsize::from(0));
         let srv_conn_count = Arc::clone(&conn_count);
         let version = self.version;
-        let tname = format!("support {:?} server (test={})", version, thread_name(),);
 
         let addr = SocketAddr::from(([127, 0, 0, 1], 0));
         let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
         listener.bind(addr).expect("Tcp::bind");
         let addr = listener.local_addr().expect("Tcp::local_addr");
 
+        let (drain_signal, drain) = drain::channel();
         let tls_config = self.tls.clone();
-        ::std::thread::Builder::new()
-            .name(tname)
-            .spawn(move || {
-                let _trace = trace_init();
+        let task = tokio::spawn(cancelable(
+            drain.clone(),
+            async move {
                 tracing::info!("support server running");
                 let mut new_svc = NewSvc(Arc::new(self.routes));
                 let mut http =
@@ -192,75 +219,56 @@ impl Server {
                     Run::Http1 => http.http1_only(true),
                     Run::Http2 => http.http2_only(true),
                 };
-                let serve = async move {
-                    if let Some(delay) = delay {
-                        let _ = listening_tx.take().unwrap().send(());
-                        delay.await;
-                    }
-                    let listener = listener.listen(1024).expect("Tcp::listen");
-                    let mut listener = TcpListener::from_std(listener).expect("from_std");
+                if let Some(delay) = delay {
+                    let _ = listening_tx.take().unwrap().send(());
+                    delay.await;
+                }
+                let listener = listener.listen(1024).expect("Tcp::listen");
+                let mut listener = TcpListener::from_std(listener).expect("from_std");
 
-                    if let Some(listening_tx) = listening_tx {
-                        let _ = listening_tx.send(());
-                    }
-                    tracing::info!("listening!");
-                    loop {
-                        let (sock, addr) = listener.accept().await?;
-                        let span = tracing::debug_span!("conn", %addr);
-                        let sock = accept_connection(sock, tls_config.clone())
-                            .instrument(span.clone())
-                            .await?;
-                        let http = http.clone();
-                        let srv_conn_count = srv_conn_count.clone();
-                        let svc = new_svc.call(());
-                        tokio::task::spawn_local(
-                            async move {
-                                tracing::trace!("serving...");
-                                let svc = svc.await;
-                                tracing::trace!("service acquired");
-                                srv_conn_count.fetch_add(1, Ordering::Release);
-                                let svc = svc.map_err(|e| {
-                                    println!("support/server new_service error: {}", e)
-                                })?;
-                                let result = http
-                                    .serve_connection(sock, svc)
-                                    .await
-                                    .map_err(|e| println!("support/server error: {}", e));
-                                tracing::trace!(?result, "serve done");
-                                result
-                            }
-                            .instrument(span.clone()),
-                        );
-                    }
-                };
+                if let Some(listening_tx) = listening_tx {
+                    let _ = listening_tx.send(());
+                }
+                tracing::info!("listening!");
+                loop {
+                    let (sock, addr) = listener.accept().await?;
+                    let span = tracing::debug_span!("conn", %addr);
+                    let sock = accept_connection(sock, tls_config.clone())
+                        .instrument(span.clone())
+                        .await?;
+                    let http = http.clone();
+                    let srv_conn_count = srv_conn_count.clone();
+                    let svc = new_svc.call(());
+                    let f = async move {
+                        tracing::trace!("serving...");
+                        let svc = svc.await;
+                        tracing::trace!("service acquired");
+                        srv_conn_count.fetch_add(1, Ordering::Release);
+                        let svc =
+                            svc.map_err(|e| println!("support/server new_service error: {}", e))?;
+                        let result = http
+                            .serve_connection(sock, svc)
+                            .await
+                            .map_err(|e| println!("support/server error: {}", e));
+                        tracing::trace!(?result, "serve done");
+                        result
+                    };
+                    tokio::spawn(cancelable(drain.clone(), f).instrument(span.clone()));
+                }
+            }
+            .instrument(tracing::info_span!("test_server", ?version, %addr, test = %thread_name())),
+        ));
 
-                let mut rt = tokio::runtime::Builder::new()
-                    .basic_scheduler()
-                    .enable_all()
-                    .build()
-                    .expect("initialize support server runtime");
-                tokio::task::LocalSet::new().block_on(
-                    &mut rt,
-                    async move {
-                        tokio::select! {
-                            res = serve => res,
-                            _ = rx => { Ok::<(), io::Error>(())},
-                        }
-                    }
-                    .instrument(tracing::info_span!("test_server", ?version, %addr)),
-                )
-            })
-            .unwrap();
-
-        futures::executor::block_on(listening_rx).expect("listening_rx");
+        listening_rx.await.expect("listening_rx");
 
         // printlns will show if the test fails...
         println!("{:?} server running; addr={}", version, addr,);
 
         Listening {
             addr,
-            _shutdown: tx,
+            drain: drain_signal,
             conn_count,
+            task: Some(task),
         }
     }
 }
@@ -282,7 +290,8 @@ struct Route(
                         + Sync
                         + 'static,
                 >,
-            > + Send,
+            > + Send
+            + Sync,
     >,
 );
 
