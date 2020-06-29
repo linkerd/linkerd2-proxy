@@ -633,9 +633,6 @@ fn is_discovery_rejected(err: &Error) -> bool {
     if let Some(e) = err.downcast_ref::<svc::buffer::error::ServiceError>() {
         return is_discovery_rejected(e.inner());
     }
-    if let Some(e) = err.downcast_ref::<svc::lock::error::ServiceError>() {
-        return is_discovery_rejected(e.inner());
-    }
 
     err.is::<DiscoveryRejected>() || err.is::<profiles::InvalidProfileAddr>()
 }
