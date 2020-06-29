@@ -322,7 +322,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.tap_addr(),
                             identity_addr,
                             main.inbound_addr(),
-                            main.outbound_addr(),
+                            _compat::runtime::current_thread::main.outbound_addr(),
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
@@ -348,7 +348,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         .expect("spawn");
 
     let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
-        futures::executor::block_on(running_rx).unwrap();
+        running_rx.await.unwrap();
 
     // printlns will show if the test fails...
     println!(
