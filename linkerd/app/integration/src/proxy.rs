@@ -310,9 +310,9 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 let span = info_span!("proxy", test = %thread_name());
                 let _enter = span.enter();
 
-                tokio_compat::runtime::current_thread::Runtime::new()
+                tokio::runtime::Runtime::new()
                     .expect("proxy")
-                    .block_on_std(async move {
+                    .block_on(async move {
                         let main = config.build(trace_handle).await.expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
