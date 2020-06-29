@@ -1,8 +1,8 @@
 #![recursion_limit = "256"]
+
 use linkerd2_error::Error;
-use std::task::Poll;
-use std::time::Duration;
-use tokio::sync::{mpsc, watch};
+use std::{future::Future, pin::Pin, task::Poll, time::Duration};
+use tokio::sync::{mpsc, oneshot, watch};
 
 mod dispatch;
 pub mod error;
@@ -11,9 +11,11 @@ mod service;
 
 pub use self::{layer::SpawnBufferLayer, service::Buffer};
 
-struct InFlight<Req, F> {
+struct InFlight<Req, Rsp> {
     request: Req,
-    tx: tokio::sync::oneshot::Sender<Result<F, linkerd2_error::Error>>,
+    tx: oneshot::Sender<
+        Result<Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>, Error>,
+    >,
 }
 
 pub(crate) fn new<Req, S>(
@@ -21,7 +23,7 @@ pub(crate) fn new<Req, S>(
     capacity: usize,
     idle_timeout: Option<Duration>,
 ) -> (
-    Buffer<Req, S::Future>,
+    Buffer<Req, S::Response>,
     impl std::future::Future<Output = ()> + Send + 'static,
 )
 where
