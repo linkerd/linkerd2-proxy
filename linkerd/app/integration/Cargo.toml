@@ -19,7 +19,7 @@ nyi = []
 
 [dependencies]
 bytes = "0.5"
-futures = { version = "0.3", features = ["compat"] }
+futures = "0.3" 
 h2 = "0.2"
 http = "0.2"
 http-body = "0.3"
@@ -35,7 +35,6 @@ ring = "0.16"
 rustls = "0.17"
 tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
 tokio-rustls = "0.13"
-tokio-compat = "0.1"
 tower = { version = "0.3", default-features = false} 
 tonic = { version = "0.2", default-features = false }
 tracing = "0.1.9"
