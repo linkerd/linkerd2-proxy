@@ -238,6 +238,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
+            .instrument(|_: &Target| info_span!("target"))
             .check_service::<Target>();
 
         // Routes targets to a Profile stack, i.e. so that profile
