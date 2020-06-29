@@ -931,7 +931,6 @@ dependencies = [
  "ring",
  "rustls",
  "tokio 0.2.21",
- "tokio-compat",
  "tokio-rustls",
  "tonic",
  "tower",
@@ -2570,7 +2569,6 @@ dependencies = [
  "memchr 2.3.3",
  "mio",
  "mio-uds",
- "num_cpus",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
@@ -2587,23 +2585,6 @@ dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
  "tokio-io",
-]
-
-[[package]]
-name = "tokio-compat"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "107b625135aa7b9297dd2d99ccd6ca6ab124a5d1230778e159b9095adca4c722"
-dependencies = [
- "futures 0.1.26",
- "futures-core",
- "futures-util",
- "pin-project-lite",
- "tokio 0.2.21",
- "tokio-current-thread",
- "tokio-executor",
- "tokio-reactor",
- "tokio-timer",
 ]
 
 [[package]]
