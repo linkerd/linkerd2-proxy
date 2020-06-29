@@ -119,11 +119,10 @@ impl Config {
                         .push(metrics.layer(stack_labels("refine"))),
                 ),
             )
+            .spawn_buffer(self.proxy.buffer_capacity)
             .instrument(|name: &dns::Name| info_span!("refine", %name))
             // Obtains the service, advances the state of the resolution
             .push(svc::make_response::Layer)
-            // Ensures that the cache isn't locked when polling readiness.
-            .push_oneshot()
             .into_inner()
     }
 
@@ -297,9 +296,8 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("balance"))),
                 ),
             )
-            .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
-            // Ensure that buffers don't hold the cache's lock in poll_ready.
-            .push_oneshot();
+            .spawn_buffer(buffer_capacity)
+            .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr));
 
         // Caches clients that bypass discovery/balancing.
         //
@@ -321,6 +319,7 @@ impl Config {
                             .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                     ),
             )
+            .spawn_buffer(buffer_capacity)
             .instrument(|endpoint: &Target<HttpEndpoint>| {
                 info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
             })
@@ -328,9 +327,7 @@ impl Config {
                 addr: t.addr.into(),
                 inner: t.inner.inner,
             })
-            .check_service::<Concrete<HttpEndpoint>>()
-            // Ensure that buffers don't hold the cache's lock in poll_ready.
-            .push_oneshot();
+            .check_service::<Concrete<HttpEndpoint>>();
 
         // If the balancer fails to be created, i.e., because it is unresolvable, fall back to
         // using a router that dispatches request to the application-selected original destination.
@@ -398,9 +395,8 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
             )
+            .spawn_buffer(buffer_capacity)
             .instrument(|_: &Profile| info_span!("profile"))
-            // Ensures that the cache isn't locked when polling readiness.
-            .push_oneshot()
             .check_make_service::<Profile, Logical<HttpEndpoint>>()
             .push(router::Layer::new(|()| ProfilePerTarget))
             .check_new_service_routes::<(), Logical<HttpEndpoint>>()
