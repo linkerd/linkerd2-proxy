@@ -7,7 +7,7 @@ use linkerd2_conditional::Conditional;
 use linkerd2_dns_name as dns;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
-use linkerd2_proxy_core::listen::Accept;
+use linkerd2_proxy_core::Accept;
 use linkerd2_stack::layer;
 use pin_project::{pin_project, project};
 pub use rustls::ServerConfig as Config;
@@ -38,6 +38,7 @@ pub struct Meta {
 
 pub type Connection = (Meta, BoxedIo);
 
+#[derive(Clone)]
 pub struct AcceptTls<A: Accept<Connection>, T> {
     accept: A,
     tls: super::Conditional<T>,
