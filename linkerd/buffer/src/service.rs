@@ -1,13 +1,11 @@
 use crate::error::{Closed, ServiceError};
 use crate::InFlight;
-use futures::{ready, TryFuture};
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin};
 use tokio::sync::{mpsc, oneshot, watch};
 
-pub struct Buffer<Req, F> {
+pub struct Buffer<Req, Rsp> {
     /// Updates with the readiness state of the inner service. This allows the buffer to reliably
     /// exert backpressure and propagate errors, especially before the inner service has been
     /// initialized.
@@ -17,26 +15,14 @@ pub struct Buffer<Req, F> {
     ///
     /// Because the inner service's status is propagated via `ready` watch, this is here to
     /// allow multiple services race to send a request.
-    tx: mpsc::Sender<InFlight<Req, F>>,
-}
-
-#[pin_project]
-pub struct ResponseFuture<F> {
-    #[pin]
-    state: State<F>,
-}
-
-#[pin_project]
-enum State<F> {
-    Receive(#[pin] oneshot::Receiver<Result<F, Error>>),
-    Respond(#[pin] F),
+    tx: mpsc::Sender<InFlight<Req, Rsp>>,
 }
 
 // === impl Buffer ===
 
-impl<Req, F> Buffer<Req, F> {
+impl<Req, Rsp> Buffer<Req, Rsp> {
     pub(crate) fn new(
-        tx: mpsc::Sender<InFlight<Req, F>>,
+        tx: mpsc::Sender<InFlight<Req, Rsp>>,
         ready: watch::Receiver<Poll<Result<(), ServiceError>>>,
     ) -> Self {
         Self { tx, ready }
@@ -61,14 +47,13 @@ impl<Req, F> Buffer<Req, F> {
     }
 }
 
-impl<Req, F> tower::Service<Req> for Buffer<Req, F>
+impl<Req, Rsp> tower::Service<Req> for Buffer<Req, Rsp>
 where
-    F: TryFuture,
-    F::Error: Into<Error>,
+    Rsp: Send + 'static,
 {
-    type Response = F::Ok;
+    type Response = Rsp;
     type Error = Error;
-    type Future = ResponseFuture<F>;
+    type Future = Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self.poll_inner(cx) {
@@ -83,39 +68,12 @@ where
             .try_send(InFlight { request, tx })
             .ok()
             .expect("poll_ready must be called");
-        Self::Future {
-            state: State::Receive(rx),
-        }
+        Box::pin(async move { rx.await.map_err(|_| Closed(()))??.await })
     }
 }
 
-impl<Req, F> Clone for Buffer<Req, F> {
+impl<Req, Rsp> Clone for Buffer<Req, Rsp> {
     fn clone(&self) -> Self {
         Self::new(self.tx.clone(), self.ready.clone())
-    }
-}
-
-// === impl ResponseFuture ===
-
-impl<F> Future for ResponseFuture<F>
-where
-    F: TryFuture,
-    F::Error: Into<Error>,
-{
-    type Output = Result<F::Ok, Error>;
-
-    #[project]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        loop {
-            #[project]
-            match this.state.as_mut().project() {
-                State::Receive(rx) => {
-                    let fut = ready!(rx.poll(cx).map_err(|_| Error::from(Closed(()))))??;
-                    this.state.set(State::Respond(fut))
-                }
-                State::Respond(fut) => return fut.try_poll(cx).map_err(Into::into),
-            };
-        }
     }
 }

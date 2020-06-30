@@ -1,6 +1,6 @@
 use crate::error::{IdleError, ServiceError};
 use crate::InFlight;
-use futures::{future::FutureExt, select_biased};
+use futures::{prelude::*, select_biased};
 use linkerd2_error::Error;
 use std::sync::Arc;
 use std::task::Poll;
@@ -15,11 +15,12 @@ pub(crate) async fn idle(max: std::time::Duration) -> IdleError {
 
 pub(crate) async fn run<S, Req, I>(
     mut service: S,
-    mut requests: mpsc::Receiver<InFlight<Req, S::Future>>,
+    mut requests: mpsc::Receiver<InFlight<Req, S::Response>>,
     ready: watch::Sender<Poll<Result<(), ServiceError>>>,
     idle: impl Fn() -> I,
 ) where
     S: tower::Service<Req>,
+    S::Future: Send + 'static,
     S::Error: Into<Error>,
     I: std::future::Future,
     I::Output: Into<Error>,
@@ -51,7 +52,7 @@ pub(crate) async fn run<S, Req, I>(
                        match service.ready_and().await {
                             Ok(svc) => {
                                 trace!("Dispatching request");
-                                let _ = tx.send(Ok(svc.call(request)));
+                                let _ = tx.send(Ok(Box::pin(svc.call(request).err_into::<Error>())));
                             }
                             Err(e) =>{
                                 let error = ServiceError(Arc::new(e.into()));
