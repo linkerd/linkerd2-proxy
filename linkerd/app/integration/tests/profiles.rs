@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -105,11 +106,12 @@ macro_rules! profile_test {
         ];
         profile_tx.send(controller::profile(routes, $budget, vec![]));
 
-        let ctrl = ctrl.run();
+        let ctrl = ctrl.run().await;
         let proxy = proxy::new()
             .controller(ctrl)
             .outbound(srv)
-            .run();
+            .run()
+            .await;
 
         let client = client::$http(proxy.outbound, host);
 

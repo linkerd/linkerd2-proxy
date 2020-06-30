@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 
@@ -16,7 +17,7 @@ macro_rules! generate_tests {
             ctrl.profile_tx_default("disco.test.svc.cluster.local");
             ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
 
-            let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+            let proxy = proxy::new().controller(ctrl.run().await).outbound(srv).run().await;
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello");
@@ -37,7 +38,7 @@ macro_rules! generate_tests {
             drop(ctrl.destination_tx("disco.test.svc.cluster.local"));
             ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
 
-            let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+            let proxy = proxy::new().controller(ctrl.run().await).outbound(srv).run().await;
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
             assert_eq!(client.get("/recon").await, "nect");
@@ -70,9 +71,9 @@ macro_rules! generate_tests {
             ctrl.destination_tx("disco.test.svc.cluster.local").send(up);
 
             let proxy = proxy::new()
-                .controller(ctrl.run())
+                .controller(ctrl.run().await)
                 .outbound(srv)
-                .run();
+                .run().await;
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
@@ -98,9 +99,9 @@ macro_rules! generate_tests {
             let ctrl = controller::new();
             ctrl.no_more_destinations();
             let proxy = proxy::new()
-                .controller(ctrl.run())
+                .controller(ctrl.run().await)
                 .outbound(srv)
-                .run();
+                .run().await;
 
             let client = $make_client(proxy.outbound, "my-great-websute.net");
 
@@ -126,9 +127,9 @@ macro_rules! generate_tests {
             ctrl.no_more_destinations();
 
             let proxy = proxy::new()
-                .controller(ctrl.run())
+                .controller(ctrl.run().await)
                 .outbound(srv)
-                .run();
+                .run().await;
 
             let client = $make_client(proxy.outbound, NAME);
 
@@ -165,9 +166,9 @@ macro_rules! generate_tests {
             let dst_tx1 = ctrl.destination_tx("initially-exists.ns.svc.cluster.local");
 
             let proxy = proxy::new()
-                .controller(ctrl.run())
+                .controller(ctrl.run().await)
                 .outbound(srv)
-                .run_with_test_env(env);
+                .run_with_test_env(env).await;
 
             let initially_exists =
                 $make_client(proxy.outbound, "initially-exists.ns.svc.cluster.local");
@@ -201,9 +202,10 @@ macro_rules! generate_tests {
                 .destination_tx("disco.test.svc.cluster.local");
 
             let proxy = proxy::new()
-                .controller(ctrl.run())
+                .controller(ctrl.run().await)
                 .outbound(srv)
-                .run_with_test_env(env);
+                .run_with_test_env(env)
+                .await;
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
             let req = client.request_builder("/");
@@ -231,10 +233,10 @@ macro_rules! generate_tests {
             ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
 
             let proxy = proxy::new()
-                .controller(ctrl.run())
+                .controller(ctrl.run().await)
                 // don't set srv as outbound(), so that SO_ORIGINAL_DST isn't
                 // used as a backup
-                .run();
+                .run().await;
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello");
@@ -253,7 +255,7 @@ macro_rules! generate_tests {
                 .run().await;
 
             // Used to delay `listen` in the server, to force connection refused errors.
-            let (tx, rx) = oneshot::channel();
+            let (tx, rx) = oneshot::channel::<()>();
 
             let ctrl = controller::new();
             ctrl.profile_tx_default("disco.test.svc.cluster.local");
@@ -263,10 +265,10 @@ macro_rules! generate_tests {
             // but don't drop, to not trigger stream closing reconnects
 
             let proxy = proxy::new()
-                .controller(ctrl.delay_listen(rx.map_err(|_| ())))
+                .controller(ctrl.delay_listen(async move { let _ = rx.await; }).await)
                 // don't set srv as outbound(), so that SO_ORIGINAL_DST isn't
                 // used as a backup
-                .run_with_test_env(env);
+                .run_with_test_env(env).await;
 
             // Allow the control client to notice a connection error
             tokio::time::delay_for(Duration::from_millis(500)).await;
@@ -304,7 +306,7 @@ macro_rules! generate_tests {
                 let ctrl = controller::new();
                 ctrl.profile_tx_default("disco.test.svc.cluster.local");
                 ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
-                let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+                let proxy = proxy::new().controller(ctrl.run().await).outbound(srv).run().await;
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
                 let rsp = client.request(client.request_builder("/strip")).await.unwrap();
 
@@ -324,7 +326,7 @@ macro_rules! generate_tests {
 
                 let ctrl = controller::new();
                 ctrl.profile_tx_default("disco.test.svc.cluster.local");
-                let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
+                let proxy = proxy::new().controller(ctrl.run().await).inbound(srv).run().await;
                 let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
                 let rsp = client.request(client.request_builder("/strip").header(REMOTE_IP_HEADER, IP_1)).await.unwrap();
 
@@ -344,7 +346,7 @@ macro_rules! generate_tests {
                 let ctrl = controller::new();
                 ctrl.profile_tx_default("disco.test.svc.cluster.local");
                 ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
-                let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+                let proxy = proxy::new().controller(ctrl.run().await).outbound(srv).run().await;
                 let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
                 let rsp = client.request(client.request_builder("/set")).await.unwrap();
 
@@ -364,7 +366,7 @@ macro_rules! generate_tests {
                     Response::default()
                 }).run().await;
 
-                let proxy = proxy::new().inbound(srv).run();
+                let proxy = proxy::new().inbound(srv).run().await;
                 let client = $make_client(proxy.inbound, "disco.test.svc.cluster.local");
                 let rsp = client.request(client.request_builder("/set")).await.unwrap();
 
@@ -467,9 +469,9 @@ macro_rules! generate_tests {
                     self.bar_reqs.load(Ordering::Acquire)
                 }
 
-                fn proxy(&mut self) -> proxy::Proxy {
+                async fn proxy(&mut self) -> proxy::Proxy {
                     let ctrl = self.ctrl.take().unwrap();
-                    proxy::new().controller(ctrl.run())
+                    proxy::new().controller(ctrl.run().await)
                 }
             }
 
@@ -485,7 +487,7 @@ macro_rules! generate_tests {
             #[tokio::test]
             async fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new().await;
-                let proxy = fixture.proxy().run();
+                let proxy = fixture.proxy().await.run().await;
 
                 let client = $make_client(proxy.outbound, FOO);
 
@@ -518,7 +520,7 @@ macro_rules! generate_tests {
             #[tokio::test]
             async fn outbound_overrides_profile() {
                 let mut fixture = Fixture::new().await;
-                let proxy = fixture.proxy().run();
+                let proxy = fixture.proxy().await.run().await;
 
                 println!("make client: {}", FOO);
                 let client = $make_client(proxy.outbound, FOO);
@@ -542,9 +544,9 @@ macro_rules! generate_tests {
             #[tokio::test]
             async fn outbound_honors_override_header_with_orig_dst() {
                 let mut fixture = Fixture::new().await;
-                let proxy = fixture.proxy()
+                let proxy = fixture.proxy().await
                     .outbound(fixture.foo())
-                    .run();
+                    .run().await;
 
                 let client = $make_client(proxy.outbound, "foo.test.svc.cluster.local");
 
@@ -578,9 +580,9 @@ macro_rules! generate_tests {
             #[tokio::test]
             async fn inbound_overrides_profile() {
                 let mut fixture = Fixture::new().await;
-                let proxy = fixture.proxy()
+                let proxy = fixture.proxy().await
                     .inbound(fixture.foo())
-                    .run();
+                    .run().await;
 
                 let client = $make_client(proxy.inbound, FOO);
                 let metrics = client::http1(proxy.metrics, "localhost");
@@ -601,9 +603,9 @@ macro_rules! generate_tests {
             #[tokio::test]
             async fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new().await;
-                let proxy = fixture.proxy()
+                let proxy = fixture.proxy().await
                     .inbound(fixture.foo())
-                    .run();
+                    .run().await;
 
                 let client = $make_client(proxy.inbound, "foo.test.svc.cluster.local");
 
@@ -667,7 +669,7 @@ mod http2 {
         // Start by "knowing" the first server...
         dst.send_addr(srv1.addr);
 
-        let proxy = proxy::new().controller(ctrl.run()).run();
+        let proxy = proxy::new().controller(ctrl.run().await).run().await;
         let client = client::http2(proxy.outbound, host);
         let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -740,7 +742,7 @@ mod proxy_to_proxy {
         let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
         dst.send_h2_hinted(srv.addr);
 
-        let proxy = proxy::new().controller(ctrl.run()).run();
+        let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
@@ -775,7 +777,11 @@ mod proxy_to_proxy {
         let ctrl = controller::new();
         ctrl.profile_tx_default("disco.test.svc.cluster.local");
 
-        let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
+        let proxy = proxy::new()
+            .controller(ctrl.run().await)
+            .inbound(srv)
+            .run()
+            .await;
 
         // This client will be used as a mocked-other-proxy.
         let client = client::http2(proxy.inbound, "disco.test.svc.cluster.local");
@@ -810,7 +816,11 @@ mod proxy_to_proxy {
         let ctrl = controller::new();
         ctrl.profile_tx_default("disco.test.svc.cluster.local");
 
-        let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
+        let proxy = proxy::new()
+            .controller(ctrl.run().await)
+            .inbound(srv)
+            .run()
+            .await;
 
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
@@ -844,7 +854,7 @@ mod proxy_to_proxy {
         ctrl.profile_tx_default("disco.test.svc.cluster.local");
         ctrl.destination_tx("disco.test.svc.cluster.local")
             .send_addr(srv.addr);
-        let proxy = proxy::new().controller(ctrl.run()).run();
+        let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
@@ -879,7 +889,11 @@ mod proxy_to_proxy {
         let ctrl = controller::new();
         ctrl.profile_tx_default("disco.test.svc.cluster.local");
 
-        let proxy = proxy::new().controller(ctrl.run()).inbound(srv).run();
+        let proxy = proxy::new()
+            .controller(ctrl.run().await)
+            .inbound(srv)
+            .run()
+            .await;
 
         let client = client::http1(proxy.inbound, "disco.test.svc.cluster.local");
 
@@ -913,7 +927,7 @@ mod proxy_to_proxy {
         ctrl.destination_tx("disco.test.svc.cluster.local")
             .send_addr(srv.addr);
         ctrl.profile_tx_default("disco.test.svc.cluster.local");
-        let proxy = proxy::new().controller(ctrl.run()).run();
+        let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
         let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
@@ -941,17 +955,19 @@ mod proxy_to_proxy {
 
             let in_proxy = proxy::new()
                 .inbound(srv)
-                .identity(id_env.service().run())
-                .run_with_test_env(id_env.env.clone());
+                .identity(id_env.service().run().await)
+                .run_with_test_env(id_env.env.clone())
+                .await;
 
             let ctrl = controller::new();
             let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
             dst.send(controller::destination_add_tls(in_proxy.inbound, id));
 
             let out_proxy = proxy::new()
-                .controller(ctrl.run())
-                .identity(id_env.service().run())
-                .run_with_test_env(id_env.env.clone());
+                .controller(ctrl.run().await)
+                .identity(id_env.service().run().await)
+                .run_with_test_env(id_env.env.clone())
+                .await;
 
             let client = $make_client(out_proxy.outbound, "disco.test.svc.cluster.local");
 

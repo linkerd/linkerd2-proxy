@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 
@@ -10,7 +11,7 @@ async fn h2_goaways_connections() {
     let (shdn, rx) = shutdown_signal();
 
     let srv = server::http2().route("/", "hello").run().await;
-    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
+    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
     let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
 
     assert_eq!(client.get("/").await, "hello");
@@ -36,7 +37,7 @@ async fn h2_exercise_goaways_connections() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
+    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
     let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
 
     let reqs = (0..NUM_REQUESTS)
@@ -89,7 +90,7 @@ async fn http1_closes_idle_connections() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
+    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
     let client = client::http1(proxy.inbound, "shutdown.test.svc.cluster.local");
 
     let res_body = client.get("/").await;
@@ -123,7 +124,7 @@ async fn tcp_waits_for_proxies_to_close() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run();
+    let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
 
     let client = client::tcp(proxy.inbound);
 

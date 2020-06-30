@@ -10,7 +10,7 @@ pub use self::endpoint::{
     TcpEndpoint,
 };
 use ::http::header::HOST;
-use futures::future;
+use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
@@ -30,12 +30,10 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::IpAddr;
-use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::info_span;
+use tracing::{info, info_span};
 
 // #[allow(dead_code)] // TODO #2597
 // mod add_remote_ip_on_rsp;
@@ -432,17 +430,17 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<C, R, H, S>(
+    pub async fn build_server<C, R, H, S>(
         self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
-        prevent_loop: impl Into<PreventLoop>,
+        listen_addr: std::net::SocketAddr,
+        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
         refine: R,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
+    ) -> Result<(), Error>
     where
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
             + Unpin
@@ -485,7 +483,9 @@ impl Config {
         // same runtime as the proxy.
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
+            .push(admit::AdmitLayer::new(PreventLoop::from(
+                listen_addr.port(),
+            )))
             .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
             .push(svc::layer::mk(tcp::Forward::new));
 
@@ -555,7 +555,8 @@ impl Config {
             // detection. Ensures that connections that never emit data are dropped eventually.
             .push_timeout(detect_protocol_timeout);
 
-        Box::pin(serve::serve(listen, tcp_detect.into_inner(), drain))
+        info!(addr = %listen_addr, "Serving");
+        serve::serve(listen, tcp_detect.into_inner(), drain.signal()).await
     }
 }
 

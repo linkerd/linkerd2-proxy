@@ -2,10 +2,7 @@ use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::ServerConfig,
     drain,
-    proxy::{
-        core::listen::{Bind, Listen},
-        identity, tap,
-    },
+    proxy::{identity, tap},
     serve,
     transport::tls,
     Error,
@@ -51,15 +48,14 @@ impl Config {
                 server,
                 permitted_peer_identities,
             } => {
-                let listen = server.bind.bind().map_err(Error::from)?;
-                let listen_addr = listen.listen_addr();
+                let (listen_addr, listen) = server.bind.bind()?;
 
                 let accept = tls::AcceptTls::new(
                     identity,
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), grpc),
                 );
 
-                let serve = Box::pin(serve::serve(listen, accept, drain));
+                let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
 
                 Ok(Tap::Enabled {
                     layer,

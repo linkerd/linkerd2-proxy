@@ -9,7 +9,7 @@ pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
 use self::require_identity_for_ports::RequireIdentityForPorts;
-use futures::future;
+use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
@@ -17,7 +17,6 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        core::Listen,
         detect::DetectProtocolLayer,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
@@ -32,8 +31,6 @@ use linkerd2_app_core::{
     L5D_SERVER_ID,
 };
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
@@ -54,9 +51,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build<L, S, P>(
+    pub async fn build<L, S, P>(
         self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        listen_addr: std::net::SocketAddr,
+        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
         local_identity: tls::Conditional<identity::Local>,
         http_loopback: L,
         profiles_client: P,
@@ -64,7 +62,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
+    ) -> Result<(), Error>
     where
         L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
@@ -81,7 +79,7 @@ impl Config {
         P::Future: Unpin + Send,
     {
         let tcp_connect = self.build_tcp_connect(&metrics);
-        let prevent_loop = PreventLoop::from(listen.listen_addr().port());
+        let prevent_loop = PreventLoop::from(listen_addr.port());
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
@@ -92,6 +90,7 @@ impl Config {
             span_sink.clone(),
         );
         self.build_server(
+            listen_addr,
             listen,
             prevent_loop,
             tcp_connect,
@@ -101,6 +100,7 @@ impl Config {
             span_sink,
             drain,
         )
+        .await
     }
 
     pub fn build_tcp_connect(
@@ -294,9 +294,10 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<C, H, S>(
+    pub async fn build_server<C, H, S>(
         self,
-        listen: transport::Listen<transport::DefaultOrigDstAddr>,
+        listen_addr: std::net::SocketAddr,
+        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
@@ -304,7 +305,7 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>
+    ) -> Result<(), Error>
     where
         C: tower::Service<TcpEndpoint> + Unpin + Clone + Send + Sync + 'static,
         C::Error: Into<Error>,
@@ -425,8 +426,8 @@ impl Config {
             // eventually.
             .push_timeout(detect_protocol_timeout);
 
-        info!(listen.addr = %listen.listen_addr(), "Serving");
-        Box::pin(serve::serve(listen, tcp_detect.into_inner(), drain))
+        info!(addr = %listen_addr, "Serving");
+        serve::serve(listen, tcp_detect.into_inner(), drain.signal()).await
     }
 }
 
