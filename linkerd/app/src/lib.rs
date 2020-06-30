@@ -1,5 +1,4 @@
 //! Configures and executes the proxy
-
 #![recursion_limit = "256"]
 //#![deny(warnings, rust_2018_idioms)]
 
@@ -25,6 +24,7 @@ use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use tokio::time::Duration;
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -347,7 +347,11 @@ impl App {
                             registry, serve, ..
                         } = tap
                         {
-                            tokio::spawn(registry.clean().instrument(info_span!("tap")));
+                            tokio::spawn(
+                                registry
+                                    .clean(tokio::time::interval(Duration::from_millis(100)))
+                                    .instrument(info_span!("tap")),
+                            );
                             tokio::spawn(
                                 serve
                                     .map_err(|error| error!(%error, "server died"))

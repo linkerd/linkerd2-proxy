@@ -1,9 +1,7 @@
 use crate::iface;
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
-use tokio::{sync::watch, time};
+use futures::{Stream, StreamExt};
+use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
 use tracing::trace;
 
 #[derive(Clone, Debug)]
@@ -45,14 +43,14 @@ where
         }
     }
 
-    pub async fn clean(self) {
-        loop {
+    pub async fn clean(self, wakeup: impl Stream) {
+        futures::pin_mut!(wakeup);
+        while let Some(_) = wakeup.next().await {
             if let Ok(mut inner) = self.inner.lock() {
                 let count = inner.taps.len();
                 inner.taps.retain(|tap| tap.can_tap_more());
                 trace!("retained {} of {} taps", inner.taps.len(), count);
             }
-            time::delay_for(Duration::from_millis(100)).await;
         }
     }
 }
