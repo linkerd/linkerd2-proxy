@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -10,7 +11,7 @@ macro_rules! profile_test {
             routes: [$($route),+],
             budget: $budget,
             with_client: $with_client,
-            with_metrics: |_m| {}
+            with_metrics: |_m| async {}
         }
     };
     (routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr, with_metrics: $with_metrics:expr) => {
@@ -86,7 +87,7 @@ macro_rules! profile_test {
                         .unwrap()
                 }
             })
-            .run();
+            .run().await;
         let ctrl = controller::new();
 
         let dst_tx = ctrl.destination_tx(host);
@@ -105,11 +106,12 @@ macro_rules! profile_test {
         ];
         profile_tx.send(controller::profile(routes, $budget, vec![]));
 
-        let ctrl = ctrl.run();
+        let ctrl = ctrl.run().await;
         let proxy = proxy::new()
             .controller(ctrl)
             .outbound(srv)
-            .run();
+            .run()
+            .await;
 
         let client = client::$http(proxy.outbound, host);
 
@@ -117,23 +119,23 @@ macro_rules! profile_test {
 
         // Poll metrics until we recognize the profile is loaded...
         loop {
-            assert_eq!(client.get("/load-profile"), "");
-            let m = metrics.get("/metrics");
+            assert_eq!(client.get("/load-profile").await, "");
+            let m = metrics.get("/metrics").await;
             if m.contains("rt_load_profile=\"test\"") {
                 break;
             }
 
-            ::std::thread::sleep(::std::time::Duration::from_millis(200));
+            tokio::time::delay_for(std::time::Duration::from_millis(200)).await;
         }
 
-        $with_client(client);
+        $with_client(client).await;
 
-        $with_metrics(metrics);
+        $with_metrics(metrics).await;
     }
 }
 
-#[test]
-fn retry_if_profile_allows() {
+#[tokio::test]
+async fn retry_if_profile_allows() {
     profile_test! {
         routes: [
             controller::route()
@@ -142,14 +144,14 @@ fn retry_if_profile_allows() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
-        with_client: |client: client::Client| {
-            assert_eq!(client.get("/0.5"), "retried");
+        with_client: |client: client::Client| async move {
+            assert_eq!(client.get("/0.5").await, "retried");
         }
     }
 }
 
-#[test]
-fn retry_uses_budget() {
+#[tokio::test]
+async fn retry_uses_budget() {
     profile_test! {
         routes: [
             controller::route()
@@ -158,22 +160,22 @@ fn retry_uses_budget() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(1), 0.1, 1)),
-        with_client: |client: client::Client| {
-            assert_eq!(client.get("/0.5"), "retried");
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client| async move {
+            assert_eq!(client.get("/0.5").await, "retried");
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         },
-        with_metrics: |metrics: client::Client| {
+        with_metrics: |metrics: client::Client| async move {
             assert_eventually_contains!(
-                metrics.get("/metrics"),
+                metrics.get("/metrics").await,
                 "route_retryable_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"no_budget\"} 1"
             );
         }
     }
 }
 
-#[test]
-fn does_not_retry_if_request_does_not_match() {
+#[tokio::test]
+async fn does_not_retry_if_request_does_not_match() {
     profile_test! {
         routes: [
             controller::route()
@@ -182,15 +184,15 @@ fn does_not_retry_if_request_does_not_match() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client| async move {
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn does_not_retry_if_earlier_response_class_is_success() {
+#[tokio::test]
+async fn does_not_retry_if_earlier_response_class_is_success() {
     profile_test! {
         routes: [
             controller::route()
@@ -201,15 +203,15 @@ fn does_not_retry_if_earlier_response_class_is_success() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client| async move {
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn does_not_retry_if_request_has_body() {
+#[tokio::test]
+async fn does_not_retry_if_request_has_body() {
     profile_test! {
         routes: [
             controller::route()
@@ -218,19 +220,19 @@ fn does_not_retry_if_request_has_body() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
-        with_client: |client: client::Client| {
+        with_client: |client: client::Client| async move {
             let req = client.request_builder("/0.5")
                 .method("POST")
                 .body("req has a body".into())
                 .unwrap();
-            let res = client.request_body(req);
+            let res = client.request_body(req).await;
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn does_not_retry_if_missing_retry_budget() {
+#[tokio::test]
+async fn does_not_retry_if_missing_retry_budget() {
     profile_test! {
         routes: [
             controller::route()
@@ -239,15 +241,15 @@ fn does_not_retry_if_missing_retry_budget() {
                 .retryable(true)
         ],
         budget: None,
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client|async move {
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn ignores_invalid_retry_budget_ttl() {
+#[tokio::test]
+async fn ignores_invalid_retry_budget_ttl() {
     profile_test! {
         routes: [
             controller::route()
@@ -256,15 +258,15 @@ fn ignores_invalid_retry_budget_ttl() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(1000), 0.1, 1)),
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client| async move {
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn ignores_invalid_retry_budget_ratio() {
+#[tokio::test]
+async fn ignores_invalid_retry_budget_ratio() {
     profile_test! {
         routes: [
             controller::route()
@@ -273,15 +275,15 @@ fn ignores_invalid_retry_budget_ratio() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 10_000.0, 1)),
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client| async move {
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn ignores_invalid_retry_budget_negative_ratio() {
+#[tokio::test]
+async fn ignores_invalid_retry_budget_negative_ratio() {
     profile_test! {
         routes: [
             controller::route()
@@ -290,15 +292,15 @@ fn ignores_invalid_retry_budget_negative_ratio() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), -1.0, 1)),
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/0.5"));
+        with_client: |client: client::Client| async move {
+            let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }
 }
 
-#[test]
-fn http2_failures_dont_leak_connection_window() {
+#[tokio::test]
+async fn http2_failures_dont_leak_connection_window() {
     profile_test! {
         http: http2,
         routes: [
@@ -308,18 +310,18 @@ fn http2_failures_dont_leak_connection_window() {
                 .retryable(true)
         ],
         budget: Some(controller::retry_budget(Duration::from_secs(10), 1.0, 10)),
-        with_client: |client: client::Client| {
+        with_client: |client: client::Client| async move {
             // Before https://github.com/carllerche/h2/pull/334, this would
             // hang since the retried failure would have leaked the 100k window
             // capacity, preventing the successful response from being read.
-            assert_eq!(client.get("/0.5/100KB"), "retried");
+            assert_eq!(client.get("/0.5/100KB").await, "retried");
         },
-        with_metrics: |_m| {}
+        with_metrics: |_m| async {}
     }
 }
 
-#[test]
-fn timeout() {
+#[tokio::test]
+async fn timeout() {
     profile_test! {
         routes: [
             controller::route()
@@ -327,13 +329,13 @@ fn timeout() {
                 .timeout(Duration::from_millis(100))
         ],
         budget: None,
-        with_client: |client: client::Client| {
-            let res = client.request(client.request_builder("/1.0/sleep"));
+        with_client: |client: client::Client| async move {
+            let res = client.request(client.request_builder("/1.0/sleep")).await.unwrap();
             assert_eq!(res.status(), 504);
         },
-        with_metrics: |metrics: client::Client| {
+        with_metrics: |metrics: client::Client| async move {
             assert_eventually_contains!(
-                metrics.get("/metrics"),
+                metrics.get("/metrics").await,
                 "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",classification=\"failure\",error=\"timeout\"} 1"
             );
         }

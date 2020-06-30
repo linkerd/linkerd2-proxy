@@ -1,5 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
 
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -13,7 +12,7 @@ pub mod tls;
 pub use self::{
     connect::Connect,
     io::BoxedIo,
-    listen::{Bind, DefaultOrigDstAddr, Listen, NoOrigDstAddr, OrigDstAddr},
+    listen::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
 };
 
 // Misc.

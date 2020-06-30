@@ -10,10 +10,10 @@ pub use self::test_env::TestEnv;
 pub use bytes::{Buf, BufMut, Bytes};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
-use futures_01::{Async, Future as Future01, Poll as Poll01, Stream as Stream01};
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
+pub use linkerd2_app_core::drain;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::future::Future;
@@ -27,9 +27,8 @@ pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 pub use tokio::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
-use tokio_compat::runtime::{self};
+pub use tonic as grpc;
 pub use tower::Service;
-pub use tower_grpc as grpc;
 pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
@@ -88,6 +87,7 @@ macro_rules! assert_eventually {
             use std::{env, u64};
             use std::time::{Instant, Duration};
             use std::str::FromStr;
+            use tracing_futures::Instrument as _;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
             let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()
                 .map(|s| {
@@ -99,21 +99,32 @@ macro_rules! assert_eventually {
                     Duration::from_millis(millis)
                 })
                 .unwrap_or($crate::DEFAULT_TEST_PATIENCE);
-            let start_t = Instant::now();
-            for i in 0i32..($retries as i32 + 1i32) {
-                if $cond {
-                    break;
-                } else if i == $retries {
-                    panic!(
-                        "assertion failed after {} (retried {} times): {}",
-                        crate::HumanDuration(start_t.elapsed()),
-                        i,
-                        format_args!($($arg)+)
-                    )
-                } else {
-                    ::std::thread::sleep(patience);
+            async {
+                let start_t = Instant::now();
+                for i in 0i32..($retries as i32 + 1i32) {
+                    tracing::info!(retries_remaining = $retries - i);
+                    if $cond {
+                        break;
+                    } else if i == $retries {
+                        panic!(
+                            "assertion failed after {} (retried {} times): {}",
+                            crate::HumanDuration(start_t.elapsed()),
+                            i,
+                            format_args!($($arg)+)
+                        )
+                    } else {
+                        tracing::trace!("waiting...");
+                        tokio::time::delay_for(patience).await;
+                        std::thread::yield_now();
+                        tracing::trace!("done");
+                    }
                 }
-            }
+            }.instrument(tracing::trace_span!(
+                "assert_eventually",
+                patience  = %crate::HumanDuration(patience),
+                max_retries = $retries
+            ))
+            .await
         }
     };
     ($cond:expr, $($arg:tt)+) => {
@@ -201,17 +212,17 @@ impl AsyncWrite for RunningIo {
 }
 
 pub fn shutdown_signal() -> (Shutdown, ShutdownRx) {
-    let (_tx, rx) = oneshot::channel();
-    (Shutdown { _tx }, Box::pin(rx.map(|_| ())))
+    let (tx, rx) = oneshot::channel();
+    (Shutdown { tx }, Box::pin(rx.map(|_| ())))
 }
 
 pub struct Shutdown {
-    _tx: oneshot::Sender<()>,
+    tx: oneshot::Sender<()>,
 }
 
 impl Shutdown {
     pub fn signal(self) {
-        // a drop is enough
+        let _ = self.tx.send(());
     }
 }
 
@@ -241,9 +252,9 @@ pub fn thread_name() -> String {
         .to_owned()
 }
 
-#[test]
+#[tokio::test]
 #[should_panic]
-fn test_assert_eventually() {
+async fn test_assert_eventually() {
     assert_eventually!(false)
 }
 
@@ -263,70 +274,15 @@ impl fmt::Display for HumanDuration {
     }
 }
 
-pub trait FutureWaitExt: Future {
-    fn wait_timeout(self, dur: Duration) -> Result<Self::Output, Waited<()>>
-    where
-        Self: Sized,
-    {
-        tokio::runtime::Builder::new()
-            .basic_scheduler()
-            .enable_all()
-            .build()
-            .expect("build rt")
-            .block_on(async move {
-                tokio::time::timeout(dur, self)
-                    .await
-                    .map_err(|_| Waited::TimedOut)
-            })
-    }
-
-    fn try_wait_timeout<T, E>(self, dur: Duration) -> Result<T, Waited<E>>
-    where
-        Self: Future<Output = Result<T, E>> + Sized,
-    {
-        match self.wait_timeout(dur) {
-            Ok(Ok(x)) => Ok(x),
-            Ok(Err(e)) => Err(Waited::Error(e)),
-            Err(_) => Err(Waited::TimedOut),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Waited<E> {
-    Error(E),
-    TimedOut,
-}
-
-impl<E> From<E> for Waited<E> {
-    fn from(err: E) -> Waited<E> {
-        Waited::Error(err)
-    }
-}
-
-impl<E: fmt::Display> fmt::Display for Waited<E> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Waited::Error(ref e) => fmt::Display::fmt(e, fmt),
-            Waited::TimedOut => fmt.write_str("wait timed out"),
-        }
-    }
-}
-
-impl<T: Future> FutureWaitExt for T {}
-
-pub trait ResultWaitedExt {
-    fn expect_timedout(self, msg: &str);
-}
-
-impl<T: fmt::Debug, E: fmt::Debug> ResultWaitedExt for Result<T, Waited<E>> {
-    fn expect_timedout(self, msg: &str) {
-        match self {
-            Ok(val) => panic!("{}; expected TimedOut, was Ok({:?})", msg, val),
-            Err(Waited::Error(err)) => {
-                panic!("{}; expected TimedOut, was Error({:?})", msg, err);
-            }
-            Err(Waited::TimedOut) => (),
+pub async fn cancelable<E: Send + 'static>(
+    drain: drain::Watch,
+    f: impl Future<Output = Result<(), E>> + Send + 'static,
+) -> Result<(), E> {
+    tokio::select! {
+        res = f => res,
+        _ = drain.signal() => {
+            tracing::debug!("canceled!");
+            Ok(())
         }
     }
 }

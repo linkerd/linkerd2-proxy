@@ -3,13 +3,13 @@ use linkerd2_error::Error;
 use std::time::Duration;
 use tracing_futures::Instrument;
 
-pub struct SpawnBufferLayer<Req> {
+pub struct SpawnBufferLayer<Req, Rsp> {
     capacity: usize,
     idle_timeout: Option<Duration>,
-    _marker: std::marker::PhantomData<fn(Req)>,
+    _marker: std::marker::PhantomData<fn(Req) -> Rsp>,
 }
 
-impl<Req> SpawnBufferLayer<Req> {
+impl<Req, Rsp> SpawnBufferLayer<Req, Rsp> {
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -24,7 +24,7 @@ impl<Req> SpawnBufferLayer<Req> {
     }
 }
 
-impl<Req> Clone for SpawnBufferLayer<Req> {
+impl<Req, Rsp> Clone for SpawnBufferLayer<Req, Rsp> {
     fn clone(&self) -> Self {
         Self {
             capacity: self.capacity,
@@ -34,15 +34,15 @@ impl<Req> Clone for SpawnBufferLayer<Req> {
     }
 }
 
-impl<Req, S> tower::layer::Layer<S> for SpawnBufferLayer<Req>
+impl<Req, Rsp, S> tower::layer::Layer<S> for SpawnBufferLayer<Req, Rsp>
 where
     Req: Send + 'static,
-    S: tower::Service<Req> + Send + 'static,
+    Rsp: Send + 'static,
+    S: tower::Service<Req, Response = Rsp> + Send + 'static,
     S::Error: Into<Error> + Send + 'static,
-    S::Response: Send + 'static,
     S::Future: Send + 'static,
 {
-    type Service = Buffer<Req, S::Future>;
+    type Service = Buffer<Req, Rsp>;
 
     fn layer(&self, inner: S) -> Self::Service {
         let (buffer, dispatch) = crate::new(inner, self.capacity, self.idle_timeout);

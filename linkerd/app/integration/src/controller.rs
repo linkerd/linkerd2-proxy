@@ -1,15 +1,15 @@
 use super::*;
 
-use bytes_04::IntoBuf;
-use futures::TryFutureExt;
-use futures_01::{future, sync};
-use hyper_012::body::Payload;
+use linkerd2_app_core::proxy::http::trace;
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
-use std::ops::{Bound, DerefMut, RangeBounds};
+use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+use tonic as grpc;
+use tracing_futures::Instrument;
 
 pub fn new() -> Controller {
     Controller::new()
@@ -25,17 +25,15 @@ pub fn identity() -> identity::Controller {
 
 pub type Labels = HashMap<String, String>;
 
-#[derive(Debug)]
-pub struct DstReceiver(sync::mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>);
+pub type DstReceiver = mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>;
 
 #[derive(Clone, Debug)]
-pub struct DstSender(sync::mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
+pub struct DstSender(mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
 
-#[derive(Debug)]
-pub struct ProfileReceiver(sync::mpsc::UnboundedReceiver<pb::DestinationProfile>);
+pub type ProfileReceiver = mpsc::UnboundedReceiver<pb::DestinationProfile>;
 
 #[derive(Clone, Debug)]
-pub struct ProfileSender(sync::mpsc::UnboundedSender<pb::DestinationProfile>);
+pub struct ProfileSender(mpsc::UnboundedSender<pb::DestinationProfile>);
 
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
@@ -46,7 +44,9 @@ pub struct Controller {
 
 pub struct Listening {
     pub addr: SocketAddr,
-    _shutdown: Shutdown,
+    drain: drain::Signal,
+    task: tokio::task::JoinHandle<Result<(), std::io::Error>>,
+    name: &'static str,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -72,7 +72,7 @@ impl Controller {
     }
 
     pub fn destination_tx(&self, dest: &str) -> DstSender {
-        let (tx, rx) = sync::mpsc::unbounded();
+        let (tx, rx) = mpsc::unbounded_channel();
         let path = if dest.contains(":") {
             dest.to_owned()
         } else {
@@ -85,7 +85,7 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back(Dst::Call(dst, Ok(DstReceiver(rx))));
+            .push_back(Dst::Call(dst, Ok(rx)));
         DstSender(tx)
     }
 
@@ -115,15 +115,16 @@ impl Controller {
         self.expect_dst_calls.lock().unwrap().push_back(Dst::Done);
     }
 
-    pub fn delay_listen<F>(self, f: F) -> Listening
+    pub async fn delay_listen<F>(self, f: F) -> Listening
     where
-        F: TryFuture<Ok = (), Error = ()> + Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
     {
         run(
-            pb::server::DestinationServer::new(self),
+            pb::destination_server::DestinationServer::new(self),
             "support destination service",
-            Some(Box::new(Box::pin(f.map(|_| Ok(()))).compat())),
+            Some(Box::pin(f)),
         )
+        .await
     }
 
     pub fn profile_tx_default(&self, dest: &str) -> ProfileSender {
@@ -133,7 +134,7 @@ impl Controller {
     }
 
     pub fn profile_tx(&self, dest: &str) -> ProfileSender {
-        let (tx, rx) = sync::mpsc::unbounded();
+        let (tx, rx) = mpsc::unbounded_channel();
         let path = if dest.contains(":") {
             dest.to_owned()
         } else {
@@ -146,21 +147,18 @@ impl Controller {
         self.expect_profile_calls
             .lock()
             .unwrap()
-            .push_back((dst, ProfileReceiver(rx)));
+            .push_back((dst, rx));
         ProfileSender(tx)
     }
 
-    pub fn run(self) -> Listening {
+    pub async fn run(self) -> Listening {
         run(
-            pb::server::DestinationServer::new(self),
+            pb::destination_server::DestinationServer::new(self),
             "support destination service",
             None,
         )
+        .await
     }
-}
-
-fn grpc_internal_code() -> grpc::Status {
-    grpc::Status::new(grpc::Code::Internal, "unit test controller internal error")
 }
 
 fn grpc_no_results() -> grpc::Status {
@@ -177,24 +175,13 @@ fn grpc_unexpected_request() -> grpc::Status {
     )
 }
 
-impl Stream01 for DstReceiver {
-    type Item = pb::Update;
-    type Error = grpc::Status;
-    fn poll(&mut self) -> Poll01<Option<Self::Item>, Self::Error> {
-        match futures_01::try_ready!(self.0.poll().map_err(|_| grpc_internal_code())) {
-            Some(res) => Ok(Async::Ready(Some(res?))),
-            None => Ok(Async::Ready(None)),
-        }
-    }
-}
-
 impl DstSender {
     pub fn send(&self, up: pb::Update) {
-        self.0.unbounded_send(Ok(up)).expect("send dst update")
+        self.0.send(Ok(up)).expect("send dst update")
     }
 
     pub fn send_err(&self, e: grpc::Status) {
-        self.0.unbounded_send(Err(e)).expect("send dst err")
+        self.0.send(Err(e)).expect("send dst err")
     }
 
     pub fn send_addr(&self, addr: SocketAddr) {
@@ -219,25 +206,20 @@ impl DstSender {
     }
 }
 
-impl Stream01 for ProfileReceiver {
-    type Item = pb::DestinationProfile;
-    type Error = grpc::Status;
-    fn poll(&mut self) -> Poll01<Option<Self::Item>, Self::Error> {
-        self.0.poll().map_err(|_| grpc_internal_code())
-    }
-}
-
 impl ProfileSender {
     pub fn send(&self, up: pb::DestinationProfile) {
-        self.0.unbounded_send(up).expect("send profile update")
+        self.0.send(up).expect("send profile update")
     }
 }
 
-impl pb::server::Destination for Controller {
+#[tonic::async_trait]
+impl pb::destination_server::Destination for Controller {
     type GetStream = DstReceiver;
-    type GetFuture = future::FutureResult<grpc::Response<Self::GetStream>, grpc::Status>;
 
-    fn get(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetFuture {
+    async fn get(
+        &self,
+        req: grpc::Request<pb::GetDestination>,
+    ) -> Result<grpc::Response<Self::GetStream>, grpc::Status> {
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
             if self.unordered {
                 let mut calls_next: VecDeque<Dst> = VecDeque::new();
@@ -249,8 +231,8 @@ impl pb::server::Destination for Controller {
                         if &dst == req.get_ref() {
                             tracing::info!("found request={:?}", dst);
                             calls_next.extend(calls.drain(..));
-                            *calls.deref_mut() = calls_next;
-                            return future::result(updates.map(grpc::Response::new));
+                            *calls = calls_next;
+                            return updates.map(grpc::Response::new);
                         }
 
                         calls_next.push_back(Dst::Call(dst, updates));
@@ -258,15 +240,15 @@ impl pb::server::Destination for Controller {
                 }
 
                 tracing::warn!("missed request={:?} remaining={:?}", req, calls_next.len());
-                *calls.deref_mut() = calls_next;
-                return future::err(grpc_unexpected_request());
+                *calls = calls_next;
+                return Err(grpc_unexpected_request());
             }
 
             match calls.pop_front() {
                 Some(Dst::Call(dst, updates)) => {
                     if &dst == req.get_ref() {
                         tracing::debug!("found request={:?}", dst);
-                        return future::result(updates.map(grpc::Response::new));
+                        return updates.map(grpc::Response::new);
                     }
 
                     let msg = format!(
@@ -274,7 +256,7 @@ impl pb::server::Destination for Controller {
                         dst, req
                     );
                     calls.push_front(Dst::Call(dst, updates));
-                    return future::err(grpc::Status::new(grpc::Code::Unavailable, msg));
+                    return Err(grpc::Status::new(grpc::Code::Unavailable, msg));
                 }
                 Some(Dst::Done) => {
                     panic!("unit test controller expects no more Destination.Get calls")
@@ -283,103 +265,122 @@ impl pb::server::Destination for Controller {
             }
         }
 
-        future::err(grpc_no_results())
+        Err(grpc_no_results())
     }
 
-    type GetProfileStream = ProfileReceiver;
-    type GetProfileFuture =
-        future::FutureResult<grpc::Response<Self::GetProfileStream>, grpc::Status>;
+    type GetProfileStream =
+        Pin<Box<dyn Stream<Item = Result<pb::DestinationProfile, grpc::Status>> + Send + Sync>>;
 
-    fn get_profile(&mut self, req: grpc::Request<pb::GetDestination>) -> Self::GetProfileFuture {
+    async fn get_profile(
+        &self,
+        req: grpc::Request<pb::GetDestination>,
+    ) -> Result<grpc::Response<Self::GetProfileStream>, grpc::Status> {
         if let Ok(mut calls) = self.expect_profile_calls.lock() {
             if let Some((dst, profile)) = calls.pop_front() {
                 if &dst == req.get_ref() {
-                    return future::ok(grpc::Response::new(profile));
+                    return Ok(grpc::Response::new(Box::pin(profile.map(Ok))));
                 }
 
                 calls.push_front((dst, profile));
-                return future::err(grpc_unexpected_request());
+                return Err(grpc_unexpected_request());
             }
         }
 
-        future::err(grpc_no_results())
+        Err(grpc_no_results())
     }
 }
 
-pub(in crate) fn run<T, B>(
+impl Listening {
+    pub async fn join(self) {
+        let span = tracing::info_span!("join", controller = %self.name, addr = %self.addr);
+        async move {
+            tracing::debug!("shutting down...");
+            self.drain.drain().await;
+            tracing::debug!("drained!");
+
+            tracing::debug!("waiting for task to complete...");
+            match self.task.await {
+                Ok(res) => res.expect("support controller failed"),
+                // If the task panicked, propagate the panic so that the test can
+                // fail nicely.
+                Err(err) if err.is_panic() => {
+                    tracing::error!("support {} panicked!", self.name);
+                    std::panic::resume_unwind(err.into_panic());
+                }
+                // If the task was already canceled, it was probably shut down
+                // explicitly, that's fine.
+                Err(_) => tracing::debug!("support server task already canceled"),
+            }
+
+            tracing::info!("support {} on {} terminated cleanly", self.name, self.addr);
+        }
+        .instrument(span)
+        .await
+    }
+}
+
+pub(in crate) async fn run<T, B>(
     svc: T,
     name: &'static str,
-    delay: Option<Box<dyn Future01<Item = (), Error = ()> + Send>>,
+    delay: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 ) -> Listening
 where
-    T: tower_01::Service<http_01::Request<tower_grpc::BoxBody>, Response = http_01::Response<B>>,
+    T: tower::Service<http::Request<hyper::body::Body>, Response = http::Response<B>>,
     T: Clone + Send + Sync + 'static,
-    T::Error: ::std::error::Error + Send + Sync,
+    T::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     T::Future: Send,
-    B: grpc::Body + Send + 'static,
+    B: http_body::Body + Send + 'static,
+    B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     B::Data: Send + 'static,
 {
-    let (tx, rx) = shutdown_signal();
-
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
     listener.bind(addr).expect("Tcp::bind");
     let addr = listener.local_addr().expect("Tcp::local_addr");
+    let listener = listener.listen(1024).expect("listen");
 
-    let (listening_tx, listening_rx) = futures_01::sync::oneshot::channel();
-    let mut listening_tx = Some(listening_tx);
+    let (listening_tx, listening_rx) = tokio::sync::oneshot::channel();
+    let (drain_signal, drain) = drain::channel();
+    let task = tokio::spawn(
+        cancelable(drain.clone(), async move {
+            let mut listener = tokio::net::TcpListener::from_std(listener)?;
+            let mut listening_tx = Some(listening_tx);
 
-    let (trace, _) = trace_subscriber();
-    std::thread::Builder::new()
-        .name(name.into())
-        .spawn(move || {
-            tracing::dispatcher::with_default(&trace, move || {
-                if let Some(delay) = delay {
-                    let _ = listening_tx.take().unwrap().send(());
-                    delay.wait().expect("support server delay wait");
-                }
-                let mut runtime = runtime::current_thread::Runtime::new().expect("support runtime");
+            if let Some(delay) = delay {
+                let _ = listening_tx.take().unwrap().send(());
+                delay.await;
+            }
 
-                let listener = listener.listen(1024).expect("Tcp::listen");
-                let bind = tokio_01::net::TcpListener::from_std(
-                    listener,
-                    &tokio_01::reactor::Handle::default(),
-                )
-                .expect("from_std");
+            if let Some(listening_tx) = listening_tx {
+                let _ = listening_tx.send(());
+            }
 
-                if let Some(listening_tx) = listening_tx {
-                    let _ = listening_tx.send(());
-                }
-
-                let name = name.clone();
-                let serve = hyper_012::Server::builder(bind.incoming())
-                    .http2_only(true)
-                    .serve(move || {
-                        let svc = Mutex::new(svc.clone());
-                        hyper_012::service::service_fn(move |req| {
-                            let req = req.map(|body| tower_grpc::BoxBody::map_from(body));
-                            svc.lock()
-                                .expect("svc lock")
-                                .call(req)
-                                .map(|res| res.map(GrpcToPayload))
-                        })
-                    })
-                    .map_err(move |e| println!("{} error: {:?}", name, e));
-
-                runtime.spawn(serve);
-                runtime
-                    .block_on(rx.map(|_| Ok::<(), ()>(())).compat())
-                    .expect(name);
-            })
+            let mut http = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+            http.http2_only(true);
+            loop {
+                let (sock, addr) = listener.accept().await?;
+                let span = tracing::debug_span!("conn", %addr);
+                let serve = http.serve_connection(sock, svc.clone());
+                let f = async move {
+                    serve
+                        .await
+                        .map_err(|error| tracing::error!(%error, "serving connection failed."))?;
+                    Ok::<(), ()>(())
+                };
+                tokio::spawn(cancelable(drain.clone(), f).instrument(span));
+            }
         })
-        .unwrap();
+        .instrument(tracing::info_span!("controller", %name, %addr)),
+    );
 
-    listening_rx.wait().expect("listening_rx");
+    listening_rx.await.expect("listening_rx");
     println!("{} listening; addr={:?}", name, addr);
 
     Listening {
         addr,
-        _shutdown: tx,
+        drain: drain_signal,
+        task,
+        name,
     }
 }
 
@@ -626,29 +627,4 @@ fn octets_to_u64s(octets: [u8; 16]) -> (u64, u64) {
         + (u64::from(octets[14]) << 8)
         + u64::from(octets[15]);
     (first, last)
-}
-
-struct GrpcToPayload<B>(B);
-
-impl<B> Payload for GrpcToPayload<B>
-where
-    B: tower_grpc::Body + Send + 'static,
-    B::Data: Send + 'static,
-    <B::Data as IntoBuf>::Buf: Send + 'static,
-{
-    type Data = <B::Data as IntoBuf>::Buf;
-    type Error = B::Error;
-
-    fn is_end_stream(&self) -> bool {
-        self.0.is_end_stream()
-    }
-
-    fn poll_data(&mut self) -> Poll01<Option<Self::Data>, Self::Error> {
-        let data = futures_01::try_ready!(self.0.poll_data());
-        Ok(data.map(IntoBuf::into_buf).into())
-    }
-
-    fn poll_trailers(&mut self) -> Poll01<Option<http_01::HeaderMap>, Self::Error> {
-        self.0.poll_trailers()
-    }
 }

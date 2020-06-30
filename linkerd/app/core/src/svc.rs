@@ -107,23 +107,25 @@ impl<L> Layers<L> {
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn push_spawn_buffer<Req>(
+    pub fn push_spawn_buffer<Req, Rsp>(
         self,
         capacity: usize,
-    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req>>>
+    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req, Rsp>>>
     where
         Req: Send + 'static,
+        Rsp: Send + 'static,
     {
         self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
-    pub fn push_spawn_buffer_with_idle_timeout<Req>(
+    pub fn push_spawn_buffer_with_idle_timeout<Req, Rsp>(
         self,
         capacity: usize,
         idle_timeout: Duration,
-    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req>>>
+    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req, Rsp>>>
     where
         Req: Send + 'static,
+        Rsp: Send + 'static,
     {
         self.push(buffer::SpawnBufferLayer::new(capacity).with_idle_timeout(idle_timeout))
     }
@@ -220,11 +222,11 @@ impl<S> Stack<S> {
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn spawn_buffer<Req>(self, capacity: usize) -> Stack<buffer::Buffer<Req, S::Future>>
+    pub fn spawn_buffer<Req, Rsp>(self, capacity: usize) -> Stack<buffer::Buffer<Req, Rsp>>
     where
         Req: Send + 'static,
-        S: Service<Req> + Send + 'static,
-        S::Response: Send + 'static,
+        Rsp: Send + 'static,
+        S: Service<Req, Response = Rsp> + Send + 'static,
         S::Error: Into<Error> + Send + Sync,
         S::Future: Send,
     {

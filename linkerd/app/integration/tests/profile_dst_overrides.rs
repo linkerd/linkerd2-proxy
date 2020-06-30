@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 use linkerd2_proxy_api::destination as pb;
@@ -12,7 +13,7 @@ struct Service {
 }
 
 impl Service {
-    fn new(name: &'static str) -> Self {
+    async fn new(name: &'static str) -> Self {
         let response_counter = Arc::new(AtomicUsize::new(0));
         let counter = response_counter.clone();
         let svc = server::http1()
@@ -23,7 +24,8 @@ impl Service {
                 counter.fetch_add(1, Ordering::SeqCst);
                 Response::builder().status(200).body(name.into()).unwrap()
             })
-            .run();
+            .run()
+            .await;
         Service {
             name,
             response_counter,
@@ -49,36 +51,36 @@ fn profile(stage: &str, overrides: Vec<pb::WeightedDst>) -> pb::DestinationProfi
     )
 }
 
-fn wait_for_profile_stage(client: &client::Client, metrics: &client::Client, stage: &str) {
-    for _ in 0..10 {
-        assert_eq!(client.get("/load-profile"), "");
-        let m = metrics.get("/metrics");
+async fn wait_for_profile_stage(client: &client::Client, metrics: &client::Client, stage: &str) {
+    for _ in 0i32..10 {
+        assert_eq!(client.get("/load-profile").await, "");
+        let m = metrics.get("/metrics").await;
         let stage_metric = format!("rt_load_profile=\"{}\"", stage);
         if m.contains(stage_metric.as_str()) {
             break;
         }
 
-        ::std::thread::sleep(::std::time::Duration::from_millis(200));
+        tokio::time::delay_for(std::time::Duration::from_millis(200)).await;
     }
 }
 
-#[test]
-fn add_a_dst_override() {
+#[tokio::test]
+async fn add_a_dst_override() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
-    let apex_svc = Service::new(apex);
+    let apex_svc = Service::new(apex).await;
     let profile_tx = ctrl.profile_tx(&apex_svc.authority());
     ctrl.destination_tx(&apex_svc.authority())
         .send_addr(apex_svc.svc.addr);
 
     let leaf = "leaf";
-    let leaf_svc = Service::new(leaf);
+    let leaf_svc = Service::new(leaf).await;
     ctrl.destination_tx(&leaf_svc.authority())
         .send_addr(leaf_svc.svc.addr);
 
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -87,7 +89,7 @@ fn add_a_dst_override() {
     // 1. Send `n` requests to apex service
     profile_tx.send(pb::DestinationProfile::default());
     for _ in 0..n {
-        assert_eq!(client.get("/"), apex);
+        assert_eq!(client.get("/").await, apex);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), n);
 
@@ -96,40 +98,40 @@ fn add_a_dst_override() {
         "override",
         vec![controller::dst_override(leaf_svc.authority(), 10000)],
     ));
-    wait_for_profile_stage(&client, &metrics, "override");
+    wait_for_profile_stage(&client, &metrics, "override").await;
 
     // 3. Send `n` requests to apex service with override
     apex_svc.response_counter.store(0, Ordering::SeqCst);
     for _ in 0..n {
-        assert_eq!(client.get("/"), leaf);
+        assert_eq!(client.get("/").await, leaf);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), 0);
     assert_eq!(leaf_svc.response_counter.load(Ordering::SeqCst), n);
 }
 
-#[test]
-fn add_multiple_dst_overrides() {
+#[tokio::test]
+async fn add_multiple_dst_overrides() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
-    let apex_svc = Service::new(apex);
+    let apex_svc = Service::new(apex).await;
     ctrl.destination_tx(&apex_svc.authority())
         .send_addr(apex_svc.svc.addr);
 
     let leaf_a = "leaf-a";
-    let leaf_a_svc = Service::new(leaf_a);
+    let leaf_a_svc = Service::new(leaf_a).await;
     ctrl.destination_tx(&leaf_a_svc.authority())
         .send_addr(leaf_a_svc.svc.addr);
     let leaf_b = "leaf-b";
-    let leaf_b_svc = Service::new(leaf_b);
+    let leaf_b_svc = Service::new(leaf_b).await;
     ctrl.destination_tx(&leaf_b_svc.authority())
         .send_addr(leaf_b_svc.svc.addr);
 
     let profile_tx = ctrl.profile_tx(&apex_svc.authority());
     profile_tx.send(pb::DestinationProfile::default());
 
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -138,7 +140,7 @@ fn add_multiple_dst_overrides() {
 
     // 1. Send `n` requests to apex service
     for _ in 0..n {
-        assert_eq!(client.get("/"), apex);
+        assert_eq!(client.get("/").await, apex);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), n);
 
@@ -150,12 +152,12 @@ fn add_multiple_dst_overrides() {
             controller::dst_override(leaf_b_svc.authority(), 5000),
         ],
     ));
-    wait_for_profile_stage(&client, &metrics, "overrides");
+    wait_for_profile_stage(&client, &metrics, "overrides").await;
 
     // 3. Send `n` requests to apex service with overrides
     apex_svc.response_counter.store(0, Ordering::SeqCst);
     for _ in 0..n {
-        let rsp = client.get("/");
+        let rsp = client.get("/").await;
         assert!(rsp == leaf_a || rsp == leaf_b);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), 0);
@@ -163,21 +165,21 @@ fn add_multiple_dst_overrides() {
     assert!(leaf_b_svc.response_counter.load(Ordering::SeqCst) > 0);
 }
 
-#[test]
-fn set_a_dst_override_weight_to_zero() {
+#[tokio::test]
+async fn set_a_dst_override_weight_to_zero() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
-    let apex_svc = Service::new(apex);
+    let apex_svc = Service::new(apex).await;
     ctrl.destination_tx(&apex_svc.authority())
         .send_addr(apex_svc.svc.addr);
     let leaf_a = "leaf-a";
-    let leaf_a_svc = Service::new(leaf_a);
+    let leaf_a_svc = Service::new(leaf_a).await;
     ctrl.destination_tx(&leaf_a_svc.authority())
         .send_addr(leaf_a_svc.svc.addr);
     let leaf_b = "leaf-b";
-    let leaf_b_svc = Service::new(leaf_b);
+    let leaf_b_svc = Service::new(leaf_b).await;
     ctrl.destination_tx(&leaf_b_svc.authority())
         .send_addr(leaf_b_svc.svc.addr);
 
@@ -190,7 +192,7 @@ fn set_a_dst_override_weight_to_zero() {
         ],
     ));
 
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -198,9 +200,9 @@ fn set_a_dst_override_weight_to_zero() {
     let n = 100;
 
     // 1. Send `n` requests to apex service with overrides
-    wait_for_profile_stage(&client, &metrics, "overrides");
+    wait_for_profile_stage(&client, &metrics, "overrides").await;
     for _ in 0..n {
-        let rsp = client.get("/");
+        let rsp = client.get("/").await;
         assert!(rsp == leaf_a || rsp == leaf_b);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), 0);
@@ -215,34 +217,34 @@ fn set_a_dst_override_weight_to_zero() {
             controller::dst_override(leaf_b_svc.authority(), 5000),
         ],
     ));
-    wait_for_profile_stage(&client, &metrics, "zero-weight");
+    wait_for_profile_stage(&client, &metrics, "zero-weight").await;
 
     // 3. Send `n` requests to apex service with a weight set to zero
     leaf_a_svc.response_counter.store(0, Ordering::SeqCst);
     leaf_b_svc.response_counter.store(0, Ordering::SeqCst);
     for _ in 0..n {
-        assert!(client.get("/") == leaf_b);
+        assert_eq!(client.get("/").await, leaf_b);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), 0);
     assert_eq!(leaf_a_svc.response_counter.load(Ordering::SeqCst), 0);
     assert_eq!(leaf_b_svc.response_counter.load(Ordering::SeqCst), n);
 }
 
-#[test]
-fn set_all_dst_override_weights_to_zero() {
+#[tokio::test]
+async fn set_all_dst_override_weights_to_zero() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 
     let apex = "apex";
-    let apex_svc = Service::new(apex);
+    let apex_svc = Service::new(apex).await;
     let apex_tx0 = ctrl.destination_tx(&apex_svc.authority());
     apex_tx0.send_addr(apex_svc.svc.addr);
     let leaf_a = "leaf-a";
-    let leaf_a_svc = Service::new(leaf_a);
+    let leaf_a_svc = Service::new(leaf_a).await;
     let leaf_a_tx = ctrl.destination_tx(&leaf_a_svc.authority());
     leaf_a_tx.send_addr(leaf_a_svc.svc.addr);
     let leaf_b = "leaf-b";
-    let leaf_b_svc = Service::new(leaf_b);
+    let leaf_b_svc = Service::new(leaf_b).await;
     let leaf_b_tx = ctrl.destination_tx(&leaf_b_svc.authority());
     leaf_b_tx.send_addr(leaf_b_svc.svc.addr);
     let apex_tx1 = ctrl.destination_tx(&apex_svc.authority());
@@ -256,7 +258,7 @@ fn set_all_dst_override_weights_to_zero() {
         ],
     ));
 
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -264,9 +266,9 @@ fn set_all_dst_override_weights_to_zero() {
     let n = 100;
 
     // 1. Send `n` requests to apex service with overrides
-    wait_for_profile_stage(&client, &metrics, "overrides");
+    wait_for_profile_stage(&client, &metrics, "overrides").await;
     for _ in 0..n {
-        let rsp = client.get("/");
+        let rsp = client.get("/").await;
         assert!(rsp == leaf_a || rsp == leaf_b);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), 0);
@@ -282,27 +284,27 @@ fn set_all_dst_override_weights_to_zero() {
         ],
     ));
     apex_tx1.send_addr(apex_svc.svc.addr);
-    wait_for_profile_stage(&client, &metrics, "zero-weights");
+    wait_for_profile_stage(&client, &metrics, "zero-weights").await;
 
     // 3. Send `n` requests to apex service with all weights set to zero
     leaf_a_svc.response_counter.store(0, Ordering::SeqCst);
     leaf_b_svc.response_counter.store(0, Ordering::SeqCst);
     for _ in 0..n {
-        assert!(client.get("/") == apex);
+        assert_eq!(client.get("/").await, apex);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), n);
     assert_eq!(leaf_a_svc.response_counter.load(Ordering::SeqCst), 0);
     assert_eq!(leaf_b_svc.response_counter.load(Ordering::SeqCst), 0);
 }
 
-#[test]
-fn remove_a_dst_override() {
+#[tokio::test]
+async fn remove_a_dst_override() {
     let _trace = trace_init();
 
     let apex = "apex";
-    let apex_svc = Service::new(apex);
+    let apex_svc = Service::new(apex).await;
     let leaf = "leaf";
-    let leaf_svc = Service::new(leaf);
+    let leaf_svc = Service::new(leaf).await;
     let ctrl = controller::new_unordered();
     let apex_tx0 = ctrl.destination_tx(&apex_svc.authority());
     let leaf_tx = ctrl.destination_tx(&leaf_svc.authority());
@@ -314,7 +316,7 @@ fn remove_a_dst_override() {
         vec![controller::dst_override(leaf_svc.authority(), 10000)],
     ));
 
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
 
     let client = client::http1(proxy.outbound, apex_svc.authority());
     let metrics = client::http1(proxy.metrics, "localhost");
@@ -324,9 +326,9 @@ fn remove_a_dst_override() {
     apex_tx0.send_addr(apex_svc.svc.addr);
     leaf_tx.send_addr(leaf_svc.svc.addr);
     // 1. Send `n` requests to apex service
-    wait_for_profile_stage(&client, &metrics, "overrides");
+    wait_for_profile_stage(&client, &metrics, "overrides").await;
     for _ in 0..n {
-        assert_eq!(client.get("/"), leaf);
+        assert_eq!(client.get("/").await, leaf);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), 0);
     assert_eq!(leaf_svc.response_counter.load(Ordering::SeqCst), n);
@@ -334,12 +336,12 @@ fn remove_a_dst_override() {
     // 2. Remove dst override
     profile_tx.send(profile("removed", Vec::new()));
     apex_tx1.send_addr(apex_svc.svc.addr);
-    wait_for_profile_stage(&client, &metrics, "removed");
+    wait_for_profile_stage(&client, &metrics, "removed").await;
 
     // 3. Send `n` requests to apex service with overrides removed
     leaf_svc.response_counter.store(0, Ordering::SeqCst);
     for _ in 0..n {
-        assert_eq!(client.get("/"), apex);
+        assert_eq!(client.get("/").await, apex);
     }
     assert_eq!(apex_svc.response_counter.load(Ordering::SeqCst), n);
     assert_eq!(leaf_svc.response_counter.load(Ordering::SeqCst), 0);

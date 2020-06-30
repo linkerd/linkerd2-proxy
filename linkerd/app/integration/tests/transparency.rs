@@ -1,43 +1,54 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::*;
 use std::error::Error as _;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 
-#[test]
-fn outbound_http1() {
+#[tokio::test]
+async fn outbound_http1() {
     let _trace = trace_init();
 
-    let srv = server::http1().route("/", "hello h1").run();
+    let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
     ctrl.profile_tx_default("transparency.test.svc.cluster.local");
     ctrl.destination_tx("transparency.test.svc.cluster.local")
         .send_addr(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run()).outbound(srv).run();
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
     let client = client::http1(proxy.outbound, "transparency.test.svc.cluster.local");
 
-    assert_eq!(client.get("/"), "hello h1");
+    assert_eq!(client.get("/").await, "hello h1");
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
-#[test]
-fn inbound_http1() {
+#[tokio::test]
+async fn inbound_http1() {
     let _trace = trace_init();
 
-    let srv = server::http1().route("/", "hello h1").run();
+    let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
     ctrl.profile_tx_default("transparency.test.svc.cluster.local");
     let proxy = proxy::new()
-        .controller(ctrl.run())
+        .controller(ctrl.run().await)
         .inbound_fuzz_addr(srv)
-        .run();
+        .run()
+        .await;
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-    assert_eq!(client.get("/"), "hello h1");
+    assert_eq!(client.get("/").await, "hello h1");
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
-#[test]
-fn outbound_tcp() {
+#[tokio::test]
+async fn outbound_tcp() {
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
@@ -48,19 +59,22 @@ fn outbound_tcp() {
             assert_eq!(read, msg1.as_bytes());
             msg2
         })
-        .run();
-    let proxy = proxy::new().outbound(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().outbound(srv).run().await;
 
     let client = client::tcp(proxy.outbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(msg1);
-    assert_eq!(tcp_client.read(), msg2.as_bytes());
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
-#[test]
-fn inbound_tcp() {
+#[tokio::test]
+async fn inbound_tcp() {
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
@@ -71,20 +85,23 @@ fn inbound_tcp() {
             assert_eq!(read, msg1.as_bytes());
             msg2
         })
-        .run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(msg1);
-    assert_eq!(tcp_client.read(), msg2.as_bytes());
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn loop_outbound_http1() {
+async fn loop_outbound_http1() {
     let _trace = trace_init();
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10751));
@@ -96,13 +113,16 @@ fn loop_outbound_http1() {
         .run_with_test_env_and_keep_ports(env);
 
     let client = client::http1(listen_addr, "some.invalid.example.com");
-    let rsp = client.request(client.request_builder("/").method("GET"));
+    let rsp = client
+        .request(client.request_builder("/").method("GET"))
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
 }
 
-#[test]
+#[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-fn loop_inbound_http1() {
+async fn loop_inbound_http1() {
     let _trace = trace_init();
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10752));
@@ -114,11 +134,14 @@ fn loop_inbound_http1() {
         .run_with_test_env_and_keep_ports(env);
 
     let client = client::http1(listen_addr, listen_addr.to_string());
-    let rsp = client.request(client.request_builder("/").method("GET"));
+    let rsp = client
+        .request(client.request_builder("/").method("GET"))
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::FORBIDDEN);
 }
 
-fn test_server_speaks_first(env: TestEnv) {
+async fn test_server_speaks_first(env: TestEnv) {
     const TIMEOUT: Duration = Duration::from_secs(5);
 
     let _trace = trace_init();
@@ -126,7 +149,7 @@ fn test_server_speaks_first(env: TestEnv) {
     let msg1 = "custom tcp server starts";
     let msg2 = "custom tcp client second";
 
-    let (tx, rx) = mpsc::channel();
+    let (mut tx, mut rx) = mpsc::channel(1);
     let srv = server::tcp()
         .accept_fut(move |mut sock| {
             async move {
@@ -134,7 +157,7 @@ fn test_server_speaks_first(env: TestEnv) {
                 let mut vec = vec![0; 512];
                 let n = sock.read(&mut vec).await?;
                 assert_eq!(s(&vec[..n]), msg2);
-                tx.send(()).unwrap();
+                tx.send(()).await.unwrap();
                 Ok(())
             }
             .map(|res: std::io::Result<()>| match res {
@@ -142,29 +165,33 @@ fn test_server_speaks_first(env: TestEnv) {
                 Ok(()) => {}
             })
         })
-        .run();
+        .run()
+        .await;
 
     let proxy = proxy::new()
         .disable_inbound_ports_protocol_detection(vec![srv.addr.port()])
         .inbound(srv)
-        .run_with_test_env(env);
+        .run_with_test_env(env)
+        .await;
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT)), msg1);
-    tcp_client.write(msg2);
-    rx.recv_timeout(TIMEOUT).unwrap();
+    assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), msg1);
+    tcp_client.write(msg2).await;
+    timeout(TIMEOUT, rx.recv()).await.unwrap();
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
-#[test]
-fn tcp_server_first() {
-    test_server_speaks_first(TestEnv::new());
+#[tokio::test]
+async fn tcp_server_first() {
+    test_server_speaks_first(TestEnv::new()).await;
 }
 
-#[test]
-fn tcp_server_first_tls() {
+#[tokio::test]
+async fn tcp_server_first_tls() {
     use std::path::PathBuf;
 
     let (_cert, _key, _trust_anchors) = {
@@ -203,19 +230,18 @@ fn tcp_server_first_tls() {
     //    "foo.deployment.ns1.linkerd-managed.linkerd.svc.cluster.local".to_string(),
     //);
 
-    test_server_speaks_first(env)
+    test_server_speaks_first(env).await
 }
 
-#[test]
-fn tcp_connections_close_if_client_closes() {
-    use std::sync::mpsc;
-
+#[tokio::test]
+#[allow(warnings)]
+async fn tcp_connections_close_if_client_closes() {
     let _trace = trace_init();
 
     let msg1 = "custom tcp hello";
     let msg2 = "custom tcp bye";
 
-    let (tx, rx) = mpsc::channel();
+    let (mut tx, mut rx) = mpsc::channel(1);
 
     let srv = server::tcp()
         .accept_fut(move |mut sock| {
@@ -227,7 +253,8 @@ fn tcp_connections_close_if_client_closes() {
                 sock.write_all(msg2.as_bytes()).await?;
                 let n = sock.read(&mut [0; 16]).await?;
                 assert_eq!(n, 0);
-                tx.send(()).unwrap();
+                panic!("lol");
+                tx.send(()).await.unwrap();
                 Ok(())
             }
             .map(|res: std::io::Result<()>| match res {
@@ -235,38 +262,45 @@ fn tcp_connections_close_if_client_closes() {
                 Ok(()) => {}
             })
         })
-        .run();
-    let proxy = proxy::new().inbound(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
-    tcp_client.write(msg1);
-    assert_eq!(s(&tcp_client.read()[..]), msg2);
+    let tcp_client = client.connect().await;
+    tcp_client.write(msg1).await;
+    assert_eq!(s(&tcp_client.read().await[..]), msg2);
 
-    drop(tcp_client);
+    tcp_client.shutdown().await;
 
     // rx will be fulfilled when our tcp accept_fut sees
     // a socket disconnect, which is what we are testing for.
     // the timeout here is just to prevent this test from hanging
-    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
 }
 
 macro_rules! http1_tests {
     (proxy: $proxy:expr) => {
-        #[test]
-        fn inbound_http1() {
+        #[tokio::test]
+        async fn inbound_http1() {
             let _trace = trace_init();
 
-            let srv = server::http1().route("/", "hello h1").run();
-            let proxy = $proxy(srv);
+            let srv = server::http1().route("/", "hello h1").run().await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            assert_eq!(client.get("/"), "hello h1");
+            assert_eq!(client.get("/").await, "hello h1");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http1_removes_connection_headers() {
+        #[tokio::test]
+        async fn http1_removes_connection_headers() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -280,31 +314,38 @@ macro_rules! http1_tests {
                         .body(Default::default())
                         .unwrap()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .header("x-foo-bar", "baz")
-                    .header("connection", "x-foo-bar, close")
-                    // These headers will fail in the proxy_to_proxy case if
-                    // they are not stripped.
-                    //
-                    // normally would be stripped by `connection: keep-alive`,
-                    // but test its removed even if the connection header forgot
-                    // about it.
-                    .header("keep-alive", "500")
-                    .header("proxy-connection", "a"),
-            );
+            let res = client
+                .request(
+                    client
+                        .request_builder("/")
+                        .header("x-foo-bar", "baz")
+                        .header("connection", "x-foo-bar, close")
+                        // These headers will fail in the proxy_to_proxy case if
+                        // they are not stripped.
+                        //
+                        // normally would be stripped by `connection: keep-alive`,
+                        // but test its removed even if the connection header forgot
+                        // about it.
+                        .header("keep-alive", "500")
+                        .header("proxy-connection", "a"),
+                )
+                .await
+                .unwrap();
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert!(!res.headers().contains_key("x-server-quux"));
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http10_with_host() {
+        #[tokio::test]
+        async fn http10_with_host() {
             let _trace = trace_init();
 
             let host = "transparency.test.svc.cluster.local";
@@ -317,23 +358,30 @@ macro_rules! http1_tests {
                         .body("".into())
                         .unwrap()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .version(http::Version::HTTP_10)
-                    .header("host", host),
-            );
+            let res = client
+                .request(
+                    client
+                        .request_builder("/")
+                        .version(http::Version::HTTP_10)
+                        .header("host", host),
+                )
+                .await
+                .unwrap();
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_10);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http11_absolute_uri_differs_from_host() {
+        #[tokio::test]
+        async fn http11_absolute_uri_differs_from_host() {
             let _trace = trace_init();
 
             // We shouldn't touch the URI or the Host, just pass directly as we got.
@@ -345,23 +393,30 @@ macro_rules! http1_tests {
                     assert_eq!(req.uri().to_string(), format!("http://{}/", auth));
                     Response::new("".into())
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .version(http::Version::HTTP_11)
-                    .header("host", host),
-            );
+            let res = client
+                .request(
+                    client
+                        .request_builder("/")
+                        .version(http::Version::HTTP_11)
+                        .header("host", host),
+                )
+                .await
+                .unwrap();
 
             assert_eq!(res.status(), http::StatusCode::OK);
             assert_eq!(res.version(), http::Version::HTTP_11);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http11_upgrades() {
+        #[tokio::test]
+        async fn http11_upgrades() {
             let _trace = trace_init();
 
             // To simplify things for this test, we just use the test TCP
@@ -411,16 +466,17 @@ macro_rules! http1_tests {
                         Err(e) => panic!("tcp server error: {}", e),
                     })
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write(upgrade_req);
+            tcp_client.write(upgrade_req).await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.1 101 Switching Protocols\r\n"),
@@ -430,14 +486,17 @@ macro_rules! http1_tests {
             assert_contains!(resp_str, upgrade_needle);
 
             // We've upgraded from HTTP to chatproto! Say hi!
-            tcp_client.write(chatproto_req);
+            tcp_client.write(chatproto_req).await;
             // Did anyone respond?
-            let chat_resp = tcp_client.read();
+            let chat_resp = tcp_client.read().await;
             assert_eq!(s(&chat_resp), chatproto_res);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn l5d_orig_proto_header_isnt_leaked() {
+        #[tokio::test]
+        async fn l5d_orig_proto_header_isnt_leaked() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -445,19 +504,23 @@ macro_rules! http1_tests {
                     assert_eq!(req.headers().get("l5d-orig-proto"), None, "request");
                     Response::new(Default::default())
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
 
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
 
-            let res = client.request(client.request_builder("/"));
+            let res = client.request(client.request_builder("/")).await.unwrap();
             assert_eq!(res.status(), 200);
             assert_eq!(res.headers().get("l5d-orig-proto"), None, "response");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http11_upgrade_h2_stripped() {
+        #[tokio::test]
+        async fn http11_upgrade_h2_stripped() {
             let _trace = trace_init();
 
             // If an `h2` upgrade over HTTP/1.1 were to go by the proxy,
@@ -477,26 +540,33 @@ macro_rules! http1_tests {
                     assert!(!req.headers().contains_key("http2-settings"));
                     Response::default()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
-            let res = client.request(
-                client
-                    .request_builder("/")
-                    .header("upgrade", "h2c")
-                    .header("http2-settings", "")
-                    .header("connection", "upgrade, http2-settings"),
-            );
+            let res = client
+                .request(
+                    client
+                        .request_builder("/")
+                        .header("upgrade", "h2c")
+                        .header("http2-settings", "")
+                        .header("connection", "upgrade, http2-settings"),
+                )
+                .await
+                .unwrap();
 
             // If the assertion is trigger in the above test route, the proxy will
             // just send back a 500.
             assert_eq!(res.status(), http::StatusCode::OK);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http11_connect() {
+        #[tokio::test]
+        async fn http11_connect() {
             let _trace = trace_init();
 
             // To simplify things for this test, we just use the test TCP
@@ -546,16 +616,17 @@ macro_rules! http1_tests {
                         Err(e) => panic!("tcp server error: {}", e),
                     })
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write(&connect_req[..]);
+            tcp_client.write(&connect_req[..]).await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.1 200 OK\r\n"),
@@ -564,22 +635,26 @@ macro_rules! http1_tests {
             );
 
             // We've CONNECTed from HTTP to foo.bar! Say hi!
-            tcp_client.write(&tunneled_req[..]);
+            tcp_client.write(&tunneled_req[..]).await;
             // Did anyone respond?
-            let resp2 = tcp_client.read();
+            let resp2 = tcp_client.read().await;
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http11_connect_bad_requests() {
+        #[tokio::test]
+        async fn http11_connect_bad_requests() {
             let _trace = trace_init();
 
             let srv = server::tcp()
                 .accept(move |_sock| -> Vec<u8> {
                     unreachable!("shouldn't get through the proxy");
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
 
             // A TCP client is used since the HTTP client would stop these requests
             // from ever touching the network.
@@ -588,12 +663,12 @@ macro_rules! http1_tests {
             let bad_uris = vec!["/origin-form", "/", "http://test/bar", "http://test", "*"];
 
             for bad_uri in bad_uris {
-                let tcp_client = client.connect();
+                let tcp_client = client.connect().await;
 
                 let req = format!("CONNECT {} HTTP/1.1\r\nHost: test\r\n\r\n", bad_uri);
-                tcp_client.write(req);
+                tcp_client.write(req).await;
 
-                let resp = tcp_client.read();
+                let resp = tcp_client.read().await;
                 let resp_str = s(&resp);
                 assert!(
                     resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
@@ -604,11 +679,13 @@ macro_rules! http1_tests {
             }
 
             // origin-form URIs must be CONNECT
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write("GET test HTTP/1.1\r\nHost: test\r\n\r\n");
+            tcp_client
+                .write("GET test HTTP/1.1\r\nHost: test\r\n\r\n")
+                .await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.1 400 Bad Request\r\n"),
@@ -617,17 +694,22 @@ macro_rules! http1_tests {
             );
 
             // check that HTTP/1.0 is not allowed for CONNECT
-            let tcp_client = client.connect();
+            let tcp_client = client.connect().await;
 
-            tcp_client.write("CONNECT test HTTP/1.0\r\nHost: test\r\n\r\n");
+            tcp_client
+                .write("CONNECT test HTTP/1.0\r\nHost: test\r\n\r\n")
+                .await;
 
-            let resp = tcp_client.read();
+            let resp = tcp_client.read().await;
             let resp_str = s(&resp);
             assert!(
                 resp_str.starts_with("HTTP/1.0 400 Bad Request\r\n"),
                 "HTTP/1.0 CONNECT should get 400 response: {:?}",
                 resp_str
             );
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -639,8 +721,9 @@ macro_rules! http1_tests {
                     assert_eq!(req.headers()["content-length"], "5");
                     Response::default()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -649,9 +732,12 @@ macro_rules! http1_tests {
                 .body("hello".into())
                 .unwrap();
 
-            let resp = client.request_body_async(req).await;
+            let resp = client.request_body(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -675,8 +761,9 @@ macro_rules! http1_tests {
                             .unwrap(),
                     )
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -686,7 +773,7 @@ macro_rules! http1_tests {
                 .body("hello".into())
                 .unwrap();
 
-            let resp = client.request_body_async(req).await;
+            let resp = client.request_body(req).await;
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["transfer-encoding"], "chunked");
@@ -697,10 +784,13 @@ macro_rules! http1_tests {
                 .expect("rsp is utf8")
                 .to_owned();
             assert_eq!(body, "world");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http1_requests_without_body_doesnt_add_transfer_encoding() {
+        #[tokio::test]
+        async fn http1_requests_without_body_doesnt_add_transfer_encoding() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -716,21 +806,28 @@ macro_rules! http1_tests {
                     *res.status_mut() = status;
                     res
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
             for &method in methods {
-                let resp = client.request(client.request_builder("/").method(method));
+                let resp = client
+                    .request(client.request_builder("/").method(method))
+                    .await
+                    .unwrap();
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
             }
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
-        #[test]
-        fn http1_content_length_zero_is_preserved() {
+        #[tokio::test]
+        async fn http1_content_length_zero_is_preserved() {
             let _trace = trace_init();
 
             let srv = server::http1()
@@ -746,27 +843,31 @@ macro_rules! http1_tests {
                         .body("".into())
                         .unwrap()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
 
             for &method in methods {
-                let resp = client.request(
-                    client
-                        .request_builder("/")
-                        .method(method)
-                        .header("content-length", "0"),
-                );
+                let resp = client
+                    .request(
+                        client
+                            .request_builder("/")
+                            .method(method)
+                            .header("content-length", "0"),
+                    )
+                    .await
+                    .unwrap();
 
                 assert_eq!(resp.status(), StatusCode::OK, "method={:?}", method);
                 assert_eq!(resp.headers()["content-length"], "0", "method={:?}", method);
             }
         }
 
-        #[test]
-        fn http1_bodyless_responses() {
+        #[tokio::test]
+        async fn http1_bodyless_responses() {
             let _trace = trace_init();
 
             let req_status_header = "x-test-status-requested";
@@ -786,8 +887,9 @@ macro_rules! http1_tests {
 
                     Response::builder().status(status).body("".into()).unwrap()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             // https://tools.ietf.org/html/rfc7230#section-3.3.3
@@ -797,7 +899,10 @@ macro_rules! http1_tests {
             //they should be tested here as well. As RFC7230 says, a 2xx response to
             //a CONNECT request is not allowed to contain a body (but 4xx, 5xx can!).
 
-            let resp = client.request(client.request_builder("/").method("HEAD"));
+            let resp = client
+                .request(client.request_builder("/").method("HEAD"))
+                .await
+                .unwrap();
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert!(!resp.headers().contains_key("transfer-encoding"));
@@ -812,11 +917,14 @@ macro_rules! http1_tests {
             ];
 
             for &status in statuses {
-                let resp = client.request(
-                    client
-                        .request_builder("/")
-                        .header(req_status_header, status.as_str()),
-                );
+                let resp = client
+                    .request(
+                        client
+                            .request_builder("/")
+                            .header(req_status_header, status.as_str()),
+                    )
+                    .await
+                    .unwrap();
 
                 assert_eq!(resp.status(), status);
                 assert!(
@@ -825,6 +933,9 @@ macro_rules! http1_tests {
                     status
                 );
             }
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -839,12 +950,13 @@ macro_rules! http1_tests {
                         .body("".into())
                         .unwrap()
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let resp = client
-                .request_async(client.request_builder("/").method("HEAD"))
+                .request(client.request_builder("/").method("HEAD"))
                 .await
                 .expect("request");
 
@@ -859,6 +971,9 @@ macro_rules! http1_tests {
                 .to_owned();
 
             assert_eq!(body, "");
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
 
         #[tokio::test]
@@ -881,8 +996,9 @@ macro_rules! http1_tests {
                      body till eof\
                      "
                 })
-                .run();
-            let proxy = $proxy(srv);
+                .run()
+                .await;
+            let proxy = $proxy(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -901,7 +1017,7 @@ macro_rules! http1_tests {
 
             for v in versions {
                 let resp = client
-                    .request_async(client.request_builder("/").method("GET"))
+                    .request(client.request_builder("/").method("GET"))
                     .await
                     .expect("response");
 
@@ -926,6 +1042,9 @@ macro_rules! http1_tests {
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }
+
+            // ensure panics from the server are propagated
+            proxy.join_servers().await;
         }
     };
 }
@@ -933,10 +1052,10 @@ macro_rules! http1_tests {
 mod one_proxy {
     use linkerd2_app_integration::*;
 
-    http1_tests! { proxy: |srv| {
+    http1_tests! { proxy: |srv| async move {
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
-        proxy::new().inbound(srv).controller(ctrl.run()).run()
+        proxy::new().inbound(srv).controller(ctrl.run().await).run().await
     }}
 }
 
@@ -947,15 +1066,24 @@ mod proxy_to_proxy {
         // Held to prevent closing, to reduce controller request noise during
         // tests
         _dst: controller::DstSender,
-        _in: proxy::Listening,
-        _out: proxy::Listening,
+        in_proxy: proxy::Listening,
+        out_proxy: proxy::Listening,
         inbound: SocketAddr,
     }
 
-    http1_tests! { proxy: |srv| {
+    impl ProxyToProxy {
+        async fn join_servers(self) {
+            tokio::join! {
+                self.in_proxy.join_servers(),
+                self.out_proxy.join_servers(),
+            };
+        }
+    }
+
+    http1_tests! { proxy: |srv| async move {
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
-        let inbound = proxy::new().controller(ctrl.run()).inbound(srv).run();
+        let inbound = proxy::new().controller(ctrl.run().await).inbound(srv).run().await;
 
         let ctrl = controller::new();
         ctrl.profile_tx_default("transparency.test.svc.cluster.local");
@@ -963,21 +1091,21 @@ mod proxy_to_proxy {
         dst.send_h2_hinted(inbound.inbound);
 
         let outbound = proxy::new()
-            .controller(ctrl.run())
-            .run();
+            .controller(ctrl.run().await)
+            .run().await;
 
         let addr = outbound.outbound;
         ProxyToProxy {
             _dst: dst,
-            _in: inbound,
-            _out: outbound,
+            in_proxy: inbound,
+            out_proxy: outbound,
             inbound: addr,
         }
     } }
 }
 
-#[test]
-fn http10_without_host() {
+#[tokio::test]
+async fn http10_without_host() {
     // Without a host or authority, there's no way to route this test,
     // so its not part of the proxy_to_proxy set.
     let _trace = trace_init();
@@ -992,127 +1120,155 @@ fn http10_without_host() {
                 .body("".into())
                 .unwrap()
         })
-        .run();
-    let proxy = proxy::new().inbound(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
-    let tcp_client = client.connect();
+    let tcp_client = client.connect().await;
 
-    tcp_client.write(
-        "\
+    tcp_client
+        .write(
+            "\
          GET / HTTP/1.0\r\n\
          \r\n\
          ",
-    );
+        )
+        .await;
 
     let expected = "HTTP/1.0 200 OK\r\n";
-    assert_eq!(s(&tcp_client.read()[..expected.len()]), expected);
+    assert_eq!(s(&tcp_client.read().await[..expected.len()]), expected);
+
+    proxy.join_servers().await;
 }
 
-#[test]
-fn http1_one_connection_per_host() {
+#[tokio::test]
+async fn http1_one_connection_per_host() {
     let _trace = trace_init();
 
     let srv = server::http1()
         .route("/body", "hello hosts")
         .route("/no-body", "")
-        .run();
-    let proxy = proxy::new().inbound(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
     let inbound = &proxy.inbound_server.as_ref().expect("no inbound server!");
 
     // Run each case with and without a body.
-    let run_request = move |host, expected_conn_cnt| {
-        for path in &["/no-body", "/body"][..] {
-            let res = client.request(
-                client
-                    .request_builder(path)
-                    .version(http::Version::HTTP_11)
-                    .header("host", host),
-            );
-            assert_eq!(res.status(), http::StatusCode::OK);
-            assert_eq!(res.version(), http::Version::HTTP_11);
-            assert_eq!(inbound.connections(), expected_conn_cnt);
+    let run_request = |host, expected_conn_cnt| {
+        let c = &client;
+        let i = &inbound;
+        async move {
+            for path in &["/no-body", "/body"][..] {
+                let res = c
+                    .request(
+                        c.request_builder(path)
+                            .version(http::Version::HTTP_11)
+                            .header("host", host),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(res.status(), http::StatusCode::OK);
+                assert_eq!(res.version(), http::Version::HTTP_11);
+                assert_eq!(i.connections(), expected_conn_cnt);
+            }
         }
     };
 
     // Make a request with the header "Host: foo.bar". After the request, the
     // server should have seen one connection.
-    run_request("foo.bar", 1);
+    run_request("foo.bar", 1).await;
 
     // Another request with the same host. The proxy may reuse the connection.
-    run_request("foo.bar", 1);
+    run_request("foo.bar", 1).await;
 
     // Make a request with a different Host header. This request must use a new
     // connection.
-    run_request("bar.baz", 2);
-    run_request("bar.baz", 2);
+    run_request("bar.baz", 2).await;
+    run_request("bar.baz", 2).await;
 
     // Make a request with a different Host header. This request must use a new
     // connection.
-    run_request("quuuux.com", 3);
+    run_request("quuuux.com", 3).await;
+
+    proxy.join_servers().await;
 }
 
-#[test]
-fn http1_requests_without_host_have_unique_connections() {
+#[tokio::test]
+async fn http1_requests_without_host_have_unique_connections() {
     let _trace = trace_init();
 
-    let srv = server::http1().route("/", "unique hosts").run();
-    let proxy = proxy::new().inbound(srv).run();
+    let srv = server::http1().route("/", "unique hosts").run().await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::http1(proxy.inbound, "foo.bar");
 
     let inbound = &proxy.inbound_server.as_ref().expect("no inbound server!");
 
     // Make a request with no Host header and no authority in the request path.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", ""),
-    );
+    let res = client
+        .request(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", ""),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 1);
 
     // Another request with no Host. The proxy must open a new connection
     // for that request.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", ""),
-    );
+    let res = client
+        .request(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", ""),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 2);
 
     // Make a request with a host header. It must also receive its
     // own connection.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", "foo.bar"),
-    );
+    let res = client
+        .request(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", "foo.bar"),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 3);
 
     // Another request with no Host. The proxy must open a new connection
     // for that request.
-    let res = client.request(
-        client
-            .request_builder("/")
-            .version(http::Version::HTTP_11)
-            .header("host", ""),
-    );
+    let res = client
+        .request(
+            client
+                .request_builder("/")
+                .version(http::Version::HTTP_11)
+                .header("host", ""),
+        )
+        .await
+        .unwrap();
     assert_eq!(res.status(), http::StatusCode::OK);
     assert_eq!(res.version(), http::Version::HTTP_11);
     assert_eq!(inbound.connections(), 4);
+
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -1124,17 +1280,18 @@ async fn retry_reconnect_errors() {
 
     let srv = server::http2()
         .route("/", "hello retry")
-        .delay_listen(rx.map(|_| ()));
-    let proxy = proxy::new().inbound(srv).run();
+        .delay_listen(rx.map(|_| ()))
+        .await;
+    let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
     let metrics = client::http1(proxy.metrics, "localhost");
 
-    let fut = client.request_async(client.request_builder("/").version(http::Version::HTTP_2));
+    let fut = client.request(client.request_builder("/").version(http::Version::HTTP_2));
 
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...
     assert_eventually_contains!(
-        metrics.get_async("/metrics").await,
+        metrics.get("/metrics").await,
         "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
     );
 
@@ -1155,8 +1312,9 @@ async fn http2_request_without_authority() {
             assert_eq!(req.uri().authority(), None);
             Response::new("".into())
         })
-        .run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
 
     // Make a single HTTP/2 request without an :authority header.
     //
@@ -1182,6 +1340,8 @@ async fn http2_request_without_authority() {
     let res = client.send_request(req).await.expect("client error");
 
     assert_eq!(res.status(), http::StatusCode::OK);
+
+    proxy.join_servers().await;
 }
 
 #[tokio::test]
@@ -1192,12 +1352,13 @@ async fn http2_rst_stream_is_propagated() {
 
     let srv = server::http2()
         .route_async("/", move |_req| async move { Err(h2::Error::from(reason)) })
-        .run();
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run();
+        .run()
+        .await;
+    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.test.svc.cluster.local");
 
     let err: hyper::Error = client
-        .request_async(client.request_builder("/"))
+        .request(client.request_builder("/"))
         .await
         .expect_err("client request should error");
 
@@ -1221,19 +1382,22 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
             assert!(req.headers().contains_key("l5d-orig-proto"));
             Err(h2::Error::from(h2::Reason::ENHANCE_YOUR_CALM))
         })
-        .run();
+        .run()
+        .await;
     let ctrl = controller::new();
     let host = "transparency.test.svc.cluster.local";
     let dst = ctrl.destination_tx(host);
     dst.send_h2_hinted(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run()).run();
+    let proxy = proxy::new().controller(ctrl.run().await).run().await;
     let addr = proxy.outbound;
 
     let client = client::http1(addr, host);
     let res = client
-        .request_async(client.request_builder("/"))
+        .request(client.request_builder("/"))
         .await
         .expect("client request");
 
     assert_eq!(res.status(), http::StatusCode::BAD_GATEWAY);
+
+    proxy.join_servers().await;
 }

@@ -1,6 +1,6 @@
 use crate::http as profiles;
 use api::destination_client::DestinationClient;
-use futures::{future, ready, Stream, TryStreamExt};
+use futures::{future, ready, select_biased, FutureExt, Stream, TryStreamExt};
 use http;
 use http_body::Body as HttpBody;
 use linkerd2_addr::{Addr, NameAddr};
@@ -243,14 +243,14 @@ where
                 let daemon = async move {
                     tokio::pin!(inner);
                     loop {
-                        tokio::select! {
-                            _ = tx.closed() => {
+                        select_biased! {
+                            _ = tx.closed().fuse() => {
                                 trace!("profile observation dropped");
                                 return;
                             },
                             profile = future::poll_fn(|cx|
                                 inner.as_mut().poll_profile(cx)
-                             ) => {
+                             ).fuse() => {
                                 match profile {
                                     Err(error) => {
                                         error!(%error, "profile client died");

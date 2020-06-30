@@ -30,15 +30,12 @@ impl Config {
     where
         R: FmtMetrics + Clone + Send + 'static,
     {
-        use linkerd2_app_core::proxy::core::listen::{Bind, Listen};
-
-        let listen = self.server.bind.bind().map_err(Error::from)?;
-        let listen_addr = listen.listen_addr();
+        let (listen_addr, listen) = self.server.bind.bind()?;
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, log_level);
         let accept = tls::AcceptTls::new(identity, admin.into_accept());
-        let serve = Box::pin(serve::serve(listen, accept, drain));
+        let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
         Ok(Admin {
             listen_addr,
             latch,

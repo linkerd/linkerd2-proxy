@@ -1,14 +1,14 @@
 #![cfg(test)]
-#![type_length_limit = "3659323"]
+
 // These are basically integration tests for the `connection` submodule, but
 // they cannot be "real" integration tests because `connection` isn't a public
 // interface and because `connection` exposes a `#[cfg(test)]`-only API for use
 // by these tests.
 
-use futures::FutureExt;
+use futures::prelude::*;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_core::listen::{Accept, Bind as _Bind, Listen as CoreListen};
+use linkerd2_proxy_core::Accept;
 use linkerd2_proxy_transport::tls::{
     self,
     accept::{AcceptTls, Connection as ServerConnection},
@@ -144,8 +144,9 @@ where
         // tests to run at once, which wouldn't work if they all were bound on
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-        let mut listen = Bind::new(addr, None).bind().expect("must bind");
-        let listen_addr = listen.listen_addr();
+
+        let (listen_addr, listen) = Bind::new(addr, None).bind().expect("must bind");
+
         let mut accept = AcceptTls::new(
             server_tls,
             service_fn(move |(meta, conn): ServerConnection| {
@@ -165,10 +166,14 @@ where
                 })
             }),
         );
+
         let server = async move {
-            let conn = futures::future::poll_fn(|cx| listen.poll_accept(cx))
+            futures::pin_mut!(listen);
+            let conn = listen
+                .next()
                 .await
-                .expect("listen failed");
+                .expect("listen failed")
+                .expect("listener closed");
             tracing::debug!("incoming connection");
             let accept = accept.ready_and().await.expect("accept failed");
             tracing::debug!("accept ready");
@@ -181,6 +186,7 @@ where
             tracing::debug!("done");
         }
         .instrument(tracing::info_span!("run_server", %listen_addr));
+
         (server, listen_addr, receiver)
     };
 
