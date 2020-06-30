@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "1586225"]
+#![type_length_limit = "16289823"]
+#![recursion_limit = "256"]
 
 use linkerd2_app_integration::tap::TapEventExt;
 use linkerd2_app_integration::*;
@@ -13,8 +14,9 @@ async fn tap_enabled_when_identity_enabled() {
     let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
 
     let proxy = proxy::new()
-        .identity(identity_env.service().run())
-        .run_with_test_env(identity_env.env);
+        .identity(identity_env.service().run().await)
+        .run_with_test_env(identity_env.env)
+        .await;
 
     assert!(proxy.tap.is_some())
 }
@@ -22,7 +24,7 @@ async fn tap_enabled_when_identity_enabled() {
 #[tokio::test]
 async fn tap_disabled_when_identity_disabled() {
     let _trace = trace_init();
-    let proxy = proxy::new().disable_identity().run();
+    let proxy = proxy::new().disable_identity().run().await;
 
     assert!(proxy.tap.is_none())
 }
@@ -33,7 +35,7 @@ async fn can_disable_tap() {
     let mut env = TestEnv::new();
     env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());
 
-    let proxy = proxy::new().run_with_test_env(env);
+    let proxy = proxy::new().run_with_test_env(env).await;
 
     assert!(proxy.tap.is_none())
 }
@@ -53,13 +55,15 @@ async fn rejects_incorrect_identity_when_identity_is_expected() {
 
     let in_proxy = proxy::new()
         .inbound(srv)
-        .identity(identity_env.service().run())
-        .run_with_test_env(expected_identity_env);
+        .identity(identity_env.service().run().await)
+        .run_with_test_env(expected_identity_env)
+        .await;
 
     let tap_proxy = proxy::new()
         .outbound_ip(in_proxy.tap.unwrap())
-        .identity(identity_env.service().run())
-        .run_with_test_env(identity_env.env.clone());
+        .identity(identity_env.service().run().await)
+        .run_with_test_env(identity_env.env.clone())
+        .await;
 
     let mut tap = tap::client(tap_proxy.outbound);
     let mut events = tap.observe(tap::observe_request()).await.take(1);
@@ -92,7 +96,10 @@ async fn inbound_http1() {
 
     // Certify server proxy identity
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
-    let srv_proxy_identity_svc = controller::identity().certify(move |_| certify_rsp).run();
+    let srv_proxy_identity_svc = controller::identity()
+        .certify(move |_| certify_rsp)
+        .run()
+        .await;
 
     // Add expected tap service identity
     env.put(
@@ -106,13 +113,15 @@ async fn inbound_http1() {
     let srv_proxy = proxy::new()
         .inbound(srv)
         .identity(srv_proxy_identity_svc)
-        .run_with_test_env(env);
+        .run_with_test_env(env)
+        .await;
 
     // Run client proxy with client proxy identity service.
     let client_proxy = proxy::new()
         .outbound_ip(srv_proxy.tap.unwrap())
-        .identity(client_proxy_identity.service().run())
-        .run_with_test_env(client_proxy_identity.env);
+        .identity(client_proxy_identity.service().run().await)
+        .run_with_test_env(client_proxy_identity.env)
+        .await;
 
     // Wait for the server proxy to become ready
     let client = client::http1(srv_proxy.metrics, "localhost");
@@ -168,7 +177,10 @@ async fn grpc_headers_end() {
 
     // Certify server proxy identity
     certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
-    let srv_proxy_identity_svc = controller::identity().certify(move |_| certify_rsp).run();
+    let srv_proxy_identity_svc = controller::identity()
+        .certify(move |_| certify_rsp)
+        .run()
+        .await;
 
     // Add expected tap service identity
     env.put(
@@ -190,13 +202,15 @@ async fn grpc_headers_end() {
     let srv_proxy = proxy::new()
         .inbound(srv)
         .identity(srv_proxy_identity_svc)
-        .run_with_test_env(env);
+        .run_with_test_env(env)
+        .await;
 
     // Run client proxy with client proxy identity service.
     let client_proxy = proxy::new()
         .outbound_ip(srv_proxy.tap.unwrap())
-        .identity(client_proxy_identity.service().run())
-        .run_with_test_env(client_proxy_identity.env);
+        .identity(client_proxy_identity.service().run().await)
+        .run_with_test_env(client_proxy_identity.env)
+        .await;
 
     // Wait for the server proxy to become ready
     let client = client::http2(srv_proxy.metrics, "localhost");

@@ -1,5 +1,4 @@
 use super::*;
-use futures_01::{future, Future as Future01};
 use std::{
     collections::VecDeque,
     fs, io,
@@ -9,6 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
+use tonic as grpc;
 
 pub struct Identity {
     pub env: TestEnv,
@@ -25,8 +25,11 @@ pub struct Controller {
 type Certify = Box<
     dyn FnMut(
             pb::CertifyRequest,
-        ) -> Box<
-            dyn Future01<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<grpc::Response<pb::CertifyResponse>, grpc::Status>>
+                    + Send,
+            >,
         > + Send,
 >;
 
@@ -198,33 +201,42 @@ impl Controller {
             let fut = f(req)
                 .map_ok(grpc::Response::new)
                 .map_err(|e| grpc::Status::new(grpc::Code::Internal, format!("{}", e)));
-            Box::new(Box::pin(fut).compat())
+            Box::pin(fut)
         });
         self.expect_calls.lock().unwrap().push_back(func);
         self
     }
 
-    pub fn run(self) -> controller::Listening {
+    pub async fn run(self) -> controller::Listening {
         println!("running support identity service");
         controller::run(
-            pb::server::IdentityServer::new(self),
+            pb::identity_server::IdentityServer::new(self),
             "support identity service",
             None,
         )
+        .await
     }
 }
 
-impl pb::server::Identity for Controller {
-    type CertifyFuture =
-        Box<dyn Future01<Item = grpc::Response<pb::CertifyResponse>, Error = grpc::Status> + Send>;
-    fn certify(&mut self, req: grpc::Request<pb::CertifyRequest>) -> Self::CertifyFuture {
-        if let Some(mut f) = self.expect_calls.lock().unwrap().pop_front() {
-            return f(req.into_inner());
+#[tonic::async_trait]
+impl pb::identity_server::Identity for Controller {
+    async fn certify(
+        &self,
+        req: grpc::Request<pb::CertifyRequest>,
+    ) -> Result<grpc::Response<pb::CertifyResponse>, grpc::Status> {
+        let f = self
+            .expect_calls
+            .lock()
+            .unwrap()
+            .pop_front()
+            .map(|mut f| f(req.into_inner()));
+        if let Some(f) = f {
+            return f.await;
         }
 
-        Box::new(future::err(grpc::Status::new(
+        Err(grpc::Status::new(
             grpc::Code::Unavailable,
             "unit test identity service has no results",
-        )))
+        ))
     }
 }

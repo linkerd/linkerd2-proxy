@@ -38,6 +38,9 @@ pub struct Listening {
     pub outbound_server: Option<server::Listening>,
     pub inbound_server: Option<server::Listening>,
 
+    controller: controller::Listening,
+    identity: Option<controller::Listening>,
+
     _shutdown: Shutdown,
 
     thread: thread::JoinHandle<()>,
@@ -138,16 +141,16 @@ impl Proxy {
         self
     }
 
-    pub fn run(self) -> Listening {
-        self.run_with_test_env(TestEnv::new())
+    pub async fn run(self) -> Listening {
+        self.run_with_test_env(TestEnv::new()).await
     }
 
-    pub fn run_with_test_env(self, env: TestEnv) -> Listening {
-        run(self, env, true)
+    pub async fn run_with_test_env(self, env: TestEnv) -> Listening {
+        run(self, env, true).await
     }
 
-    pub fn run_with_test_env_and_keep_ports(self, env: TestEnv) -> Listening {
-        run(self, env, false)
+    pub async fn run_with_test_env_and_keep_ports(self, env: TestEnv) -> Listening {
+        run(self, env, false).await
     }
 }
 
@@ -156,24 +159,51 @@ impl Listening {
         let Self {
             inbound_server,
             outbound_server,
+            controller,
+            identity,
             thread,
             ..
         } = self;
         drop(thread);
-        if let Some(srv) = outbound_server {
-            srv.join().instrument(tracing::info_span!("outbound")).await;
-        }
 
-        if let Some(srv) = inbound_server {
-            srv.join().instrument(tracing::info_span!("inbound")).await;
+        let outbound = async move {
+            if let Some(srv) = outbound_server {
+                srv.join().await;
+            }
         }
+        .instrument(tracing::info_span!("outbound"));
+
+        let inbound = async move {
+            if let Some(srv) = inbound_server {
+                srv.join().await;
+            }
+        }
+        .instrument(tracing::info_span!("inbound"));
+
+        let identity = async move {
+            if let Some(srv) = identity {
+                srv.join().await;
+            }
+        };
+
+        tokio::join! {
+            inbound,
+            outbound,
+            identity,
+            controller.join(),
+        };
     }
 }
 
-fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
+async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     use app::env::Strings;
 
-    let controller = proxy.controller.unwrap_or_else(|| controller::new().run());
+    let controller = if let Some(controller) = proxy.controller {
+        controller
+    } else {
+        // bummer that the whole function needs to be async just for this...
+        controller::new().run().await
+    };
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
     let identity = proxy.identity;
@@ -280,12 +310,9 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 let span = info_span!("proxy", test = %thread_name());
                 let _enter = span.enter();
 
-                let _c = controller;
-                let _i = identity;
-
-                tokio_compat::runtime::current_thread::Runtime::new()
+                tokio::runtime::Runtime::new()
                     .expect("proxy")
-                    .block_on_std(async move {
+                    .block_on(async move {
                         let main = config.build(trace_handle).await.expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
@@ -321,7 +348,7 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         .expect("spawn");
 
     let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
-        futures::executor::block_on(running_rx).unwrap();
+        running_rx.await.unwrap();
 
     // printlns will show if the test fails...
     println!(
@@ -352,6 +379,9 @@ fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
 
         outbound_server: proxy.outbound_server,
         inbound_server: proxy.inbound_server,
+
+        controller,
+        identity,
 
         _shutdown: tx,
         thread,
