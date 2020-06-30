@@ -322,7 +322,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             main.tap_addr(),
                             identity_addr,
                             main.inbound_addr(),
-                            _compat::runtime::current_thread::main.outbound_addr(),
+                            main.outbound_addr(),
                             main.admin_addr(),
                         );
                         let mut running = Some((running_tx, addrs));
