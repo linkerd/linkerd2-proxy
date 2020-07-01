@@ -206,17 +206,15 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
 
-// Because buffers propagate readiness, they should only need enough capacity to satisfy the
-// process's concurrency. This should probably be derived from the number of CPUs, but the num-cpus
-// crate does not support cgroups yet [seanmonstar/num_cpus#80].
-const DEFAULT_BUFFER_CAPACITY: usize = 10;
+// 10_000 is arbitrarily chosen for now...
+const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
 
 const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 
-// 10_000 is arbitrarily chosen for now...
-const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = 10_000;
-const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 10_000;
+// By default, don't accept more requests than we can buffer.
+const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
+const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
 
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";

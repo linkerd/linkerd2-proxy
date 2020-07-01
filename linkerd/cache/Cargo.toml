@@ -8,7 +8,6 @@ publish = false
 [dependencies]
 futures = "0.3"
 linkerd2-error = { path = "../error" }
-linkerd2-lock = { path = "../lock" }
 linkerd2-stack = { path = "../stack" }
 tokio = "0.2"
 tower = { version = "0.3", default-features = false, features = ["util"] }
