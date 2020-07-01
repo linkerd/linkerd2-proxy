@@ -38,7 +38,6 @@ linkerd2-error-respond = { path = "../../error-respond" }
 linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-http-classify = { path = "../../http-classify" }
 linkerd2-http-metrics = { path = "../../http-metrics" }
-linkerd2-lock = { path = "../../lock" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }

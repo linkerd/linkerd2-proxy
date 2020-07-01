@@ -1,7 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 use futures::future;
 use linkerd2_error::Never;
-use linkerd2_lock::{Guard, Lock};
 use linkerd2_stack::NewService;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -19,8 +18,7 @@ where
     N: NewService<(T, Handle)>,
 {
     new_service: N,
-    lock: Lock<Services<T, N::Service>>,
-    guard: Option<Guard<Services<T, N::Service>>>,
+    services: Services<T, N::Service>,
 }
 
 /// A tracker inserted into each inner service that, when dropped, indicates the service may be
@@ -34,68 +32,33 @@ type Services<T, S> = HashMap<T, (S, Weak<()>)>;
 
 impl<T, N> Cache<T, N>
 where
-    T: Eq + Hash + Send + 'static,
+    T: Eq + Hash + Send,
     N: NewService<(T, Handle)>,
 {
     pub fn new(new_service: N) -> Self {
         Self {
             new_service,
-            guard: None,
-            lock: Lock::new(Services::default()),
-        }
-    }
-}
-
-impl<T, N> Clone for Cache<T, N>
-where
-    T: Clone + Eq + Hash,
-    N: NewService<(T, Handle)> + Clone,
-    N::Service: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            new_service: self.new_service.clone(),
-            lock: self.lock.clone(),
-            guard: None,
+            services: Services::default(),
         }
     }
 }
 
 impl<T, N> tower::Service<T> for Cache<T, N>
 where
-    T: Clone + Eq + Hash + Send + 'static,
+    T: Clone + Eq + Hash + Send,
     N: NewService<(T, Handle)>,
-    N::Service: Clone + Send + 'static,
+    N::Service: Clone + Send,
 {
     type Response = N::Service;
     type Error = Never;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        if self.guard.is_none() {
-            let mut services = futures::ready!(self.lock.poll_acquire(cx));
-            // Drop defunct services before interacting with the cache.
-            let n = services.len();
-            services.retain(|_, (_, weak)| {
-                if weak.strong_count() > 0 {
-                    true
-                } else {
-                    trace!("Dropping defunct service");
-                    false
-                }
-            });
-            debug!(services = services.len(), dropped = n - services.len());
-            self.guard = Some(services);
-        }
-
-        debug_assert!(self.guard.is_some(), "guard must be acquired");
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let mut services = self.guard.take().expect("poll_ready must be called");
-
-        if let Some((service, weak)) = services.get(&target) {
+        if let Some((service, weak)) = self.services.get(&target) {
             if weak.upgrade().is_some() {
                 trace!("Using cached service");
                 return future::ok(service.clone());
@@ -109,8 +72,24 @@ where
             .new_service
             .new_service((target.clone(), Handle(handle)));
 
+        // Drop defunct services before inserting the new service into the
+        // cache.
+        let n = self.services.len();
+        self.services.retain(|_, (_, weak)| {
+            if weak.strong_count() > 0 {
+                true
+            } else {
+                trace!("Dropping defunct service");
+                false
+            }
+        });
+        debug!(
+            services = self.services.len(),
+            dropped = n - self.services.len()
+        );
+
         debug!("Caching new service");
-        services.insert(target, (service.clone(), weak));
+        self.services.insert(target, (service.clone(), weak));
 
         future::ok(service.into())
     }

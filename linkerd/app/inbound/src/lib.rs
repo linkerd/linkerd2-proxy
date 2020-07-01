@@ -237,10 +237,8 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("target"))),
                 ),
             )
+            .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| info_span!("target"))
-            // Prevent the cache's lock from being acquired in poll_ready, ensuring this happens
-            // in the response future. This prevents buffers from holding the cache's lock.
-            .push_oneshot()
             .check_service::<Target>();
 
         // Routes targets to a Profile stack, i.e. so that profile
@@ -268,10 +266,9 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
             )
+            .spawn_buffer(buffer_capacity)
             .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
             .check_make_service::<Profile, Target>()
-            // Ensures that cache's lock isn't held in poll_ready.
-            .push_oneshot()
             .push(router::Layer::new(|()| ProfileTarget))
             .check_new_service_routes::<(), Target>()
             .new_service(());
