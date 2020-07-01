@@ -58,21 +58,6 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        // Drop defunct services before interacting with the cache.
-        let n = self.services.len();
-        self.services.retain(|_, (_, weak)| {
-            if weak.strong_count() > 0 {
-                true
-            } else {
-                trace!("Dropping defunct service");
-                false
-            }
-        });
-        debug!(
-            services = self.services.len(),
-            dropped = n - self.services.len()
-        );
-
         if let Some((service, weak)) = self.services.get(&target) {
             if weak.upgrade().is_some() {
                 trace!("Using cached service");
@@ -86,6 +71,22 @@ where
         let service = self
             .new_service
             .new_service((target.clone(), Handle(handle)));
+
+        // Drop defunct services before inserting the new service into the
+        // cache.
+        let n = self.services.len();
+        self.services.retain(|_, (_, weak)| {
+            if weak.strong_count() > 0 {
+                true
+            } else {
+                trace!("Dropping defunct service");
+                false
+            }
+        });
+        debug!(
+            services = self.services.len(),
+            dropped = n - self.services.len()
+        );
 
         debug!("Caching new service");
         self.services.insert(target, (service.clone(), weak));
