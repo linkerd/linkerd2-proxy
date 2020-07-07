@@ -10,7 +10,13 @@ pub use tracing::{debug, error, info, warn};
 
 #[tokio::main(basic_scheduler)]
 async fn main() {
-    let trace = trace::init();
+    let trace = match trace::init() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Could not initialize tracing: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
@@ -22,7 +28,7 @@ async fn main() {
         }
     };
 
-    let app = match async move { config.build(trace?).await }.await {
+    let app = match config.build(trace).await {
         Ok(app) => app,
         Err(e) => {
             eprintln!("Initialization failure: {}", e);
