@@ -4,7 +4,6 @@ use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio_timer::clock;
 use tracing::trace;
 
 #[derive(Debug)]
@@ -59,7 +58,7 @@ impl<T: Hash + Eq> Clone for Retries<T> {
 impl Handle {
     pub fn incr_retryable(&self, has_budget: bool) {
         if let Ok(mut m) = self.0.lock() {
-            m.last_update = clock::now();
+            m.last_update = Instant::now();
             m.retryable.incr();
             if !has_budget {
                 m.no_budget.incr();
@@ -73,7 +72,7 @@ impl Handle {
 impl Default for Metrics {
     fn default() -> Self {
         Self {
-            last_update: clock::now(),
+            last_update: Instant::now(),
             retryable: Counter::default(),
             no_budget: Counter::default(),
         }
@@ -129,7 +128,7 @@ where
             }
         }
 
-        registry.retain_since(clock::now() - self.retain_idle);
+        registry.retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
     }

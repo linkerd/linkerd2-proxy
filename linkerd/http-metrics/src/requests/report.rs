@@ -3,7 +3,7 @@ use crate::{Prefixed, Registry, Report};
 use linkerd2_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 use std::fmt;
 use std::hash::Hash;
-use tokio_timer::clock;
+use std::time::Instant;
 use tracing::trace;
 
 struct Status(http::StatusCode);
@@ -73,7 +73,7 @@ where
         metric.fmt_help(f)?;
         registry.fmt_by_class(f, metric, |s| &s.total)?;
 
-        registry.retain_since(clock::now() - self.retain_idle);
+        registry.retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
     }
