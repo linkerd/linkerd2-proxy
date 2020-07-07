@@ -37,7 +37,7 @@ ARG PROXY_FEATURES
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \
     --mount=type=cache,target=/var/tmp \
-    apt update && apt install -y time
+    apt update && apt install -y time cmake
 
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
