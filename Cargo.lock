@@ -873,7 +873,7 @@ dependencies = [
  "tower-request-modifier",
  "tracing",
  "tracing-futures",
- "tracing-log",
+ "tracing-log 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing-subscriber",
 ]
 
@@ -1798,8 +1798,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f842b1982eb6c2fe34036a4fbfb06dd185a3f5c8edfaacdf7d1ea10b07de6252"
 dependencies = [
  "lock_api",
- "parking_lot_core",
+ "parking_lot_core 0.6.2",
  "rustc_version",
+]
+
+[[package]]
+name = "parking_lot"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fdfcb5f20930a79e326f7ec992a9fdb5b7bd809254b1e735bdd5a99f78bee0d"
+dependencies = [
+ "lock_api",
+ "parking_lot_core 0.7.2",
 ]
 
 [[package]]
@@ -1814,6 +1824,20 @@ dependencies = [
  "redox_syscall",
  "rustc_version",
  "smallvec 0.6.10",
+ "winapi 0.3.8",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d58c7c768d4ba344e3e8d72518ac13e259d7c7ade24167003b8488e10b6740a3"
+dependencies = [
+ "cfg-if",
+ "cloudabi",
+ "libc",
+ "redox_syscall",
+ "smallvec 1.2.0",
  "winapi 0.3.8",
 ]
 
@@ -2551,6 +2575,7 @@ dependencies = [
  "memchr 2.3.3",
  "mio",
  "mio-uds",
+ "parking_lot 0.10.1",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
@@ -2643,7 +2668,7 @@ dependencies = [
  "log",
  "mio",
  "num_cpus",
- "parking_lot",
+ "parking_lot 0.9.0",
  "slab",
  "tokio-executor",
  "tokio-io",
@@ -2886,7 +2911,7 @@ dependencies = [
  "log",
  "spin",
  "tracing-attributes",
- "tracing-core",
+ "tracing-core 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2897,6 +2922,14 @@ checksum = "5e27d1065a1de5d8ad2637e41fe14d3cd14363d4a20cb99090b9012004955637"
 dependencies = [
  "quote 1.0.2",
  "syn 1.0.21",
+]
+
+[[package]]
+name = "tracing-core"
+version = "0.1.10"
+source = "git+https://github.com/tokio-rs/tracing#e58a8692ce36090e0169a8f81a7c5ab1a06b91d9"
+dependencies = [
+ "lazy_static",
 ]
 
 [[package]]
@@ -2921,41 +2954,50 @@ dependencies = [
 [[package]]
 name = "tracing-log"
 version = "0.1.1"
+source = "git+https://github.com/tokio-rs/tracing#e58a8692ce36090e0169a8f81a7c5ab1a06b91d9"
+dependencies = [
+ "lazy_static",
+ "log",
+ "tracing-core 0.1.10 (git+https://github.com/tokio-rs/tracing)",
+]
+
+[[package]]
+name = "tracing-log"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e0f8c7178e13481ff6765bd169b33e8d554c5d2bbede5e32c356194be02b9b9"
 dependencies = [
  "lazy_static",
  "log",
- "tracing-core",
+ "tracing-core 0.1.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "tracing-serde"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6ccba2f8f16e0ed268fc765d9b7ff22e965e7185d32f8f1ec8294fe17d86e79"
+source = "git+https://github.com/tokio-rs/tracing#e58a8692ce36090e0169a8f81a7c5ab1a06b91d9"
 dependencies = [
  "serde",
- "tracing-core",
+ "tracing-core 0.1.10 (git+https://github.com/tokio-rs/tracing)",
 ]
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d53c40489aa69c9aed21ff483f26886ca8403df33bdc2d2f87c60c1617826d2"
+version = "0.2.7"
+source = "git+https://github.com/tokio-rs/tracing#e58a8692ce36090e0169a8f81a7c5ab1a06b91d9"
 dependencies = [
  "ansi_term",
  "chrono",
  "lazy_static",
  "matchers",
+ "parking_lot 0.9.0",
  "regex 1.0.0",
  "serde",
  "serde_json",
  "sharded-slab",
  "smallvec 1.2.0",
- "tracing-core",
- "tracing-log",
+ "tracing-core 0.1.10 (git+https://github.com/tokio-rs/tracing)",
+ "tracing-log 0.1.1 (git+https://github.com/tokio-rs/tracing)",
  "tracing-serde",
 ]
 
