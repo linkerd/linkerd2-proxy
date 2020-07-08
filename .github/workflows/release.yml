@@ -1,4 +1,4 @@
-name: release
+name: Release
 
 on:
   push:
@@ -7,6 +7,20 @@ on:
 
 jobs:
   package:
+    strategy:
+      matrix:
+        architecture: [amd64, arm64, arm]
+        include:
+          - architecture: amd64
+            target: x86_64-unknown-linux-gnu
+            strip: strip
+          - architecture: arm64
+            target: aarch64-unknown-linux-gnu
+            strip: aarch64-linux-gnu-strip
+          - architecture: arm
+            target: armv7-unknown-linux-gnueabihf
+            strip: arm-linux-gnueabihf-strip
+    name: Package (${{ matrix.architecture }})
     runs-on: ubuntu-latest
     steps:
       - name: git co
@@ -23,6 +37,9 @@ jobs:
         env:
           CARGO_RELEASE: "1"
           PACKAGE_VERSION: ${{ steps.release-tag-meta.outputs.name }}
+          CARGO_TARGET: ${{ matrix.target }}
+          STRIP: ${{ matrix.strip }}
+          ARCH: ${{ matrix.architecture }}
         uses: ./.github/actions/package
         with:
           entrypoint: make
@@ -32,7 +49,35 @@ jobs:
         uses: ./.github/actions/package
         with:
           entrypoint: /linkerd/validate-checksec.sh
-          args: /linkerd/expected-checksec.json "target/x86_64-unknown-linux-gnu/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-checksec.json"
+          args: /linkerd/expected-checksec.json "target/${{ matrix.target }}/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-${{ matrix.architecture }}-checksec.json"
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.architecture }}-artifacts
+          path: target/${{ matrix.target }}/release/package/*
+
+  release:
+    needs: [package]
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: git co
+        uses: actions/checkout@v1
+
+      - name: meta
+        id: release-tag-meta
+        uses: ./.github/actions/release-tag-meta
+        with:
+          git-ref: ${{ github.ref }}
+
+      - name: download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: artifacts
+
+      - name: display structure of downloaded files
+        run: ls -R artifacts
 
       - name: release
         uses: softprops/action-gh-release@b21b43d
@@ -40,4 +85,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           name: ${{ steps.release-tag-meta.outputs.name }}
-          files:  target/x86_64-unknown-linux-gnu/release/package/*
+          files: artifacts/**/*
