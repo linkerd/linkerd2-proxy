@@ -7,7 +7,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio_timer::clock;
 
 mod layer;
 mod report;
@@ -79,7 +78,7 @@ impl<T: Hash + Eq, C: Hash + Eq> Clone for Requests<T, C> {
 impl<C: Hash + Eq> Default for Metrics<C> {
     fn default() -> Self {
         Self {
-            last_update: clock::now(),
+            last_update: Instant::now(),
             total: Counter::default(),
             by_status: IndexMap::default(),
         }
@@ -110,8 +109,7 @@ mod tests {
     fn expiry() {
         use linkerd2_metrics::FmtLabels;
         use std::fmt;
-        use std::time::Duration;
-        use tokio_timer::clock;
+        use std::time::{Duration, Instant};
 
         #[derive(Clone, Debug, Hash, Eq, PartialEq)]
         struct Target(usize);
@@ -142,14 +140,14 @@ mod tests {
         let report = r.clone().into_report(retain_idle_for);
         let mut registry = r.0.lock().unwrap();
 
-        let before_update = clock::now();
+        let before_update = Instant::now();
         let metrics = registry
             .by_target
             .entry(Target(123))
             .or_insert_with(|| Default::default())
             .clone();
         assert_eq!(registry.by_target.len(), 1, "target should be registered");
-        let after_update = clock::now();
+        let after_update = Instant::now();
 
         registry.retain_since(after_update);
         assert_eq!(
