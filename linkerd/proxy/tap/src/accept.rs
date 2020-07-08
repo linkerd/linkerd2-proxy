@@ -1,3 +1,4 @@
+use crate::grpc::Server;
 use futures::future;
 use indexmap::IndexSet;
 use linkerd2_error::Error;
@@ -17,13 +18,13 @@ use tower::Service;
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
     permitted_client_ids: Arc<IndexSet<identity::Name>>,
-    server: super::Server,
+    server: Server,
 }
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
 impl AcceptPermittedClients {
-    pub fn new(permitted_client_ids: Arc<IndexSet<identity::Name>>, server: super::Server) -> Self {
+    pub fn new(permitted_client_ids: Arc<IndexSet<identity::Name>>, server: Server) -> Self {
         Self {
             permitted_client_ids,
             server,

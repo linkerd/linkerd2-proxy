@@ -13,7 +13,6 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Instant;
-use tokio_timer::clock;
 
 /// A stack module that wraps services to record metrics.
 #[derive(Debug)]
@@ -285,7 +284,7 @@ where
 
         if req.body().is_end_stream() {
             if let Some(lock) = req_metrics.take() {
-                let now = clock::now();
+                let now = Instant::now();
                 if let Ok(mut metrics) = lock.lock() {
                     (*metrics).last_update = now;
                     (*metrics).total.incr();
@@ -307,7 +306,7 @@ where
         ResponseFuture {
             classify: Some(classify),
             metrics: self.metrics.clone(),
-            stream_open_at: clock::now(),
+            stream_open_at: Instant::now(),
             inner: self.inner.proxy(svc, req),
         }
     }
@@ -335,7 +334,7 @@ where
 
         if req.body().is_end_stream() {
             if let Some(lock) = req_metrics.take() {
-                let now = clock::now();
+                let now = Instant::now();
                 if let Ok(mut metrics) = lock.lock() {
                     (*metrics).last_update = now;
                     (*metrics).total.incr();
@@ -357,7 +356,7 @@ where
         ResponseFuture {
             classify: Some(classify),
             metrics: self.metrics.clone(),
-            stream_open_at: clock::now(),
+            stream_open_at: Instant::now(),
             inner: self.inner.call(req),
         }
     }
@@ -427,7 +426,7 @@ where
         let frame = ready!(this.inner.poll_data(cx));
 
         if let Some(lock) = this.metrics.take() {
-            let now = clock::now();
+            let now = Instant::now();
             if let Ok(mut metrics) = lock.lock() {
                 (*metrics).last_update = now;
                 (*metrics).total.incr();
@@ -472,7 +471,7 @@ where
         Self {
             status: http::StatusCode::OK,
             inner: B::default(),
-            stream_open_at: clock::now(),
+            stream_open_at: Instant::now(),
             classify: None,
             metrics: None,
             latency_recorded: false,
@@ -488,7 +487,7 @@ where
 {
     fn record_latency(self: Pin<&mut Self>) {
         let this = self.project();
-        let now = clock::now();
+        let now = Instant::now();
 
         let lock = match this.metrics.as_mut() {
             Some(lock) => lock,
@@ -537,7 +536,7 @@ fn measure_class<C: Hash + Eq>(
     class: C,
     status: Option<http::StatusCode>,
 ) {
-    let now = clock::now();
+    let now = Instant::now();
     let mut metrics = match lock.lock() {
         Ok(m) => m,
         Err(_) => return,

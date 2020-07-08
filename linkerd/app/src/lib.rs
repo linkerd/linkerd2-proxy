@@ -1,5 +1,4 @@
 //! Configures and executes the proxy
-
 #![recursion_limit = "256"]
 //#![deny(warnings, rust_2018_idioms)]
 
@@ -25,6 +24,7 @@ use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use tokio::time::Duration;
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -343,8 +343,15 @@ impl App {
                         // Spawn the DNS resolver background task.
                         tokio::spawn(dns.instrument(info_span!("dns")));
 
-                        if let tap::Tap::Enabled { daemon, serve, .. } = tap {
-                            tokio::spawn(daemon.instrument(info_span!("tap")));
+                        if let tap::Tap::Enabled {
+                            registry, serve, ..
+                        } = tap
+                        {
+                            tokio::spawn(
+                                registry
+                                    .clean(tokio::time::interval(Duration::from_secs(60)))
+                                    .instrument(info_span!("tap_clean")),
+                            );
                             tokio::spawn(
                                 serve
                                     .map_err(|error| error!(%error, "server died"))

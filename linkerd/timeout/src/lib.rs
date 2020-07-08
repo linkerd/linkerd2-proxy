@@ -5,7 +5,7 @@ use futures::{
 };
 use linkerd2_error::Error;
 use linkerd2_stack::Proxy;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -25,7 +25,7 @@ pub struct Timeout<T> {
     duration: Option<Duration>,
 }
 
-#[pin_project]
+#[pin_project(project = TimeoutFutureProj)]
 pub enum TimeoutFuture<F> {
     Passthru(#[pin] F),
     Timeout(#[pin] time::Timeout<F>, Duration),
@@ -116,12 +116,10 @@ where
     E: Into<Error>,
 {
     type Output = Result<T, Error>;
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         match self.project() {
-            TimeoutFuture::Passthru(f) => f.poll(cx).map_err(Into::into),
-            TimeoutFuture::Timeout(f, duration) => {
+            TimeoutFutureProj::Passthru(f) => f.poll(cx).map_err(Into::into),
+            TimeoutFutureProj::Timeout(f, duration) => {
                 // If the `timeout` future failed, the error is aways "elapsed";
                 // errors from the underlying future will be in the success arm.
                 let ready = futures::ready!(f.poll(cx))

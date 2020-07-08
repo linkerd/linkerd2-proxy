@@ -14,7 +14,7 @@ use std::pin::Pin;
 pub enum Config {
     Disabled,
     Enabled {
-        server: ServerConfig,
+        config: ServerConfig,
         permitted_peer_identities: IndexSet<identity::Name>,
     },
 }
@@ -26,7 +26,7 @@ pub enum Tap {
     Enabled {
         listen_addr: SocketAddr,
         layer: tap::Layer,
-        daemon: tap::Daemon,
+        registry: tap::Registry,
         serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
     },
 }
@@ -37,31 +37,30 @@ impl Config {
         identity: tls::Conditional<identity::Local>,
         drain: drain::Watch,
     ) -> Result<Tap, Error> {
-        let (layer, grpc, daemon) = tap::new();
+        let (registry, layer, server) = tap::new();
         match self {
             Config::Disabled => {
-                drop((grpc, daemon));
+                drop((registry, server));
                 Ok(Tap::Disabled { layer })
             }
-
             Config::Enabled {
-                server,
+                config,
                 permitted_peer_identities,
             } => {
-                let (listen_addr, listen) = server.bind.bind()?;
+                let (listen_addr, listen) = config.bind.bind()?;
 
                 let accept = tls::AcceptTls::new(
                     identity,
-                    tap::AcceptPermittedClients::new(permitted_peer_identities.into(), grpc),
+                    tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server),
                 );
 
                 let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
 
                 Ok(Tap::Enabled {
-                    layer,
-                    daemon,
-                    serve,
                     listen_addr,
+                    layer,
+                    registry,
+                    serve,
                 })
             }
         }

@@ -16,9 +16,7 @@ indexmap = "1.0"
 linkerd2-error = { path  = "../error" }
 linkerd2-http-classify = { path  = "../http-classify" }
 linkerd2-metrics = { path  = "../metrics" }
-linkerd2-stack = { path  = "../stack" }
-tokio = "0.1"
-tokio-timer = "0.2"   # for tokio_timer::clock
+linkerd2-stack = { path  = "../stack" } 
 tracing = "0.1.9"
 pin-project = "0.4"
 

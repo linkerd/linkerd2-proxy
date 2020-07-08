@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-use futures::{ready, Stream};
+use futures::{ready, FutureExt, Stream};
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
 use linkerd2_stack::NewService;
@@ -10,7 +10,7 @@ use opencensus_proto::agent::trace::v1::{
     trace_service_client::TraceServiceClient, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
 use opencensus_proto::trace::v1::Span;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::convert::TryInto;
 use std::future::Future;
 use std::pin::Pin;
@@ -45,16 +45,17 @@ enum State {
         // Node data should only be sent on the first message of a streaming
         // request.
         node: Option<Node>,
-        // We hold the response future, but never poll it.
-        _rsp: Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            grpc::Response<Streaming<ExportTraceServiceResponse>>,
-                            grpc::Status,
-                        >,
-                    > + Send
-                    + 'static,
+        rsp: Option<
+            Pin<
+                Box<
+                    dyn Future<
+                            Output = Result<
+                                grpc::Response<Streaming<ExportTraceServiceResponse>>,
+                                grpc::Status,
+                            >,
+                        > + Send
+                        + 'static,
+                >,
             >,
         >,
         metrics: Registry,
@@ -167,7 +168,6 @@ where
 {
     type Output = ();
 
-    #[project]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
             let this = self.as_mut().project();
@@ -178,11 +178,11 @@ where
                     let req = grpc::Request::new(request_rx);
                     trace!("Establishing new TraceService::export request");
                     this.metrics.start_stream();
-                    let _rsp = Box::pin(async move { svc.export(req).await });
+                    let rsp = Box::pin(async move { svc.export(req).await });
                     State::Sending {
                         sender: request_tx,
                         node: Some(this.node.clone()),
-                        _rsp,
+                        rsp: Some(rsp),
                         metrics: this.metrics.clone(),
                     }
                 }
@@ -190,18 +190,35 @@ where
                     ref mut sender,
                     ref mut node,
                     ref mut metrics,
+                    ref mut rsp,
                     ..
                 } => {
-                    match ready!(Self::poll_send_spans(
-                        this.spans,
-                        sender,
-                        node,
-                        *this.max_batch_size,
-                        metrics,
-                        cx,
-                    )) {
-                        Ok(()) => return Poll::Ready(()),
-                        Err(()) => State::Idle,
+                    let mut idle = false;
+                    if let Some(mut f) = rsp.take() {
+                        match f.poll_unpin(cx) {
+                            Poll::Ready(Ok(_)) => {}
+                            Poll::Pending => *rsp = Some(f),
+                            Poll::Ready(Err(error)) => {
+                                tracing::debug!(%error, "response future failed, sending a new request");
+                                idle = true;
+                            }
+                        }
+                    }
+                    // this is gross...let's just see if it works.
+                    if idle {
+                        State::Idle
+                    } else {
+                        match ready!(Self::poll_send_spans(
+                            this.spans,
+                            sender,
+                            node,
+                            *this.max_batch_size,
+                            metrics,
+                            cx,
+                        )) {
+                            Ok(()) => return Poll::Ready(()),
+                            Err(()) => State::Idle,
+                        }
                     }
                 }
             };

@@ -547,7 +547,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let tap = tap?
         .map(|(addr, ids)| super::tap::Config::Enabled {
             permitted_peer_identities: ids,
-            server: ServerConfig {
+            config: ServerConfig {
                 bind: listen::Bind::new(addr, inbound.proxy.server.bind.keepalive()),
                 h2_settings,
             },
