@@ -2,7 +2,7 @@
 
 use linkerd2_error::Error;
 use linkerd2_stack::{NewService, Proxy, ProxyService};
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -37,7 +37,7 @@ pub struct Retry<P, S> {
     inner: S,
 }
 
-#[pin_project]
+#[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<R, P, S, Req>
 where
     R: tower::retry::Policy<Req, P::Response, Error> + Clone,
@@ -122,12 +122,10 @@ where
 {
     type Output = Result<P::Response, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         match self.project() {
-            ResponseFuture::Disabled(f) => f.poll(cx).map_err(Into::into),
-            ResponseFuture::Retry(f) => f.poll(cx).map_err(Into::into),
+            ResponseFutureProj::Disabled(f) => f.poll(cx).map_err(Into::into),
+            ResponseFutureProj::Retry(f) => f.poll(cx).map_err(Into::into),
         }
     }
 }

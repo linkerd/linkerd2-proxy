@@ -10,7 +10,7 @@ use opencensus_proto::agent::trace::v1::{
     trace_service_client::TraceServiceClient, ExportTraceServiceRequest, ExportTraceServiceResponse,
 };
 use opencensus_proto::trace::v1::Span;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::convert::TryInto;
 use std::future::Future;
 use std::pin::Pin;
@@ -167,7 +167,6 @@ where
 {
     type Output = ();
 
-    #[project]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
             let this = self.as_mut().project();

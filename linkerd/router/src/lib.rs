@@ -3,7 +3,7 @@
 use futures::{ready, TryFuture};
 use linkerd2_error::Error;
 use linkerd2_stack::NewService;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -111,7 +111,7 @@ where
     state: State<Req, M, S>,
 }
 
-#[pin_project]
+#[pin_project(project = StateProj)]
 enum State<Req, M, S>
 where
     M: TryFuture<Ok = S>,
@@ -132,19 +132,17 @@ where
 {
     type Output = Result<S::Response, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                State::Make(fut, req) => {
+                StateProj::Make(fut, req) => {
                     trace!("Making");
                     let service = ready!(fut.try_poll(cx)).map_err(Into::into)?;
                     let req = req.take().expect("polled after ready");
                     this.state.set(State::Respond(service.oneshot(req)))
                 }
-                State::Respond(future) => {
+                StateProj::Respond(future) => {
                     trace!("Responding");
                     return future.poll(cx).map_err(Into::into);
                 }

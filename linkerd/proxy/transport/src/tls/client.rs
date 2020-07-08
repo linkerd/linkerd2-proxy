@@ -2,7 +2,7 @@ use crate::io::BoxedIo;
 use futures::TryFuture;
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 pub use rustls::ClientConfig as Config;
 use std::future::Future;
 use std::io;
@@ -33,7 +33,7 @@ pub struct ConnectFuture<L, F: TryFuture> {
     #[pin]
     state: ConnectState<L, F>,
 }
-#[pin_project]
+#[pin_project(project = ConnectStateProj)]
 enum ConnectState<L, F: TryFuture> {
     Init {
         #[pin]
@@ -108,13 +108,11 @@ where
 {
     type Output = Result<Connection, F::Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                ConnectState::Init { future, tls } => {
+                ConnectStateProj::Init { future, tls } => {
                     let io = futures::ready!(future.try_poll(cx))?;
 
                     match tls {
@@ -131,7 +129,7 @@ where
                         }
                     }
                 }
-                ConnectState::Handshake(fut) => {
+                ConnectStateProj::Handshake(fut) => {
                     let io = futures::ready!(fut.poll(cx))?;
                     trace!("established TLS");
                     return Poll::Ready(Ok(Connection::new(io)));

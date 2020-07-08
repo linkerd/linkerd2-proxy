@@ -9,7 +9,7 @@ use futures::{ready, TryFuture};
 use http;
 use hyper;
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -35,7 +35,7 @@ pub struct MakeClient<C, B> {
 }
 
 /// A `Future` returned from `MakeClient::new_service()`.
-#[pin_project]
+#[pin_project(project = MakeFutureProj)]
 pub enum MakeFuture<C, T, B>
 where
     B: hyper::body::HttpBody + Send + 'static,
@@ -60,7 +60,7 @@ where
     Http2(h2::Connection<B>),
 }
 
-#[pin_project]
+#[pin_project(project = ClientFutureProj)]
 pub enum ClientFuture {
     Http1 {
         #[pin]
@@ -183,12 +183,10 @@ where
 {
     type Output = Result<Client<C, T, B>, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         let svc = match self.project() {
-            MakeFuture::Http1(h1) => Client::Http1(h1.take().expect("poll more than once")),
-            MakeFuture::Http2(h2) => {
+            MakeFutureProj::Http1(h1) => Client::Http1(h1.take().expect("poll more than once")),
+            MakeFutureProj::Http2(h2) => {
                 let svc = ready!(h2.poll(cx))?;
                 Client::Http2(svc)
             }
@@ -253,11 +251,9 @@ where
 impl Future for ClientFuture {
     type Output = Result<http::Response<Body>, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         match self.project() {
-            ClientFuture::Http1 {
+            ClientFutureProj::Http1 {
                 future,
                 upgrade,
                 is_http_connect,
@@ -277,7 +273,7 @@ impl Future for ClientFuture {
                 }
                 Poll::Ready(Ok(res))
             }
-            ClientFuture::Http2(f) => f.poll(cx).map_err(Into::into),
+            ClientFutureProj::Http2(f) => f.poll(cx).map_err(Into::into),
         }
     }
 }
