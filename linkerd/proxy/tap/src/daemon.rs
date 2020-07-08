@@ -1,6 +1,6 @@
 use super::iface::Tap;
 use futures::{ready, Stream};
-use pin_project::{pin_project, project};
+use pin_project::{pin_project};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -50,7 +50,7 @@ pub struct Subscribe<T>(mpsc::Sender<(T, oneshot::Sender<()>)>);
 #[derive(Debug)]
 pub struct SubscribeFuture<T>(#[pin] FutState<T>);
 
-#[pin_project]
+#[pin_project(project = FutStateProj)]
 #[derive(Debug)]
 enum FutState<T> {
     Subscribe {
@@ -193,13 +193,11 @@ impl<T: Tap> super::iface::Subscribe<T> for Subscribe<T> {
 impl<T: Tap> Future for SubscribeFuture<T> {
     type Output = Result<(), super::iface::NoCapacity>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.0.as_mut().project() {
-                FutState::Subscribe { tap, tap_tx } => {
+                FutStateProj::Subscribe { tap, tap_tx } => {
                     ready!(tap_tx.poll_ready(cx)).map_err(|_| super::iface::NoCapacity)?;
 
                     let tap = tap.take().expect("tap must be set");
@@ -210,7 +208,7 @@ impl<T: Tap> Future for SubscribeFuture<T> {
 
                     this.0.as_mut().set(FutState::Pending(rx))
                 }
-                FutState::Pending(rx) => {
+                FutStateProj::Pending(rx) => {
                     return Poll::Ready(ready!(rx.poll(cx)).map_err(|_| super::iface::NoCapacity));
                 }
             }

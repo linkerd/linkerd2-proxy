@@ -1,7 +1,7 @@
 use futures::{future, TryFuture};
 use linkerd2_duplex::Duplex;
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -23,7 +23,7 @@ pub struct ForwardFuture<I, F: TryFuture> {
     state: ForwardState<I, F>,
 }
 
-#[pin_project]
+#[pin_project(project = ForwardStateProj)]
 enum ForwardState<I, F: TryFuture> {
     Connect {
         #[pin]
@@ -75,19 +75,17 @@ where
 {
     type Output = Result<(), Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                ForwardState::Connect { connect, io } => {
+                ForwardStateProj::Connect { connect, io } => {
                     let client_io = futures::ready!(connect.try_poll(cx).map_err(Into::into))?;
                     let server_io = io.take().expect("illegal state");
                     let duplex = Duplex::new(server_io, client_io);
                     this.state.set(ForwardState::Duplex(duplex))
                 }
-                ForwardState::Duplex(fut) => {
+                ForwardStateProj::Duplex(fut) => {
                     return fut.poll(cx).map_err(Into::into);
                 }
             }

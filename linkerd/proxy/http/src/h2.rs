@@ -7,7 +7,7 @@ use hyper::{
     client::conn::{self, SendRequest},
 };
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -48,7 +48,7 @@ where
     h2_settings: Settings,
 }
 
-#[pin_project]
+#[pin_project(project = ConnectStateProj)]
 enum ConnectState<F, B>
 where
     F: TryFuture + Send + 'static,
@@ -141,13 +141,11 @@ where
 {
     type Output = Result<Connection<B>, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                ConnectState::Connect(fut) => {
+                ConnectStateProj::Connect(fut) => {
                     let io = ready!(fut.try_poll(cx)).map_err(Into::into)?;
                     let hs = conn::Builder::new()
                         .http2_only(true)
@@ -163,7 +161,7 @@ where
 
                     this.state.set(ConnectState::Handshake(Box::pin(hs)));
                 }
-                ConnectState::Handshake(hs) => {
+                ConnectStateProj::Handshake(hs) => {
                     let (tx, conn) = ready!(hs.poll(cx))?;
 
                     tokio::spawn(

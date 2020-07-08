@@ -7,7 +7,7 @@ use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_dns as dns;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use regex::Regex;
 use std::convert::TryInto;
 use std::future::Future;
@@ -50,7 +50,7 @@ where
     inner: ProfileFutureInner<S, R>,
 }
 
-#[pin_project]
+#[pin_project(project = ProfileFutureInnerProj)]
 enum ProfileFutureInner<S, R>
 where
     S: GrpcService<BoxBody>,
@@ -73,7 +73,7 @@ where
     request: api::GetDestination,
 }
 
-#[pin_project]
+#[pin_project(project = StateProj)]
 enum State<B> {
     Disconnected {
         backoff: Option<B>,
@@ -208,14 +208,12 @@ where
 {
     type Output = Result<Receiver, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         match self.project().inner.project() {
-            ProfileFutureInner::Invalid(addr) => {
+            ProfileFutureInnerProj::Invalid(addr) => {
                 Poll::Ready(Err(InvalidProfileAddr(addr.clone()).into()))
             }
-            ProfileFutureInner::Pending(mut inner, timeout) => {
+            ProfileFutureInnerProj::Pending(mut inner, timeout) => {
                 let profile = match inner
                     .as_mut()
                     .as_pin_mut()
@@ -316,7 +314,6 @@ where
         Poll::Ready(profile)
     }
 
-    #[project]
     fn poll_profile(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -326,9 +323,8 @@ where
 
         loop {
             let mut this = self.as_mut().project();
-            #[project]
             match this.state.as_mut().project() {
-                State::Disconnected { backoff } => {
+                StateProj::Disconnected { backoff } => {
                     trace!("disconnected");
                     let mut svc = this.service.clone();
                     let req = this.request.clone();
@@ -337,7 +333,7 @@ where
                     let backoff = backoff.take();
                     this.state.as_mut().set(State::Waiting { future, backoff });
                 }
-                State::Waiting { future, backoff } => {
+                StateProj::Waiting { future, backoff } => {
                     trace!("waiting");
                     match ready!(Pin::new(future).poll(cx)) {
                         Ok(rsp) => this.state.set(State::Streaming(rsp.into_inner())),
@@ -350,7 +346,7 @@ where
                         }
                     }
                 }
-                State::Streaming(s) => {
+                StateProj::Streaming(s) => {
                     trace!("streaming");
                     let status = match ready!(Self::poll_rx(s, cx)) {
                         Some(Ok(profile)) => return Poll::Ready(Ok(profile.into())),
@@ -361,7 +357,7 @@ where
                     let backoff = this.recover.recover(status.into())?;
                     this.state.set(State::Backoff(Some(backoff)));
                 }
-                State::Backoff(ref mut backoff) => {
+                StateProj::Backoff(ref mut backoff) => {
                     trace!("backoff");
                     let backoff = match ready!(backoff.as_mut().unwrap().try_poll_next_unpin(cx)) {
                         Some(e) => {

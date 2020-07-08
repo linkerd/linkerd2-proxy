@@ -1,6 +1,6 @@
 use futures::{ready, TryFuture};
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -20,7 +20,7 @@ pub struct MakeReadyFuture<F, S, Req> {
     _req: PhantomData<fn(Req)>,
 }
 
-#[pin_project]
+#[pin_project(project = StateProj)]
 #[derive(Debug)]
 enum State<F, S> {
     Making(#[pin] F),
@@ -85,17 +85,15 @@ where
 {
     type Output = Result<S, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                State::Making(fut) => {
+                StateProj::Making(fut) => {
                     let svc = ready!(fut.try_poll(cx)).map_err(Into::into)?;
                     this.state.set(State::Ready(Some(svc)));
                 }
-                State::Ready(svc) => {
+                StateProj::Ready(svc) => {
                     let _ = ready!(svc.as_mut().expect("polled after ready!").poll_ready(cx))
                         .map_err(Into::into)?;
                     return Poll::Ready(Ok(svc.take().expect("polled after ready!")));

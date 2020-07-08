@@ -9,7 +9,7 @@ use linkerd2_error::Error;
 use linkerd2_identity as identity;
 use linkerd2_proxy_core::Accept;
 use linkerd2_stack::layer;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 pub use rustls::ServerConfig as Config;
 use std::future::Future;
 use std::pin::Pin;
@@ -51,7 +51,7 @@ pub struct AcceptFuture<A: Accept<Connection>> {
     state: AcceptState<A>,
 }
 
-#[pin_project]
+#[pin_project(project = AcceptStateProj)]
 enum AcceptState<A: Accept<Connection>> {
     TryTls(Option<TryTls<A>>),
     TerminateTls(
@@ -185,19 +185,17 @@ impl<A: Accept<Connection>> AcceptFuture<A> {
 
 impl<A: Accept<Connection>> Future for AcceptFuture<A> {
     type Output = Result<A::ConnectionFuture, Error>;
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                AcceptState::Accept(future) => return future.poll(cx).map_err(Into::into),
-                AcceptState::ReadyAccept(accept, conn) => {
+                AcceptStateProj::Accept(future) => return future.poll(cx).map_err(Into::into),
+                AcceptStateProj::ReadyAccept(accept, conn) => {
                     futures::ready!(accept.poll_ready(cx).map_err(Into::into))?;
                     let conn = accept.accept(conn.take().expect("polled after complete"));
                     this.state.set(AcceptState::Accept(conn))
                 }
-                AcceptState::TryTls(ref mut try_tls) => {
+                AcceptStateProj::TryTls(ref mut try_tls) => {
                     let match_ = futures::ready!(try_tls
                         .as_mut()
                         .expect("polled after complete")
@@ -245,7 +243,7 @@ impl<A: Accept<Connection>> Future for AcceptFuture<A> {
                         }
                     }
                 }
-                AcceptState::TerminateTls(future, meta) => {
+                AcceptStateProj::TerminateTls(future, meta) => {
                     let io = futures::ready!(future.poll(cx))?;
                     let peer_identity =
                         client_identity(&io)

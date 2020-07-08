@@ -4,7 +4,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -21,7 +21,7 @@ pub struct Service<I, S> {
     service: S,
 }
 
-#[pin_project]
+#[pin_project(project = ResponseFutureProj)]
 #[derive(Debug)]
 pub enum ResponseFuture<F> {
     Future(#[pin] F),
@@ -75,12 +75,10 @@ where
 {
     type Output = Result<T, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         match self.project() {
-            ResponseFuture::Future(f) => f.poll(cx).map(|r| r.map_err(Into::into)),
-            ResponseFuture::Rejected(e) => Poll::Ready(Err(e.take().unwrap())),
+            ResponseFutureProj::Future(f) => f.poll(cx).map(|r| r.map_err(Into::into)),
+            ResponseFutureProj::Rejected(e) => Poll::Ready(Err(e.take().unwrap())),
         }
     }
 }

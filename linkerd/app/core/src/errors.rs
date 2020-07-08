@@ -7,7 +7,7 @@ use linkerd2_error_respond as respond;
 pub use linkerd2_error_respond::RespondLayer;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::{self as grpc, Code};
@@ -57,7 +57,7 @@ pub enum Respond {
     Http2 { is_grpc: bool },
 }
 
-#[pin_project]
+#[pin_project(project = ResponseBodyProj)]
 pub enum ResponseBody<B> {
     NonGrpc(#[pin] B),
     Grpc {
@@ -74,15 +74,13 @@ where
     type Data = B::Data;
     type Error = B::Error;
 
-    #[project]
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        #[project]
         match self.project() {
-            ResponseBody::NonGrpc(inner) => inner.poll_data(cx),
-            ResponseBody::Grpc { inner, trailers } => {
+            ResponseBodyProj::NonGrpc(inner) => inner.poll_data(cx),
+            ResponseBodyProj::Grpc { inner, trailers } => {
                 // should not be calling poll_data if we have set trailers derived from an error
                 assert!(trailers.is_none());
                 match inner.poll_data(cx) {
@@ -100,15 +98,13 @@ where
         }
     }
 
-    #[project]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        #[project]
         match self.project() {
-            ResponseBody::NonGrpc(inner) => inner.poll_trailers(cx),
-            ResponseBody::Grpc { inner, trailers } => match trailers.take() {
+            ResponseBodyProj::NonGrpc(inner) => inner.poll_trailers(cx),
+            ResponseBodyProj::Grpc { inner, trailers } => match trailers.take() {
                 Some(t) => Poll::Ready(Ok(Some(t))),
                 None => inner.poll_trailers(cx),
             },
