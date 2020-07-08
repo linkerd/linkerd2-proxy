@@ -8,38 +8,27 @@ use std::net;
 use std::sync::Arc;
 
 mod accept;
-mod daemon;
 mod grpc;
+mod registry;
 mod service;
 
 pub use self::accept::AcceptPermittedClients;
 
 /// Instruments service stacks so that requests may be tapped.
-pub type Layer = service::Layer<daemon::Register<grpc::Tap>>;
+pub type Layer = service::Layer<grpc::Tap>;
 
-/// A gRPC tap server.
-pub type Server = grpc::Server<daemon::Subscribe<grpc::Tap>>;
-
-/// A Future that dispatches new tap requests to services and ensures that new
-/// services are notified of active tap requests.
-pub type Daemon = daemon::Daemon<grpc::Tap>;
-
-// The maximum number of taps that may be live in the system at once.
-const TAP_CAPACITY: usize = 100;
-
-// The maximum number of registrations that may be queued on the registration
-// channel.
-const REGISTER_CHANNEL_CAPACITY: usize = 10_000;
+/// A registry containing all the active taps that have registered with the
+/// gRPC server.
+pub type Registry = registry::Registry<grpc::Tap>;
 
 // The number of events that may be buffered for a given response.
 const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;
 
-/// Build the tap subsystem.
-pub fn new() -> (Layer, Server, Daemon) {
-    let (daemon, register, subscribe) = daemon::new();
-    let layer = Layer::new(register);
-    let server = Server::new(subscribe);
-    (layer, server, daemon)
+pub fn new() -> (Registry, Layer, grpc::Server) {
+    let registry = Registry::new();
+    let layer = Layer::new(registry.clone());
+    let server = grpc::Server::new(registry.clone());
+    (registry, layer, server)
 }
 
 /// Inspects a request for a `Stack`.
@@ -47,13 +36,16 @@ pub fn new() -> (Layer, Server, Daemon) {
 /// `Stack` target types
 pub trait Inspect {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
+
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
     ) -> Conditional<&'a identity::Name, ReasonForNoIdentity>;
 
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
+
     fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>>;
+
     fn dst_tls<B>(
         &self,
         req: &http::Request<B>,
@@ -80,40 +72,20 @@ pub trait Inspect {
     }
 }
 
-/// The internal interface used between Layer, Server, and Daemon.
+/// The internal interface used between Registry, Layer, and grpc.
 ///
 /// These interfaces are provided to decouple the service implementation from any
 /// Protobuf or gRPC concerns, hopefully to make this module more testable and
 /// easier to change.
 ///
 /// This module is necessary to seal the traits, which must be public
-/// for Layer/Server/Daemon, but need not be implemented outside of the `tap`
+/// for Registry/Layer/grpc, but need not be implemented outside of the `tap`
 /// module.
 mod iface {
     use bytes::Buf;
-    use futures::Stream;
     use http;
     use hyper::body::HttpBody;
     use linkerd2_proxy_http::HasH2Reason;
-    use std::future::Future;
-
-    /// Registers a stack to receive taps.
-    pub trait Register {
-        type Tap: Tap;
-        type Taps: Stream<Item = Self::Tap>;
-
-        fn register(&mut self) -> Self::Taps;
-    }
-
-    /// Advertises a Tap from a server to stacks.
-    pub trait Subscribe<T: Tap> {
-        type Future: Future<Output = Result<(), NoCapacity>>;
-
-        /// Returns a `Future` that succeeds when the tap has been registered.
-        ///
-        /// If the tap cannot be registered, a `NoCapacity` error is returned.
-        fn subscribe(&self, tap: T) -> Self::Future;
-    }
 
     pub trait Tap: Clone {
         type TapRequestPayload: TapPayload;
@@ -151,15 +123,4 @@ mod iface {
         /// Record a service failure.
         fn fail<E: HasH2Reason>(self, error: &E);
     }
-
-    #[derive(Debug)]
-    pub struct NoCapacity;
-
-    impl ::std::fmt::Display for NoCapacity {
-        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            write!(f, "capacity exhausted")
-        }
-    }
-
-    impl ::std::error::Error for NoCapacity {}
 }

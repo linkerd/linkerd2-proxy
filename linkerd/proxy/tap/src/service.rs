@@ -1,6 +1,7 @@
-use super::iface::{Register, Tap, TapPayload, TapResponse};
+use super::iface::{Tap, TapPayload, TapResponse};
+use super::registry::Registry;
 use super::Inspect;
-use futures::{ready, Stream, StreamExt, TryFuture};
+use futures::{ready, TryFuture};
 use http;
 use hyper::body::HttpBody;
 use linkerd2_proxy_http::HasH2Reason;
@@ -12,32 +13,32 @@ use std::task::{Context, Poll};
 
 /// A layer that wraps MakeServices to record taps.
 #[derive(Clone, Debug)]
-pub struct Layer<R: Register> {
-    registry: R,
+pub struct Layer<T> {
+    registry: Registry<T>,
 }
 
 /// Makes wrapped Services to record taps.
 #[derive(Clone, Debug)]
-pub struct MakeService<R: Register, T> {
-    registry: R,
-    inner: T,
+pub struct MakeService<M, T> {
+    inner: M,
+    registry: Registry<T>,
 }
 
 /// Future returned by `MakeService`.
 #[pin_project]
-pub struct MakeFuture<F, R, T> {
+pub struct MakeFuture<F, I, T> {
     #[pin]
     inner: F,
-    next: Option<(R, T)>,
+    inspect: I,
+    registry: Registry<T>,
 }
 
 /// A middleware that records HTTP taps.
 #[derive(Clone, Debug)]
-pub struct Service<I, R, T, S> {
-    tap_rx: R,
-    taps: Vec<T>,
+pub struct Service<S, I, T> {
     inner: S,
     inspect: I,
+    registry: Registry<T>,
 }
 
 #[pin_project]
@@ -63,20 +64,17 @@ where
 
 // === Layer ===
 
-impl<R> Layer<R>
-where
-    R: Register + Clone,
-{
-    pub(super) fn new(registry: R) -> Self {
+impl<T> Layer<T> {
+    pub(super) fn new(registry: Registry<T>) -> Self {
         Self { registry }
     }
 }
 
-impl<R, M> tower::layer::Layer<M> for Layer<R>
+impl<M, T> tower::layer::Layer<M> for Layer<T>
 where
-    R: Register + Clone,
+    T: Clone,
 {
-    type Service = MakeService<R, M>;
+    type Service = MakeService<M, T>;
 
     fn layer(&self, inner: M) -> Self::Service {
         MakeService {
@@ -88,85 +86,79 @@ where
 
 // === MakeService ===
 
-impl<R, T, M> NewService<T> for MakeService<R, M>
+impl<M, I, T> NewService<I> for MakeService<M, T>
 where
-    T: Inspect + Clone,
-    R: Register + Clone,
-    M: NewService<T>,
+    M: NewService<I>,
+    I: Inspect + Clone,
+    T: Clone,
 {
-    type Service = Service<T, R::Taps, R::Tap, M::Service>;
+    type Service = Service<M::Service, I, T>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&self, target: I) -> Self::Service {
         let inspect = target.clone();
-        let inner = self.inner.new_service(target);
-        let tap_rx = self.registry.clone().register();
         Service {
-            inner,
-            tap_rx,
+            inner: self.inner.new_service(target),
             inspect,
-            taps: Vec::default(),
+            registry: self.registry.clone(),
         }
     }
 }
 
-impl<R, T, M> tower::Service<T> for MakeService<R, M>
+impl<M, I, T> tower::Service<I> for MakeService<M, T>
 where
-    T: Inspect + Clone,
-    R: Register,
-    M: tower::Service<T>,
+    M: tower::Service<I>,
+    I: Inspect + Clone,
+    T: Clone,
 {
-    type Response = Service<T, R::Taps, R::Tap, M::Response>;
+    type Response = Service<M::Response, I, T>;
     type Error = M::Error;
-    type Future = MakeFuture<M::Future, R::Taps, T>;
+    type Future = MakeFuture<M::Future, I, T>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, target: T) -> Self::Future {
+    fn call(&mut self, target: I) -> Self::Future {
         let inspect = target.clone();
-        let inner = self.inner.call(target);
-        let tap_rx = self.registry.register();
         MakeFuture {
-            inner,
-            next: Some((tap_rx, inspect)),
+            inner: self.inner.call(target),
+            inspect,
+            registry: self.registry.clone(),
         }
     }
 }
 
 // === MakeFuture ===
 
-impl<F, Taps, I> Future for MakeFuture<F, Taps, I>
+impl<F, I, T> Future for MakeFuture<F, I, T>
 where
     F: TryFuture,
-    Taps: Stream,
+    I: Clone,
+    T: Clone,
 {
-    type Output = Result<Service<I, Taps, Taps::Item, F::Ok>, F::Error>;
+    type Output = Result<Service<F::Ok, I, T>, F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let inner = ready!(this.inner.try_poll(cx))?;
-        let (tap_rx, inspect) = this.next.take().expect("poll more than once");
         Poll::Ready(Ok(Service {
             inner,
-            tap_rx,
-            taps: Vec::default(),
-            inspect,
+            inspect: this.inspect.clone(),
+            registry: this.registry.clone(),
         }))
     }
 }
 
 // === Service ===
 
-impl<I, R, S, T, A, B> tower::Service<http::Request<A>> for Service<I, R, T, S>
+impl<S, I, T, A, B> tower::Service<http::Request<A>> for Service<S, I, T>
 where
+    S: tower::Service<http::Request<Body<A, T::TapRequestPayload>>, Response = http::Response<B>>,
+    S::Error: HasH2Reason,
     I: Inspect,
-    R: Stream<Item = T> + Unpin,
     T: Tap,
     T::TapRequestPayload: Send + 'static,
     T::TapResponsePayload: Send + 'static,
-    S: tower::Service<http::Request<Body<A, T::TapRequestPayload>>, Response = http::Response<B>>,
-    S::Error: HasH2Reason,
     A: HttpBody,
     A::Error: HasH2Reason,
     B: HttpBody,
@@ -177,13 +169,6 @@ where
     type Future = ResponseFuture<S::Future, T::TapResponse>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // Load new taps from the tap server.
-        while let Poll::Ready(Some(t)) = self.tap_rx.poll_next_unpin(cx) {
-            self.taps.push(t);
-        }
-        // Drop taps that have been canceled or completed.
-        self.taps.retain(|t| t.can_tap_more());
-
         self.inner.poll_ready(cx)
     }
 
@@ -192,7 +177,7 @@ where
         let mut req_taps = Vec::new();
         let mut rsp_taps = Vec::new();
 
-        for t in &mut self.taps {
+        for mut t in self.registry.get_taps() {
             if let Some((req_tap, rsp_tap)) = t.tap(&req, &self.inspect) {
                 req_taps.push(req_tap);
                 rsp_taps.push(rsp_tap);
