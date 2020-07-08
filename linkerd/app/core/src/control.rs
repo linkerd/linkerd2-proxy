@@ -152,7 +152,7 @@ pub mod resolve {
     use futures::{ready, TryFuture};
     use linkerd2_addr::Addr;
     use linkerd2_dns as dns;
-    use pin_project::{pin_project, project};
+    use pin_project::pin_project;
     use std::future::Future;
     use std::net::SocketAddr;
     use std::pin::Pin;
@@ -179,7 +179,7 @@ pub mod resolve {
         state: State<M>,
     }
 
-    #[pin_project]
+    #[pin_project(project = StateProj)]
     enum State<M>
     where
         M: tower::Service<client::Target>,
@@ -248,13 +248,11 @@ pub mod resolve {
     {
         type Output = Result<M::Response, Error<M::Error>>;
 
-        #[project]
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let mut this = self.project();
             loop {
-                #[project]
                 match this.state.as_mut().project() {
-                    State::Resolve(fut, stack) => {
+                    StateProj::Resolve(fut, stack) => {
                         let ip = ready!(fut.poll(cx).map_err(Error::Dns))?;
                         let (svc, config) = stack.take().unwrap();
                         let addr = SocketAddr::from((ip, config.addr.port()));
@@ -262,13 +260,13 @@ pub mod resolve {
                             .as_mut()
                             .set(State::NotReady(svc, Some((addr, config))));
                     }
-                    State::NotReady(svc, cfg) => {
+                    StateProj::NotReady(svc, cfg) => {
                         ready!(svc.poll_ready(cx).map_err(Error::Inner))?;
                         let (addr, config) = cfg.take().unwrap();
                         let state = State::make_inner(addr, &config, svc);
                         this.state.as_mut().set(state);
                     }
-                    State::Inner(fut) => return fut.poll(cx).map_err(Error::Inner),
+                    StateProj::Inner(fut) => return fut.poll(cx).map_err(Error::Inner),
                 };
             }
         }

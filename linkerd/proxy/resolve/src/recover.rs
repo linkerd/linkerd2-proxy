@@ -4,7 +4,7 @@ use futures::{ready, stream::TryStreamExt, FutureExt};
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -21,7 +21,7 @@ pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Option<Inner<T, E, R>>,
 }
 
-#[pin_project]
+#[pin_project(project = ResolutionProj)]
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Inner<T, E, R>,
     cache: IndexMap<SocketAddr, R::Endpoint>,
@@ -225,8 +225,7 @@ where
     }
 }
 
-#[project]
-impl<T, E, R> Resolution<T, E, R>
+impl<T, E, R> ResolutionProj<'_, T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,

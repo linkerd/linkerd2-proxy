@@ -6,7 +6,7 @@ use http;
 use hyper::body::HttpBody;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_stack::NewService;
-use pin_project::{pin_project, pinned_drop, project};
+use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -49,7 +49,7 @@ pub struct ResponseFuture<F, T> {
 }
 
 // A `Body` instrumented with taps.
-#[pin_project(PinnedDrop)]
+#[pin_project(PinnedDrop, project = BodyProj)]
 #[derive(Debug)]
 pub struct Body<B, T>
 where
@@ -298,8 +298,7 @@ where
     }
 }
 
-#[project]
-impl<B, T> Body<B, T>
+impl<B, T> BodyProj<'_, B, T>
 where
     B: HttpBody,
     B::Error: HasH2Reason,

@@ -433,7 +433,7 @@ pub mod make_response {
     use super::Oneshot;
     use crate::Error;
     use futures::TryFuture;
-    use pin_project::{pin_project, project};
+    use pin_project::pin_project;
     use std::future::Future;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -449,7 +449,7 @@ pub mod make_response {
         state: State<F, S>,
     }
 
-    #[pin_project]
+    #[pin_project(project = StateProj)]
     enum State<F, S: tower::Service<()>> {
         Make(#[pin] F),
         Respond(#[pin] Oneshot<S, ()>),
@@ -493,17 +493,15 @@ pub mod make_response {
     {
         type Output = Result<S::Response, Error>;
 
-        #[project]
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let mut this = self.project();
             loop {
-                #[project]
                 match this.state.as_mut().project() {
-                    State::Make(fut) => {
+                    StateProj::Make(fut) => {
                         let svc = futures::ready!(fut.try_poll(cx)).map_err(Into::into)?;
                         this.state.set(State::Respond(Oneshot::new(svc, ())))
                     }
-                    State::Respond(fut) => return fut.poll(cx).map_err(Into::into),
+                    StateProj::Respond(fut) => return fut.poll(cx).map_err(Into::into),
                 }
             }
         }

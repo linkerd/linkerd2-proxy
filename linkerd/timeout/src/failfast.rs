@@ -3,7 +3,7 @@
 
 use futures::TryFuture;
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -32,7 +32,7 @@ enum State {
     FailFast,
 }
 
-#[pin_project]
+#[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<F> {
     Inner(#[pin] F),
     FailFast,
@@ -126,12 +126,10 @@ where
 {
     type Output = Result<F::Ok, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[project]
         match self.project() {
-            ResponseFuture::Inner(f) => f.try_poll(cx).map_err(Into::into),
-            ResponseFuture::FailFast => Poll::Ready(Err(FailFastError(()).into())),
+            ResponseFutureProj::Inner(f) => f.try_poll(cx).map_err(Into::into),
+            ResponseFutureProj::FailFast => Poll::Ready(Err(FailFastError(()).into())),
         }
     }
 }

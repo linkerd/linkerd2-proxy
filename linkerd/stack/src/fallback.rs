@@ -1,7 +1,7 @@
 //! A middleware that may retry a request in a fallback service.
 use futures::TryFuture;
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -29,7 +29,7 @@ pub struct MakeFuture<A, B, P> {
     state: State<A, B, P>,
 }
 
-#[pin_project]
+#[pin_project(project = StateProj)]
 enum State<A, B, P> {
     A {
         #[pin]
@@ -143,13 +143,11 @@ where
 {
     type Output = Result<Either<A::Ok, B::Ok>, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
         loop {
-            #[project]
             match this.state.as_mut().project() {
-                State::A {
+                StateProj::A {
                     primary,
                     fallback,
                     predicate,
@@ -164,7 +162,7 @@ where
                         this.state.set(State::B(fallback));
                     }
                 },
-                State::B(b) => {
+                StateProj::B(b) => {
                     return b
                         .try_poll(cx)
                         .map(|ok| ok.map(Either::B))

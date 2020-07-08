@@ -10,7 +10,7 @@ use futures::{ready, TryFuture};
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_dns::Name;
 use linkerd2_error::Error;
-use pin_project::{pin_project, project};
+use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -44,7 +44,7 @@ pub struct MakeFuture<T, R, M: tower::Service<T>> {
     state: State<T, R, M>,
 }
 
-#[pin_project]
+#[pin_project(project = StateProj)]
 enum State<T, R, M: tower::Service<T>> {
     Refine {
         #[pin]
@@ -134,13 +134,11 @@ where
 {
     type Output = Result<M::Response, Error>;
 
-    #[project]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut state = self.project().state;
         loop {
-            #[project]
             match state.as_mut().project() {
-                State::Refine {
+                StateProj::Refine {
                     future,
                     make,
                     original,
@@ -166,13 +164,13 @@ where
                     let make = make.take().expect("illegal state");
                     state.set(State::NotReady(make, Some(target)));
                 }
-                State::NotReady(svc, target) => {
+                StateProj::NotReady(svc, target) => {
                     ready!(svc.poll_ready(cx)).map_err(Into::into)?;
                     let target = target.take().expect("illegal state");
                     let fut = svc.call(target);
                     state.set(State::Make(fut));
                 }
-                State::Make(fut) => return fut.try_poll(cx).map_err(Into::into),
+                StateProj::Make(fut) => return fut.try_poll(cx).map_err(Into::into),
             };
         }
     }
