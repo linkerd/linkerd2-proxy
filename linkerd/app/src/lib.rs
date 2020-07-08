@@ -349,7 +349,7 @@ impl App {
                         {
                             tokio::spawn(
                                 registry
-                                    .clean(tokio::time::interval(Duration::from_millis(100)))
+                                    .clean(tokio::time::interval(Duration::from_secs(60)))
                                     .instrument(info_span!("tap_clean")),
                             );
                             tokio::spawn(
