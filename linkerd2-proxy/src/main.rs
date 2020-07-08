@@ -15,13 +15,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main(basic_scheduler)]
 async fn main() {
-    let trace = match trace::init() {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Could not initialize tracing: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let trace = trace::init();
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
@@ -33,7 +27,7 @@ async fn main() {
         }
     };
 
-    let app = match config.build(trace).await {
+    let app = match async move { config.build(trace?).await }.await {
         Ok(app) => app,
         Err(e) => {
             eprintln!("Initialization failure: {}", e);
