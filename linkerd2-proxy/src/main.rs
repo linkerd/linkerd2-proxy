@@ -8,6 +8,10 @@ use linkerd2_app::{trace, Config};
 use linkerd2_signal as signal;
 pub use tracing::{debug, error, info, warn};
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main(basic_scheduler)]
 async fn main() {
     let trace = trace::init();
