@@ -16,6 +16,7 @@ pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     config::ControlAddr,
     dns, drain,
+    proxy::http,
     svc::{self, NewService},
     Error,
 };
@@ -67,6 +68,8 @@ pub struct App {
     tap: tap::Tap,
 }
 
+use linkerd2_app_core::{classify, control, reconnect, transport::tls};
+
 impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
@@ -100,31 +103,42 @@ impl Config {
 
         let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
         let dst = {
-            use linkerd2_app_core::{classify, control, reconnect, transport::tls};
+            const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+            const EWMA_DECAY: Duration = Duration::from_secs(10);
 
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
+
+            use linkerd2_app_core::proxy::discover;
+
+            let discover = {
+                const BUFFER_CAPACITY: usize = 1_000;
+                discover::Layer::new(
+                    BUFFER_CAPACITY,
+                    outbound.proxy.cache_max_idle_age,
+                    control::dns_resolve::Resolve::new(dns),
+                )
+            };
+
             info_span!("dst").in_scope(|| {
-                // XXX This is unfortunate. But we don't daemonize the service into a
-                // task in the build, so we'd have to name it. And that's not
-                // happening today. Really, we should daemonize the whole client
-                // into a task so consumers can be ignorant. This would also
-                // probably enable the use of a lock.
-                let svc = svc::connect(dst.control.connect.keepalive)
+                let dst_connect = svc::connect(dst.control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
-                    .push(control::resolve::layer(dns))
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;
                         move |_| Ok(backoff.stream())
                     }))
+                    .push_spawn_ready()
+                    .push(discover)
+                    .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()
                     .push_on_response(svc::layers().push_spawn_buffer(dst.control.buffer_capacity))
                     .new_service(dst.control.addr.clone());
-                dst.build(svc)
+
+                dst.build(dst_connect)
             })
         }?;
 

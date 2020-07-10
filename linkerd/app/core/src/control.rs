@@ -301,6 +301,150 @@ pub mod resolve {
     impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
 }
 
+pub mod dns_resolve {
+    use super::{client::Target, ControlAddr};
+    use futures::ready;
+    use linkerd2_addr::Addr;
+    use linkerd2_dns as dns;
+    use linkerd2_error::Error;
+    use linkerd2_proxy_core::resolve::{self, Update};
+
+    use pin_project::pin_project;
+    use std::future::Future;
+    use std::net::SocketAddr;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::time;
+    use tracing::debug;
+
+    #[derive(Clone)]
+    pub struct Resolve {
+        dns: dns::Resolver,
+    }
+
+    #[pin_project]
+    pub struct Resolution {
+        current_endpoints: Vec<Target>,
+        address: ControlAddr,
+        dns: dns::Resolver,
+        #[pin]
+        state: State,
+    }
+
+    #[pin_project(project = StateProj)]
+    enum State {
+        Resolving(#[pin] dns::ResolveResponseFuture),
+        Resolved(Option<Vec<Target>>, #[pin] time::Delay),
+        Constant(Option<Target>),
+    }
+
+    // === impl ControlPlaneResolve ===
+
+    impl Resolve {
+        pub fn new(dns: dns::Resolver) -> Self {
+            Self { dns }
+        }
+    }
+
+    impl tower::Service<ControlAddr> for Resolve {
+        type Response = Resolution;
+        type Error = Error;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, target: ControlAddr) -> Self::Future {
+            Box::pin(futures::future::ok(match target.addr {
+                Addr::Socket(sa) => Resolution {
+                    current_endpoints: vec![],
+                    address: target.clone(),
+                    dns: self.dns.clone(),
+                    state: State::Constant(Some(Target {
+                        addr: sa,
+                        server_name: target.identity.clone(),
+                    })),
+                },
+                Addr::Name(ref na) => Resolution {
+                    current_endpoints: vec![],
+                    address: target.clone(),
+                    dns: self.dns.clone(),
+                    state: State::Resolving(self.dns.resolve_ips(na.name())),
+                },
+            }))
+        }
+    }
+
+    // === impl ControlPlaneResolution ===
+
+    impl resolve::Resolution for Resolution {
+        type Endpoint = Target;
+        type Error = Error;
+
+        fn poll(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
+            let mut this = self.project();
+            loop {
+                match this.state.as_mut().project() {
+                    StateProj::Constant(address) => {
+                        if let Some(target) = address.take() {
+                            return Poll::Ready(Ok(Update::Add(vec![(target.addr, target)])));
+                        }
+                        return Poll::Pending;
+                    }
+                    StateProj::Resolving(f) => {
+                        debug!("resolving");
+                        let resolve_response = ready!(f.poll(cx))?;
+
+                        let result = Some(
+                            resolve_response
+                                .ips
+                                .into_iter()
+                                .map(|ip| Target {
+                                    addr: SocketAddr::from((ip, this.address.addr.port())),
+                                    server_name: this.address.identity.clone(),
+                                })
+                                .collect(),
+                        );
+
+                        debug!(?result, "resolved");
+                        this.state.as_mut().set(State::Resolved(
+                            result,
+                            time::delay_until(resolve_response.valid_until), // TODO: base on TTL
+                        ));
+                    }
+                    StateProj::Resolved(targets, delay) => {
+                        if let Some(targets) = targets.take() {
+                            debug!(?targets, "add");
+                            return Poll::Ready(Ok(Update::Add(
+                                targets
+                                    .into_iter()
+                                    .map(|target| (target.addr, target))
+                                    .collect(),
+                            )));
+                        }
+                        ready!(delay.poll(cx));
+
+                        let name = this
+                            .address
+                            .addr
+                            .name_addr()
+                            .expect("should be name addr if resolving")
+                            .name();
+                        this.state
+                            .as_mut()
+                            .set(State::Resolving(this.dns.resolve_ips(name)));
+                    }
+                };
+            }
+        }
+    }
+}
+
 /// Creates a client suitable for gRPC.
 pub mod client {
     use crate::transport::{connect, tls};
@@ -309,7 +453,7 @@ pub mod client {
     use std::net::SocketAddr;
     use std::task::{Context, Poll};
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub struct Target {
         pub(super) addr: SocketAddr,
         pub(super) server_name: tls::PeerIdentity,

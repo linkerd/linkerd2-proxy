@@ -3,11 +3,13 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
+use futures::FutureExt;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::future::Future;
 use std::pin::Pin;
 use std::{fmt, net};
 use tokio::sync::{mpsc, oneshot};
+use tokio::time::Instant;
 use tracing::{info_span, trace, Span};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
@@ -33,7 +35,15 @@ pub enum Error {
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
+pub type ResolveResponseFuture =
+    Pin<Box<dyn Future<Output = Result<ResolveResponse, Error>> + Send + 'static>>;
+
 pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
+
+pub struct ResolveResponse {
+    pub ips: Vec<net::IpAddr>,
+    pub valid_until: Instant,
+}
 
 struct ResolveRequest {
     name: Name,
@@ -112,12 +122,31 @@ impl Resolver {
         &self,
         name: &Name,
     ) -> Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>> {
+        Box::pin(
+            self.resolve_ips(name).map(|rsp| {
+                rsp.map(|result| result.ips.first().expect("would error if empty").clone())
+            }),
+        )
+    }
+
+    pub fn resolve_ips(
+        &self,
+        name: &Name,
+    ) -> Pin<Box<dyn Future<Output = Result<ResolveResponse, Error>> + Send + 'static>> {
         let name = name.clone();
         let resolver = self.clone();
         Box::pin(async move {
-            let span = info_span!("resolve_one_ip", %name);
-            let ips = resolver.lookup_ip(name, span).await?;
-            ips.iter().next().ok_or_else(|| Error::NoAddressesFound)
+            let span = info_span!("resolve_ips", %name);
+            let result = resolver.lookup_ip(name, span).await?;
+            let ips: Vec<std::net::IpAddr> = result.iter().collect();
+            if ips.is_empty() {
+                return Err(Error::NoAddressesFound);
+            }
+
+            Ok(ResolveResponse {
+                ips: ips,
+                valid_until: Instant::from_std(result.valid_until()),
+            })
         })
     }
 
