@@ -2,6 +2,7 @@ use futures::stream::TryStream;
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
+use linkerd2_app_core::proxy::{discover, http};
 use linkerd2_app_core::{
     classify,
     config::{ControlAddr, ControlConfig},
@@ -14,6 +15,7 @@ use linkerd2_app_core::{
 };
 use std::future::Future;
 use std::pin::Pin;
+use tokio::time::Duration;
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -46,6 +48,18 @@ impl Config {
         match self {
             Config::Disabled => Ok(Identity::Disabled),
             Config::Enabled { control, certify } => {
+                const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+                const EWMA_DECAY: Duration = Duration::from_secs(10);
+                let discover = {
+                    const BUFFER_CAPACITY: usize = 1_000;
+                    let cache_timeout = Duration::from_secs(60);
+                    discover::Layer::new(
+                        BUFFER_CAPACITY,
+                        cache_timeout,
+                        control::dns_resolve::Resolve::new(dns),
+                    )
+                };
+
                 let (local, crt_store) = Local::new(&certify);
 
                 let addr = control.addr;
@@ -55,7 +69,8 @@ impl Config {
                     )))
                     .push_timeout(control.connect.timeout)
                     .push(control::client::layer())
-                    .push(control::resolve::layer(dns))
+                    .push(discover)
+                    .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer(Recover(control.connect.backoff)))
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())

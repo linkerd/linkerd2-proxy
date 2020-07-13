@@ -28,7 +28,7 @@ pub trait ConfigureResolver {
 
 #[derive(Debug)]
 pub enum Error {
-    NoAddressesFound,
+    NoAddressesFound(Instant),
     ResolutionFailed(ResolveError),
     TaskLost,
 }
@@ -139,13 +139,14 @@ impl Resolver {
             let span = info_span!("resolve_ips", %name);
             let result = resolver.lookup_ip(name, span).await?;
             let ips: Vec<std::net::IpAddr> = result.iter().collect();
+            let valid_until = Instant::from_std(result.valid_until());
             if ips.is_empty() {
-                return Err(Error::NoAddressesFound);
+                return Err(Error::NoAddressesFound(valid_until));
             }
 
             Ok(ResolveResponse {
                 ips: ips,
-                valid_until: Instant::from_std(result.valid_until()),
+                valid_until,
             })
         })
     }
@@ -187,7 +188,7 @@ impl From<ResolveError> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoAddressesFound => f.pad("no addresses found"),
+            Self::NoAddressesFound(_) => f.pad("no addresses found"),
             Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
             Self::TaskLost => f.pad("background task terminated unexpectedly"),
         }

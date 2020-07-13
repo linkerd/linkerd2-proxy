@@ -113,9 +113,10 @@ impl Config {
 
             let discover = {
                 const BUFFER_CAPACITY: usize = 1_000;
+                let cache_timeout = Duration::from_secs(60);
                 discover::Layer::new(
                     BUFFER_CAPACITY,
-                    outbound.proxy.cache_max_idle_age,
+                    cache_timeout,
                     control::dns_resolve::Resolve::new(dns),
                 )
             };
@@ -125,13 +126,12 @@ impl Config {
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
+                    .push(discover)
+                    .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;
                         move |_| Ok(backoff.stream())
                     }))
-                    .push_spawn_ready()
-                    .push(discover)
-                    .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())
                     .into_new_service()
