@@ -3,7 +3,7 @@
 //! * `/metrics` -- reports prometheus-formatted metrics.
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
-use crate::{svc, transport::tls::accept::Connection};
+use crate::{svc, trace, transport::tls::accept::Connection};
 use futures::{future, TryFutureExt};
 use http::StatusCode;
 use hyper::{Body, Request, Response};
@@ -16,15 +16,17 @@ use std::task::{Context, Poll};
 use tower::{service_fn, Service};
 
 mod readiness;
+mod tasks;
 mod trace_level;
 
 pub use self::readiness::{Latch, Readiness};
-use self::trace_level::TraceLevel;
+use self::{tasks::Tasks, trace_level::TraceLevel};
 
 #[derive(Debug, Clone)]
 pub struct Admin<M: FmtMetrics> {
     metrics: metrics::Serve<M>,
     trace_level: TraceLevel,
+    tasks: Tasks,
     ready: Readiness,
 }
 
@@ -38,10 +40,18 @@ pub type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Response<Body>, io::Error>> + Send + 'static>>;
 
 impl<M: FmtMetrics> Admin<M> {
-    pub fn new(m: M, ready: Readiness, trace_level: TraceLevel) -> Self {
+    pub fn new(
+        m: M,
+        ready: Readiness,
+        trace::Handle {
+            level: trace_level,
+            tasks,
+        }: trace::Handle,
+    ) -> Self {
         Self {
             metrics: metrics::Serve::new(m),
             trace_level,
+            tasks: tasks.into(),
             ready,
         }
     }
@@ -87,6 +97,7 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
             "/proxy-log-level" => self.trace_level.call(req),
             "/ready" => Box::pin(future::ok(self.ready_rsp())),
             "/live" => Box::pin(future::ok(self.live_rsp())),
+            "/tasks" => Box::pin(self.tasks.call(req)),
             _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }
@@ -144,7 +155,6 @@ mod tests {
         let (r, l0) = Readiness::new();
         let l1 = l0.clone();
 
-        let mut srv = Admin::new((), r, TraceLevel::dangling());
         macro_rules! call {
             () => {{
                 let r = Request::builder()

@@ -76,7 +76,7 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
+    pub async fn build(self, log_level: trace::Handle) -> Result<App, Error> {
         let Config {
             admin,
             dns,

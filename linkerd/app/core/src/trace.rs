@@ -4,6 +4,7 @@ use tokio_timer::clock;
 use tracing::Dispatch;
 use tracing_subscriber::{
     fmt::{format, Formatter},
+    prelude::*,
     reload, EnvFilter, FmtSubscriber,
 };
 
@@ -17,6 +18,12 @@ type JsonFormatter = Formatter<format::JsonFields, format::Format<format::Json, 
 type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Full, Uptime>>;
 
 #[derive(Clone)]
+pub struct Handle {
+    pub level: LevelHandle,
+    pub tasks: tokio_trace::tasks::TaskList,
+}
+
+#[derive(Clone)]
 pub enum LevelHandle {
     Json(reload::Handle<EnvFilter, JsonFormatter>),
     Plain(reload::Handle<EnvFilter, PlainFormatter>),
@@ -24,7 +31,7 @@ pub enum LevelHandle {
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
-pub fn init() -> Result<LevelHandle, Error> {
+pub fn init() -> Result<Handle, Error> {
     let log_level = env::var(ENV_LOG_LEVEL).unwrap_or(DEFAULT_LOG_LEVEL.to_string());
     let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
 
@@ -44,17 +51,17 @@ pub fn init_log_compat() -> Result<(), Error> {
 pub fn with_filter_and_format(
     filter: impl AsRef<str>,
     format: impl AsRef<str>,
-) -> (Dispatch, LevelHandle) {
+) -> (Dispatch, Handle) {
     let filter = filter.as_ref();
 
     // Set up the subscriber
     let start_time = clock::now();
-
+    let (tasks, task_layer) = tokio_trace::tasks::TasksLayer::<format::DefaultFields>::new();
     let builder = FmtSubscriber::builder()
         .with_timer(Uptime { start_time })
         .with_env_filter(filter);
 
-    match format.as_ref().to_uppercase().as_ref() {
+    let (dispatch, level) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let builder = builder.json().with_span_list(true).with_filter_reloading();
             let handle = LevelHandle::Json(builder.reload_handle());
@@ -64,10 +71,12 @@ pub fn with_filter_and_format(
         "PLAIN" | _ => {
             let builder = builder.with_ansi(cfg!(test)).with_filter_reloading();
             let handle = LevelHandle::Plain(builder.reload_handle());
-            let dispatch = Dispatch::new(builder.finish());
+            let dispatch = Dispatch::new(builder.finish().with(task_layer));
             (dispatch, handle)
         }
-    }
+    };
+
+    (dispatch, Handle { level, tasks })
 }
 
 pub struct Uptime {
@@ -81,7 +90,7 @@ impl tracing_subscriber::fmt::time::FormatTime for Uptime {
     }
 }
 
-impl LevelHandle {
+impl Handle {
     /// Returns a new `LevelHandle` without a corresponding filter.
     ///
     /// This will do nothing, but is required for admin endpoint tests which
@@ -90,13 +99,15 @@ impl LevelHandle {
         let (_, handle) = with_filter_and_format("", "");
         handle
     }
+}
 
+impl LevelHandle {
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
         let level = level.as_ref();
         let filter = level.parse::<EnvFilter>()?;
         match self {
-            Self::Json(level) => level.reload(filter)?,
-            Self::Plain(level) => level.reload(filter)?,
+            LevelHandle::Json(level) => level.reload(filter)?,
+            LevelHandle::Plain(level) => level.reload(filter)?,
         }
         tracing::info!(%level, "set new log level");
         Ok(())
@@ -104,10 +115,10 @@ impl LevelHandle {
 
     pub fn current(&self) -> Result<String, Error> {
         match self {
-            Self::Json(handle) => handle
+            LevelHandle::Json(handle) => handle
                 .with_current(|f| format!("{}", f))
                 .map_err(Into::into),
-            Self::Plain(handle) => handle
+            LevelHandle::Plain(handle) => handle
                 .with_current(|f| format!("{}", f))
                 .map_err(Into::into),
         }
@@ -117,7 +128,7 @@ impl LevelHandle {
 impl fmt::Debug for LevelHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json(handle) => handle
+            LevelHandle::Json(handle) => handle
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
@@ -128,7 +139,7 @@ impl fmt::Debug for LevelHandle {
                         .field("current", &format_args!("{}", e))
                         .finish()
                 }),
-            Self::Plain(handle) => handle
+            LevelHandle::Plain(handle) => handle
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))

@@ -44,6 +44,7 @@ COPY . .
 RUN --mount=type=cache,target=target \
     --mount=type=cache,from=rust:1.44.1-buster,source=/usr/local/cargo,target=/usr/local/cargo \
     mkdir -p /out && \
+    export RUSTFLAGS="--cfg tokio_unstable" && \
     if [ -n "$PROXY_UNOPTIMIZED" ]; then \
       (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --features="$PROXY_FEATURES") && \
       mv target/debug/linkerd2-proxy /out/linkerd2-proxy ; \
