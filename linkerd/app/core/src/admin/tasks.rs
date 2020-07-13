@@ -33,7 +33,7 @@ impl Service<Request<Body>> for Tasks {
         self.tasks.tasks(|task| {
             writeln!(
                 &mut body,
-                "kind: {}\nfuture: {}\ncontext:\n{}",
+                "kind: {}\nfuture:\n\t{}\ncontext:\n{}\n",
                 task.kind, task.future, task.scope
             )
             .expect("writing to a String doesn't fail");
