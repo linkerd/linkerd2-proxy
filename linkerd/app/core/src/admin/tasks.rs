@@ -29,19 +29,19 @@ impl Service<Request<Body>> for Tasks {
 
     fn call(&mut self, _: Request<Body>) -> Self::Future {
         let mut body = String::from(
-            "
-            <html><head><title = \"tasks\"></head>
-            <body>
-                <table>
-                    <tr>
-                        <th>Kind</th>
-                        <th>Active</th>
-                        <th>Total Time</th>
-                        <th>Busy Time</th>
-                        <th>Idle Time</th>
-                        <th>Scope</th>
-                        <th>Future</th>
-                    </tr>
+            "<html>
+                <head><title>tasks</title></head>
+                <body>
+                    <table>
+                        <tr>
+                            <th>Kind</th>
+                            <th>Active</th>
+                            <th>Total Time</th>
+                            <th>Busy Time</th>
+                            <th>Idle Time</th>
+                            <th>Scope</th>
+                            <th>Future</th>
+                        </tr>
         ",
         );
         self.tasks.tasks(|task| {
