@@ -66,8 +66,8 @@ impl Service<Request<Body>> for Tasks {
                 total = timings.total_time(),
                 busy = timings.busy_time(),
                 idle = timings.idle_time(),
-                scope = html_escape::encode_text(task.scope),
-                future = html_escape::encode_text(task.future),
+                scope = html_escape::encode_text(&task.scope),
+                future = html_escape::encode_text(&task.future),
             )
             .expect("writing to a String doesn't fail");
         });
