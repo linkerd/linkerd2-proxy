@@ -174,8 +174,11 @@ pub mod dns_resolve {
         }
     }
 
+    type UpdatesStream =
+        Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + 'static>>;
+
     impl tower::Service<ControlAddr> for Resolve {
-        type Response = FromStream;
+        type Response = FromStream<UpdatesStream>;
         type Error = Error;
         type Future =
             Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
@@ -185,9 +188,9 @@ pub mod dns_resolve {
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
-            Box::pin(futures::future::ok({
-                from_stream(resolution_stream(self.dns.clone(), target.clone()))
-            }))
+            Box::pin(futures::future::ok(from_stream::<UpdatesStream>(Box::pin(
+                resolution_stream(self.dns.clone(), target.clone()),
+            ))))
         }
     }
 
@@ -305,20 +308,20 @@ pub mod dns_resolve {
         };
     }
 
-    pub fn from_stream(
-        stream: impl Stream<Item = Result<Update<Target>, Error>> + Send + 'static,
-    ) -> FromStream {
-        FromStream(Box::pin(stream))
+    pub fn from_stream<S>(stream: S) -> FromStream<S> {
+        FromStream(stream)
     }
 
     #[pin_project]
-    pub struct FromStream(
-        #[pin] Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + 'static>>,
-    );
+    pub struct FromStream<S>(#[pin] S);
 
-    impl resolve::Resolution for FromStream {
-        type Endpoint = Target;
-        type Error = Error;
+    impl<E, S> resolve::Resolution for FromStream<S>
+    where
+        S: TryStream<Ok = Update<E>>,
+        S::Error: Into<Error>,
+    {
+        type Endpoint = E;
+        type Error = S::Error;
 
         fn poll(
             self: Pin<&mut Self>,
