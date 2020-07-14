@@ -799,6 +799,7 @@ dependencies = [
  "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
+ "html-escape",
  "http 0.2.1",
  "http-body",
  "hyper",
