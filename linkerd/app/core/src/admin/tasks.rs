@@ -32,7 +32,8 @@ impl Service<Request<Body>> for Tasks {
             "<html>
                 <head><title>tasks</title></head>
                 <body>
-                    <table>
+                    <table style=\"width:100%;\">
+                        <thead>
                         <tr>
                             <th>Kind</th>
                             <th>Active</th>
@@ -42,6 +43,8 @@ impl Service<Request<Body>> for Tasks {
                             <th>Scope</th>
                             <th>Future</th>
                         </tr>
+                        </thead>
+                        <tbody>
         ",
         );
         self.tasks.tasks(|task| {
@@ -63,12 +66,12 @@ impl Service<Request<Body>> for Tasks {
                 total = timings.total_time(),
                 busy = timings.busy_time(),
                 idle = timings.idle_time(),
-                scope = task.scope,
-                future = task.future,
+                scope = html_escape::encode_text(task.scope),
+                future = html_escape::encode_text(task.future),
             )
             .expect("writing to a String doesn't fail");
         });
-        body.push_str("</table></body></html>");
+        body.push_str("</tbody></table></body></html>");
         futures::future::ok(
             Response::builder()
                 .status(StatusCode::OK)

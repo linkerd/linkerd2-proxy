@@ -26,9 +26,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "0.6.4"
+version = "0.7.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6531d44de723825aa81398a6415283229725a00fa30713812ab9323faa82fc4"
+checksum = "043164d8ba5c4c3035fec9bbee8647c0261d788f3474306f93bb65901cae0e86"
 dependencies = [
  "memchr 2.3.3",
 ]
@@ -542,6 +542,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "html-escape"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c185ca7c57375b4d21eb5a1343a152099b9ea3e7e776971fce80f8d907a7ffb"
+dependencies = [
+ "utf8-width",
+]
+
+[[package]]
 name = "http"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -752,6 +761,7 @@ dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
  "h2 0.2.6",
+ "html-escape",
  "http 0.2.1",
  "http-body",
  "hyper",
@@ -767,7 +777,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "net2",
  "quickcheck",
- "regex 1.0.0",
+ "regex 1.2.1",
  "ring",
  "rustls",
  "tokio 0.2.22",
@@ -838,7 +848,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "rand 0.7.2",
- "regex 1.0.0",
+ "regex 1.2.1",
  "tokio 0.2.22",
  "tokio-test",
  "tokio-timer",
@@ -1453,7 +1463,7 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "rand 0.7.2",
- "regex 1.0.0",
+ "regex 1.2.1",
  "tokio 0.2.22",
  "tonic",
  "tower",
@@ -2152,15 +2162,14 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.0.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75ecf88252dce580404a22444fc7d626c01815debba56a7f4f536772a5ff19d3"
+checksum = "88c3d9193984285d544df4a30c23a4e62ead42edf70a4452ceb76dac1ce05c26"
 dependencies = [
- "aho-corasick 0.6.4",
+ "aho-corasick 0.7.13",
  "memchr 2.3.3",
  "regex-syntax 0.6.11",
- "thread_local 0.3.5",
- "utf8-ranges 1.0.0",
+ "thread_local 0.3.6",
 ]
 
 [[package]]
@@ -2454,12 +2463,11 @@ dependencies = [
 
 [[package]]
 name = "thread_local"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "279ef31c19ededf577bfd12dfae728040a21f635b06a24cd670ff510edd38963"
+checksum = "c6b53e329000edc2b34dbe8545fd20e55a333362d0a321909685a19bd28c3f1b"
 dependencies = [
  "lazy_static",
- "unreachable",
 ]
 
 [[package]]
@@ -2476,7 +2484,7 @@ dependencies = [
 [[package]]
 name = "tokio"
 version = "0.2.21"
-source = "git+https://github.com/tokio-rs/tokio?branch=eliza/trace-spawns#59fec641d293a78ab2e517012c402472313f7b01"
+source = "git+https://github.com/tokio-rs/tokio?rev=b9e3d2edde33a12ead6df3895caeafa90f9db7e4#b9e3d2edde33a12ead6df3895caeafa90f9db7e4"
 dependencies = [
  "bytes 0.5.4",
  "pin-project-lite",
@@ -2595,7 +2603,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace#91b9b71db395bb3ab29ea6662c8cdad4dc696042"
+source = "git+https://github.com/hawkw/tokio-trace#017fffc0ac7149f8bc9cff054ed3e35f82a15368"
 dependencies = [
  "num_cpus",
  "tokio 0.2.21",
@@ -2795,7 +2803,7 @@ dependencies = [
  "lazy_static",
  "matchers",
  "parking_lot",
- "regex 1.0.0",
+ "regex 1.2.1",
  "serde",
  "serde_json",
  "sharded-slab",
@@ -2885,15 +2893,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "826e7639553986605ec5979c7dd957c7895e93eabed50ab2ffa7f6128a75097c"
 
 [[package]]
-name = "unreachable"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "382810877fe448991dfc7f0dd6e3ae5d58088fd0ea5e35189655f84e6814fa56"
-dependencies = [
- "void",
-]
-
-[[package]]
 name = "untrusted"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2923,16 +2922,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "662fab6525a98beff2921d7f61a39e7d59e0b425ebc7d0d9e66d316e55124122"
 
 [[package]]
+name = "utf8-width"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f2c54fe5e8d6907c60dc6fba532cc8529245d97ff4e26cb490cb462de114ba4"
+
+[[package]]
 name = "version_check"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "914b1a6776c4c929a602fafd8bc742e06365d4bcbe48c30f9cca5824f70dc9dd"
-
-[[package]]
-name = "void"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a02e4885ed3bc0f2de90ea6dd45ebcbb66dacffe03547fadbb0eeae2770887d"
 
 [[package]]
 name = "want"
@@ -3118,8 +3117,3 @@ dependencies = [
  "winapi 0.2.8",
  "winapi-build",
 ]
-
-[[patch.unused]]
-name = "tokio"
-version = "0.2.21"
-source = "git+https://github.com/tokio-rs/tokio?rev=b9e3d2edde33a12ead6df3895caeafa90f9db7e4#b9e3d2edde33a12ead6df3895caeafa90f9db7e4"
