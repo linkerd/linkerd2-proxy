@@ -145,165 +145,8 @@ pub mod add_origin {
     }
 }
 
-/// Resolves the controller's `addr` once before building a client.
-pub mod resolve {
-    use super::{client, ControlAddr};
-    use crate::svc;
-    use futures::{ready, TryFuture};
-    use linkerd2_addr::Addr;
-    use linkerd2_dns as dns;
-    use pin_project::pin_project;
-    use std::future::Future;
-    use std::net::SocketAddr;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-    use std::{error, fmt};
-
-    #[derive(Clone, Debug)]
-    pub struct Layer {
-        dns: dns::Resolver,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Resolve<M> {
-        dns: dns::Resolver,
-        inner: M,
-    }
-
-    #[pin_project]
-    pub struct Init<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        #[pin]
-        state: State<M>,
-    }
-
-    #[pin_project(project = StateProj)]
-    enum State<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        Resolve(#[pin] dns::IpAddrFuture, Option<(M, ControlAddr)>),
-        NotReady(M, Option<(SocketAddr, ControlAddr)>),
-        Inner(#[pin] M::Future),
-    }
-
-    #[derive(Debug)]
-    pub enum Error<I> {
-        Dns(dns::Error),
-        Inner(I),
-    }
-
-    // === impl Layer ===
-
-    pub fn layer<M>(dns: dns::Resolver) -> impl svc::Layer<M, Service = Resolve<M>> + Clone
-    where
-        M: tower::Service<client::Target> + Clone,
-    {
-        svc::layer::mk(move |inner| Resolve {
-            dns: dns.clone(),
-            inner,
-        })
-    }
-
-    // === impl Resolve ===
-
-    impl<M> tower::Service<ControlAddr> for Resolve<M>
-    where
-        M: tower::Service<client::Target> + Clone,
-    {
-        type Response = M::Response;
-        type Error = <Init<M> as TryFuture>::Error;
-        type Future = Init<M>;
-
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            self.inner.poll_ready(cx).map_err(Error::Inner)
-        }
-
-        fn call(&mut self, target: ControlAddr) -> Self::Future {
-            let state = match target.addr {
-                Addr::Socket(sa) => State::make_inner(sa, &target, &mut self.inner),
-                Addr::Name(ref na) => {
-                    // The inner service is ready, but we are going to do
-                    // additional work before using it. In case the inner
-                    // service has acquired resources (like a lock), we
-                    // relinquish our claim on the service by replacing it.
-                    self.inner = self.inner.clone();
-
-                    let future = self.dns.resolve_one_ip(na.name());
-                    State::Resolve(future, Some((self.inner.clone(), target.clone())))
-                }
-            };
-
-            Init { state }
-        }
-    }
-
-    // === impl Init ===
-
-    impl<M> Future for Init<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        type Output = Result<M::Response, Error<M::Error>>;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let mut this = self.project();
-            loop {
-                match this.state.as_mut().project() {
-                    StateProj::Resolve(fut, stack) => {
-                        let ip = ready!(fut.poll(cx).map_err(Error::Dns))?;
-                        let (svc, config) = stack.take().unwrap();
-                        let addr = SocketAddr::from((ip, config.addr.port()));
-                        this.state
-                            .as_mut()
-                            .set(State::NotReady(svc, Some((addr, config))));
-                    }
-                    StateProj::NotReady(svc, cfg) => {
-                        ready!(svc.poll_ready(cx).map_err(Error::Inner))?;
-                        let (addr, config) = cfg.take().unwrap();
-                        let state = State::make_inner(addr, &config, svc);
-                        this.state.as_mut().set(state);
-                    }
-                    StateProj::Inner(fut) => return fut.poll(cx).map_err(Error::Inner),
-                };
-            }
-        }
-    }
-
-    impl<M> State<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        fn make_inner(addr: SocketAddr, dst: &ControlAddr, mk_svc: &mut M) -> Self {
-            let target = client::Target {
-                addr,
-                server_name: dst.identity.clone(),
-            };
-
-            State::Inner(mk_svc.call(target))
-        }
-    }
-
-    // === impl Error ===
-
-    impl<I: fmt::Display> fmt::Display for Error<I> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Error::Dns(dns::Error::NoAddressesFound(_)) => write!(f, "no addresses found"),
-                Error::Dns(e) => fmt::Display::fmt(&e, f),
-                Error::Inner(ref e) => fmt::Display::fmt(&e, f),
-            }
-        }
-    }
-
-    impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
-}
-
 pub mod dns_resolve {
     use super::{client::Target, ControlAddr};
-    use futures::ready;
     use linkerd2_addr::Addr;
     use linkerd2_dns as dns;
     use linkerd2_error::Error;
@@ -323,22 +166,6 @@ pub mod dns_resolve {
         dns: dns::Resolver,
     }
 
-    #[pin_project]
-    pub struct Resolution {
-        current_targets: HashSet<Target>,
-        address: ControlAddr,
-        dns: dns::Resolver,
-        #[pin]
-        state: State,
-    }
-
-    #[pin_project(project = StateProj)]
-    enum State {
-        Resolving(#[pin] dns::ResolveResponseFuture),
-        Resolved(VecDeque<Update<Target>>, #[pin] time::Delay),
-        Constant(Option<Target>),
-    }
-
     // === impl ControlPlaneResolve ===
 
     impl Resolve {
@@ -348,7 +175,7 @@ pub mod dns_resolve {
     }
 
     impl tower::Service<ControlAddr> for Resolve {
-        type Response = Resolution;
+        type Response = FromStream;
         type Error = Error;
         type Future =
             Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
@@ -358,53 +185,138 @@ pub mod dns_resolve {
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
-            Box::pin(futures::future::ok(match target.addr {
-                Addr::Socket(sa) => Resolution {
-                    current_targets: HashSet::default(),
-                    address: target.clone(),
-                    dns: self.dns.clone(),
-                    state: State::Constant(Some(Target {
-                        addr: sa,
-                        server_name: target.identity.clone(),
-                    })),
-                },
-                Addr::Name(ref na) => Resolution {
-                    current_targets: HashSet::default(),
-                    address: target.clone(),
-                    dns: self.dns.clone(),
-                    state: State::Resolving(self.dns.resolve_ips(na.name())),
-                },
+            Box::pin(futures::future::ok({
+                from_stream(resolution_stream(self.dns.clone(), target.clone()))
             }))
-        }
-    }
-
-    impl Resolution {
-        pub fn diff_targets(
-            old_targets: &HashSet<Target>,
-            new_targets: &HashSet<Target>,
-        ) -> (Vec<(SocketAddr, Target)>, Vec<SocketAddr>) {
-            let mut adds = Vec::default();
-            let mut removes = Vec::default();
-
-            for new_target in new_targets.iter() {
-                if !old_targets.contains(new_target) {
-                    adds.push((new_target.addr, new_target.clone()))
-                }
-            }
-
-            for old_target in old_targets.iter() {
-                if !new_targets.contains(old_target) {
-                    removes.push(old_target.addr)
-                }
-            }
-
-            (adds, removes)
         }
     }
 
     // === impl ControlPlaneResolution ===
 
-    impl resolve::Resolution for Resolution {
+    use async_stream::try_stream;
+    use futures::prelude::*;
+    use tokio::time::Instant;
+
+    pub fn diff_targets(
+        old_targets: &HashSet<Target>,
+        new_targets: &HashSet<Target>,
+    ) -> (Vec<(SocketAddr, Target)>, Vec<SocketAddr>) {
+        let mut adds = Vec::default();
+        let mut removes = Vec::default();
+
+        for new_target in new_targets.iter() {
+            if !old_targets.contains(new_target) {
+                adds.push((new_target.addr, new_target.clone()))
+            }
+        }
+
+        for old_target in old_targets.iter() {
+            if !new_targets.contains(old_target) {
+                removes.push(old_target.addr)
+            }
+        }
+
+        (adds, removes)
+    }
+    pub fn resolution_stream(
+        dns: dns::Resolver,
+        address: ControlAddr,
+    ) -> impl Stream<Item = Result<Update<Target>, Error>> {
+        return match address.clone().addr {
+            Addr::Socket(_) => unimplemented!(),
+            Addr::Name(name_addr) => {
+                let port = address.addr.port().clone();
+                let server_name = address.identity.clone();
+                try_stream! {
+                    let mut resolve_ips = Some(dns.resolve_ips(name_addr.name()));
+                    let mut pending_updates: VecDeque<Update<Target>> = VecDeque::default();
+                    let mut current_targets: HashSet<Target> = HashSet::new();
+                    let mut ttl_expiration = time::delay_until(Instant::now());
+
+                    if let Some(resolve_result) = resolve_ips {
+                        debug_assert!(current_targets.is_empty());
+                        debug_assert!(pending_updates.is_empty());
+
+                        match resolve_result.await {
+                            Err(dns::Error::NoAddressesFound(valid_until)) => {
+                                resolve_ips = None;
+                                debug!("resolved empty");
+                                current_targets.clear();
+                                ttl_expiration = time::delay_until(valid_until);
+                            }
+
+                            Err(dns::Error::ResolutionFailed(inner)) => {
+                                resolve_ips = None;
+                                if let dns::ResolveErrorKind::NoRecordsFound {
+                                    valid_until: Some(valid_until),
+                                    ..
+                                } = inner.kind()
+                                {
+                                    debug!("resolved does not exist");
+                                    current_targets.clear();
+                                    pending_updates.push_back(Update::DoesNotExist);
+                                    ttl_expiration = time::delay_until(time::Instant::from_std(
+                                        valid_until.clone(),
+                                    ));
+                                } else {
+                                    Err(dns::Error::ResolutionFailed(inner))?
+                                }
+                            }
+                            Ok(result) => {
+                                resolve_ips = None;
+                                let new_targets = result
+                                    .ips
+                                    .into_iter()
+                                    .map(|ip| Target {
+                                        addr: SocketAddr::from((ip, port)),
+                                        server_name: server_name.clone(),
+                                    })
+                                    .collect();
+
+                                let (adds, removes) = diff_targets(&current_targets, &new_targets);
+                                if !adds.is_empty() {
+                                    pending_updates.push_back(Update::Add(adds))
+                                }
+                                if !removes.is_empty() {
+                                    pending_updates.push_back(Update::Remove(removes))
+                                }
+
+                                current_targets.clear();
+                                current_targets.extend(new_targets);
+
+                                debug!(?pending_updates, "resolved");
+                                ttl_expiration = time::delay_until(result.valid_until);
+                            }
+                            Err(err) => {
+                                resolve_ips = None;
+                                Err(err)?
+                            }
+                        };
+                    }
+
+                    while let Some(update) = pending_updates.pop_front() {
+                        yield update;
+                    }
+
+                    ttl_expiration.await;
+                    resolve_ips = Some(dns.resolve_ips(name_addr.name()));
+                }
+            }
+        };
+    }
+
+    pub fn from_stream(
+        stream: impl Stream<Item = Result<Update<Target>, Error>> + Send + 'static,
+    ) -> FromStream {
+        FromStream(Box::pin(stream))
+    }
+
+    #[pin_project]
+    pub struct FromStream(
+        #[pin] Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + 'static>>,
+    );
+
+    impl resolve::Resolution for FromStream {
         type Endpoint = Target;
         type Error = Error;
 
@@ -412,96 +324,9 @@ pub mod dns_resolve {
             self: Pin<&mut Self>,
             cx: &mut Context<'_>,
         ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
-            let mut this = self.project();
-            loop {
-                match this.state.as_mut().project() {
-                    StateProj::Constant(address) => {
-                        if let Some(target) = address.take() {
-                            return Poll::Ready(Ok(Update::Add(vec![(target.addr, target)])));
-                        }
-                        return Poll::Pending;
-                    }
-                    StateProj::Resolving(f) => {
-                        debug!("resolving");
-
-                        let new_state = match ready!(f.poll(cx)) {
-                            Err(dns::Error::NoAddressesFound(valid_until)) => {
-                                debug!("resolved empty");
-                                this.current_targets.clear();
-                                State::Resolved(
-                                    vec![Update::Empty].into_iter().collect(),
-                                    time::delay_until(valid_until),
-                                )
-                            }
-                            Err(dns::Error::ResolutionFailed(inner)) => {
-                                if let dns::ResolveErrorKind::NoRecordsFound {
-                                    valid_until: Some(valid_until),
-                                    ..
-                                } = inner.kind()
-                                {
-                                    debug!("resolved does not exist");
-                                    this.current_targets.clear();
-                                    State::Resolved(
-                                        vec![Update::DoesNotExist].into_iter().collect(),
-                                        time::delay_until(time::Instant::from_std(
-                                            valid_until.clone(),
-                                        )),
-                                    )
-                                } else {
-                                    return Poll::Ready(Err(
-                                        dns::Error::ResolutionFailed(inner).into()
-                                    ));
-                                }
-                            }
-                            Err(err) => return Poll::Ready(Err(err.into())),
-                            Ok(result) => {
-                                let new_targets = result
-                                    .ips
-                                    .into_iter()
-                                    .map(|ip| Target {
-                                        addr: SocketAddr::from((ip, this.address.addr.port())),
-                                        server_name: this.address.identity.clone(),
-                                    })
-                                    .collect();
-
-                                let (adds, removes) =
-                                    Resolution::diff_targets(this.current_targets, &new_targets);
-                                let mut new_updates = VecDeque::default();
-                                if !adds.is_empty() {
-                                    new_updates.push_back(Update::Add(adds))
-                                }
-                                if !removes.is_empty() {
-                                    new_updates.push_back(Update::Remove(removes))
-                                }
-
-                                this.current_targets.clear();
-                                this.current_targets.extend(new_targets);
-
-                                debug!(?new_updates, "resolved");
-                                State::Resolved(new_updates, time::delay_until(result.valid_until))
-                            }
-                        };
-
-                        this.state.as_mut().set(new_state);
-                    }
-                    StateProj::Resolved(new_updates, delay) => {
-                        if let Some(update) = new_updates.pop_front() {
-                            debug!(?update, "emitting");
-                            return Poll::Ready(Ok(update));
-                        }
-                        ready!(delay.poll(cx));
-                        let name = this
-                            .address
-                            .addr
-                            .name_addr()
-                            .expect("should be name addr if resolving")
-                            .name();
-                        this.state
-                            .as_mut()
-                            .set(State::Resolving(this.dns.resolve_ips(name)));
-                    }
-                };
-            }
+            let res = futures::ready!(self.project().0.try_poll_next(cx))
+                .expect("resolution stream must be infinite!");
+            Poll::Ready(res)
         }
     }
 }

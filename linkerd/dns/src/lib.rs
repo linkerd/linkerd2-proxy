@@ -3,7 +3,6 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
-use futures::FutureExt;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::future::Future;
 use std::pin::Pin;
@@ -118,36 +117,19 @@ impl Resolver {
         Ok(ips)
     }
 
-    pub fn resolve_one_ip(
-        &self,
-        name: &Name,
-    ) -> Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>> {
-        Box::pin(
-            self.resolve_ips(name).map(|rsp| {
-                rsp.map(|result| result.ips.first().expect("would error if empty").clone())
-            }),
-        )
-    }
-
-    pub fn resolve_ips(
-        &self,
-        name: &Name,
-    ) -> Pin<Box<dyn Future<Output = Result<ResolveResponse, Error>> + Send + 'static>> {
+    pub async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error> {
         let name = name.clone();
         let resolver = self.clone();
-        Box::pin(async move {
-            let span = info_span!("resolve_ips", %name);
-            let result = resolver.lookup_ip(name, span).await?;
-            let ips: Vec<std::net::IpAddr> = result.iter().collect();
-            let valid_until = Instant::from_std(result.valid_until());
-            if ips.is_empty() {
-                return Err(Error::NoAddressesFound(valid_until));
-            }
-
-            Ok(ResolveResponse {
-                ips: ips,
-                valid_until,
-            })
+        let span = info_span!("resolve_ips", %name);
+        let result = resolver.lookup_ip(name, span).await?;
+        let ips: Vec<std::net::IpAddr> = result.iter().collect();
+        let valid_until = Instant::from_std(result.valid_until());
+        if ips.is_empty() {
+            return Err(Error::NoAddressesFound(valid_until));
+        }
+        Ok(ResolveResponse {
+            ips: ips,
+            valid_until,
         })
     }
 
