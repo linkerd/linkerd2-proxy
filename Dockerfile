@@ -36,22 +36,21 @@ ARG PROXY_UNOPTIMIZED
 ARG PROXY_FEATURES
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \
-    --mount=type=cache,target=/var/tmp \
-    apt update && apt install -y time cmake
+  --mount=type=cache,target=/var/tmp \
+  apt update && apt install -y time cmake
 
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,target=target \
-    --mount=type=cache,from=rust:1.44.1-buster,source=/usr/local/cargo,target=/usr/local/cargo \
-    mkdir -p /out && \
-    export RUSTFLAGS="--cfg tokio_unstable" && \
-    if [ -n "$PROXY_UNOPTIMIZED" ]; then \
-      (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --features="$PROXY_FEATURES") && \
-      mv target/debug/linkerd2-proxy /out/linkerd2-proxy ; \
-    else \
-      (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --release --features="$PROXY_FEATURES") && \
-      mv target/release/linkerd2-proxy /out/linkerd2-proxy ; \
-    fi
+  --mount=type=cache,from=rust:1.44.1-buster,source=/usr/local/cargo,target=/usr/local/cargo \
+  mkdir -p /out && \
+  if [ -n "$PROXY_UNOPTIMIZED" ]; then \
+  (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --features="$PROXY_FEATURES") && \
+  mv target/debug/linkerd2-proxy /out/linkerd2-proxy ; \
+  else \
+  (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --release --features="$PROXY_FEATURES") && \
+  mv target/release/linkerd2-proxy /out/linkerd2-proxy ; \
+  fi
 
 ## Install the proxy binary into the base runtime image.
 FROM $RUNTIME_IMAGE as runtime

@@ -1,4 +1,3 @@
-use super::rsp;
 use futures::future;
 use http::StatusCode;
 use hyper::{service::Service, Body, Request, Response};
@@ -29,16 +28,54 @@ impl Service<Request<Body>> for Tasks {
     }
 
     fn call(&mut self, _: Request<Body>) -> Self::Future {
-        let mut body = String::new();
+        let mut body = String::from(
+            "
+            <html><head><title = \"tasks\"></head>
+            <body>
+                <table>
+                    <tr>
+                        <th>Kind</th>
+                        <th>Active</th>
+                        <th>Total Time</th>
+                        <th>Busy Time</th>
+                        <th>Idle Time</th>
+                        <th>Scope</th>
+                        <th>Future</th>
+                    </tr>
+        ",
+        );
         self.tasks.tasks(|task| {
+            let timings = task.timings();
             writeln!(
                 &mut body,
-                "kind: {}\nfuture:\n\t{}\ncontext:\n{}\n",
-                task.kind, task.future, task.scope
+                "<tr>
+                    <td>{kind}</td>
+                    <td>{active}</td>
+                    <td>{total:?}</td>
+                    <td>{busy:?}</td>
+                    <td>{idle:?}</td>
+                    <th>{scope}</td>
+                    <th>{future}</td>
+                </tr>
+                ",
+                kind = task.kind,
+                active = task.is_active(),
+                total = timings.total_time(),
+                busy = timings.busy_time(),
+                idle = timings.idle_time(),
+                scope = task.scope,
+                future = task.future,
             )
             .expect("writing to a String doesn't fail");
         });
-        futures::future::ok(rsp(StatusCode::OK, body))
+        body.push_str("</table></body></html>");
+        futures::future::ok(
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/html")
+                .body(body.into())
+                .expect("response"),
+        )
     }
 }
 
