@@ -32,11 +32,12 @@ impl Service<Request<Body>> for Tasks {
             "<html>
                 <head><title>tasks</title></head>
                 <body>
-                    <table style=\"width:100%;\">
+                    <table>
                         <thead>
                         <tr>
                             <th>Kind</th>
                             <th>Active</th>
+                            <th>Total Polls</th>
                             <th>Total Time</th>
                             <th>Busy Time</th>
                             <th>Idle Time</th>
@@ -54,6 +55,7 @@ impl Service<Request<Body>> for Tasks {
                 "<tr>
                     <td>{kind}</td>
                     <td>{active}</td>
+                    <td>{polls}</td>
                     <td>{total:?}</td>
                     <td>{busy:?}</td>
                     <td>{idle:?}</td>
@@ -63,6 +65,7 @@ impl Service<Request<Body>> for Tasks {
                 ",
                 kind = task.kind,
                 active = task.is_active(),
+                polls = task.polls(),
                 total = timings.total_time(),
                 busy = timings.busy_time(),
                 idle = timings.idle_time(),

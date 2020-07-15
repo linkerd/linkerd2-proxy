@@ -2604,7 +2604,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace#017fffc0ac7149f8bc9cff054ed3e35f82a15368"
+source = "git+https://github.com/hawkw/tokio-trace#97e14f9600380e93e6315297aa6e1268de988a29"
 dependencies = [
  "num_cpus",
  "tokio 0.2.21",
