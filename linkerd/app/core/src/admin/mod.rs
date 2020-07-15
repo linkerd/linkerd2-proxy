@@ -174,6 +174,7 @@ mod tests {
         let (r, l0) = Readiness::new();
         let l1 = l0.clone();
 
+        let mut srv = Admin::new((), r, trace::Handle::dangling());
         macro_rules! call {
             () => {{
                 let r = Request::builder()
