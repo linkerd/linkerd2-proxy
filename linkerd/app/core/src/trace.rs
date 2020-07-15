@@ -1,6 +1,7 @@
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
+use tokio_trace::tasks::{TasksLayer, TasksList};
 use tracing::Dispatch;
 use tracing_subscriber::{
     fmt::{format, Formatter},
@@ -20,7 +21,7 @@ type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Fu
 #[derive(Clone)]
 pub struct Handle {
     pub level: LevelHandle,
-    pub tasks: tokio_trace::tasks::TaskList,
+    pub tasks: TasksList,
 }
 
 #[derive(Clone)]
@@ -56,23 +57,28 @@ pub fn with_filter_and_format(
 
     // Set up the subscriber
     let start_time = clock::now();
-    let (tasks, task_layer) = tokio_trace::tasks();
     let builder = FmtSubscriber::builder()
         .with_timer(Uptime { start_time })
         .with_env_filter(filter);
 
-    let (dispatch, level) = match format.as_ref().to_uppercase().as_ref() {
+    let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
-            let builder = builder.json().with_span_list(true).with_filter_reloading();
+            let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
+            let builder = builder
+                .builder
+                .json()
+                .with_span_list(true)
+                .with_filter_reloading();
             let handle = LevelHandle::Json(builder.reload_handle());
-            let dispatch = Dispatch::new(builder.finish());
-            (dispatch, handle)
+            let dispatch = Dispatch::new(builder.finish().with(tasks_layer));
+            (dispatch, handle, tasks)
         }
         "PLAIN" | _ => {
+            let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
             let builder = builder.with_ansi(cfg!(test)).with_filter_reloading();
             let handle = LevelHandle::Plain(builder.reload_handle());
-            let dispatch = Dispatch::new(builder.finish().with(task_layer));
-            (dispatch, handle)
+            let dispatch = Dispatch::new(builder.finish().with(tasks_layer));
+            (dispatch, handle, tasks)
         }
     };
 

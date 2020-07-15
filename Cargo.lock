@@ -2605,7 +2605,7 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace#89dda681a04b6ac98068c5f28eb8d6d984d396ca"
+source = "git+https://github.com/hawkw/tokio-trace#b65bcd254244ce25081cfa83aa0c72514a72bb71"
 dependencies = [
  "num_cpus",
  "serde",
