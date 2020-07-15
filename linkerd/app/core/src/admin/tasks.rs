@@ -1,5 +1,5 @@
 use futures::future;
-use http::StatusCode;
+use http::{header, StatusCode};
 use hyper::{service::Service, Body, Request, Response};
 use std::task::{Context, Poll};
 use std::{
@@ -27,7 +27,47 @@ impl Service<Request<Body>> for Tasks {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, _: Request<Body>) -> Self::Future {
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        if is_json(&req) {
+            let rsp = match self.render_json() {
+                Ok(body) => Response::builder()
+                    .status(StatusCode::OK)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(body.into()),
+                Err(e) => Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(format!("failed rendering JSON: {}", e).into()),
+            }
+            .expect("known status code should not fail");
+
+            return futures::future::ok(rsp);
+        }
+
+        futures::future::ok(
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "text/html")
+                .body(self.render_html().into())
+                .expect("known status code should not fail"),
+        )
+    }
+}
+
+fn is_json<B>(req: &Request<B>) -> bool {
+    req.path().ends_with(".json")
+        || req
+            .headers()
+            .get(header::ACCEPT)
+            .iter()
+            .any(|header| header == "application/json")
+}
+
+impl Tasks {
+    fn render_json(&self) -> serde_json::Result<String> {
+        serde_json::to_string(self.tasks)
+    }
+
+    fn render_html(&self) -> String {
         let mut body = String::from(
             "<html>
                 <head><title>tasks</title></head>
@@ -75,13 +115,7 @@ impl Service<Request<Body>> for Tasks {
             .expect("writing to a String doesn't fail");
         });
         body.push_str("</tbody></table></body></html>");
-        futures::future::ok(
-            Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "text/html")
-                .body(body.into())
-                .expect("response"),
-        )
+        body
     }
 }
 

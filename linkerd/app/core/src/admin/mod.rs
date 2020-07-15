@@ -97,7 +97,7 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
             "/proxy-log-level" => self.trace_level.call(req),
             "/ready" => Box::pin(future::ok(self.ready_rsp())),
             "/live" => Box::pin(future::ok(self.live_rsp())),
-            "/tasks" => Box::pin(self.tasks.call(req)),
+            path if path.starts_with("/tasks") => Box::pin(self.tasks.call(req)),
             _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
     }

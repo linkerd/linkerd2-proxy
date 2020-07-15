@@ -850,6 +850,7 @@ dependencies = [
  "quickcheck",
  "rand 0.7.2",
  "regex 1.2.1",
+ "serde_json",
  "tokio 0.2.22",
  "tokio-test",
  "tokio-timer",
@@ -2604,9 +2605,10 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace#97e14f9600380e93e6315297aa6e1268de988a29"
+source = "git+https://github.com/hawkw/tokio-trace#80f8ecaea0f53c54afc616e82ec79437424c9d5e"
 dependencies = [
  "num_cpus",
+ "serde",
  "tokio 0.2.21",
  "tracing-core",
  "tracing-subscriber",
