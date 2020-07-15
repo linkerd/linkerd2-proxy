@@ -74,7 +74,7 @@ pin-project = "0.4"
 
 # task tracking
 html-escape = "0.2.5"
-tokio-trace = { git = "https://github.com/hawkw/tokio-trace", features = ["serde"] }
+tokio-trace = { git = "https://github.com/hawkw/tokio-trace", rev = "e788d60b1bc048550f1719912e90aa9c4b5bd50a", features = ["serde"] }
 serde_json = "1"
 
 [dependencies.tracing-subscriber]
