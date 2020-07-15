@@ -1,7 +1,7 @@
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
-use tokio_trace::tasks::{TasksLayer, TasksList};
+use tokio_trace::tasks::{TaskList, TasksLayer};
 use tracing::Dispatch;
 use tracing_subscriber::{
     fmt::{format, Formatter},
@@ -21,7 +21,7 @@ type PlainFormatter = Formatter<format::DefaultFields, format::Format<format::Fu
 #[derive(Clone)]
 pub struct Handle {
     pub level: LevelHandle,
-    pub tasks: TasksList,
+    pub tasks: TaskList,
 }
 
 #[derive(Clone)]

@@ -7,7 +7,7 @@ use hyper::{service::Service, Body, Request, Response};
 use std::future::Future;
 use std::task::{Context, Poll};
 use std::{io, pin::Pin, str};
-use tracing::{error, trace, warn};
+use tracing::{trace, warn};
 
 impl Service<Request<Body>> for TraceLevel {
     type Response = Response<Body>;
