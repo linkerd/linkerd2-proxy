@@ -54,17 +54,18 @@ impl Service<Request<Body>> for Tasks {
 }
 
 fn is_json<B>(req: &Request<B>) -> bool {
-    req.path().ends_with(".json")
+    let json = header::HeaderValue::from_static("application/json");
+    req.uri().path().ends_with(".json")
         || req
             .headers()
             .get(header::ACCEPT)
             .iter()
-            .any(|header| header == "application/json")
+            .any(|&value| value == json)
 }
 
 impl Tasks {
     fn render_json(&self) -> serde_json::Result<String> {
-        serde_json::to_string(self.tasks)
+        serde_json::to_string(&self.tasks)
     }
 
     fn render_html(&self) -> String {
