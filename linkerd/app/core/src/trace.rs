@@ -56,7 +56,7 @@ pub fn with_filter_and_format(
 
     // Set up the subscriber
     let start_time = clock::now();
-    let (tasks, task_layer) = tokio_trace::tasks::TasksLayer::<format::DefaultFields>::new();
+    let (tasks, task_layer) = tokio_trace::tasks();
     let builder = FmtSubscriber::builder()
         .with_timer(Uptime { start_time })
         .with_env_filter(filter);
