@@ -28,6 +28,13 @@ impl Service<Request<Body>> for Tasks {
     }
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
+        // `/tasks` endpoint can only be called from loopback IPs
+        if let Err(rsp) = super::check_loopback(&req) {
+            return future::ok(rsp);
+        }
+
+        tracing::info!("dumping tasks...");
+
         if is_json(&req) {
             let rsp = match self.render_json() {
                 Ok(body) => Response::builder()

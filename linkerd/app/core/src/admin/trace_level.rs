@@ -1,4 +1,4 @@
-use super::{rsp, ClientAddr};
+use super::{check_loopback, rsp};
 pub use crate::trace::LevelHandle as TraceLevel;
 use bytes::buf::Buf;
 use futures::future;
@@ -20,23 +20,8 @@ impl Service<Request<Body>> for TraceLevel {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         // `/proxy-log-level` endpoint can only be called from loopback IPs
-        if let Some(addr) = req.extensions().get::<ClientAddr>() {
-            let addr = addr.addr();
-            if !addr.ip().is_loopback() {
-                warn!(message = "denying request from non-loopback IP", %addr);
-                return Box::pin(future::ok(rsp(
-                    StatusCode::FORBIDDEN,
-                    "access to /proxy-log-level only allowed from loopback interface",
-                )));
-            }
-        } else {
-            // TODO: should we panic if this was unset? It's a bug, but should
-            // it crash the proxy?
-            error!(message = "ClientAddr extension should always be set");
-            return Box::pin(future::ok(rsp(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Body::empty(),
-            )));
+        if let Err(rsp) = check_loopback(&req) {
+            return Box::pin(future::ok(rsp));
         }
 
         match req.method() {

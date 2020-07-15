@@ -141,6 +141,25 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
         .expect("builder with known status code must not fail")
 }
 
+fn check_loopback<B>(req: &Request<B>) -> Result<(), Response<Body>> {
+    if let Some(addr) = req.extensions().get::<ClientAddr>() {
+        let addr = addr.addr();
+        if addr.ip().is_loopback() {
+            return Ok(());
+        }
+        tracing::warn!(%addr, "denying request from non-loopback IP");
+        Err(rsp(
+            StatusCode::FORBIDDEN,
+            "access to /proxy-log-level and /trace only allowed from loopback interface",
+        ))
+    } else {
+        // TODO: should we panic if this was unset? It's a bug, but should
+        // it crash the proxy?
+        tracing::error!("ClientAddr extension should always be set");
+        Err(rsp(StatusCode::INTERNAL_SERVER_ERROR, Body::empty()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
