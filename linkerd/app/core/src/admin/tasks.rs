@@ -57,8 +57,8 @@ impl Service<Request<Body>> for Tasks {
                     <td>{total:?}</td>
                     <td>{busy:?}</td>
                     <td>{idle:?}</td>
-                    <th>{scope}</td>
-                    <th>{future}</td>
+                    <td>{scope}</td>
+                    <td>{future}</td>
                 </tr>
                 ",
                 kind = task.kind,
