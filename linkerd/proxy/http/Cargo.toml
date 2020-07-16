@@ -13,11 +13,11 @@ This should probably be decomposed into smaller, decoupled crates.
 [dependencies]
 bytes = "0.5"
 futures = { package = "futures", version = "0.3" }
-h2 = "0.2"
+h2 = "0.2.6"
 http = "0.2"
 http-body = "0.3"
 httparse = "1.2"
-hyper = "0.13"
+hyper = "0.13.7"
 hyper-balance = { path  = "../../../hyper-balance" }
 indexmap = "1.0"
 linkerd2-addr = { path  = "../../addr" }

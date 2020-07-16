@@ -64,7 +64,3 @@ debug = false
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
 tower = { version = "0.3", git = "https://github.com/tower-rs/tower", rev = "8752a3811788e94670c62dc0acbc9613207931b1"}
-# Un-patch after h2 v0.2.6 is published
-h2 = { git = "https://github.com/hyperium/h2", rev = "d3b9f1e36aadc1a7a6804e2f8e86d3fe4a244b4f"} 
-# Un-patch after hyper v0.13.7 is published
-hyper = { version = "0.13", git = "https://github.com/hyperium/hyper", rev = "9832aef9eeaeff8979354d5de04b8706ff79a233"}

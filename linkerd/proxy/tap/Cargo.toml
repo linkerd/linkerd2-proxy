@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 bytes = "0.5"
 http = "0.2"
-hyper = "0.13"
+hyper = "0.13.7"
 futures = "0.3"
 indexmap = "1.0"
 ipnet = "2.0"

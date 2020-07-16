@@ -489,8 +489,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.2.5"
-source = "git+https://github.com/hyperium/h2?rev=d3b9f1e36aadc1a7a6804e2f8e86d3fe4a244b4f#d3b9f1e36aadc1a7a6804e2f8e86d3fe4a244b4f"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993f9e0baeed60001cf565546b0d3dbe6a6ad23f2bd31644a133c641eccf6d53"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -571,14 +572,15 @@ checksum = "cd179ae861f0c2e53da70d892f5f3029f9594be0c41dc5269cd371691b1dc2f9"
 
 [[package]]
 name = "hyper"
-version = "0.13.6"
-source = "git+https://github.com/hyperium/hyper?rev=9832aef9eeaeff8979354d5de04b8706ff79a233#9832aef9eeaeff8979354d5de04b8706ff79a233"
+version = "0.13.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e68a8dd9716185d9e64ea473ea6ef63529252e3e27623295a0378a19665d5eb"
 dependencies = [
  "bytes 0.5.4",
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "httparse",
@@ -740,7 +742,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "hyper",
@@ -879,7 +881,7 @@ dependencies = [
  "bytes 0.5.4",
  "flate2",
  "futures 0.3.5",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "hyper",
@@ -1174,7 +1176,7 @@ name = "linkerd2-proxy-api"
 version = "0.1.13"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.13#f9a95345ef44c3d6f22559442e35f07e0af477e2"
 dependencies = [
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "prost",
  "prost-types",
@@ -1250,7 +1252,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "httparse",
