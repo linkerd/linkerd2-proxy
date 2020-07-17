@@ -1,8 +1,13 @@
+use futures::TryStream;
 use linkerd2_error::Error;
+use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+#[pin_project]
+pub struct FromStream<S>(#[pin] S);
 
 /// Resolves `T`-typed names/addresses as a `Resolution`.
 pub trait Resolve<T> {
@@ -98,5 +103,29 @@ where
     #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.0.resolve(target)
+    }
+}
+
+// === impl FromStream ===
+
+pub fn from_stream<S>(stream: S) -> FromStream<S> {
+    FromStream(stream)
+}
+
+impl<E, S> Resolution for FromStream<S>
+where
+    S: TryStream<Ok = Update<E>>,
+    S::Error: Into<Error>,
+{
+    type Endpoint = E;
+    type Error = S::Error;
+
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
+        let res = futures::ready!(self.project().0.try_poll_next(cx))
+            .expect("resolution stream must be infinite!");
+        Poll::Ready(res)
     }
 }

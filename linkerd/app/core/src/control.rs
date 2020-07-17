@@ -151,10 +151,7 @@ pub mod dns_resolve {
     use linkerd2_dns as dns;
     use linkerd2_error::Error;
     use linkerd2_proxy_core::resolve::{self, Update};
-
-    use pin_project::pin_project;
     use std::collections::{HashSet, VecDeque};
-    use std::future::Future;
     use std::net::SocketAddr;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -178,19 +175,18 @@ pub mod dns_resolve {
         Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + 'static>>;
 
     impl tower::Service<ControlAddr> for Resolve {
-        type Response = FromStream<UpdatesStream>;
+        type Response = resolve::FromStream<UpdatesStream>;
         type Error = Error;
-        type Future =
-            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
 
         fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
-            Box::pin(futures::future::ok(from_stream::<UpdatesStream>(Box::pin(
+            futures::future::ok(resolve::from_stream::<UpdatesStream>(Box::pin(
                 resolution_stream(self.dns.clone(), target.clone()),
-            ))))
+            )))
         }
     }
 
@@ -221,6 +217,7 @@ pub mod dns_resolve {
 
         (adds, removes)
     }
+
     pub fn resolution_stream(
         dns: dns::Resolver,
         address: ControlAddr,
@@ -306,31 +303,6 @@ pub mod dns_resolve {
                 }
             }
         };
-    }
-
-    pub fn from_stream<S>(stream: S) -> FromStream<S> {
-        FromStream(stream)
-    }
-
-    #[pin_project]
-    pub struct FromStream<S>(#[pin] S);
-
-    impl<E, S> resolve::Resolution for FromStream<S>
-    where
-        S: TryStream<Ok = Update<E>>,
-        S::Error: Into<Error>,
-    {
-        type Endpoint = E;
-        type Error = S::Error;
-
-        fn poll(
-            self: Pin<&mut Self>,
-            cx: &mut Context<'_>,
-        ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
-            let res = futures::ready!(self.project().0.try_poll_next(cx))
-                .expect("resolution stream must be infinite!");
-            Poll::Ready(res)
-        }
     }
 }
 

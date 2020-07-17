@@ -5,5 +5,5 @@ pub mod resolve;
 
 pub use self::{
     accept::Accept,
-    resolve::{Resolution, Resolve},
+    resolve::{from_stream, FromStream, Resolution, Resolve},
 };
