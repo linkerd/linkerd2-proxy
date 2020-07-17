@@ -73,7 +73,7 @@ tracing-log = "0.1"
 pin-project = "0.4"
 
 [dependencies.tracing-subscriber]
-version = "0.2.7"
+version = "0.2.8"
 # we don't need `chrono` time formatting
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi", "json", "parking_lot"]

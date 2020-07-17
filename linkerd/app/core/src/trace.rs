@@ -56,7 +56,7 @@ pub fn with_filter_and_format(
 
     match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
-            let builder = builder.json().with_filter_reloading();
+            let builder = builder.json().with_span_list(true).with_filter_reloading();
             let handle = LevelHandle::Json(builder.reload_handle());
             let dispatch = Dispatch::new(builder.finish());
             (dispatch, handle)
