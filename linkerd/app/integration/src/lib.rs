@@ -115,7 +115,6 @@ macro_rules! assert_eventually {
                     } else {
                         tracing::trace!("waiting...");
                         tokio::time::delay_for(patience).await;
-                        std::thread::yield_now();
                         tracing::trace!("done");
                     }
                 }
