@@ -9,6 +9,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+pub use linkerd_access_log as access_log;
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
 pub use linkerd_conditional::Conditional;

@@ -5,6 +5,7 @@ use crate::{
 };
 pub use linkerd_app_core::proxy::http::{strip_header, BoxBody, DetectHttp, Request, Response};
 use linkerd_app_core::{
+    access_log::tower::AccessLogLayer,
     classify,
     config::{ProxyConfig, ServerConfig},
     drain, dst, errors, io, metrics,
@@ -72,6 +73,7 @@ where
                 .push(metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
+                .push(AccessLogLayer::new())
                 .push(TraceContext::layer(
                     span_sink.map(|k| SpanConverter::server(k, trace_labels())),
                 ))

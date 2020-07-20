@@ -6,10 +6,12 @@ mod uptime;
 
 use self::uptime::Uptime;
 use hyper::body::HttpBody;
+use linkerd_access_log::tracing::AccessLogWriter;
 use linkerd_error::Error;
-use std::{env, str};
+use std::{env, str, sync::Arc};
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{fmt::format, prelude::*};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
@@ -96,6 +98,9 @@ impl Settings {
         let level = level::Handle::new(level);
         let registry = tracing_subscriber::registry().with(filter);
 
+        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+        let access_log = AccessLogWriter::new().with_writer(non_blocking);
+
         let (dispatch, tasks) = match format.to_uppercase().as_ref() {
             "JSON" => {
                 let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
@@ -113,7 +118,7 @@ impl Settings {
                     // Since we're using the JSON event formatter, we must also
                     // use the JSON field formatter.
                     .fmt_fields(format::JsonFields::default());
-                let registry = registry.with(tasks_layer);
+                let registry = registry.with(tasks_layer).with(access_log);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()
                 } else {
@@ -123,7 +128,7 @@ impl Settings {
             }
             _ => {
                 let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
-                let registry = registry.with(tasks_layer);
+                let registry = registry.with(tasks_layer).with(access_log);
                 let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()
@@ -139,6 +144,7 @@ impl Settings {
             Handle(Inner::Enabled {
                 level,
                 tasks: tasks::Handle { tasks },
+                flush_guard: Arc::new(guard),
             }),
         )
     }
@@ -153,6 +159,7 @@ enum Inner {
     Enabled {
         level: level::Handle,
         tasks: tasks::Handle,
+        flush_guard: Arc<WorkerGuard>,
     },
 }
 
