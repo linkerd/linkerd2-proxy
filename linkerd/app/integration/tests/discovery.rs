@@ -484,7 +484,7 @@ macro_rules! generate_tests {
                 .expect("override request")
             }
 
-            #[tokio::test]
+            #[tokio::test(basic_scheduler)]
             async fn outbound_honors_override_header() {
                 let mut fixture = Fixture::new().await;
                 let proxy = fixture.proxy().await.run().await;
@@ -517,7 +517,7 @@ macro_rules! generate_tests {
                 };
             }
 
-            #[tokio::test]
+            #[tokio::test(basic_scheduler)]
             async fn outbound_overrides_profile() {
                 let mut fixture = Fixture::new().await;
                 let proxy = fixture.proxy().await.run().await;
@@ -541,7 +541,7 @@ macro_rules! generate_tests {
                 };
             }
 
-            #[tokio::test]
+            #[tokio::test(basic_scheduler)]
             async fn outbound_honors_override_header_with_orig_dst() {
                 let mut fixture = Fixture::new().await;
                 let proxy = fixture.proxy().await
@@ -577,7 +577,7 @@ macro_rules! generate_tests {
                 };
             }
 
-            #[tokio::test]
+            #[tokio::test(basic_scheduler)]
             async fn inbound_overrides_profile() {
                 let mut fixture = Fixture::new().await;
                 let proxy = fixture.proxy().await
@@ -600,7 +600,7 @@ macro_rules! generate_tests {
                 proxy.join_servers().await;
             }
 
-            #[tokio::test]
+            #[tokio::test(basic_scheduler)]
             async fn inbound_still_routes_to_orig_dst() {
                 let mut fixture = Fixture::new().await;
                 let proxy = fixture.proxy().await
