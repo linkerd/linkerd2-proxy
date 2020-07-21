@@ -44,7 +44,11 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 pub type LocalIdentity = tls::Conditional<Local>;
 
 impl Config {
-    pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Result<Identity, Error> {
+    pub fn build(
+        self,
+        dns: impl dns::Resolver + Send + Sync + 'static,
+        metrics: Metrics,
+    ) -> Result<Identity, Error> {
         match self {
             Config::Disabled => Ok(Identity::Disabled),
             Config::Enabled { control, certify } => {

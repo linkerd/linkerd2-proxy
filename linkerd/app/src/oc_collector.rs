@@ -45,7 +45,7 @@ impl Config {
     pub fn build(
         self,
         identity: LocalIdentity,
-        dns: dns::Resolver,
+        dns: impl dns::Resolver + Send + Sync + 'static,
         metrics: metrics::Registry,
     ) -> Result<OcCollector, Error> {
         match self {

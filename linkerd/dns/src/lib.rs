@@ -3,6 +3,7 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
+use async_trait::async_trait;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::future::Future;
 use std::pin::Pin;
@@ -13,32 +14,10 @@ use tracing::{info_span, trace, Span};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
-use trust_dns_resolver::lookup_ip::LookupIp;
+pub use trust_dns_resolver::lookup_ip::LookupIp;
 use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
 
-#[derive(Clone)]
-pub struct Resolver {
-    tx: mpsc::UnboundedSender<ResolveRequest>,
-}
-
-pub trait ConfigureResolver {
-    fn configure_resolver(&self, _: &mut ResolverOpts);
-}
-
-#[derive(Debug)]
-pub enum Error {
-    NoAddressesFound(Instant),
-    ResolutionFailed(ResolveError),
-    TaskLost,
-}
-
-pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-
-pub type ResolveResponseFuture =
-    Pin<Box<dyn Future<Output = Result<ResolveResponse, Error>> + Send + 'static>>;
-
-pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
-
+#[derive(Clone, Debug)]
 pub struct ResolveResponse {
     pub ips: Vec<net::IpAddr>,
     pub valid_until: Instant,
@@ -50,7 +29,38 @@ struct ResolveRequest {
     span: tracing::Span,
 }
 
-impl Resolver {
+#[async_trait]
+pub trait Resolver: Clone {
+    async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error>;
+    async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error>;
+    /// Creates a refining service.
+    fn into_make_refine(self) -> MakeRefine<Self>;
+}
+
+#[derive(Clone)]
+pub struct DnsResolver {
+    tx: mpsc::UnboundedSender<ResolveRequest>,
+}
+
+pub trait ConfigureResolver {
+    fn configure_resolver(&self, _: &mut ResolverOpts);
+}
+
+#[derive(Debug, Clone)]
+pub enum Error {
+    NoAddressesFound(Instant, bool),
+    ResolutionFailed(ResolveError),
+    TaskLost,
+}
+
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+pub type ResolveResponseFuture =
+    Pin<Box<dyn Future<Output = Result<ResolveResponse, Error>> + Send + 'static>>;
+
+pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
+
+impl DnsResolver {
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -103,9 +113,11 @@ impl Resolver {
             }
             tracing::debug!("all resolver handles dropped; terminating.");
         });
-        Ok((Resolver { tx }, task))
+        Ok((DnsResolver { tx }, task))
     }
-
+}
+#[async_trait]
+impl Resolver for DnsResolver {
     async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error> {
         let (result_tx, rx) = oneshot::channel();
         self.tx.send(ResolveRequest {
@@ -117,7 +129,7 @@ impl Resolver {
         Ok(ips)
     }
 
-    pub async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error> {
+    async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error> {
         let name = name.clone();
         let resolver = self.clone();
         let span = info_span!("resolve_ips", %name);
@@ -125,7 +137,7 @@ impl Resolver {
         let ips: Vec<std::net::IpAddr> = result.iter().collect();
         let valid_until = Instant::from_std(result.valid_until());
         if ips.is_empty() {
-            return Err(Error::NoAddressesFound(valid_until));
+            return Err(Error::NoAddressesFound(valid_until, true));
         }
         Ok(ResolveResponse {
             ips: ips,
@@ -133,15 +145,14 @@ impl Resolver {
         })
     }
 
-    /// Creates a refining service.
-    pub fn into_make_refine(self) -> MakeRefine {
+    fn into_make_refine(self) -> MakeRefine<Self> {
         MakeRefine(self)
     }
 }
 
 /// Note: `AsyncResolver` does not implement `Debug`, so we must manually
 ///       implement this.
-impl fmt::Debug for Resolver {
+impl fmt::Debug for DnsResolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Resolver")
             .field("resolver", &"...")
@@ -163,14 +174,22 @@ impl From<oneshot::error::RecvError> for Error {
 
 impl From<ResolveError> for Error {
     fn from(e: ResolveError) -> Self {
-        Self::ResolutionFailed(e)
+        if let ResolveErrorKind::NoRecordsFound {
+            valid_until: Some(valid_until),
+            ..
+        } = e.kind()
+        {
+            Self::NoAddressesFound(Instant::from_std(valid_until.clone()), false)
+        } else {
+            Self::ResolutionFailed(e)
+        }
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoAddressesFound(_) => f.pad("no addresses found"),
+            Self::NoAddressesFound(_, _) => f.pad("no addresses found"),
             Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
             Self::TaskLost => f.pad("background task terminated unexpectedly"),
         }
