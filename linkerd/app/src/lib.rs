@@ -14,10 +14,13 @@ use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
+    classify,
     config::ControlAddr,
-    dns, drain,
+    control, dns, drain,
     proxy::http,
+    reconnect,
     svc::{self, NewService},
+    transport::tls,
     Error,
 };
 use linkerd2_app_gateway as gateway;
@@ -67,8 +70,6 @@ pub struct App {
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
-
-use linkerd2_app_core::{classify, control, reconnect, transport::tls};
 
 impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {

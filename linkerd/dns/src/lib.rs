@@ -174,14 +174,12 @@ impl From<oneshot::error::RecvError> for Error {
 
 impl From<ResolveError> for Error {
     fn from(e: ResolveError) -> Self {
-        if let ResolveErrorKind::NoRecordsFound {
-            valid_until: Some(valid_until),
-            ..
-        } = e.kind()
-        {
-            Self::NoAddressesFound(Instant::from_std(valid_until.clone()), false)
-        } else {
-            Self::ResolutionFailed(e)
+        match e.kind() {
+            ResolveErrorKind::NoRecordsFound {
+                valid_until: Some(valid_until),
+                ..
+            } => Self::NoAddressesFound(Instant::from_std(valid_until.clone()), false),
+            _ => Self::ResolutionFailed(e),
         }
     }
 }

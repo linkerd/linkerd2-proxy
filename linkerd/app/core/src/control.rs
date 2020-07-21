@@ -240,11 +240,12 @@ pub mod dns_resolve {
                     .chain(tokio::stream::pending());
 
                     while let Some(value) = stream.next().await {
+                        debug!(?value, "resolved once");
                         yield value.expect("no errors in this stream");
                     }
                 }
                 Addr::Name(name_addr) => {
-                    let mut current_targets: Vec<Target> = Vec::new();
+                    let mut current: Vec<Target> = Vec::new();
                     loop {
                         let mut resolve_ips = Some(dns.resolve_ips(name_addr.name()));
                         if let Some(resolve_result) = resolve_ips {
@@ -252,7 +253,7 @@ pub mod dns_resolve {
                                 Err(dns::Error::NoAddressesFound(valid_until, exists)) => {
                                     resolve_ips = None;
                                     debug!("resolved empty");
-                                    current_targets.clear();
+                                    current.clear();
                                     if exists {
                                         yield Update::Empty;
                                     } else {
@@ -262,7 +263,7 @@ pub mod dns_resolve {
                                 }
                                 Ok(result) => {
                                     resolve_ips = None;
-                                    let new_targets = result
+                                    let new = result
                                         .ips
                                         .into_iter()
                                         .map(|ip| {
@@ -273,9 +274,9 @@ pub mod dns_resolve {
                                         })
                                         .collect();
 
-                                    let (adds, removes) =
-                                        diff_targets(&current_targets, &new_targets);
+                                    let (adds, removes) = diff_targets(&current, &new);
 
+                                    debug!(?adds, ?removes, "resolved");
                                     if !adds.is_empty() {
                                         yield Update::Add(adds);
                                     }
@@ -284,8 +285,8 @@ pub mod dns_resolve {
                                         yield Update::Remove(removes);
                                     }
 
-                                    current_targets.clear();
-                                    current_targets.extend(new_targets);
+                                    current.clear();
+                                    current.extend(new);
 
                                     time::delay_until(result.valid_until).await;
                                 }
