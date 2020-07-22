@@ -95,7 +95,7 @@ test-lib:: fetch
 
 .PHONY: test-integration
 test-integration: fetch
-	$(CARGO_TEST) --tests
+	$(CARGO_TEST) --tests -- --test-threads=1
 
 .PHONY: test
 test: test-lib test-integration
