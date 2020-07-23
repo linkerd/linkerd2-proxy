@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// Resolves `T`-typed names/addresses as a `Resolution`.
+/// Resolves `T`-typed names/addresses as an infinite stream of `Update<Self::Endpoint>`.
 pub trait Resolve<T> {
     type Endpoint;
     type Error: Into<Error>;
