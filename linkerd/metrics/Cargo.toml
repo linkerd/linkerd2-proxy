@@ -13,7 +13,7 @@ test_util = []
 deflate = { version = "0.7.18", features = ["gzip"] }
 futures = "0.3"
 http = "0.2"
-hyper = "0.13"
+hyper = "0.13.7"
 indexmap = "1.0"
 tracing = "0.1.2"
 

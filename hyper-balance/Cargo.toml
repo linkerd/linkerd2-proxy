@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 futures = "0.3"
 http = "0.2"
-hyper = "0.13"
+hyper = "0.13.7"
 pin-project = "0.4"
 tower = { version = "0.3", default-features = false, features = ["load"]}
 tokio = { version = "0.2", features = ["macros"]}

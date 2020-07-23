@@ -20,10 +20,10 @@ nyi = []
 [dependencies]
 bytes = "0.5"
 futures = "0.3" 
-h2 = "0.2"
+h2 = "0.2.6"
 http = "0.2"
 http-body = "0.3"
-hyper = "0.13"
+hyper = "0.13.7"
 linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
