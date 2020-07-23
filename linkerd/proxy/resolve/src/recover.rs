@@ -1,6 +1,6 @@
 //! A middleware that recovers a resolution after some failures.
 
-use futures::{ready, prelude::*};
+use futures::{prelude::*, ready};
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
@@ -329,15 +329,8 @@ where
                 }
 
                 State::Backoff(ref mut backoff) => {
-                    let more = ready!(backoff
-                        .as_mut()
-                        .expect("illegal state")
-                        .poll_next_unpin(cx));
-                    let backoff = if more.is_some() {
-                        backoff.take()
-                    } else {
-                        None
-                    };
+                    let more = ready!(backoff.as_mut().expect("illegal state").poll_next_unpin(cx));
+                    let backoff = if more.is_some() { backoff.take() } else { None };
                     tracing::trace!("disconnected");
                     State::Disconnected { backoff }
                 }
