@@ -81,8 +81,6 @@ where
     }
 }
 
-impl<E, T, S: ?Sized + TryStream<Ok = Update<E>, Error = T>> ResolutionStreamExt<E, T> for S {}
-
 pub trait ResolutionStreamExt<E, T>: TryStream<Ok = Update<E>, Error = T> {
     fn next_update(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>> {
         self.try_poll_next(cx)
@@ -96,3 +94,5 @@ pub trait ResolutionStreamExt<E, T>: TryStream<Ok = Update<E>, Error = T> {
         Pin::new(self).next_update(cx)
     }
 }
+
+impl<E, T, S: TryStream<Ok = Update<E>, Error = T>> ResolutionStreamExt<E, T> for S {}
