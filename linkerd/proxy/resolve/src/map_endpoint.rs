@@ -1,7 +1,11 @@
 //! A middleware that wraps `Resolutions`, modifying their endpoint type.
 
+use futures::stream::Stream;
+use futures::stream::TryStream;
 use futures::{ready, TryFuture};
+use linkerd2_error::Error;
 use linkerd2_proxy_core::resolve;
+use linkerd2_proxy_core::resolve::ResolutionStreamExt;
 use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -30,11 +34,12 @@ pub struct ResolveFuture<T, F, M> {
 
 #[pin_project]
 #[derive(Clone, Debug)]
-pub struct Resolution<T, M, R> {
+pub struct Resolution<T, M, R, E> {
     #[pin]
     resolution: R,
     target: T,
     map: M,
+    _marker: std::marker::PhantomData<fn(E)>,
 }
 
 // === impl Resolve ===
@@ -54,7 +59,7 @@ where
     R: resolve::Resolve<T>,
     M: MapEndpoint<T, R::Endpoint> + Clone,
 {
-    type Response = Resolution<T, M, R::Resolution>;
+    type Response = Resolution<T, M, R::Resolution, R::Endpoint>;
     type Error = R::Error;
     type Future = ResolveFuture<T, R::Future, M>;
 
@@ -76,13 +81,14 @@ where
 
 // === impl ResolveFuture ===
 
-impl<T, F, M> Future for ResolveFuture<T, F, M>
+impl<T, F, M, E> Future for ResolveFuture<T, F, M>
 where
     F: TryFuture,
-    F::Ok: resolve::Resolution,
-    M: MapEndpoint<T, <F::Ok as resolve::Resolution>::Endpoint>,
+    F::Ok: TryStream<Ok = resolve::Update<E>>,
+    <F::Ok as TryStream>::Error: Into<Error>,
+    M: MapEndpoint<T, E>,
 {
-    type Output = Result<Resolution<T, M, F::Ok>, F::Error>;
+    type Output = Result<Resolution<T, M, F::Ok, E>, F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
@@ -93,26 +99,24 @@ where
             resolution,
             target,
             map,
+            _marker: std::marker::PhantomData,
         }))
     }
 }
 
 // === impl Resolution ===
 
-impl<T, M, R> resolve::Resolution for Resolution<T, M, R>
+impl<T, M, R, E> Stream for Resolution<T, M, R, E>
 where
-    R: resolve::Resolution,
-    M: MapEndpoint<T, R::Endpoint>,
+    R: TryStream<Ok = resolve::Update<E>>,
+    R::Error: Into<Error>,
+    M: MapEndpoint<T, E>,
 {
-    type Endpoint = M::Out;
-    type Error = R::Error;
+    type Item = Result<resolve::Update<M::Out>, R::Error>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<resolve::Update<M::Out>, Self::Error>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
-        let update = match ready!(this.resolution.poll(cx))? {
+        let update = match ready!(this.resolution.next_update(cx))? {
             resolve::Update::Add(eps) => {
                 let mut update = Vec::new();
                 for (a, ep) in eps.into_iter() {
@@ -126,7 +130,7 @@ where
             resolve::Update::DoesNotExist => resolve::Update::DoesNotExist,
             resolve::Update::Empty => resolve::Update::Empty,
         };
-        Poll::Ready(Ok(update))
+        Poll::Ready(Some(Ok(update)))
     }
 }
 

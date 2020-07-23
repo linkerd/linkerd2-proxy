@@ -1,9 +1,10 @@
 //! A middleware that recovers a resolution after some failures.
 
-use futures::{prelude::*, ready};
+use futures::stream::TryStream;
+use futures::{prelude::*, ready, FutureExt, Stream};
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
-use linkerd2_proxy_core::resolve::{self, Resolution as _, Update};
+use linkerd2_proxy_core::resolve::{self, ResolutionStreamExt, Update};
 use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -42,7 +43,7 @@ struct Cache<T> {
 }
 
 #[pin_project]
-enum State<F, R: resolve::Resolution, B> {
+enum State<F, R: TryStream, B> {
     Disconnected {
         backoff: Option<B>,
     },
@@ -62,7 +63,7 @@ enum State<F, R: resolve::Resolution, B> {
     Connected {
         #[pin]
         resolution: R,
-        initial: Option<Update<R::Endpoint>>,
+        initial: Option<R::Ok>,
     },
 
     Recover {
@@ -151,7 +152,7 @@ where
 
 // === impl Resolution ===
 
-impl<T, E, R> resolve::Resolution for Resolution<T, E, R>
+impl<T, E, R> Stream for Resolution<T, E, R>
 where
     T: Clone,
     R: resolve::Resolve<T>,
@@ -161,20 +162,16 @@ where
     E: Recover,
     E::Backoff: Unpin,
 {
-    type Endpoint = R::Endpoint;
-    type Error = Error;
+    type Item = Result<Update<R::Endpoint>, Error>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         loop {
             // If a reconciliation update is buffered (i.e. after
             // reconcile_after_reconnect), process it immediately.
             if let Some(update) = this.reconcile.take() {
                 this.update_active(&update);
-                return Poll::Ready(Ok(update));
+                return Poll::Ready(Some(Ok(update)));
             }
 
             match this.inner.state {
@@ -195,17 +192,18 @@ where
                         {
                             *this.reconcile = reconcile;
                             this.update_active(&update);
-                            return Poll::Ready(Ok(update));
+                            return Poll::Ready(Some(Ok(update)));
                         }
                     }
 
                     // Process the resolution stream, updating the cache.
                     //
                     // Attempt recovery/backoff if the resolution fails.
-                    match ready!(resolution.poll_unpin(cx)) {
+
+                    match ready!(resolution.next_update_pin(cx)) {
                         Ok(update) => {
                             this.update_active(&update);
-                            return Poll::Ready(Ok(update));
+                            return Poll::Ready(Some(Ok(update)));
                         }
                         Err(e) => {
                             this.inner.state = State::Recover {
@@ -300,7 +298,11 @@ where
                 State::Pending {
                     ref mut resolution,
                     ref mut backoff,
-                } => match ready!(resolution.as_mut().expect("illegal state").poll_unpin(cx)) {
+                } => match ready!(resolution
+                    .as_mut()
+                    .expect("illegal state")
+                    .next_update_pin(cx))
+                {
                     Err(e) => State::Recover {
                         error: Some(e.into()),
                         backoff: backoff.take(),

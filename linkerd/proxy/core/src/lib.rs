@@ -2,4 +2,4 @@
 
 pub mod resolve;
 
-pub use self::resolve::{Resolution, Resolve};
+pub use self::{resolve::Resolve, resolve::Update};
