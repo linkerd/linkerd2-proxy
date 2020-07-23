@@ -10,7 +10,6 @@ use linkerd2_app_core::{
     request_filter, Addr, DiscoveryRejected, Error, Recover,
 };
 use linkerd2_app_outbound::Target;
-use linkerd2_error::Never;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tonic::{
@@ -105,7 +104,6 @@ impl From<ExponentialBackoff> for BackoffUnlessInvalidArgument {
 
 impl Recover<Error> for BackoffUnlessInvalidArgument {
     type Backoff = ExponentialBackoffStream;
-    type Error = Never;
 
     fn recover(&self, err: Error) -> Result<Self::Backoff, Error> {
         match err.downcast::<Status>() {

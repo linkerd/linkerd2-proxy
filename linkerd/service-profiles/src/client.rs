@@ -1,6 +1,6 @@
 use crate::http as profiles;
 use api::destination_client::DestinationClient;
-use futures::{future, ready, select_biased, FutureExt, Stream, TryStreamExt};
+use futures::{future, prelude::*, ready, select_biased};
 use http;
 use http_body::Body as HttpBody;
 use linkerd2_addr::{Addr, NameAddr};
@@ -359,11 +359,8 @@ where
                 }
                 StateProj::Backoff(ref mut backoff) => {
                     trace!("backoff");
-                    let backoff = match ready!(backoff.as_mut().unwrap().try_poll_next_unpin(cx)) {
-                        Some(e) => {
-                            e.map_err(Into::into)?;
-                            backoff.take()
-                        }
+                    let backoff = match ready!(backoff.as_mut().unwrap().poll_next_unpin(cx)) {
+                        Some(()) => backoff.take(),
                         None => None,
                     };
                     this.state.set(State::Disconnected { backoff });
