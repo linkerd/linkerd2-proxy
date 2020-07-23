@@ -109,7 +109,7 @@ where
                 return Poll::Ready(Some(Ok(change)));
             }
 
-            match ready!(this.resolution.next_update(cx))? {
+            match ready!(this.resolution.poll_next_update(cx))? {
                 Update::Add(endpoints) => {
                     for (addr, endpoint) in endpoints.into_iter() {
                         this.active.insert(addr);

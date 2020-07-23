@@ -200,7 +200,7 @@ where
                     //
                     // Attempt recovery/backoff if the resolution fails.
 
-                    match ready!(resolution.next_update_pin(cx)) {
+                    match ready!(resolution.poll_next_update_unpin(cx)) {
                         Ok(update) => {
                             this.update_active(&update);
                             return Poll::Ready(Some(Ok(update)));
@@ -301,7 +301,7 @@ where
                 } => match ready!(resolution
                     .as_mut()
                     .expect("illegal state")
-                    .next_update_pin(cx))
+                    .poll_next_update_unpin(cx))
                 {
                     Err(e) => State::Recover {
                         error: Some(e.into()),

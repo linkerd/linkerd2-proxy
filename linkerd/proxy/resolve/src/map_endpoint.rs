@@ -116,7 +116,7 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
-        let update = match ready!(this.resolution.next_update(cx))? {
+        let update = match ready!(this.resolution.poll_next_update(cx))? {
             resolve::Update::Add(eps) => {
                 let mut update = Vec::new();
                 for (a, ep) in eps.into_iter() {

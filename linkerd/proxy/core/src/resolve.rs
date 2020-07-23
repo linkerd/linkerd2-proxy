@@ -82,16 +82,16 @@ where
 }
 
 pub trait ResolutionStreamExt<E, T>: TryStream<Ok = Update<E>, Error = T> {
-    fn next_update(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>> {
+    fn poll_next_update(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>> {
         self.try_poll_next(cx)
             .map(|result| result.expect("resolution stream never ends"))
     }
 
-    fn next_update_pin(&mut self, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>>
+    fn poll_next_update_unpin(&mut self, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>>
     where
         Self: Unpin,
     {
-        Pin::new(self).next_update(cx)
+        Pin::new(self).poll_next_update(cx)
     }
 }
 
