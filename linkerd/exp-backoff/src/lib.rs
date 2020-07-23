@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_error::Never;
 use pin_project::pin_project;
 use rand::{rngs::SmallRng, SeedableRng};
 use std::fmt;
@@ -99,7 +98,7 @@ impl ExponentialBackoff {
 }
 
 impl Stream for ExponentialBackoffStream {
-    type Item = Result<(), Never>;
+    type Item = ();
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
@@ -111,7 +110,7 @@ impl Stream for ExponentialBackoffStream {
 
                 this.delay.as_mut().set(None);
                 *this.iterations += 1;
-                return Poll::Ready(Some(Ok(())));
+                return Poll::Ready(Some(()));
             }
             if *this.iterations == std::u32::MAX {
                 return Poll::Ready(None);
