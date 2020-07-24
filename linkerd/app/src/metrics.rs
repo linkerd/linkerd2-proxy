@@ -18,6 +18,8 @@ impl Metrics {
     pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
         let process = telemetry::process::Report::new(SystemTime::now());
 
+        let build_info = telemetry::build_info::Report::new();
+
         let (control, control_report) = {
             let m = metrics::Requests::<ControlLabels, Class>::default();
             let r = m.clone().into_report(retain_idle).with_prefix("control");
@@ -98,7 +100,8 @@ impl Metrics {
             .and_then(transport_report)
             .and_then(opencensus_report)
             .and_then(stack)
-            .and_then(process);
+            .and_then(process)
+            .and_then(build_info);
 
         (metrics, report)
     }
