@@ -39,8 +39,19 @@ tower = { version = "0.3", default-features = false}
 tonic = { version = "0.2", default-features = false }
 tracing = "0.1.9"
 tracing-futures = { version = "0.2", features = ["std-future"] }
-tracing-subscriber = "0.2.7"
-webpki = "0.21.0"
+webpki = "0.21.0
+
+[dependencies.tracing-subscriber]
+version = "0.2.8"
+# we don't need `chrono` time formatting or ANSI colored output
+default-features = false
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
 
 [dev-dependencies]
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies.tracing-subscriber]
+version = "0.2.8"
+# turn on ANSI colors for tests :)
+default-features = false
+features = ["env-filter", "fmt", "smallvec", "ansi", "tracing-log", "json", "parking_lot"]
