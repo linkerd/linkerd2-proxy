@@ -2,7 +2,6 @@ use futures::stream::TryStream;
 use linkerd2_error::Error;
 use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Resolves `T`-typed names/addresses as an infinite stream of `Update<Self::Endpoint>`.
@@ -80,19 +79,3 @@ where
         self.0.resolve(target)
     }
 }
-
-pub trait ResolutionStreamExt<E, T>: TryStream<Ok = Update<E>, Error = T> {
-    fn poll_next_update(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>> {
-        self.try_poll_next(cx)
-            .map(|result| result.expect("resolution stream never ends"))
-    }
-
-    fn poll_next_update_unpin(&mut self, cx: &mut Context<'_>) -> Poll<Result<Update<E>, T>>
-    where
-        Self: Unpin,
-    {
-        Pin::new(self).poll_next_update(cx)
-    }
-}
-
-impl<E, T, S: TryStream<Ok = Update<E>, Error = T>> ResolutionStreamExt<E, T> for S {}

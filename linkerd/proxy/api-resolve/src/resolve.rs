@@ -149,12 +149,7 @@ impl Stream for Resolution {
 
                     None => {} // continue
                 },
-                None => {
-                    return Poll::Ready(Some(Err(grpc::Status::new(
-                        grpc::Code::Ok,
-                        "end of stream",
-                    ))))
-                }
+                None => return Poll::Ready(None),
             };
         }
     }

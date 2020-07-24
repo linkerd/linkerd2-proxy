@@ -5,7 +5,6 @@ use futures::stream::TryStream;
 use futures::{ready, TryFuture};
 use linkerd2_error::Error;
 use linkerd2_proxy_core::resolve;
-use linkerd2_proxy_core::resolve::ResolutionStreamExt;
 use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -116,19 +115,22 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
-        let update = match ready!(this.resolution.poll_next_update(cx))? {
-            resolve::Update::Add(eps) => {
-                let mut update = Vec::new();
-                for (a, ep) in eps.into_iter() {
-                    let ep = this.map.map_endpoint(&this.target, a, ep);
-                    update.push((a, ep));
-                }
+        let update = match ready!(this.resolution.try_poll_next(cx)) {
+            Some(result) => match result? {
+                resolve::Update::Add(eps) => {
+                    let mut update = Vec::new();
+                    for (a, ep) in eps.into_iter() {
+                        let ep = this.map.map_endpoint(&this.target, a, ep);
+                        update.push((a, ep));
+                    }
 
-                resolve::Update::Add(update)
-            }
-            resolve::Update::Remove(addrs) => resolve::Update::Remove(addrs),
-            resolve::Update::DoesNotExist => resolve::Update::DoesNotExist,
-            resolve::Update::Empty => resolve::Update::Empty,
+                    resolve::Update::Add(update)
+                }
+                resolve::Update::Remove(addrs) => resolve::Update::Remove(addrs),
+                resolve::Update::DoesNotExist => resolve::Update::DoesNotExist,
+                resolve::Update::Empty => resolve::Update::Empty,
+            },
+            None => return Poll::Ready(None),
         };
         Poll::Ready(Some(Ok(update)))
     }

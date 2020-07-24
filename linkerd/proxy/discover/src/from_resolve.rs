@@ -1,6 +1,6 @@
 use futures::{ready, Stream, TryFuture, TryStream};
 use indexmap::IndexSet;
-use linkerd2_proxy_core::resolve::{ResolutionStreamExt, Resolve, Update};
+use linkerd2_proxy_core::resolve::{Resolve, Update};
 use pin_project::pin_project;
 use std::collections::VecDeque;
 use std::future::Future;
@@ -109,24 +109,27 @@ where
                 return Poll::Ready(Some(Ok(change)));
             }
 
-            match ready!(this.resolution.poll_next_update(cx))? {
-                Update::Add(endpoints) => {
-                    for (addr, endpoint) in endpoints.into_iter() {
-                        this.active.insert(addr);
-                        this.pending.push_back(Change::Insert(addr, endpoint));
-                    }
-                }
-                Update::Remove(addrs) => {
-                    for addr in addrs.into_iter() {
-                        if this.active.remove(&addr) {
-                            this.pending.push_back(Change::Remove(addr));
+            match ready!(this.resolution.try_poll_next(cx)) {
+                Some(update) => match update? {
+                    Update::Add(endpoints) => {
+                        for (addr, endpoint) in endpoints.into_iter() {
+                            this.active.insert(addr);
+                            this.pending.push_back(Change::Insert(addr, endpoint));
                         }
                     }
-                }
-                Update::DoesNotExist | Update::Empty => {
-                    this.pending
-                        .extend(this.active.drain(..).map(Change::Remove));
-                }
+                    Update::Remove(addrs) => {
+                        for addr in addrs.into_iter() {
+                            if this.active.remove(&addr) {
+                                this.pending.push_back(Change::Remove(addr));
+                            }
+                        }
+                    }
+                    Update::DoesNotExist | Update::Empty => {
+                        this.pending
+                            .extend(this.active.drain(..).map(Change::Remove));
+                    }
+                },
+                None => return Poll::Ready(None),
             }
         }
     }

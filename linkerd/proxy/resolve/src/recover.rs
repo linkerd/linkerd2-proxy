@@ -4,7 +4,7 @@ use futures::stream::TryStream;
 use futures::{prelude::*, ready, FutureExt, Stream};
 use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
-use linkerd2_proxy_core::resolve::{self, ResolutionStreamExt, Update};
+use linkerd2_proxy_core::resolve::{self, Update};
 use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -70,6 +70,8 @@ enum State<F, R: TryStream, B> {
         error: Option<Error>,
         backoff: Option<B>,
     },
+
+    Eos,
 
     Backoff(Option<B>),
 }
@@ -200,19 +202,22 @@ where
                     //
                     // Attempt recovery/backoff if the resolution fails.
 
-                    match ready!(resolution.poll_next_update_unpin(cx)) {
-                        Ok(update) => {
+                    match ready!(resolution.try_poll_next_unpin(cx)) {
+                        Some(Ok(update)) => {
                             this.update_active(&update);
                             return Poll::Ready(Some(Ok(update)));
                         }
-                        Err(e) => {
+                        Some(Err(e)) => {
                             this.inner.state = State::Recover {
                                 error: Some(e.into()),
                                 backoff: None,
                             }
                         }
+                        None => return Poll::Ready(None),
                     }
                 }
+
+                State::Eos => return Poll::Ready(None),
                 // XXX(eliza): note that this match was originally an `if let`,
                 // but that doesn't work with `#[project]` for some kinda reason
                 _ => {}
@@ -301,22 +306,23 @@ where
                 } => match ready!(resolution
                     .as_mut()
                     .expect("illegal state")
-                    .poll_next_update_unpin(cx))
+                    .try_poll_next_unpin(cx))
                 {
-                    Err(e) => State::Recover {
+                    Some(Err(e)) => State::Recover {
                         error: Some(e.into()),
                         backoff: backoff.take(),
                     },
-                    Ok(initial) => {
+                    Some(Ok(initial)) => {
                         tracing::trace!("connected");
                         State::Connected {
                             resolution: resolution.take().expect("illegal state"),
                             initial: Some(initial),
                         }
                     }
+                    None => State::Eos,
                 },
 
-                State::Connected { .. } => return Poll::Ready(Ok(())),
+                State::Connected { .. } | State::Eos => return Poll::Ready(Ok(())),
 
                 // If any stage failed, try to recover. If the error is
                 // recoverable, start (or continue) backing off...
