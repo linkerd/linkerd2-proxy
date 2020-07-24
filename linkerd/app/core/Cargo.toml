@@ -79,9 +79,9 @@ serde_json = "1"
 
 [dependencies.tracing-subscriber]
 version = "0.2.8"
-# we don't need `chrono` time formatting
+# we don't need `chrono` time formatting or ANSI colored output
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi", "json", "parking_lot"]
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
 
 [dependencies.tower]
 version = "0.3"
