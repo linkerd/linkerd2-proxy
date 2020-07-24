@@ -111,7 +111,7 @@ pub mod add_origin {
         }
     }
 
-    // === impl MakeFuture ===
+    // === impl Resolve ===
 
     impl<F, B> Future for MakeFuture<F, B>
     where
@@ -150,7 +150,6 @@ pub mod dns_resolve {
     use async_stream::try_stream;
     use futures::future;
     use futures::prelude::*;
-    use futures::stream::StreamExt;
     use linkerd2_addr::Addr;
     use linkerd2_dns as dns;
     use linkerd2_error::Error;
@@ -166,7 +165,7 @@ pub mod dns_resolve {
         dns: R,
     }
 
-    // === impl ControlPlaneResolve ===
+    // === impl Resolve ===
 
     impl<R> Resolve<R> {
         pub fn new(dns: R) -> Self {
@@ -183,7 +182,7 @@ pub mod dns_resolve {
     {
         type Response = resolve::FromStream<UpdatesStream>;
         type Error = Error;
-        type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+        type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
         fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
@@ -205,13 +204,13 @@ pub mod dns_resolve {
         let mut adds = Vec::default();
         let mut removes = Vec::default();
 
-        for new_target in new_targets.iter() {
+        for new_target in new_targets {
             if !old_targets.contains(new_target) {
                 adds.push((new_target.addr, new_target.clone()))
             }
         }
 
-        for old_target in old_targets.iter() {
+        for old_target in old_targets {
             if !new_targets.contains(old_target) {
                 removes.push(old_target.addr)
             }
@@ -234,24 +233,16 @@ pub mod dns_resolve {
                 Addr::Socket(sa) => {
                     // this should yield the socket address once
                     // and keep on yielding NotReady forever.
-                    let mut stream = futures::stream::once(future::ok::<Update<Target>, Error>(
-                        Update::Add(vec![(sa, Target::new(sa, address.identity))]),
-                    ))
-                    .chain(tokio::stream::pending());
-
-                    while let Some(value) = stream.next().await {
-                        debug!(?value, "resolved once");
-                        yield value.expect("no errors in this stream");
-                    }
+                    let update = Update::Add(vec![(sa, Target::new(sa, address.identity))]);
+                    debug!(?update, "resolved once");
+                    yield update;
+                    future::pending::<Update<Target>>().await;
                 }
                 Addr::Name(name_addr) => {
                     let mut current: Vec<Target> = Vec::new();
                     loop {
-                        let mut resolve_ips = Some(dns.resolve_ips(name_addr.name()));
-                        if let Some(resolve_result) = resolve_ips {
-                            match resolve_result.await {
+                            match dns.resolve_ips(name_addr.name()).await {
                                 Err(dns::Error::NoAddressesFound(valid_until, exists)) => {
-                                    resolve_ips = None;
                                     debug!("resolved empty");
                                     current.clear();
                                     if exists {
@@ -262,7 +253,6 @@ pub mod dns_resolve {
                                     time::delay_until(valid_until).await;
                                 }
                                 Ok(result) => {
-                                    resolve_ips = None;
                                     let new = result
                                         .ips
                                         .into_iter()
@@ -295,7 +285,6 @@ pub mod dns_resolve {
                                 }
                             };
                         }
-                    }
                 }
             }
         }

@@ -54,10 +54,6 @@ pub enum Error {
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-
-pub type ResolveResponseFuture =
-    Pin<Box<dyn Future<Output = Result<ResolveResponse, Error>> + Send + 'static>>;
-
 pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
 
 impl DnsResolver {
@@ -116,6 +112,7 @@ impl DnsResolver {
         Ok((DnsResolver { tx }, task))
     }
 }
+
 #[async_trait]
 impl Resolver for DnsResolver {
     async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error> {
