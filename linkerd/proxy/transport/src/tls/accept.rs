@@ -1,22 +1,18 @@
-use super::{conditional_accept, ReasonForNoPeerName};
+use super::{conditional_accept, Conditional, PeerIdentity, ReasonForNoPeerName};
 use crate::io::{BoxedIo, PrefixedIo};
-use crate::listen::{self, Addrs};
+use crate::listen::Addrs;
 use bytes::BytesMut;
 use indexmap::IndexSet;
-use linkerd2_conditional::Conditional;
 use linkerd2_dns_name as dns;
-use linkerd2_error::Error;
 use linkerd2_identity as identity;
-use linkerd2_proxy_core::Accept;
-use linkerd2_stack::layer;
-use pin_project::pin_project;
+use linkerd2_proxy_detect as detect;
 pub use rustls::ServerConfig as Config;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use tokio::net::TcpStream;
-use tracing::{debug, trace};
+use tokio::{
+    io::{self, AsyncReadExt},
+    net::TcpStream,
+};
+use tracing::{debug, trace, warn};
 
 pub trait HasConfig {
     fn tls_server_name(&self) -> identity::Name;
@@ -32,272 +28,151 @@ pub fn empty_config() -> Arc<Config> {
 #[derive(Clone, Debug)]
 pub struct Meta {
     // TODO sni name
-    pub peer_identity: super::PeerIdentity,
+    pub peer_identity: PeerIdentity,
     pub addrs: Addrs,
 }
 
 pub type Connection = (Meta, BoxedIo);
 
-#[derive(Clone)]
-pub struct AcceptTls<A: Accept<Connection>, T> {
-    accept: A,
-    tls: super::Conditional<T>,
+#[derive(Clone, Debug)]
+pub struct DetectTls<I> {
+    local_identity: Conditional<I>,
     skip_ports: Arc<IndexSet<u16>>,
 }
 
-#[pin_project]
-pub struct AcceptFuture<A: Accept<Connection>> {
-    #[pin]
-    state: AcceptState<A>,
-}
-
-#[pin_project(project = AcceptStateProj)]
-enum AcceptState<A: Accept<Connection>> {
-    TryTls(Option<TryTls<A>>),
-    TerminateTls(
-        #[pin] tokio_rustls::Accept<PrefixedIo<TcpStream>>,
-        Option<AcceptMeta<A>>,
-    ),
-    ReadyAccept(A, Option<Connection>),
-    Accept(#[pin] A::Future),
-}
-
-pub struct TryTls<A: Accept<Connection>> {
-    meta: AcceptMeta<A>,
-    server_name: identity::Name,
-    config: Arc<Config>,
-    peek_buf: BytesMut,
-    socket: TcpStream,
-}
-
-pub struct AcceptMeta<A: Accept<Connection>> {
-    accept: A,
-    addrs: Addrs,
-}
-
-// === impl Listen ===
-
-impl<A: Accept<Connection>, T: HasConfig> AcceptTls<A, T> {
+impl<I: HasConfig> DetectTls<I> {
     const PEEK_CAPACITY: usize = 8192;
 
-    pub fn new(tls: super::Conditional<T>, accept: A) -> Self {
+    pub fn new(local_identity: Conditional<I>, skip_ports: Arc<IndexSet<u16>>) -> Self {
         Self {
-            accept,
-            tls,
-            skip_ports: Default::default(),
+            local_identity,
+            skip_ports,
         }
-    }
-
-    pub fn with_skip_ports(mut self, skip_ports: Arc<IndexSet<u16>>) -> Self {
-        self.skip_ports = skip_ports;
-        self
-    }
-
-    pub fn layer(
-        tls: super::Conditional<T>,
-        skip_ports: Arc<IndexSet<u16>>,
-    ) -> impl tower::layer::Layer<A, Service = AcceptTls<A, T>>
-    where
-        T: Clone,
-    {
-        layer::mk(move |accept| {
-            AcceptTls::new(tls.clone(), accept).with_skip_ports(skip_ports.clone())
-        })
     }
 }
 
-impl<A, T> tower::Service<listen::Connection> for AcceptTls<A, T>
-where
-    A: Accept<Connection> + Clone,
-    T: HasConfig + Send + 'static,
-{
-    type Response = A::ConnectionFuture;
-    type Error = Error;
-    type Future = AcceptFuture<A>;
+#[async_trait::async_trait]
+impl<I: HasConfig + Send + Sync> detect::Detect<Addrs, TcpStream> for DetectTls<I> {
+    type Target = Meta;
+    type Io = BoxedIo;
+    type Error = io::Error;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.accept
-            .poll_ready(cx)
-            .map(|poll| poll.map_err(Into::into))
-    }
-
-    fn call(&mut self, (addrs, socket): listen::Connection) -> Self::Future {
-        // Protocol detection is disabled for the original port. Return a
-        // new connection without protocol detection.
-        let target_addr = addrs.target_addr();
-
-        match &self.tls {
-            // Tls is disabled. Return a new plaintext connection.
+    async fn detect(&self, addrs: Addrs, mut tcp: TcpStream) -> io::Result<(Meta, BoxedIo)> {
+        let local_id = match self.local_identity.as_ref() {
+            Conditional::Some(local_id) => local_id,
             Conditional::None(reason) => {
-                debug!(%reason, "skipping TLS");
                 let meta = Meta {
+                    peer_identity: Conditional::None(reason),
                     addrs,
-                    peer_identity: Conditional::None(*reason),
                 };
-                let conn = (meta, BoxedIo::new(socket));
-                AcceptFuture::accept(self.accept.accept(conn))
+                return Ok((meta, BoxedIo::new(tcp)));
+            }
+        };
+
+        let port = addrs.target_addr().port();
+        if self.skip_ports.contains(&port) {
+            debug!(%port, "Skipping TLS detection on port");
+            let meta = Meta {
+                peer_identity: Conditional::None(ReasonForNoPeerName::PortSkipped),
+                addrs,
+            };
+            return Ok((meta, BoxedIo::new(tcp)));
+        }
+
+        let no_tls_meta = move |addrs: Addrs| Meta {
+            peer_identity: Conditional::None(ReasonForNoPeerName::NoTlsFromRemote),
+            addrs,
+        };
+
+        // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello.
+        // Because peeked data does not need to be retained, we use a static
+        // buffer to prevent needless heap allocation.
+        //
+        // Anecdotally, the ClientHello sent by Linkerd proxies is <300B. So a
+        // ~500B byte buffer is more than enough.
+        let mut buf = [0u8; 512];
+        let sz = tcp.peek(&mut buf).await?;
+        debug!(sz, "Peeked bytes from TCP stream");
+        match conditional_accept::match_client_hello(&buf, &local_id.tls_server_name()) {
+            conditional_accept::Match::Matched => {
+                trace!("Identified matching SNI via peek");
+                // Terminate the TLS stream.
+                let (peer_identity, tls) = handshake(local_id, tcp).await?;
+                let meta = Meta {
+                    peer_identity,
+                    addrs,
+                };
+                return Ok((meta, BoxedIo::new(tls)));
             }
 
-            // Tls is enabled. Try to accept a Tls handshake.
-            Conditional::Some(tls) => {
-                if self.skip_ports.contains(&target_addr.port()) {
-                    debug!("skipping protocol detection");
+            conditional_accept::Match::NotMatched => {
+                trace!("Not a matching TLS ClientHello");
+                return Ok((no_tls_meta(addrs), BoxedIo::new(tcp)));
+            }
+
+            conditional_accept::Match::Incomplete => {}
+        }
+
+        // Peeking didn't return enough data, so instead we'll allocate more
+        // capacity and try reading data from the socket.
+        debug!("Attempting to buffer TLS ClientHello after incomplete peek");
+        let mut buf = BytesMut::with_capacity(Self::PEEK_CAPACITY);
+        debug!(buf.capacity = %buf.capacity(), "Reading bytes from TCP stream");
+        while tcp.read_buf(&mut buf).await? != 0 {
+            debug!(buf.len = %buf.len(), "Read bytes from TCP stream");
+            match conditional_accept::match_client_hello(buf.as_ref(), &local_id.tls_server_name())
+            {
+                conditional_accept::Match::Matched => {
+                    trace!("Identified matching SNI via buffered read");
+                    // Terminate the TLS stream.
+                    let (peer_identity, tls) =
+                        handshake(local_id, PrefixedIo::new(buf.freeze(), tcp)).await?;
                     let meta = Meta {
-                        peer_identity: Conditional::None(
-                            super::ReasonForNoPeerName::NotHttp.into(),
-                        ),
+                        peer_identity,
                         addrs,
                     };
-                    let conn = (meta, BoxedIo::new(socket));
-                    AcceptFuture::accept(self.accept.accept(conn))
-                } else {
-                    debug!("attempting TLS handshake");
-                    let meta = AcceptMeta {
-                        accept: self.accept.clone(),
-                        addrs,
-                    };
-                    AcceptFuture::try_tls(TryTls {
-                        meta,
-                        socket,
-                        peek_buf: BytesMut::with_capacity(Self::PEEK_CAPACITY),
-                        config: tls.tls_server_config(),
-                        server_name: tls.tls_server_name(),
-                    })
+                    return Ok((meta, BoxedIo::new(tls)));
                 }
-            }
-        }
-    }
-}
 
-impl<A: Accept<Connection>> AcceptFuture<A> {
-    fn accept(f: A::Future) -> Self {
-        Self {
-            state: AcceptState::Accept(f),
-        }
-    }
+                conditional_accept::Match::NotMatched => break,
 
-    fn try_tls(try_tls: TryTls<A>) -> Self {
-        Self {
-            state: AcceptState::TryTls(Some(try_tls)),
-        }
-    }
-}
-
-impl<A: Accept<Connection>> Future for AcceptFuture<A> {
-    type Output = Result<A::ConnectionFuture, Error>;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        loop {
-            match this.state.as_mut().project() {
-                AcceptStateProj::Accept(future) => return future.poll(cx).map_err(Into::into),
-                AcceptStateProj::ReadyAccept(accept, conn) => {
-                    futures::ready!(accept.poll_ready(cx).map_err(Into::into))?;
-                    let conn = accept.accept(conn.take().expect("polled after complete"));
-                    this.state.set(AcceptState::Accept(conn))
-                }
-                AcceptStateProj::TryTls(ref mut try_tls) => {
-                    let match_ = futures::ready!(try_tls
-                        .as_mut()
-                        .expect("polled after complete")
-                        .poll_match_client_hello(cx))?;
-                    match match_ {
-                        conditional_accept::Match::Matched => {
-                            trace!("upgrading accepted connection to TLS");
-                            let TryTls {
-                                meta,
-                                socket,
-                                peek_buf,
-                                config,
-                                ..
-                            } = try_tls.take().expect("polled after complete");
-                            let io = PrefixedIo::new(peek_buf.freeze(), socket);
-                            this.state.set(AcceptState::TerminateTls(
-                                tokio_rustls::TlsAcceptor::from(config).accept(io),
-                                Some(meta),
-                            ));
-                        }
-
-                        conditional_accept::Match::NotMatched => {
-                            trace!("passing through accepted connection without TLS");
-                            let TryTls {
-                                peek_buf,
-                                socket,
-                                meta: AcceptMeta { accept, addrs },
-                                ..
-                            } = try_tls.take().expect("polled after complete");
-                            let meta = Meta {
-                                addrs,
-                                peer_identity: Conditional::None(
-                                    ReasonForNoPeerName::NotProvidedByRemote.into(),
-                                ),
-                            };
-                            let conn = (
-                                meta,
-                                BoxedIo::new(PrefixedIo::new(peek_buf.freeze(), socket)),
-                            );
-                            this.state.set(AcceptState::ReadyAccept(accept, Some(conn)))
-                        }
-
-                        conditional_accept::Match::Incomplete => {
-                            continue;
-                        }
+                conditional_accept::Match::Incomplete => {
+                    if buf.capacity() == 0 {
+                        // If we can't buffer an entire TLS ClientHello, it
+                        // almost definitely wasn't initiated by another proxy,
+                        // at least.
+                        warn!("Buffer insufficient for TLS ClientHello");
+                        break;
                     }
                 }
-                AcceptStateProj::TerminateTls(future, meta) => {
-                    let io = futures::ready!(future.poll(cx))?;
-                    let peer_identity =
-                        client_identity(&io)
-                            .map(Conditional::Some)
-                            .unwrap_or_else(|| {
-                                Conditional::None(super::ReasonForNoIdentity::NoPeerName(
-                                    super::ReasonForNoPeerName::NotProvidedByRemote,
-                                ))
-                            });
-                    trace!(peer.identity=?peer_identity, "accepted TLS connection");
-
-                    let AcceptMeta { accept, addrs } = meta.take().expect("polled after complete");
-                    // FIXME the connection doesn't know about TLS connections
-                    // that don't have a client id.
-                    let meta = Meta {
-                        addrs,
-                        peer_identity,
-                    };
-                    this.state.set(AcceptState::ReadyAccept(
-                        accept,
-                        Some((meta, BoxedIo::new(io))),
-                    ));
-                }
             }
         }
+
+        trace!("Could not read TLS ClientHello via buffering");
+        let io = BoxedIo::new(PrefixedIo::new(buf.freeze(), tcp));
+        Ok((no_tls_meta(addrs), io))
     }
 }
 
-impl<A: Accept<Connection>> TryTls<A> {
-    /// Polls the underlying socket for more data and buffers it.
-    ///
-    /// The buffer is matched for a Tls client hello message.
-    ///
-    /// `NotMatched` is returned if the underlying socket has closed.
-    fn poll_match_client_hello(
-        &mut self,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<conditional_accept::Match, Error>> {
-        use crate::io::AsyncRead;
+async fn handshake<L, T>(
+    local_id: &L,
+    io: T,
+) -> io::Result<(PeerIdentity, tokio_rustls::server::TlsStream<T>)>
+where
+    L: HasConfig,
+    T: io::AsyncRead + io::AsyncWrite + Unpin,
+{
+    let tls = tokio_rustls::TlsAcceptor::from(local_id.tls_server_config())
+        .accept(io)
+        .await?;
 
-        let sz = futures::ready!(Pin::new(&mut self.socket).poll_read_buf(cx, &mut self.peek_buf))?;
-        trace!(%sz, "read");
-        if sz == 0 {
-            // XXX: It is ambiguous whether this is the start of a Tls handshake or not.
-            // For now, resolve the ambiguity in favor of plaintext. TODO: revisit this
-            // when we add support for Tls policy.
-            return Poll::Ready(Ok(conditional_accept::Match::NotMatched.into()));
-        }
+    // Determine the peer's identity, if it exist.
+    let peer_id = client_identity(&tls)
+        .map(Conditional::Some)
+        .unwrap_or_else(|| Conditional::None(ReasonForNoPeerName::NoPeerIdFromRemote));
 
-        let buf = self.peek_buf.as_ref();
-        let m = conditional_accept::match_client_hello(buf, &self.server_name);
-        trace!(sni = %self.server_name, r#match = ?m, "conditional_accept");
-        Poll::Ready(Ok(m.into()))
-    }
+    trace!(peer.identity = ?peer_id, "Accepted TLS connection");
+    Ok((peer_id, tls))
 }
 
 fn client_identity<S>(tls: &tokio_rustls::server::TlsStream<S>) -> Option<identity::Name> {

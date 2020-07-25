@@ -128,7 +128,7 @@ impl<T: tap::Inspect> tap::Inspect for Target<T> {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
         self.inner.src_tls(req)
     }
 
@@ -143,7 +143,7 @@ impl<T: tap::Inspect> tap::Inspect for Target<T> {
     fn dst_tls<B>(
         &self,
         req: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
         self.inner.dst_tls(req)
     }
 
@@ -236,7 +236,7 @@ impl tap::Inspect for HttpEndpoint {
     fn src_tls<'a, B>(
         &self,
         _: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 
@@ -251,7 +251,7 @@ impl tap::Inspect for HttpEndpoint {
     fn dst_tls<B>(
         &self,
         _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
         self.identity.as_ref()
     }
 

@@ -1353,6 +1353,7 @@ name = "linkerd2-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
  "indexmap",
@@ -1365,6 +1366,7 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-metrics",
  "linkerd2-proxy-core",
+ "linkerd2-proxy-detect",
  "linkerd2-stack",
  "pin-project",
  "ring",

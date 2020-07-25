@@ -3,7 +3,7 @@ use http;
 use indexmap::IndexMap;
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
-use linkerd2_proxy_transport::tls::ReasonForNoIdentity;
+use linkerd2_proxy_transport::tls::ReasonForNoPeerName;
 use std::net;
 use std::sync::Arc;
 
@@ -40,7 +40,7 @@ pub trait Inspect {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, ReasonForNoIdentity>;
+    ) -> Conditional<&'a identity::Name, ReasonForNoPeerName>;
 
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
 
@@ -49,7 +49,7 @@ pub trait Inspect {
     fn dst_tls<B>(
         &self,
         req: &http::Request<B>,
-    ) -> Conditional<&identity::Name, ReasonForNoIdentity>;
+    ) -> Conditional<&identity::Name, ReasonForNoPeerName>;
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>>;
 

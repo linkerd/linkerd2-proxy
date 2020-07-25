@@ -16,7 +16,7 @@ pub struct ControlLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
     pub direction: Direction,
-    pub tls_id: Conditional<TlsId, tls::ReasonForNoIdentity>,
+    pub tls_id: Conditional<TlsId, tls::ReasonForNoPeerName>,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
 }

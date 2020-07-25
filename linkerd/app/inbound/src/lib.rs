@@ -417,10 +417,10 @@ impl Config {
             )))
             .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
             // Terminates inbound mTLS from other outbound proxies.
-            .push(tls::AcceptTls::layer(
+            .push(DetectProtocolLayer::new(tls::DetectTls::new(
                 local_identity,
                 disable_protocol_detection_for_ports,
-            ))
+            )))
             // Limits the amount of time that the TCP server spends waiting for TLS handshake &
             // protocol detection. Ensures that connections that never emit data are dropped
             // eventually.

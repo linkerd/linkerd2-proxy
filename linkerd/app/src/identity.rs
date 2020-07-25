@@ -79,7 +79,9 @@ impl Config {
 impl Identity {
     pub fn local(&self) -> LocalIdentity {
         match self {
-            Identity::Disabled => tls::Conditional::None(tls::ReasonForNoIdentity::Disabled),
+            Identity::Disabled => {
+                tls::Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)
+            }
             Identity::Enabled { ref local, .. } => tls::Conditional::Some(local.clone()),
         }
     }

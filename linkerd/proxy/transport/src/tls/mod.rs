@@ -4,14 +4,14 @@ use std::fmt;
 
 pub mod accept;
 pub mod client;
-mod conditional_accept;
+pub mod conditional_accept;
 
-pub use self::accept::AcceptTls;
+pub use self::accept::DetectTls;
 pub use self::client::ConnectLayer;
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.
-pub type Conditional<T> = linkerd2_conditional::Conditional<T, ReasonForNoIdentity>;
+pub type Conditional<T> = linkerd2_conditional::Conditional<T, ReasonForNoPeerName>;
 
 pub type PeerIdentity = Conditional<identity::Name>;
 
@@ -20,23 +20,10 @@ pub trait HasPeerIdentity {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ReasonForNoIdentity {
-    /// Identity is administratively disabled.
-    Disabled,
-
-    /// The remote peer does not have a known identity name.
-    NoPeerName(ReasonForNoPeerName),
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReasonForNoPeerName {
     /// The connection is a non-HTTP connection so we don't know anything
     /// about the destination besides its address.
     NotHttp,
-
-    /// The connection is for HTTP but the HTTP request doesn't have an
-    /// authority so we can't extract the identity from it.
-    NoAuthorityInHttpRequest,
 
     /// The destination service didn't give us the identity, which is its way
     /// of telling us that we shouldn't do TLS for this endpoint.
@@ -46,34 +33,28 @@ pub enum ReasonForNoPeerName {
     /// doesn't need or support TLS.
     Loopback,
 
+    // The connection was insecure.
+    NoTlsFromRemote,
+
     // Identity was not provided by the remote peer.
-    NotProvidedByRemote,
-}
+    NoPeerIdFromRemote,
 
-impl From<ReasonForNoPeerName> for ReasonForNoIdentity {
-    fn from(r: ReasonForNoPeerName) -> Self {
-        ReasonForNoIdentity::NoPeerName(r)
-    }
-}
+    // TLS termination was not attempted on this port.
+    PortSkipped,
 
-impl fmt::Display for ReasonForNoIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ReasonForNoIdentity::Disabled => write!(f, "disabled"),
-            ReasonForNoIdentity::NoPeerName(n) => write!(f, "{}", n),
-        }
-    }
+    /// Identity is administratively disabled.
+    LocalIdentityDisabled,
 }
 
 impl fmt::Display for ReasonForNoPeerName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ReasonForNoPeerName::LocalIdentityDisabled => write!(f, "disabled"),
             ReasonForNoPeerName::Loopback => write!(f, "loopback"),
-            ReasonForNoPeerName::NoAuthorityInHttpRequest => {
-                write!(f, "no_authority_in_http_request")
-            }
             ReasonForNoPeerName::NotHttp => write!(f, "not_http"),
-            ReasonForNoPeerName::NotProvidedByRemote => write!(f, "not_provided_by_remote"),
+            ReasonForNoPeerName::PortSkipped => write!(f, "port_skipped"),
+            ReasonForNoPeerName::NoTlsFromRemote => write!(f, "no_tls_from_remote"),
+            ReasonForNoPeerName::NoPeerIdFromRemote => write!(f, "no_peer_id_from_remote"),
             ReasonForNoPeerName::NotProvidedByServiceDiscovery => {
                 write!(f, "not_provided_by_service_discovery")
             }

@@ -1,7 +1,7 @@
 use crate::identity::LocalIdentity;
 use linkerd2_app_core::{
-    admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, trace::LevelHandle,
-    transport::tls, Error,
+    admin, config::ServerConfig, drain, metrics::FmtMetrics, proxy::detect::DetectProtocol, serve,
+    trace::LevelHandle, transport::tls, Error,
 };
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -34,7 +34,10 @@ impl Config {
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, log_level);
-        let accept = tls::AcceptTls::new(identity, admin.into_accept());
+        let accept = DetectProtocol::new(
+            tls::DetectTls::new(identity, Default::default()),
+            admin.into_accept(),
+        );
         let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
         Ok(Admin {
             listen_addr,

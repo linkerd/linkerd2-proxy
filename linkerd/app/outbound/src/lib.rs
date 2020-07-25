@@ -547,10 +547,10 @@ impl Config {
             )))
             // The local application never establishes mTLS with the proxy, so don't try to
             // terminate TLS, just annotate with the connection with the reason.
-            .push(tls::AcceptTls::layer(
+            .push(DetectProtocolLayer::new(tls::DetectTls::new(
                 no_tls,
                 disable_protocol_detection_for_ports,
-            ))
+            )))
             // Limits the amount of time that the TCP server spends waiting for protocol
             // detection. Ensures that connections that never emit data are dropped eventually.
             .push_timeout(detect_protocol_timeout);
