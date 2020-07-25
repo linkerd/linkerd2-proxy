@@ -8,10 +8,10 @@
 use futures::prelude::*;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_core::Accept;
+use linkerd2_proxy_detect as detect;
 use linkerd2_proxy_transport::tls::{
     self,
-    accept::{AcceptTls, Connection as ServerConnection},
+    accept::{Connection as ServerConnection, DetectTls},
     client::Connection as ClientConnection,
     Conditional,
 };
@@ -22,8 +22,11 @@ use tokio::{
     self,
     io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
-use tower::layer::Layer;
-use tower::util::{service_fn, ServiceExt};
+use tower::{
+    layer::Layer,
+    util::{service_fn, ServiceExt},
+    Service,
+};
 use tracing_futures::Instrument;
 
 #[test]
@@ -147,8 +150,8 @@ where
 
         let (listen_addr, listen) = Bind::new(addr, None).bind().expect("must bind");
 
-        let mut accept = AcceptTls::new(
-            server_tls,
+        let mut accept = detect::Accept::new(
+            DetectTls::new(server_tls, Default::default()),
             service_fn(move |(meta, conn): ServerConnection| {
                 let server = server.clone();
                 let sender = sender.clone();
@@ -178,7 +181,7 @@ where
             let accept = accept.ready_and().await.expect("accept failed");
             tracing::debug!("accept ready");
             accept
-                .accept(conn)
+                .call(conn)
                 .await
                 .expect("connection failed")
                 .await

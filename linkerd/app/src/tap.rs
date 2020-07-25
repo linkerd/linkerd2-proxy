@@ -2,7 +2,7 @@ use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::ServerConfig,
     drain,
-    proxy::{detect::DetectProtocol, identity, tap},
+    proxy::{detect, identity, tap},
     serve,
     transport::tls,
     Error,
@@ -49,7 +49,7 @@ impl Config {
             } => {
                 let (listen_addr, listen) = config.bind.bind()?;
 
-                let accept = DetectProtocol::new(
+                let accept = detect::Accept::new(
                     tls::DetectTls::new(identity, Default::default()),
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server),
                 );

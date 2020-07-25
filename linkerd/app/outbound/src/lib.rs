@@ -18,8 +18,8 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, detect::DetectProtocolLayer, discover, http, identity,
-        resolve::map_endpoint, server::ProtocolDetect, tap, tcp, Server,
+        self, core::resolve::Resolve, detect, discover, http, identity, resolve::map_endpoint,
+        server::ProtocolDetect, tap, tcp, Server,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -542,12 +542,12 @@ impl Config {
             Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
 
         let tcp_detect = svc::stack(tcp_server)
-            .push(DetectProtocolLayer::new(ProtocolDetect::new(
+            .push(detect::AcceptLayer::new(ProtocolDetect::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             // The local application never establishes mTLS with the proxy, so don't try to
             // terminate TLS, just annotate with the connection with the reason.
-            .push(DetectProtocolLayer::new(tls::DetectTls::new(
+            .push(detect::AcceptLayer::new(tls::DetectTls::new(
                 no_tls,
                 disable_protocol_detection_for_ports,
             )))

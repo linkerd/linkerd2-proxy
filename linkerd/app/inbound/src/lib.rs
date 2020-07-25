@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        detect::DetectProtocolLayer,
+        detect,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
         server::{Protocol as ServerProtocol, ProtocolDetect, Server},
@@ -412,12 +412,12 @@ impl Config {
         );
 
         let tcp_detect = svc::stack(tcp_server)
-            .push(DetectProtocolLayer::new(ProtocolDetect::new(
+            .push(detect::AcceptLayer::new(ProtocolDetect::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
             // Terminates inbound mTLS from other outbound proxies.
-            .push(DetectProtocolLayer::new(tls::DetectTls::new(
+            .push(detect::AcceptLayer::new(tls::DetectTls::new(
                 local_identity,
                 disable_protocol_detection_for_ports,
             )))

@@ -1,6 +1,6 @@
 use crate::identity::LocalIdentity;
 use linkerd2_app_core::{
-    admin, config::ServerConfig, drain, metrics::FmtMetrics, proxy::detect::DetectProtocol, serve,
+    admin, config::ServerConfig, drain, metrics::FmtMetrics, proxy::detect, serve,
     trace::LevelHandle, transport::tls, Error,
 };
 use std::net::SocketAddr;
@@ -34,7 +34,7 @@ impl Config {
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, log_level);
-        let accept = DetectProtocol::new(
+        let accept = detect::Accept::new(
             tls::DetectTls::new(identity, Default::default()),
             admin.into_accept(),
         );
