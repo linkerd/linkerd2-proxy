@@ -539,7 +539,7 @@ impl Config {
         );
 
         let no_tls: tls::Conditional<identity::Local> =
-            Conditional::None(tls::ReasonForNoPeerName::Loopback.into());
+            Conditional::None(tls::ReasonForNoPeerName::Loopback);
 
         let tcp_detect = svc::stack(tcp_server)
             .push(detect::AcceptLayer::new(ProtocolDetect::new(
