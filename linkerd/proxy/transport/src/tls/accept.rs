@@ -41,7 +41,13 @@ pub struct DetectTls<I> {
 }
 
 impl<I: HasConfig> DetectTls<I> {
-    const PEEK_CAPACITY: usize = 8192;
+    // The initial peek buffer is statically allocated on the stack and is fairly small; but it is
+    // large enough to hold the ~300B ClientHello sent by proxies.
+    const PEEK_CAPACITY: usize = 512;
+
+    // A larger fallback buffer is allocated onto the heap if the initial peek buffer is
+    // insufficient. This is the same value used in HTTP detection.
+    const BUFFER_CAPACITY: usize = 8192;
 
     pub fn new(local_identity: Conditional<I>, skip_ports: Arc<IndexSet<u16>>) -> Self {
         Self {
@@ -90,7 +96,7 @@ impl<I: HasConfig + Send + Sync> detect::Detect<Addrs, TcpStream> for DetectTls<
         //
         // Anecdotally, the ClientHello sent by Linkerd proxies is <300B. So a
         // ~500B byte buffer is more than enough.
-        let mut buf = [0u8; 512];
+        let mut buf = [0u8; Self::PEEK_CAPACITY];
         let sz = tcp.peek(&mut buf).await?;
         debug!(sz, "Peeked bytes from TCP stream");
         match conditional_accept::match_client_hello(&buf, &local_id.tls_server_name()) {
@@ -116,7 +122,7 @@ impl<I: HasConfig + Send + Sync> detect::Detect<Addrs, TcpStream> for DetectTls<
         // Peeking didn't return enough data, so instead we'll allocate more
         // capacity and try reading data from the socket.
         debug!("Attempting to buffer TLS ClientHello after incomplete peek");
-        let mut buf = BytesMut::with_capacity(Self::PEEK_CAPACITY);
+        let mut buf = BytesMut::with_capacity(Self::BUFFER_CAPACITY);
         debug!(buf.capacity = %buf.capacity(), "Reading bytes from TCP stream");
         while tcp.read_buf(&mut buf).await? != 0 {
             debug!(buf.len = %buf.len(), "Read bytes from TCP stream");
