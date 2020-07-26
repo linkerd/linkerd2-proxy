@@ -99,6 +99,9 @@ impl fmt::Display for TlsStatus {
 
 impl FmtLabels for TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Self(Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)) = self {
+            return write!(f, "tls=\"disabled\"");
+        }
         if let Self(Conditional::None(why)) = self {
             return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
         }
