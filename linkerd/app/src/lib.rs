@@ -291,7 +291,7 @@ impl App {
             ..
         } = self;
 
-        // Run a daemon thread for all administative tasks.
+        // Run a daemon thread for all administrative tasks.
         //
         // The main reactor holds `admin_shutdown_tx` until the reactor drops
         // the task. This causes the daemon reactor to stop.

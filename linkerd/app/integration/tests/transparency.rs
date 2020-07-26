@@ -69,6 +69,10 @@ async fn outbound_tcp() {
 
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
+
+    // TCP client must close first
+    tcp_client.shutdown().await;
+
     // ensure panics from the server are propagated
     proxy.join_servers().await;
 }
@@ -95,6 +99,10 @@ async fn inbound_tcp() {
 
     tcp_client.write(msg1).await;
     assert_eq!(tcp_client.read().await, msg2.as_bytes());
+
+    // TCP client must close first
+    tcp_client.shutdown().await;
+
     // ensure panics from the server are propagated
     proxy.join_servers().await;
 }
@@ -181,6 +189,10 @@ async fn test_server_speaks_first(env: TestEnv) {
     assert_eq!(s(&tcp_client.read_timeout(TIMEOUT).await), msg1);
     tcp_client.write(msg2).await;
     timeout(TIMEOUT, rx.recv()).await.unwrap();
+
+    // TCP client must close first
+    tcp_client.shutdown().await;
+
     // ensure panics from the server are propagated
     proxy.join_servers().await;
 }
@@ -491,6 +503,9 @@ macro_rules! http1_tests {
             let chat_resp = tcp_client.read().await;
             assert_eq!(s(&chat_resp), chatproto_res);
 
+            // TCP client must close first
+            tcp_client.shutdown().await;
+
             // ensure panics from the server are propagated
             proxy.join_servers().await;
         }
@@ -639,6 +654,9 @@ macro_rules! http1_tests {
             // Did anyone respond?
             let resp2 = tcp_client.read().await;
             assert_eq!(s(&resp2), s(&tunneled_res[..]));
+
+            // TCP client must close first
+            tcp_client.shutdown().await;
 
             // ensure panics from the server are propagated
             proxy.join_servers().await;
