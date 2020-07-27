@@ -521,6 +521,7 @@ impl Config {
                     .push(http_admit_request)
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
+                    .box_http_response()
             )
             .instrument(
                 |src: &tls::accept::Meta| {
@@ -530,8 +531,6 @@ impl Config {
             .check_new_service::<tls::accept::Meta>();
 
         let tcp_server = Server::new(
-            TransportLabels,
-            metrics.transport,
             tcp_forward.into_inner(),
             http_server.into_inner(),
             h2_settings,
@@ -542,6 +541,7 @@ impl Config {
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
 
         let tcp_detect = svc::stack(tcp_server)
+            .push(metrics.transport.layer_accept(TransportLabels))
             .push(detect::AcceptLayer::new(ProtocolDetect::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
@@ -583,11 +583,13 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<proxy::server::Protocol> for TransportLabels {
+type ServerProtocol = proxy::server::Protocol<tls::accept::Meta>;
+
+impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, proto: &proxy::server::Protocol) -> Self::Labels {
-        transport::labels::Key::accept("outbound", proto.tls.peer_identity.as_ref())
+    fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
+        transport::labels::Key::accept("outbound", proto.target.peer_identity.as_ref())
     }
 }
 

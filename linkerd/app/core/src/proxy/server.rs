@@ -1,13 +1,11 @@
 use crate::proxy::http::{
+    self,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
     trace, upgrade, Version as HttpVersion,
 };
 use crate::transport::{
-    self,
     io::{self, BoxedIo, Peekable},
-    labels::Key as TransportKey,
-    metrics::TransportLabels,
     tls,
 };
 use crate::{
@@ -18,7 +16,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::TryFutureExt;
-use http;
 use hyper;
 use indexmap::IndexSet;
 use std::future::Future;
@@ -29,12 +26,10 @@ use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
-pub struct Protocol {
+pub struct Protocol<T> {
     pub http: Option<HttpVersion>,
-    pub tls: tls::accept::Meta,
+    pub target: T,
 }
-
-pub type Connection = (Protocol, BoxedIo);
 
 #[derive(Clone, Debug)]
 pub struct ProtocolDetect {
@@ -55,20 +50,20 @@ impl ProtocolDetect {
 
 #[async_trait]
 impl detect::Detect<tls::accept::Meta, BoxedIo> for ProtocolDetect {
-    type Target = Protocol;
+    type Target = Protocol<tls::accept::Meta>;
     type Io = BoxedIo;
     type Error = io::Error;
 
     async fn detect(
         &self,
-        tls: tls::accept::Meta,
+        target: tls::accept::Meta,
         io: BoxedIo,
     ) -> Result<(Self::Target, BoxedIo), Self::Error> {
-        let port = tls.addrs.target_addr().port();
+        let port = target.addrs.target_addr().port();
 
         // Skip detection if the port is in the configured set.
         if self.skip_ports.contains(&port) {
-            let proto = Protocol { tls, http: None };
+            let proto = Protocol { target, http: None };
             return Ok::<_, Self::Error>((proto, io));
         }
 
@@ -76,64 +71,37 @@ impl detect::Detect<tls::accept::Meta, BoxedIo> for ProtocolDetect {
         // Currently, we only check for an HTTP prefix.
         let peek = io.peek(self.capacity).await?;
         let http = HttpVersion::from_prefix(peek.prefix().as_ref());
-        let proto = Protocol { tls, http };
+        let proto = Protocol { target, http };
         Ok((proto, BoxedIo::new(peek)))
     }
 }
 
-/// A protocol-transparent Server!
+/// Accepts a TCP stream according to its detected protocol.
 ///
-/// As TCP streams are passed to `Server::serve`, the following occurs:
+/// The server accepts TCP connections with their detected protocol. If the
+/// protocol is known to be HTTP, a server is built with a new HTTP service
+/// (built using the `H`-typed NewService).
 ///
-/// *   A `Source` is created to describe the accepted connection.
-///
-/// *  If the original destination address's port is not specified in
-///    `disable_protocol_detection_ports`, then data received on the connection is
-///    buffered until the server can determine whether the streams begins with a
-///    HTTP/1 or HTTP/2 preamble.
-///
-/// *  If the stream is not determined to be HTTP, then the original destination
-///    address is used to transparently forward the TCP stream. A `C`-typed
-///    `Connect` `Stack` is used to build a connection to the destination (i.e.,
-///    instrumented with telemetry, etc).
-///
-/// *  Otherwise, an `H`-typed `Service` is used to build a service that
-///    can route HTTP  requests for the `tls::accept::Meta`.
-pub struct Server<L, F, H, B>
-where
-    H: NewService<tls::accept::Meta>,
-    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
-{
+/// Otherwise, the `F` type forwarding service is used to handle the TCP
+/// connection.
+#[derive(Clone, Debug)]
+pub struct Server<F, H> {
     http: hyper::server::conn::Http<trace::Executor>,
-    h2_settings: H2Settings,
-    transport_labels: L,
-    transport_metrics: transport::Metrics,
     forward_tcp: F,
     make_http: H,
     drain: drain::Watch,
 }
 
-impl<L, F, H, B> Server<L, F, H, B>
-where
-    L: TransportLabels<Protocol, Labels = TransportKey>,
-    H: NewService<tls::accept::Meta>,
-    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
-    Self: Accept<Connection>,
-{
+impl<F, H> Server<F, H> {
     /// Creates a new `Server`.
-    pub fn new(
-        transport_labels: L,
-        transport_metrics: transport::Metrics,
-        forward_tcp: F,
-        make_http: H,
-        h2_settings: H2Settings,
-        drain: drain::Watch,
-    ) -> Self {
+    pub fn new(forward_tcp: F, make_http: H, h2: H2Settings, drain: drain::Watch) -> Self {
+        let mut http = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
+
+        http.http2_initial_stream_window_size(h2.initial_stream_window_size)
+            .http2_initial_connection_window_size(h2.initial_connection_window_size);
+
         Self {
-            http: hyper::server::conn::Http::new().with_executor(trace::Executor::new()),
-            h2_settings,
-            transport_labels,
-            transport_metrics,
+            http,
             forward_tcp,
             make_http,
             drain,
@@ -141,21 +109,19 @@ where
     }
 }
 
-impl<L, F, H, B> Service<Connection> for Server<L, F, H, B>
+impl<T, I, F, H, S> Service<(Protocol<T>, I)> for Server<F, H>
 where
-    L: TransportLabels<Protocol, Labels = TransportKey>,
-    F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone + Send + 'static,
+    T: Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    F: Accept<(T, I)> + Clone + Send + 'static,
     F::Future: Send + 'static,
     F::ConnectionFuture: Send + 'static,
-    H: NewService<tls::accept::Meta> + Send + 'static,
-    H::Service: Service<http::Request<Body>, Response = http::Response<B>, Error = Error>
+    H: NewService<T, Service = S> + Send + 'static,
+    S: Service<http::Request<Body>, Response = http::Response<http::boxed::Payload>, Error = Error>
         + Unpin
         + Send
         + 'static,
-    <H::Service as Service<http::Request<Body>>>::Future: Send + 'static,
-    B: hyper::body::HttpBody + Default + Send + 'static,
-    B::Error: Into<Error>,
-    B::Data: Send + 'static,
+    S::Future: Send + 'static,
 {
     type Response = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     type Error = Error;
@@ -172,15 +138,9 @@ where
     /// what protocol the connection is speaking. From there, the connection
     /// will be mapped into respective services, and spawned into an
     /// executor.
-    fn call(&mut self, (proto, io): Connection) -> Self::Future {
-        // TODO move this into a distinct Accept?
-        let io = {
-            let labels = self.transport_labels.transport_labels(&proto);
-            self.transport_metrics.wrap_server_transport(labels, io)
-        };
-
+    fn call(&mut self, (Protocol { http, target }, io): (Protocol<T>, I)) -> Self::Future {
         let drain = self.drain.clone();
-        let http_version = match proto.http {
+        let http_version = match http {
             Some(http) => http,
             None => {
                 trace!("did not detect protocol; forwarding TCP");
@@ -189,7 +149,7 @@ where
                     .forward_tcp
                     .clone()
                     .into_service()
-                    .oneshot((proto.tls, io));
+                    .oneshot((target, io));
                 let fwd = async move {
                     let conn = accept.await.map_err(Into::into)?;
                     Ok(Box::pin(
@@ -204,11 +164,8 @@ where
             }
         };
 
-        let http_svc = self.make_http.new_service(proto.tls);
-
+        let http_svc = self.make_http.new_service(target);
         let mut builder = self.http.clone();
-        let initial_stream_window_size = self.h2_settings.initial_stream_window_size;
-        let initial_conn_window_size = self.h2_settings.initial_connection_window_size;
         Box::pin(async move {
             match http_version {
                 HttpVersion::Http1 => {
@@ -231,8 +188,6 @@ where
                 HttpVersion::H2 => {
                     let conn = builder
                         .http2_only(true)
-                        .http2_initial_stream_window_size(initial_stream_window_size)
-                        .http2_initial_connection_window_size(initial_conn_window_size)
                         .serve_connection(io, HyperServerSvc::new(http_svc));
                     Ok(Box::pin(async move {
                         drain
@@ -244,26 +199,5 @@ where
                 }
             }
         })
-    }
-}
-
-impl<L, F, H, B> Clone for Server<L, F, H, B>
-where
-    L: TransportLabels<Protocol, Labels = TransportKey> + Clone,
-    F: Clone,
-    H: NewService<tls::accept::Meta> + Clone,
-    H::Service: Service<http::Request<Body>, Response = http::Response<B>>,
-    B: hyper::body::HttpBody,
-{
-    fn clone(&self) -> Self {
-        Self {
-            http: self.http.clone(),
-            h2_settings: self.h2_settings.clone(),
-            transport_labels: self.transport_labels.clone(),
-            transport_metrics: self.transport_metrics.clone(),
-            forward_tcp: self.forward_tcp.clone(),
-            make_http: self.make_http.clone(),
-            drain: self.drain.clone(),
-        }
     }
 }

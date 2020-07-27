@@ -4,6 +4,8 @@ use linkerd2_errno::Errno;
 use linkerd2_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
+use linkerd2_proxy_core as core;
+use linkerd2_stack::layer;
 use pin_project::pin_project;
 use std::fmt;
 use std::future::Future;
@@ -50,6 +52,13 @@ pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 #[derive(Debug)]
 pub struct ConnectLayer<L, K: Eq + Hash + FmtLabels> {
     label: L,
+    registry: Arc<Mutex<Inner<K>>>,
+}
+
+#[derive(Debug)]
+pub struct Accept<L, K: Eq + Hash + FmtLabels, M> {
+    label: L,
+    inner: M,
     registry: Arc<Mutex<Inner<K>>>,
 }
 
@@ -182,15 +191,27 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
         ConnectLayer::new(label, self.0.clone())
     }
 
-    pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
-        let metrics = self
-            .0
-            .lock()
-            .expect("metrics registry poisoned")
-            .get_or_default(labels)
-            .clone();
-        Io::new(io, Sensor::open(metrics))
+    pub fn layer_accept<L: Clone, S>(
+        &self,
+        label: L,
+    ) -> impl layer::Layer<S, Service = Accept<L, K, S>> + Clone {
+        let registry = self.0.clone();
+        layer::mk(move |inner| Accept {
+            inner,
+            label: label.clone(),
+            registry: registry.clone(),
+        })
     }
+
+    // pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
+    //     let metrics = self
+    //         .0
+    //         .lock()
+    //         .expect("metrics registry poisoned")
+    //         .get_or_default(labels)
+    //         .clone();
+    //     Io::new(io, Sensor::open(metrics))
+    // }
 }
 
 impl<L, K: Eq + Hash + FmtLabels> ConnectLayer<L, K> {
@@ -217,6 +238,52 @@ impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLa
     }
 }
 
+// === impl Accept ===
+
+impl<L, K, M> Clone for Accept<L, K, M>
+where
+    L: Clone,
+    K: Eq + Hash + FmtLabels,
+    M: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            label: self.label.clone(),
+            registry: self.registry.clone(),
+        }
+    }
+}
+
+impl<L, T, I, A> tower::Service<(T, I)> for Accept<L, L::Labels, A>
+where
+    L: TransportLabels<T>,
+    A: core::Accept<(T, Io<I>)>,
+{
+    type Response = A::ConnectionFuture;
+    type Error = A::Error;
+    type Future = A::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, (target, io): (T, I)) -> Self::Future {
+        let labels = self.label.transport_labels(&target);
+        let metrics = self
+            .registry
+            .lock()
+            .expect("metrics registr poisoned")
+            .get_or_default(labels)
+            .clone();
+
+        self.inner
+            .accept((target, Io::new(io, Sensor::open(metrics))))
+    }
+}
+
+// === impl Connect ===
+
 impl<L, K, M> Clone for Connect<L, K, M>
 where
     L: Clone,
@@ -231,8 +298,6 @@ where
         }
     }
 }
-
-// === impl Connect ===
 
 impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
 where

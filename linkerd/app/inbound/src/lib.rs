@@ -17,10 +17,10 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        detect,
+        self, detect,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
-        server::{Protocol as ServerProtocol, ProtocolDetect, Server},
+        server::{ProtocolDetect, Server},
         tap, tcp,
     },
     reconnect, router, serve,
@@ -392,7 +392,8 @@ impl Config {
                     .push(http_admit_request)
                     .push(http_server_observability)
                     .push(metrics.stack.layer(stack_labels("source")))
-                    .box_http_request(),
+                    .box_http_request()
+                    .box_http_response(),
             )
             .check_new_service::<tls::accept::Meta>()
             .instrument(|src: &tls::accept::Meta| {
@@ -403,8 +404,6 @@ impl Config {
             });
 
         let tcp_server = Server::new(
-            TransportLabels,
-            metrics.transport,
             tcp_forward.into_inner(),
             http_server.into_inner(),
             h2_settings,
@@ -412,6 +411,7 @@ impl Config {
         );
 
         let tcp_detect = svc::stack(tcp_server)
+            .push(metrics.transport.layer_accept(TransportLabels))
             .push(detect::AcceptLayer::new(ProtocolDetect::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
@@ -456,11 +456,13 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     }
 }
 
+type ServerProtocol = proxy::server::Protocol<tls::accept::Meta>;
+
 impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
-        transport::labels::Key::accept("inbound", proto.tls.peer_identity.as_ref())
+        transport::labels::Key::accept("inbound", proto.target.peer_identity.as_ref())
     }
 }
 
