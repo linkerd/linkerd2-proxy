@@ -97,7 +97,8 @@ impl<F, H> Server<F, H> {
     pub fn new(forward_tcp: F, make_http: H, h2: H2Settings, drain: drain::Watch) -> Self {
         let mut http = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
 
-        http.http2_initial_stream_window_size(h2.initial_stream_window_size)
+        http.http2_adaptive_window(true)
+            .http2_initial_stream_window_size(h2.initial_stream_window_size)
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
 
         Self {
