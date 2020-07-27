@@ -3,10 +3,10 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
-use async_trait::async_trait;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{fmt, net};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
@@ -17,28 +17,8 @@ pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
 pub use trust_dns_resolver::lookup_ip::LookupIp;
 use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
 
-#[derive(Clone, Debug)]
-pub struct ResolveResponse {
-    pub ips: Vec<net::IpAddr>,
-    pub valid_until: Instant,
-}
-
-struct ResolveRequest {
-    name: Name,
-    result_tx: oneshot::Sender<Result<LookupIp, ResolveError>>,
-    span: tracing::Span,
-}
-
-#[async_trait]
-pub trait Resolver: Clone {
-    async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error>;
-    async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error>;
-    /// Creates a refining service.
-    fn into_make_refine(self) -> MakeRefine<Self>;
-}
-
 #[derive(Clone)]
-pub struct DnsResolver {
+pub struct Resolver {
     tx: mpsc::UnboundedSender<ResolveRequest>,
 }
 
@@ -53,10 +33,21 @@ pub enum Error {
     TaskLost,
 }
 
-pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
+#[derive(Clone, Debug)]
+pub struct ResolveResponse {
+    pub ips: Vec<net::IpAddr>,
+    pub valid_until: Instant,
+}
 
-impl DnsResolver {
+struct ResolveRequest {
+    name: Name,
+    result_tx: oneshot::Sender<Result<LookupIp, ResolveError>>,
+    span: tracing::Span,
+}
+
+pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+impl Resolver {
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -109,12 +100,9 @@ impl DnsResolver {
             }
             tracing::debug!("all resolver handles dropped; terminating.");
         });
-        Ok((DnsResolver { tx }, task))
+        Ok((Resolver { tx }, task))
     }
-}
 
-#[async_trait]
-impl Resolver for DnsResolver {
     async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error> {
         let (result_tx, rx) = oneshot::channel();
         self.tx.send(ResolveRequest {
@@ -125,7 +113,6 @@ impl Resolver for DnsResolver {
         let ips = rx.await??;
         Ok(ips)
     }
-
     async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error> {
         let name = name.clone();
         let resolver = self.clone();
@@ -142,14 +129,35 @@ impl Resolver for DnsResolver {
         })
     }
 
-    fn into_make_refine(self) -> MakeRefine<Self> {
+    /// Creates a refining service.
+    pub fn into_make_refine(self) -> MakeRefine {
         MakeRefine(self)
+    }
+}
+
+impl tower::Service<Name> for Resolver {
+    type Response = ResolveResponse;
+    type Error = Error;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Name) -> Self::Future {
+        let name = req.clone();
+        let resolver = self.clone();
+        Box::pin(async move {
+            let ips = resolver.resolve_ips(&name).await;
+            ips
+        })
     }
 }
 
 /// Note: `AsyncResolver` does not implement `Debug`, so we must manually
 ///       implement this.
-impl fmt::Debug for DnsResolver {
+impl fmt::Debug for Resolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Resolver")
             .field("resolver", &"...")

@@ -88,7 +88,7 @@ impl Config {
 
     pub fn build_dns_refine(
         &self,
-        dns_resolver: impl dns::Resolver + Send + Sync + 'static,
+        dns_resolver: dns::Resolver,
         metrics: &StackMetrics,
     ) -> impl tower::Service<
         dns::Name,

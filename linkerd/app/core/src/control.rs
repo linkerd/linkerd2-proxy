@@ -161,14 +161,14 @@ pub mod dns_resolve {
     use tracing::debug;
 
     #[derive(Clone)]
-    pub struct Resolve<R> {
-        dns: R,
+    pub struct Resolve<S> {
+        dns: S,
     }
 
     // === impl Resolve ===
 
-    impl<R> Resolve<R> {
-        pub fn new(dns: R) -> Self {
+    impl<S> Resolve<S> {
+        pub fn new(dns: S) -> Self {
             Self { dns }
         }
     }
@@ -176,9 +176,11 @@ pub mod dns_resolve {
     type UpdatesStream =
         Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + 'static>>;
 
-    impl<R> tower::Service<ControlAddr> for Resolve<R>
+    impl<S> tower::Service<ControlAddr> for Resolve<S>
     where
-        R: dns::Resolver + Send + Sync + 'static,
+        S: tower::Service<dns::Name, Response = dns::ResolveResponse, Error = dns::Error>,
+        S: Clone + Send + 'static,
+        S::Future: Send,
     {
         type Response = resolve::FromStream<UpdatesStream>;
         type Error = Error;
@@ -219,12 +221,14 @@ pub mod dns_resolve {
         (adds, removes)
     }
 
-    pub fn resolution_stream<R>(
-        dns: R,
+    pub fn resolution_stream<S>(
+        mut dns: S,
         address: ControlAddr,
     ) -> impl Stream<Item = Result<Update<Target>, Error>>
     where
-        R: dns::Resolver,
+        S: tower::Service<dns::Name, Response = dns::ResolveResponse, Error = dns::Error>,
+        S: Clone + Send + 'static,
+        S::Future: Send,
     {
         let port = address.addr.port().clone();
         let server_name = address.identity.clone();
@@ -241,7 +245,7 @@ pub mod dns_resolve {
                 Addr::Name(name_addr) => {
                     let mut current: Vec<Target> = Vec::new();
                     loop {
-                            match dns.resolve_ips(name_addr.name()).await {
+                            match dns.call(name_addr.name().clone()).await {
                                 Err(dns::Error::NoAddressesFound(valid_until, exists)) => {
                                     debug!("resolved empty");
                                     current.clear();
@@ -293,7 +297,6 @@ pub mod dns_resolve {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use async_trait::async_trait;
         use linkerd2_proxy_identity::Name;
         use linkerd2_proxy_transport::tls::Conditional;
         use linkerd2_proxy_transport::tls::PeerIdentity;
@@ -316,23 +319,16 @@ pub mod dns_resolve {
             }
         }
 
-        #[async_trait]
-        impl dns::Resolver for MockDnsResolver {
-            async fn lookup_ip(
-                &self,
-                _name: dns::Name,
-                _span: tracing::Span,
-            ) -> Result<dns::LookupIp, dns::Error> {
-                unimplemented!()
+        impl tower::Service<dns::Name> for MockDnsResolver {
+            type Response = dns::ResolveResponse;
+            type Error = dns::Error;
+            type Future = future::Ready<Result<Self::Response, Self::Error>>;
+
+            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
             }
-            async fn resolve_ips(
-                &self,
-                _name: &dns::Name,
-            ) -> Result<dns::ResolveResponse, dns::Error> {
-                self.responses.write().unwrap().pop_front().unwrap()
-            }
-            fn into_make_refine(self) -> dns::MakeRefine<Self> {
-                unimplemented!()
+            fn call(&mut self, _req: dns::Name) -> Self::Future {
+                future::ready(self.responses.write().unwrap().pop_front().unwrap())
             }
         }
 

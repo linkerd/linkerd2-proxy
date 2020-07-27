@@ -13,11 +13,11 @@ use trust_dns_resolver::lookup_ip::LookupIp;
 
 /// A `MakeService` that produces a `Refine` for a given name.
 #[derive(Clone)]
-pub struct MakeRefine<R: Resolver>(pub(super) R);
+pub struct MakeRefine(pub(super) Resolver);
 
 /// A `Service` that produces the most recent result if one is known.
-pub struct Refine<R> {
-    resolver: R,
+pub struct Refine {
+    resolver: Resolver,
     name: Name,
     state: State,
 }
@@ -33,11 +33,8 @@ enum State {
     },
 }
 
-impl<R> NewService<Name> for MakeRefine<R>
-where
-    R: Resolver,
-{
-    type Service = Refine<R>;
+impl NewService<Name> for MakeRefine {
+    type Service = Refine;
 
     fn new_service(&self, name: Name) -> Self::Service {
         Refine {
@@ -48,10 +45,7 @@ where
     }
 }
 
-impl<R> tower::Service<()> for Refine<R>
-where
-    R: Resolver + Sync + Send + 'static,
-{
+impl tower::Service<()> for Refine {
     type Response = (Name, IpAddr);
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
