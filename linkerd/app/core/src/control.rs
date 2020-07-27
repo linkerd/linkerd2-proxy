@@ -246,10 +246,10 @@ pub mod dns_resolve {
                     let mut current: Vec<Target> = Vec::new();
                     loop {
                             match dns.call(name_addr.name().clone()).await {
-                                Err(dns::Error::NoAddressesFound(valid_until, exists)) => {
+                                Err(dns::Error::NoAddressesFound{ valid_until, name_exists})  => {
                                     debug!("resolved empty");
                                     current.clear();
-                                    if exists {
+                                    if name_exists {
                                         yield Update::Empty;
                                     } else {
                                         yield Update::DoesNotExist;
@@ -409,10 +409,10 @@ pub mod dns_resolve {
                     vec!["127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"],
                     Duration::from_millis(100),
                 )),
-                Err(dns::Error::NoAddressesFound(
-                    Instant::now() + Duration::from_millis(200),
-                    false,
-                )),
+                Err(dns::Error::NoAddressesFound {
+                    valid_until: Instant::now() + Duration::from_millis(200),
+                    name_exists: false,
+                }),
                 Ok(dns_rsp(vec!["127.0.0.1"], Duration::from_millis(300))),
             ]);
 
@@ -443,10 +443,10 @@ pub mod dns_resolve {
                     vec!["127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"],
                     Duration::from_millis(100),
                 )),
-                Err(dns::Error::NoAddressesFound(
-                    Instant::now() + Duration::from_millis(200),
-                    true,
-                )),
+                Err(dns::Error::NoAddressesFound {
+                    valid_until: Instant::now() + Duration::from_millis(200),
+                    name_exists: true,
+                }),
                 Ok(dns_rsp(vec!["127.0.0.1"], Duration::from_millis(300))),
             ]);
 

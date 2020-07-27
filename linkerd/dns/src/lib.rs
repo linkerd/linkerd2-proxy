@@ -28,7 +28,10 @@ pub trait ConfigureResolver {
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    NoAddressesFound(Instant, bool),
+    NoAddressesFound {
+        valid_until: Instant,
+        name_exists: bool,
+    },
     ResolutionFailed(ResolveError),
     TaskLost,
 }
@@ -121,7 +124,10 @@ impl Resolver {
         let ips: Vec<std::net::IpAddr> = result.iter().collect();
         let valid_until = Instant::from_std(result.valid_until());
         if ips.is_empty() {
-            return Err(Error::NoAddressesFound(valid_until, true));
+            return Err(Error::NoAddressesFound {
+                valid_until,
+                name_exists: true,
+            });
         }
         Ok(ResolveResponse {
             ips: ips,
@@ -183,7 +189,10 @@ impl From<ResolveError> for Error {
             ResolveErrorKind::NoRecordsFound {
                 valid_until: Some(valid_until),
                 ..
-            } => Self::NoAddressesFound(Instant::from_std(valid_until.clone()), false),
+            } => Self::NoAddressesFound {
+                valid_until: Instant::from_std(valid_until.clone()),
+                name_exists: false,
+            },
             _ => Self::ResolutionFailed(e),
         }
     }
@@ -192,7 +201,7 @@ impl From<ResolveError> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoAddressesFound(_, _) => f.pad("no addresses found"),
+            Self::NoAddressesFound { .. } => f.pad("no addresses found"),
             Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
             Self::TaskLost => f.pad("background task terminated unexpectedly"),
         }
