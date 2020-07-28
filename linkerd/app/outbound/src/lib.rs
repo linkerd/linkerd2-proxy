@@ -19,7 +19,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         self, core::resolve::Resolve, detect, discover, http, identity, resolve::map_endpoint,
-        server::ProtocolDetect, tap, tcp, Server,
+        server::DetectHttp, tap, tcp, ServeHttp,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -530,10 +530,10 @@ impl Config {
             )
             .check_new_service::<tls::accept::Meta>();
 
-        let tcp_server = Server::new(
-            tcp_forward.into_inner(),
+        let tcp_server = ServeHttp::new(
             http_server.into_inner(),
             h2_settings,
+            tcp_forward.into_inner(),
             drain.clone(),
         );
 
@@ -542,7 +542,7 @@ impl Config {
 
         let tcp_detect = svc::stack(tcp_server)
             .push(metrics.transport.layer_accept(TransportLabels))
-            .push(detect::AcceptLayer::new(ProtocolDetect::new(
+            .push(detect::AcceptLayer::new(DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             // The local application never establishes mTLS with the proxy, so don't try to

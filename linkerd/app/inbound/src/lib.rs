@@ -20,7 +20,7 @@ use linkerd2_app_core::{
         self, detect,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
-        server::{ProtocolDetect, Server},
+        server::{DetectHttp, ServeHttp},
         tap, tcp,
     },
     reconnect, router, serve,
@@ -403,16 +403,16 @@ impl Config {
                 )
             });
 
-        let tcp_server = Server::new(
-            tcp_forward.into_inner(),
+        let tcp_server = ServeHttp::new(
             http_server.into_inner(),
             h2_settings,
+            tcp_forward.into_inner(),
             drain.clone(),
         );
 
         let tcp_detect = svc::stack(tcp_server)
             .push(metrics.transport.layer_accept(TransportLabels))
-            .push(detect::AcceptLayer::new(ProtocolDetect::new(
+            .push(detect::AcceptLayer::new(DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
