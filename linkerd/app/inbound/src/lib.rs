@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, detect,
+        detect,
         http::{self, normalize_uri, orig_proto, strip_header},
         identity,
         server::{DetectHttp, ServeHttp},
@@ -411,11 +411,11 @@ impl Config {
         );
 
         let tcp_detect = svc::stack(tcp_server)
-            .push(metrics.transport.layer_accept(TransportLabels))
             .push(detect::AcceptLayer::new(DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
+            .push(metrics.transport.layer_accept(TransportLabels))
             // Terminates inbound mTLS from other outbound proxies.
             .push(detect::AcceptLayer::new(tls::DetectTls::new(
                 local_identity,
@@ -456,13 +456,11 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     }
 }
 
-type ServerProtocol = proxy::server::Protocol<tls::accept::Meta>;
-
-impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
+impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
-        transport::labels::Key::accept("inbound", proto.target.peer_identity.as_ref())
+    fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
+        transport::labels::Key::accept("inbound", target.peer_identity.as_ref())
     }
 }
 

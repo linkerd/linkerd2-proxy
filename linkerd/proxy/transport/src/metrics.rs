@@ -241,10 +241,10 @@ where
     }
 }
 
-impl<L, T, I, A> tower::Service<(T, I)> for Accept<L, L::Labels, A>
+impl<L, T, A> tower::Service<(T, io::BoxedIo)> for Accept<L, L::Labels, A>
 where
     L: TransportLabels<T>,
-    A: core::Accept<(T, SensorIo<I>)>,
+    A: core::Accept<(T, io::BoxedIo)>,
 {
     type Response = A::ConnectionFuture;
     type Error = A::Error;
@@ -254,7 +254,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, (target, io): (T, I)) -> Self::Future {
+    fn call(&mut self, (target, io): (T, io::BoxedIo)) -> Self::Future {
         let labels = self.label.transport_labels(&target);
         let metrics = self
             .registry
@@ -264,7 +264,7 @@ where
             .clone();
 
         let io = SensorIo::new(io, Sensor::open(metrics));
-        self.inner.accept((target, io))
+        self.inner.accept((target, io::BoxedIo::new(io)))
     }
 }
 
