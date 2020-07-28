@@ -124,8 +124,8 @@ impl LevelHandle {
         let level = level.as_ref();
         let filter = level.parse::<EnvFilter>()?;
         match self {
-            LevelHandle::Json(level) => level.reload(filter)?,
-            LevelHandle::Plain(level) => level.reload(filter)?,
+            Self::Json(level) => level.reload(filter)?,
+            Self::Plain(level) => level.reload(filter)?,
         }
         tracing::info!(%level, "set new log level");
         Ok(())
@@ -133,10 +133,10 @@ impl LevelHandle {
 
     pub fn current(&self) -> Result<String, Error> {
         match self {
-            LevelHandle::Json(handle) => handle
+            Self::Json(handle) => handle
                 .with_current(|f| format!("{}", f))
                 .map_err(Into::into),
-            LevelHandle::Plain(handle) => handle
+            Self::Plain(handle) => handle
                 .with_current(|f| format!("{}", f))
                 .map_err(Into::into),
         }
@@ -146,7 +146,7 @@ impl LevelHandle {
 impl fmt::Debug for LevelHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LevelHandle::Json(handle) => handle
+            Self::Json(handle) => handle
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
@@ -157,7 +157,7 @@ impl fmt::Debug for LevelHandle {
                         .field("current", &format_args!("{}", e))
                         .finish()
                 }),
-            LevelHandle::Plain(handle) => handle
+            Self::Plain(handle) => handle
                 .with_current(|c| {
                     f.debug_struct("LevelHandle")
                         .field("current", &format_args!("{}", c))
