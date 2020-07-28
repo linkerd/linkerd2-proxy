@@ -11,6 +11,7 @@ General I/O primitives.
 [dependencies]
 futures = "0.3"
 bytes = "0.5"
+linkerd2-errno = { path = "../errno" }
 tokio = { version = "0.2", features = ["io-util", "net", "macros"] }
 tokio-rustls = "0.13"
 pin-project = "0.4"
