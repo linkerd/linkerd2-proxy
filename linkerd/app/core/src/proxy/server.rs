@@ -144,7 +144,7 @@ where
 impl<L, F, H, B> Service<Connection> for Server<L, F, H, B>
 where
     L: TransportLabels<Protocol, Labels = TransportKey>,
-    F: Accept<(tls::accept::Meta, transport::metrics::Io<BoxedIo>)> + Clone + Send + 'static,
+    F: Accept<(tls::accept::Meta, transport::metrics::SensorIo<BoxedIo>)> + Clone + Send + 'static,
     F::Future: Send + 'static,
     F::ConnectionFuture: Send + 'static,
     H: NewService<tls::accept::Meta> + Send + 'static,
