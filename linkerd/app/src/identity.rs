@@ -1,4 +1,3 @@
-use futures::stream::TryStream;
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
@@ -95,7 +94,9 @@ impl Config {
 impl Identity {
     pub fn local(&self) -> LocalIdentity {
         match self {
-            Identity::Disabled => tls::Conditional::None(tls::ReasonForNoIdentity::Disabled),
+            Identity::Disabled => {
+                tls::Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)
+            }
             Identity::Enabled { ref local, .. } => tls::Conditional::Some(local.clone()),
         }
     }
@@ -109,7 +110,6 @@ impl Identity {
 }
 
 impl<E: Into<Error>> linkerd2_error::Recover<E> for Recover {
-    type Error = <ExponentialBackoffStream as TryStream>::Error;
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {

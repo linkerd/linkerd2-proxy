@@ -60,7 +60,7 @@ mod test {
 
     #[tokio::test]
     async fn no_identity() {
-        let peer_id = tls::PeerIdentity::None(tls::ReasonForNoPeerName::NotProvidedByRemote.into());
+        let peer_id = tls::PeerIdentity::None(tls::ReasonForNoPeerName::NoPeerIdFromRemote);
         let test = Test {
             peer_id,
             ..Default::default()

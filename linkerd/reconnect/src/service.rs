@@ -1,4 +1,4 @@
-use futures::{future, ready, TryFuture, TryFutureExt, TryStreamExt};
+use futures::{future, prelude::*, ready};
 use linkerd2_error::{Error, Recover};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -125,14 +125,10 @@ where
                     let more = ready!(backoff
                         .as_mut()
                         .expect("backoff must be set")
-                        .try_poll_next_unpin(cx));
+                        .poll_next_unpin(cx));
 
                     // Only reuse the backoff if the backoff stream did not complete.
-                    let backoff = match more {
-                        Some(Ok(())) => backoff.take(),
-                        Some(Err(e)) => return Poll::Ready(Err(e.into())),
-                        None => None,
-                    };
+                    let backoff = if more.is_some() { backoff.take() } else { None };
 
                     State::Disconnected { backoff }
                 }

@@ -890,7 +890,7 @@ pub fn parse_control_addr_disable_identity<S: Strings>(
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let identity = tls::Conditional::None(tls::ReasonForNoIdentity::Disabled);
+    let identity = tls::Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled);
     Ok(a.map(|addr| ControlAddr { addr, identity }))
 }
 

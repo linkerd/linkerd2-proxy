@@ -9,11 +9,12 @@ ifndef PACKAGE_VERSION
 	PACKAGE_VERSION = $(shell git rev-parse --short HEAD)
 endif
 
+ARCH ?= amd64
 STRIP ?= strip
 PROFILING = profiling
 TARGET_BIN = $(TARGET)/linkerd2-proxy
 PKG_ROOT = $(TARGET)/package
-PKG_NAME = linkerd2-proxy-$(PACKAGE_VERSION)
+PKG_NAME = linkerd2-proxy-$(PACKAGE_VERSION)-$(ARCH)
 PKG_BASE = $(PKG_ROOT)/$(PKG_NAME)
 PKG_CHECKSEC = $(PKG_BASE)-checksec.json
 PKG = $(PKG_NAME).tar.gz
@@ -59,8 +60,8 @@ endif
 	./checksec.sh $(PKG_BASE)/bin/linkerd2-proxy >$(PKG_CHECKSEC) || true
 	cd $(PKG_ROOT) && \
 		tar -czvf $(PKG) $(PKG_NAME) && \
-		($(SHASUM) $(PKG) >$(PKG_NAME).txt) && \
-		rm -rf $(PKG_BASE)
+		($(SHASUM) $(PKG) >$(PKG_NAME).txt)
+	rm -rf $(PKG_BASE)
 
 
 .PHONY: fetch

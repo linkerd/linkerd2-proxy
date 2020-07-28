@@ -20,7 +20,7 @@ async-trait = "0.1"
 bytes = "0.5"
 http = "0.2"
 http-body = "0.3"
-hyper = "0.13"
+hyper = "0.13.7"
 futures = "0.3"
 indexmap = "1.0"
 linkerd2-addr = { path = "../../addr" }
@@ -74,7 +74,7 @@ tracing-log = "0.1"
 pin-project = "0.4"
 
 [dependencies.tracing-subscriber]
-version = "0.2.7"
+version = "0.2.8"
 # we don't need `chrono` time formatting
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "ansi", "json", "parking_lot"]

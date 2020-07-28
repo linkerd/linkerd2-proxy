@@ -189,11 +189,11 @@ impl tap::Inspect for Target {
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoIdentity> {
+    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
         req.extensions()
             .get::<tls::accept::Meta>()
             .map(|s| s.peer_identity.as_ref())
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoIdentity::Disabled))
+            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -207,7 +207,7 @@ impl tap::Inspect for Target {
     fn dst_tls<B>(
         &self,
         _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoIdentity> {
+    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
     }
 

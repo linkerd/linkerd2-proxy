@@ -54,8 +54,9 @@ impl ProtocolDetect {
 }
 
 #[async_trait]
-impl detect::Detect<tls::accept::Meta> for ProtocolDetect {
+impl detect::Detect<tls::accept::Meta, BoxedIo> for ProtocolDetect {
     type Target = Protocol;
+    type Io = BoxedIo;
     type Error = io::Error;
 
     async fn detect(

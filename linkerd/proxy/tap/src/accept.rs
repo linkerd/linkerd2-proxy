@@ -6,9 +6,7 @@ use linkerd2_identity as identity;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd2_proxy_http::{trace, HyperServerSvc};
 use linkerd2_proxy_transport::io::BoxedIo;
-use linkerd2_proxy_transport::tls::{
-    accept::Connection, Conditional, ReasonForNoIdentity, ReasonForNoPeerName,
-};
+use linkerd2_proxy_transport::tls::{accept::Connection, Conditional, ReasonForNoPeerName};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -74,7 +72,7 @@ impl Service<Connection> for AcceptPermittedClients {
                     Box::pin(self.serve_unauthenticated(io, format!("Unauthorized peer: {}", peer)))
                 }
             }
-            Conditional::None(ReasonForNoIdentity::NoPeerName(ReasonForNoPeerName::Loopback)) => {
+            Conditional::None(ReasonForNoPeerName::Loopback) => {
                 Box::pin(self.serve_authenticated(io))
             }
             Conditional::None(reason) => {

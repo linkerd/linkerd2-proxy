@@ -11,7 +11,7 @@ futures = "0.3"
 h2 = "0.1"
 http = "0.2"
 http-body = "0.3"
-hyper = "0.13.0"
+hyper = "0.13.7"
 indexmap = "1.0"
 linkerd2-error = { path  = "../error" }
 linkerd2-http-classify = { path  = "../http-classify" }

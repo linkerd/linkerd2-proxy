@@ -35,9 +35,9 @@ dependencies = [
 
 [[package]]
 name = "ansi_term"
-version = "0.11.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
 dependencies = [
  "winapi 0.3.8",
 ]
@@ -489,8 +489,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.2.5"
-source = "git+https://github.com/hyperium/h2?rev=d3b9f1e36aadc1a7a6804e2f8e86d3fe4a244b4f#d3b9f1e36aadc1a7a6804e2f8e86d3fe4a244b4f"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993f9e0baeed60001cf565546b0d3dbe6a6ad23f2bd31644a133c641eccf6d53"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -571,14 +572,15 @@ checksum = "cd179ae861f0c2e53da70d892f5f3029f9594be0c41dc5269cd371691b1dc2f9"
 
 [[package]]
 name = "hyper"
-version = "0.13.6"
-source = "git+https://github.com/hyperium/hyper?rev=9832aef9eeaeff8979354d5de04b8706ff79a233#9832aef9eeaeff8979354d5de04b8706ff79a233"
+version = "0.13.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e68a8dd9716185d9e64ea473ea6ef63529252e3e27623295a0378a19665d5eb"
 dependencies = [
  "bytes 0.5.4",
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "httparse",
@@ -740,7 +742,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "hyper",
@@ -880,7 +882,7 @@ dependencies = [
  "bytes 0.5.4",
  "flate2",
  "futures 0.3.5",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "hyper",
@@ -1175,7 +1177,7 @@ name = "linkerd2-proxy-api"
 version = "0.1.13"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.13#f9a95345ef44c3d6f22559442e35f07e0af477e2"
 dependencies = [
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "prost",
  "prost-types",
@@ -1251,7 +1253,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.5",
+ "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "httparse",
@@ -1352,6 +1354,7 @@ name = "linkerd2-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
  "indexmap",
@@ -1364,6 +1367,7 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-metrics",
  "linkerd2-proxy-core",
+ "linkerd2-proxy-detect",
  "linkerd2-stack",
  "pin-project",
  "ring",
@@ -2744,9 +2748,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c72c8cf3ec4ed69fef614d011a5ae4274537a8a8c59133558029bd731eb71659"
+checksum = "cafe899b943f5433c6cab468d75a17ea92948fe9fe60b00f41e13d5e0d4fd054"
 dependencies = [
  "ansi_term",
  "chrono",

@@ -1,10 +1,9 @@
-use super::{Error, Never};
-use futures::stream::{self, TryStream};
+use super::Error;
+use futures::{stream, Stream};
 
 /// An error recovery strategy.
 pub trait Recover<E: Into<Error> = Error> {
-    type Error: Into<Error>;
-    type Backoff: TryStream<Ok = (), Error = Self::Error>;
+    type Backoff: Stream<Item = ()>;
 
     /// Given an E-typed error, determine if the error is recoverable.
     ///
@@ -25,11 +24,9 @@ pub struct Immediately(());
 impl<E, B, F> Recover<E> for F
 where
     E: Into<Error>,
-    B: TryStream<Ok = ()>,
-    B::Error: Into<Error>,
+    B: Stream<Item = ()>,
     F: Fn(E) -> Result<B, E>,
 {
-    type Error = B::Error;
     type Backoff = B;
 
     fn recover(&self, err: E) -> Result<Self::Backoff, E> {
@@ -46,7 +43,6 @@ impl Immediately {
 }
 
 impl<E: Into<Error>> Recover<E> for Immediately {
-    type Error = Never;
     type Backoff = stream::Iter<Immediately>;
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {
@@ -55,9 +51,9 @@ impl<E: Into<Error>> Recover<E> for Immediately {
 }
 
 impl Iterator for Immediately {
-    type Item = Result<(), Never>;
+    type Item = ();
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(Ok(()))
+        Some(())
     }
 }
