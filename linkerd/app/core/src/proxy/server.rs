@@ -140,7 +140,7 @@ where
 
         Box::pin(async move {
             let rsp: Self::Response = match protocol.http {
-                Some(HttpVersion::Http1) => Box::pin(async move {
+                Some(HttpVersion::Http1) => {
                     trace!("Handling as HTTP");
                     // Enable support for HTTP upgrades (CONNECT and websockets).
                     let svc = upgrade::Service::new(
@@ -151,25 +151,31 @@ where
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(svc))
                         .with_upgrades();
-                    drain
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .instrument(info_span!("h1"))
-                        .await?;
-                    Ok(())
-                }),
 
-                Some(HttpVersion::H2) => Box::pin(async move {
+                    Box::pin(async move {
+                        drain
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h1"))
+                            .await?;
+                        Ok(())
+                    })
+                }
+
+                Some(HttpVersion::H2) => {
                     trace!("Handling as H2");
                     let conn = http.http2_only(true).serve_connection(
                         io,
                         HyperServerSvc::new(make_http.new_service(protocol.target)),
                     );
-                    drain
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .instrument(info_span!("h2"))
-                        .await?;
-                    Ok(())
-                }),
+
+                    Box::pin(async move {
+                        drain
+                            .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                            .instrument(info_span!("h2"))
+                            .await?;
+                        Ok(())
+                    })
+                }
 
                 None => {
                     trace!("Forwarding TCP");
