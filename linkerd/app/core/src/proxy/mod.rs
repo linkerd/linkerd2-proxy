@@ -16,4 +16,4 @@ pub use linkerd2_proxy_tcp as tcp;
 
 pub mod server;
 
-pub use self::server::Server;
+pub use self::server::ServeHttp;

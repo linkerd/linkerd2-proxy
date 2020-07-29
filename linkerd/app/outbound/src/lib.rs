@@ -19,7 +19,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         self, core::resolve::Resolve, detect, discover, http, identity, resolve::map_endpoint,
-        server::ProtocolDetect, tap, tcp, Server,
+        server::DetectHttp, tap, tcp, ServeHttp,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -521,6 +521,7 @@ impl Config {
                     .push(http_admit_request)
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
+                    .box_http_response()
             )
             .instrument(
                 |src: &tls::accept::Meta| {
@@ -529,12 +530,10 @@ impl Config {
             )
             .check_new_service::<tls::accept::Meta>();
 
-        let tcp_server = Server::new(
-            TransportLabels,
-            metrics.transport,
-            tcp_forward.into_inner(),
+        let tcp_server = ServeHttp::new(
             http_server.into_inner(),
             h2_settings,
+            tcp_forward.into_inner(),
             drain.clone(),
         );
 
@@ -542,9 +541,10 @@ impl Config {
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
 
         let tcp_detect = svc::stack(tcp_server)
-            .push(detect::AcceptLayer::new(ProtocolDetect::new(
+            .push(detect::AcceptLayer::new(DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
+            .push(metrics.transport.layer_accept(TransportLabels))
             // The local application never establishes mTLS with the proxy, so don't try to
             // terminate TLS, just annotate with the connection with the reason.
             .push(detect::AcceptLayer::new(tls::DetectTls::new(
@@ -583,11 +583,11 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<proxy::server::Protocol> for TransportLabels {
+impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, proto: &proxy::server::Protocol) -> Self::Labels {
-        transport::labels::Key::accept("outbound", proto.tls.peer_identity.as_ref())
+    fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
+        transport::labels::Key::accept("outbound", target.peer_identity.as_ref())
     }
 }
 
