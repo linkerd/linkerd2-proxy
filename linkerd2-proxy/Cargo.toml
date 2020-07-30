@@ -14,5 +14,5 @@ futures = { version = "0.3", features = ["compat"] }
 mimalloc = { version = "0.1.19", optional = true }
 linkerd2-app = { path = "../linkerd/app" }
 linkerd2-signal = { path = "../linkerd/signal" }
-tokio = { version = "0.2", features = ["rt-core"] }
+tokio = { version = "0.2", features = ["rt-threaded"] }
 tracing = "0.1"

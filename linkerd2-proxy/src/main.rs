@@ -12,7 +12,7 @@ pub use tracing::{debug, error, info, warn};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[tokio::main(basic_scheduler)]
+#[tokio::main(threaded_scheduler)]
 async fn main() {
     let trace = trace::init();
 
