@@ -273,7 +273,6 @@ impl Config {
             .check_new_service_routes::<(), Target>()
             .new_service(());
 
-        // svc::stack(http_target_cache)
         svc::stack(http_profile_cache)
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
@@ -344,52 +343,53 @@ impl Config {
             .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
             .push(svc::layer::mk(tcp::Forward::new));
 
-        // // Strips headers that may be set by the inbound router.
-        // let http_strip_headers = svc::layers()
-        //     .push(strip_header::request::layer(L5D_REMOTE_IP))
-        //     .push(strip_header::request::layer(L5D_CLIENT_ID))
-        //     .push(strip_header::response::layer(L5D_SERVER_ID));
+        // Strips headers that may be set by the inbound router.
+        let http_strip_headers = svc::layers()
+            .push(strip_header::request::layer(L5D_REMOTE_IP))
+            .push(strip_header::request::layer(L5D_CLIENT_ID))
+            .push(strip_header::response::layer(L5D_SERVER_ID));
 
         // Handles requests as they are initially received by the proxy.
         let http_admit_request = svc::layers()
             // Downgrades the protocol if upgraded by an outbound proxy.
-            // .push(svc::layer::mk(orig_proto::Downgrade::new))
+            .push(svc::layer::mk(orig_proto::Downgrade::new))
             // Limits the number of in-flight requests.
             .push_concurrency_limit(max_in_flight_requests)
             // Eagerly fail requests when the proxy is out of capacity for a
             // dispatch_timeout.
-            // .push_failfast(dispatch_timeout)
-            // .push(metrics.http_errors)
+            .push_failfast(dispatch_timeout)
+            .push(metrics.http_errors)
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
         let http_server_observability = svc::layers()
-            // .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-            //     SpanConverter::server(span_sink, trace_labels())
-            // })))
-            // Tracks proxy handletime.
-            .push(metrics.http_handle_time.layer());
+            .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+                SpanConverter::server(span_sink, trace_labels())
+            })))
+            // // Tracks proxy handletime.
+            // .push(metrics.http_handle_time.layer())
+            ;
 
         let http_server = svc::stack(http_router)
-            // // Ensures that the built service is ready before it is returned
-            // // to the router to dispatch a request.
-            // .push_make_ready()
-            // // Limits the amount of time each request waits to obtain a
-            // // ready service.
-            // .push_timeout(dispatch_timeout)
-            // // Removes the override header after it has been used to
-            // // determine a reuquest target.
-            // .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
-            // // Routes each request to a target, obtains a service for that
+            // Ensures that the built service is ready before it is returned
+            // to the router to dispatch a request.
+            .push_make_ready()
+            // Limits the amount of time each request waits to obtain a
+            // ready service.
+            .push_timeout(dispatch_timeout)
+            // Removes the override header after it has been used to
+            // determine a reuquest target.
+            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+            // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
             .push(router::Layer::new(RequestTarget::from))
-            // // Used by tap.
-            // .push_http_insert_target()
+            // Used by tap.
+            .push_http_insert_target()
             .check_new_service::<tls::accept::Meta>()
             .push_on_response(
                 svc::layers()
-                    // .push(http_strip_headers)
+                    .push(http_strip_headers)
                     .push(http_admit_request)
                     .push(http_server_observability)
                     .push(metrics.stack.layer(stack_labels("source")))
