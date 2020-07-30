@@ -184,7 +184,7 @@ impl Config {
             ..
         } = self.clone();
 
-        // let prevent_loop = prevent_loop.into();
+        let prevent_loop = prevent_loop.into();
 
         // Creates HTTP clients for each inbound port & HTTP settings.
         let http_endpoint = svc::stack(tcp_connect)
@@ -281,16 +281,16 @@ impl Config {
             //     http_target_cache
             //         .push_on_response(svc::layers().box_http_response().box_http_request()),
             // )
-            // // If the traffic is targeted at the inbound port, send it through
-            // // the loopback service (i.e. as a gateway). This is done before
-            // // caching so that the loopback stack can determine whether it
-            // // should cache or not.
-            // .push(admit::AdmitLayer::new(prevent_loop))
-            // .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
-            //     svc::stack(http_loopback)
-            //         .push_on_response(svc::layers().box_http_request())
-            //         .into_inner(),
-            // )
+            // If the traffic is targeted at the inbound port, send it through
+            // the loopback service (i.e. as a gateway). This is done before
+            // caching so that the loopback stack can determine whether it
+            // should cache or not.
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
+                svc::stack(http_loopback)
+                    .push_on_response(svc::layers().box_http_request())
+                    .into_inner(),
+            )
             .check_service::<Target>()
             .into_inner()
     }
