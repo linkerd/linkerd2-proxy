@@ -363,12 +363,12 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        // let http_server_observability = svc::layers()
-        //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-        //         SpanConverter::server(span_sink, trace_labels())
-        //     })))
-        //     // Tracks proxy handletime.
-        //     .push(metrics.http_handle_time.layer());
+        let http_server_observability = svc::layers()
+            // .push(TraceContextLayer::new(span_sink.map(|span_sink| {
+            //     SpanConverter::server(span_sink, trace_labels())
+            // })))
+            // Tracks proxy handletime.
+            .push(metrics.http_handle_time.layer());
 
         let http_server = svc::stack(http_router)
             // // Ensures that the built service is ready before it is returned
@@ -391,7 +391,7 @@ impl Config {
                 svc::layers()
                     // .push(http_strip_headers)
                     .push(http_admit_request)
-                    // .push(http_server_observability)
+                    .push(http_server_observability)
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
                     .box_http_response(),
