@@ -125,7 +125,7 @@ impl Config {
             .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
-            .push(metrics.transport.layer_connect(TransportLabels))
+            // .push(metrics.transport.layer_connect(TransportLabels))
             .into_inner()
     }
 
@@ -198,8 +198,8 @@ impl Config {
         let http_target_observability = svc::layers()
             // Registers the stack to be tapped.
             .push(tap_layer)
-            // Records metrics for each `Target`.
-            .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            // // Records metrics for each `Target`.
+            // .push(metrics.http_endpoint.into_layer::<classify::Response>())
             .push_on_response(TraceContextLayer::new(
                 span_sink
                     .clone()
@@ -210,8 +210,8 @@ impl Config {
             // Sets the route as a request extension so that it can be used
             // by tap.
             .push_http_insert_target()
-            // Records per-route metrics.
-            .push(metrics.http_route.into_layer::<classify::Response>())
+            // // Records per-route metrics.
+            // .push(metrics.http_route.into_layer::<classify::Response>())
             // Sets the per-route response classifier as a request
             // extension.
             .push(classify::Layer::new())
@@ -233,8 +233,7 @@ impl Config {
                         // fail requests.
                         .push_failfast(dispatch_timeout)
                         // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("target"))),
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age), // .push(metrics.stack.layer(stack_labels("target"))),
                 ),
             )
             .spawn_buffer(buffer_capacity)
@@ -262,8 +261,7 @@ impl Config {
                         // fail requests.
                         .push_failfast(dispatch_timeout)
                         // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age), // .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
             )
             .spawn_buffer(buffer_capacity)
@@ -358,7 +356,7 @@ impl Config {
             // Eagerly fail requests when the proxy is out of capacity for a
             // dispatch_timeout.
             .push_failfast(dispatch_timeout)
-            .push(metrics.http_errors)
+            // .push(metrics.http_errors)
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
@@ -392,7 +390,7 @@ impl Config {
                     .push(http_strip_headers)
                     .push(http_admit_request)
                     .push(http_server_observability)
-                    .push(metrics.stack.layer(stack_labels("source")))
+                    // .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
                     .box_http_response(),
             )
@@ -416,7 +414,7 @@ impl Config {
                 disable_protocol_detection_for_ports.clone(),
             )))
             .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
-            .push(metrics.transport.layer_accept(TransportLabels))
+            // .push(metrics.transport.layer_accept(TransportLabels))
             // Terminates inbound mTLS from other outbound proxies.
             .push(detect::AcceptLayer::new(tls::DetectTls::new(
                 local_identity,
