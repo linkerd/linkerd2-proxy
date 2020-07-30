@@ -1,9 +1,12 @@
 use futures::{ready, TryFuture};
 use indexmap::IndexMap;
 use linkerd2_errno::Errno;
+use linkerd2_io as io;
 use linkerd2_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
+use linkerd2_proxy_core as core;
+use linkerd2_stack::layer;
 use pin_project::pin_project;
 use std::fmt;
 use std::future::Future;
@@ -14,10 +17,6 @@ use std::task::{Context, Poll};
 use std::time::Instant;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
-
-mod io;
-
-pub use self::io::Io;
 
 metrics! {
     tcp_open_total: Counter { "Total count of opened connections" },
@@ -54,6 +53,13 @@ pub struct ConnectLayer<L, K: Eq + Hash + FmtLabels> {
 }
 
 #[derive(Debug)]
+pub struct Accept<L, K: Eq + Hash + FmtLabels, M> {
+    label: L,
+    inner: M,
+    registry: Arc<Mutex<Inner<K>>>,
+}
+
+#[derive(Debug)]
 pub struct Connect<L, K: Eq + Hash + FmtLabels, M> {
     label: L,
     inner: M,
@@ -68,9 +74,6 @@ pub struct Connecting<F> {
 }
 
 /// Stores a class of transport's metrics.
-///
-/// TODO We should probaby use AtomicUsize for most of these counters so that
-/// simple increments don't require a lock. Especially for read|write_bytes_total.
 #[derive(Debug, Default)]
 struct Metrics {
     open_total: Counter,
@@ -98,10 +101,12 @@ struct EosMetrics {
 
 /// Tracks the state of a single instance of `Io` throughout its lifetime.
 #[derive(Debug)]
-struct Sensor {
+pub struct Sensor {
     metrics: Option<Arc<Metrics>>,
     opened_at: Instant,
 }
+
+pub type SensorIo<T> = io::SensorIo<T, Sensor>;
 
 /// Lazily builds instances of `Sensor`.
 #[derive(Clone, Debug)]
@@ -182,14 +187,16 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
         ConnectLayer::new(label, self.0.clone())
     }
 
-    pub fn wrap_server_transport<T: AsyncRead + AsyncWrite>(&self, labels: K, io: T) -> Io<T> {
-        let metrics = self
-            .0
-            .lock()
-            .expect("metrics registry poisoned")
-            .get_or_default(labels)
-            .clone();
-        Io::new(io, Sensor::open(metrics))
+    pub fn layer_accept<L: Clone, S>(
+        &self,
+        label: L,
+    ) -> impl layer::Layer<S, Service = Accept<L, K, S>> + Clone {
+        let registry = self.0.clone();
+        layer::mk(move |inner| Accept {
+            inner,
+            label: label.clone(),
+            registry: registry.clone(),
+        })
     }
 }
 
@@ -217,6 +224,52 @@ impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLa
     }
 }
 
+// === impl Accept ===
+
+impl<L, K, M> Clone for Accept<L, K, M>
+where
+    L: Clone,
+    K: Eq + Hash + FmtLabels,
+    M: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            label: self.label.clone(),
+            registry: self.registry.clone(),
+        }
+    }
+}
+
+impl<L, T, A> tower::Service<(T, io::BoxedIo)> for Accept<L, L::Labels, A>
+where
+    L: TransportLabels<T>,
+    A: core::Accept<(T, io::BoxedIo)>,
+{
+    type Response = A::ConnectionFuture;
+    type Error = A::Error;
+    type Future = A::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, (target, io): (T, io::BoxedIo)) -> Self::Future {
+        let labels = self.label.transport_labels(&target);
+        let metrics = self
+            .registry
+            .lock()
+            .expect("metrics registry poisoned")
+            .get_or_default(labels)
+            .clone();
+
+        let io = SensorIo::new(io, Sensor::open(metrics));
+        self.inner.accept((target, io::BoxedIo::new(io)))
+    }
+}
+
+// === impl Connect ===
+
 impl<L, K, M> Clone for Connect<L, K, M>
 where
     L: Clone,
@@ -232,14 +285,12 @@ where
     }
 }
 
-// === impl Connect ===
-
 impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
 where
     L: TransportLabels<T>,
     M: tower::make::MakeConnection<T>,
 {
-    type Response = Io<M::Connection>;
+    type Response = SensorIo<M::Connection>;
     type Error = M::Error;
     type Future = Connecting<M::Future>;
 
@@ -270,7 +321,7 @@ where
     F: TryFuture,
     F::Ok: AsyncRead + AsyncWrite,
 {
-    type Output = Result<Io<F::Ok>, F::Error>;
+    type Output = Result<SensorIo<F::Ok>, F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
@@ -282,7 +333,7 @@ where
             .take()
             .expect("future must not be polled after ready")
             .new_sensor();
-        let t = Io::new(io, sensor);
+        let t = SensorIo::new(io, sensor);
         Poll::Ready(Ok(t))
     }
 }
@@ -321,7 +372,7 @@ impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
 // ===== impl Sensor =====
 
 impl Sensor {
-    pub fn open(metrics: Arc<Metrics>) -> Self {
+    fn open(metrics: Arc<Metrics>) -> Self {
         metrics.open_total.incr();
         metrics.open_connections.incr();
         Self {
@@ -329,20 +380,22 @@ impl Sensor {
             opened_at: Instant::now(),
         }
     }
+}
 
-    pub fn record_read(&mut self, sz: usize) {
+impl io::Sensor for Sensor {
+    fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.read_bytes_total.add(sz as u64);
         }
     }
 
-    pub fn record_write(&mut self, sz: usize) {
+    fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.write_bytes_total.add(sz as u64);
         }
     }
 
-    pub fn record_close(&mut self, eos: Option<Errno>) {
+    fn record_close(&mut self, eos: Option<Errno>) {
         let duration = self.opened_at.elapsed();
         // When closed, the metrics structure is dropped so that no further
         // updates can occur (i.e. so that an additional close won't be recorded
@@ -361,7 +414,7 @@ impl Sensor {
     ///
     /// If the transport operation results in a non-recoverable error, record a
     /// transport closure.
-    fn sense_err<T>(&mut self, op: Poll<std::io::Result<T>>) -> Poll<std::io::Result<T>> {
+    fn record_error<T>(&mut self, op: Poll<std::io::Result<T>>) -> Poll<std::io::Result<T>> {
         match op {
             Poll::Ready(Ok(v)) => Poll::Ready(Ok(v)),
             Poll::Ready(Err(e)) => {
@@ -379,7 +432,7 @@ impl Sensor {
 
 impl Drop for Sensor {
     fn drop(&mut self) {
-        self.record_close(None)
+        io::Sensor::record_close(self, None)
     }
 }
 

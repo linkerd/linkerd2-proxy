@@ -88,12 +88,6 @@ impl Into<tls::Conditional<()>> for TlsStatus {
     }
 }
 
-impl TlsStatus {
-    pub fn no_tls_reason(&self) -> Option<tls::ReasonForNoIdentity> {
-        self.0.reason()
-    }
-}
-
 impl fmt::Display for TlsStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
@@ -105,7 +99,10 @@ impl fmt::Display for TlsStatus {
 
 impl FmtLabels for TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(tls::ReasonForNoIdentity::NoPeerName(why)) = self.no_tls_reason() {
+        if let Self(Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)) = self {
+            return write!(f, "tls=\"disabled\"");
+        }
+        if let Self(Conditional::None(why)) = self {
             return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
         }
 
