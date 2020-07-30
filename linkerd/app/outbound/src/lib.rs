@@ -3,7 +3,7 @@
 //! The outound proxy is responsible for routing traffic from the local
 //! application to external network endpoints.
 
-#![deny(warnings, rust_2018_idioms)]
+// #![deny(warnings, rust_2018_idioms)]
 
 pub use self::endpoint::{
     Concrete, HttpEndpoint, Logical, LogicalPerRequest, Profile, ProfilePerTarget, Target,
@@ -342,88 +342,96 @@ impl Config {
             )
             .check_service::<Concrete<HttpEndpoint>>();
 
-        let http_profile_route_proxy = svc::proxies()
-            .check_new_clone_service::<dst::Route>()
-            .push(metrics.http_route_actual.into_layer::<classify::Response>())
-            // Sets an optional retry policy.
-            .push(retry::layer(metrics.http_route_retry))
-            .check_new_clone_service::<dst::Route>()
-            // Sets an optional request timeout.
-            .push(http::MakeTimeoutLayer::default())
-            .check_new_clone_service::<dst::Route>()
-            // Records per-route metrics.
-            .push(metrics.http_route.into_layer::<classify::Response>())
-            .check_new_clone_service::<dst::Route>()
-            // Sets the per-route response classifier as a request
-            // extension.
-            .push(classify::Layer::new())
-            .check_new_clone_service::<dst::Route>();
+        // let http_profile_route_proxy = svc::proxies()
+        //     .check_new_clone_service::<dst::Route>()
+        //     .push(metrics.http_route_actual.into_layer::<classify::Response>())
+        //     // Sets an optional retry policy.
+        //     .push(retry::layer(metrics.http_route_retry))
+        //     .check_new_clone_service::<dst::Route>()
+        //     // Sets an optional request timeout.
+        //     .push(http::MakeTimeoutLayer::default())
+        //     .check_new_clone_service::<dst::Route>()
+        //     // Records per-route metrics.
+        //     .push(metrics.http_route.into_layer::<classify::Response>())
+        //     .check_new_clone_service::<dst::Route>()
+        //     // Sets the per-route response classifier as a request
+        //     // extension.
+        //     .push(classify::Layer::new())
+        //     .check_new_clone_service::<dst::Route>();
 
-        // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
-        // resolutions are shared even as the type of request may vary.
-        let http_logical_profile_cache = http_concrete
-            .clone()
-            .push_on_response(svc::layers().box_http_request())
-            .check_service::<Concrete<HttpEndpoint>>()
-            // Provides route configuration. The profile service operates
-            // over `Concret` services. When overrides are in play, the
-            // Concrete destination may be overridden.
-            .push(profiles::Layer::with_overrides(
-                profiles_client,
-                http_profile_route_proxy.into_inner(),
-            ))
-            .check_make_service::<Profile, Concrete<HttpEndpoint>>()
-            // Use the `Logical` target as a `Concrete` target. It may be
-            // overridden by the profile layer.
-            .push_on_response(
-                svc::layers().push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
-                    addr: inner.addr.clone(),
-                    inner,
-                }),
-            )
-            .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Profile| info_span!("profile"))
-            .check_make_service::<Profile, Logical<HttpEndpoint>>()
-            .push(router::Layer::new(|()| ProfilePerTarget))
-            .check_new_service_routes::<(), Logical<HttpEndpoint>>()
-            .new_service(());
+        // // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
+        // // resolutions are shared even as the type of request may vary.
+        // let http_logical_profile_cache = http_concrete
+        //     .clone()
+        //     .push_on_response(svc::layers().box_http_request())
+        //     .check_service::<Concrete<HttpEndpoint>>()
+        //     // Provides route configuration. The profile service operates
+        //     // over `Concret` services. When overrides are in play, the
+        //     // Concrete destination may be overridden.
+        //     .push(profiles::Layer::with_overrides(
+        //         profiles_client,
+        //         http_profile_route_proxy.into_inner(),
+        //     ))
+        //     .check_make_service::<Profile, Concrete<HttpEndpoint>>()
+        //     // Use the `Logical` target as a `Concrete` target. It may be
+        //     // overridden by the profile layer.
+        //     .push_on_response(
+        //         svc::layers().push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
+        //             addr: inner.addr.clone(),
+        //             inner,
+        //         }),
+        //     )
+        //     .into_new_service()
+        //     .cache(
+        //         svc::layers().push_on_response(
+        //             svc::layers()
+        //                 // If the service has been unavailable for an extended time, eagerly
+        //                 // fail requests.
+        //                 .push_failfast(dispatch_timeout)
+        //                 // Shares the service, ensuring discovery errors are propagated.
+        //                 .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+        //                 .push(metrics.stack.layer(stack_labels("profile"))),
+        //         ),
+        //     )
+        //     .spawn_buffer(buffer_capacity)
+        //     .instrument(|_: &Profile| info_span!("profile"))
+        //     .check_make_service::<Profile, Logical<HttpEndpoint>>()
+        //     .push(router::Layer::new(|()| ProfilePerTarget))
+        //     .check_new_service_routes::<(), Logical<HttpEndpoint>>()
+        //     .new_service(());
 
         // Routes requests to their logical target.
-        svc::stack(http_logical_profile_cache)
+        svc::stack(http_concrete)
+            .push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
+                addr: inner.addr.clone(),
+                inner,
+            })
+            .push_on_response(svc::layers().box_http_response().box_http_request())
+            .check_service::<Logical<HttpEndpoint>>()
+            // .into_inner()
+            // svc::stack(http_logical_profile_cache)
             .check_service::<Logical<HttpEndpoint>>()
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
-            .push_fallback_with_predicate(
-                http_concrete
-                    .push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
-                        addr: inner.addr.clone(),
-                        inner,
-                    })
-                    .push_on_response(svc::layers().box_http_response().box_http_request())
-                    .check_service::<Logical<HttpEndpoint>>()
-                    .into_inner(),
-                is_discovery_rejected,
-            )
+            //     .push_fallback_with_predicate(
+            //         http_concrete
+            //             .push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
+            //                 addr: inner.addr.clone(),
+            //                 inner,
+            //             })
+            //             .push_on_response(svc::layers().box_http_response().box_http_request())
+            //             .check_service::<Logical<HttpEndpoint>>()
+            //             .into_inner(),
+            //         is_discovery_rejected,
+            //     )
             .check_service::<Logical<HttpEndpoint>>()
-            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-            .push_on_response(
-                // Strips headers that may be set by this proxy.
-                svc::layers()
-                    .push(http::strip_header::request::layer(L5D_CLIENT_ID))
-                    .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
-            )
+            // .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+            // .push_on_response(
+            //     // Strips headers that may be set by this proxy.
+            //     svc::layers()
+            //         .push(http::strip_header::request::layer(L5D_CLIENT_ID))
+            //         .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
+            // )
             // Sets the canonical-dst header on all outbound requests.
             .check_service::<Logical<HttpEndpoint>>()
             .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr))
@@ -490,20 +498,21 @@ impl Config {
             .push(svc::layer::mk(tcp::Forward::new));
 
         let http_admit_request = svc::layers()
-            // Limits the number of in-flight requests.
-            .push_concurrency_limit(max_in_flight_requests)
-            // Eagerly fail requests when the proxy is out of capacity for a
-            // dispatch_timeout.
-            .push_failfast(dispatch_timeout)
-            .push(metrics.http_errors.clone())
-            // Synthesizes responses for proxy errors.
-            .push(errors::layer())
-            // Initiates OpenCensus tracing.
-            .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
-                SpanConverter::server(span_sink, trace_labels())
-            })))
-            // Tracks proxy handletime.
-            .push(metrics.clone().http_handle_time.layer());
+            // // Limits the number of in-flight requests.
+            // .push_concurrency_limit(max_in_flight_requests)
+            // // Eagerly fail requests when the proxy is out of capacity for a
+            // // dispatch_timeout.
+            // .push_failfast(dispatch_timeout)
+            // .push(metrics.http_errors.clone())
+            // // Synthesizes responses for proxy errors.
+            // .push(errors::layer())
+            // // Initiates OpenCensus tracing.
+            // .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+            //     SpanConverter::server(span_sink, trace_labels())
+            // })))
+            // // Tracks proxy handletime.
+            // .push(metrics.clone().http_handle_time.layer())
+            ;
 
         let http_server = svc::stack(http_router)
             // Resolve the application-emitted destination via DNS to determine                                                                                                                      
@@ -514,8 +523,8 @@ impl Config {
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
             .check_new_service::<tls::accept::Meta>()
-            // Used by tap.
-            .push_http_insert_target()
+            // // Used by tap.
+            // .push_http_insert_target()
             .push_on_response(
                  svc::layers()
                     .push(http_admit_request)
