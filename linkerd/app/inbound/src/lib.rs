@@ -206,16 +206,16 @@ impl Config {
                     .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             ));
 
-        // let http_profile_route_proxy = svc::proxies()
-        //     // Sets the route as a request extension so that it can be used
-        //     // by tap.
-        //     .push_http_insert_target()
-        //     // Records per-route metrics.
-        //     .push(metrics.http_route.into_layer::<classify::Response>())
-        //     // Sets the per-route response classifier as a request
-        //     // extension.
-        //     .push(classify::Layer::new())
-        //     .check_new_clone_service::<dst::Route>();
+        let http_profile_route_proxy = svc::proxies()
+            // Sets the route as a request extension so that it can be used
+            // by tap.
+            .push_http_insert_target()
+            // Records per-route metrics.
+            .push(metrics.http_route.into_layer::<classify::Response>())
+            // Sets the per-route response classifier as a request
+            // extension.
+            .push(classify::Layer::new())
+            .check_new_clone_service::<dst::Route>();
 
         // An HTTP client is created for each target via the endpoint stack.
         let http_target_cache = http_endpoint
@@ -241,46 +241,46 @@ impl Config {
             .instrument(|_: &Target| info_span!("target"))
             .check_service::<Target>();
 
-        // // Routes targets to a Profile stack, i.e. so that profile
-        // // resolutions are shared even as the type of request may vary.
-        // let http_profile_cache = http_target_cache
-        //     .clone()
-        //     .push_on_response(svc::layers().box_http_request())
-        //     .check_service::<Target>()
-        //     // Provides route configuration without pdestination overrides.
-        //     .push(profiles::Layer::without_overrides(
-        //         profiles_client,
-        //         http_profile_route_proxy.into_inner(),
-        //     ))
-        //     .into_new_service()
-        //     // Caches profile stacks.
-        //     .check_new_service_routes::<Profile, Target>()
-        //     .cache(
-        //         svc::layers().push_on_response(
-        //             svc::layers()
-        //                 // If the service has been unavailable for an extended time, eagerly
-        //                 // fail requests.
-        //                 .push_failfast(dispatch_timeout)
-        //                 // Shares the service, ensuring discovery errors are propagated.
-        //                 .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-        //                 .push(metrics.stack.layer(stack_labels("profile"))),
-        //         ),
-        //     )
-        //     .spawn_buffer(buffer_capacity)
-        //     .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
-        //     .check_make_service::<Profile, Target>()
-        //     .push(router::Layer::new(|()| ProfileTarget))
-        //     .check_new_service_routes::<(), Target>()
-        //     .new_service(());
+        // Routes targets to a Profile stack, i.e. so that profile
+        // resolutions are shared even as the type of request may vary.
+        let http_profile_cache = http_target_cache
+            .clone()
+            .push_on_response(svc::layers().box_http_request())
+            .check_service::<Target>()
+            // Provides route configuration without pdestination overrides.
+            .push(profiles::Layer::without_overrides(
+                profiles_client,
+                http_profile_route_proxy.into_inner(),
+            ))
+            .into_new_service()
+            // Caches profile stacks.
+            .check_new_service_routes::<Profile, Target>()
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        // If the service has been unavailable for an extended time, eagerly
+                        // fail requests.
+                        .push_failfast(dispatch_timeout)
+                        // Shares the service, ensuring discovery errors are propagated.
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("profile"))),
+                ),
+            )
+            .spawn_buffer(buffer_capacity)
+            .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
+            .check_make_service::<Profile, Target>()
+            .push(router::Layer::new(|()| ProfileTarget))
+            .check_new_service_routes::<(), Target>()
+            .new_service(());
 
-        svc::stack(http_target_cache)
-            // svc::stack(http_profile_cache)
+        // svc::stack(http_target_cache)
+        svc::stack(http_profile_cache)
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
-            // .push_fallback(
-            //     http_target_cache
-            //         .push_on_response(svc::layers().box_http_response().box_http_request()),
-            // )
+            .push_fallback(
+                http_target_cache
+                    .push_on_response(svc::layers().box_http_response().box_http_request()),
+            )
             // If the traffic is targeted at the inbound port, send it through
             // the loopback service (i.e. as a gateway). This is done before
             // caching so that the loopback stack can determine whether it
