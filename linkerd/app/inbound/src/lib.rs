@@ -350,18 +350,18 @@ impl Config {
         //     .push(strip_header::request::layer(L5D_CLIENT_ID))
         //     .push(strip_header::response::layer(L5D_SERVER_ID));
 
-        // // Handles requests as they are initially received by the proxy.
-        // let http_admit_request = svc::layers()
-        //     // Downgrades the protocol if upgraded by an outbound proxy.
-        //     .push(svc::layer::mk(orig_proto::Downgrade::new))
-        //     // Limits the number of in-flight requests.
-        //     .push_concurrency_limit(max_in_flight_requests)
-        //     // Eagerly fail requests when the proxy is out of capacity for a
-        //     // dispatch_timeout.
-        //     .push_failfast(dispatch_timeout)
-        //     .push(metrics.http_errors)
-        //     // Synthesizes responses for proxy errors.
-        //     .push(errors::layer());
+        // Handles requests as they are initially received by the proxy.
+        let http_admit_request = svc::layers()
+            // Downgrades the protocol if upgraded by an outbound proxy.
+            // .push(svc::layer::mk(orig_proto::Downgrade::new))
+            // Limits the number of in-flight requests.
+            .push_concurrency_limit(max_in_flight_requests)
+            // Eagerly fail requests when the proxy is out of capacity for a
+            // dispatch_timeout.
+            // .push_failfast(dispatch_timeout)
+            // .push(metrics.http_errors)
+            // Synthesizes responses for proxy errors.
+            .push(errors::layer());
 
         // let http_server_observability = svc::layers()
         //     .push(TraceContextLayer::new(span_sink.map(|span_sink| {
@@ -390,7 +390,7 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     // .push(http_strip_headers)
-                    // .push(http_admit_request)
+                    .push(http_admit_request)
                     // .push(http_server_observability)
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
