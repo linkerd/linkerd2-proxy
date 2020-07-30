@@ -1,7 +1,7 @@
 use crate::identity::LocalIdentity;
 use linkerd2_app_core::{
-    admin, config::ServerConfig, drain, metrics::FmtMetrics  proxy::detect, serve,
-    trace, transport::tls, Error,
+    admin, config::ServerConfig, drain, metrics::FmtMetrics, proxy::detect, serve, trace,
+    transport::tls, Error,
 };
 use std::net::SocketAddr;
 use std::pin::Pin;
