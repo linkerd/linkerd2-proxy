@@ -6,10 +6,10 @@ pub(crate) fn build() -> Runtime {
         .enable_all()
         .thread_name("linkerd2-proxy-worker");
     let num_cpus = num_cpus::get();
-    if num_cpus > 2 {
+    if num_cpus > 1 {
         builder
             .threaded_scheduler()
-            .core_threads(num_cpus - 1) // Save 1 core for the admin runtime.
+            .core_threads(num_cpus)
             .build()
             .expect("failed to build multithreaded runtime!")
     } else {
