@@ -82,7 +82,7 @@ impl Config {
             .push(tls::client::ConnectLayer::new(local_identity))
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
-            // .push(metrics.transport.layer_connect(TransportLabels))
+            .push(metrics.transport.layer_connect(TransportLabels))
             .into_inner()
     }
 
@@ -113,7 +113,8 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(
                             self.proxy.buffer_capacity,
                             self.proxy.cache_max_idle_age,
-                        ), // .push(metrics.layer(stack_labels("refine"))),
+                        )
+                        .push(metrics.layer(stack_labels("refine"))),
                 ),
             )
             .spawn_buffer(self.proxy.buffer_capacity)
@@ -159,7 +160,7 @@ impl Config {
         // export.
         let observability = svc::layers()
             .push(tap_layer.clone())
-            // .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            .push(metrics.http_endpoint.into_layer::<classify::Response>())
             .push_on_response(TraceContextLayer::new(
                 span_sink
                     .clone()
@@ -274,7 +275,7 @@ impl Config {
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
-                    // .push(metrics.stack.layer(stack_labels("balance.endpoint")))
+                    .push(metrics.stack.layer(stack_labels("balance.endpoint")))
                     .box_http_request(),
             )
             .push_spawn_ready()
@@ -289,7 +290,8 @@ impl Config {
                         // requests.
                         .push_failfast(dispatch_timeout)
                         // Shares the balancer, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age), // .push(metrics.stack.layer(stack_labels("balance"))),
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("balance"))),
                 ),
             )
             .spawn_buffer(buffer_capacity)
@@ -312,7 +314,7 @@ impl Config {
                             // Shares the balancer, ensuring discovery errors are propagated.
                             .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
                             .box_http_request()
-                            // .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
+                            .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                     ),
             )
             .spawn_buffer(buffer_capacity)
@@ -342,15 +344,15 @@ impl Config {
 
         let http_profile_route_proxy = svc::proxies()
             .check_new_clone_service::<dst::Route>()
-            // .push(metrics.http_route_actual.into_layer::<classify::Response>())
+            .push(metrics.http_route_actual.into_layer::<classify::Response>())
             // Sets an optional retry policy.
             .push(retry::layer(metrics.http_route_retry))
             .check_new_clone_service::<dst::Route>()
             // Sets an optional request timeout.
             .push(http::MakeTimeoutLayer::default())
             .check_new_clone_service::<dst::Route>()
-            // // Records per-route metrics.
-            // .push(metrics.http_route.into_layer::<classify::Response>())
+            // Records per-route metrics.
+            .push(metrics.http_route.into_layer::<classify::Response>())
             .check_new_clone_service::<dst::Route>()
             // Sets the per-route response classifier as a request
             // extension.
@@ -387,7 +389,8 @@ impl Config {
                         // fail requests.
                         .push_failfast(dispatch_timeout)
                         // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age), // .push(metrics.stack.layer(stack_labels("profile"))),
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
             )
             .spawn_buffer(buffer_capacity)
@@ -517,7 +520,7 @@ impl Config {
             .push_on_response(
                  svc::layers()
                     .push(http_admit_request)
-                    // .push(metrics.stack.layer(stack_labels("source")))
+                    .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
                     .box_http_response()
             )
@@ -542,7 +545,7 @@ impl Config {
             .push(detect::AcceptLayer::new(DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
-            // .push(metrics.transport.layer_accept(TransportLabels))
+            .push(metrics.transport.layer_accept(TransportLabels))
             // The local application never establishes mTLS with the proxy, so don't try to
             // terminate TLS, just annotate with the connection with the reason.
             .push(detect::AcceptLayer::new(tls::DetectTls::new(
