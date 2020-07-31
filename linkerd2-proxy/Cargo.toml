@@ -8,11 +8,13 @@ description = "The main proxy executable"
 
 [features]
 mock-orig-dst  = ["linkerd2-app/mock-orig-dst"]
+multicore = ["tokio/rt-threaded", "num_cpus"]
 
 [dependencies]
 futures = { version = "0.3", features = ["compat"] }
 mimalloc = { version = "0.1.19", optional = true }
+num_cpus = { version = "1", optional = true }
 linkerd2-app = { path = "../linkerd/app" }
 linkerd2-signal = { path = "../linkerd/signal" }
-tokio = { version = "0.2", features = ["rt-core"] }
+tokio = { version = "0.2", features = ["rt-core", "time", "io-driver"] }
 tracing = "0.1"
