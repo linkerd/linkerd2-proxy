@@ -1,31 +1,35 @@
-use tokio::runtime::{self, Runtime};
+use tokio::runtime::{Builder, Runtime};
 
 #[cfg(feature = "multicore")]
 pub(crate) fn build() -> Runtime {
-    let builder = runtime::Builder::new()
-        .enable_all()
-        .thread_name("linkerd2-proxy-worker");
-    let num_cpus = num_cpus::get();
-    if num_cpus > 2 {
-        builder
-            .threaded_scheduler()
-            .core_threads(num_cpus - 1) // Save 1 core for the admin runtime.
-            .build()
-            .expect("failed to build multithreaded runtime!")
-    } else {
-        builder
+    // The proxy creates an additional admin thread, but it would be wasteful to allocate a whole
+    // core to it; so we let the main runtime consume all cores the process has. The basic scheduler
+    // is used when the threaded scheduler would provide no benefit.
+    match num_cpus::get() {
+        // `0` is unexpected, but it's a wild world out there.
+        0 | 1 => Builder::new()
+            .enable_all()
+            .thread_name("proxy")
             .basic_scheduler()
             .build()
-            .expect("failed to build single-threaded runtime!")
+            .expect("failed to build basic runtime!"),
+        num_cpus => Builder::new()
+            .enable_all()
+            .thread_name("proxy")
+            .threaded_scheduler()
+            .core_threads(num_cpus)
+            .max_threads(num_cpus)
+            .build()
+            .expect("failed to build threaded runtime!"),
     }
 }
 
 #[cfg(not(feature = "multicore"))]
 pub(crate) fn build() -> Runtime {
-    runtime::Builder::new()
+    Builder::new()
         .enable_all()
-        .thread_name("linkerd2-proxy-worker")
+        .thread_name("proxy")
         .basic_scheduler()
         .build()
-        .expect("failed to build single-threaded runtime!")
+        .expect("failed to build basic runtime!")
 }
