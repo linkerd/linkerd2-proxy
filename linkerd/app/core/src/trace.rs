@@ -11,10 +11,7 @@ use tracing_subscriber::{
 };
 
 #[cfg(feature = "flamegraph")]
-use {
-    std::{fs::File, io::BufWriter},
-    tracing_flame::FlameLayer,
-};
+use std::{fs::File, io::BufWriter};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
