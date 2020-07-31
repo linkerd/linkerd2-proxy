@@ -18,6 +18,7 @@ pub(crate) fn build() -> Runtime {
             .thread_name("proxy")
             .threaded_scheduler()
             .core_threads(num_cpus)
+            .max_threads(num_cpus)
             .build()
             .expect("failed to build threaded runtime!"),
     }
@@ -30,5 +31,5 @@ pub(crate) fn build() -> Runtime {
         .thread_name("proxy")
         .basic_scheduler()
         .build()
-        .expect("failed to build threaded runtime!")
+        .expect("failed to build basic runtime!")
 }
