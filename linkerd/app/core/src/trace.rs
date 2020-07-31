@@ -32,6 +32,9 @@ type Formatter<F, E> = Layered<
 #[cfg(feature = "flamegraph")]
 pub type FlushFlamegraph = tracing_flame::FlushGuard<BufWriter<File>>;
 
+#[cfg(feature = "flamegraph")]
+const FLAMEGRAPH_PATH: &str = "/tmp/linkerd2.folded";
+
 #[cfg(not(feature = "flamegraph"))]
 pub type FlushFlamegraph = ();
 
@@ -85,7 +88,7 @@ pub fn with_filter_and_format(
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
             #[cfg(feature = "flamegraph")]
             let (flamegraph_layer, flush) = {
-                let (layer, flush) = tracing_flame::FlameLayer::with_file("./linkerd2.folded")
+                let (layer, flush) = tracing_flame::FlameLayer::with_file(FLAMEGRAPH_PATH)
                     .expect("failed to create file for flamegraph!");
                 let layer = layer.with_empty_samples(false).with_threads_collapsed(true);
                 (layer, flush)
@@ -109,7 +112,7 @@ pub fn with_filter_and_format(
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
             #[cfg(feature = "flamegraph")]
             let (flamegraph_layer, flush) = {
-                let (layer, flush) = tracing_flame::FlameLayer::with_file("./linkerd2.folded")
+                let (layer, flush) = tracing_flame::FlameLayer::with_file(FLAMEGRAPH_PATH)
                     .expect("failed to create file for flamegraph!");
                 let layer = layer.with_empty_samples(false).with_threads_collapsed(true);
                 (layer, flush)
