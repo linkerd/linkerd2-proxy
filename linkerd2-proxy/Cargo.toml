@@ -10,6 +10,7 @@ description = "The main proxy executable"
 default = ["multicore"]
 mock-orig-dst  = ["linkerd2-app/mock-orig-dst"]
 multicore = ["tokio/rt-threaded", "num_cpus"]
+flamegraph = ["linkerd2-app/flamegraph"]
 
 [dependencies]
 futures = { version = "0.3", features = ["compat"] }

@@ -12,6 +12,7 @@ This is used by tests and the executable.
 
 [features]
 mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
+flamegraph = ["linkerd2-app-core/flamegraph"]
 
 [dependencies]
 futures = { version = "0.3" }

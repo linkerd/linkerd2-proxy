@@ -13,6 +13,7 @@ independently of the inbound and outbound proxy logic.
 
 [features]
 mock-orig-dst  = ["linkerd2-proxy-transport/mock-orig-dst"]
+flamegraph = ["tracing-flame"]
 
 [dependencies]
 async-trait = "0.1"
@@ -69,6 +70,7 @@ tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
 tonic = { version = "0.2", default-features = false, features = ["prost"] }
 tracing = "0.1.9"
 tracing-futures = { version = "0.2", features = ["std-future"] }
+tracing-flame = { version = "0.1", optional = true }
 tracing-log = "0.1"
 pin-project = "0.4"
 

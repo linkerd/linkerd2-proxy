@@ -10,6 +10,12 @@ use tracing_subscriber::{
     reload, EnvFilter,
 };
 
+#[cfg(feature = "flamegraph")]
+use {
+    std::{fs::File, io::BufWriter},
+    tracing_flame::FlameLayer,
+};
+
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 
@@ -23,10 +29,17 @@ type Formatter<F, E> = Layered<
     Layered<TasksLayer<F>, tracing_subscriber::Registry>,
 >;
 
+#[cfg(feature = "flamegraph")]
+pub type FlushFlamegraph = tracing_flame::FlushGuard<BufWriter<File>>;
+
+#[cfg(not(feature = "flamegraph"))]
+pub type FlushFlamegraph = ();
+
 #[derive(Clone)]
 pub struct Handle {
     pub level: LevelHandle,
     pub tasks: TaskList,
+    pub flush: FlushFlamegraph,
 }
 
 #[derive(Clone)]
@@ -64,11 +77,22 @@ pub fn with_filter_and_format(
     let start_time = clock::now();
     let filter = tracing_subscriber::EnvFilter::new(filter);
 
+    #[cfg(feature = "flamegraph")]
+    let (flamegraph_layer, flush) = {
+        let (layer, flush) = tracing_flame::FlameLayer::with_file("./linkerd2.folded")
+            .expect("failed to create file for flamegraph!");
+        let layer = layer.with_empty_samples(false).with_threads_collapsed(true);
+        (layer, flush)
+    };
+
+    #[cfg(not(feature = "flamegraph"))]
+    let flush = ();
+
     let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
-            let dispatch = tracing_subscriber::registry()
+            let builder = tracing_subscriber::registry()
                 .with(tasks_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
@@ -76,25 +100,34 @@ pub fn with_filter_and_format(
                         .json()
                         .with_span_list(true),
                 )
-                .with(filter)
-                .into();
-            let handle = LevelHandle::Json(level);
-            (dispatch, handle, tasks)
+                .with(filter);
+            let level = LevelHandle::Json(level);
+            #[cfg(feature = "flamegraph")]
+            let builder = builder.with(flamegraph_layer);
+            (builder.into(), level, tasks)
         }
         "PLAIN" | _ => {
             let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
-            let dispatch = tracing_subscriber::registry()
+            let builder = tracing_subscriber::registry()
                 .with(tasks_layer)
                 .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }))
-                .with(filter)
-                .into();
-            let handle = LevelHandle::Plain(level);
-            (dispatch, handle, tasks)
+                .with(filter);
+            let level = LevelHandle::Plain(level);
+            #[cfg(feature = "flamegraph")]
+            let builder = builder.with(flamegraph_layer);
+            (builder.into(), level, tasks)
         }
     };
 
-    (dispatch, Handle { level, tasks })
+    (
+        dispatch,
+        Handle {
+            level,
+            tasks,
+            flush,
+        },
+    )
 }
 
 pub struct Uptime {

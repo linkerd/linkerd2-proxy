@@ -28,6 +28,9 @@ pub struct Admin<M: FmtMetrics> {
     trace_level: TraceLevel,
     tasks: Tasks,
     ready: Readiness,
+    /// Ensures that the flamegraph is flushed when the proxy shuts down, if one
+    /// is being collected.
+    _flush: trace::FlushFlamegraph,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +49,7 @@ impl<M: FmtMetrics> Admin<M> {
         trace::Handle {
             level: trace_level,
             tasks,
+            flush,
         }: trace::Handle,
     ) -> Self {
         Self {
@@ -53,6 +57,7 @@ impl<M: FmtMetrics> Admin<M> {
             trace_level,
             tasks: tasks.into(),
             ready,
+            _flush: flush,
         }
     }
 

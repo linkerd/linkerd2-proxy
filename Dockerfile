@@ -32,8 +32,9 @@ FROM $RUST_IMAGE as build
 ARG PROXY_UNOPTIMIZED
 
 # Controls what features are enabled in the proxy. This is typically empty but
-# may be set to `mock-orig-dst` for profiling builds, or to `multithreaded` to
-# enable the multithreaded Tokio runtime.
+# may be set to `mock-orig-dst` for profiling builds,`multithreaded` to
+# enable the multithreaded Tokio runtime, and `flamegraph` to generate a
+# `tracing-flame` flamegraph of the proxy's execution in a profiling run.
 ARG PROXY_FEATURES
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \
