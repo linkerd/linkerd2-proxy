@@ -67,7 +67,7 @@ tokio = { version = "0.2", features = ["macros", "sync", "parking_lot"]}
 tokio-timer = "0.2"
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
 tonic = { version = "0.2", default-features = false, features = ["prost"] }
-tracing = "0.1.9"
+tracing = "0.1.18"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 tracing-log = "0.1"
 pin-project = "0.4"
