@@ -94,15 +94,17 @@ pub fn with_filter_and_format(
                 (layer, flush)
             };
 
-            let builder = tracing_subscriber::registry().with(tasks_layer).with(
-                tracing_subscriber::fmt::layer()
-                    .with_timer(Uptime { start_time })
-                    .json()
-                    .with_span_list(true),
-            );
+            let builder = tracing_subscriber::registry()
+                .with(tasks_layer)
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_timer(Uptime { start_time })
+                        .json()
+                        .with_span_list(true),
+                )
+                .with(filter);
             #[cfg(feature = "flamegraph")]
             let builder = builder.with(flamegraph_layer);
-            let builder = builder.with(filter);
 
             let level = LevelHandle::Json(level);
             (builder.into(), level, tasks, flush)
@@ -120,10 +122,10 @@ pub fn with_filter_and_format(
 
             let builder = tracing_subscriber::registry()
                 .with(tasks_layer)
-                .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }));
+                .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }))
+                .with(filter);
             #[cfg(feature = "flamegraph")]
             let builder = builder.with(flamegraph_layer);
-            let builder = builder.with(filter);
 
             let level = LevelHandle::Plain(level);
             (builder.into(), level, tasks, flush)
