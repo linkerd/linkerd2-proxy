@@ -366,8 +366,9 @@ impl Config {
             .push(TraceContextLayer::new(span_sink.map(|span_sink| {
                 SpanConverter::server(span_sink, trace_labels())
             })))
-            // Tracks proxy handletime.
-            .push(metrics.http_handle_time.layer());
+            // // Tracks proxy handletime.
+            // .push(metrics.http_handle_time.layer())
+            ;
 
         let http_server = svc::stack(http_router)
             // Ensures that the built service is ready before it is returned

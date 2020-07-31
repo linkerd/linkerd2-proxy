@@ -12,8 +12,9 @@ pub use tracing::{debug, error, info, warn};
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[tokio::main(basic_scheduler)]
-async fn main() {
+mod rt;
+
+fn main() {
     let trace = trace::init();
 
     // Load configuration from the environment without binding ports.
@@ -26,51 +27,55 @@ async fn main() {
         }
     };
 
-    let app = match async move { config.build(trace?).await }.await {
-        Ok(app) => app,
-        Err(e) => {
-            eprintln!("Initialization failure: {}", e);
-            std::process::exit(1);
+    rt::build().block_on(async move {
+        let app = match async move { config.build(trace?).await }.await {
+            Ok(app) => app,
+            Err(e) => {
+                eprintln!("Initialization failure: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        info!("Admin interface on {}", app.admin_addr());
+        info!("Inbound interface on {}", app.inbound_addr());
+        info!("Outbound interface on {}", app.outbound_addr());
+
+        match app.tap_addr() {
+            None => info!("Tap DISABLED"),
+            Some(addr) => info!("Tap interface on {}", addr),
         }
-    };
 
-    info!("Admin interface on {}", app.admin_addr());
-    info!("Inbound interface on {}", app.inbound_addr());
-    info!("Outbound interface on {}", app.outbound_addr());
-
-    match app.tap_addr() {
-        None => info!("Tap DISABLED"),
-        Some(addr) => info!("Tap interface on {}", addr),
-    }
-
-    match app.local_identity() {
-        None => warn!("Identity is DISABLED"),
-        Some(identity) => {
-            info!("Local identity is {}", identity.name());
-            let addr = app.identity_addr().expect("must have identity addr");
-            match addr.identity.value() {
-                None => info!("Identity verified via {}", addr.addr),
-                Some(identity) => {
-                    info!("Identity verified via {} ({})", addr.addr, identity);
+        match app.local_identity() {
+            None => warn!("Identity is DISABLED"),
+            Some(identity) => {
+                info!("Local identity is {}", identity.name());
+                let addr = app.identity_addr().expect("must have identity addr");
+                match addr.identity.value() {
+                    None => info!("Identity verified via {}", addr.addr),
+                    Some(identity) => {
+                        info!("Identity verified via {} ({})", addr.addr, identity);
+                    }
                 }
             }
         }
-    }
 
-    let dst_addr = app.dst_addr();
-    match dst_addr.identity.value() {
-        None => info!("Destinations resolved via {}", dst_addr.addr),
-        Some(identity) => info!("Destinations resolved via {} ({})", dst_addr.addr, identity),
-    }
-
-    if let Some(oc) = app.opencensus_addr() {
-        match oc.identity.value() {
-            None => info!("OpenCensus tracing collector at {}", oc.addr),
-            Some(identity) => info!("OpenCensus tracing collector at {} ({})", oc.addr, identity),
+        let dst_addr = app.dst_addr();
+        match dst_addr.identity.value() {
+            None => info!("Destinations resolved via {}", dst_addr.addr),
+            Some(identity) => info!("Destinations resolved via {} ({})", dst_addr.addr, identity),
         }
-    }
 
-    let drain = app.spawn();
-    signal::shutdown().await;
-    drain.drain().await;
+        if let Some(oc) = app.opencensus_addr() {
+            match oc.identity.value() {
+                None => info!("OpenCensus tracing collector at {}", oc.addr),
+                Some(identity) => {
+                    info!("OpenCensus tracing collector at {} ({})", oc.addr, identity)
+                }
+            }
+        }
+
+        let drain = app.spawn();
+        signal::shutdown().await;
+        drain.drain().await;
+    });
 }

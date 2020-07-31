@@ -1190,6 +1190,7 @@ dependencies = [
  "linkerd2-app",
  "linkerd2-signal",
  "mimalloc",
+ "num_cpus",
  "tokio",
  "tracing",
 ]
@@ -2501,6 +2502,7 @@ dependencies = [
  "memchr 2.3.3",
  "mio",
  "mio-uds",
+ "num_cpus",
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
