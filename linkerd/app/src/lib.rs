@@ -299,7 +299,7 @@ impl App {
         debug!("spawning daemon thread");
         tokio::spawn(future::pending().map(|()| drop(admin_shutdown_tx)));
         std::thread::Builder::new()
-            .name("admin".into())
+            .name("linkerd2-proxy-admin".into())
             .spawn(move || {
                 let mut rt = tokio::runtime::Builder::new()
                     .basic_scheduler()
