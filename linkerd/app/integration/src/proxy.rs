@@ -289,7 +289,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     }
 
     let config = app::env::parse_config(&env).unwrap();
-    let (trace, trace_handle) = super::trace_subscriber();
+    let (trace, trace_handle, flush) = super::trace_subscriber();
 
     let (running_tx, running_rx) = oneshot::channel();
     let (tx, mut rx) = shutdown_signal();
@@ -306,6 +306,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let thread = thread::Builder::new()
         .name(format!("{}:proxy", thread_name()))
         .spawn(move || {
+            let _flush = flush;
             tracing::dispatcher::with_default(&trace, || {
                 let span = info_span!("proxy", test = %thread_name());
                 let _enter = span.enter();

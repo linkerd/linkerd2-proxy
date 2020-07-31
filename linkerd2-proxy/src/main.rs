@@ -28,7 +28,13 @@ fn main() {
     };
 
     rt::build().block_on(async move {
-        let app = match async move { config.build(trace?).await }.await {
+        let (app, _flush) = match async move {
+            let (trace, flush) = trace?;
+            let app = config.build(trace).await?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>((app, flush))
+        }
+        .await
+        {
             Ok(app) => app,
             Err(e) => {
                 eprintln!("Initialization failure: {}", e);

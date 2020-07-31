@@ -43,7 +43,11 @@ const DEFAULT_LOG: &'static str = "error,\
                                    linkerd2_proxy_http=off,\
                                    linkerd2_proxy_transport=off";
 
-pub fn trace_subscriber() -> (Dispatch, app::core::trace::Handle) {
+pub fn trace_subscriber() -> (
+    Dispatch,
+    app::core::trace::Handle,
+    app::core::trace::FlushFlamegraph,
+) {
     use std::env;
     let log_level = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
@@ -59,7 +63,7 @@ pub fn trace_subscriber() -> (Dispatch, app::core::trace::Handle) {
 }
 
 pub fn trace_init() -> tracing::dispatcher::DefaultGuard {
-    let (d, _) = trace_subscriber();
+    let (d, _, _) = trace_subscriber();
     tracing::dispatcher::set_default(&d)
 }
 

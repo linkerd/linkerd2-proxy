@@ -39,7 +39,6 @@ pub type FlushFlamegraph = ();
 pub struct Handle {
     pub level: LevelHandle,
     pub tasks: TaskList,
-    pub flush: FlushFlamegraph,
 }
 
 #[derive(Clone)]
@@ -50,17 +49,17 @@ pub enum LevelHandle {
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
-pub fn init() -> Result<Handle, Error> {
+pub fn init() -> Result<(Handle, FlushFlamegraph), Error> {
     let log_level = env::var(ENV_LOG_LEVEL).unwrap_or(DEFAULT_LOG_LEVEL.to_string());
     let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
 
-    let (dispatch, handle) = with_filter_and_format(log_level, log_format);
+    let (dispatch, handle, flush) = with_filter_and_format(log_level, log_format);
 
     // Set up log compatibility.
     init_log_compat()?;
     // Set the default subscriber.
     tracing::dispatcher::set_global_default(dispatch)?;
-    Ok(handle)
+    Ok((handle, flush))
 }
 
 pub fn init_log_compat() -> Result<(), Error> {
@@ -70,64 +69,65 @@ pub fn init_log_compat() -> Result<(), Error> {
 pub fn with_filter_and_format(
     filter: impl AsRef<str>,
     format: impl AsRef<str>,
-) -> (Dispatch, Handle) {
+) -> (Dispatch, Handle, FlushFlamegraph) {
     let filter = filter.as_ref();
 
     // Set up the subscriber
     let start_time = clock::now();
     let filter = tracing_subscriber::EnvFilter::new(filter);
 
-    #[cfg(feature = "flamegraph")]
-    let (flamegraph_layer, flush) = {
-        let (layer, flush) = tracing_flame::FlameLayer::with_file("./linkerd2.folded")
-            .expect("failed to create file for flamegraph!");
-        let layer = layer.with_empty_samples(false).with_threads_collapsed(true);
-        (layer, flush)
-    };
-
     #[cfg(not(feature = "flamegraph"))]
     let flush = ();
 
-    let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
+    let (dispatch, level, tasks, flush) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
-            let builder = tracing_subscriber::registry()
-                .with(tasks_layer)
-                .with(
-                    tracing_subscriber::fmt::layer()
-                        .with_timer(Uptime { start_time })
-                        .json()
-                        .with_span_list(true),
-                )
-                .with(filter);
-            let level = LevelHandle::Json(level);
+            #[cfg(feature = "flamegraph")]
+            let (flamegraph_layer, flush) = {
+                let (layer, flush) = tracing_flame::FlameLayer::with_file("./linkerd2.folded")
+                    .expect("failed to create file for flamegraph!");
+                let layer = layer.with_empty_samples(false).with_threads_collapsed(true);
+                (layer, flush)
+            };
+
+            let builder = tracing_subscriber::registry().with(tasks_layer).with(
+                tracing_subscriber::fmt::layer()
+                    .with_timer(Uptime { start_time })
+                    .json()
+                    .with_span_list(true),
+            );
             #[cfg(feature = "flamegraph")]
             let builder = builder.with(flamegraph_layer);
-            (builder.into(), level, tasks)
+            let builder = builder.with(filter);
+
+            let level = LevelHandle::Json(level);
+            (builder.into(), level, tasks, flush)
         }
         "PLAIN" | _ => {
             let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
+            #[cfg(feature = "flamegraph")]
+            let (flamegraph_layer, flush) = {
+                let (layer, flush) = tracing_flame::FlameLayer::with_file("./linkerd2.folded")
+                    .expect("failed to create file for flamegraph!");
+                let layer = layer.with_empty_samples(false).with_threads_collapsed(true);
+                (layer, flush)
+            };
+
             let builder = tracing_subscriber::registry()
                 .with(tasks_layer)
-                .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }))
-                .with(filter);
-            let level = LevelHandle::Plain(level);
+                .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }));
             #[cfg(feature = "flamegraph")]
             let builder = builder.with(flamegraph_layer);
-            (builder.into(), level, tasks)
+            let builder = builder.with(filter);
+
+            let level = LevelHandle::Plain(level);
+            (builder.into(), level, tasks, flush)
         }
     };
 
-    (
-        dispatch,
-        Handle {
-            level,
-            tasks,
-            flush,
-        },
-    )
+    (dispatch, Handle { level, tasks }, flush)
 }
 
 pub struct Uptime {
@@ -147,7 +147,7 @@ impl Handle {
     /// This will do nothing, but is required for admin endpoint tests which
     /// do not exercise the `proxy-log-level` endpoint.
     pub fn dangling() -> Self {
-        let (_, handle) = with_filter_and_format("", "");
+        let (_, handle, _) = with_filter_and_format("", "");
         handle
     }
 }
