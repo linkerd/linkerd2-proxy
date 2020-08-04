@@ -13,8 +13,8 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info_span};
-use tracing_futures::Instrument;
+use tracing::{debug, info_span, trace_span};
+use tracing_futures::{Instrument, Instrumented};
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Settings {
@@ -46,6 +46,7 @@ where
     #[pin]
     state: ConnectState<F, B>,
     h2_settings: Settings,
+    span: tracing::Span,
 }
 
 #[pin_project(project = ConnectStateProj)]
@@ -114,16 +115,22 @@ where
 {
     type Response = Connection<B>;
     type Error = Error;
-    type Future = ConnectFuture<C::Future, B>;
+    type Future = ConnectFuture<Instrumented<C::Future>, B>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
+        let span = info_span!("h2");
         ConnectFuture {
-            state: ConnectState::Connect(self.connect.make_connection(target)),
+            state: ConnectState::Connect(
+                self.connect
+                    .make_connection(target)
+                    .instrument(trace_span!(parent: &span, "connect")),
+            ),
             h2_settings: self.h2_settings,
+            span,
         }
     }
 }
@@ -143,6 +150,8 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
+        let span = this.span;
+        let _guard = span.enter();
         loop {
             match this.state.as_mut().project() {
                 ConnectStateProj::Connect(fut) => {
@@ -157,7 +166,8 @@ where
                         )
                         .executor(trace::Executor::new())
                         .handshake(io)
-                        .instrument(info_span!("h2"));
+                        .instrument(trace_span!("handshake"))
+                        .instrument(span.clone());
 
                     this.state.set(ConnectState::Handshake(Box::pin(hs)));
                 }
@@ -165,7 +175,9 @@ where
                     let (tx, conn) = ready!(hs.poll(cx))?;
 
                     tokio::spawn(
-                        conn.map_err(|error| debug!(%error, "failed").instrument(info_span!("h2"))),
+                        conn.map_err(|error| debug!(%error, "failed"))
+                            .instrument(trace_span!("conn"))
+                            .instrument(span.clone()),
                     );
 
                     return Poll::Ready(Ok(Connection { tx }));
