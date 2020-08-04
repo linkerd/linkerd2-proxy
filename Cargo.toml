@@ -64,4 +64,4 @@ debug = false
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
 tower = { version = "0.3", git = "https://github.com/tower-rs/tower", rev = "8752a3811788e94670c62dc0acbc9613207931b1"}
-h2 = { git = "https://github.com/hyperium/h2", rev = "96685a48fc14410da676548875c715f09aae1d93"}
+h2 = { git = "https://github.com/hyperium/h2", rev = "a57a2a879520d03ac8352876dbf276f183d819a2"}

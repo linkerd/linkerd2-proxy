@@ -490,7 +490,7 @@ dependencies = [
 [[package]]
 name = "h2"
 version = "0.2.6"
-source = "git+https://github.com/hyperium/h2?rev=96685a48fc14410da676548875c715f09aae1d93#96685a48fc14410da676548875c715f09aae1d93"
+source = "git+https://github.com/hyperium/h2?rev=a57a2a879520d03ac8352876dbf276f183d819a2#a57a2a879520d03ac8352876dbf276f183d819a2"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
