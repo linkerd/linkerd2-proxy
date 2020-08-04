@@ -63,7 +63,9 @@ pub fn with_filter_and_format(
     // Set up the subscriber
     let start_time = clock::now();
     let filter = tracing_subscriber::EnvFilter::new(filter);
-
+    let formatter = tracing_subscriber::fmt::format()
+        .with_timer(Uptime { start_time })
+        .with_thread_ids(true);
     let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
@@ -72,7 +74,7 @@ pub fn with_filter_and_format(
                 .with(tasks_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
-                        .with_timer(Uptime { start_time })
+                        .event_format(formatter)
                         .json()
                         .with_span_list(true),
                 )
@@ -86,7 +88,7 @@ pub fn with_filter_and_format(
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
             let dispatch = tracing_subscriber::registry()
                 .with(tasks_layer)
-                .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }))
+                .with(tracing_subscriber::fmt::layer().event_format(formatter))
                 .with(filter)
                 .into();
             let handle = LevelHandle::Plain(level);
