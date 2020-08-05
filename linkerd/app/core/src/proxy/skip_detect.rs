@@ -96,14 +96,8 @@ where
 
     fn call(&mut self, io: T) -> Self::Future {
         match self {
-            Self::Detect(d) => {
-                let fut = d.call(io).err_into::<Error>();
-                Box::pin(fut)
-            }
-            Self::Tcp(f) => {
-                let fut = f.call(io).err_into::<Error>();
-                Box::pin(fut)
-            }
+            Self::Detect(d) => Box::pin(d.call(io).err_into::<Error>()),
+            Self::Tcp(f) => Box::pin(f.call(io).err_into::<Error>()),
         }
     }
 }
