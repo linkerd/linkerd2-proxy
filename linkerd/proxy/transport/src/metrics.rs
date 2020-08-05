@@ -266,7 +266,7 @@ where
         let metrics = self
             .registry
             .lock()
-            .expect("metrics registr poisoned")
+            .expect("metrics registry poisoned")
             .get_or_default(labels)
             .clone();
 
