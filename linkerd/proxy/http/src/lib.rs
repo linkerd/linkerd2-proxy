@@ -26,7 +26,7 @@ mod version;
 
 pub use self::{
     client::MakeClientLayer,
-    detect::{DetectHttp, ServeHttp},
+    detect::DetectHttp,
     glue::{Body, HyperServerSvc},
     settings::Settings,
     timeout::MakeTimeoutLayer,

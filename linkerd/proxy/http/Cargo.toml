@@ -11,7 +11,6 @@ This should probably be decomposed into smaller, decoupled crates.
 """
 
 [dependencies]
-async-trait = "0.1"
 bytes = "0.5"
 futures = { package = "futures", version = "0.3" }
 h2 = "0.2.6"
@@ -28,8 +27,7 @@ linkerd2-duplex = { path  = "../../duplex" }
 linkerd2-error = { path  = "../../error" }
 linkerd2-http-box = { path  = "../../http-box" }
 linkerd2-identity = { path  = "../../identity" }
-linkerd2-proxy-core = { path  = "../core" }
-linkerd2-proxy-detect = { path  = "../detect" }
+linkerd2-io = { path  = "../../io" }
 linkerd2-proxy-transport = { path  = "../transport" }
 linkerd2-stack = { path  = "../../stack" }
 linkerd2-timeout = { path  = "../../timeout" }

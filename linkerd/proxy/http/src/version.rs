@@ -1,4 +1,6 @@
-#[derive(Copy, Clone, Debug)]
+use linkerd2_proxy_transport::io::{self, Peekable, PrefixedIo};
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Version {
     Http1,
     H2,
@@ -39,4 +41,33 @@ impl Version {
 
         None
     }
+
+    pub async fn detect<I>(io: I) -> io::Result<(Option<Version>, PrefixedIo<I>)>
+    where
+        I: io::AsyncRead + io::AsyncWrite + Unpin,
+    {
+        // If we don't find a newline, we consider the stream to be HTTP/1; so
+        // we need enough capacity to prevent false-positives.
+        let io = io.peek(8192).await?;
+        let version = Version::from_prefix(io.prefix());
+        Ok((version, io))
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn from_prefix() {
+    assert_eq!(Version::from_prefix(Version::H2_PREFACE), Some(Version::H2));
+    assert_eq!(
+        Version::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
+        Some(Version::Http1)
+    );
+    assert_eq!(
+        Version::from_prefix("GET /foo".as_ref()),
+        Some(Version::Http1)
+    );
+    assert_eq!(
+        Version::from_prefix("GET /foo/barbasdklfja\n".as_ref()),
+        None
+    );
 }

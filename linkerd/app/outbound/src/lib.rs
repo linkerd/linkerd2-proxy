@@ -18,13 +18,13 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, detect, discover, http, identity, resolve::map_endpoint, tap,
-        tcp,
+        self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
+        SkipDetect,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, tls},
+    transport::{self, listen, tls},
     Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP, L5D_REQUIRE_ID,
     L5D_SERVER_ID,
@@ -54,7 +54,6 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
-    pub canonicalize_timeout: Duration,
 }
 
 impl Config {
@@ -424,17 +423,15 @@ impl Config {
                     .push(http::strip_header::request::layer(L5D_CLIENT_ID))
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER)),
             )
-            // Sets the canonical-dst header on all outbound requests.
-            .check_service::<Logical<HttpEndpoint>>()
+            .check_make_service_clone::<Logical<HttpEndpoint>, http::Request<B>>()
             .instrument(|logical: &Logical<_>| info_span!("logical", addr = %logical.addr))
             .into_inner()
     }
 
-    pub async fn build_server<C, R, H, S>(
+    pub async fn build_server<C, H, S>(
         self,
         listen_addr: std::net::SocketAddr,
-        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
-        refine: R,
+        listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -442,12 +439,6 @@ impl Config {
         drain: drain::Watch,
     ) -> Result<(), Error>
     where
-        R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
-        R::Future: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
@@ -465,29 +456,15 @@ impl Config {
             + 'static,
         S::Future: Send,
     {
-        let Config {
-            canonicalize_timeout,
-            proxy:
-                ProxyConfig {
-                    server: ServerConfig { h2_settings, .. },
-                    disable_protocol_detection_for_ports,
-                    dispatch_timeout,
-                    max_in_flight_requests,
-                    detect_protocol_timeout,
-                    ..
-                },
-        } = self;
-
-        // The stack is served lazily since caching layers spawn tasks from
-        // their constructor. This helps to ensure that tasks are spawned on the
-        // same runtime as the proxy.
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp_connect)
-            .push(admit::AdmitLayer::new(PreventLoop::from(
-                listen_addr.port(),
-            )))
-            .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
-            .push(svc::layer::mk(tcp::Forward::new));
+        let ProxyConfig {
+            server: ServerConfig { h2_settings, .. },
+            disable_protocol_detection_for_ports: skip_detect,
+            dispatch_timeout,
+            max_in_flight_requests,
+            detect_protocol_timeout,
+            ..
+        } = self.proxy;
+        let prevent_loop = PreventLoop::from(listen_addr.port());
 
         let http_admit_request = svc::layers()
             // Limits the number of in-flight requests.
@@ -507,57 +484,48 @@ impl Config {
             ;
 
         let http_server = svc::stack(http_router)
-            // Resolve the application-emitted destination via DNS to determine                                                                                                                      
-            // its canonical FQDN to use for routing.                                                                                                                                                
-            .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .push_make_ready()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<tls::accept::Meta>()
+            .check_new_service::<listen::Addrs>()
             // Used by tap.
             .push_http_insert_target()
             .push_on_response(
-                 svc::layers()
+                svc::layers()
                     .push(http_admit_request)
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
-                    .box_http_response()
+                    .box_http_response(),
             )
             .instrument(
-                |src: &tls::accept::Meta| {
-                    info_span!("source", target.addr = %src.addrs.target_addr())
-                },
+                |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
             )
-            .check_new_service::<tls::accept::Meta>();
+            .check_new_service::<listen::Addrs>()
+            .into_inner()
+            .into_make_service();
 
-        let tcp_server = http::ServeHttp::new(
-            http_server.into_inner(),
+        // The stack is served lazily since caching layers spawn tasks from
+        // their constructor. This helps to ensure that tasks are spawned on the
+        // same runtime as the proxy.
+        // Forwards TCP streams that cannot be decoded as HTTP.
+        let tcp_forward = svc::stack(tcp::Forward::new(tcp_connect))
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_map_target(TcpEndpoint::from);
+
+        let http = http::DetectHttp::new(
             h2_settings,
-            tcp_forward.into_inner(),
+            detect_protocol_timeout,
+            http_server,
+            tcp_forward.clone(),
             drain.clone(),
         );
 
-        let no_tls: tls::Conditional<identity::Local> =
-            Conditional::None(tls::ReasonForNoPeerName::Loopback);
-
-        let tcp_detect = svc::stack(tcp_server)
-            .push(detect::AcceptLayer::new(http::DetectHttp::new(
-                disable_protocol_detection_for_ports.clone(),
-            )))
-            .push(metrics.transport.layer_accept(TransportLabels))
-            // The local application never establishes mTLS with the proxy, so don't try to
-            // terminate TLS, just annotate with the connection with the reason.
-            .push(detect::AcceptLayer::new(tls::DetectTls::new(
-                no_tls,
-                disable_protocol_detection_for_ports,
-            )))
-            // Limits the amount of time that the TCP server spends waiting for protocol
-            // detection. Ensures that connections that never emit data are dropped eventually.
-            .push_timeout(detect_protocol_timeout);
+        let accept = svc::stack(SkipDetect::new(skip_detect, http, tcp_forward))
+            .push(metrics.transport.layer_accept(TransportLabels));
 
         info!(addr = %listen_addr, "Serving");
-        serve::serve(listen, tcp_detect.into_inner(), drain.signal()).await
+        serve::serve(listen, accept, drain.signal()).await
     }
 }
 
@@ -584,11 +552,12 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels {
+impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
-        transport::labels::Key::accept("outbound", target.peer_identity.as_ref())
+    fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
+        const NO_TLS: tls::Conditional<()> = Conditional::None(tls::ReasonForNoPeerName::Loopback);
+        transport::labels::Key::accept("outbound", NO_TLS)
     }
 }
 
