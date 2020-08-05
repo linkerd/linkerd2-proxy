@@ -310,7 +310,10 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                 let span = info_span!("proxy", test = %thread_name());
                 let _enter = span.enter();
 
-                tokio::runtime::Runtime::new()
+                tokio::runtime::Builder::new()
+                    .enable_all()
+                    .basic_scheduler()
+                    .build()
                     .expect("proxy")
                     .block_on(async move {
                         let main = config.build(trace_handle).await.expect("config");
