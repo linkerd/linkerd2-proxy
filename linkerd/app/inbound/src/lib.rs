@@ -19,9 +19,7 @@ use linkerd2_app_core::{
     proxy::{
         detect,
         http::{self, normalize_uri, orig_proto, strip_header},
-        identity,
-        server::{DetectHttp, ServeHttp},
-        tap, tcp,
+        identity, tap, tcp,
     },
     reconnect, router, serve,
     spans::SpanConverter,
@@ -404,7 +402,7 @@ impl Config {
                 )
             });
 
-        let tcp_server = ServeHttp::new(
+        let tcp_server = http::ServeHttp::new(
             http_server.into_inner(),
             h2_settings,
             tcp_forward.into_inner(),
@@ -412,7 +410,7 @@ impl Config {
         );
 
         let tcp_detect = svc::stack(tcp_server)
-            .push(detect::AcceptLayer::new(DetectHttp::new(
+            .push(detect::AcceptLayer::new(http::DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))

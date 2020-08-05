@@ -1,27 +1,27 @@
-use crate::proxy::http::{
-    self,
+use crate::Error;
+use crate::{
+    self as http,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
     trace, upgrade, Version as HttpVersion,
 };
-use crate::transport::{
+use async_trait::async_trait;
+use futures::prelude::*;
+use hyper;
+use indexmap::IndexSet;
+use linkerd2_drain as drain;
+use linkerd2_proxy_core::Accept;
+use linkerd2_proxy_detect as detect;
+use linkerd2_proxy_transport::{
     io::{self, BoxedIo, Peekable},
     tls,
 };
-use crate::{
-    drain,
-    proxy::{core::Accept, detect},
-    svc::{NewService, Service, ServiceExt},
-    Error,
-};
-use async_trait::async_trait;
-use futures::TryFutureExt;
-use hyper;
-use indexmap::IndexSet;
+use linkerd2_stack::NewService;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use tower::{util::ServiceExt, Service};
 use tracing::{info_span, trace};
 use tracing_futures::Instrument;
 

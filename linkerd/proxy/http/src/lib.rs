@@ -8,6 +8,7 @@ pub mod add_header;
 pub mod balance;
 pub mod canonicalize;
 pub mod client;
+pub mod detect;
 pub mod glue;
 pub mod h1;
 pub mod h2;
@@ -25,6 +26,7 @@ mod version;
 
 pub use self::{
     client::MakeClientLayer,
+    detect::{DetectHttp, ServeHttp},
     glue::{Body, HyperServerSvc},
     settings::Settings,
     timeout::MakeTimeoutLayer,
