@@ -174,6 +174,7 @@ where
                     )
                 }))
             }),
+            std::time::Duration::from_secs(10),
         );
 
         let server = async move {
