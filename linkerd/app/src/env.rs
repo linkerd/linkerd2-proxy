@@ -169,6 +169,10 @@ const ENV_DNS_MIN_TTL: &str = "LINKERD2_PROXY_DNS_MIN_TTL";
 /// Lookups with TTLs above this value will use this value instead.
 const ENV_DNS_MAX_TTL: &str = "LINKERD2_PROXY_DNS_MAX_TTL";
 
+/// The amount of time to wait for a DNS query to succeed before falling back to
+/// an uncanonicalized address.
+const ENV_DNS_CANONICALIZE_TIMEOUT: &str = "LINKERD2_PROXY_DNS_CANONICALIZE_TIMEOUT";
+
 /// Configure the stream or connection level flow control setting for HTTP2.
 ///
 /// If unspecified, the default value of 65,535 is used.
@@ -196,6 +200,7 @@ const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff 
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
+const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
@@ -285,6 +290,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let dns_min_ttl = parse(strings, ENV_DNS_MIN_TTL, parse_duration);
     let dns_max_ttl = parse(strings, ENV_DNS_MAX_TTL, parse_duration);
+
+    let dns_canonicalize_timeout = parse(strings, ENV_DNS_CANONICALIZE_TIMEOUT, parse_duration);
 
     let identity_config = parse_identity_config(strings);
 
@@ -387,6 +394,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
         outbound::Config {
+            canonicalize_timeout: dns_canonicalize_timeout?
+                .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT),
             proxy: ProxyConfig {
                 server,
                 connect,

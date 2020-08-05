@@ -54,6 +54,7 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
+    pub canonicalize_timeout: Duration,
 }
 
 impl Config {
@@ -428,10 +429,11 @@ impl Config {
             .into_inner()
     }
 
-    pub async fn build_server<C, H, S>(
+    pub async fn build_server<R, C, H, S>(
         self,
         listen_addr: std::net::SocketAddr,
         listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
+        refine: R,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -439,6 +441,12 @@ impl Config {
         drain: drain::Watch,
     ) -> Result<(), Error>
     where
+        R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
+        R::Future: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
@@ -464,6 +472,7 @@ impl Config {
             detect_protocol_timeout,
             ..
         } = self.proxy;
+        let canonicalize_timeout = self.canonicalize_timeout;
         let prevent_loop = PreventLoop::from(listen_addr.port());
 
         let http_admit_request = svc::layers()
@@ -484,6 +493,9 @@ impl Config {
             ;
 
         let http_server = svc::stack(http_router)
+            // Resolve the application-emitted destination via DNS to determine
+            // its canonical FQDN to use for routing.
+            .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .push_make_ready()
             .push_timeout(dispatch_timeout)

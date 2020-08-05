@@ -88,7 +88,7 @@ impl Config {
             gateway,
             tap,
         } = self;
-
+        debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
         let dns = dns.build();
@@ -155,10 +155,10 @@ impl Config {
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
-            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
-
             let outbound_connect =
                 outbound.build_tcp_connect(local_identity.clone(), &outbound_metrics);
+
+            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
 
             let outbound_http_endpoint = outbound.build_http_endpoint(
                 outbound_addr.port(),
@@ -180,6 +180,9 @@ impl Config {
                     .build_server(
                         outbound_addr,
                         outbound_listen,
+                        svc::stack(refine.clone())
+                            .push_map_response(|(n, _)| n)
+                            .into_inner(),
                         outbound_connect,
                         outbound_http.clone(),
                         outbound_metrics,
