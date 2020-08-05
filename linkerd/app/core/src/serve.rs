@@ -37,7 +37,6 @@ where
                         "accept",
                         peer.addr = %addrs.peer(),
                     );
-                    let _enter = span.enter();
 
                     // Ready the service before dispatching the request to it.
                     //
@@ -46,6 +45,7 @@ where
                     let accept = make_accept
                         .ready_and()
                         .err_into::<Error>()
+                        .instrument(span.clone())
                         .await?
                         .call(addrs);
 
@@ -60,7 +60,7 @@ where
                                 },
                             }
                         }
-                        .in_current_span(),
+                        .instrument(span),
                     );
                 }
             }
