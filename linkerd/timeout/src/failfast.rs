@@ -66,9 +66,9 @@ where
 {
     fn clone(&self) -> Self {
         // When cloning failfast, we can't preserve the waiting state, so each
-        // clone will have to detect its own failfast. Pracitically, this means
+        // clone will have to detect its own failfast. Practically, this means
         // that each connection will have to wait for a timeout before
-        // triggerring failfast.
+        // triggering failfast.
         Self {
             inner: self.inner.clone(),
             max_unavailable: self.max_unavailable.clone(),
