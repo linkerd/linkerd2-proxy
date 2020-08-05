@@ -8,6 +8,7 @@
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
+use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
@@ -43,6 +44,7 @@ use self::prevent_loop::PreventLoop;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
+    pub require_identity_for_inbound_ports: RequireIdentityForPorts,
 }
 
 impl Config {
@@ -324,6 +326,7 @@ impl Config {
             detect_protocol_timeout,
             ..
         } = self.proxy;
+        let require_identity = self.require_identity_for_inbound_ports;
 
         // Strips headers that may be set by the inbound router.
         let http_strip_headers = svc::layers()
@@ -404,6 +407,7 @@ impl Config {
         );
 
         let tls = svc::stack(http)
+            .push(admit::AdmitLayer::new(require_identity))
             .push(metrics.transport.layer_accept(TransportLabels))
             .push(svc::layer::mk(|inner| {
                 tls::DetectTls::new(local_identity.clone(), inner, detect_protocol_timeout)

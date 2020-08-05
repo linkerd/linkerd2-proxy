@@ -468,6 +468,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
             },
+            require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
         }
     };
 
