@@ -60,6 +60,23 @@ impl<S> tower::layer::Layer<S> for FailFastLayer {
 
 // === impl FailFast ===
 
+impl<S> Clone for FailFast<S>
+where
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        // When cloning failfast, we can't preserve the waiting state, so each
+        // clone will have to detect its own failfast. Pracitically, this means
+        // that each connection will have to wait for a timeout before
+        // triggerring failfast.
+        Self {
+            inner: self.inner.clone(),
+            max_unavailable: self.max_unavailable.clone(),
+            state: State::Open,
+        }
+    }
+}
+
 impl<S, T> tower::Service<T> for FailFast<S>
 where
     S: tower::Service<T>,
