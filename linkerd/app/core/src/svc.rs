@@ -376,6 +376,15 @@ impl<S> Stack<S> {
         self
     }
 
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_make_service_clone<T, U>(self) -> Self
+    where
+        S: MakeService<T, U> + Clone,
+        S::Service: Clone,
+    {
+        self
+    }
+
     pub fn check_new_send_and_static<M, T, Req>(self) -> Self
     where
         S: NewService<T, Service = M>,

@@ -19,10 +19,10 @@ impl<T: IntoIterator<Item = u16>> From<T> for RequireIdentityForPorts {
     }
 }
 
-impl admit::Admit<tls::accept::Connection> for RequireIdentityForPorts {
+impl admit::Admit<tls::accept::Meta> for RequireIdentityForPorts {
     type Error = IdentityRequired;
 
-    fn admit(&mut self, (meta, _): &tls::accept::Connection) -> Result<(), Self::Error> {
+    fn admit(&mut self, meta: &tls::accept::Meta) -> Result<(), Self::Error> {
         let port = meta.addrs.target_addr().port();
         let id_required = self.ports.contains(&port);
 

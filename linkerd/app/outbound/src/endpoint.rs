@@ -13,7 +13,7 @@ use linkerd2_app_core::{
         tap,
     },
     router,
-    transport::{connect, tls},
+    transport::{connect, listen, tls},
     Addr, Conditional, L5D_REQUIRE_ID,
 };
 use std::net::SocketAddr;
@@ -30,7 +30,7 @@ pub type Concrete<T> = Target<Logical<T>>;
 pub struct Profile(Addr);
 
 #[derive(Clone, Debug)]
-pub struct LogicalPerRequest(tls::accept::Meta);
+pub struct LogicalPerRequest(listen::Addrs);
 
 #[derive(Clone, Debug)]
 pub struct ProfilePerTarget;
@@ -228,9 +228,7 @@ impl http::settings::HasSettings for HttpEndpoint {
 
 impl tap::Inspect for HttpEndpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions()
-            .get::<tls::accept::Meta>()
-            .map(|s| s.addrs.peer())
+        req.extensions().get::<listen::Addrs>().map(|s| s.peer())
     }
 
     fn src_tls<'a, B>(
@@ -321,10 +319,10 @@ impl Into<EndpointLabels> for Target<HttpEndpoint> {
 
 // === impl TcpEndpoint ===
 
-impl From<SocketAddr> for TcpEndpoint {
-    fn from(addr: SocketAddr) -> Self {
+impl From<listen::Addrs> for TcpEndpoint {
+    fn from(addrs: listen::Addrs) -> Self {
         Self {
-            addr,
+            addr: addrs.target_addr(),
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
         }
     }
@@ -356,9 +354,9 @@ impl Into<EndpointLabels> for TcpEndpoint {
 
 // === impl LogicalPerRequest ===
 
-impl From<tls::accept::Meta> for LogicalPerRequest {
-    fn from(accept: tls::accept::Meta) -> Self {
-        LogicalPerRequest(accept)
+impl From<listen::Addrs> for LogicalPerRequest {
+    fn from(t: listen::Addrs) -> Self {
+        LogicalPerRequest(t)
     }
 }
 
@@ -388,7 +386,7 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
                 })
             })
             .unwrap_or_else(|_| {
-                let addr = self.0.addrs.target_addr();
+                let addr = self.0.target_addr();
                 tracing::debug!(%addr, "using socket target");
                 addr.into()
             });
@@ -399,7 +397,7 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
 
         let inner = HttpEndpoint {
             settings,
-            addr: self.0.addrs.target_addr(),
+            addr: self.0.target_addr(),
             metadata: Metadata::empty(),
             identity: identity_from_header(req, L5D_REQUIRE_ID)
                 .map(Conditional::Some)

@@ -3,17 +3,21 @@
 //! * `/metrics` -- reports prometheus-formatted metrics.
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
-use crate::{svc, trace, transport::tls::accept::Connection};
+use crate::{
+    svc, trace,
+    transport::{io, tls},
+};
 use futures::{future, TryFutureExt};
 use http::StatusCode;
 use hyper::{Body, Request, Response};
-use linkerd2_error::Error;
+use linkerd2_error::{Error, Never};
 use linkerd2_metrics::{self as metrics, FmtMetrics};
-use std::future::Future;
-use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use tower::{service_fn, Service};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tower::{service_fn, util::ServiceExt, Service};
 
 mod readiness;
 mod tasks;
@@ -32,6 +36,9 @@ pub struct Admin<M: FmtMetrics> {
 
 #[derive(Debug, Clone)]
 pub struct Accept<M: FmtMetrics>(Admin<M>, hyper::server::conn::Http);
+
+#[derive(Debug, Clone)]
+pub struct Serve<M: FmtMetrics>(tls::accept::Meta, Accept<M>);
 
 #[derive(Clone, Debug)]
 pub struct ClientAddr(std::net::SocketAddr);
@@ -103,28 +110,43 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
     }
 }
 
-impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<Connection> for Accept<M> {
-    type Response = Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'static>>;
-    type Error = Error;
+impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<tls::accept::Meta> for Accept<M> {
+    type Response = Serve<M>;
+    type Error = Never;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, (meta, io): Connection) -> Self::Future {
+    fn call(&mut self, meta: tls::accept::Meta) -> Self::Future {
+        future::ok(Serve(meta, self.clone()))
+    }
+}
+
+impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve<M> {
+    type Response = ();
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, io: io::BoxedIo) -> Self::Future {
+        let Self(ref meta, Accept(ref svc, ref server)) = self;
+
         // Since the `/proxy-log-level` controls access based on the
         // client's IP address, we wrap the service with a new service
         // that adds the remote IP as a request extension.
         let peer = meta.addrs.peer();
-        let mut svc = self.0.clone();
+        let svc = svc.clone();
         let svc = service_fn(move |mut req: Request<Body>| {
             req.extensions_mut().insert(ClientAddr(peer));
-            svc.call(req)
+            svc.clone().oneshot(req)
         });
 
-        let connection_future = self.1.serve_connection(io, svc).map_err(Into::into);
-        future::ok(Box::pin(connection_future))
+        Box::pin(server.serve_connection(io, svc).map_err(Into::into))
     }
 }
 
