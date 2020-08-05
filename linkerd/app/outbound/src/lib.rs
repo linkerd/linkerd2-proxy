@@ -18,8 +18,8 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        self, core::resolve::Resolve, detect, discover, http, identity, resolve::map_endpoint,
-        server::DetectHttp, tap, tcp, ServeHttp,
+        self, core::resolve::Resolve, detect, discover, http, identity, resolve::map_endpoint, tap,
+        tcp,
     },
     reconnect, retry, router, serve,
     spans::SpanConverter,
@@ -531,7 +531,7 @@ impl Config {
             )
             .check_new_service::<tls::accept::Meta>();
 
-        let tcp_server = ServeHttp::new(
+        let tcp_server = http::ServeHttp::new(
             http_server.into_inner(),
             h2_settings,
             tcp_forward.into_inner(),
@@ -542,7 +542,7 @@ impl Config {
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
 
         let tcp_detect = svc::stack(tcp_server)
-            .push(detect::AcceptLayer::new(DetectHttp::new(
+            .push(detect::AcceptLayer::new(http::DetectHttp::new(
                 disable_protocol_detection_for_ports.clone(),
             )))
             .push(metrics.transport.layer_accept(TransportLabels))

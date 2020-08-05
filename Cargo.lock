@@ -1274,6 +1274,7 @@ dependencies = [
 name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
  "h2 0.2.6",
@@ -1290,6 +1291,9 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-http-box",
  "linkerd2-identity",
+ "linkerd2-proxy-core",
+ "linkerd2-proxy-detect",
+ "linkerd2-proxy-transport",
  "linkerd2-stack",
  "linkerd2-timeout",
  "pin-project",
