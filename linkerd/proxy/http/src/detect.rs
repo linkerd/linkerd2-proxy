@@ -103,13 +103,7 @@ where
                 http.oneshot(target).map_err(Into::<Error>::into)
             )?;
 
-            Ok(AcceptHttp {
-                timeout,
-                server,
-                http,
-                tcp,
-                drain,
-            })
+            Ok(AcceptHttp::new(server, timeout, http, tcp, drain))
         })
     }
 }
@@ -117,7 +111,6 @@ where
 // === impl AcceptHttp ===
 
 impl<F, H> AcceptHttp<F, H> {
-    /// Creates a new `AcceptHttp`.
     pub fn new(server: Server, timeout: Duration, http: H, tcp: F, drain: drain::Watch) -> Self {
         Self {
             server,
