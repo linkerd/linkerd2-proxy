@@ -12,6 +12,9 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
+pub struct Eos(());
+
+#[derive(Clone, Debug)]
 pub struct Resolve<E, R> {
     resolve: R,
     recover: E,
@@ -70,8 +73,6 @@ enum State<F, R: TryStream, B> {
         error: Option<Error>,
         backoff: Option<B>,
     },
-
-    Eos,
 
     Backoff(Option<B>),
 }
@@ -216,8 +217,6 @@ where
                         None => return Poll::Ready(None),
                     }
                 }
-
-                State::Eos => return Poll::Ready(None),
                 // XXX(eliza): note that this match was originally an `if let`,
                 // but that doesn't work with `#[project]` for some kinda reason
                 _ => {}
@@ -319,10 +318,13 @@ where
                             initial: Some(initial),
                         }
                     }
-                    None => State::Eos,
+                    None => State::Recover {
+                        error: Some(Eos(()).into()),
+                        backoff: backoff.take(),
+                    },
                 },
 
-                State::Connected { .. } | State::Eos => return Poll::Ready(Ok(())),
+                State::Connected { .. } => return Poll::Ready(Ok(())),
 
                 // If any stage failed, try to recover. If the error is
                 // recoverable, start (or continue) backing off...
@@ -401,6 +403,14 @@ fn reconcile_after_connect<E: PartialEq>(
         Update::DoesNotExist => Some((Update::DoesNotExist, None)),
     }
 }
+
+impl std::fmt::Display for Eos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "end of stream reached")
+    }
+}
+
+impl std::error::Error for Eos {}
 
 #[cfg(test)]
 mod tests {
