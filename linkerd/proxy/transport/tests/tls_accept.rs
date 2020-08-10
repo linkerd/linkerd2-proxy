@@ -8,24 +8,22 @@
 use futures::prelude::*;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_detect as detect;
 use linkerd2_proxy_transport::tls::{
     self,
-    accept::{Connection as ServerConnection, DetectTls},
+    accept::{self, DetectTls},
     client::Connection as ClientConnection,
     Conditional,
 };
-use linkerd2_proxy_transport::{connect, Bind};
+use linkerd2_proxy_transport::{
+    connect,
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BoxedIo},
+    Bind,
+};
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
-use tokio::{
-    self,
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-};
 use tower::{
     layer::Layer,
     util::{service_fn, ServiceExt},
-    Service,
 };
 use tracing_futures::Instrument;
 
@@ -117,7 +115,7 @@ where
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
-    S: Fn(ServerConnection) -> SF + Clone + Send + 'static,
+    S: Fn(accept::Connection) -> SF + Clone + Send + 'static,
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
@@ -150,42 +148,45 @@ where
 
         let (listen_addr, listen) = Bind::new(addr, None).bind().expect("must bind");
 
-        let mut accept = detect::Accept::new(
-            DetectTls::new(server_tls, Default::default()),
-            service_fn(move |(meta, conn): ServerConnection| {
+        let detect = DetectTls::new(
+            server_tls,
+            service_fn(move |meta: accept::Meta| {
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                let future = server((meta, conn)).instrument(tracing::info_span!("test_svc"));
-                futures::future::ok::<_, Never>(async move {
-                    let result = future.await;
-                    sender
-                        .send(Transported {
-                            peer_identity,
-                            result,
-                        })
-                        .expect("send result");
-                    Ok::<(), Never>(())
-                })
+                futures::future::ok::<_, Never>(service_fn(move |conn: BoxedIo| {
+                    let server = server.clone();
+                    let sender = sender.clone();
+                    let peer_identity = peer_identity.clone();
+                    let future = server((meta.clone(), conn));
+                    Box::pin(
+                        async move {
+                            let result = future.await;
+                            sender
+                                .send(Transported {
+                                    peer_identity,
+                                    result,
+                                })
+                                .expect("send result");
+                            Ok::<(), Never>(())
+                        }
+                        .instrument(tracing::info_span!("test_svc")),
+                    )
+                }))
             }),
+            std::time::Duration::from_secs(10),
         );
 
         let server = async move {
             futures::pin_mut!(listen);
-            let conn = listen
+            let (meta, io) = listen
                 .next()
                 .await
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            let accept = accept.ready_and().await.expect("accept failed");
-            tracing::debug!("accept ready");
-            accept
-                .call(conn)
-                .await
-                .expect("connection failed")
-                .await
-                .expect("connection future failed");
+            let accept = detect.oneshot(meta).await.expect("accept failed");
+            accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
         .instrument(tracing::info_span!("run_server", %listen_addr));

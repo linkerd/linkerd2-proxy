@@ -79,6 +79,9 @@ pub fn with_filter_and_format(
     #[cfg(not(feature = "flamegraph"))]
     let flush = ();
 
+    let formatter = tracing_subscriber::fmt::format()
+        .with_timer(Uptime { start_time })
+        .with_thread_ids(true);
     let (dispatch, level, tasks, flush) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
@@ -95,7 +98,7 @@ pub fn with_filter_and_format(
                 .with(tasks_layer)
                 .with(
                     tracing_subscriber::fmt::layer()
-                        .with_timer(Uptime { start_time })
+                        .event_format(formatter)
                         .json()
                         .with_span_list(true),
                 )
@@ -119,7 +122,7 @@ pub fn with_filter_and_format(
 
             let builder = tracing_subscriber::registry()
                 .with(tasks_layer)
-                .with(tracing_subscriber::fmt::layer().with_timer(Uptime { start_time }))
+                .with(tracing_subscriber::fmt::layer().event_format(formatter))
                 .with(filter);
             #[cfg(feature = "flamegraph")]
             let builder = builder.with(flamegraph_layer);

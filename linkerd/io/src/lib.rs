@@ -10,7 +10,7 @@ pub use self::{
     sensor::{Sensor, SensorIo},
 };
 pub use std::io::{Error, Read, Result, Write};
-pub use tokio::io::{AsyncRead, AsyncWrite};
+pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub type Poll<T> = std::task::Poll<Result<T>>;
 

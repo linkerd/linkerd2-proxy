@@ -27,13 +27,12 @@ linkerd2-identity = { path = "../../identity" }
 linkerd2-io = { path = "../../io" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-proxy-core = { path = "../core" }
-linkerd2-proxy-detect = { path = "../detect" }
 linkerd2-stack = { path = "../../stack" }
 ring = "0.16"
 rustls = "0.17"
 tokio = { version = "0.2", features = ["net", "io-util"]}
 tokio-rustls = "0.13"
-tracing = "0.1.9"
+tracing = "0.1.18"
 webpki = "0.21"
 untrusted = "0.7"
 pin-project = "0.4"
@@ -52,6 +51,6 @@ libc = "0.2"
 
 [dev-dependencies]
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
-tracing-subscriber = "0.2.1"
+tracing-subscriber = "0.2.10"
 tower = { version = "0.3", default-features = false, features = ["util"] }
 tracing-futures = { version = "0.2", features = ["std-future"] }
