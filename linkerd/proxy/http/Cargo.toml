@@ -34,7 +34,7 @@ linkerd2-timeout = { path  = "../../timeout" }
 rand = "0.7"
 tokio = { version = "0.2", features = ["time", "rt-core"] }
 tower = { version = "0.3", default-features = false, features = ["balance", "load", "discover"] }
-tracing = "0.1.18"
+tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 try-lock = "0.2"
 pin-project = "0.4"

@@ -10,7 +10,7 @@ futures = { version = "0.3", features = ["compat"] }
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
-tracing = "0.1.18"
+tracing = "0.1.19"
 pin-project = "0.4"
 tokio = { version = "0.2", features = ["time"] }
 
