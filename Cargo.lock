@@ -490,7 +490,7 @@ dependencies = [
 [[package]]
 name = "h2"
 version = "0.2.6"
-source = "git+https://github.com/hyperium/h2?branch=eliza/trace-internals#f8e7517b68d7d95e06c1d4e33ce6bffe0fb036d3"
+source = "git+https://github.com/hyperium/h2?branch=eliza/trace-internals#ae32a303593556b9b064f9c70b5512d1cef85d5f"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
