@@ -32,7 +32,7 @@ ring = "0.16"
 rustls = "0.17"
 tokio = { version = "0.2", features = ["net", "io-util"]}
 tokio-rustls = "0.13"
-tracing = "0.1.18"
+tracing = "0.1.19"
 webpki = "0.21"
 untrusted = "0.7"
 pin-project = "0.4"
@@ -51,6 +51,6 @@ libc = "0.2"
 
 [dev-dependencies]
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
-tracing-subscriber = "0.2.10"
+tracing-subscriber = "0.2.11"
 tower = { version = "0.3", default-features = false, features = ["util"] }
 tracing-futures = { version = "0.2", features = ["std-future"] }

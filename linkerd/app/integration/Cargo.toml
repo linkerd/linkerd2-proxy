@@ -37,12 +37,12 @@ tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
 tokio-rustls = "0.13"
 tower = { version = "0.3", default-features = false} 
 tonic = { version = "0.2", default-features = false }
-tracing = "0.1.18"
+tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 webpki = "0.21.0"
 
 [dependencies.tracing-subscriber]
-version = "0.2.10"
+version = "0.2.11"
 # we don't need `chrono` time formatting or ANSI colored output
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
