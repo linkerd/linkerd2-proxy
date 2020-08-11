@@ -490,7 +490,8 @@ dependencies = [
 [[package]]
 name = "h2"
 version = "0.2.6"
-source = "git+https://github.com/hyperium/h2?rev=a57a2a879520d03ac8352876dbf276f183d819a2#a57a2a879520d03ac8352876dbf276f183d819a2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993f9e0baeed60001cf565546b0d3dbe6a6ad23f2bd31644a133c641eccf6d53"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -588,15 +589,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd179ae861f0c2e53da70d892f5f3029f9594be0c41dc5269cd371691b1dc2f9"
 
 [[package]]
-name = "httpdate"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
-
-[[package]]
 name = "hyper"
 version = "0.13.7"
-source = "git+https://github.com/hawkw/hyper?rev=45437dd47db3a5dc0eee6cc0e9bff1000cbd3bd5#45437dd47db3a5dc0eee6cc0e9bff1000cbd3bd5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e68a8dd9716185d9e64ea473ea6ef63529252e3e27623295a0378a19665d5eb"
 dependencies = [
  "bytes 0.5.4",
  "futures-channel",
@@ -606,14 +602,13 @@ dependencies = [
  "http 0.2.1",
  "http-body",
  "httparse",
- "httpdate",
  "itoa",
  "pin-project",
  "socket2",
+ "time",
  "tokio",
  "tower-service",
  "tracing",
- "tracing-futures",
  "want",
 ]
 
@@ -2749,6 +2744,15 @@ name = "tracing-core"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2734b5a028fa697686f16c6d18c2c6a3c7e41513f9a213abb6754c4acb3c8d7"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
+name = "tracing-flame"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd520fe41c667b437952383f3a1ec14f1fa45d653f719a77eedd6e6a02d8fa54"
 dependencies = [
  "lazy_static",
  "tracing",

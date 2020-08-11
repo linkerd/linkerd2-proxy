@@ -46,7 +46,13 @@ where
 
     fn layer(&self, inner: S) -> Self::Service {
         let (buffer, dispatch) = crate::new(inner, self.capacity, self.idle_timeout);
-        tokio::spawn(dispatch.in_current_span());
+        tokio::spawn(dispatch
+            .instrument(tracing::trace_span!(
+                "buffer::dispatch",
+                capacity = self.capacity,
+                idle_timeout = ?self.idle_timeout
+            ))
+            .in_current_span());
         buffer
     }
 }
