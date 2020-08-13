@@ -195,18 +195,17 @@ where
             // services. Don't process any updates until we can do so.
             ready!(this.make_endpoint.poll_ready(cx)).map_err(Into::into)?;
 
-            match ready!(this.discover.poll_discover(cx))
-                .expect("XXX(eliza): can this ever be none???")
-                .map_err(Into::into)?
-            {
-                Change::Insert(key, target) => {
-                    // Start building the service and continue. If a pending
-                    // service exists for this addr, it will be canceled.
-                    let fut = this.make_endpoint.call(target);
-                    this.make_futures.push(key, fut);
-                }
-                Change::Remove(key) => {
-                    this.pending_removals.push(key);
+            if let Some(change) = ready!(this.discover.poll_discover(cx)) {
+                match change.map_err(Into::into)? {
+                    Change::Insert(key, target) => {
+                        // Start building the service and continue. If a pending
+                        // service exists for this addr, it will be canceled.
+                        let fut = this.make_endpoint.call(target);
+                        this.make_futures.push(key, fut);
+                    }
+                    Change::Remove(key) => {
+                        this.pending_removals.push(key);
+                    }
                 }
             }
         }

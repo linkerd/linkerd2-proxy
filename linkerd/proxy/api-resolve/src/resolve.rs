@@ -104,14 +104,10 @@ where
     }
 }
 
-impl resolve::Resolution for Resolution {
-    type Endpoint = Metadata;
-    type Error = grpc::Status;
+impl Stream for Resolution {
+    type Item = Result<resolve::Update<Metadata>, grpc::Status>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         loop {
             match ready!(this.inner.as_mut().poll_next(cx)) {
@@ -126,7 +122,7 @@ impl resolve::Resolution for Resolution {
                             .collect::<Vec<_>>();
                         if !addr_metas.is_empty() {
                             debug!(endpoints = %addr_metas.len(), "Add");
-                            return Poll::Ready(Ok(Update::Add(addr_metas)));
+                            return Poll::Ready(Some(Ok(Update::Add(addr_metas))));
                         }
                     }
 
@@ -137,7 +133,7 @@ impl resolve::Resolution for Resolution {
                             .collect::<Vec<_>>();
                         if !sock_addrs.is_empty() {
                             debug!(endpoints = %sock_addrs.len(), "Remove");
-                            return Poll::Ready(Ok(Update::Remove(sock_addrs)));
+                            return Poll::Ready(Some(Ok(Update::Remove(sock_addrs))));
                         }
                     }
 
@@ -148,14 +144,12 @@ impl resolve::Resolution for Resolution {
                         } else {
                             Update::DoesNotExist
                         };
-                        return Poll::Ready(Ok(update.into()));
+                        return Poll::Ready(Some(Ok(update.into())));
                     }
 
                     None => {} // continue
                 },
-                None => {
-                    return Poll::Ready(Err(grpc::Status::new(grpc::Code::Ok, "end of stream")))
-                }
+                None => return Poll::Ready(None),
             };
         }
     }
