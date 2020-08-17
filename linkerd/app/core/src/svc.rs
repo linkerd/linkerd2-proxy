@@ -1,6 +1,7 @@
 // Possibly unused, but useful during development.
 
 pub use crate::proxy::http;
+use crate::request_filter;
 use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
@@ -297,6 +298,10 @@ impl<S> Stack<S> {
         P: Fn(&Error) -> bool + Clone,
     {
         self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
+    }
+
+    pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<request_filter::Service<F, S>> {
+        self.push(request_filter::RequestFilterLayer::new(filter))
     }
 
     // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>

@@ -117,3 +117,9 @@ impl std::fmt::Display for DiscoveryRejected {
 }
 
 impl std::error::Error for DiscoveryRejected {}
+
+impl From<Addr> for DiscoveryRejected {
+    fn from(_: Addr) -> Self {
+        Self::new()
+    }
+}

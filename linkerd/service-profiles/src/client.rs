@@ -4,7 +4,6 @@ use futures::{future, prelude::*, ready, select_biased};
 use http;
 use http_body::Body as HttpBody;
 use linkerd2_addr::{Addr, NameAddr};
-use linkerd2_dns as dns;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
@@ -32,7 +31,6 @@ pub struct Client<S, R> {
     recover: R,
     initial_timeout: Duration,
     context_token: String,
-    suffixes: Vec<dns::Suffix>,
 }
 
 pub type Receiver = watch::Receiver<profiles::Routes>;
@@ -112,19 +110,12 @@ where
     R: Recover,
     R::Backoff: Unpin,
 {
-    pub fn new(
-        service: S,
-        recover: R,
-        initial_timeout: Duration,
-        context_token: String,
-        suffixes: impl IntoIterator<Item = dns::Suffix>,
-    ) -> Self {
+    pub fn new(service: S, recover: R, initial_timeout: Duration, context_token: String) -> Self {
         Self {
             service: DestinationClient::new(service),
             recover,
             initial_timeout,
             context_token,
-            suffixes: suffixes.into_iter().collect(),
         }
     }
 }
@@ -159,14 +150,6 @@ where
                 };
             }
         };
-
-        if !self.suffixes.iter().any(|s| s.contains(dst.name())) {
-            debug!("name not in profile suffixes");
-            self.service = self.service.clone();
-            return ProfileFuture {
-                inner: ProfileFutureInner::Invalid(dst.into()),
-            };
-        }
 
         let service = {
             // In case the ready service holds resources, pass it into the
@@ -582,3 +565,9 @@ impl std::fmt::Display for InvalidProfileAddr {
 }
 
 impl std::error::Error for InvalidProfileAddr {}
+
+impl From<Addr> for InvalidProfileAddr {
+    fn from(addr: Addr) -> Self {
+        Self(addr)
+    }
+}
