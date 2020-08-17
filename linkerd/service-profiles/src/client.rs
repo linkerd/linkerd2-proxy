@@ -45,17 +45,9 @@ where
     R: Recover,
 {
     #[pin]
-    inner: ProfileFutureInner<S, R>,
-}
-
-#[pin_project(project = ProfileFutureInnerProj)]
-enum ProfileFutureInner<S, R>
-where
-    S: GrpcService<BoxBody>,
-    R: Recover,
-{
-    Invalid(Addr),
-    Pending(#[pin] Option<Inner<S, R>>, #[pin] Delay),
+    inner: Option<Inner<S, R>>,
+    #[pin]
+    timeout: Delay,
 }
 
 #[pin_project]
@@ -165,7 +157,8 @@ where
             state: State::Disconnected { backoff: None },
         };
         ProfileFuture {
-            inner: ProfileFutureInner::Pending(Some(inner), timeout),
+            inner: Some(inner),
+            timeout,
         }
     }
 }
@@ -184,68 +177,63 @@ where
     type Output = Result<Receiver, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project().inner.project() {
-            ProfileFutureInnerProj::Invalid(addr) => {
-                Poll::Ready(Err(InvalidProfileAddr(addr.clone()).into()))
+        let mut this = self.project();
+        let profile = match this
+            .inner
+            .as_mut()
+            .as_pin_mut()
+            .expect("polled after ready")
+            .poll_profile(cx)
+        {
+            Poll::Ready(Err(error)) => {
+                trace!(%error, "failed to fetch profile");
+                return Poll::Ready(Err(error));
             }
-            ProfileFutureInnerProj::Pending(mut inner, timeout) => {
-                let profile = match inner
-                    .as_mut()
-                    .as_pin_mut()
-                    .expect("polled after ready")
-                    .poll_profile(cx)
-                {
-                    Poll::Ready(Err(error)) => {
-                        trace!(%error, "failed to fetch profile");
-                        return Poll::Ready(Err(error));
-                    }
-                    Poll::Pending => {
-                        if timeout.poll(cx).is_pending() {
-                            return Poll::Pending;
-                        }
+            Poll::Pending => {
+                if this.timeout.poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
 
-                        info!("Using default service profile after timeout");
-                        profiles::Routes::default()
-                    }
-                    Poll::Ready(Ok(profile)) => profile,
-                };
+                info!("Using default service profile after timeout");
+                profiles::Routes::default()
+            }
+            Poll::Ready(Ok(profile)) => profile,
+        };
 
-                trace!("daemonizing");
-                let (mut tx, rx) = watch::channel(profile);
-                let inner = inner.take().expect("polled after ready");
-                let daemon = async move {
-                    tokio::pin!(inner);
-                    loop {
-                        select_biased! {
-                            _ = tx.closed().fuse() => {
-                                trace!("profile observation dropped");
+        trace!("daemonizing");
+        let (mut tx, rx) = watch::channel(profile);
+        let inner = this.inner.take().expect("polled after ready");
+        let daemon = async move {
+            tokio::pin!(inner);
+            loop {
+                select_biased! {
+                    _ = tx.closed().fuse() => {
+                        trace!("profile observation dropped");
+                        return;
+                    },
+                    profile = future::poll_fn(|cx|
+                        inner.as_mut().poll_profile(cx)
+                        ).fuse() => {
+                        match profile {
+                            Err(error) => {
+                                error!(%error, "profile client died");
                                 return;
-                            },
-                            profile = future::poll_fn(|cx|
-                                inner.as_mut().poll_profile(cx)
-                             ).fuse() => {
-                                match profile {
-                                    Err(error) => {
-                                        error!(%error, "profile client died");
-                                        return;
-                                    }
-                                    Ok(profile) => {
-                                        trace!(?profile, "publishing");
-                                        if tx.broadcast(profile).is_err() {
-                                            trace!("failed to publish profile");
-                                            return
-                                        }
-                                    }
+                            }
+                            Ok(profile) => {
+                                trace!(?profile, "publishing");
+                                if tx.broadcast(profile).is_err() {
+                                    trace!("failed to publish profile");
+                                    return
                                 }
                             }
                         }
                     }
-                };
-                tokio::spawn(daemon.in_current_span());
-
-                Poll::Ready(Ok(rx))
+                }
             }
-        }
+        };
+        tokio::spawn(daemon.in_current_span());
+
+        Poll::Ready(Ok(rx))
     }
 }
 
