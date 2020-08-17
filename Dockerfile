@@ -21,7 +21,7 @@ ARG RUST_IMAGE=rust:1.44.1-buster
 
 # Use an arbitrary ~recent edge release image to get the proxy
 # identity-initializing wrapper.
-ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-20.4.1
+ARG RUNTIME_IMAGE=gcr.io/linkerd-io/proxy:edge-20.8.2
 
 # Build the proxy, leveraging (new, experimental) cache mounting.
 #
