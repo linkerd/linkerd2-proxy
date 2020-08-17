@@ -5,9 +5,7 @@ use http_body::Body as HttpBody;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
-    dns, profiles, request_filter,
-    request_filter::RequestFilterLayer,
-    svc, Error,
+    dns, profiles, request_filter, svc, Error,
 };
 use permit::PermitConfiguredDsts;
 use std::time::Duration;
@@ -23,6 +21,7 @@ pub struct Config {
     pub get_suffixes: IndexSet<dns::Suffix>,
     pub get_networks: IndexSet<ipnet::IpNet>,
     pub profile_suffixes: IndexSet<dns::Suffix>,
+    pub profile_networks: IndexSet<ipnet::IpNet>,
     pub initial_profile_timeout: Duration,
 }
 
@@ -67,7 +66,7 @@ impl Config {
             self.context,
         ))
         .push_request_filter(
-            PermitConfiguredDsts::new(self.profile_suffixes, vec![])
+            PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
                 .with_error::<profiles::InvalidProfileAddr>(),
         )
         .into_inner();

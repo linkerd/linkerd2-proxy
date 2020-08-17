@@ -141,15 +141,7 @@ where
     }
 
     fn call(&mut self, dst: Addr) -> Self::Future {
-        let dst = match dst {
-            Addr::Name(n) => n,
-            Addr::Socket(_) => {
-                self.service = self.service.clone();
-                return ProfileFuture {
-                    inner: ProfileFutureInner::Invalid(dst),
-                };
-            }
-        };
+        let path = dst.to_string();
 
         let service = {
             // In case the ready service holds resources, pass it into the
@@ -159,7 +151,7 @@ where
         };
 
         let request = api::GetDestination {
-            path: dst.to_string(),
+            path,
             context_token: self.context_token.clone(),
             ..Default::default()
         };

@@ -121,6 +121,16 @@ pub const ENV_DESTINATION_GET_NETWORKS: &str = "LINKERD2_PROXY_DESTINATION_GET_N
 /// If unspecified, a default value is used.
 pub const ENV_DESTINATION_PROFILE_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_PROFILE_SUFFIXES";
 
+/// Constrains which destination addresses may be used for profile/route discovery.
+///
+/// The value is a comma-separated list of networks that may be
+/// resolved via the destination service.
+///
+/// If specified and empty, the destination service is not used for route discovery.
+///
+/// If unspecified, a default value is used.
+pub const ENV_DESTINATION_PROFILE_NETWORKS: &str = "LINKERD2_PROXY_DESTINATION_PROFILE_NETWORKS";
+
 /// Constrains which destination names are permitted.
 ///
 /// If unspecified or empty, no inbound gateway is configured.
@@ -331,6 +341,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ENV_DESTINATION_PROFILE_SUFFIXES,
         parse_dns_suffixes,
     );
+    let dst_profile_networks = parse(strings, ENV_DESTINATION_PROFILE_NETWORKS, parse_networks);
 
     let initial_stream_window_size = parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_number);
     let initial_connection_window_size =
@@ -486,6 +497,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             get_networks: dst_get_networks?.unwrap_or_default(),
             profile_suffixes: dst_profile_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
+            profile_networks: dst_profile_networks?.unwrap_or_default(),
             initial_profile_timeout: dst_profile_initial_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
             control: ControlConfig {
