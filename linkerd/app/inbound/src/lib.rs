@@ -8,6 +8,7 @@
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
+use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::{future, prelude::*};
 use linkerd2_app_core::{
@@ -33,12 +34,6 @@ use tracing::{info, info_span};
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
-// #[allow(dead_code)] // TODO #2597
-// mod set_client_id_on_req;
-// #[allow(dead_code)] // TODO #2597
-// mod set_remote_ip_on_req;
-
-use self::prevent_loop::PreventLoop;
 
 #[derive(Clone, Debug)]
 pub struct Config {
