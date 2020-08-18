@@ -47,9 +47,6 @@ pub mod transport;
 
 pub const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";
-pub const L5D_REMOTE_IP: &'static str = "l5d-remote-ip";
-pub const L5D_SERVER_ID: &'static str = "l5d-server-id";
-pub const L5D_CLIENT_ID: &'static str = "l5d-client-id";
 pub const L5D_REQUIRE_ID: &'static str = "l5d-require-id";
 
 const DEFAULT_PORT: u16 = 80;

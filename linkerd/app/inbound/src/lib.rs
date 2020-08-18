@@ -8,6 +8,7 @@
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
+use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::{future, prelude::*};
 use linkerd2_app_core::{
@@ -24,8 +25,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, io::BoxedIo, listen, tls},
-    Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
-    L5D_SERVER_ID,
+    Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -34,12 +34,6 @@ use tracing::{info, info_span};
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
-// #[allow(dead_code)] // TODO #2597
-// mod set_client_id_on_req;
-// #[allow(dead_code)] // TODO #2597
-// mod set_remote_ip_on_req;
-
-use self::prevent_loop::PreventLoop;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -328,12 +322,6 @@ impl Config {
         } = self.proxy;
         let require_identity = self.require_identity_for_inbound_ports;
 
-        // Strips headers that may be set by the inbound router.
-        let http_strip_headers = svc::layers()
-            .push(strip_header::request::layer(L5D_REMOTE_IP))
-            .push(strip_header::request::layer(L5D_CLIENT_ID))
-            .push(strip_header::response::layer(L5D_SERVER_ID));
-
         // Handles requests as they are initially received by the proxy.
         let http_admit_request = svc::layers()
             // Downgrades the protocol if upgraded by an outbound proxy.
@@ -374,7 +362,6 @@ impl Config {
             .check_new_service::<tls::accept::Meta>()
             .push_on_response(
                 svc::layers()
-                    .push(http_strip_headers)
                     .push(http_admit_request)
                     .push(http_server_observability)
                     .push(metrics.stack.layer(stack_labels("source")))
