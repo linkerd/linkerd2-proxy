@@ -188,7 +188,6 @@ macro_rules! generate_tests {
         }
 
         #[tokio::test]
-        #[ignore] //TODO: there's currently no destination-acquisition timeout...
         async fn outbound_times_out() {
             let env = TestEnv::new();
 
@@ -211,7 +210,7 @@ macro_rules! generate_tests {
             let req = client.request_builder("/");
             let rsp = client.request(req.method("GET")).await.unwrap();
             // the request should time out
-            assert_eq!(rsp.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
 
             // Ensure panics are propagated.
             proxy.join_servers().await;
