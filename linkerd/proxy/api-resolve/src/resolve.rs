@@ -108,49 +108,50 @@ where
     S::Future: Send,
 {
     try_stream! {
-        let rsp = client.get(grpc::Request::new(req)).await?;
-        trace!(metadata = ?rsp.metadata());
-        let mut stream = rsp.into_inner();
-
-        while let Some(update) = stream.next().await {
-            match update?.update {
-                Some(api::update::Update::Add(api::WeightedAddrSet {
-                    addrs,
-                    metric_labels,
-                })) => {
-                    let addr_metas = addrs
-                        .into_iter()
-                        .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
-                        .collect::<Vec<_>>();
-                    if !addr_metas.is_empty() {
-                        debug!(endpoints = %addr_metas.len(), "Add");
-                        yield Update::Add(addr_metas);
+            let rsp = client.get(grpc::Request::new(req)).await?;
+            trace!(metadata = ?rsp.metadata());
+            let mut stream = rsp.into_inner();
+    loop {
+            while let Some(update) = stream.next().await {
+                match update?.update {
+                    Some(api::update::Update::Add(api::WeightedAddrSet {
+                        addrs,
+                        metric_labels,
+                    })) => {
+                        let addr_metas = addrs
+                            .into_iter()
+                            .filter_map(|addr| pb::to_addr_meta(addr, &metric_labels))
+                            .collect::<Vec<_>>();
+                        if !addr_metas.is_empty() {
+                            debug!(endpoints = %addr_metas.len(), "Add");
+                            yield Update::Add(addr_metas);
+                        }
                     }
-                }
 
-                Some(api::update::Update::Remove(api::AddrSet { addrs })) => {
-                    let sock_addrs = addrs
-                        .into_iter()
-                        .filter_map(pb::to_sock_addr)
-                        .collect::<Vec<_>>();
-                    if !sock_addrs.is_empty() {
-                        debug!(endpoints = %sock_addrs.len(), "Remove");
-                        yield Update::Remove(sock_addrs);
+                    Some(api::update::Update::Remove(api::AddrSet { addrs })) => {
+                        let sock_addrs = addrs
+                            .into_iter()
+                            .filter_map(pb::to_sock_addr)
+                            .collect::<Vec<_>>();
+                        if !sock_addrs.is_empty() {
+                            debug!(endpoints = %sock_addrs.len(), "Remove");
+                            yield Update::Remove(sock_addrs);
+                        }
                     }
-                }
 
-                Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
-                    info!("No endpoints");
-                    let update = if exists {
-                        Update::Empty
-                    } else {
-                        Update::DoesNotExist
-                    };
-                    yield update.into();
-                }
+                    Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
+                        info!("No endpoints");
+                        let update = if exists {
+                            Update::Empty
+                        } else {
+                            Update::DoesNotExist
+                        };
+                        yield update.into();
+                    }
 
-                None => {} // continue
+                    None => {} // continue
+                }
             }
         }
-    }
+        }
 }
