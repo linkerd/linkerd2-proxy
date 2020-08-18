@@ -41,7 +41,8 @@ pub struct Listening {
     controller: controller::Listening,
     identity: Option<controller::Listening>,
 
-    _shutdown: Shutdown,
+    shutdown: Shutdown,
+    terminated: oneshot::Receiver<()>,
 
     thread: thread::JoinHandle<()>,
 }
@@ -162,9 +163,19 @@ impl Listening {
             controller,
             identity,
             thread,
+            shutdown,
+            terminated,
             ..
         } = self;
-        drop(thread);
+
+        debug!("signaling shutdown");
+        shutdown.signal();
+
+        debug!("waiting for proxy termination");
+        terminated.await.unwrap();
+
+        debug!("proxy terminated");
+        thread.join().unwrap();
 
         let outbound = async move {
             if let Some(srv) = outbound_server {
@@ -292,6 +303,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let (trace, trace_handle) = super::trace_subscriber();
 
     let (running_tx, running_rx) = oneshot::channel();
+    let (term_tx, term_rx) = oneshot::channel();
     let (tx, mut rx) = shutdown_signal();
 
     if let Some(fut) = proxy.shutdown_signal {
@@ -342,9 +354,12 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                         let drain = main.spawn();
                         on_shutdown.await;
                         debug!("after on_shutdown");
-                        drain.drain().await;
 
-                        debug!("after on_shutdown");
+                        drain.drain().await;
+                        debug!("after drain");
+
+                        // Suppress error as not all tests wait for graceful shutdown
+                        let _ = term_tx.send(());
                     });
             })
         })
@@ -386,7 +401,8 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         controller,
         identity,
 
-        _shutdown: tx,
+        shutdown: tx,
+        terminated: term_rx,
         thread,
     }
 }
