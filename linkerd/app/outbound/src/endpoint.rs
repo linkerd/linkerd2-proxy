@@ -162,6 +162,12 @@ impl<T: connect::ConnectAddr> connect::ConnectAddr for Target<T> {
     }
 }
 
+impl<T> AsRef<Addr> for Target<T> {
+    fn as_ref(&self) -> &Addr {
+        &self.addr
+    }
+}
+
 // === impl HttpEndpoint ===
 
 impl HttpEndpoint {

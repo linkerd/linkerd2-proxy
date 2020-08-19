@@ -129,6 +129,12 @@ impl From<NameAddr> for Addr {
     }
 }
 
+impl AsRef<Self> for Addr {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 // === impl NameAddr ===
 
 impl NameAddr {

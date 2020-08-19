@@ -1,11 +1,13 @@
+mod permit;
 mod resolve;
 
 use http_body::Body as HttpBody;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
-    dns, profiles, Error,
+    dns, profiles, request_filter, svc, Error,
 };
+use permit::PermitConfiguredDsts;
 use std::time::Duration;
 use tonic::{
     body::{Body, BoxBody},
@@ -19,6 +21,7 @@ pub struct Config {
     pub get_suffixes: IndexSet<dns::Suffix>,
     pub get_networks: IndexSet<ipnet::IpNet>,
     pub profile_suffixes: IndexSet<dns::Suffix>,
+    pub profile_networks: IndexSet<ipnet::IpNet>,
     pub initial_profile_timeout: Duration,
 }
 
@@ -27,8 +30,11 @@ pub struct Config {
 /// The addr is preserved for logging.
 pub struct Dst<S> {
     pub addr: ControlAddr,
-    pub profiles: profiles::Client<S, resolve::BackoffUnlessInvalidArgument>,
-    pub resolve: resolve::Resolve<S>,
+    pub profiles: request_filter::Service<
+        PermitConfiguredDsts<profiles::InvalidProfileAddr>,
+        profiles::Client<S, resolve::BackoffUnlessInvalidArgument>,
+    >,
+    pub resolve: request_filter::Service<PermitConfiguredDsts, resolve::Resolve<S>>,
 }
 
 impl Config {
@@ -42,21 +48,28 @@ impl Config {
         <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
         S::Future: Send,
     {
-        let resolve = resolve::new(
+        let resolve = svc::stack(resolve::new(
             svc.clone(),
-            self.get_suffixes,
-            self.get_networks,
             &self.context,
             self.control.connect.backoff,
-        );
+        ))
+        .push_request_filter(PermitConfiguredDsts::new(
+            self.get_suffixes,
+            self.get_networks,
+        ))
+        .into_inner();
 
-        let profiles = profiles::Client::new(
+        let profiles = svc::stack(profiles::Client::new(
             svc,
             resolve::BackoffUnlessInvalidArgument::from(self.control.connect.backoff),
             self.initial_profile_timeout,
             self.context,
-            self.profile_suffixes,
-        );
+        ))
+        .push_request_filter(
+            PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
+                .with_error::<profiles::InvalidProfileAddr>(),
+        )
+        .into_inner();
 
         Ok(Dst {
             addr: self.control.addr,
