@@ -11,6 +11,7 @@ use tokio::time::{self, Delay};
 use tower::discover;
 use tracing::warn;
 use tracing_futures::Instrument;
+
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
     capacity: usize,
@@ -51,10 +52,7 @@ pub struct Daemon<D: discover::Discover> {
 pub struct Lost(());
 
 impl<M> Buffer<M> {
-    pub fn new<T>(capacity: usize, watchdog_timeout: Duration, inner: M) -> Self
-    where
-        Self: tower::Service<T>,
-    {
+    pub fn new(capacity: usize, watchdog_timeout: Duration, inner: M) -> Self {
         Self {
             capacity,
             watchdog_timeout,
