@@ -112,22 +112,12 @@ impl Config {
 
             use linkerd2_app_core::proxy::discover;
 
-            let discover = {
-                const BUFFER_CAPACITY: usize = 1_000;
-                let cache_timeout = Duration::from_secs(60);
-                discover::Layer::new(
-                    BUFFER_CAPACITY,
-                    cache_timeout,
-                    control::dns_resolve::Resolve::new(dns),
-                )
-            };
-
             info_span!("dst").in_scope(|| {
                 let dst_connect = svc::connect(dst.control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
-                    .push(discover)
+                    .push(discover::resolve(control::dns_resolve::Resolve::new(dns)))
                     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;
