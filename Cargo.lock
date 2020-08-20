@@ -1213,6 +1213,7 @@ dependencies = [
 name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "futures 0.3.5",
  "http 0.2.1",
  "http-body",
