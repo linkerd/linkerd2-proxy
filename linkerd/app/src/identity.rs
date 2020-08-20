@@ -1,12 +1,12 @@
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
-use linkerd2_app_core::proxy::{discover, http};
 use linkerd2_app_core::{
     classify,
     config::{ControlAddr, ControlConfig},
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    proxy::{discover, http},
     reconnect,
     svc::{self, NewService},
     transport::tls,

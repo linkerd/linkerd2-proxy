@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     classify,
     config::ControlAddr,
     control, dns, drain,
-    proxy::http,
+    proxy::{discover, http},
     reconnect,
     svc::{self, NewService},
     transport::tls,
@@ -109,8 +109,6 @@ impl Config {
 
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-
-            use linkerd2_app_core::proxy::discover;
 
             info_span!("dst").in_scope(|| {
                 let dst_connect = svc::connect(dst.control.connect.keepalive)
