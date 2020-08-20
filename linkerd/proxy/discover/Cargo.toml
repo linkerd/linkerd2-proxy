@@ -13,6 +13,7 @@ Utilities to implement a Discover with the core Resolve type
 futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-proxy-core = { path = "../core" }
+linkerd2-stack = { path = "../../stack" }
 indexmap = "1.0"
 tokio = { version = "0.2", features = ["sync", "time", "stream"] }
 tracing = "0.1.19"
