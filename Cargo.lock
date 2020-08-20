@@ -1249,6 +1249,7 @@ dependencies = [
  "indexmap",
  "linkerd2-error",
  "linkerd2-proxy-core",
+ "linkerd2-stack",
  "pin-project",
  "tokio",
  "tokio-test",
