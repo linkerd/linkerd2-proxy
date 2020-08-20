@@ -16,6 +16,11 @@ pub trait RequestFilter<T> {
 }
 
 #[derive(Clone, Debug)]
+pub struct RequestFilterLayer<T> {
+    filter: T,
+}
+
+#[derive(Clone, Debug)]
 pub struct Service<I, S> {
     filter: I,
     service: S,
@@ -26,6 +31,22 @@ pub struct Service<I, S> {
 pub enum ResponseFuture<F> {
     Future(#[pin] F),
     Rejected(Option<Error>),
+}
+
+// === impl Layer ===
+
+impl<T: Clone> RequestFilterLayer<T> {
+    pub fn new(filter: T) -> Self {
+        Self { filter }
+    }
+}
+
+impl<T: Clone, S> tower::Layer<S> for RequestFilterLayer<T> {
+    type Service = Service<T, S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        Service::new(self.filter.clone(), inner)
+    }
 }
 
 // === impl Service ===

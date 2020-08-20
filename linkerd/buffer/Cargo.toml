@@ -10,7 +10,7 @@ futures = "0.3"
 linkerd2-error = { path = "../error" }
 tokio = { version = "0.2", features = ["sync", "stream", "time", "macros"] }
 tower = { version = "0.3", default_features = false, features = ["util"] }
-tracing = "0.1"
+tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
 

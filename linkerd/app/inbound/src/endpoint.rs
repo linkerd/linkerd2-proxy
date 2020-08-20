@@ -4,7 +4,7 @@ use linkerd2_app_core::{
     http_request_l5d_override_dst_addr, metric_labels, profiles,
     proxy::{http, identity, tap},
     router, stack_tracing,
-    transport::{connect, tls},
+    transport::{connect, listen, tls},
     Addr, Conditional, NameAddr, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::fmt;
@@ -73,9 +73,19 @@ impl tls::HasPeerIdentity for HttpEndpoint {
 
 // === TcpEndpoint ===
 
-impl From<SocketAddr> for TcpEndpoint {
-    fn from(addr: SocketAddr) -> Self {
-        Self { port: addr.port() }
+impl From<listen::Addrs> for TcpEndpoint {
+    fn from(addrs: listen::Addrs) -> Self {
+        Self {
+            port: addrs.target_addr().port(),
+        }
+    }
+}
+
+impl From<tls::accept::Meta> for TcpEndpoint {
+    fn from(meta: tls::accept::Meta) -> Self {
+        Self {
+            port: meta.addrs.target_addr().port(),
+        }
     }
 }
 

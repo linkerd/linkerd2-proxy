@@ -1,3 +1,5 @@
+pub use tower::layer::Layer;
+
 /// Make a `Layer` from a closure.
 pub fn mk<F>(f: F) -> LayerFn<F> {
     LayerFn(f)
@@ -7,7 +9,7 @@ pub fn mk<F>(f: F) -> LayerFn<F> {
 #[derive(Clone, Copy, Debug)]
 pub struct LayerFn<F>(F);
 
-impl<F, S, Out> tower::layer::Layer<S> for LayerFn<F>
+impl<F, S, Out> Layer<S> for LayerFn<F>
 where
     F: Fn(S) -> Out,
 {

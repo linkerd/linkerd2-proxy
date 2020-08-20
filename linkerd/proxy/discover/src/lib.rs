@@ -43,7 +43,7 @@ where
     T: fmt::Display,
     R: Resolve<T> + Send + Clone + 'static,
     R::Error: Into<Error>,
-    R::Endpoint: fmt::Debug + Clone + PartialEq + Send,
+    R::Endpoint: fmt::Debug + Clone + PartialEq + Send + 'static,
     R::Resolution: Send + 'static,
     R::Future: Send + 'static,
     M: tower::Service<R::Endpoint> + Clone + Send + 'static,
@@ -51,7 +51,7 @@ where
     M::Response: Send + 'static,
     M::Future: Send + 'static,
 {
-    type Service = Buffer<MakeEndpoint<FromResolve<R>, M>>;
+    type Service = Buffer<MakeEndpoint<FromResolve<R, R::Endpoint>, M>>;
 
     fn layer(&self, make_endpoint: M) -> Self::Service {
         let make_discover =

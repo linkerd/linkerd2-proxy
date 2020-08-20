@@ -32,7 +32,6 @@ members = [
     "linkerd/opencensus",
     "linkerd/proxy/api-resolve",
     "linkerd/proxy/core",
-    "linkerd/proxy/detect",
     "linkerd/proxy/discover",
     "linkerd/proxy/http",
     "linkerd/proxy/identity",

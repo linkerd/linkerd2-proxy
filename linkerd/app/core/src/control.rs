@@ -153,7 +153,7 @@ pub mod dns_resolve {
     use linkerd2_addr::Addr;
     use linkerd2_dns as dns;
     use linkerd2_error::Error;
-    use linkerd2_proxy_core::resolve::{self, Update};
+    use linkerd2_proxy_core::resolve::Update;
     use std::net::SocketAddr;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -182,7 +182,7 @@ pub mod dns_resolve {
         S: Clone + Send + 'static,
         S::Future: Send,
     {
-        type Response = resolve::FromStream<UpdatesStream>;
+        type Response = UpdatesStream;
         type Error = Error;
         type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
@@ -191,8 +191,9 @@ pub mod dns_resolve {
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
-            futures::future::ok(resolve::from_stream::<UpdatesStream>(Box::pin(
-                resolution_stream(self.dns.clone(), target.clone()),
+            futures::future::ok(Box::pin(resolution_stream(
+                self.dns.clone(),
+                target.clone(),
             )))
         }
     }

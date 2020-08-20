@@ -13,6 +13,6 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", ta
 linkerd2-proxy-transport = { path = "../transport" }
 tokio = { version = "0.2", features = ["time", "sync"] }
 tonic = { version = "0.2", default-features = false }
-tracing = "0.1.9"
+tracing = "0.1.19"
 http-body = "0.3"
 pin-project = "0.4"

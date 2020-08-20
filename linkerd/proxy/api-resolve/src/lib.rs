@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![recursion_limit = "512"]
 
 use linkerd2_identity as identity;
 use linkerd2_proxy_api as api;

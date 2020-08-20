@@ -80,7 +80,7 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build(self, log_level: trace::LevelHandle) -> Result<App, Error> {
+    pub async fn build(self, log_level: trace::Handle) -> Result<App, Error> {
         let Config {
             admin,
             dns,
@@ -306,7 +306,7 @@ impl App {
             ..
         } = self;
 
-        // Run a daemon thread for all administative tasks.
+        // Run a daemon thread for all administrative tasks.
         //
         // The main reactor holds `admin_shutdown_tx` until the reactor drops
         // the task. This causes the daemon reactor to stop.

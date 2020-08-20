@@ -10,7 +10,7 @@ futures = "0.3"
 linkerd2-dns-name = { path = "./name" }
 linkerd2-stack = { path = "../stack" }
 tower = "0.3"
-tracing = "0.1"
+tracing = "0.1.19"
 tracing-futures = "0.2"
 tokio = { version = "0.2", features = ["rt-core", "sync"] }
 pin-project = "0.4"

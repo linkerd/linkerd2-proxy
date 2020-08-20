@@ -8,6 +8,7 @@
 pub use self::endpoint::{
     HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
 };
+use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::{future, prelude::*};
 use linkerd2_app_core::{
@@ -17,18 +18,14 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        detect,
-        http::{self, normalize_uri, orig_proto, strip_header},
-        identity,
-        server::{Protocol as ServerProtocol, ProtocolDetect, Server},
-        tap, tcp,
+        http::{self, normalize_uri, orig_proto, strip_header, DetectHttp},
+        identity, tap, tcp, SkipDetect,
     },
     reconnect, router, serve,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, io::BoxedIo, tls},
-    Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER, L5D_CLIENT_ID, L5D_REMOTE_IP,
-    L5D_SERVER_ID,
+    transport::{self, io::BoxedIo, listen, tls},
+    Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
 use std::collections::HashMap;
 use tokio::sync::mpsc;
@@ -37,12 +34,6 @@ use tracing::{info, info_span};
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
-// #[allow(dead_code)] // TODO #2597
-// mod set_client_id_on_req;
-// #[allow(dead_code)] // TODO #2597
-// mod set_remote_ip_on_req;
-
-use self::prevent_loop::PreventLoop;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -54,7 +45,7 @@ impl Config {
     pub async fn build<L, S, P>(
         self,
         listen_addr: std::net::SocketAddr,
-        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
+        listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         local_identity: tls::Conditional<identity::Local>,
         http_loopback: L,
         profiles_client: P,
@@ -297,7 +288,7 @@ impl Config {
     pub async fn build_server<C, H, S>(
         self,
         listen_addr: std::net::SocketAddr,
-        listen: impl Stream<Item = std::io::Result<transport::listen::Connection>> + Send + 'static,
+        listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
@@ -321,33 +312,15 @@ impl Config {
             + 'static,
         S::Future: Send,
     {
-        let Config {
-            proxy:
-                ProxyConfig {
-                    server: ServerConfig { h2_settings, .. },
-                    disable_protocol_detection_for_ports,
-                    dispatch_timeout,
-                    max_in_flight_requests,
-                    detect_protocol_timeout,
-                    ..
-                },
-            require_identity_for_inbound_ports,
-        } = self;
-
-        // The stack is served lazily since some layers (notably buffer) spawn
-        // tasks from their constructor. This helps to ensure that tasks are
-        // spawned on the same runtime as the proxy.
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp_connect.clone())
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
-            .push_map_target(|meta: tls::accept::Meta| TcpEndpoint::from(meta.addrs.target_addr()))
-            .push(svc::layer::mk(tcp::Forward::new));
-
-        // Strips headers that may be set by the inbound router.
-        let http_strip_headers = svc::layers()
-            .push(strip_header::request::layer(L5D_REMOTE_IP))
-            .push(strip_header::request::layer(L5D_CLIENT_ID))
-            .push(strip_header::response::layer(L5D_SERVER_ID));
+        let ProxyConfig {
+            server: ServerConfig { h2_settings, .. },
+            disable_protocol_detection_for_ports: skip_detect,
+            dispatch_timeout,
+            max_in_flight_requests,
+            detect_protocol_timeout,
+            ..
+        } = self.proxy;
+        let require_identity = self.require_identity_for_inbound_ports;
 
         // Handles requests as they are initially received by the proxy.
         let http_admit_request = svc::layers()
@@ -366,8 +339,9 @@ impl Config {
             .push(TraceContextLayer::new(span_sink.map(|span_sink| {
                 SpanConverter::server(span_sink, trace_labels())
             })))
-            // Tracks proxy handletime.
-            .push(metrics.http_handle_time.layer());
+            // // Tracks proxy handletime.
+            // .push(metrics.http_handle_time.layer())
+            ;
 
         let http_server = svc::stack(http_router)
             // Ensures that the built service is ready before it is returned
@@ -388,11 +362,11 @@ impl Config {
             .check_new_service::<tls::accept::Meta>()
             .push_on_response(
                 svc::layers()
-                    .push(http_strip_headers)
                     .push(http_admit_request)
                     .push(http_server_observability)
                     .push(metrics.stack.layer(stack_labels("source")))
-                    .box_http_request(),
+                    .box_http_request()
+                    .box_http_response(),
             )
             .check_new_service::<tls::accept::Meta>()
             .instrument(|src: &tls::accept::Meta| {
@@ -400,34 +374,40 @@ impl Config {
                     "source",
                     target.addr = %src.addrs.target_addr(),
                 )
-            });
+            })
+            .into_inner()
+            .into_make_service();
 
-        let tcp_server = Server::new(
-            TransportLabels,
-            metrics.transport,
-            tcp_forward.into_inner(),
-            http_server.into_inner(),
+        // The stack is served lazily since some layers (notably buffer) spawn
+        // tasks from their constructor. This helps to ensure that tasks are
+        // spawned on the same runtime as the proxy.
+        // Forwards TCP streams that cannot be decoded as HTTP.
+        let tcp_forward = svc::stack(tcp::Forward::new(tcp_connect))
+            .push(admit::AdmitLayer::new(prevent_loop.into()));
+
+        let http = DetectHttp::new(
             h2_settings,
+            detect_protocol_timeout,
+            http_server,
+            tcp_forward.clone().push_map_target(TcpEndpoint::from),
             drain.clone(),
         );
 
-        let tcp_detect = svc::stack(tcp_server)
-            .push(detect::AcceptLayer::new(ProtocolDetect::new(
-                disable_protocol_detection_for_ports.clone(),
-            )))
-            .push(admit::AdmitLayer::new(require_identity_for_inbound_ports))
-            // Terminates inbound mTLS from other outbound proxies.
-            .push(detect::AcceptLayer::new(tls::DetectTls::new(
-                local_identity,
-                disable_protocol_detection_for_ports,
-            )))
-            // Limits the amount of time that the TCP server spends waiting for TLS handshake &
-            // protocol detection. Ensures that connections that never emit data are dropped
-            // eventually.
-            .push_timeout(detect_protocol_timeout);
+        let tls = svc::stack(http)
+            .push(admit::AdmitLayer::new(require_identity))
+            .push(metrics.transport.layer_accept(TransportLabels))
+            .push(svc::layer::mk(|inner| {
+                tls::DetectTls::new(local_identity.clone(), inner, detect_protocol_timeout)
+            }));
+
+        let accept_fwd = tcp_forward
+            .push_map_target(TcpEndpoint::from)
+            .push(metrics.transport.layer_accept(TransportLabels))
+            .into_inner();
+        let accept = SkipDetect::new(skip_detect, tls, accept_fwd);
 
         info!(addr = %listen_addr, "Serving");
-        serve::serve(listen, tcp_detect.into_inner(), drain.signal()).await
+        serve::serve(listen, accept, drain.signal()).await
     }
 }
 
@@ -456,11 +436,22 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     }
 }
 
-impl transport::metrics::TransportLabels<ServerProtocol> for TransportLabels {
+impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
     type Labels = transport::labels::Key;
 
-    fn transport_labels(&self, proto: &ServerProtocol) -> Self::Labels {
-        transport::labels::Key::accept("inbound", proto.tls.peer_identity.as_ref())
+    fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
+        transport::labels::Key::accept::<()>(
+            "inbound",
+            tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
+        )
+    }
+}
+
+impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels {
+    type Labels = transport::labels::Key;
+
+    fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
+        transport::labels::Key::accept("inbound", target.peer_identity.as_ref())
     }
 }
 

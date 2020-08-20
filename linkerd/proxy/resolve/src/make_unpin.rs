@@ -1,5 +1,6 @@
+use futures::stream::{Stream, TryStream};
 use futures::TryFuture;
-use linkerd2_proxy_core::resolve::{self, Resolution, Update};
+use linkerd2_proxy_core::resolve;
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
@@ -38,15 +39,11 @@ impl<T> MakeUnpin<T> {
     }
 }
 
-impl<T: Resolution> Resolution for MakeUnpin<T> {
-    type Endpoint = T::Endpoint;
-    type Error = T::Error;
+impl<T: TryStream> Stream for MakeUnpin<T> {
+    type Item = Result<T::Ok, T::Error>;
 
-    fn poll(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Update<Self::Endpoint>, Self::Error>> {
-        self.project().0.as_mut().as_mut().poll(cx)
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.project().0.as_mut().as_mut().try_poll_next(cx)
     }
 }
 

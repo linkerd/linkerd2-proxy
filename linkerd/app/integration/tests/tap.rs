@@ -159,6 +159,7 @@ async fn inbound_http1() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(feature = "flaky_tests"), ignore)]
 async fn grpc_headers_end() {
     let _trace = trace_init();
 

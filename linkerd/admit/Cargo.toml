@@ -9,4 +9,4 @@ publish = false
 futures = "0.3"
 linkerd2-error = { path = "../error" }
 tower = { version = "0.3", default-features = false, features = ["util"] }
-tracing = "0.1"
+tracing = "0.1.19"

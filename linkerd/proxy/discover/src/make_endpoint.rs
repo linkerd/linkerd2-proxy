@@ -158,8 +158,10 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Change<D::Key, E::Response>, Error>>> {
-        if let Poll::Ready(key) = self.poll_removals(cx) {
-            return Poll::Ready(Some(Ok(Change::Remove(key?))));
+        if let Poll::Ready(result) = self.poll_removals(cx) {
+            if let Some(key) = result? {
+                return Poll::Ready(Some(Ok(Change::Remove(key))));
+            }
         }
 
         if let Poll::Ready(Some(res)) = self.project().make_futures.poll_next(cx) {
@@ -182,12 +184,12 @@ where
     fn poll_removals(
         self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<D::Key, Error>> {
+    ) -> Poll<Result<Option<D::Key>, Error>> {
         loop {
             let mut this = self.as_mut().project();
             if let Some(key) = this.pending_removals.pop() {
                 this.make_futures.remove(&key);
-                return Poll::Ready(Ok(key));
+                return Poll::Ready(Ok(Some(key)));
             }
 
             // Before polling the resolution, where we could potentially receive
@@ -195,19 +197,20 @@ where
             // services. Don't process any updates until we can do so.
             ready!(this.make_endpoint.poll_ready(cx)).map_err(Into::into)?;
 
-            match ready!(this.discover.poll_discover(cx))
-                .expect("XXX(eliza): can this ever be none???")
-                .map_err(Into::into)?
-            {
-                Change::Insert(key, target) => {
-                    // Start building the service and continue. If a pending
-                    // service exists for this addr, it will be canceled.
-                    let fut = this.make_endpoint.call(target);
-                    this.make_futures.push(key, fut);
-                }
-                Change::Remove(key) => {
-                    this.pending_removals.push(key);
-                }
+            match ready!(this.discover.poll_discover(cx)) {
+                Some(change) => match change.map_err(Into::into)? {
+                    Change::Insert(key, target) => {
+                        // Start building the service and continue. If a pending
+                        // service exists for this addr, it will be canceled.
+                        let fut = this.make_endpoint.call(target);
+                        this.make_futures.push(key, fut);
+                    }
+                    Change::Remove(key) => {
+                        this.pending_removals.push(key);
+                    }
+                },
+
+                None => return Poll::Ready(Ok(None)),
             }
         }
     }

@@ -15,8 +15,8 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::ServiceExt;
-use tracing::{debug, trace};
-// use tracing_futures::{Instrument, Instrumented};
+use tracing::{debug, debug_span, trace};
+use tracing_futures::{Instrument, Instrumented};
 
 /// Configures an HTTP client that uses a `C`-typed connector
 #[derive(Debug)]
@@ -64,11 +64,11 @@ where
 pub enum ClientFuture {
     Http1 {
         #[pin]
-        future: hyper::client::ResponseFuture,
+        future: Instrumented<hyper::client::ResponseFuture>,
         upgrade: Option<Http11Upgrade>,
         is_http_connect: bool,
     },
-    Http2(#[pin] h2::ResponseFuture),
+    Http2(#[pin] Instrumented<h2::ResponseFuture>),
 }
 
 // === impl MakeClientLayer ===
@@ -185,7 +185,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let svc = match self.project() {
-            MakeFutureProj::Http1(h1) => Client::Http1(h1.take().expect("poll more than once")),
+            MakeFutureProj::Http1(h1) => Client::Http1(h1.take().expect("polled after ready")),
             MakeFutureProj::Http2(h2) => {
                 let svc = ready!(h2.poll(cx))?;
                 Client::Http2(svc)
@@ -220,12 +220,14 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        debug!(
+        let span = debug_span!(
+            "request",
             method = %req.method(),
             uri = %req.uri(),
             version = ?req.version(),
-            headers = ?req.headers(),
         );
+        let _e = span.enter();
+        debug!(headers = ?req.headers(), "client request");
 
         match *self {
             Client::Http1(ref h1) => {
@@ -236,12 +238,12 @@ where
                     false
                 };
                 ClientFuture::Http1 {
-                    future: h1.request(req),
+                    future: h1.request(req).instrument(span.clone()),
                     upgrade,
                     is_http_connect,
                 }
             }
-            Client::Http2(ref mut h2) => ClientFuture::Http2(h2.call(req)),
+            Client::Http2(ref mut h2) => ClientFuture::Http2(h2.call(req).instrument(span.clone())),
         }
     }
 }

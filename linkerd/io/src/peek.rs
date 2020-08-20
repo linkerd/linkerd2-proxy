@@ -1,4 +1,4 @@
-use crate::{internal::Io, AsyncRead, AsyncWrite, PrefixedIo};
+use crate::{AsyncRead, AsyncWrite, PrefixedIo};
 use bytes::BytesMut;
 use pin_project::pin_project;
 use std::future::Future;
@@ -19,13 +19,16 @@ struct Inner<T> {
     io: T,
 }
 
-pub trait Peekable: Io + Sized + Unpin {
-    fn peek(self, capacity: usize) -> Peek<Self> {
+pub trait Peekable: AsyncRead + AsyncWrite + Unpin {
+    fn peek(self, capacity: usize) -> Peek<Self>
+    where
+        Self: Sized,
+    {
         Peek::with_capacity(capacity, self)
     }
 }
 
-impl<I: Io + Sized + Unpin> Peekable for I {}
+impl<I: AsyncRead + AsyncWrite + Unpin> Peekable for I {}
 
 // === impl Peek ===
 

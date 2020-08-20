@@ -4,7 +4,6 @@ use futures::{future, prelude::*, ready, select_biased};
 use http;
 use http_body::Body as HttpBody;
 use linkerd2_addr::{Addr, NameAddr};
-use linkerd2_dns as dns;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
@@ -32,7 +31,6 @@ pub struct Client<S, R> {
     recover: R,
     initial_timeout: Duration,
     context_token: String,
-    suffixes: Vec<dns::Suffix>,
 }
 
 pub type Receiver = watch::Receiver<profiles::Routes>;
@@ -47,17 +45,9 @@ where
     R: Recover,
 {
     #[pin]
-    inner: ProfileFutureInner<S, R>,
-}
-
-#[pin_project(project = ProfileFutureInnerProj)]
-enum ProfileFutureInner<S, R>
-where
-    S: GrpcService<BoxBody>,
-    R: Recover,
-{
-    Invalid(Addr),
-    Pending(#[pin] Option<Inner<S, R>>, #[pin] Delay),
+    inner: Option<Inner<S, R>>,
+    #[pin]
+    timeout: Delay,
 }
 
 #[pin_project]
@@ -112,19 +102,12 @@ where
     R: Recover,
     R::Backoff: Unpin,
 {
-    pub fn new(
-        service: S,
-        recover: R,
-        initial_timeout: Duration,
-        context_token: String,
-        suffixes: impl IntoIterator<Item = dns::Suffix>,
-    ) -> Self {
+    pub fn new(service: S, recover: R, initial_timeout: Duration, context_token: String) -> Self {
         Self {
             service: DestinationClient::new(service),
             recover,
             initial_timeout,
             context_token,
-            suffixes: suffixes.into_iter().collect(),
         }
     }
 }
@@ -150,23 +133,7 @@ where
     }
 
     fn call(&mut self, dst: Addr) -> Self::Future {
-        let dst = match dst {
-            Addr::Name(n) => n,
-            Addr::Socket(_) => {
-                self.service = self.service.clone();
-                return ProfileFuture {
-                    inner: ProfileFutureInner::Invalid(dst),
-                };
-            }
-        };
-
-        if !self.suffixes.iter().any(|s| s.contains(dst.name())) {
-            debug!("name not in profile suffixes");
-            self.service = self.service.clone();
-            return ProfileFuture {
-                inner: ProfileFutureInner::Invalid(dst.into()),
-            };
-        }
+        let path = dst.to_string();
 
         let service = {
             // In case the ready service holds resources, pass it into the
@@ -176,7 +143,7 @@ where
         };
 
         let request = api::GetDestination {
-            path: dst.to_string(),
+            path,
             context_token: self.context_token.clone(),
             ..Default::default()
         };
@@ -190,7 +157,8 @@ where
             state: State::Disconnected { backoff: None },
         };
         ProfileFuture {
-            inner: ProfileFutureInner::Pending(Some(inner), timeout),
+            inner: Some(inner),
+            timeout,
         }
     }
 }
@@ -209,68 +177,63 @@ where
     type Output = Result<Receiver, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project().inner.project() {
-            ProfileFutureInnerProj::Invalid(addr) => {
-                Poll::Ready(Err(InvalidProfileAddr(addr.clone()).into()))
+        let mut this = self.project();
+        let profile = match this
+            .inner
+            .as_mut()
+            .as_pin_mut()
+            .expect("polled after ready")
+            .poll_profile(cx)
+        {
+            Poll::Ready(Err(error)) => {
+                trace!(%error, "failed to fetch profile");
+                return Poll::Ready(Err(error));
             }
-            ProfileFutureInnerProj::Pending(mut inner, timeout) => {
-                let profile = match inner
-                    .as_mut()
-                    .as_pin_mut()
-                    .expect("polled after ready")
-                    .poll_profile(cx)
-                {
-                    Poll::Ready(Err(error)) => {
-                        trace!(%error, "failed to fetch profile");
-                        return Poll::Ready(Err(error));
-                    }
-                    Poll::Pending => {
-                        if timeout.poll(cx).is_pending() {
-                            return Poll::Pending;
-                        }
+            Poll::Pending => {
+                if this.timeout.poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
 
-                        info!("Using default service profile after timeout");
-                        profiles::Routes::default()
-                    }
-                    Poll::Ready(Ok(profile)) => profile,
-                };
+                info!("Using default service profile after timeout");
+                profiles::Routes::default()
+            }
+            Poll::Ready(Ok(profile)) => profile,
+        };
 
-                trace!("daemonizing");
-                let (mut tx, rx) = watch::channel(profile);
-                let inner = inner.take().expect("polled after ready");
-                let daemon = async move {
-                    tokio::pin!(inner);
-                    loop {
-                        select_biased! {
-                            _ = tx.closed().fuse() => {
-                                trace!("profile observation dropped");
+        trace!("daemonizing");
+        let (mut tx, rx) = watch::channel(profile);
+        let inner = this.inner.take().expect("polled after ready");
+        let daemon = async move {
+            tokio::pin!(inner);
+            loop {
+                select_biased! {
+                    _ = tx.closed().fuse() => {
+                        trace!("profile observation dropped");
+                        return;
+                    },
+                    profile = future::poll_fn(|cx|
+                        inner.as_mut().poll_profile(cx)
+                        ).fuse() => {
+                        match profile {
+                            Err(error) => {
+                                error!(%error, "profile client died");
                                 return;
-                            },
-                            profile = future::poll_fn(|cx|
-                                inner.as_mut().poll_profile(cx)
-                             ).fuse() => {
-                                match profile {
-                                    Err(error) => {
-                                        error!(%error, "profile client died");
-                                        return;
-                                    }
-                                    Ok(profile) => {
-                                        trace!(?profile, "publishing");
-                                        if tx.broadcast(profile).is_err() {
-                                            trace!("failed to publish profile");
-                                            return
-                                        }
-                                    }
+                            }
+                            Ok(profile) => {
+                                trace!(?profile, "publishing");
+                                if tx.broadcast(profile).is_err() {
+                                    trace!("failed to publish profile");
+                                    return
                                 }
                             }
                         }
                     }
-                };
-                tokio::spawn(daemon.in_current_span());
-
-                Poll::Ready(Ok(rx))
+                }
             }
-        }
+        };
+        tokio::spawn(daemon.in_current_span());
+
+        Poll::Ready(Ok(rx))
     }
 }
 
@@ -582,3 +545,9 @@ impl std::fmt::Display for InvalidProfileAddr {
 }
 
 impl std::error::Error for InvalidProfileAddr {}
+
+impl From<Addr> for InvalidProfileAddr {
+    fn from(addr: Addr) -> Self {
+        Self(addr)
+    }
+}
