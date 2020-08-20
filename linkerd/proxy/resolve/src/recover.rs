@@ -214,7 +214,12 @@ where
                                 backoff: None,
                             }
                         }
-                        None => return Poll::Ready(None),
+                        None => {
+                            this.inner.state = State::Recover {
+                                error: Some(Eos(()).into()),
+                                backoff: None,
+                            }
+                        }
                     }
                 }
                 // XXX(eliza): note that this match was originally an `if let`,
