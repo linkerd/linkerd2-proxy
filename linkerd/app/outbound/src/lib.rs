@@ -254,11 +254,12 @@ impl Config {
         // This buffer controls how many discovery updates may be pending/unconsumed by the
         // balancer before backpressure is applied on the resolution stream. If the buffer is
         // full for `cache_max_idle_age`, then the resolution task fails.
-        let discover = {
-            const BUFFER_CAPACITY: usize = 1_000;
-            let resolve = map_endpoint::Resolve::new(endpoint::FromMetadata, resolve.clone());
-            discover::Layer::new(BUFFER_CAPACITY, cache_max_idle_age, resolve)
-        };
+        let discover = svc::layers()
+            .push(discover::resolve(map_endpoint::Resolve::new(
+                endpoint::FromMetadata,
+                resolve.clone(),
+            )))
+            .push(discover::buffer(1_000, cache_max_idle_age));
 
         // Builds a balancer for each concrete destination.
         let http_balancer = svc::stack(http_endpoint.clone())

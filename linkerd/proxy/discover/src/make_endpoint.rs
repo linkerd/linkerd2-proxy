@@ -59,15 +59,7 @@ enum MakeError<E> {
 // === impl MakeEndpoint ===
 
 impl<D, E> MakeEndpoint<D, E> {
-    pub fn new<T, InnerDiscover>(make_endpoint: E, make_discover: D) -> Self
-    where
-        D: tower::Service<T, Response = InnerDiscover>,
-        InnerDiscover: discover::Discover,
-        InnerDiscover::Key: Clone,
-        InnerDiscover::Error: Into<Error>,
-        E: tower::Service<InnerDiscover::Service> + Clone,
-        E::Error: Into<Error>,
-    {
+    pub fn new(make_endpoint: E, make_discover: D) -> Self {
         Self {
             make_discover,
             make_endpoint,
