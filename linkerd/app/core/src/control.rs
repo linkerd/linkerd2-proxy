@@ -298,6 +298,7 @@ pub mod dns_resolve {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use linkerd2_proxy_core::resolve;
         use linkerd2_proxy_identity::Name;
         use linkerd2_proxy_transport::tls::Conditional;
         use linkerd2_proxy_transport::tls::PeerIdentity;
