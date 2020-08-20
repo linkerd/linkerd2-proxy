@@ -288,7 +288,6 @@ mod tests {
     use std::net::SocketAddr;
     use tokio::sync::mpsc;
     use tokio_test::{assert_pending, assert_ready, assert_ready_ok, task};
-    use tower::discover::Change;
     use tower::util::service_fn;
     use tower::Service;
     use tower_test::mock;
