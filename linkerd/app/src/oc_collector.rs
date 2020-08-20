@@ -57,15 +57,6 @@ impl Config {
             } => {
                 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
                 const EWMA_DECAY: Duration = Duration::from_secs(10);
-                let discover = {
-                    const BUFFER_CAPACITY: usize = 1_000;
-                    let cache_timeout = Duration::from_secs(60);
-                    discover::Layer::new(
-                        BUFFER_CAPACITY,
-                        cache_timeout,
-                        control::dns_resolve::Resolve::new(dns),
-                    )
-                };
 
                 let addr = control.addr;
                 let svc = svc::connect(control.connect.keepalive)
@@ -76,7 +67,7 @@ impl Config {
                     // TODO: we should have metrics of some kind, but the standard
                     // HTTP metrics aren't useful for a client where we never read
                     // the response.
-                    .push(discover)
+                    .push(discover::resolve(control::dns_resolve::Resolve::new(dns)))
                     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer({
                         let backoff = control.connect.backoff;
