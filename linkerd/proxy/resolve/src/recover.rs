@@ -46,18 +46,10 @@ enum State<F, R: TryStream, B> {
         backoff: Option<B>,
     },
 
-    // XXX This state shouldn't be necessary, but we need it to pass tests(!)
-    // that don't properly mimic the go server's behavior. See
-    // linkerd/linkerd2#3362.
-    Pending {
-        resolution: Option<R>,
-        backoff: Option<B>,
-    },
-
     Connected {
         #[pin]
         resolution: R,
-        initial: Option<R::Ok>,
+        is_initial: bool,
     },
 
     Recover {
@@ -136,9 +128,7 @@ where
             .expect("polled after complete")
             .poll_connected(cx))?;
         let inner = this.inner.take().expect("polled after complete");
-        Poll::Ready(Ok(Resolution {
-            inner,
-        }))
+        Poll::Ready(Ok(Resolution { inner }))
     }
 }
 
@@ -162,37 +152,33 @@ where
             match this.inner.state {
                 State::Connected {
                     ref mut resolution,
-                    ref mut initial,
-                } => {
-                    // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
-                    // eagerly, so we must potentially read the first update to be
-                    // sure it didn't fail.
-                    if let Some(initial) = initial.take() {
-                        let update = match initial {
-                            Update::Add(eps) => Update::Reset(eps),
-                            up => up,
+                    ref mut is_initial,
+                } => match ready!(resolution.try_poll_next_unpin(cx)) {
+                    Some(Ok(update)) => {
+                        let update = if *is_initial {
+                            *is_initial = false;
+                            match update {
+                                Update::Add(eps) => Update::Reset(eps),
+                                up => up,
+                            }
+                        } else {
+                            update
                         };
                         return Poll::Ready(Some(Ok(update)));
                     }
-
-                    match ready!(resolution.try_poll_next_unpin(cx)) {
-                        Some(Ok(update)) => {
-                            return Poll::Ready(Some(Ok(update)));
-                        }
-                        Some(Err(e)) => {
-                            this.inner.state = State::Recover {
-                                error: Some(e.into()),
-                                backoff: None,
-                            }
-                        }
-                        None => {
-                            this.inner.state = State::Recover {
-                                error: Some(Eos(()).into()),
-                                backoff: None,
-                            }
+                    Some(Err(e)) => {
+                        this.inner.state = State::Recover {
+                            error: Some(e.into()),
+                            backoff: None,
                         }
                     }
-                }
+                    None => {
+                        this.inner.state = State::Recover {
+                            error: Some(Eos(()).into()),
+                            backoff: None,
+                        }
+                    }
+                },
                 // XXX(eliza): note that this match was originally an `if let`,
                 // but that doesn't work with `#[project]` for some kinda reason
                 _ => {}
@@ -236,42 +222,14 @@ where
                     ref mut backoff,
                 } => match ready!(future.poll_unpin(cx)) {
                     Ok(resolution) => {
-                        tracing::trace!("pending");
-                        State::Pending {
-                            resolution: Some(resolution),
-                            backoff: backoff.take(),
+                        tracing::trace!("Connected");
+                        State::Connected {
+                            resolution,
+                            is_initial: true,
                         }
                     }
                     Err(e) => State::Recover {
                         error: Some(e.into()),
-                        backoff: backoff.take(),
-                    },
-                },
-
-                // We've already connected, but haven't yet received an update
-                // (or an error). This state shouldn't exist. See
-                // linkerd/linkerd2#3362.
-                State::Pending {
-                    ref mut resolution,
-                    ref mut backoff,
-                } => match ready!(resolution
-                    .as_mut()
-                    .expect("illegal state")
-                    .try_poll_next_unpin(cx))
-                {
-                    Some(Err(e)) => State::Recover {
-                        error: Some(e.into()),
-                        backoff: backoff.take(),
-                    },
-                    Some(Ok(initial)) => {
-                        tracing::trace!("connected");
-                        State::Connected {
-                            resolution: resolution.take().expect("illegal state"),
-                            initial: Some(initial),
-                        }
-                    }
-                    None => State::Recover {
-                        error: Some(Eos(()).into()),
                         backoff: backoff.take(),
                     },
                 },
