@@ -93,27 +93,17 @@ where
         Box::pin(async move {
             // Wait for the server to respond once before returning a stream. This let's us eagerly
             // detect errors (like InvalidArgument).
-            let rsp = client.get(grpc::Request::new(req.clone())).await?;
+            let rsp = client.get(grpc::Request::new(req)).await?;
             trace!(metadata = ?rsp.metadata());
-            let stream: UpdatesStream = Box::pin(resolution(rsp.into_inner(), client, req));
+            let stream: UpdatesStream = Box::pin(resolution(rsp.into_inner()));
             Ok(stream)
         })
     }
 }
 
-fn resolution<S>(
+fn resolution(
     mut stream: tonic::Streaming<api::Update>,
-    mut client: DestinationClient<S>,
-    req: api::GetDestination,
-) -> impl Stream<Item = Result<resolve::Update<Metadata>, grpc::Status>>
-where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
-    S::ResponseBody: Send,
-    <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
-    S::Future: Send,
-{
+) -> impl Stream<Item = Result<resolve::Update<Metadata>, grpc::Status>> {
     try_stream! {
         while let Some(update) = stream.next().await {
             match update?.update {
@@ -155,9 +145,5 @@ where
                 None => {} // continue
             }
         }
-
-        let rsp = client.get(grpc::Request::new(req)).await?;
-        trace!(metadata = ?rsp.metadata());
-        stream = rsp.into_inner();
     }
 }
