@@ -28,6 +28,7 @@ pub struct Service<S>(S);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Update<T> {
+    Reset(Vec<(SocketAddr, T)>),
     Add(Vec<(SocketAddr, T)>),
     Remove(Vec<SocketAddr>),
     Empty,

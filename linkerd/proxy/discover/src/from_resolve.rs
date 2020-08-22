@@ -1,12 +1,13 @@
 use futures::{ready, Stream, TryFuture, TryStream};
-use indexmap::IndexSet;
 use linkerd2_proxy_core::resolve::{Resolve, Update};
 use pin_project::pin_project;
-use std::collections::VecDeque;
-use std::future::Future;
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tower::discover::Change;
 
 #[derive(Clone, Debug)]
@@ -29,7 +30,7 @@ pub struct DiscoverFuture<F, E> {
 pub struct Discover<R: TryStream, E> {
     #[pin]
     resolution: R,
-    active: IndexSet<SocketAddr>,
+    active: HashMap<SocketAddr, E>,
     pending: VecDeque<Change<SocketAddr, E>>,
 }
 
@@ -90,7 +91,7 @@ impl<R: TryStream, E> Discover<R, E> {
     pub fn new(resolution: R) -> Self {
         Self {
             resolution,
-            active: IndexSet::default(),
+            active: HashMap::default(),
             pending: VecDeque::new(),
         }
     }
@@ -99,6 +100,7 @@ impl<R: TryStream, E> Discover<R, E> {
 impl<R, E> Stream for Discover<R, E>
 where
     R: TryStream<Ok = Update<E>>,
+    E: Clone + PartialEq,
 {
     type Item = Result<Change<SocketAddr, E>, R::Error>;
 
@@ -111,22 +113,35 @@ where
 
             match ready!(this.resolution.try_poll_next(cx)) {
                 Some(update) => match update? {
+                    Update::Reset(endpoints) => {
+                        let mut new_active = HashMap::with_capacity(endpoints.len());
+                        for (addr, endpoint) in endpoints.into_iter() {
+                            if this.active.remove(&addr).as_ref() != Some(&endpoint) {
+                                this.pending
+                                    .push_back(Change::Insert(addr, endpoint.clone()));
+                            }
+                            new_active.insert(addr, endpoint);
+                        }
+                        this.pending
+                            .extend(this.active.drain().map(|(a, _)| Change::Remove(a)));
+                        *this.active = new_active;
+                    }
                     Update::Add(endpoints) => {
                         for (addr, endpoint) in endpoints.into_iter() {
-                            this.active.insert(addr);
+                            this.active.insert(addr, endpoint.clone());
                             this.pending.push_back(Change::Insert(addr, endpoint));
                         }
                     }
                     Update::Remove(addrs) => {
                         for addr in addrs.into_iter() {
-                            if this.active.remove(&addr) {
+                            if this.active.remove(&addr).is_some() {
                                 this.pending.push_back(Change::Remove(addr));
                             }
                         }
                     }
                     Update::DoesNotExist | Update::Empty => {
                         this.pending
-                            .extend(this.active.drain(..).map(Change::Remove));
+                            .extend(this.active.drain().map(|(a, _)| Change::Remove(a)));
                     }
                 },
                 None => return Poll::Ready(None),

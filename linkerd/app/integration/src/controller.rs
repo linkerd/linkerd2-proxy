@@ -247,7 +247,7 @@ impl pb::destination_server::Destination for Controller {
             match calls.pop_front() {
                 Some(Dst::Call(dst, updates)) => {
                     if &dst == req.get_ref() {
-                        tracing::debug!("found request={:?}", dst);
+                        tracing::debug!(?dst, ?updates, "found request");
                         return updates.map(grpc::Response::new);
                     }
 

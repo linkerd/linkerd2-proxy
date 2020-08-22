@@ -126,6 +126,15 @@ where
 
                     resolve::Update::Add(update)
                 }
+                resolve::Update::Reset(eps) => {
+                    let mut update = Vec::new();
+                    for (a, ep) in eps.into_iter() {
+                        let ep = this.map.map_endpoint(&this.target, a, ep);
+                        update.push((a, ep));
+                    }
+
+                    resolve::Update::Reset(update)
+                }
                 resolve::Update::Remove(addrs) => resolve::Update::Remove(addrs),
                 resolve::Update::DoesNotExist => resolve::Update::DoesNotExist,
                 resolve::Update::Empty => resolve::Update::Empty,

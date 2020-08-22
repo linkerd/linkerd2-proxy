@@ -2,12 +2,10 @@
 
 use futures::stream::TryStream;
 use futures::{prelude::*, ready, FutureExt, Stream};
-use indexmap::IndexMap;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_core::resolve::{self, Update};
 use pin_project::pin_project;
 use std::future::Future;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -28,8 +26,6 @@ pub struct ResolveFuture<T, E: Recover, R: resolve::Resolve<T>> {
 #[pin_project(project = ResolutionProj)]
 pub struct Resolution<T, E: Recover, R: resolve::Resolve<T>> {
     inner: Inner<T, E, R>,
-    cache: IndexMap<SocketAddr, R::Endpoint>,
-    reconcile: Option<Update<R::Endpoint>>,
 }
 
 #[pin_project]
@@ -38,11 +34,6 @@ struct Inner<T, E: Recover, R: resolve::Resolve<T>> {
     resolve: R,
     recover: E,
     state: State<R::Future, R::Resolution, E::Backoff>,
-}
-
-#[derive(Debug)]
-struct Cache<T> {
-    active: IndexMap<SocketAddr, T>,
 }
 
 #[pin_project]
@@ -147,8 +138,6 @@ where
         let inner = this.inner.take().expect("polled after complete");
         Poll::Ready(Ok(Resolution {
             inner,
-            cache: IndexMap::default(),
-            reconcile: None,
         }))
     }
 }
@@ -170,13 +159,6 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         loop {
-            // If a reconciliation update is buffered (i.e. after
-            // reconcile_after_reconnect), process it immediately.
-            if let Some(update) = this.reconcile.take() {
-                this.update_active(&update);
-                return Poll::Ready(Some(Ok(update)));
-            }
-
             match this.inner.state {
                 State::Connected {
                     ref mut resolution,
@@ -184,28 +166,17 @@ where
                 } => {
                     // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
                     // eagerly, so we must potentially read the first update to be
-                    // sure it didn't fail. If that's the case, then reconcile the
-                    // cache against the initial update.
+                    // sure it didn't fail.
                     if let Some(initial) = initial.take() {
-                        // The initial state afer a reconnect may be identitical to
-                        // the prior state, and so there may be no updates to
-                        // advertise.
-                        if let Some((update, reconcile)) =
-                            reconcile_after_connect(&this.cache, initial)
-                        {
-                            *this.reconcile = reconcile;
-                            this.update_active(&update);
-                            return Poll::Ready(Some(Ok(update)));
-                        }
+                        let update = match initial {
+                            Update::Add(eps) => Update::Reset(eps),
+                            up => up,
+                        };
+                        return Poll::Ready(Some(Ok(update)));
                     }
-
-                    // Process the resolution stream, updating the cache.
-                    //
-                    // Attempt recovery/backoff if the resolution fails.
 
                     match ready!(resolution.try_poll_next_unpin(cx)) {
                         Some(Ok(update)) => {
-                            this.update_active(&update);
                             return Poll::Ready(Some(Ok(update)));
                         }
                         Some(Err(e)) => {
@@ -228,30 +199,6 @@ where
             }
 
             ready!(this.inner.poll_connected(cx))?;
-        }
-    }
-}
-
-impl<T, E, R> ResolutionProj<'_, T, E, R>
-where
-    T: Clone,
-    R: resolve::Resolve<T>,
-    R::Endpoint: Clone + PartialEq,
-    E: Recover,
-{
-    fn update_active(&mut self, update: &Update<R::Endpoint>) {
-        match update {
-            Update::Add(ref endpoints) => {
-                self.cache.extend(endpoints.clone());
-            }
-            Update::Remove(ref addrs) => {
-                for addr in addrs.iter() {
-                    self.cache.remove(addr);
-                }
-            }
-            Update::DoesNotExist | Update::Empty => {
-                self.cache.drain(..);
-            }
         }
     }
 }
@@ -354,61 +301,6 @@ where
     }
 }
 
-/// Computes the updates needed after a connection is (re-)established.
-// Raw fn for easier testing.
-fn reconcile_after_connect<E: PartialEq>(
-    cache: &IndexMap<SocketAddr, E>,
-    initial: Update<E>,
-) -> Option<(Update<E>, Option<Update<E>>)> {
-    match initial {
-        // When the first update after a disconnect is an Add, it should
-        // contain the new state of the replica set.
-        Update::Add(endpoints) => {
-            let mut new_eps = endpoints.into_iter().collect::<IndexMap<_, _>>();
-            let mut rm_addrs = Vec::with_capacity(cache.len());
-            for (addr, endpoint) in cache.iter() {
-                match new_eps.get(addr) {
-                    // If the endpoint is in the active set and not in
-                    // the new set, it needs to be removed.
-                    None => {
-                        rm_addrs.push(*addr);
-                    }
-                    // If the endpoint is already in the active set,
-                    // remove it from the new set (to avoid rebuilding
-                    // services unnecessarily).
-                    Some(ep) => {
-                        // The endpoints must be identitical, though.
-                        if *ep == *endpoint {
-                            new_eps.remove(addr);
-                        }
-                    }
-                }
-            }
-            let add = if new_eps.is_empty() {
-                None
-            } else {
-                Some(Update::Add(new_eps.into_iter().collect()))
-            };
-            let rm = if rm_addrs.is_empty() {
-                None
-            } else {
-                Some(Update::Remove(rm_addrs))
-            };
-            // Advertise adds before removes so that we don't unnecessarily
-            // empty out a consumer.
-            match add {
-                Some(add) => Some((add, rm)),
-                None => rm.map(|rm| (rm, None)),
-            }
-        }
-        // It would be exceptionally odd to get a remove, specifically,
-        // immediately after a reconnect, but it seems appropriate to
-        // handle it as Empty.
-        Update::Remove(..) | Update::Empty => Some((Update::Empty, None)),
-        Update::DoesNotExist => Some((Update::DoesNotExist, None)),
-    }
-}
-
 impl std::fmt::Display for Eos {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "end of stream reached")
@@ -416,113 +308,3 @@ impl std::fmt::Display for Eos {
 }
 
 impl std::error::Error for Eos {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    pub fn addr0() -> SocketAddr {
-        ([198, 51, 100, 1], 8080).into()
-    }
-
-    pub fn addr1() -> SocketAddr {
-        ([198, 51, 100, 2], 8080).into()
-    }
-
-    #[test]
-    fn reconcile_after_initial_connect() {
-        let cache = IndexMap::default();
-        let add = Update::Add(vec![(addr0(), 0), (addr1(), 0)]);
-        assert_eq!(
-            reconcile_after_connect(&cache, add.clone()),
-            Some((add, None)),
-            "Adds should be passed through initially"
-        );
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Remove(vec![addr0(), addr1()])),
-            Some((Update::Empty, None)),
-            "Removes should be treated as empty"
-        );
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Empty),
-            Some((Update::Empty, None)),
-            "Empties should be passed through"
-        );
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::DoesNotExist),
-            Some((Update::DoesNotExist, None)),
-            "DNEs should be passed through"
-        );
-    }
-
-    #[test]
-    fn reconcile_after_reconnect_dedupes() {
-        let mut cache = IndexMap::new();
-        cache.insert(addr0(), 0);
-
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 0), (addr1(), 0)])),
-            Some((Update::Add(vec![(addr1(), 0)]), None)),
-        );
-    }
-
-    #[test]
-    fn reconcile_after_reconnect_updates() {
-        let mut cache = IndexMap::new();
-        cache.insert(addr0(), 0);
-
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 1), (addr1(), 0)])),
-            Some((Update::Add(vec![(addr0(), 1), (addr1(), 0)]), None)),
-        );
-    }
-
-    #[test]
-    fn reconcile_after_reconnect_removes() {
-        let mut cache = IndexMap::new();
-        cache.insert(addr0(), 0);
-        cache.insert(addr1(), 0);
-
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 0)])),
-            Some((Update::Remove(vec![addr1()]), None))
-        );
-    }
-
-    #[test]
-    fn reconcile_after_reconnect_adds_and_removes() {
-        let mut cache = IndexMap::new();
-        cache.insert(addr0(), 0);
-        cache.insert(addr1(), 0);
-
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Add(vec![(addr0(), 1)])),
-            Some((
-                Update::Add(vec![(addr0(), 1)]),
-                Some(Update::Remove(vec![addr1()]))
-            ))
-        );
-    }
-
-    #[test]
-    fn reconcile_after_reconnect_passthru() {
-        let mut cache = IndexMap::default();
-        cache.insert(addr0(), 0);
-
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Remove(vec![addr1()])),
-            Some((Update::Empty, None)),
-            "Removes should be treated as empty"
-        );
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::Empty),
-            Some((Update::Empty, None)),
-            "Empties should be passed through"
-        );
-        assert_eq!(
-            reconcile_after_connect(&cache, Update::DoesNotExist),
-            Some((Update::DoesNotExist, None)),
-            "DNEs should be passed through"
-        );
-    }
-}
