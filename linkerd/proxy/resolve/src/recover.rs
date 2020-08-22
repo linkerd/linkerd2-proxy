@@ -136,9 +136,7 @@ where
             .expect("polled after complete")
             .poll_connected(cx))?;
         let inner = this.inner.take().expect("polled after complete");
-        Poll::Ready(Ok(Resolution {
-            inner,
-        }))
+        Poll::Ready(Ok(Resolution { inner }))
     }
 }
 
