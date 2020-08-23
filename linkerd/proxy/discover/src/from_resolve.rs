@@ -1,8 +1,8 @@
-use futures::{ready, Stream, TryFuture, TryStream};
+use futures::{prelude::*, ready};
 use linkerd2_proxy_core::resolve::{Resolve, Update};
 use pin_project::pin_project;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashSet, VecDeque},
     future::Future,
     net::SocketAddr,
     pin::Pin,
@@ -30,7 +30,7 @@ pub struct DiscoverFuture<F, E> {
 pub struct Discover<R: TryStream, E> {
     #[pin]
     resolution: R,
-    active: HashMap<SocketAddr, E>,
+    active: HashSet<SocketAddr>,
     pending: VecDeque<Change<SocketAddr, E>>,
 }
 
@@ -91,7 +91,7 @@ impl<R: TryStream, E> Discover<R, E> {
     pub fn new(resolution: R) -> Self {
         Self {
             resolution,
-            active: HashMap::default(),
+            active: HashSet::default(),
             pending: VecDeque::new(),
         }
     }
@@ -114,38 +114,91 @@ where
             match ready!(this.resolution.try_poll_next(cx)) {
                 Some(update) => match update? {
                     Update::Reset(endpoints) => {
-                        let mut new_active = HashMap::with_capacity(endpoints.len());
+                        let active = endpoints.iter().map(|(a, _)| *a).collect::<HashSet<_>>();
+                        for addr in this.active.iter() {
+                            // If the old addr is not in the new set, remove it.
+                            if !active.contains(addr) {
+                                this.pending.push_back(Change::Remove(*addr));
+                            }
+                        }
                         for (addr, endpoint) in endpoints.into_iter() {
-                            if this.active.remove(&addr).as_ref() != Some(&endpoint) {
+                            if !this.active.contains(&addr) {
                                 this.pending
                                     .push_back(Change::Insert(addr, endpoint.clone()));
                             }
-                            new_active.insert(addr, endpoint);
                         }
-                        this.pending
-                            .extend(this.active.drain().map(|(a, _)| Change::Remove(a)));
-                        *this.active = new_active;
+                        *this.active = active;
                     }
                     Update::Add(endpoints) => {
                         for (addr, endpoint) in endpoints.into_iter() {
-                            this.active.insert(addr, endpoint.clone());
+                            this.active.insert(addr);
                             this.pending.push_back(Change::Insert(addr, endpoint));
                         }
                     }
                     Update::Remove(addrs) => {
                         for addr in addrs.into_iter() {
-                            if this.active.remove(&addr).is_some() {
+                            if this.active.remove(&addr) {
                                 this.pending.push_back(Change::Remove(addr));
                             }
                         }
                     }
                     Update::DoesNotExist => {
-                        this.pending
-                            .extend(this.active.drain().map(|(a, _)| Change::Remove(a)));
+                        this.pending.extend(this.active.drain().map(Change::Remove));
                     }
                 },
                 None => return Poll::Ready(None),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Discover;
+    use async_stream::stream;
+    use futures::prelude::*;
+    use linkerd2_error::Never;
+    use linkerd2_proxy_core::resolve::Update;
+    use std::net::SocketAddr;
+    use tower::discover::Change;
+
+    const PORT: u16 = 8080;
+    fn addr(n: u8) -> SocketAddr {
+        SocketAddr::from(([10, 1, 1, n], PORT))
+    }
+
+    #[tokio::test]
+    async fn reset() {
+        tokio::pin! {
+            let stream = stream! {
+                yield Ok::<_, Never>(Update::Add((1..=2).map(|n| (addr(n), n)).collect()));
+                yield Ok(Update::Reset((2..=4).map(|n| (addr(n), n)).collect()));
+            };
+        }
+        let mut disco = Discover::new(stream);
+
+        for i in 1..=2 {
+            match disco.next().await.unwrap().unwrap() {
+                Change::Remove(_) => panic!("Unexpectd Remove"),
+                Change::Insert(a, n) => {
+                    assert_eq!(n, i);
+                    assert_eq!(addr(i), a);
+                }
+            }
+        }
+        match disco.next().await.unwrap().unwrap() {
+            Change::Remove(a) => assert_eq!(a, addr(1)),
+            change => panic!("Unexpected change: {:?}", change),
+        }
+        for i in 3..=4 {
+            match disco.next().await.unwrap().unwrap() {
+                Change::Remove(_) => panic!("Unexpectd Remove"),
+                Change::Insert(a, n) => {
+                    assert_eq!(n, i);
+                    assert_eq!(addr(i), a);
+                }
+            }
+        }
+        assert!(disco.next().await.is_none());
     }
 }
