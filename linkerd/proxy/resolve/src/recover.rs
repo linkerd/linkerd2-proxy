@@ -162,15 +162,8 @@ where
                     ref mut resolution,
                     ref mut initial,
                 } => {
-                    // XXX Due to linkerd/linkerd2#3362, errors can't be discovered
-                    // eagerly, so we must potentially read the first update to be
-                    // sure it didn't fail.
                     if let Some(initial) = initial.take() {
-                        let update = match initial {
-                            Update::Add(eps) => Update::Reset(eps),
-                            up => up,
-                        };
-                        return Poll::Ready(Some(Ok(update)));
+                        return Poll::Ready(Some(Ok(initial)));
                     }
 
                     match ready!(resolution.try_poll_next_unpin(cx)) {
@@ -261,11 +254,24 @@ where
                         error: Some(e.into()),
                         backoff: backoff.take(),
                     },
-                    Some(Ok(initial)) => {
-                        tracing::trace!("connected");
+                    Some(Ok(Update::Remove(_))) => {
+                        debug_assert!(false, "First update after connection must not be a Remove");
+                        // If we see this in production, just ignore and keep polling until an
+                        // actionable update is received.
+                        tracing::debug!("Ignoring removal after connect");
+                        continue;
+                    }
+                    Some(Ok(update)) => {
+                        tracing::debug!("Connected");
+                        // If the first update is an Add; convert it to a Reset, indicating all
+                        // other endpoints should be removed.
+                        let update = match update {
+                            Update::Add(eps) => Update::Reset(eps),
+                            up => up,
+                        };
                         State::Connected {
                             resolution: resolution.take().expect("illegal state"),
-                            initial: Some(initial),
+                            initial: Some(update),
                         }
                     }
                     None => State::Recover {
