@@ -139,7 +139,7 @@ where
                             }
                         }
                     }
-                    Update::DoesNotExist | Update::Empty => {
+                    Update::DoesNotExist => {
                         this.pending
                             .extend(this.active.drain().map(|(a, _)| Change::Remove(a)));
                     }

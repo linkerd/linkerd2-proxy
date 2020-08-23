@@ -31,7 +31,6 @@ pub enum Update<T> {
     Reset(Vec<(SocketAddr, T)>),
     Add(Vec<(SocketAddr, T)>),
     Remove(Vec<SocketAddr>),
-    Empty,
     DoesNotExist,
 }
 

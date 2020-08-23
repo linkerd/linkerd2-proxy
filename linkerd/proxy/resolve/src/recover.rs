@@ -154,6 +154,11 @@ where
                     ref mut resolution,
                     ref mut is_initial,
                 } => match ready!(resolution.try_poll_next_unpin(cx)) {
+                    Some(Ok(Update::Remove(_))) if *is_initial => {
+                        debug_assert!(false, "Remove must not be initial update");
+                        tracing::debug!("Ignoring Remove after connection");
+                        // Continue polling until a useful update is received.
+                    }
                     Some(Ok(update)) => {
                         let update = if *is_initial {
                             *is_initial = false;
