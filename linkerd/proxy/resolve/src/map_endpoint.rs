@@ -118,26 +118,23 @@ where
         let update = match ready!(this.resolution.try_poll_next(cx)) {
             Some(result) => match result? {
                 resolve::Update::Add(eps) => {
-                    let mut update = Vec::new();
+                    let mut update = Vec::with_capacity(eps.len());
                     for (a, ep) in eps.into_iter() {
                         let ep = this.map.map_endpoint(&this.target, a, ep);
                         update.push((a, ep));
                     }
-
                     resolve::Update::Add(update)
                 }
                 resolve::Update::Reset(eps) => {
-                    let mut update = Vec::new();
+                    let mut update = Vec::with_capacity(eps.len());
                     for (a, ep) in eps.into_iter() {
                         let ep = this.map.map_endpoint(&this.target, a, ep);
                         update.push((a, ep));
                     }
-
                     resolve::Update::Reset(update)
                 }
                 resolve::Update::Remove(addrs) => resolve::Update::Remove(addrs),
                 resolve::Update::DoesNotExist => resolve::Update::DoesNotExist,
-                resolve::Update::Empty => resolve::Update::Empty,
             },
             None => return Poll::Ready(None),
         };
