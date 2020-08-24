@@ -139,7 +139,7 @@ where
                 Some(api::update::Update::NoEndpoints(api::NoEndpoints { exists })) => {
                     info!("No endpoints");
                     let update = if exists {
-                        Update::Empty
+                        Update::Reset(Vec::new())
                     } else {
                         Update::DoesNotExist
                     };
