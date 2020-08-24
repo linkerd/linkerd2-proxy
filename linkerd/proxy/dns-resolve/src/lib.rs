@@ -77,7 +77,7 @@ where
             let result = result?;
             if result.is_empty() {
                 current.clear();
-                yield Update::Empty;
+                yield Update::Reset(Vec::new());
             }
 
             let (adds, removes) = diff_targets(&current, &result);

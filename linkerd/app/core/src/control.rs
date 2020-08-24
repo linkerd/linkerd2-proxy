@@ -250,7 +250,7 @@ pub mod dns_resolve {
                             .collect(),
                     ),
                     Update::Remove(removes) => Update::Remove(removes),
-                    Update::Empty => Update::Empty,
+                    Update::Reset(rst) => Update::Reset(rst),
                     Update::DoesNotExist => Update::DoesNotExist,
                 }
             }))))
