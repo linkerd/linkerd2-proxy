@@ -256,17 +256,6 @@ pub mod dns_resolve {
                             .collect(),
                     ),
                     Update::Remove(removes) => Update::Remove(removes),
-<<<<<<< HEAD
-||||||| d2b4f089
-                    Update::Reset(rst) => Update::Reset(rst),
-=======
-                    Update::Reset(rst) => Update::Reset(
-                        rst.clone()
-                            .into_iter()
-                            .map(|(sa, _)| (sa, Target::new(sa, identity.clone())))
-                            .collect(),
-                    ),
->>>>>>> ad9ab78f02094f27d8d226988aac7b1e1e480c64
                     Update::DoesNotExist => Update::DoesNotExist,
                 }
             }))))
@@ -335,12 +324,10 @@ pub mod client {
         type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
         type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
 
-        #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
-        #[inline]
         fn call(&mut self, target: Target) -> Self::Future {
             self.inner.call(target)
         }
