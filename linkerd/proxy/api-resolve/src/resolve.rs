@@ -4,7 +4,7 @@ use crate::metadata::Metadata;
 use crate::pb;
 use api::destination_client::DestinationClient;
 use async_stream::try_stream;
-use futures::{future, stream::StreamExt, Stream};
+use futures::prelude::*;
 use http_body::Body as HttpBody;
 use std::error::Error;
 use std::pin::Pin;
@@ -73,42 +73,38 @@ where
 {
     type Response = UpdatesStream;
     type Error = grpc::Status;
-    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // The future returned by the Tonic generated `DestinationClient`'s `get` method will drive the service to readiness before calling it, so we can always return `Ready` here.
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
         let path = target.to_string();
         debug!(dst = %path, context = %self.context_token, "Resolving");
+
         let req = api::GetDestination {
             path,
             scheme: self.scheme.clone(),
             context_token: self.context_token.clone(),
         };
-
-        future::ok(Box::pin(resolution(self.service.clone(), req)))
+        let mut client = self.service.clone();
+        Box::pin(async move {
+            // Wait for the server to respond once before returning a stream. This let's us eagerly
+            // detect errors (like InvalidArgument).
+            let rsp = client.get(grpc::Request::new(req)).await?;
+            trace!(metadata = ?rsp.metadata());
+            let stream: UpdatesStream = Box::pin(resolution(rsp.into_inner()));
+            Ok(stream)
+        })
     }
 }
 
-fn resolution<S>(
-    mut client: DestinationClient<S>,
-    req: api::GetDestination,
-) -> impl Stream<Item = Result<resolve::Update<Metadata>, grpc::Status>>
-where
-    S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
-    S::ResponseBody: Send,
-    <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
-    S::Future: Send,
-{
+fn resolution(
+    mut stream: tonic::Streaming<api::Update>,
+) -> impl Stream<Item = Result<resolve::Update<Metadata>, grpc::Status>> {
     try_stream! {
-        let rsp = client.get(grpc::Request::new(req)).await?;
-        trace!(metadata = ?rsp.metadata());
-        let mut stream = rsp.into_inner();
         while let Some(update) = stream.next().await {
             match update?.update {
                 Some(api::update::Update::Add(api::WeightedAddrSet {
