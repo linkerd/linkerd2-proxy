@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     classify,
     config::ControlAddr,
     control, dns, drain,
-    proxy::{discover, dns_resolve::DnsResolve, http},
+    proxy::{discover, http},
     reconnect,
     svc::{self, NewService},
     transport::tls,
@@ -109,13 +109,12 @@ impl Config {
 
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            let control_dns_resolve = control::dns_resolve::Resolve::new(DnsResolve::new(dns));
             info_span!("dst").in_scope(|| {
                 let dst_connect = svc::connect(dst.control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
-                    .push(discover::resolve(control_dns_resolve))
+                    .push(discover::resolve(control::resolve::new(dns)))
                     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;

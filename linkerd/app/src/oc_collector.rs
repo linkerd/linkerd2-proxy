@@ -2,7 +2,7 @@ use crate::{dns, identity::LocalIdentity};
 use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     control,
-    proxy::{discover, dns_resolve::DnsResolve, http},
+    proxy::{discover, http},
     reconnect, svc,
     transport::tls,
     Error,
@@ -59,7 +59,6 @@ impl Config {
                 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
                 let addr = control.addr;
-                let control_dns_resolve = control::dns_resolve::Resolve::new(DnsResolve::new(dns));
                 let svc = svc::connect(control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity))
                     .push_timeout(control.connect.timeout)
@@ -68,7 +67,7 @@ impl Config {
                     // TODO: we should have metrics of some kind, but the standard
                     // HTTP metrics aren't useful for a client where we never read
                     // the response.
-                    .push(discover::resolve(control_dns_resolve))
+                    .push(discover::resolve(control::resolve::new(dns)))
                     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer({
                         let backoff = control.connect.backoff;
