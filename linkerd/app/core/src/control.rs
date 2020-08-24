@@ -192,10 +192,11 @@ pub mod dns_resolve {
         }
     }
 
-    impl<S> tower::Service<ControlAddr> for Resolve<S>
+    impl<S, T> tower::Service<ControlAddr> for Resolve<S>
     where
+        T: Clone,
         S: tower::Service<NameAddr>,
-        S::Response: Stream<Item = Result<Update<SocketAddr>, Error>> + Send + Sync + 'static,
+        S::Response: Stream<Item = Result<Update<T>, Error>> + Send + Sync + 'static,
         S::Error: Into<Error> + Send + Sync,
         S::Future: Send + Sync,
     {
@@ -228,10 +229,11 @@ pub mod dns_resolve {
 
     // === impl MakeFuture ===
 
-    impl<S> Future for MakeFuture<S>
+    impl<S, T> Future for MakeFuture<S>
     where
+        T: Clone,
         S: tower::Service<NameAddr>,
-        S::Response: Stream<Item = Result<Update<SocketAddr>, Error>> + Send + Sync + 'static,
+        S::Response: Stream<Item = Result<Update<T>, Error>> + Send + Sync + 'static,
         S::Error: Into<Error> + Send + Sync,
         S::Future: Send + Sync,
     {
