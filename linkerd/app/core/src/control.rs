@@ -250,7 +250,12 @@ pub mod dns_resolve {
                             .collect(),
                     ),
                     Update::Remove(removes) => Update::Remove(removes),
-                    Update::Reset(rst) => Update::Reset(rst),
+                    Update::Reset(rst) => Update::Reset(
+                        rst.clone()
+                            .into_iter()
+                            .map(|(sa, _)| (sa, Target::new(sa, identity.clone())))
+                            .collect(),
+                    ),
                     Update::DoesNotExist => Update::DoesNotExist,
                 }
             }))))
