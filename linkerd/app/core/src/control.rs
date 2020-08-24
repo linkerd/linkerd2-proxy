@@ -148,358 +148,112 @@ pub mod add_origin {
 pub mod dns_resolve {
     use super::{client::Target, ControlAddr};
     use async_stream::try_stream;
-    use futures::future;
+    use futures::future::{self, Either};
     use futures::prelude::*;
-    use linkerd2_addr::Addr;
-    use linkerd2_dns as dns;
+    use linkerd2_addr::{Addr, NameAddr};
     use linkerd2_error::Error;
     use linkerd2_proxy_core::resolve::Update;
+    use linkerd2_proxy_transport::tls::PeerIdentity;
+    use pin_project::pin_project;
     use std::net::SocketAddr;
     use std::pin::Pin;
     use std::task::{Context, Poll};
-    use tokio::time;
-    use tracing::debug;
+
+    type UpdatesStream = Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + Sync>>;
 
     #[derive(Clone)]
     pub struct Resolve<S> {
-        dns: S,
+        inner: S,
+    }
+
+    #[pin_project]
+    pub struct MakeFuture<S: tower::Service<NameAddr>> {
+        #[pin]
+        inner: S::Future,
+        identity: PeerIdentity,
     }
 
     // === impl Resolve ===
 
     impl<S> Resolve<S> {
-        pub fn new(dns: S) -> Self {
-            Self { dns }
+        pub fn new(inner: S) -> Self {
+            Self { inner }
+        }
+
+        // should yield the socket address once
+        // and keep on yielding Pending forever.
+        pub fn resolve_once_stream(&self, sa: SocketAddr, identity: PeerIdentity) -> UpdatesStream {
+            Box::pin(try_stream! {
+                let update = Update::Add(vec![(sa, Target::new(sa, identity))]);
+                tracing::debug!(?update, "resolved once");
+                yield update;
+                future::pending::<Update<Target>>().await;
+            })
         }
     }
-
-    type UpdatesStream =
-        Pin<Box<dyn Stream<Item = Result<Update<Target>, Error>> + Send + 'static>>;
 
     impl<S> tower::Service<ControlAddr> for Resolve<S>
     where
-        S: tower::Service<dns::Name, Response = dns::ResolveResponse, Error = dns::Error>,
-        S: Clone + Send + 'static,
-        S::Future: Send,
+        S: tower::Service<NameAddr>,
+        S::Response: Stream<Item = Result<Update<SocketAddr>, Error>> + Send + Sync + 'static,
+        S::Error: Into<Error> + Send + Sync,
+        S::Future: Send + Sync,
     {
         type Response = UpdatesStream;
-        type Error = Error;
-        type Future = future::Ready<Result<Self::Response, Self::Error>>;
+        type Error = S::Error;
+        type Future = Either<MakeFuture<S>, future::Ready<Result<Self::Response, S::Error>>>;
 
-        fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
 
         fn call(&mut self, target: ControlAddr) -> Self::Future {
-            futures::future::ok(Box::pin(resolution_stream(
-                self.dns.clone(),
-                target.clone(),
-            )))
-        }
-    }
-
-    // === impl ControlPlaneResolution ===
-
-    pub fn diff_targets(
-        old_targets: &Vec<Target>,
-        new_targets: &Vec<Target>,
-    ) -> (Vec<(SocketAddr, Target)>, Vec<SocketAddr>) {
-        let mut adds = Vec::default();
-        let mut removes = Vec::default();
-
-        for new_target in new_targets {
-            if !old_targets.contains(new_target) {
-                adds.push((new_target.addr, new_target.clone()))
-            }
-        }
-
-        for old_target in old_targets {
-            if !new_targets.contains(old_target) {
-                removes.push(old_target.addr)
-            }
-        }
-
-        (adds, removes)
-    }
-
-    pub fn resolution_stream<S>(
-        mut dns: S,
-        address: ControlAddr,
-    ) -> impl Stream<Item = Result<Update<Target>, Error>>
-    where
-        S: tower::Service<dns::Name, Response = dns::ResolveResponse, Error = dns::Error>,
-        S: Clone + Send + 'static,
-        S::Future: Send,
-    {
-        let port = address.addr.port().clone();
-        let server_name = address.identity.clone();
-        try_stream! {
-            match address.clone().addr {
+            match target.addr {
+                Addr::Name(na) if na.is_localhost() => {
+                    let local_sa = format!("127.0.0.1:{}", na.port()).parse().unwrap();
+                    Either::Right(future::ok(
+                        self.resolve_once_stream(local_sa, target.identity),
+                    ))
+                }
+                Addr::Name(na) => Either::Left(MakeFuture {
+                    inner: self.inner.call(na),
+                    identity: target.identity,
+                }),
                 Addr::Socket(sa) => {
-                    // this should yield the socket address once
-                    // and keep on yielding NotReady forever.
-                    let update = Update::Add(vec![(sa, Target::new(sa, address.identity))]);
-                    debug!(?update, "resolved once");
-                    yield update;
-                    future::pending::<Update<Target>>().await;
-                }
-                Addr::Name(name_addr) => {
-                    let mut current: Vec<Target> = Vec::new();
-                    loop {
-                            match dns.call(name_addr.name().clone()).await {
-                                Err(dns::Error::NoAddressesFound{ valid_until, name_exists})  => {
-                                    debug!("resolved empty");
-                                    current.clear();
-                                    if name_exists {
-                                        yield Update::Empty;
-                                    } else {
-                                        yield Update::DoesNotExist;
-                                    }
-                                    time::delay_until(valid_until).await;
-                                }
-                                Ok(result) => {
-                                    let new = result
-                                        .ips
-                                        .into_iter()
-                                        .map(|ip| {
-                                            Target::new(
-                                                SocketAddr::from((ip, port)),
-                                                server_name.clone(),
-                                            )
-                                        })
-                                        .collect();
-
-                                    let (adds, removes) = diff_targets(&current, &new);
-
-                                    debug!(?adds, ?removes, "resolved");
-                                    if !adds.is_empty() {
-                                        yield Update::Add(adds);
-                                    }
-
-                                    if !removes.is_empty() {
-                                        yield Update::Remove(removes);
-                                    }
-
-                                    current.clear();
-                                    current.extend(new);
-
-                                    time::delay_until(result.valid_until).await;
-                                }
-                                Err(err) => {
-                                    Err(err)?;
-                                }
-                            };
-                        }
+                    Either::Right(future::ok(self.resolve_once_stream(sa, target.identity)))
                 }
             }
         }
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use linkerd2_proxy_core::resolve;
-        use linkerd2_proxy_identity::Name;
-        use linkerd2_proxy_transport::tls::Conditional;
-        use linkerd2_proxy_transport::tls::PeerIdentity;
-        use std::collections::VecDeque;
-        use std::sync::Arc;
-        use std::sync::RwLock;
-        use tokio::time::{self, Duration, Instant};
-        use tokio_test::{assert_pending, assert_ready, assert_ready_eq, task};
+    // === impl MakeFuture ===
 
-        #[derive(Clone)]
-        struct MockDnsResolver {
-            responses: Arc<RwLock<VecDeque<Result<dns::ResolveResponse, dns::Error>>>>,
-        }
+    impl<S> Future for MakeFuture<S>
+    where
+        S: tower::Service<NameAddr>,
+        S::Response: Stream<Item = Result<Update<SocketAddr>, Error>> + Send + Sync + 'static,
+        S::Error: Into<Error> + Send + Sync,
+        S::Future: Send + Sync,
+    {
+        type Output = Result<UpdatesStream, S::Error>;
 
-        impl MockDnsResolver {
-            pub fn new(responses: Vec<Result<dns::ResolveResponse, dns::Error>>) -> Self {
-                MockDnsResolver {
-                    responses: Arc::new(RwLock::new(responses.into_iter().collect())),
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let this = self.project();
+            let identity = this.identity.clone();
+            let stream = futures::ready!(this.inner.poll(cx))?;
+            Poll::Ready(Ok(Box::pin(stream.map_ok(move |update| {
+                match update {
+                    Update::Add(adds) => Update::Add(
+                        adds.clone()
+                            .into_iter()
+                            .map(|(sa, _)| (sa, Target::new(sa, identity.clone())))
+                            .collect(),
+                    ),
+                    Update::Remove(removes) => Update::Remove(removes),
+                    Update::Empty => Update::Empty,
+                    Update::DoesNotExist => Update::DoesNotExist,
                 }
-            }
-        }
-
-        impl tower::Service<dns::Name> for MockDnsResolver {
-            type Response = dns::ResolveResponse;
-            type Error = dns::Error;
-            type Future = future::Ready<Result<Self::Response, Self::Error>>;
-
-            fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-                Poll::Ready(Ok(()))
-            }
-            fn call(&mut self, _req: dns::Name) -> Self::Future {
-                future::ready(self.responses.write().unwrap().pop_front().unwrap())
-            }
-        }
-
-        fn add(adresses: Vec<&str>) -> resolve::Update<Target> {
-            resolve::Update::Add(
-                adresses
-                    .into_iter()
-                    .map(|a| a.parse().unwrap())
-                    .map(|addr| (addr, Target::new(addr, identity())))
-                    .collect(),
-            )
-        }
-
-        fn remove(adresses: Vec<&str>) -> resolve::Update<Target> {
-            resolve::Update::Remove(adresses.into_iter().map(|a| a.parse().unwrap()).collect())
-        }
-
-        fn dns_rsp(addresses: Vec<&str>, ttl: Duration) -> dns::ResolveResponse {
-            dns::ResolveResponse {
-                ips: addresses.into_iter().map(|a| a.parse().unwrap()).collect(),
-                valid_until: Instant::now() + ttl,
-            }
-        }
-
-        fn identity() -> PeerIdentity {
-            Conditional::Some(Name::from_hostname("test.identity".as_bytes()).unwrap())
-        }
-
-        fn address(addr: &str) -> ControlAddr {
-            ControlAddr {
-                addr: Addr::from_str(addr).unwrap(),
-                identity: identity(),
-            }
-        }
-
-        #[tokio::test]
-        async fn yields_add() {
-            let dns_resolver = MockDnsResolver::new(vec![Ok(dns_rsp(
-                vec!["127.0.0.1"],
-                Duration::from_millis(100),
-            ))]);
-
-            let mut stream = task::spawn(
-                resolution_stream(dns_resolver, address("test.com:8888"))
-                    .map_err(|err| err.to_string()),
-            );
-
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.1:8888"]))));
-            assert_pending!(stream.poll_next());
-        }
-
-        #[tokio::test]
-        async fn yields_remove_on_different_rsp() {
-            time::pause();
-            let dns_resolver = MockDnsResolver::new(vec![
-                Ok(dns_rsp(vec!["127.0.0.1"], Duration::from_millis(100))),
-                Ok(dns_rsp(vec!["127.0.0.2"], Duration::from_millis(200))),
-            ]);
-
-            let mut stream = task::spawn(
-                resolution_stream(dns_resolver, address("test.com:8888"))
-                    .map_err(|err| err.to_string()),
-            );
-
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.1:8888"]))));
-            time::advance(Duration::from_millis(101)).await;
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.2:8888"]))));
-            assert_ready_eq!(stream.poll_next(), Some(Ok(remove(vec!["127.0.0.1:8888"]))));
-            // should return pending because it is awaiting on the dns TTL
-            assert_pending!(stream.poll_next());
-        }
-
-        #[tokio::test]
-        async fn yields_does_not_exist() {
-            time::pause();
-            let dns_resolver = MockDnsResolver::new(vec![
-                Ok(dns_rsp(
-                    vec!["127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"],
-                    Duration::from_millis(100),
-                )),
-                Err(dns::Error::NoAddressesFound {
-                    valid_until: Instant::now() + Duration::from_millis(200),
-                    name_exists: false,
-                }),
-                Ok(dns_rsp(vec!["127.0.0.1"], Duration::from_millis(300))),
-            ]);
-
-            let mut stream = task::spawn(
-                resolution_stream(dns_resolver, address("test.com:8888"))
-                    .map_err(|err| err.to_string()),
-            );
-            assert_ready_eq!(
-                stream.poll_next(),
-                Some(Ok(add(vec![
-                    "127.0.0.1:8888",
-                    "127.0.0.2:8888",
-                    "127.0.0.3:8888",
-                    "127.0.0.4:8888"
-                ])))
-            );
-            time::advance(Duration::from_millis(101)).await;
-            assert_ready_eq!(stream.poll_next(), Some(Ok(Update::DoesNotExist)));
-            time::advance(Duration::from_millis(101)).await;
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.1:8888"]))));
-        }
-
-        #[tokio::test]
-        async fn yields_empty() {
-            time::pause();
-            let dns_resolver = MockDnsResolver::new(vec![
-                Ok(dns_rsp(
-                    vec!["127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4"],
-                    Duration::from_millis(100),
-                )),
-                Err(dns::Error::NoAddressesFound {
-                    valid_until: Instant::now() + Duration::from_millis(200),
-                    name_exists: true,
-                }),
-                Ok(dns_rsp(vec!["127.0.0.1"], Duration::from_millis(300))),
-            ]);
-
-            let mut stream = task::spawn(
-                resolution_stream(dns_resolver, address("test.com:8888"))
-                    .map_err(|err| err.to_string()),
-            );
-            assert_ready_eq!(
-                stream.poll_next(),
-                Some(Ok(add(vec![
-                    "127.0.0.1:8888",
-                    "127.0.0.2:8888",
-                    "127.0.0.3:8888",
-                    "127.0.0.4:8888"
-                ])))
-            );
-            time::advance(Duration::from_millis(101)).await;
-            assert_ready_eq!(stream.poll_next(), Some(Ok(Update::Empty)));
-            time::advance(Duration::from_millis(101)).await;
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.1:8888"]))));
-        }
-
-        #[tokio::test]
-        #[ignore]
-        async fn continues_yielding_after_err() {
-            time::pause();
-            let dns_resolver = MockDnsResolver::new(vec![
-                Err(dns::Error::TaskLost),
-                Ok(dns_rsp(vec!["127.0.0.1"], Duration::from_millis(100))),
-            ]);
-
-            let mut stream = task::spawn(
-                resolution_stream(dns_resolver, address("test.com:8888"))
-                    .map_err(|err| err.to_string()),
-            );
-            let result = assert_ready!(stream.poll_next());
-            assert!(result.unwrap().is_err());
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.1:8888"]))));
-        }
-
-        #[tokio::test]
-        async fn yields_once_for_ip_addr() {
-            time::pause();
-            let dns_resolver = MockDnsResolver::new(vec![]);
-            let mut stream = task::spawn(
-                resolution_stream(dns_resolver, address("127.0.0.5:8888"))
-                    .map_err(|err| err.to_string()),
-            );
-            assert_ready_eq!(stream.poll_next(), Some(Ok(add(vec!["127.0.0.5:8888"]))));
-            time::advance(Duration::from_millis(1000)).await;
-            assert_pending!(stream.poll_next());
+            }))))
         }
     }
 }

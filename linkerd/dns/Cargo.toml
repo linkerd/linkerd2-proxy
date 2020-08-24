@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+async-stream = "0.2.1"
 futures = "0.3"
 linkerd2-dns-name = { path = "./name" }
 linkerd2-stack = { path = "../stack" }

@@ -1,20 +1,24 @@
 #![deny(warnings, rust_2018_idioms)]
-
+#![recursion_limit = "512"]
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
+use async_stream::try_stream;
+use futures::stream::Stream;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::{fmt, net};
 use tokio::sync::{mpsc, oneshot};
+use tokio::time;
 use tokio::time::Instant;
 use tracing::{info_span, trace, Span};
 use tracing_futures::Instrument;
 pub use trust_dns_resolver::config::ResolverOpts;
 pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
+use trust_dns_resolver::lookup::SrvLookup;
 pub use trust_dns_resolver::lookup_ip::LookupIp;
+use trust_dns_resolver::proto::rr::rdata;
 use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
 
 #[derive(Clone)]
@@ -28,24 +32,20 @@ pub trait ConfigureResolver {
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    NoAddressesFound {
-        valid_until: Instant,
-        name_exists: bool,
-    },
     ResolutionFailed(ResolveError),
     TaskLost,
+    InvalidSRVRecord(rdata::SRV),
 }
 
-#[derive(Clone, Debug)]
-pub struct ResolveResponse {
-    pub ips: Vec<net::IpAddr>,
-    pub valid_until: Instant,
+enum LookupType {
+    Ip(oneshot::Sender<Result<LookupIp, ResolveError>>),
+    Service(oneshot::Sender<Result<SrvLookup, ResolveError>>),
 }
 
 struct ResolveRequest {
     name: Name,
-    result_tx: oneshot::Sender<Result<LookupIp, ResolveError>>,
     span: tracing::Span,
+    lookup_type: LookupType,
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -86,20 +86,36 @@ impl Resolver {
             };
             while let Some(ResolveRequest {
                 name,
-                result_tx,
                 span,
+                lookup_type,
             }) = rx.recv().await
             {
-                let resolver = resolver.clone();
-                tokio::spawn(
-                    async move {
-                        let res = resolver.lookup_ip(name.as_ref()).await;
-                        if result_tx.send(res).is_err() {
-                            tracing::debug!("resolution canceled");
-                        }
+                match lookup_type {
+                    LookupType::Ip(result_tx) => {
+                        let resolver = resolver.clone();
+                        tokio::spawn(
+                            async move {
+                                let res = resolver.lookup_ip(name.as_ref()).await;
+                                if result_tx.send(res).is_err() {
+                                    tracing::debug!("resolution canceled");
+                                }
+                            }
+                            .instrument(span),
+                        );
                     }
-                    .instrument(span),
-                );
+                    LookupType::Service(result_tx) => {
+                        let resolver = resolver.clone();
+                        tokio::spawn(
+                            async move {
+                                let res = resolver.srv_lookup(name.as_ref()).await;
+                                if result_tx.send(res).is_err() {
+                                    tracing::debug!("resolution canceled");
+                                }
+                            }
+                            .instrument(span),
+                        );
+                    }
+                }
             }
             tracing::debug!("all resolver handles dropped; terminating.");
         });
@@ -110,54 +126,84 @@ impl Resolver {
         let (result_tx, rx) = oneshot::channel();
         self.tx.send(ResolveRequest {
             name,
-            result_tx,
             span,
+            lookup_type: LookupType::Ip(result_tx),
         })?;
         let ips = rx.await??;
         Ok(ips)
     }
-    async fn resolve_ips(&self, name: &Name) -> Result<ResolveResponse, Error> {
-        let name = name.clone();
+
+    async fn lookup_service(&self, name: Name, span: Span) -> Result<SrvLookup, Error> {
+        let (result_tx, rx) = oneshot::channel();
+        self.tx.send(ResolveRequest {
+            name,
+            span,
+            lookup_type: LookupType::Service(result_tx),
+        })?;
+        let srvs = rx.await??;
+        Ok(srvs)
+    }
+
+    // XXX We need to convert the SRV records to an IP addr manually,
+    // because of: https://github.com/bluejekyll/trust-dns/issues/872
+    // Here we rely in on the fact that the first label of the SRV
+    // record's target will be the ip of the pod delimited by dashes
+    // instead of dots. We can alternatively do another lookup
+    // on the pod's DNS but it seems unnecessary since the pod's
+    // ip is in the target of the SRV record.
+    fn srv_to_socket_addr(srv: &rdata::SRV) -> Result<net::SocketAddr, Error> {
+        let first_label = srv
+            .target()
+            .iter()
+            .next()
+            .ok_or_else(|| Error::InvalidSRVRecord(srv.clone()))?;
+
+        std::str::from_utf8(first_label)
+            .expect("should be utf8")
+            .replace("-", ".")
+            .parse::<std::net::IpAddr>()
+            .map(|ip| net::SocketAddr::new(ip, srv.port()))
+            .map_err(|_| Error::InvalidSRVRecord(srv.clone()))
+    }
+
+    pub fn resolve_service_ips(
+        &self,
+        svc: &Name,
+    ) -> impl Stream<Item = Result<Vec<net::SocketAddr>, Error>> {
         let resolver = self.clone();
-        let span = info_span!("resolve_ips", %name);
-        let result = resolver.lookup_ip(name, span).await?;
-        let ips: Vec<std::net::IpAddr> = result.iter().collect();
-        let valid_until = Instant::from_std(result.valid_until());
-        if ips.is_empty() {
-            return Err(Error::NoAddressesFound {
-                valid_until,
-                name_exists: true,
-            });
+        let svc_name = svc.clone();
+        try_stream! {
+            loop {
+                let span = info_span!("lookup_service", %svc_name);
+                match resolver
+                    .lookup_service(svc_name.clone(), span.clone())
+                    .await
+                {
+                    Ok(srv_records) => {
+                        let addresses =
+                            srv_records.iter().map(Self::srv_to_socket_addr).collect()?;
+                        yield addresses;
+                        let valid_until = Instant::from_std(srv_records.as_lookup().valid_until());
+                        time::delay_until(valid_until).await;
+                    }
+                    Err(Error::ResolutionFailed(err)) => match err.kind() {
+                        ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                            yield vec![];
+                            if let Some(ttl) = valid_until {
+                                time::delay_until(Instant::from_std(ttl.clone())).await;
+                            }
+                        }
+                        _ => Err(err)?,
+                    },
+                    Err(err) => Err(err)?,
+                }
+            }
         }
-        Ok(ResolveResponse {
-            ips: ips,
-            valid_until,
-        })
     }
 
     /// Creates a refining service.
     pub fn into_make_refine(self) -> MakeRefine {
         MakeRefine(self)
-    }
-}
-
-impl tower::Service<Name> for Resolver {
-    type Response = ResolveResponse;
-    type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
-
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: Name) -> Self::Future {
-        let name = req.clone();
-        let resolver = self.clone();
-        Box::pin(async move {
-            let ips = resolver.resolve_ips(&name).await;
-            ips
-        })
     }
 }
 
@@ -185,24 +231,15 @@ impl From<oneshot::error::RecvError> for Error {
 
 impl From<ResolveError> for Error {
     fn from(e: ResolveError) -> Self {
-        match e.kind() {
-            ResolveErrorKind::NoRecordsFound {
-                valid_until: Some(valid_until),
-                ..
-            } => Self::NoAddressesFound {
-                valid_until: Instant::from_std(valid_until.clone()),
-                name_exists: false,
-            },
-            _ => Self::ResolutionFailed(e),
-        }
+        Self::ResolutionFailed(e)
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoAddressesFound { .. } => f.pad("no addresses found"),
             Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
+            Self::InvalidSRVRecord(srv) => write!(f, "Invalid SRV record {:?}", srv),
             Self::TaskLost => f.pad("background task terminated unexpectedly"),
         }
     }
