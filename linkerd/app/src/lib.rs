@@ -110,7 +110,12 @@ impl Config {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
             info_span!("dst").in_scope(|| {
-                let dst_connect = svc::connect(dst.control.connect.keepalive)
+                // XXX This is unfortunate. But we don't daemonize the service into a
+                // task in the build, so we'd have to name it. And that's not
+                // happening today. Really, we should daemonize the whole client
+                // into a task so consumers can be ignorant. This would also
+                // probably enable the use of a lock.
+                let svc = svc::connect(dst.control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
@@ -126,7 +131,7 @@ impl Config {
                     .push_on_response(svc::layers().push_spawn_buffer(dst.control.buffer_capacity))
                     .new_service(dst.control.addr.clone());
 
-                dst.build(dst_connect)
+                dst.build(svc)
             })
         }?;
 
