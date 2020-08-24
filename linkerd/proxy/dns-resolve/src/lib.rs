@@ -151,6 +151,6 @@ mod tests {
             Some(Ok(Update::Add(vec![(sa_1, sa_1), (sa_2, sa_2)])))
         );
         tx.send(Ok(vec![])).await.unwrap();
-        assert_ready_eq!(stream.poll_next(), Some(Ok(Update::Empty)));
+        assert_ready_eq!(stream.poll_next(), Some(Ok(Update::Reset(vec![]))));
     }
 }

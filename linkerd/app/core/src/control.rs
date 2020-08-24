@@ -249,8 +249,13 @@ pub mod dns_resolve {
                             .map(|(sa, _)| (sa, Target::new(sa, identity.clone())))
                             .collect(),
                     ),
+                    Update::Reset(eps) => Update::Reset(
+                        eps.clone()
+                            .into_iter()
+                            .map(|(sa, _)| (sa, Target::new(sa, identity.clone())))
+                            .collect(),
+                    ),
                     Update::Remove(removes) => Update::Remove(removes),
-                    Update::Reset(rst) => Update::Reset(rst),
                     Update::DoesNotExist => Update::DoesNotExist,
                 }
             }))))
