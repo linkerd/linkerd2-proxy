@@ -111,7 +111,7 @@ pub mod add_origin {
         }
     }
 
-    // === impl Resolve ===
+    // === impl MakeFuture ===
 
     impl<F, B> Future for MakeFuture<F, B>
     where
