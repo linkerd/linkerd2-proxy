@@ -201,10 +201,8 @@ impl Server {
         let srv_conn_count = Arc::clone(&conn_count);
         let version = self.version;
 
-        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-        let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
-        listener.bind(addr).expect("Tcp::bind");
-        let addr = listener.local_addr().expect("Tcp::local_addr");
+        // Bind an ephemeral port but do not start listening yet.
+        let (sock, addr) = crate::bind_ephemeral();
 
         let (drain_signal, drain) = drain::channel();
         let tls_config = self.tls.clone();
@@ -223,8 +221,9 @@ impl Server {
                     let _ = listening_tx.take().unwrap().send(());
                     delay.await;
                 }
-                let listener = listener.listen(1024).expect("Tcp::listen");
-                let mut listener = TcpListener::from_std(listener).expect("from_std");
+
+                // After the delay, start listening on the socket.
+                let mut listener = crate::listen(sock);
 
                 if let Some(listening_tx) = listening_tx {
                     let _ = listening_tx.send(());

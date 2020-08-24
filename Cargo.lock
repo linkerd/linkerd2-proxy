@@ -717,9 +717,9 @@ checksum = "bc5729f27f159ddd61f4df6228e827e86643d4d3e7c32183cb30a1c08f604a14"
 
 [[package]]
 name = "libc"
-version = "0.2.65"
+version = "0.2.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a31a0627fdf1f6a39ec0dd577e101440b7db22672c0901fe00a9a6fbb5c24e8"
+checksum = "755456fae044e6fa1ebbbd1b3e902ae19e73097ed4ed87bb79934a867c007bc3"
 
 [[package]]
 name = "libmimalloc-sys"
@@ -775,7 +775,6 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-opencensus",
  "linkerd2-proxy-api",
- "net2",
  "quickcheck",
  "regex 1.3.9",
  "ring",
@@ -910,11 +909,11 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-metrics",
  "linkerd2-proxy-api",
- "net2",
  "quickcheck",
  "regex 0.1.80",
  "ring",
  "rustls",
+ "socket2",
  "tokio",
  "tokio-rustls",
  "tonic",
@@ -2138,9 +2137,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.1.37"
+version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d92eecebad22b767915e4d529f89f28ee96dbbf5a4810d2b844373f136417fd"
+checksum = "41cc0f7e4d5d4544e8861606a285bb08d3e70712ccc7d2b84d7c0ccfaf4b05ce"
 
 [[package]]
 name = "regex"
@@ -2339,12 +2338,13 @@ checksum = "5c2fb2ec9bcd216a5b0d0ccf31ab17b5ed1d627960edff65bbe95d3ce221cefc"
 
 [[package]]
 name = "socket2"
-version = "0.3.5"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff606e0486e88f5fc6cfeb3966e434fb409abbc7a3ab495238f70a1ca97f789d"
+checksum = "03088793f677dce356f3ccc2edb1b314ad191ab702a5de3faf49304f7e104918"
 dependencies = [
  "cfg-if",
  "libc",
+ "redox_syscall",
  "winapi 0.3.8",
 ]
 
