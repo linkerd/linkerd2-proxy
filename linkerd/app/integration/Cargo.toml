@@ -29,7 +29,7 @@ linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13", features = ["arbitrary"] }
 regex = "0.1"
-net2 = "0.2"
+socket2 = "0.3.12"
 quickcheck = { version = "0.9", default-features = false }
 ring = "0.16"
 rustls = "0.17"

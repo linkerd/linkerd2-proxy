@@ -14,6 +14,7 @@ pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
 pub use linkerd2_app_core::drain;
+use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;
 pub use std::future::Future;
@@ -285,4 +286,36 @@ pub async fn cancelable<E: Send + 'static>(
             Ok(())
         }
     }
+}
+
+/// Binds a socket to an ephemeral port without starting listening on it.
+///
+/// Some tests require us to introduce a delay between binding the server
+/// socket and listening on it. However, `tokio::net`'s
+/// `TcpListener::bind` function both binds the socket _and_ starts
+/// listening on it, so we can't just use that. Instead, we must manually
+/// construct the socket using `socket2`'s lower-level interface to libc
+///  socket APIs, and _then_ convert it into a Tokio `TcpListener`.
+pub(crate) fn bind_ephemeral() -> (Socket, SocketAddr) {
+    use socket2::{Domain, Protocol, Type};
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    let sock =
+        Socket::new(Domain::ipv4(), Type::stream(), Some(Protocol::tcp())).expect("Socket::new");
+    sock.bind(&addr.into()).expect("Socket::bind");
+    let addr = sock
+        .local_addr()
+        .expect("Socket::local_addr")
+        .as_std()
+        .expect("must be AF_INET");
+    (sock, addr)
+}
+
+/// Start listening on a socket previously bound using `socket2`, returning a
+/// Tokio `TcpListener`.
+pub(crate) fn listen(sock: Socket) -> TcpListener {
+    sock.listen(1024)
+        .expect("socket should be able to start listening");
+    TcpListener::from_std(sock.into_tcp_listener())
+        .expect("socket should be able to set nonblocking")
 }
