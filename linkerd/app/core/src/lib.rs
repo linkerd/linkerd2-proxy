@@ -6,9 +6,8 @@
 //! - Admin interfaces
 //! - Tap
 //! - Metric labeling
-#![type_length_limit = "1586225"]
+
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "512"]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
 pub use linkerd2_admit as admit;

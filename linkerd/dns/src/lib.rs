@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "512"]
+
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
