@@ -11,16 +11,15 @@ pub struct Config {
 
 pub struct Dns {
     pub resolver: Resolver,
-    pub task: Task,
 }
 
 // === impl Config ===
 
 impl Config {
     pub fn build(self) -> Dns {
-        let (resolver, task) =
+        let resolver =
             Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
-        Dns { resolver, task }
+        Dns { resolver }
     }
 }
 
