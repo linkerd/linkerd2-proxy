@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::{future, prelude::*, stream};
-use linkerd2_addr::Addr;
+use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_dns as dns;
 use linkerd2_error::Error;
 use linkerd2_proxy_core::resolve::Update;
@@ -37,6 +37,8 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
     }
 
     fn call(&mut self, target: T) -> Self::Future {
+        // If the target address is `localhost.`, skip DNS resolution and use
+        // 127.0.0.1.
         let addr = match target.into() {
             Addr::Name(na) if na.is_localhost() => {
                 SocketAddr::from(([127, 0, 0, 1], na.port())).into()
@@ -45,86 +47,46 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
         };
 
         match addr {
+            Addr::Name(na) => Box::pin(resolution(self.dns.clone(), na)),
             Addr::Socket(sa) => {
                 let eps = vec![(sa, ())];
                 let updates: UpdateStream = Box::pin(stream::iter(Some(Ok(Update::Reset(eps)))));
                 Box::pin(future::ok(updates))
             }
-            Addr::Name(na) => {
-                let dns = self.dns.clone();
-                Box::pin(async move {
-                    let (mut tx, rx) = mpsc::channel::<Result<Update<()>, Error>>(1);
-
-                    // First, try to resolve the name via SRV records.
-                    match dns.resolve_srv(na.name().clone()).await {
-                        Ok((addrs, expiry)) => {
-                            tokio::spawn(async move {
-                                let eps = addrs.into_iter().map(|a| (a, ())).collect();
-                                if tx.send(Ok(Update::Reset(eps))).await.is_err() {
-                                    return;
-                                }
-                                expiry.await;
-                                loop {
-                                    match dns.resolve_srv(na.name().clone()).await {
-                                        Ok((addrs, expiry)) => {
-                                            let eps = addrs.into_iter().map(|a| (a, ())).collect();
-                                            if tx.send(Ok(Update::Reset(eps))).await.is_err() {
-                                                return;
-                                            }
-                                            expiry.await;
-                                        }
-                                        Err(e) => {
-                                            let _ = tx.send(Err(e)).await;
-                                            return;
-                                        }
-                                    }
-                                }
-                            });
-                        }
-
-                        // If the initial SRV resolution failed because we
-                        // couldn't parse out IPs from the response, try falling
-                        // back to normal-old A records.
-                        Err(e) if e.is::<dns::InvalidSrv>() => {
-                            let port = na.port();
-                            let (ips, expiry) = dns.resolve_a(na.name().clone()).await?;
-
-                            tokio::spawn(async move {
-                                let eps = ips
-                                    .into_iter()
-                                    .map(|i| (SocketAddr::new(i, port), ()))
-                                    .collect();
-                                if tx.send(Ok(Update::Reset(eps))).await.is_err() {
-                                    return;
-                                }
-                                expiry.await;
-                                loop {
-                                    match dns.resolve_a(na.name().clone()).await {
-                                        Ok((ips, expiry)) => {
-                                            let eps = ips
-                                                .into_iter()
-                                                .map(|i| (SocketAddr::new(i, port), ()))
-                                                .collect();
-                                            if tx.send(Ok(Update::Reset(eps))).await.is_err() {
-                                                return;
-                                            }
-                                            expiry.await;
-                                        }
-                                        Err(e) => {
-                                            let _ = tx.send(Err(e.into())).await;
-                                            return;
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                        Err(e) => return Err(e),
-                    }
-
-                    let updates: UpdateStream = Box::pin(rx);
-                    Ok(updates)
-                })
-            }
         }
     }
+}
+
+async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
+    let (mut tx, rx) = mpsc::channel::<Result<Update<()>, Error>>(1);
+
+    // Don't return a stream before the initial resolution completes. Then,
+    // spawn a task to drive the continued resolution.
+    let (addrs, expiry) = dns.resolve_addr(na.name(), na.port()).await?;
+    tokio::spawn(async move {
+        let eps = addrs.into_iter().map(|a| (a, ())).collect();
+        if tx.send(Ok(Update::Reset(eps))).await.is_err() {
+            debug!("Closed");
+            return;
+        }
+        expiry.await;
+
+        loop {
+            match dns.resolve_addr(na.name(), na.port()).await {
+                Ok((addrs, expiry)) => {
+                    let eps = addrs.into_iter().map(|a| (a, ())).collect();
+                    if tx.send(Ok(Update::Reset(eps))).await.is_err() {
+                        return;
+                    }
+                    expiry.await;
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    return;
+                }
+            }
+        }
+    });
+
+    Ok(Box::pin(rx))
 }

@@ -29,7 +29,7 @@ pub trait ConfigureResolver {
 pub struct ResolutionFailed(ResolveError);
 
 #[derive(Debug, Clone)]
-pub struct InvalidSrv(rdata::SRV);
+struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
     const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
@@ -63,9 +63,30 @@ impl Resolver {
         MakeRefine(self)
     }
 
-    pub async fn resolve_a(
+    /// Resolves a name to a set of addresses, preferring SRV records to normal A
+    /// record lookups.
+    pub async fn resolve_addr(
         &self,
-        name: Name,
+        name: &Name,
+        default_port: u16,
+    ) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+        match self.resolve_srv(name).await {
+            Ok(res) => Ok(res),
+            Err(e) if e.is::<InvalidSrv>() => {
+                let (ips, delay) = self.resolve_a(name).await?;
+                let addrs = ips
+                    .into_iter()
+                    .map(|ip| net::SocketAddr::new(ip, default_port))
+                    .collect();
+                Ok((addrs, delay))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn resolve_a(
+        &self,
+        name: &Name,
     ) -> Result<(Vec<net::IpAddr>, time::Delay), ResolveError> {
         debug!(%name, "resolve_a");
         match self.dns.lookup_ip(name.as_ref()).await {
@@ -85,10 +106,7 @@ impl Resolver {
         }
     }
 
-    pub async fn resolve_srv(
-        &self,
-        name: Name,
-    ) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
         debug!(%name, "resolve_srv");
         match self.dns.srv_lookup(name.as_ref()).await {
             Ok(srv) => {
