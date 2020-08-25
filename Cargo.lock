@@ -1274,6 +1274,7 @@ dependencies = [
  "tokio-test",
  "tower",
  "tracing",
+ "tracing-futures",
 ]
 
 [[package]]

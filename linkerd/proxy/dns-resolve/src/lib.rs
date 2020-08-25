@@ -12,6 +12,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tracing::debug;
+use tracing_futures::Instrument;
 
 /// A Resolver that attempts to lookup
 #[derive(Clone)]
@@ -47,7 +48,7 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
         };
 
         match addr {
-            Addr::Name(na) => Box::pin(resolution(self.dns.clone(), na)),
+            Addr::Name(na) => Box::pin(resolution(self.dns.clone(), na).in_current_span()),
             Addr::Socket(sa) => {
                 let eps = vec![(sa, ())];
                 let updates: UpdateStream = Box::pin(stream::iter(Some(Ok(Update::Reset(eps)))));
@@ -63,30 +64,35 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.
     let (addrs, expiry) = dns.resolve_addrs(na.name(), na.port()).await?;
-    tokio::spawn(async move {
-        let eps = addrs.into_iter().map(|a| (a, ())).collect();
-        if tx.send(Ok(Update::Reset(eps))).await.is_err() {
-            debug!("Closed");
-            return;
-        }
-        expiry.await;
+    tokio::spawn(
+        async move {
+            let eps = addrs.into_iter().map(|a| (a, ())).collect();
+            if tx.send(Ok(Update::Reset(eps))).await.is_err() {
+                debug!("Closed");
+                return;
+            }
+            expiry.await;
 
-        loop {
-            match dns.resolve_addrs(na.name(), na.port()).await {
-                Ok((addrs, expiry)) => {
-                    let eps = addrs.into_iter().map(|a| (a, ())).collect();
-                    if tx.send(Ok(Update::Reset(eps))).await.is_err() {
+            loop {
+                match dns.resolve_addrs(na.name(), na.port()).await {
+                    Ok((addrs, expiry)) => {
+                        debug!(?addrs);
+                        let eps = addrs.into_iter().map(|a| (a, ())).collect();
+                        if tx.send(Ok(Update::Reset(eps))).await.is_err() {
+                            return;
+                        }
+                        expiry.await;
+                    }
+                    Err(e) => {
+                        debug!(error = %e);
+                        let _ = tx.send(Err(e)).await;
                         return;
                     }
-                    expiry.await;
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e)).await;
-                    return;
                 }
             }
         }
-    });
+        .in_current_span(),
+    );
 
     Ok(Box::pin(rx))
 }

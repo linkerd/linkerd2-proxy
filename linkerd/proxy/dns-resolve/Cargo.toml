@@ -16,6 +16,7 @@ linkerd2-dns = { path = "../../dns" }
 linkerd2-proxy-core = { path = "../core" }
 tokio = { version = "0.2", features = ["stream", "sync"] }
 tracing = "0.1.9"
+tracing-futures = "0.2"
 
 [dependencies.tower]
 version = "0.3"
