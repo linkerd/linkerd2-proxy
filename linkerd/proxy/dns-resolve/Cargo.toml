@@ -9,7 +9,6 @@ Service Dns Resolutions for the proxy
 """
 
 [dependencies]
-async-stream = "0.2.1"
 futures = "0.3"
 linkerd2-error = { path  = "../../error" }
 linkerd2-addr = { path = "../../addr" }

@@ -3,27 +3,27 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
-use async_stream::try_stream;
-use futures::stream::Stream;
+use futures::prelude::*;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
-use std::future::Future;
-use std::pin::Pin;
 use std::{fmt, net};
-use tokio::sync::{mpsc, oneshot};
-use tokio::time;
-use tokio::time::Instant;
-use tracing::{info_span, trace, Span};
+use tokio::{
+    sync::mpsc,
+    time::{self, Instant},
+};
+use tracing::{info_span, trace};
 use tracing_futures::Instrument;
-pub use trust_dns_resolver::config::ResolverOpts;
-pub use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
-use trust_dns_resolver::lookup::SrvLookup;
-pub use trust_dns_resolver::lookup_ip::LookupIp;
-use trust_dns_resolver::proto::rr::rdata;
-use trust_dns_resolver::{config::ResolverConfig, system_conf, AsyncResolver};
+use trust_dns_resolver::{
+    config::ResolverConfig, lookup_ip::LookupIp, proto::rr::rdata, system_conf, AsyncResolver,
+    TokioAsyncResolver,
+};
+pub use trust_dns_resolver::{
+    config::ResolverOpts,
+    error::{ResolveError, ResolveErrorKind},
+};
 
 #[derive(Clone)]
 pub struct Resolver {
-    tx: mpsc::UnboundedSender<ResolveRequest>,
+    dns: TokioAsyncResolver,
 }
 
 pub trait ConfigureResolver {
@@ -33,22 +33,8 @@ pub trait ConfigureResolver {
 #[derive(Debug, Clone)]
 pub enum Error {
     ResolutionFailed(ResolveError),
-    TaskLost,
     InvalidSRVRecord(rdata::SRV),
 }
-
-enum LookupType {
-    Ip(oneshot::Sender<Result<LookupIp, ResolveError>>),
-    Service(oneshot::Sender<Result<SrvLookup, ResolveError>>),
-}
-
-struct ResolveRequest {
-    name: Name,
-    span: tracing::Span,
-    lookup_type: LookupType,
-}
-
-pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 impl Resolver {
     /// Construct a new `Resolver` from environment variables and system
@@ -60,88 +46,23 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(
-        c: &C,
-    ) -> Result<(Self, Task), ResolveError> {
+    pub fn from_system_config_with<C: ConfigureResolver>(c: &C) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Self::new(config, opts)
+        Ok(Self::new(config, opts))
     }
 
-    pub fn new(
-        config: ResolverConfig,
-        mut opts: ResolverOpts,
-    ) -> Result<(Self, Task), ResolveError> {
+    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-
-        // XXX(eliza): figure out an appropriate bound for the channel...
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let task = Box::pin(async move {
-            let resolver = match AsyncResolver::tokio(config, opts) {
-                Ok(resolver) => resolver,
-                Err(e) => unreachable!("constructing resolver should not fail: {}", e),
-            };
-            while let Some(ResolveRequest {
-                name,
-                span,
-                lookup_type,
-            }) = rx.recv().await
-            {
-                match lookup_type {
-                    LookupType::Ip(result_tx) => {
-                        let resolver = resolver.clone();
-                        tokio::spawn(
-                            async move {
-                                let res = resolver.lookup_ip(name.as_ref()).await;
-                                if result_tx.send(res).is_err() {
-                                    tracing::debug!("resolution canceled");
-                                }
-                            }
-                            .instrument(span),
-                        );
-                    }
-                    LookupType::Service(result_tx) => {
-                        let resolver = resolver.clone();
-                        tokio::spawn(
-                            async move {
-                                let res = resolver.srv_lookup(name.as_ref()).await;
-                                if result_tx.send(res).is_err() {
-                                    tracing::debug!("resolution canceled");
-                                }
-                            }
-                            .instrument(span),
-                        );
-                    }
-                }
-            }
-            tracing::debug!("all resolver handles dropped; terminating.");
-        });
-        Ok((Resolver { tx }, task))
+        let dns = AsyncResolver::tokio(config, opts).expect("Resolver must be valid");
+        Resolver { dns }
     }
 
-    async fn lookup_ip(&self, name: Name, span: Span) -> Result<LookupIp, Error> {
-        let (result_tx, rx) = oneshot::channel();
-        self.tx.send(ResolveRequest {
-            name,
-            span,
-            lookup_type: LookupType::Ip(result_tx),
-        })?;
-        let ips = rx.await??;
-        Ok(ips)
-    }
-
-    async fn lookup_service(&self, name: Name, span: Span) -> Result<SrvLookup, Error> {
-        let (result_tx, rx) = oneshot::channel();
-        self.tx.send(ResolveRequest {
-            name,
-            span,
-            lookup_type: LookupType::Service(result_tx),
-        })?;
-        let srvs = rx.await??;
-        Ok(srvs)
+    async fn lookup_ip(&self, name: Name) -> Result<LookupIp, Error> {
+        self.dns.lookup_ip(name.as_ref()).err_into::<Error>().await
     }
 
     // XXX We need to convert the SRV records to an IP addr manually,
@@ -151,54 +72,61 @@ impl Resolver {
     // instead of dots. We can alternatively do another lookup
     // on the pod's DNS but it seems unnecessary since the pod's
     // ip is in the target of the SRV record.
-    fn srv_to_socket_addr(srv: &rdata::SRV) -> Result<net::SocketAddr, Error> {
-        let first_label = srv
-            .target()
-            .iter()
-            .next()
-            .ok_or_else(|| Error::InvalidSRVRecord(srv.clone()))?;
-
-        std::str::from_utf8(first_label)
-            .expect("should be utf8")
-            .replace("-", ".")
-            .parse::<std::net::IpAddr>()
-            .map(|ip| net::SocketAddr::new(ip, srv.port()))
-            .map_err(|_| Error::InvalidSRVRecord(srv.clone()))
+    fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, Error> {
+        if let Some(first_label) = srv.target().iter().next() {
+            if let Ok(utf8) = std::str::from_utf8(first_label) {
+                if let Ok(ip) = utf8.replace("-", ".").parse::<std::net::IpAddr>() {
+                    return Ok(net::SocketAddr::new(ip, srv.port()));
+                }
+            }
+        }
+        Err(Error::InvalidSRVRecord(srv))
     }
 
     pub fn resolve_service_addrs(
         &self,
-        svc: &Name,
-    ) -> impl Stream<Item = Result<Vec<net::SocketAddr>, Error>> {
-        let resolver = self.clone();
-        let svc_name = svc.clone();
-        try_stream! {
+        name: Name,
+    ) -> mpsc::Receiver<Result<Vec<net::SocketAddr>, Error>> {
+        let dns = self.dns.clone();
+        let (mut tx, rx) = mpsc::channel(1);
+        tokio::spawn(async move {
             loop {
-                let span = info_span!("lookup_service", %svc_name);
-                match resolver
-                    .lookup_service(svc_name.clone(), span.clone())
+                match dns
+                    .srv_lookup(name.as_ref())
+                    .instrument(info_span!("srv_lookup", %name))
                     .await
                 {
                     Ok(srv_records) => {
-                        let addresses =
-                            srv_records.iter().map(Self::srv_to_socket_addr).collect()?;
-                        yield addresses;
                         let valid_until = Instant::from_std(srv_records.as_lookup().valid_until());
+                        let update = srv_records
+                            .into_iter()
+                            .map(Self::srv_to_socket_addr)
+                            .collect();
+                        if tx.send(update).await.is_err() {
+                            return;
+                        }
                         time::delay_until(valid_until).await;
                     }
-                    Err(Error::ResolutionFailed(err)) => match err.kind() {
+                    Err(e) => match e.kind() {
                         ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
-                            yield vec![];
-                            if let Some(ttl) = valid_until {
-                                time::delay_until(Instant::from_std(ttl.clone())).await;
+                            if tx.send(Ok(vec![])).await.is_err() {
+                                return;
+                            }
+
+                            if let Some(expiry) = valid_until {
+                                time::delay_until(Instant::from_std(*expiry)).await;
                             }
                         }
-                        _ => Err(err)?,
+                        _ => {
+                            if tx.send(Err(e.into())).await.is_err() {
+                                return;
+                            }
+                        }
                     },
-                    Err(err) => Err(err)?,
                 }
             }
-        }
+        });
+        rx
     }
 
     /// Creates a refining service.
@@ -217,18 +145,6 @@ impl fmt::Debug for Resolver {
     }
 }
 
-impl<T> From<mpsc::error::SendError<T>> for Error {
-    fn from(_: mpsc::error::SendError<T>) -> Self {
-        Self::TaskLost
-    }
-}
-
-impl From<oneshot::error::RecvError> for Error {
-    fn from(_: oneshot::error::RecvError) -> Self {
-        Self::TaskLost
-    }
-}
-
 impl From<ResolveError> for Error {
     fn from(e: ResolveError) -> Self {
         Self::ResolutionFailed(e)
@@ -240,7 +156,6 @@ impl fmt::Display for Error {
         match self {
             Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
             Self::InvalidSRVRecord(srv) => write!(f, "Invalid SRV record {:?}", srv),
-            Self::TaskLost => f.pad("background task terminated unexpectedly"),
         }
     }
 }

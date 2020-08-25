@@ -1,10 +1,8 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use async_stream::try_stream;
-use futures::{future, prelude::*};
+use futures::{future, prelude::*, stream};
 use linkerd2_addr::Addr;
 use linkerd2_dns as dns;
-use linkerd2_error::Error;
 use linkerd2_proxy_core::resolve::Update;
 use std::{
     net::SocketAddr,
@@ -23,11 +21,12 @@ impl DnsResolve {
     }
 }
 
-type UpdatesStream = Pin<Box<dyn Stream<Item = Result<Update<()>, Error>> + Send + Sync + 'static>>;
+type UpdatesStream =
+    Pin<Box<dyn Stream<Item = Result<Update<()>, dns::Error>> + Send + Sync + 'static>>;
 
 impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
     type Response = UpdatesStream;
-    type Error = Error;
+    type Error = dns::Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -38,27 +37,20 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
         match target.into() {
             Addr::Name(na) if na.is_localhost() => {
                 let sa = SocketAddr::from(([127, 0, 0, 1], na.port()));
-                let stream = try_stream! {
-                    yield Update::Reset(vec![(sa, ())]);
-                };
-                future::ok(Box::pin(stream))
+                let eps = vec![(sa, ())];
+                future::ok(Box::pin(stream::iter(Some(Ok(Update::Reset(eps))))))
             }
             Addr::Name(na) => {
-                let resolve = self.dns.resolve_service_addrs(na.name());
-                let stream = try_stream! {
-                    tokio::pin!(resolve);
-                    while let Some(addrs) = resolve.next().await {
-                        let addrs = addrs?;
-                        yield Update::Reset(addrs.into_iter().map(|a| (a, ())).collect());
-                    }
-                };
-                future::ok(Box::pin(stream))
+                let resolve = self.dns.resolve_service_addrs(na.name().clone());
+                let updates = resolve.map_ok(|addrs| {
+                    let eps = addrs.into_iter().map(|a| (a, ())).collect();
+                    Update::Reset(eps)
+                });
+                future::ok(Box::pin(updates))
             }
             Addr::Socket(sa) => {
-                let stream = try_stream! {
-                    yield Update::Reset(vec![(sa, ())]);
-                };
-                future::ok(Box::pin(stream))
+                let eps = vec![(sa, ())];
+                future::ok(Box::pin(stream::iter(Some(Ok(Update::Reset(eps))))))
             }
         }
     }

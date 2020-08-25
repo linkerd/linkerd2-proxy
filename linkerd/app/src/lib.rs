@@ -61,7 +61,6 @@ pub struct Config {
 pub struct App {
     admin: admin::Admin,
     drain: drain::Signal,
-    dns: dns::Task,
     dst: ControlAddr,
     identity: identity::Identity,
     inbound_addr: SocketAddr,
@@ -230,7 +229,6 @@ impl Config {
             admin,
             dst: dst_addr,
             drain: drain_tx,
-            dns: dns.task,
             identity,
             inbound_addr,
             oc_collector,
@@ -290,7 +288,6 @@ impl App {
         let App {
             admin,
             drain,
-            dns,
             identity,
             oc_collector,
             start_proxy,
@@ -346,9 +343,6 @@ impl App {
                         } else {
                             admin.latch.release()
                         }
-
-                        // Spawn the DNS resolver background task.
-                        tokio::spawn(dns.instrument(info_span!("dns")));
 
                         if let tap::Tap::Enabled {
                             registry, serve, ..
