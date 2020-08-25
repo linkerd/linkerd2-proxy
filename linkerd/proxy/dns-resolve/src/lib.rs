@@ -60,13 +60,13 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
     }
 }
 
-// Note, this can't be an async_stream, due to pinniness.
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
-    let (mut tx, rx) = mpsc::channel::<Result<Update<()>, Error>>(1);
-
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.
+    //
+    // Note: this can't be an async_stream, due to pinniness.
     let (addrs, expiry) = dns.resolve_addrs(na.name(), na.port()).await?;
+    let (mut tx, rx) = mpsc::channel(1);
     tokio::spawn(
         async move {
             let eps = addrs.into_iter().map(|a| (a, ())).collect();
