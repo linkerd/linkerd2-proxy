@@ -9,6 +9,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
+use tracing_futures::Instrument;
 use trust_dns_resolver::lookup_ip::LookupIp;
 
 /// A `MakeService` that produces a `Refine` for a given name.
@@ -54,12 +55,11 @@ impl tower::Service<()> for Refine {
         loop {
             self.state = match self.state {
                 State::Init => {
-                    let resolver = self.resolver.clone();
                     let name = self.name.clone();
-                    let span = tracing::Span::current();
-                    State::Pending(Box::pin(
-                        async move { resolver.lookup_ip(name, span).await },
-                    ))
+                    let dns = self.resolver.clone();
+                    State::Pending(Box::pin(async move {
+                        dns.lookup_ip(name).in_current_span().await
+                    }))
                 }
                 State::Pending(ref mut fut) => {
                     let lookup = ready!(fut.as_mut().poll(cx))?;
