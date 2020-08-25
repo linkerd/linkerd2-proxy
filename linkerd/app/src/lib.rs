@@ -16,9 +16,7 @@ pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
     classify,
     config::ControlAddr,
-    control, dns, drain,
-    proxy::{discover, http},
-    reconnect,
+    control, dns, drain, reconnect,
     svc::{self, NewService},
     transport::tls,
     Error,
@@ -103,9 +101,6 @@ impl Config {
 
         let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
         let dst = {
-            const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
-            const EWMA_DECAY: Duration = Duration::from_secs(10);
-
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
             info_span!("dst").in_scope(|| {
@@ -118,8 +113,8 @@ impl Config {
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
-                    .push(discover::resolve(control::resolve::new(dns)))
-                    .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(control::resolve::layer(dns))
+                    .push_on_response(control::balance::layer())
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;
                         move |_| Ok(backoff.stream())

@@ -152,25 +152,50 @@ pub mod add_origin {
 }
 
 pub mod resolve {
+    use super::client::Target;
     use crate::{
         dns,
-        proxy::{dns_resolve::DnsResolve, resolve::map_endpoint},
+        proxy::{discover, dns_resolve::DnsResolve, resolve::map_endpoint},
+        svc,
     };
     use std::net::SocketAddr;
 
-    pub fn new(dns: dns::Resolver) -> map_endpoint::Resolve<IntoTarget, DnsResolve> {
-        map_endpoint::Resolve::new(IntoTarget(()), DnsResolve::new(dns))
+    pub fn layer<M>(
+        dns: dns::Resolver,
+    ) -> impl svc::Layer<
+        M,
+        Service = discover::MakeEndpoint<
+            discover::FromResolve<map_endpoint::Resolve<IntoTarget, DnsResolve>, Target>,
+            M,
+        >,
+    > {
+        discover::resolve(map_endpoint::Resolve::new(
+            IntoTarget(()),
+            DnsResolve::new(dns),
+        ))
     }
 
     #[derive(Copy, Clone, Debug)]
     pub struct IntoTarget(());
 
     impl map_endpoint::MapEndpoint<super::ControlAddr, ()> for IntoTarget {
-        type Out = super::client::Target;
+        type Out = Target;
 
         fn map_endpoint(&self, control: &super::ControlAddr, addr: SocketAddr, _: ()) -> Self::Out {
-            super::client::Target::new(addr, control.identity.clone())
+            Target::new(addr, control.identity.clone())
         }
+    }
+}
+
+pub mod balance {
+    use crate::proxy::http;
+    use std::time::Duration;
+
+    const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+    const EWMA_DECAY: Duration = Duration::from_secs(10);
+
+    pub fn layer<A, B>() -> http::balance::Layer<A, B> {
+        http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
     }
 }
 
