@@ -62,7 +62,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
 
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.
-    let (addrs, expiry) = dns.resolve_addr(na.name(), na.port()).await?;
+    let (addrs, expiry) = dns.resolve_addrs(na.name(), na.port()).await?;
     tokio::spawn(async move {
         let eps = addrs.into_iter().map(|a| (a, ())).collect();
         if tx.send(Ok(Update::Reset(eps))).await.is_err() {
@@ -72,7 +72,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
         expiry.await;
 
         loop {
-            match dns.resolve_addr(na.name(), na.port()).await {
+            match dns.resolve_addrs(na.name(), na.port()).await {
                 Ok((addrs, expiry)) => {
                     let eps = addrs.into_iter().map(|a| (a, ())).collect();
                     if tx.send(Ok(Update::Reset(eps))).await.is_err() {

@@ -65,7 +65,7 @@ impl Resolver {
 
     /// Resolves a name to a set of addresses, preferring SRV records to normal A
     /// record lookups.
-    pub async fn resolve_addr(
+    pub async fn resolve_addrs(
         &self,
         name: &Name,
         default_port: u16,
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_dns_name_parsing() {
-        // Stack sure `dns::Name`'s validation isn't too strict. It is
+        // Make sure `dns::Name`'s validation isn't too strict. It is
         // implemented in terms of `webpki::DNSName` which has many more tests
         // at https://github.com/briansmith/webpki/blob/master/tests/dns_name_tests.rs.
 
