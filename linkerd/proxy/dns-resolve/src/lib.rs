@@ -11,10 +11,12 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::mpsc;
-use tracing::debug;
+use tracing::{debug, trace};
 use tracing_futures::Instrument;
 
-/// A Resolver that attempts to lookup
+/// A Resolver that attempts to lookup targets via DNS.
+///
+/// SRV records are checked first, A records are used as a fallback.
 #[derive(Clone)]
 pub struct DnsResolve {
     dns: linkerd2_dns::Resolver,
@@ -58,6 +60,7 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
     }
 }
 
+// Note, this can't be an async_stream, due to pinniness.
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
     let (mut tx, rx) = mpsc::channel::<Result<Update<()>, Error>>(1);
 
@@ -68,7 +71,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
         async move {
             let eps = addrs.into_iter().map(|a| (a, ())).collect();
             if tx.send(Ok(Update::Reset(eps))).await.is_err() {
-                debug!("Closed");
+                trace!("Closed");
                 return;
             }
             expiry.await;
@@ -79,6 +82,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                         debug!(?addrs);
                         let eps = addrs.into_iter().map(|a| (a, ())).collect();
                         if tx.send(Ok(Update::Reset(eps))).await.is_err() {
+                            trace!("Closed");
                             return;
                         }
                         expiry.await;
@@ -86,6 +90,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
                     Err(e) => {
                         debug!(error = %e);
                         let _ = tx.send(Err(e)).await;
+                        trace!("Closed");
                         return;
                     }
                 }
