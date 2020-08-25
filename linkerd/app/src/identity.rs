@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     config::{ControlAddr, ControlConfig},
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    proxy::{discover, dns_resolve::DnsResolve, http},
+    proxy::{discover, http},
     reconnect,
     svc::{self, NewService},
     transport::tls,
@@ -53,14 +53,13 @@ impl Config {
                 let (local, crt_store) = Local::new(&certify);
 
                 let addr = control.addr;
-                let control_dns_resolve = control::dns_resolve::Resolve::new(DnsResolve::new(dns));
                 let svc = svc::connect(control.connect.keepalive)
                     .push(tls::ConnectLayer::new(tls::Conditional::Some(
                         certify.trust_anchors.clone(),
                     )))
                     .push_timeout(control.connect.timeout)
                     .push(control::client::layer())
-                    .push(discover::resolve(control_dns_resolve))
+                    .push(discover::resolve(control::resolve::new(dns)))
                     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer(Recover(control.connect.backoff)))
                     .push(metrics.into_layer::<classify::Response>())

@@ -1,6 +1,7 @@
 use futures::{future, ready};
 
 use super::{Error, Resolver};
+use futures::prelude::*;
 use linkerd2_dns_name::Name;
 use linkerd2_stack::NewService;
 use std::convert::TryFrom;
@@ -9,6 +10,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
+use tracing_futures::Instrument;
 use trust_dns_resolver::lookup_ip::LookupIp;
 
 /// A `MakeService` that produces a `Refine` for a given name.
@@ -54,11 +56,11 @@ impl tower::Service<()> for Refine {
         loop {
             self.state = match self.state {
                 State::Init => {
-                    let resolver = self.resolver.clone();
                     let name = self.name.clone();
-                    let span = tracing::Span::current();
+                    let dns = self.resolver.dns.clone();
                     State::Pending(Box::pin(
-                        async move { resolver.lookup_ip(name, span).await },
+                        async move { dns.lookup_ip(name.as_ref()).err_into::<Error>().await }
+                            .in_current_span(),
                     ))
                 }
                 State::Pending(ref mut fut) => {

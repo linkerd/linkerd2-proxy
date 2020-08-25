@@ -1,6 +1,6 @@
 //! Configures and executes the proxy
-#![recursion_limit = "256"]
-//#![deny(warnings, rust_2018_idioms)]
+
+#![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
 pub mod dst;
@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     classify,
     config::ControlAddr,
     control, dns, drain,
-    proxy::{discover, dns_resolve::DnsResolve, http},
+    proxy::{discover, http},
     reconnect,
     svc::{self, NewService},
     transport::tls,
@@ -61,7 +61,6 @@ pub struct Config {
 pub struct App {
     admin: admin::Admin,
     drain: drain::Signal,
-    dns: dns::Task,
     dst: ControlAddr,
     identity: identity::Identity,
     inbound_addr: SocketAddr,
@@ -109,13 +108,17 @@ impl Config {
 
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            let control_dns_resolve = control::dns_resolve::Resolve::new(DnsResolve::new(dns));
             info_span!("dst").in_scope(|| {
-                let dst_connect = svc::connect(dst.control.connect.keepalive)
+                // XXX This is unfortunate. But we don't daemonize the service into a
+                // task in the build, so we'd have to name it. And that's not
+                // happening today. Really, we should daemonize the whole client
+                // into a task so consumers can be ignorant. This would also
+                // probably enable the use of a lock.
+                let svc = svc::connect(dst.control.connect.keepalive)
                     .push(tls::ConnectLayer::new(identity.local()))
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
-                    .push(discover::resolve(control_dns_resolve))
+                    .push(discover::resolve(control::resolve::new(dns)))
                     .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;
@@ -127,7 +130,7 @@ impl Config {
                     .push_on_response(svc::layers().push_spawn_buffer(dst.control.buffer_capacity))
                     .new_service(dst.control.addr.clone());
 
-                dst.build(dst_connect)
+                dst.build(svc)
             })
         }?;
 
@@ -226,7 +229,6 @@ impl Config {
             admin,
             dst: dst_addr,
             drain: drain_tx,
-            dns: dns.task,
             identity,
             inbound_addr,
             oc_collector,
@@ -286,7 +288,6 @@ impl App {
         let App {
             admin,
             drain,
-            dns,
             identity,
             oc_collector,
             start_proxy,
@@ -342,9 +343,6 @@ impl App {
                         } else {
                             admin.latch.release()
                         }
-
-                        // Spawn the DNS resolver background task.
-                        tokio::spawn(dns.instrument(info_span!("dns")));
 
                         if let tap::Tap::Enabled {
                             registry, serve, ..
