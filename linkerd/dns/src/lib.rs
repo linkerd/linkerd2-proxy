@@ -88,44 +88,45 @@ impl Resolver {
         name: Name,
     ) -> mpsc::Receiver<Result<Vec<net::SocketAddr>, Error>> {
         let dns = self.dns.clone();
+        let span = info_span!("srv_lookup", %name);
         let (mut tx, rx) = mpsc::channel(1);
-        tokio::spawn(async move {
-            loop {
-                match dns
-                    .srv_lookup(name.as_ref())
-                    .instrument(info_span!("srv_lookup", %name))
-                    .await
-                {
-                    Ok(srv_records) => {
-                        let valid_until = Instant::from_std(srv_records.as_lookup().valid_until());
-                        let update = srv_records
-                            .into_iter()
-                            .map(Self::srv_to_socket_addr)
-                            .collect();
-                        if tx.send(update).await.is_err() {
-                            return;
-                        }
-                        time::delay_until(valid_until).await;
-                    }
-                    Err(e) => match e.kind() {
-                        ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
-                            if tx.send(Ok(vec![])).await.is_err() {
+        tokio::spawn(
+            async move {
+                loop {
+                    match dns.srv_lookup(name.as_ref()).await {
+                        Ok(srv_records) => {
+                            let valid_until =
+                                Instant::from_std(srv_records.as_lookup().valid_until());
+                            let update = srv_records
+                                .into_iter()
+                                .map(Self::srv_to_socket_addr)
+                                .collect();
+                            if tx.send(update).await.is_err() {
                                 return;
                             }
+                            time::delay_until(valid_until).await;
+                        }
+                        Err(e) => match e.kind() {
+                            ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                                if tx.send(Ok(vec![])).await.is_err() {
+                                    return;
+                                }
 
-                            if let Some(expiry) = valid_until {
-                                time::delay_until(Instant::from_std(*expiry)).await;
+                                if let Some(expiry) = valid_until {
+                                    time::delay_until(Instant::from_std(*expiry)).await;
+                                }
                             }
-                        }
-                        _ => {
-                            if tx.send(Err(e.into())).await.is_err() {
-                                return;
+                            _ => {
+                                if tx.send(Err(e.into())).await.is_err() {
+                                    return;
+                                }
                             }
-                        }
-                    },
+                        },
+                    }
                 }
             }
-        });
+            .instrument(span),
+        );
         rx
     }
 
