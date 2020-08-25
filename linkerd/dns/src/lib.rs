@@ -3,18 +3,13 @@
 mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
-use futures::prelude::*;
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
+use linkerd2_error::Error;
 use std::{fmt, net};
-use tokio::{
-    sync::mpsc,
-    time::{self, Instant},
-};
-use tracing::{info_span, trace};
-use tracing_futures::Instrument;
+use tokio::time::{self, Instant};
+use tracing::{debug, trace};
 use trust_dns_resolver::{
-    config::ResolverConfig, lookup_ip::LookupIp, proto::rr::rdata, system_conf, AsyncResolver,
-    TokioAsyncResolver,
+    config::ResolverConfig, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
 };
 pub use trust_dns_resolver::{
     config::ResolverOpts,
@@ -31,12 +26,14 @@ pub trait ConfigureResolver {
 }
 
 #[derive(Debug, Clone)]
-pub enum Error {
-    ResolutionFailed(ResolveError),
-    InvalidSRVRecord(rdata::SRV),
-}
+pub struct ResolutionFailed(ResolveError);
+
+#[derive(Debug, Clone)]
+pub struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
+    const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -61,8 +58,57 @@ impl Resolver {
         Resolver { dns }
     }
 
-    async fn lookup_ip(&self, name: Name) -> Result<LookupIp, Error> {
-        self.dns.lookup_ip(name.as_ref()).err_into::<Error>().await
+    /// Creates a refining service.
+    pub fn into_make_refine(self) -> MakeRefine {
+        MakeRefine(self)
+    }
+
+    pub async fn resolve_a(
+        &self,
+        name: Name,
+    ) -> Result<(Vec<net::IpAddr>, time::Delay), ResolveError> {
+        debug!(%name, "resolve_a");
+        match self.dns.lookup_ip(name.as_ref()).await {
+            Ok(lookup) => {
+                let valid_until = Instant::from_std(lookup.valid_until());
+                let ips = lookup.iter().collect::<Vec<_>>();
+                Ok((ips, time::delay_until(valid_until)))
+            }
+            Err(e) => match e.kind() {
+                ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                    let expiry = valid_until
+                        .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
+                    Ok((vec![], time::delay_until(Instant::from_std(expiry))))
+                }
+                _ => Err(e),
+            },
+        }
+    }
+
+    pub async fn resolve_srv(
+        &self,
+        name: Name,
+    ) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+        debug!(%name, "resolve_srv");
+        match self.dns.srv_lookup(name.as_ref()).await {
+            Ok(srv) => {
+                let valid_until = Instant::from_std(srv.as_lookup().valid_until());
+                let addrs = srv
+                    .into_iter()
+                    .map(Self::srv_to_socket_addr)
+                    .collect::<Result<_, InvalidSrv>>()?;
+                debug!(?addrs);
+                Ok((addrs, time::delay_until(valid_until)))
+            }
+            Err(e) => match e.kind() {
+                ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                    let expiry = valid_until
+                        .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
+                    Ok((vec![], time::delay_until(Instant::from_std(expiry))))
+                }
+                _ => Err(e.into()),
+            },
+        }
     }
 
     // XXX We need to convert the SRV records to an IP addr manually,
@@ -72,7 +118,7 @@ impl Resolver {
     // instead of dots. We can alternatively do another lookup
     // on the pod's DNS but it seems unnecessary since the pod's
     // ip is in the target of the SRV record.
-    fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, Error> {
+    fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
         if let Some(first_label) = srv.target().iter().next() {
             if let Ok(utf8) = std::str::from_utf8(first_label) {
                 if let Ok(ip) = utf8.replace("-", ".").parse::<std::net::IpAddr>() {
@@ -80,59 +126,7 @@ impl Resolver {
                 }
             }
         }
-        Err(Error::InvalidSRVRecord(srv))
-    }
-
-    pub fn resolve_service_addrs(
-        &self,
-        name: Name,
-    ) -> mpsc::Receiver<Result<Vec<net::SocketAddr>, Error>> {
-        let dns = self.dns.clone();
-        let span = info_span!("srv_lookup", %name);
-        let (mut tx, rx) = mpsc::channel(1);
-        tokio::spawn(
-            async move {
-                loop {
-                    match dns.srv_lookup(name.as_ref()).await {
-                        Ok(srv_records) => {
-                            let valid_until =
-                                Instant::from_std(srv_records.as_lookup().valid_until());
-                            let update = srv_records
-                                .into_iter()
-                                .map(Self::srv_to_socket_addr)
-                                .collect();
-                            if tx.send(update).await.is_err() {
-                                return;
-                            }
-                            time::delay_until(valid_until).await;
-                        }
-                        Err(e) => match e.kind() {
-                            ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
-                                if tx.send(Ok(vec![])).await.is_err() {
-                                    return;
-                                }
-
-                                if let Some(expiry) = valid_until {
-                                    time::delay_until(Instant::from_std(*expiry)).await;
-                                }
-                            }
-                            _ => {
-                                if tx.send(Err(e.into())).await.is_err() {
-                                    return;
-                                }
-                            }
-                        },
-                    }
-                }
-            }
-            .instrument(span),
-        );
-        rx
-    }
-
-    /// Creates a refining service.
-    pub fn into_make_refine(self) -> MakeRefine {
-        MakeRefine(self)
+        Err(InvalidSrv(srv))
     }
 }
 
@@ -146,29 +140,13 @@ impl fmt::Debug for Resolver {
     }
 }
 
-impl From<ResolveError> for Error {
-    fn from(e: ResolveError) -> Self {
-        Self::ResolutionFailed(e)
-    }
-}
-
-impl fmt::Display for Error {
+impl fmt::Display for InvalidSrv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
-            Self::InvalidSRVRecord(srv) => write!(f, "Invalid SRV record {:?}", srv),
-        }
+        write!(f, "Invalid SRV record {:?}", self.0)
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::ResolutionFailed(e) => Some(e),
-            _ => None,
-        }
-    }
-}
+impl std::error::Error for InvalidSrv {}
 
 #[cfg(test)]
 mod tests {

@@ -1000,6 +1000,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "linkerd2-dns-name",
+ "linkerd2-error",
  "linkerd2-stack",
  "pin-project",
  "tokio",
@@ -1264,6 +1265,7 @@ dependencies = [
 name = "linkerd2-proxy-dns-resolve"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "futures 0.3.5",
  "linkerd2-addr",
  "linkerd2-dns",

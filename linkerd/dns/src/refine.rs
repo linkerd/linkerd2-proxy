@@ -1,6 +1,7 @@
 use futures::{future, ready};
 
 use super::{Error, Resolver};
+use futures::prelude::*;
 use linkerd2_dns_name::Name;
 use linkerd2_stack::NewService;
 use std::convert::TryFrom;
@@ -56,10 +57,11 @@ impl tower::Service<()> for Refine {
             self.state = match self.state {
                 State::Init => {
                     let name = self.name.clone();
-                    let dns = self.resolver.clone();
-                    State::Pending(Box::pin(async move {
-                        dns.lookup_ip(name).in_current_span().await
-                    }))
+                    let dns = self.resolver.dns.clone();
+                    State::Pending(Box::pin(
+                        async move { dns.lookup_ip(name.as_ref()).err_into::<Error>().await }
+                            .in_current_span(),
+                    ))
                 }
                 State::Pending(ref mut fut) => {
                     let lookup = ready!(fut.as_mut().poll(cx))?;

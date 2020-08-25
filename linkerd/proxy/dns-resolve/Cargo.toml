@@ -9,12 +9,13 @@ Service Dns Resolutions for the proxy
 """
 
 [dependencies]
+async-stream = "0.2"
 futures = "0.3"
 linkerd2-error = { path  = "../../error" }
 linkerd2-addr = { path = "../../addr" }
 linkerd2-dns = { path = "../../dns" }
 linkerd2-proxy-core = { path = "../core" }
-tokio = "0.2"
+tokio = { version = "0.2", features = ["stream", "sync"] }
 tracing = "0.1.9"
 
 [dependencies.tower]
