@@ -166,7 +166,7 @@ impl Resolver {
             .map_err(|_| Error::InvalidSRVRecord(srv.clone()))
     }
 
-    pub fn resolve_service_ips(
+    pub fn resolve_service_addrs(
         &self,
         svc: &Name,
     ) -> impl Stream<Item = Result<Vec<net::SocketAddr>, Error>> {

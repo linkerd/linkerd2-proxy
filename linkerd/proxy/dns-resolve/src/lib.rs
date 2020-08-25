@@ -44,7 +44,7 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
                 future::ok(Box::pin(stream))
             }
             Addr::Name(na) => {
-                let resolve = self.dns.resolve_service_ips(na.name());
+                let resolve = self.dns.resolve_service_addrs(na.name());
                 let stream = try_stream! {
                     tokio::pin!(resolve);
                     while let Some(addrs) = resolve.next().await {
