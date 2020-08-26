@@ -35,7 +35,6 @@ pub struct Dst {
 }
 
 impl Config {
-    // XXX This is unfortunate -- the service should be built here, but it's annoying to name.
     pub fn build(
         self,
         dns: dns::Resolver,
