@@ -7,6 +7,12 @@ pub struct ControlAddr {
     pub identity: crate::transport::tls::PeerIdentity,
 }
 
+impl Into<Addr> for ControlAddr {
+    fn into(self) -> Addr {
+        self.addr
+    }
+}
+
 impl fmt::Display for ControlAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.addr, f)
@@ -145,160 +151,52 @@ pub mod add_origin {
     }
 }
 
-/// Resolves the controller's `addr` once before building a client.
 pub mod resolve {
-    use super::{client, ControlAddr};
-    use crate::svc;
-    use futures::{ready, TryFuture};
-    use linkerd2_addr::Addr;
-    use linkerd2_dns as dns;
-    use pin_project::pin_project;
-    use std::future::Future;
+    use super::client::Target;
+    use crate::{
+        dns,
+        proxy::{discover, dns_resolve::DnsResolve, resolve::map_endpoint},
+        svc,
+    };
     use std::net::SocketAddr;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-    use std::{error, fmt};
 
-    #[derive(Clone, Debug)]
-    pub struct Layer {
+    pub fn layer<M>(
         dns: dns::Resolver,
+    ) -> impl svc::Layer<
+        M,
+        Service = discover::MakeEndpoint<
+            discover::FromResolve<map_endpoint::Resolve<IntoTarget, DnsResolve>, Target>,
+            M,
+        >,
+    > {
+        discover::resolve(map_endpoint::Resolve::new(
+            IntoTarget(()),
+            DnsResolve::new(dns),
+        ))
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Resolve<M> {
-        dns: dns::Resolver,
-        inner: M,
-    }
+    #[derive(Copy, Clone, Debug)]
+    pub struct IntoTarget(());
 
-    #[pin_project]
-    pub struct Init<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        #[pin]
-        state: State<M>,
-    }
+    impl map_endpoint::MapEndpoint<super::ControlAddr, ()> for IntoTarget {
+        type Out = Target;
 
-    #[pin_project(project = StateProj)]
-    enum State<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        Resolve(#[pin] dns::IpAddrFuture, Option<(M, ControlAddr)>),
-        NotReady(M, Option<(SocketAddr, ControlAddr)>),
-        Inner(#[pin] M::Future),
-    }
-
-    #[derive(Debug)]
-    pub enum Error<I> {
-        Dns(dns::Error),
-        Inner(I),
-    }
-
-    // === impl Layer ===
-
-    pub fn layer<M>(dns: dns::Resolver) -> impl svc::Layer<M, Service = Resolve<M>> + Clone
-    where
-        M: tower::Service<client::Target> + Clone,
-    {
-        svc::layer::mk(move |inner| Resolve {
-            dns: dns.clone(),
-            inner,
-        })
-    }
-
-    // === impl Resolve ===
-
-    impl<M> tower::Service<ControlAddr> for Resolve<M>
-    where
-        M: tower::Service<client::Target> + Clone,
-    {
-        type Response = M::Response;
-        type Error = <Init<M> as TryFuture>::Error;
-        type Future = Init<M>;
-
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            self.inner.poll_ready(cx).map_err(Error::Inner)
-        }
-
-        fn call(&mut self, target: ControlAddr) -> Self::Future {
-            let state = match target.addr {
-                Addr::Socket(sa) => State::make_inner(sa, &target, &mut self.inner),
-                Addr::Name(ref na) => {
-                    // The inner service is ready, but we are going to do
-                    // additional work before using it. In case the inner
-                    // service has acquired resources (like a lock), we
-                    // relinquish our claim on the service by replacing it.
-                    self.inner = self.inner.clone();
-
-                    let future = self.dns.resolve_one_ip(na.name());
-                    State::Resolve(future, Some((self.inner.clone(), target.clone())))
-                }
-            };
-
-            Init { state }
+        fn map_endpoint(&self, control: &super::ControlAddr, addr: SocketAddr, _: ()) -> Self::Out {
+            Target::new(addr, control.identity.clone())
         }
     }
+}
 
-    // === impl Init ===
+pub mod balance {
+    use crate::proxy::http;
+    use std::time::Duration;
 
-    impl<M> Future for Init<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        type Output = Result<M::Response, Error<M::Error>>;
+    const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
+    const EWMA_DECAY: Duration = Duration::from_secs(10);
 
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let mut this = self.project();
-            loop {
-                match this.state.as_mut().project() {
-                    StateProj::Resolve(fut, stack) => {
-                        let ip = ready!(fut.poll(cx).map_err(Error::Dns))?;
-                        let (svc, config) = stack.take().unwrap();
-                        let addr = SocketAddr::from((ip, config.addr.port()));
-                        this.state
-                            .as_mut()
-                            .set(State::NotReady(svc, Some((addr, config))));
-                    }
-                    StateProj::NotReady(svc, cfg) => {
-                        ready!(svc.poll_ready(cx).map_err(Error::Inner))?;
-                        let (addr, config) = cfg.take().unwrap();
-                        let state = State::make_inner(addr, &config, svc);
-                        this.state.as_mut().set(state);
-                    }
-                    StateProj::Inner(fut) => return fut.poll(cx).map_err(Error::Inner),
-                };
-            }
-        }
+    pub fn layer<A, B>() -> http::balance::Layer<A, B> {
+        http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)
     }
-
-    impl<M> State<M>
-    where
-        M: tower::Service<client::Target>,
-    {
-        fn make_inner(addr: SocketAddr, dst: &ControlAddr, mk_svc: &mut M) -> Self {
-            let target = client::Target {
-                addr,
-                server_name: dst.identity.clone(),
-            };
-
-            State::Inner(mk_svc.call(target))
-        }
-    }
-
-    // === impl Error ===
-
-    impl<I: fmt::Display> fmt::Display for Error<I> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Error::Dns(dns::Error::NoAddressesFound) => write!(f, "no addresses found"),
-                Error::Dns(e) => fmt::Display::fmt(&e, f),
-                Error::Inner(ref e) => fmt::Display::fmt(&e, f),
-            }
-        }
-    }
-
-    impl<I: fmt::Debug + fmt::Display> error::Error for Error<I> {}
 }
 
 /// Creates a client suitable for gRPC.
@@ -306,13 +204,21 @@ pub mod client {
     use crate::transport::{connect, tls};
     use crate::{proxy::http, svc};
     use linkerd2_proxy_http::h2::Settings as H2Settings;
-    use std::net::SocketAddr;
-    use std::task::{Context, Poll};
+    use std::{
+        net::SocketAddr,
+        task::{Context, Poll},
+    };
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Hash, Debug, Eq, PartialEq)]
     pub struct Target {
-        pub(super) addr: SocketAddr,
-        pub(super) server_name: tls::PeerIdentity,
+        addr: SocketAddr,
+        server_name: tls::PeerIdentity,
+    }
+
+    impl Target {
+        pub(super) fn new(addr: SocketAddr, server_name: tls::PeerIdentity) -> Self {
+            Self { addr, server_name }
+        }
     }
 
     #[derive(Debug)]
@@ -356,12 +262,10 @@ pub mod client {
         type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
         type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
 
-        #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
-        #[inline]
         fn call(&mut self, target: Target) -> Self::Future {
             self.inner.call(target)
         }

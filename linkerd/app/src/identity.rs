@@ -55,6 +55,7 @@ impl Config {
                     .push_timeout(control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))
+                    .push_on_response(control::balance::layer())
                     .push(reconnect::layer(Recover(control.connect.backoff)))
                     .push(metrics.into_layer::<classify::Response>())
                     .push(control::add_origin::Layer::new())

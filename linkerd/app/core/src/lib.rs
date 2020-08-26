@@ -6,13 +6,14 @@
 //! - Admin interfaces
 //! - Tap
 //! - Metric labeling
-#![type_length_limit = "1586225"]
+
 #![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
 pub use linkerd2_admit as admit;
 pub use linkerd2_cache as cache;
 pub use linkerd2_conditional::Conditional;
+pub use linkerd2_dns;
 pub use linkerd2_drain as drain;
 pub use linkerd2_error::{Error, Never, Recover};
 pub use linkerd2_exp_backoff as exp_backoff;

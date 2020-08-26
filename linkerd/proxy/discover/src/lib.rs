@@ -9,8 +9,8 @@ pub mod from_resolve;
 pub mod make_endpoint;
 
 use self::buffer::Buffer;
-use self::from_resolve::FromResolve;
-use self::make_endpoint::MakeEndpoint;
+pub use self::from_resolve::FromResolve;
+pub use self::make_endpoint::MakeEndpoint;
 
 pub fn buffer<M>(capacity: usize, watchdog: Duration) -> impl layer::Layer<M, Service = Buffer<M>> {
     layer::mk(move |inner: M| Buffer::new(capacity, watchdog, inner))

@@ -1,0 +1,28 @@
+[package]
+name = "linkerd2-proxy-dns-resolve"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+Service Dns Resolutions for the proxy
+"""
+
+[dependencies]
+futures = "0.3"
+linkerd2-error = { path  = "../../error" }
+linkerd2-addr = { path = "../../addr" }
+linkerd2-dns = { path = "../../dns" }
+linkerd2-proxy-core = { path = "../core" }
+tokio = { version = "0.2", features = ["stream", "sync"] }
+tracing = "0.1.9"
+tracing-futures = "0.2"
+
+[dependencies.tower]
+version = "0.3"
+# disable tower's tracing `log` integration for performance reasons, since we
+# will consume tower's traces as traces.
+default-features = false
+
+[dev-dependencies]
+tokio-test = "0.2"

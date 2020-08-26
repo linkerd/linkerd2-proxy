@@ -4,13 +4,12 @@ mod refine;
 
 pub use self::refine::{MakeRefine, Refine};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
-use std::future::Future;
-use std::pin::Pin;
+use linkerd2_error::Error;
 use std::{fmt, net};
-use tracing::{info_span, trace};
-use tracing_futures::Instrument;
+use tokio::time::{self, Instant};
+use tracing::{debug, trace};
 use trust_dns_resolver::{
-    config::ResolverConfig, lookup_ip::LookupIp, system_conf, AsyncResolver, TokioAsyncResolver,
+    config::ResolverConfig, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
 };
 pub use trust_dns_resolver::{
     config::ResolverOpts,
@@ -26,15 +25,12 @@ pub trait ConfigureResolver {
     fn configure_resolver(&self, _: &mut ResolverOpts);
 }
 
-#[derive(Debug)]
-pub enum Error {
-    NoAddressesFound,
-    ResolutionFailed(ResolveError),
-}
-
-pub type IpAddrFuture = Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>>;
+#[derive(Debug, Clone)]
+struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
+    const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -59,27 +55,93 @@ impl Resolver {
         Resolver { dns }
     }
 
-    async fn lookup_ip(&self, name: Name) -> Result<LookupIp, Error> {
-        let lookup = self.dns.lookup_ip(name.as_ref()).await?;
-        Ok(lookup)
-    }
-
-    pub fn resolve_one_ip(
-        &self,
-        name: &Name,
-    ) -> Pin<Box<dyn Future<Output = Result<net::IpAddr, Error>> + Send + 'static>> {
-        let name = name.clone();
-        let resolver = self.clone();
-        Box::pin(async move {
-            let span = info_span!("resolve_one_ip", %name);
-            let ips = resolver.lookup_ip(name).instrument(span).await?;
-            ips.iter().next().ok_or_else(|| Error::NoAddressesFound)
-        })
-    }
-
     /// Creates a refining service.
     pub fn into_make_refine(self) -> MakeRefine {
         MakeRefine(self)
+    }
+
+    /// Resolves a name to a set of addresses, preferring SRV records to normal A
+    /// record lookups.
+    pub async fn resolve_addrs(
+        &self,
+        name: &Name,
+        default_port: u16,
+    ) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+        match self.resolve_srv(name).await {
+            Ok(res) => Ok(res),
+            Err(e) if e.is::<InvalidSrv>() => {
+                let (ips, delay) = self.resolve_a(name).await?;
+                let addrs = ips
+                    .into_iter()
+                    .map(|ip| net::SocketAddr::new(ip, default_port))
+                    .collect();
+                Ok((addrs, delay))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn resolve_a(
+        &self,
+        name: &Name,
+    ) -> Result<(Vec<net::IpAddr>, time::Delay), ResolveError> {
+        debug!(%name, "resolve_a");
+        match self.dns.lookup_ip(name.as_ref()).await {
+            Ok(lookup) => {
+                let valid_until = Instant::from_std(lookup.valid_until());
+                let ips = lookup.iter().collect::<Vec<_>>();
+                Ok((ips, time::delay_until(valid_until)))
+            }
+            Err(e) => match e.kind() {
+                ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                    let expiry = valid_until
+                        .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
+                    Ok((vec![], time::delay_until(Instant::from_std(expiry))))
+                }
+                _ => Err(e),
+            },
+        }
+    }
+
+    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+        debug!(%name, "resolve_srv");
+        match self.dns.srv_lookup(name.as_ref()).await {
+            Ok(srv) => {
+                let valid_until = Instant::from_std(srv.as_lookup().valid_until());
+                let addrs = srv
+                    .into_iter()
+                    .map(Self::srv_to_socket_addr)
+                    .collect::<Result<_, InvalidSrv>>()?;
+                debug!(?addrs);
+                Ok((addrs, time::delay_until(valid_until)))
+            }
+            Err(e) => match e.kind() {
+                ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                    let expiry = valid_until
+                        .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
+                    Ok((vec![], time::delay_until(Instant::from_std(expiry))))
+                }
+                _ => Err(e.into()),
+            },
+        }
+    }
+
+    // XXX We need to convert the SRV records to an IP addr manually,
+    // because of: https://github.com/bluejekyll/trust-dns/issues/872
+    // Here we rely in on the fact that the first label of the SRV
+    // record's target will be the ip of the pod delimited by dashes
+    // instead of dots. We can alternatively do another lookup
+    // on the pod's DNS but it seems unnecessary since the pod's
+    // ip is in the target of the SRV record.
+    fn srv_to_socket_addr(srv: rdata::SRV) -> Result<net::SocketAddr, InvalidSrv> {
+        if let Some(first_label) = srv.target().iter().next() {
+            if let Ok(utf8) = std::str::from_utf8(first_label) {
+                if let Ok(ip) = utf8.replace("-", ".").parse::<std::net::IpAddr>() {
+                    return Ok(net::SocketAddr::new(ip, srv.port()));
+                }
+            }
+        }
+        Err(InvalidSrv(srv))
     }
 }
 
@@ -93,29 +155,13 @@ impl fmt::Debug for Resolver {
     }
 }
 
-impl From<ResolveError> for Error {
-    fn from(e: ResolveError) -> Self {
-        Self::ResolutionFailed(e)
-    }
-}
-
-impl fmt::Display for Error {
+impl fmt::Display for InvalidSrv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoAddressesFound => f.pad("no addresses found"),
-            Self::ResolutionFailed(e) => fmt::Display::fmt(e, f),
-        }
+        write!(f, "Invalid SRV record {:?}", self.0)
     }
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::ResolutionFailed(e) => Some(e),
-            _ => None,
-        }
-    }
-}
+impl std::error::Error for InvalidSrv {}
 
 #[cfg(test)]
 mod tests {
@@ -124,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_dns_name_parsing() {
-        // Stack sure `dns::Name`'s validation isn't too strict. It is
+        // Make sure `dns::Name`'s validation isn't too strict. It is
         // implemented in terms of `webpki::DNSName` which has many more tests
         // at https://github.com/briansmith/webpki/blob/master/tests/dns_name_tests.rs.
 

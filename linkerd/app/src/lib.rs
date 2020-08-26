@@ -1,6 +1,6 @@
 //! Configures and executes the proxy
-#![recursion_limit = "256"]
-//#![deny(warnings, rust_2018_idioms)]
+
+#![deny(warnings, rust_2018_idioms)]
 
 pub mod admin;
 pub mod dst;
@@ -14,9 +14,11 @@ use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{
+    classify,
     config::ControlAddr,
-    dns, drain,
+    control, dns, drain, reconnect,
     svc::{self, NewService},
+    transport::tls,
     Error,
 };
 use linkerd2_app_gateway as gateway;
@@ -99,8 +101,6 @@ impl Config {
 
         let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
         let dst = {
-            use linkerd2_app_core::{classify, control, reconnect, transport::tls};
-
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
             info_span!("dst").in_scope(|| {
@@ -114,6 +114,7 @@ impl Config {
                     .push_timeout(dst.control.connect.timeout)
                     .push(control::client::layer())
                     .push(control::resolve::layer(dns))
+                    .push_on_response(control::balance::layer())
                     .push(reconnect::layer({
                         let backoff = dst.control.connect.backoff;
                         move |_| Ok(backoff.stream())
@@ -123,6 +124,7 @@ impl Config {
                     .into_new_service()
                     .push_on_response(svc::layers().push_spawn_buffer(dst.control.buffer_capacity))
                     .new_service(dst.control.addr.clone());
+
                 dst.build(svc)
             })
         }?;
