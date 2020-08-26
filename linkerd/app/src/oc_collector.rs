@@ -1,10 +1,5 @@
 use crate::{dns, identity::LocalIdentity};
-use linkerd2_app_core::{
-    config::{ControlAddr, ControlConfig},
-    control, reconnect, svc,
-    transport::tls,
-    Error,
-};
+use linkerd2_app_core::{control, ControlHttpMetrics, Error};
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
 use std::future::Future;
 use std::pin::Pin;
@@ -16,7 +11,7 @@ use tracing::debug;
 pub enum Config {
     Disabled,
     Enabled {
-        control: ControlConfig,
+        control: control::Config,
         attributes: HashMap<String, String>,
         hostname: Option<String>,
     },
@@ -29,7 +24,7 @@ pub type SpanSink = mpsc::Sender<proto::trace::v1::Span>;
 pub enum OcCollector {
     Disabled,
     Enabled {
-        addr: ControlAddr,
+        addr: control::ControlAddr,
         span_sink: SpanSink,
         task: Task,
     },
@@ -44,6 +39,7 @@ impl Config {
         identity: LocalIdentity,
         dns: dns::Resolver,
         metrics: metrics::Registry,
+        client_metrics: ControlHttpMetrics,
     ) -> Result<OcCollector, Error> {
         match self {
             Config::Disabled => Ok(OcCollector::Disabled),
@@ -52,24 +48,8 @@ impl Config {
                 hostname,
                 attributes,
             } => {
-                let addr = control.addr;
-                let svc = svc::connect(control.connect.keepalive)
-                    .push(tls::ConnectLayer::new(identity))
-                    .push_timeout(control.connect.timeout)
-                    // TODO: perhaps rename from "control" to "grpc"
-                    .push(control::client::layer())
-                    // TODO: we should have metrics of some kind, but the standard
-                    // HTTP metrics aren't useful for a client where we never read
-                    // the response.
-                    .push(control::resolve::layer(dns))
-                    .push_on_response(control::balance::layer())
-                    .push(reconnect::layer({
-                        let backoff = control.connect.backoff;
-                        move |_| Ok(backoff.stream())
-                    }))
-                    .push(control::add_origin::Layer::new())
-                    .into_new_service()
-                    .with_fixed_target(addr.clone());
+                let addr = control.addr.clone();
+                let svc = control.build(dns, client_metrics, identity);
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
 

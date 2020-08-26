@@ -1,10 +1,25 @@
-use linkerd2_addr::Addr;
+use crate::{
+    classify, config, control, dns,
+    proxy::http,
+    reconnect,
+    svc::{self, NewService},
+    transport::tls,
+    Addr, ControlHttpMetrics, Error,
+};
+use linkerd2_buffer::Buffer;
 use std::fmt;
+
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub addr: ControlAddr,
+    pub connect: config::ConnectConfig,
+    pub buffer_capacity: usize,
+}
 
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
     pub addr: Addr,
-    pub identity: crate::transport::tls::PeerIdentity,
+    pub identity: tls::PeerIdentity,
 }
 
 impl Into<Addr> for ControlAddr {
@@ -19,8 +34,54 @@ impl fmt::Display for ControlAddr {
     }
 }
 
+pub type Client<B> = Buffer<
+    http::Request<B>,
+    http::Response<
+        linkerd2_http_metrics::requests::ResponseBody<
+            http::balance::PendingUntilFirstDataBody<
+                tower::load::peak_ewma::Handle,
+                linkerd2_proxy_http::glue::Body,
+            >,
+            classify::Eos,
+        >,
+    >,
+>;
+
+impl Config {
+    pub fn build<B, I>(
+        self,
+        dns: dns::Resolver,
+        metrics: ControlHttpMetrics,
+        identity: tls::Conditional<I>,
+    ) -> Client<B>
+    where
+        B: http::HttpBody + Send + 'static,
+        B::Data: Send,
+        B::Error: Into<Error> + Send + Sync,
+        I: Clone + tls::client::HasConfig + Send + 'static,
+    {
+        svc::connect(self.connect.keepalive)
+            .push(tls::ConnectLayer::new(identity))
+            .push_timeout(self.connect.timeout)
+            .push(self::client::layer())
+            .push(reconnect::layer({
+                let backoff = self.connect.backoff;
+                move |_| Ok(backoff.stream())
+            }))
+            .push_spawn_ready()
+            .push(self::resolve::layer(dns))
+            .push_on_response(self::control::balance::layer())
+            .push(metrics.into_layer::<classify::Response>())
+            .push(self::add_origin::Layer::new())
+            .into_new_service()
+            .check_new_service()
+            .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
+            .new_service(self.addr)
+    }
+}
+
 /// Sets the request's URI from `Config`.
-pub mod add_origin {
+mod add_origin {
     use super::ControlAddr;
     use futures::{ready, TryFuture};
     use linkerd2_error::Error;
@@ -151,7 +212,7 @@ pub mod add_origin {
     }
 }
 
-pub mod resolve {
+mod resolve {
     use super::client::Target;
     use crate::{
         dns,
@@ -187,7 +248,7 @@ pub mod resolve {
     }
 }
 
-pub mod balance {
+mod balance {
     use crate::proxy::http;
     use std::time::Duration;
 
@@ -200,7 +261,7 @@ pub mod balance {
 }
 
 /// Creates a client suitable for gRPC.
-pub mod client {
+mod client {
     use crate::transport::{connect, tls};
     use crate::{proxy::http, svc};
     use linkerd2_proxy_http::h2::Settings as H2Settings;

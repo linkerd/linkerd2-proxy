@@ -1,22 +1,18 @@
 mod permit;
 mod resolve;
 
-use http_body::Body as HttpBody;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
-    config::{ControlAddr, ControlConfig},
-    dns, profiles, request_filter, svc, Error,
+    control, dns, profiles, proxy::identity, request_filter, svc, transport::tls,
+    ControlHttpMetrics, Error,
 };
 use permit::PermitConfiguredDsts;
 use std::time::Duration;
-use tonic::{
-    body::{Body, BoxBody},
-    client::GrpcService,
-};
+use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub control: ControlConfig,
+    pub control: control::Config,
     pub context: String,
     pub get_suffixes: IndexSet<dns::Suffix>,
     pub get_networks: IndexSet<ipnet::IpNet>,
@@ -28,40 +24,37 @@ pub struct Config {
 /// Handles to destination service clients.
 ///
 /// The addr is preserved for logging.
-pub struct Dst<S> {
-    pub addr: ControlAddr,
+pub struct Dst {
+    pub addr: control::ControlAddr,
     pub profiles: request_filter::Service<
         PermitConfiguredDsts<profiles::InvalidProfileAddr>,
-        profiles::Client<S, resolve::BackoffUnlessInvalidArgument>,
+        profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
     >,
-    pub resolve: request_filter::Service<PermitConfiguredDsts, resolve::Resolve<S>>,
+    pub resolve:
+        request_filter::Service<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
 }
 
 impl Config {
     // XXX This is unfortunate -- the service should be built here, but it's annoying to name.
-    pub fn build<S>(self, svc: S) -> Result<Dst<S>, Error>
-    where
-        S: GrpcService<BoxBody> + Clone + Send + 'static,
-        S::Error: Into<Error> + Send,
-        S::ResponseBody: Send,
-        <S::ResponseBody as Body>::Data: Send,
-        <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-        S::Future: Send,
-    {
-        let resolve = svc::stack(resolve::new(
-            svc.clone(),
-            &self.context,
-            self.control.connect.backoff,
-        ))
-        .push_request_filter(PermitConfiguredDsts::new(
-            self.get_suffixes,
-            self.get_networks,
-        ))
-        .into_inner();
+    pub fn build(
+        self,
+        dns: dns::Resolver,
+        metrics: ControlHttpMetrics,
+        identity: tls::Conditional<identity::Local>,
+    ) -> Result<Dst, Error> {
+        let addr = self.control.addr.clone();
+        let backoff = self.control.connect.backoff.clone();
+        let svc = self.control.build(dns, metrics, identity);
+        let resolve = svc::stack(resolve::new(svc.clone(), &self.context, backoff))
+            .push_request_filter(PermitConfiguredDsts::new(
+                self.get_suffixes,
+                self.get_networks,
+            ))
+            .into_inner();
 
         let profiles = svc::stack(profiles::Client::new(
             svc,
-            resolve::BackoffUnlessInvalidArgument::from(self.control.connect.backoff),
+            resolve::BackoffUnlessInvalidArgument::from(backoff),
             self.initial_profile_timeout,
             self.context,
         ))
@@ -72,7 +65,7 @@ impl Config {
         .into_inner();
 
         Ok(Dst {
-            addr: self.control.addr,
+            addr,
             resolve,
             profiles,
         })

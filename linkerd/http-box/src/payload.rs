@@ -4,6 +4,7 @@ use linkerd2_error::Error;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
 pub struct Payload {
     inner: Pin<Box<dyn Body<Data = Data, Error = Error> + Send + 'static>>,
 }

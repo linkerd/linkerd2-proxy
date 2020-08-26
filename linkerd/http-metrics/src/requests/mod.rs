@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 mod layer;
 mod report;
 
+pub use self::layer::ResponseBody;
+
 type SharedRegistry<T, C> = Arc<Mutex<Registry<T, Metrics<C>>>>;
 
 #[derive(Debug)]

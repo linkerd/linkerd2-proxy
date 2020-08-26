@@ -2,7 +2,6 @@
 use futures::{ready, FutureExt, Stream};
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
-use linkerd2_stack::NewService;
 use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;
@@ -66,8 +65,7 @@ enum State {
 
 impl<T, S> SpanExporter<T, S>
 where
-    T: NewService<()>,
-    T::Service: GrpcService<BoxBody>,
+    T: GrpcService<BoxBody> + Clone,
     S: Stream<Item = Span>,
 {
     const DEFAULT_MAX_BATCH_SIZE: usize = 100;
@@ -155,16 +153,15 @@ where
     }
 }
 
-impl<T, S, Svc> Future for SpanExporter<T, S>
+impl<T, S> Future for SpanExporter<T, S>
 where
-    T: NewService<(), Service = Svc>,
-    Svc: GrpcService<BoxBody> + Send + 'static,
+    T: GrpcService<BoxBody> + Clone + Send + 'static,
+    T::Error: Into<Error> + Send,
+    T::Future: Send,
+    T::ResponseBody: Send + 'static,
+    <T::ResponseBody as GrpcBody>::Data: Send,
+    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S: Stream<Item = Span>,
-    Svc::Error: Into<Error> + Send,
-    Svc::ResponseBody: Send + 'static,
-    <Svc::ResponseBody as GrpcBody>::Data: Send,
-    <Svc::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    Svc::Future: Send,
 {
     type Output = ();
 
@@ -174,7 +171,7 @@ where
             *this.state = match this.state {
                 State::Idle => {
                     let (request_tx, request_rx) = mpsc::channel(1);
-                    let mut svc = TraceServiceClient::new(this.client.new_service(()));
+                    let mut svc = TraceServiceClient::new(this.client.clone());
                     let req = grpc::Request::new(request_rx);
                     trace!("Establishing new TraceService::export request");
                     this.metrics.start_stream();

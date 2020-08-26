@@ -13,14 +13,7 @@ pub mod tap;
 use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
-use linkerd2_app_core::{
-    classify,
-    config::ControlAddr,
-    control, dns, drain, reconnect,
-    svc::{self, NewService},
-    transport::tls,
-    Error,
-};
+use linkerd2_app_core::{control::ControlAddr, dns, drain, svc, Error};
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
@@ -103,37 +96,16 @@ impl Config {
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| {
-                // XXX This is unfortunate. But we don't daemonize the service into a
-                // task in the build, so we'd have to name it. And that's not
-                // happening today. Really, we should daemonize the whole client
-                // into a task so consumers can be ignorant. This would also
-                // probably enable the use of a lock.
-                let svc = svc::connect(dst.control.connect.keepalive)
-                    .push(tls::ConnectLayer::new(identity.local()))
-                    .push_timeout(dst.control.connect.timeout)
-                    .push(control::client::layer())
-                    .push(control::resolve::layer(dns))
-                    .push_on_response(control::balance::layer())
-                    .push(reconnect::layer({
-                        let backoff = dst.control.connect.backoff;
-                        move |_| Ok(backoff.stream())
-                    }))
-                    .push(metrics.into_layer::<classify::Response>())
-                    .push(control::add_origin::Layer::new())
-                    .into_new_service()
-                    .push_on_response(svc::layers().push_spawn_buffer(dst.control.buffer_capacity))
-                    .new_service(dst.control.addr.clone());
-
-                dst.build(svc)
-            })
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
         }?;
 
         let oc_collector = {
             let identity = identity.local();
             let dns = dns.resolver.clone();
+            let client_metrics = metrics.control;
             let metrics = metrics.opencensus;
-            info_span!("opencensus").in_scope(|| oc_collector.build(identity, dns, metrics))
+            info_span!("opencensus")
+                .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
         let admin = {
