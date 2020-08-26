@@ -1,6 +1,7 @@
 use crate::core::{
     addr,
     config::*,
+    control::{Config as ControlConfig, ControlAddr},
     proxy::http::h2,
     transport::{listen, tls},
     Addr,

@@ -1,4 +1,3 @@
-pub use super::control::ControlAddr;
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::h2;
 pub use crate::transport::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr};
@@ -30,13 +29,6 @@ pub struct ProxyConfig {
     pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
     pub detect_protocol_timeout: Duration,
-}
-
-#[derive(Clone, Debug)]
-pub struct ControlConfig {
-    pub addr: ControlAddr,
-    pub connect: ConnectConfig,
-    pub buffer_capacity: usize,
 }
 
 // === impl ServerConfig ===

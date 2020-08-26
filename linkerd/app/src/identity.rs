@@ -2,12 +2,8 @@ pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
 use linkerd2_app_core::{
-    classify,
-    config::{ControlAddr, ControlConfig},
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    reconnect,
-    svc::{self, NewService},
     transport::tls,
     ControlHttpMetrics as Metrics, Error,
 };
@@ -19,7 +15,7 @@ use tracing::debug;
 pub enum Config {
     Disabled,
     Enabled {
-        control: ControlConfig,
+        control: control::Config,
         certify: certify::Config,
     },
 }
@@ -27,7 +23,7 @@ pub enum Config {
 pub enum Identity {
     Disabled,
     Enabled {
-        addr: ControlAddr,
+        addr: control::ControlAddr,
         local: Local,
         task: Task,
     },
@@ -47,20 +43,12 @@ impl Config {
             Config::Enabled { control, certify } => {
                 let (local, crt_store) = Local::new(&certify);
 
-                let addr = control.addr;
-                let svc = svc::connect(control.connect.keepalive)
-                    .push(tls::ConnectLayer::new(tls::Conditional::Some(
-                        certify.trust_anchors.clone(),
-                    )))
-                    .push_timeout(control.connect.timeout)
-                    .push(control::client::layer())
-                    .push(control::resolve::layer(dns))
-                    .push_on_response(control::balance::layer())
-                    .push(reconnect::layer(Recover(control.connect.backoff)))
-                    .push(metrics.into_layer::<classify::Response>())
-                    .push(control::add_origin::Layer::new())
-                    .into_new_service()
-                    .new_service(addr.clone());
+                let addr = control.addr.clone();
+                let svc = control.build(
+                    dns,
+                    metrics,
+                    tls::Conditional::Some(certify.trust_anchors.clone()),
+                );
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {

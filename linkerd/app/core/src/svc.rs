@@ -49,42 +49,6 @@ impl<T> NewService<T> for IdentityProxy {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct WithTarget<S, T> {
-    inner: S,
-    target: T,
-}
-
-impl<S, T> Service<()> for WithTarget<S, T>
-where
-    S: Service<T>,
-    T: Clone,
-{
-    type Response = S::Response;
-    type Future = S::Future;
-    type Error = S::Error;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, _: ()) -> Self::Future {
-        self.inner.call(self.target.clone())
-    }
-}
-
-impl<S, T> NewService<()> for WithTarget<S, T>
-where
-    S: NewService<T>,
-    T: Clone,
-{
-    type Service = S::Service;
-
-    fn new_service(&self, _: ()) -> Self::Service {
-        self.inner.new_service(self.target.clone())
-    }
-}
-
 #[allow(dead_code)]
 impl<L> Layers<L> {
     pub fn push<O>(self, outer: O) -> Layers<Pair<L, O>> {
@@ -402,15 +366,6 @@ impl<S> Stack<S> {
 
     pub fn into_inner(self) -> S {
         self.0
-    }
-
-    /// Transforms a `Service<T>` or `NewService<T>` into a `Service<()>` or
-    /// `NewService<()>` by calling it with a fixed instance of `T`.
-    pub fn with_fixed_target<T: Clone>(self, target: T) -> Stack<WithTarget<S, T>> {
-        Stack(WithTarget {
-            target,
-            inner: self.0,
-        })
     }
 }
 
