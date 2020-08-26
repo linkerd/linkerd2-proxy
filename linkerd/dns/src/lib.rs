@@ -26,9 +26,6 @@ pub trait ConfigureResolver {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolutionFailed(ResolveError);
-
-#[derive(Debug, Clone)]
 struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
