@@ -333,17 +333,16 @@ where
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     B::Data: Send + 'static,
 {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-    let listener = net2::TcpBuilder::new_v4().expect("Tcp::new_v4");
-    listener.bind(addr).expect("Tcp::bind");
-    let addr = listener.local_addr().expect("Tcp::local_addr");
-    let listener = listener.listen(1024).expect("listen");
-
     let (listening_tx, listening_rx) = tokio::sync::oneshot::channel();
     let (drain_signal, drain) = drain::channel();
+
+    // Bind an ephemeral port but do not start listening yet.
+    let (sock, addr) = crate::bind_ephemeral();
+
     let task = tokio::spawn(
         cancelable(drain.clone(), async move {
-            let mut listener = tokio::net::TcpListener::from_std(listener)?;
+            // Start listening on the socket.
+            let mut listener = crate::listen(sock);
             let mut listening_tx = Some(listening_tx);
 
             if let Some(delay) = delay {
