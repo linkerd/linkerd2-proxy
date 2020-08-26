@@ -40,7 +40,7 @@ pub type Client<B> = Buffer<
         linkerd2_http_metrics::requests::ResponseBody<
             http::balance::PendingUntilFirstDataBody<
                 tower::load::peak_ewma::Handle,
-                linkerd2_proxy_http::glue::Body,
+                http::glue::Body,
             >,
             classify::Eos,
         >,
