@@ -6,7 +6,6 @@ use crate::{
     transport::tls,
     Addr, ControlHttpMetrics, Error,
 };
-use linkerd2_buffer::Buffer;
 use std::fmt;
 
 #[derive(Clone, Debug)]
@@ -34,18 +33,12 @@ impl fmt::Display for ControlAddr {
     }
 }
 
-pub type Client<B> = Buffer<
-    http::Request<B>,
-    http::Response<
-        linkerd2_http_metrics::requests::ResponseBody<
-            http::balance::PendingUntilFirstDataBody<
-                tower::load::peak_ewma::Handle,
-                http::glue::Body,
-            >,
-            classify::Eos,
-        >,
-    >,
->;
+type BalanceBody =
+    http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, http::glue::Body>;
+
+type RspBody = linkerd2_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
+
+pub type Client<B> = linkerd2_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
 
 impl Config {
     pub fn build<B, I>(
