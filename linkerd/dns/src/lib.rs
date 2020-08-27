@@ -9,7 +9,8 @@ use std::{fmt, net};
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 use trust_dns_resolver::{
-    config::ResolverConfig, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
+    config::ResolverConfig, proto::error, proto::rr::rdata, system_conf, AsyncResolver,
+    TokioAsyncResolver,
 };
 pub use trust_dns_resolver::{
     config::ResolverOpts,
@@ -98,9 +99,23 @@ impl Resolver {
                         .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
                     Ok((vec![], time::delay_until(Instant::from_std(expiry))))
                 }
+                ResolveErrorKind::Proto(pe) if self.is_nx_domain(&pe) => Ok((
+                    vec![],
+                    time::delay_until(Instant::from_std(
+                        std::time::Instant::now() + Self::DEFAULT_TTL,
+                    )),
+                )),
+
                 _ => Err(e),
             },
         }
+    }
+
+    fn is_nx_domain(&self, pe: &error::ProtoError) -> bool {
+        return match pe.kind() {
+            error::ProtoErrorKind::Message(msg) => *msg == "Nameserver responded with NXDomain",
+            _ => false,
+        };
     }
 
     async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
@@ -121,6 +136,12 @@ impl Resolver {
                         .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
                     Ok((vec![], time::delay_until(Instant::from_std(expiry))))
                 }
+                ResolveErrorKind::Proto(pe) if self.is_nx_domain(&pe) => Ok((
+                    vec![],
+                    time::delay_until(Instant::from_std(
+                        std::time::Instant::now() + Self::DEFAULT_TTL,
+                    )),
+                )),
                 _ => Err(e.into()),
             },
         }
