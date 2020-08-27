@@ -57,7 +57,7 @@ impl<T, N: Clone, S> NewService<(T, Receiver)> for NewSplit<N, S> {
 impl<Req, T, N, S> tower::Service<Req> for Split<T, N, S>
 where
     Req: Send + 'static,
-    T: Clone,
+    T: Into<Addr> + Clone,
     N: NewService<(T, Addr), Service = S> + Clone,
     S: tower::Service<Req> + Clone + Send + 'static,
     S::Response: Send + 'static,
@@ -78,10 +78,19 @@ where
         if let Some(Routes { dst_overrides, .. }) = update {
             // Clear out the prior state and preserve its services for reuse.
             let mut prior = self.inner.take().map(|i| i.services).unwrap_or_default();
-            if dst_overrides.len() > 0 {
+
+            let mut services = IndexMap::with_capacity(dst_overrides.len().max(1));
+            let mut weights = Vec::with_capacity(dst_overrides.len().max(1));
+            if dst_overrides.len() == 0 {
+                let addr: Addr = self.target.clone().into();
+                let svc = prior.remove(&addr).unwrap_or_else(|| {
+                    self.new_service
+                        .new_service((self.target.clone(), addr.clone()))
+                });
+                services.insert(addr, svc);
+                weights.push(1);
+            } else {
                 // Create an updated distribution and set of services.
-                let mut services = IndexMap::with_capacity(dst_overrides.len());
-                let mut weights = Vec::with_capacity(dst_overrides.len());
                 for WeightedAddr { weight, addr } in dst_overrides.into_iter() {
                     // Reuse the prior services whenever possible.
                     let svc = prior.remove(&addr).unwrap_or_else(|| {
@@ -91,11 +100,11 @@ where
                     services.insert(addr, svc);
                     weights.push(weight);
                 }
-                self.inner = WeightedIndex::new(weights).ok().map(|distribution| Inner {
-                    services,
-                    distribution,
-                });
             }
+            self.inner = WeightedIndex::new(weights).ok().map(|distribution| Inner {
+                services,
+                distribution,
+            });
         }
 
         Poll::Ready(Ok(()))
