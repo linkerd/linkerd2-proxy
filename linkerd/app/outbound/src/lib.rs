@@ -262,7 +262,7 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age));
 
         // Builds a balancer for each concrete destination.
-        let http_balancer = svc::stack(http_endpoint.clone())
+        let balance = svc::stack(http_endpoint.clone())
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -273,78 +273,26 @@ impl Config {
             .check_service::<Target<HttpEndpoint>>()
             .push(discover)
             .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        // If the balancer has been empty/unavailable for 10s, eagerly fail
-                        // requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the balancer, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("balance"))),
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
-            .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr));
-
-        // Caches clients that bypass discovery/balancing.
-        //
-        // This is effectively the same as the endpoint stack; but the client layer captures the
-        // requst body type (via PhantomData), so the stack cannot be shared directly.
-        let http_forward_cache = svc::stack(http_endpoint)
-            .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
-            .into_new_service()
-            .cache(
+            .push_on_response(
                 svc::layers()
-                    .push_on_response(
-                        svc::layers()
-                            // If the endpoint has been unavailable for an extended time, eagerly
-                            // fail requests.
-                            .push_failfast(dispatch_timeout)
-                            // Shares the balancer, ensuring discovery errors are propagated.
-                            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                            .box_http_request()
-                            .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
-                    ),
+                    // If the balancer has been empty/unavailable for 10s, eagerly fail
+                    // requests.
+                    .push_failfast(dispatch_timeout)
+                    // Shares the balancer, ensuring discovery errors are propagated.
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                    .push(metrics.stack.layer(stack_labels("balance"))),
             )
-            .spawn_buffer(buffer_capacity)
-            .instrument(|endpoint: &Target<HttpEndpoint>| {
-                info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
-            })
-            .push_map_target(|t: Concrete<HttpEndpoint>| Target {
-                addr: t.addr.into(),
-                inner: t.inner.inner,
-            })
-            .check_service::<Concrete<HttpEndpoint>>();
+            .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
+            .into_new_service();
 
-        // If the balancer fails to be created, i.e., because it is unresolvable, fall back to
-        // using a router that dispatches request to the application-selected original destination.
-        let http_concrete = http_balancer
-            .push_map_target(|c: Concrete<HttpEndpoint>| c.map(|l| l.map(|e| e.settings)))
-            .check_service::<Concrete<HttpEndpoint>>()
-            .push_on_response(svc::layers().box_http_response())
-            .push_make_ready()
-            .push_fallback_with_predicate(
-                http_forward_cache
-                    .push_on_response(svc::layers().box_http_response())
-                    .into_inner(),
-                is_discovery_rejected,
-            )
-            .check_service::<Concrete<HttpEndpoint>>();
-
-        let http_profile_route_proxy = svc::proxies()
-            .check_new_clone_service::<dst::Route>()
+        let request_routes = svc::proxies()
             .push(metrics.http_route_actual.into_layer::<classify::Response>())
             // Sets an optional retry policy.
             .push(retry::layer(metrics.http_route_retry))
-            .check_new_clone_service::<dst::Route>()
             // Sets an optional request timeout.
             .push(http::MakeTimeoutLayer::default())
-            .check_new_clone_service::<dst::Route>()
             // Records per-route metrics.
             .push(metrics.http_route.into_layer::<classify::Response>())
-            .check_new_clone_service::<dst::Route>()
             // Sets the per-route response classifier as a request
             // extension.
             .push(classify::Layer::new())
@@ -352,7 +300,7 @@ impl Config {
 
         // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
-        let http_logical_profile_cache = http_concrete
+        let logical_cache = balance
             .clone()
             .push_on_response(svc::layers().box_http_request())
             .check_service::<Concrete<HttpEndpoint>>()
@@ -391,13 +339,43 @@ impl Config {
             .check_new_service_routes::<(), Logical<HttpEndpoint>>()
             .new_service(());
 
+        // Caches clients that bypass discovery/balancing.
+        //
+        // This is effectively the same as the endpoint stack; but the client layer captures the
+        // requst body type (via PhantomData), so the stack cannot be shared directly.
+        let forward_cache = svc::stack(http_endpoint)
+            .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
+            .into_new_service()
+            .cache(
+                svc::layers()
+                    .push_on_response(
+                        svc::layers()
+                            // If the endpoint has been unavailable for an extended time, eagerly
+                            // fail requests.
+                            .push_failfast(dispatch_timeout)
+                            // Shares the balancer, ensuring discovery errors are propagated.
+                            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                            .box_http_request()
+                            .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
+                    ),
+            )
+            .spawn_buffer(buffer_capacity)
+            .instrument(|endpoint: &Target<HttpEndpoint>| {
+                info_span!("forward", peer.addr = %endpoint.addr, peer.id = ?endpoint.inner.identity)
+            })
+            .push_map_target(|t: Concrete<HttpEndpoint>| Target {
+                addr: t.addr.into(),
+                inner: t.inner.inner,
+            })
+            .check_service::<Concrete<HttpEndpoint>>();
+
         // Routes requests to their logical target.
-        svc::stack(http_logical_profile_cache)
+        svc::stack(logical_cache)
             .check_service::<Logical<HttpEndpoint>>()
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
             .push_fallback_with_predicate(
-                http_concrete
+                forward_cache
                     .push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
                         addr: inner.addr.clone(),
                         inner,

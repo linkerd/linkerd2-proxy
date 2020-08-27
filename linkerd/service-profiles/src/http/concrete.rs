@@ -73,14 +73,17 @@ where
         while let Poll::Ready(Some(up)) = self.rx.poll_recv_ref(cx) {
             update = Some(up.clone());
         }
+        // Every time the profile updates, rebuild the distribution, reusing
+        // services that existed in the prior state.
         if let Some(Routes { dst_overrides, .. }) = update {
-            self.inner = if dst_overrides.len() == 0 {
-                None
-            } else {
+            // Clear out the prior state and preserve its services for reuse.
+            let mut prior = self.inner.take().map(|i| i.services).unwrap_or_default();
+            if dst_overrides.len() > 0 {
+                // Create an updated distribution and set of services.
                 let mut services = IndexMap::with_capacity(dst_overrides.len());
                 let mut weights = Vec::with_capacity(dst_overrides.len());
-                let mut prior = self.inner.take().map(|i| i.services).unwrap_or_default();
                 for WeightedAddr { weight, addr } in dst_overrides.into_iter() {
+                    // Reuse the prior services whenever possible.
                     let svc = prior.remove(&addr).unwrap_or_else(|| {
                         self.new_service
                             .new_service((self.target.clone(), addr.clone()))
@@ -88,11 +91,11 @@ where
                     services.insert(addr, svc);
                     weights.push(weight);
                 }
-                WeightedIndex::new(weights).ok().map(|distribution| Inner {
+                self.inner = WeightedIndex::new(weights).ok().map(|distribution| Inner {
                     services,
                     distribution,
-                })
-            };
+                });
+            }
         }
 
         Poll::Ready(Ok(()))
@@ -105,16 +108,16 @@ where
         }) = self.inner.as_ref()
         {
             debug_assert_ne!(services.len(), 0);
-            let service = if services.len() == 1 {
-                services.get_index(0).unwrap().1.clone()
+            let idx = if services.len() == 1 {
+                0
             } else {
-                let idx = distribution.sample(&mut self.rng);
-                services.get_index(idx).unwrap().1.clone()
+                distribution.sample(&mut self.rng)
             };
-            return Box::pin(service.oneshot(req).err_into::<Error>());
+            let (_, svc) = services.get_index(idx).expect("illegal service index");
+            return Box::pin(svc.clone().oneshot(req).err_into::<Error>());
         }
 
-        return Box::pin(future::err(NoTargets(()).into()));
+        Box::pin(future::err(NoTargets(()).into()))
     }
 }
 
