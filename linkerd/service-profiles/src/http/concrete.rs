@@ -2,8 +2,8 @@ use super::{Receiver, Routes, WeightedAddr};
 use futures::{future, prelude::*};
 use indexmap::IndexMap;
 use linkerd2_addr::Addr;
-use linkerd2_error::{Error, Never};
-use linkerd2_stack::NewService;
+use linkerd2_error::Error;
+use linkerd2_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::rngs::SmallRng;
 use std::{
@@ -13,8 +13,16 @@ use std::{
 };
 use tower::util::ServiceExt;
 
-pub struct MakeSplit<N, S> {
-    new_service: N,
+pub fn layer<N, S>(rng: SmallRng) -> impl layer::Layer<N, Service = NewSplit<N, S>> {
+    layer::mk(move |inner| NewSplit {
+        inner,
+        rng: rng.clone(),
+        _service: PhantomData,
+    })
+}
+
+pub struct NewSplit<N, S> {
+    inner: N,
     rng: SmallRng,
     _service: PhantomData<S>,
 }
@@ -32,23 +40,17 @@ struct Inner<S> {
     services: IndexMap<Addr, S>,
 }
 
-impl<T, N: Clone, S> tower::Service<(T, Receiver)> for MakeSplit<N, S> {
-    type Response = Split<T, N, S>;
-    type Error = Never;
-    type Future = future::Ready<Result<Split<T, N, S>, Never>>;
+impl<T, N: Clone, S> NewService<(T, Receiver)> for NewSplit<N, S> {
+    type Service = Split<T, N, S>;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, (target, rx): (T, Receiver)) -> Self::Future {
-        future::ok(Split {
+    fn new_service(&self, (target, rx): (T, Receiver)) -> Self::Service {
+        Split {
             rx,
             target,
-            new_service: self.new_service.clone(),
+            new_service: self.inner.clone(),
             rng: self.rng.clone(),
             inner: None,
-        })
+        }
     }
 }
 
