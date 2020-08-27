@@ -21,12 +21,14 @@ pub fn layer<N, S>(rng: SmallRng) -> impl layer::Layer<N, Service = NewSplit<N, 
     })
 }
 
+#[derive(Clone, Debug)]
 pub struct NewSplit<N, S> {
     inner: N,
     rng: SmallRng,
-    _service: PhantomData<S>,
+    _service: PhantomData<fn() -> S>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Split<T, N, S> {
     target: T,
     rx: Receiver,
@@ -35,6 +37,7 @@ pub struct Split<T, N, S> {
     inner: Option<Inner<S>>,
 }
 
+#[derive(Clone, Debug)]
 struct Inner<S> {
     distribution: WeightedIndex<u32>,
     services: IndexMap<Addr, S>,
@@ -123,10 +126,10 @@ where
                 distribution.sample(&mut self.rng)
             };
             let (_, svc) = services.get_index(idx).expect("illegal service index");
-            return Box::pin(svc.clone().oneshot(req).err_into::<Error>());
+            Box::pin(svc.clone().oneshot(req).err_into::<Error>())
+        } else {
+            Box::pin(future::err(NoTargets(()).into()))
         }
-
-        Box::pin(future::err(NoTargets(()).into()))
     }
 }
 
