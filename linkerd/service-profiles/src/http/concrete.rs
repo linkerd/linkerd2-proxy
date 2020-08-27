@@ -43,10 +43,10 @@ struct Inner<S> {
     services: IndexMap<Addr, S>,
 }
 
-impl<T, N: Clone, S> NewService<(T, Receiver)> for NewSplit<N, S> {
+impl<T, N: Clone, S> NewService<(Receiver, T)> for NewSplit<N, S> {
     type Service = Split<T, N, S>;
 
-    fn new_service(&self, (target, rx): (T, Receiver)) -> Self::Service {
+    fn new_service(&self, (rx, target): (Receiver, T)) -> Self::Service {
         Split {
             rx,
             target,
@@ -61,7 +61,7 @@ impl<Req, T, N, S> tower::Service<Req> for Split<T, N, S>
 where
     Req: Send + 'static,
     T: Into<Addr> + Clone,
-    N: NewService<(T, Addr), Service = S> + Clone,
+    N: NewService<(Addr, T), Service = S> + Clone,
     S: tower::Service<Req> + Clone + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
@@ -85,10 +85,12 @@ where
             let mut services = IndexMap::with_capacity(dst_overrides.len().max(1));
             let mut weights = Vec::with_capacity(dst_overrides.len().max(1));
             if dst_overrides.len() == 0 {
+                // If there were no overrides, build a default backend from the
+                // target.
                 let addr: Addr = self.target.clone().into();
                 let svc = prior.remove(&addr).unwrap_or_else(|| {
                     self.new_service
-                        .new_service((self.target.clone(), addr.clone()))
+                        .new_service((addr.clone(), self.target.clone()))
                 });
                 services.insert(addr, svc);
                 weights.push(1);
@@ -98,12 +100,13 @@ where
                     // Reuse the prior services whenever possible.
                     let svc = prior.remove(&addr).unwrap_or_else(|| {
                         self.new_service
-                            .new_service((self.target.clone(), addr.clone()))
+                            .new_service((addr.clone(), self.target.clone()))
                     });
                     services.insert(addr, svc);
                     weights.push(weight);
                 }
             }
+
             self.inner = WeightedIndex::new(weights).ok().map(|distribution| Inner {
                 services,
                 distribution,

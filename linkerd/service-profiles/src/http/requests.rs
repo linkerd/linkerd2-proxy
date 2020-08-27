@@ -1,4 +1,5 @@
 use super::{Receiver, RequestMatch, Route, Routes};
+use futures::prelude::*;
 use linkerd2_stack::{layer, NewService, Proxy};
 use std::{
     collections::HashMap,
@@ -38,12 +39,12 @@ pub struct RequestRoute<T, S, N, R> {
     default: R,
 }
 
-impl<T, M, N> tower::Service<(T, Receiver)> for NewRequestRoute<M, N, N::Service>
+impl<T, M, N> tower::Service<(Receiver, T)> for NewRequestRoute<M, N, N::Service>
 where
     T: Clone + Send + 'static,
-    M: tower::Service<(T, Receiver)>,
+    M: tower::Service<(Receiver, T)>,
     M::Future: Send + 'static,
-    N: NewService<(T, Route)> + Clone + Send + 'static,
+    N: NewService<(Route, T)> + Clone + Send + 'static,
 {
     type Response = RequestRoute<T, M::Response, N, N::Service>;
     type Error = M::Error;
@@ -53,23 +54,25 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, (target, rx): (T, Receiver)) -> Self::Future {
-        let fut = self.inner.call((target.clone(), rx.clone()));
+    fn call(&mut self, (rx, target): (Receiver, T)) -> Self::Future {
         let new_route = self.new_route.clone();
         let default_route = self.default.clone();
-        Box::pin(async move {
-            let inner = fut.await?;
-            let default = new_route.new_service((target.clone(), default_route));
-            Ok(RequestRoute {
-                rx,
-                target,
-                inner,
-                default,
-                new_route,
-                routes: Vec::new(),
-                proxies: HashMap::new(),
-            })
-        })
+        Box::pin(
+            self.inner
+                .call((rx.clone(), target.clone()))
+                .map_ok(move |inner| {
+                    let default = new_route.new_service((default_route, target.clone()));
+                    RequestRoute {
+                        rx,
+                        target,
+                        inner,
+                        default,
+                        new_route,
+                        routes: Vec::new(),
+                        proxies: HashMap::new(),
+                    }
+                }),
+        )
     }
 }
 
@@ -77,7 +80,7 @@ impl<B, T, N, S, R> tower::Service<http::Request<B>> for RequestRoute<T, S, N, R
 where
     B: Send + 'static,
     T: Clone,
-    N: NewService<(T, Route), Service = R> + Clone,
+    N: NewService<(Route, T), Service = R> + Clone,
     R: Proxy<http::Request<B>, S>,
     S: tower::Service<R::Request>,
 {
@@ -98,7 +101,7 @@ where
                 // Reuse the prior services whenever possible.
                 let proxy = self.proxies.remove(&route).unwrap_or_else(|| {
                     self.new_route
-                        .new_service((self.target.clone(), route.clone()))
+                        .new_service((route.clone(), self.target.clone()))
                 });
                 proxies.insert(route.clone(), proxy);
             }

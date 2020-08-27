@@ -66,11 +66,12 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let future = self.get_routes.get_routes(target.clone());
         let inner = self.inner.clone();
-        Box::pin(async move {
-            let routes = future.err_into::<Error>().await?;
-            inner.oneshot((target, routes)).err_into::<Error>().await
-        })
+        Box::pin(
+            self.get_routes
+                .get_routes(target.clone())
+                .err_into::<Error>()
+                .and_then(move |rx| inner.oneshot((target, rx)).err_into::<Error>()),
+        )
     }
 }
