@@ -1,16 +1,17 @@
 use super::{Receiver, WeightedAddr};
 use futures::{future, prelude::*};
+use indexmap::IndexMap;
 use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_error::{Error, Never};
 use linkerd2_stack::NewService;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::rngs::SmallRng;
-use indexmap::IndexMap;
-use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData};
-use tracing::debug;
+use std::{
+    marker::PhantomData,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tower::util::ServiceExt;
-
-pub enum Routes {}
 
 pub struct MakeSplit<N, S> {
     new_service: N,
@@ -73,18 +74,22 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        if let Some(Inner { ref services, ref distribution }) = self.inner.as_ref() {
+        if let Some(Inner {
+            ref services,
+            ref distribution,
+        }) = self.inner.as_ref()
+        {
             debug_assert_ne!(services.len(), 0);
             let service = if services.len() == 1 {
                 services.get_index(0).unwrap().1.clone()
             } else {
                 let idx = distribution.sample(&mut self.rng);
-                services.get_index(0).unwrap().1.clone()
+                services.get_index(idx).unwrap().1.clone()
             };
             return Box::pin(service.oneshot(req).err_into::<Error>());
         }
 
-        return Box::pin(future::err(NoTargets(()).into()))
+        return Box::pin(future::err(NoTargets(()).into()));
     }
 }
 
