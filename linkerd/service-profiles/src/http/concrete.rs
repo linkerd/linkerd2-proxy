@@ -1,7 +1,7 @@
-use super::{Receiver, WeightedAddr};
+use super::{Receiver, Routes, WeightedAddr};
 use futures::{future, prelude::*};
 use indexmap::IndexMap;
-use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_addr::Addr;
 use linkerd2_error::{Error, Never};
 use linkerd2_stack::NewService;
 use rand::distributions::{Distribution, WeightedIndex};
@@ -29,18 +29,15 @@ pub struct Split<T, N, S> {
 
 struct Inner<S> {
     distribution: WeightedIndex<u32>,
-    services: IndexMap<NameAddr, S>,
+    services: IndexMap<Addr, S>,
 }
 
-impl<T, N, S> tower::Service<(T, Receiver)> for MakeSplit<N, S>
-where
-    N: NewService<T, Service = S> + Clone,
-{
+impl<T, N: Clone, S> tower::Service<(T, Receiver)> for MakeSplit<N, S> {
     type Response = Split<T, N, S>;
     type Error = Never;
     type Future = future::Ready<Result<Split<T, N, S>, Never>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -59,7 +56,7 @@ impl<Req, T, N, S> tower::Service<Req> for Split<T, N, S>
 where
     Req: Send + 'static,
     T: Clone,
-    N: NewService<(Addr, T)> + Clone,
+    N: NewService<(T, Addr), Service = S> + Clone,
     S: tower::Service<Req> + Clone + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
@@ -70,6 +67,32 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        let mut update = None;
+        while let Poll::Ready(Some(up)) = self.rx.poll_recv_ref(cx) {
+            update = Some(up.clone());
+        }
+        if let Some(Routes { dst_overrides, .. }) = update {
+            self.inner = if dst_overrides.len() == 0 {
+                None
+            } else {
+                let mut services = IndexMap::with_capacity(dst_overrides.len());
+                let mut weights = Vec::with_capacity(dst_overrides.len());
+                let mut prior = self.inner.take().map(|i| i.services).unwrap_or_default();
+                for WeightedAddr { weight, addr } in dst_overrides.into_iter() {
+                    let svc = prior.remove(&addr).unwrap_or_else(|| {
+                        self.new_service
+                            .new_service((self.target.clone(), addr.clone()))
+                    });
+                    services.insert(addr, svc);
+                    weights.push(weight);
+                }
+                WeightedIndex::new(weights).ok().map(|distribution| Inner {
+                    services,
+                    distribution,
+                })
+            };
+        }
+
         Poll::Ready(Ok(()))
     }
 

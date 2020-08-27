@@ -3,7 +3,7 @@ use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http;
 use http_body::Body as HttpBody;
-use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_addr::Addr;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
@@ -353,15 +353,14 @@ fn convert_route(
     Some((req_match, route))
 }
 
-fn convert_dst_override(orig: api::WeightedDst) -> Option<profiles::WeightedAddr> {
-    if orig.weight == 0 {
+fn convert_dst_override(
+    api::WeightedDst { authority, weight }: api::WeightedDst,
+) -> Option<profiles::WeightedAddr> {
+    if weight == 0 {
         return None;
     }
-    let addr = NameAddr::from_str(orig.authority.as_str()).ok()?;
-    Some(profiles::WeightedAddr {
-        addr,
-        weight: orig.weight,
-    })
+    let addr = Addr::from_str(authority.as_str()).ok()?;
+    Some(profiles::WeightedAddr { addr, weight })
 }
 
 fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget>>) {

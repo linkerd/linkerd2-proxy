@@ -1,6 +1,6 @@
 use http;
 use indexmap::IndexMap;
-use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_addr::Addr;
 use linkerd2_error::Error;
 use regex::Regex;
 use std::fmt;
@@ -22,7 +22,7 @@ pub use self::service::Layer;
 
 #[derive(Clone, Debug)]
 pub struct WeightedAddr {
-    pub addr: NameAddr,
+    pub addr: Addr,
     pub weight: u32,
 }
 
@@ -48,9 +48,8 @@ pub trait GetRoutes<T> {
     fn get_routes(&mut self, target: T) -> Self::Future;
 }
 
-impl<T, S> GetRoutes<T> for S
+impl<T: Into<Addr>, S> GetRoutes<T> for S
 where
-    T: HasDestination,
     S: tower::Service<Addr, Response = watch::Receiver<Routes>>,
     S::Error: Into<Error>,
 {
@@ -62,27 +61,8 @@ where
     }
 
     fn get_routes(&mut self, target: T) -> Self::Future {
-        tower::Service::call(self, target.destination())
+        tower::Service::call(self, target.into())
     }
-}
-
-/// Implemented by target types that may be combined with a Route.
-pub trait WithRoute {
-    type Route;
-
-    fn with_route(self, route: Route) -> Self::Route;
-}
-
-/// Implemented by target types that can have their `NameAddr` destination
-/// changed.
-pub trait OverrideDestination {
-    fn dst_mut(&mut self) -> &mut Addr;
-}
-
-/// Implemented by target types that may have a `NameAddr` destination that
-/// can be discovered via `GetRoutes`.
-pub trait HasDestination {
-    fn destination(&self) -> Addr;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
