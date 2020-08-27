@@ -10,154 +10,56 @@
 //! The concrete dst router uses the concrete dst as the target for the
 //! underlying stack.
 
-use super::concrete;
-use super::requests::Requests;
-use super::{GetRoutes, OverrideDestination, Route, Routes, WithRoute};
-use futures::{ready, TryFuture};
+use super::{GetRoutes, Receiver};
+use futures::{prelude::*, ready};
 use linkerd2_error::Error;
-use linkerd2_stack::{NewService, ProxyService};
-use pin_project::pin_project;
-use rand::{rngs::SmallRng, SeedableRng};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::sync::watch;
-use tracing::{debug, trace};
+use tower::{util::ServiceExt, Service};
 
 #[derive(Clone, Debug)]
-pub struct Layer<G, R, O = ()> {
+pub struct Layer<G> {
     get_routes: G,
-    make_route: R,
-    dst_override: O,
-    /// This is saved into a field so that the same `Arc`s are used and
-    /// cloned, instead of calling `Route::default()` every time.
-    default_route: Route,
 }
 
 #[derive(Clone, Debug)]
-pub struct MakeSvc<G, R, CMake, O = ()> {
-    default_route: Route,
+pub struct MakeSvc<G, M> {
     get_routes: G,
-    make_route: R,
-    make_concrete: CMake,
-    dst_override: O,
+    inner: M,
 }
 
-#[pin_project]
-pub struct MakeFuture<T, F, R, CMake, O> {
-    #[pin]
-    future: F,
-    inner: Option<Inner<T, R, CMake, O>>,
-}
-
-struct Inner<T, R, CMake, O> {
-    target: T,
-    default_route: Route,
-    make_route: R,
-    make_concrete: CMake,
-    dst_override: O,
-}
-
-pub struct Service<T, R, C>
-where
-    T: WithRoute,
-    R: NewService<T::Route>,
-{
-    profiles: watch::Receiver<Routes>,
-    requests: Requests<T, R>,
-    concrete: C,
-}
-
-pub struct Forward<M>(M);
-
-pub struct Override<M> {
-    service: concrete::Service<M>,
-    update: concrete::Update,
-}
-
-impl<G, R, O> Layer<G, R, O> {
-    fn new(get_routes: G, make_route: R, dst_override: O) -> Self {
-        Self {
-            get_routes,
-            make_route,
-            dst_override,
-            default_route: Route::default(),
-        }
+impl<G> Layer<G> {
+    pub fn new(get_routes: G) -> Self {
+        Self { get_routes }
     }
 }
 
-impl<G, R> Layer<G, R> {
-    pub fn without_overrides(get_routes: G, make_route: R) -> Self {
-        Self::new(get_routes, make_route, ())
-    }
-}
+impl<G: Clone, M> tower::layer::Layer<M> for Layer<G> {
+    type Service = MakeSvc<G, M>;
 
-impl<G, R> Layer<G, R, SmallRng> {
-    pub fn with_overrides(get_routes: G, make_route: R) -> Self {
-        Self::new(get_routes, make_route, SmallRng::from_entropy())
-    }
-}
-
-impl<G, R, C, O> tower::layer::Layer<C> for Layer<G, R, O>
-where
-    G: Clone,
-    R: Clone,
-    O: Clone,
-{
-    type Service = MakeSvc<G, R, C, O>;
-
-    fn layer(&self, make_concrete: C) -> Self::Service {
+    fn layer(&self, inner: M) -> Self::Service {
         MakeSvc {
-            make_concrete,
+            inner,
             get_routes: self.get_routes.clone(),
-            make_route: self.make_route.clone(),
-            default_route: self.default_route.clone(),
-            dst_override: self.dst_override.clone(),
         }
     }
 }
 
-impl<T, G, R, C> tower::Service<T> for MakeSvc<G, R, C, ()>
+impl<T, G, M> tower::Service<T> for MakeSvc<G, M>
 where
-    T: WithRoute + Clone,
+    T: Clone + Send + 'static,
     G: GetRoutes<T>,
-    R: NewService<T::Route> + Clone,
-    C: Clone,
+    G::Future: Send + 'static,
+    G::Error: Send,
+    M: Service<(T, Receiver)> + Clone + Send + 'static,
+    M::Future: Send + 'static,
+    M::Error: Into<Error>,
 {
-    type Response = Service<T, R, Forward<C>>;
+    type Response = M::Response;
     type Error = Error;
-    type Future = MakeFuture<T, G::Future, R, C, ()>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_routes.poll_ready(cx).map_err(Into::into)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let future = self.get_routes.get_routes(target.clone());
-
-        MakeFuture {
-            future,
-            inner: Some(Inner {
-                target,
-                make_route: self.make_route.clone(),
-                default_route: self.default_route.clone(),
-                make_concrete: self.make_concrete.clone(),
-                dst_override: self.dst_override.clone(),
-            }),
-        }
-    }
-}
-
-impl<T, G, R, C> tower::Service<T> for MakeSvc<G, R, C, SmallRng>
-where
-    T: WithRoute + Clone,
-    G: GetRoutes<T>,
-    R: NewService<T::Route> + Clone,
-    C: Clone,
-{
-    type Response = Service<T, R, Override<C>>;
-    type Error = Error;
-    type Future = MakeFuture<T, G::Future, R, C, SmallRng>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(ready!(self.get_routes.poll_ready(cx)).map_err(Into::into))
@@ -165,225 +67,10 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let future = self.get_routes.get_routes(target.clone());
-
-        MakeFuture {
-            future,
-            inner: Some(Inner {
-                target,
-                make_route: self.make_route.clone(),
-                default_route: self.default_route.clone(),
-                make_concrete: self.make_concrete.clone(),
-                dst_override: self.dst_override.clone(),
-            }),
-        }
-    }
-}
-
-impl<T, F, R, C> Future for MakeFuture<T, F, R, C, ()>
-where
-    T: WithRoute + Clone,
-    F: TryFuture<Ok = watch::Receiver<Routes>>,
-    F::Error: Into<Error>,
-    R: NewService<T::Route>,
-{
-    type Output = Result<Service<T, R, Forward<C>>, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        trace!("poll");
-        let this = self.project();
-        let profiles = ready!(this.future.try_poll(cx)).map_err(Into::into)?;
-
-        let Inner {
-            target,
-            make_route,
-            default_route,
-            make_concrete,
-            dst_override: (),
-        } = this.inner.take().unwrap();
-
-        let requests = Requests::new(target.clone(), make_route, default_route);
-        let svc = Service {
-            profiles,
-            requests,
-            concrete: Forward(make_concrete),
-        };
-
-        trace!("forwarding profile service ready");
-        Poll::Ready(Ok(svc))
-    }
-}
-
-impl<T, F, R, C> Future for MakeFuture<T, F, R, C, SmallRng>
-where
-    T: WithRoute + Clone,
-    F: TryFuture<Ok = watch::Receiver<Routes>>,
-    F::Error: Into<Error>,
-    R: NewService<T::Route> + Clone,
-{
-    type Output = Result<Service<T, R, Override<C>>, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        trace!("poll");
-        let this = self.project();
-        let profiles = ready!(this.future.try_poll(cx)).map_err(Into::into)?;
-
-        let Inner {
-            target,
-            make_route,
-            default_route,
-            make_concrete,
-            dst_override: rng,
-        } = this.inner.take().unwrap();
-
-        let requests = Requests::new(target.clone(), make_route, default_route);
-        let (service, update) = concrete::default(make_concrete, rng);
-        let svc = Service {
-            profiles,
-            requests,
-            concrete: Override { service, update },
-        };
-
-        trace!("overriding profile service ready");
-        Poll::Ready(Ok(svc))
-    }
-}
-
-mod sealed {
-    use std::task::Context;
-
-    pub trait PollUpdate {
-        fn poll_update(&mut self, cx: &mut Context<'_>);
-    }
-}
-
-impl<T, R, C> sealed::PollUpdate for Service<T, R, Override<C>>
-where
-    T: WithRoute + Clone,
-    R: NewService<T::Route>,
-{
-    // Drive the profiles stream to notready or completion, capturing the
-    // most recent update.
-    fn poll_update(&mut self, cx: &mut Context<'_>) {
-        let mut profile = None;
-        while let Poll::Ready(Some(update)) = self.profiles.poll_recv_ref(cx) {
-            profile = Some(update.clone());
-        }
-
-        if let Some(profile) = profile {
-            if profile.dst_overrides.is_empty() {
-                self.concrete
-                    .update
-                    .set_forward()
-                    .expect("both sides of the concrete updater must be held");
-            } else {
-                debug!(services = profile.dst_overrides.len(), "updating split");
-
-                self.concrete
-                    .update
-                    .set_split(profile.dst_overrides)
-                    .expect("both sides of the concrete updater must be held");
-            }
-
-            debug!(routes = profile.routes.len(), "updating routes");
-            self.requests.set_routes(profile.routes);
-        }
-    }
-}
-
-impl<T, R, C> sealed::PollUpdate for Service<T, R, Forward<C>>
-where
-    T: WithRoute + Clone,
-    R: NewService<T::Route>,
-{
-    // Drive the profiles stream to notready or completion, capturing the
-    // most recent update.
-    fn poll_update(&mut self, cx: &mut Context<'_>) {
-        let mut profile = None;
-        while let Poll::Ready(Some(update)) = self.profiles.poll_recv_ref(cx) {
-            profile = Some(update.clone());
-        }
-
-        if let Some(profile) = profile {
-            debug!(routes = profile.routes.len(), "updating routes");
-            self.requests.set_routes(profile.routes);
-        }
-    }
-}
-
-impl<U, T, R, C> tower::Service<U> for Service<T, R, C>
-where
-    Self: sealed::PollUpdate,
-    T: WithRoute + Clone,
-    R: NewService<T::Route> + Clone,
-    C: tower::Service<U>,
-    Requests<T, R>: Clone,
-{
-    type Response = ProxyService<Requests<T, R>, C::Response>;
-    type Error = C::Error;
-    type Future = ProxyConcrete<Requests<T, R>, C::Future>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        sealed::PollUpdate::poll_update(self, cx);
-        self.concrete.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: U) -> Self::Future {
-        let proxy = self.requests.clone();
-        let future = self.concrete.call(target);
-        ProxyConcrete {
-            future,
-            proxy: Some(proxy),
-        }
-    }
-}
-
-#[pin_project]
-pub struct ProxyConcrete<P, F> {
-    proxy: Option<P>,
-    #[pin]
-    future: F,
-}
-
-impl<F: TryFuture, P> Future for ProxyConcrete<P, F> {
-    type Output = Result<ProxyService<P, F::Ok>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let inner = ready!(this.future.try_poll(cx))?;
-        let service = ProxyService::new(this.proxy.take().unwrap(), inner);
-        Poll::Ready(Ok(service))
-    }
-}
-
-impl<T, M: tower::Service<T>> tower::Service<T> for Forward<M> {
-    type Response = M::Response;
-    type Error = M::Error;
-    type Future = M::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: T) -> Self::Future {
-        self.0.call(req)
-    }
-}
-
-impl<T, M> tower::Service<T> for Override<M>
-where
-    T: OverrideDestination,
-    M: tower::Service<T>,
-    M::Error: Into<Error>,
-{
-    type Response = M::Response;
-    type Error = Error;
-    type Future = <concrete::Service<M> as tower::Service<T>>::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: T) -> Self::Future {
-        self.service.call(req)
+        let inner = self.inner.clone();
+        Box::pin(async move {
+            let routes = future.err_into::<Error>().await?;
+            inner.oneshot((target, routes)).err_into::<Error>().await
+        })
     }
 }

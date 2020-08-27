@@ -1,182 +1,100 @@
-use super::{OverrideDestination, WeightedAddr};
-use futures::{future, TryFutureExt};
-use linkerd2_addr::NameAddr;
-use linkerd2_error::Error;
+use super::{Receiver, WeightedAddr};
+use futures::{future, prelude::*};
+use linkerd2_addr::{Addr, NameAddr};
+use linkerd2_error::{Error, Never};
+use linkerd2_stack::NewService;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::rngs::SmallRng;
-use std::task::{Context, Poll};
-use tokio::sync::watch;
-pub use tokio::sync::watch::error::SendError;
-use tracing::{debug, trace};
+use indexmap::IndexMap;
+use std::{pin::Pin, task::{Context, Poll}, marker::PhantomData};
+use tracing::debug;
+use tower::util::ServiceExt;
 
-pub fn default<M>(make: M, rng: SmallRng) -> (Service<M>, Update) {
-    let routes = Routes::Forward(None);
-    let (tx, rx) = watch::channel(routes.clone());
-    let concrete = Service {
-        make,
-        routes: routes.clone(),
-        updates: rx.clone(),
-        rng,
-    };
-    let update = Update { tx, routes };
-    (concrete, update)
-}
+pub enum Routes {}
 
-#[derive(Clone, Debug)]
-pub struct Service<M> {
-    make: M,
-    routes: Routes,
-    updates: watch::Receiver<Routes>,
+pub struct MakeSplit<N, S> {
+    new_service: N,
     rng: SmallRng,
+    _service: PhantomData<S>,
 }
 
-#[derive(Debug)]
-pub struct Update {
-    routes: Routes,
-    tx: watch::Sender<Routes>,
+pub struct Split<T, N, S> {
+    target: T,
+    rx: Receiver,
+    new_service: N,
+    rng: SmallRng,
+    inner: Option<Inner<S>>,
 }
 
-#[derive(Clone)]
-enum Routes {
-    Forward(Option<NameAddr>),
-    Override {
-        distribution: WeightedIndex<u32>,
-        overrides: Vec<NameAddr>,
-    },
+struct Inner<S> {
+    distribution: WeightedIndex<u32>,
+    services: IndexMap<NameAddr, S>,
 }
 
-impl std::fmt::Debug for Routes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Routes::Forward(None) => write!(f, "Routes::Forward"),
-            Routes::Forward(Some(addr)) => write!(f, "Routes::Forward({})", addr),
-            Routes::Override { overrides, .. } => {
-                write!(f, "Routes::Override(")?;
-                let mut addrs = overrides.iter();
-                if let Some(a) = addrs.next() {
-                    write!(f, "{}", a)?;
-                }
-                for a in addrs {
-                    write!(f, ", {}", a)?;
-                }
-                write!(f, ")")
-            }
-        }
+impl<T, N, S> tower::Service<(T, Receiver)> for MakeSplit<N, S>
+where
+    N: NewService<T, Service = S> + Clone,
+{
+    type Response = Split<T, N, S>;
+    type Error = Never;
+    type Future = future::Ready<Result<Split<T, N, S>, Never>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, (target, rx): (T, Receiver)) -> Self::Future {
+        future::ok(Split {
+            rx,
+            target,
+            new_service: self.new_service.clone(),
+            rng: self.rng.clone(),
+            inner: None,
+        })
     }
 }
 
-impl<T, S> tower::Service<T> for Service<S>
+impl<Req, T, N, S> tower::Service<Req> for Split<T, N, S>
 where
-    T: OverrideDestination,
-    S: tower::Service<T>,
+    Req: Send + 'static,
+    T: Clone,
+    N: NewService<(Addr, T)> + Clone,
+    S: tower::Service<Req> + Clone + Send + 'static,
+    S::Response: Send + 'static,
     S::Error: Into<Error>,
+    S::Future: Send,
 {
     type Response = S::Response;
     type Error = Error;
-    type Future = future::MapErr<S::Future, fn(S::Error) -> Self::Error>;
+    type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        loop {
-            match self.updates.poll_recv_ref(cx) {
-                Poll::Pending | Poll::Ready(None) => break,
-                Poll::Ready(Some(routes)) => {
-                    debug!(?routes, "updated");
-                    self.routes = (*routes).clone();
-                }
-            }
-        }
-
-        self.make.poll_ready(cx).map_err(Into::into)
+        Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, mut target: T) -> Self::Future {
-        match self.routes {
-            Routes::Forward(None) => {}
-            Routes::Forward(Some(ref addr)) => {
-                *target.dst_mut() = addr.clone().into();
-            }
-            Routes::Override {
-                ref distribution,
-                ref overrides,
-            } => {
-                debug_assert!(overrides.len() > 1);
+    fn call(&mut self, req: Req) -> Self::Future {
+        if let Some(Inner { ref services, ref distribution }) = self.inner.as_ref() {
+            debug_assert_ne!(services.len(), 0);
+            let service = if services.len() == 1 {
+                services.get_index(0).unwrap().1.clone()
+            } else {
                 let idx = distribution.sample(&mut self.rng);
-                debug_assert!(idx < overrides.len());
-                *target.dst_mut() = overrides[idx].clone().into();
-            }
+                services.get_index(0).unwrap().1.clone()
+            };
+            return Box::pin(service.oneshot(req).err_into::<Error>());
         }
 
-        self.make.call(target).map_err(Into::into)
+        return Box::pin(future::err(NoTargets(()).into()))
     }
 }
 
-impl Update {
-    pub fn set_forward(&mut self) -> Result<(), error::LostService> {
-        if let Routes::Forward(None) = self.routes {
-            trace!("default forward already set");
-            return Ok(());
-        };
+#[derive(Copy, Clone, Debug)]
+pub struct NoTargets(());
 
-        trace!("building default forward");
-        self.routes = Routes::Forward(None);
-
-        self.tx
-            .broadcast(self.routes.clone())
-            .map_err(|_| error::LostService(()))
-    }
-
-    pub fn set_split(&mut self, mut addrs: Vec<WeightedAddr>) -> Result<(), error::LostService> {
-        let routes = match self.routes {
-            Routes::Forward(ref addr) => {
-                if addrs.len() == 1 {
-                    let new_addr = addrs.pop().unwrap().addr;
-                    if addr.as_ref().map(|a| a == &new_addr).unwrap_or(false) {
-                        trace!("forward already set to {}", new_addr);
-                        return Ok(());
-                    }
-                    Routes::Forward(Some(new_addr))
-                } else {
-                    let distribution = WeightedIndex::new(addrs.iter().map(|w| w.weight))
-                        .expect("invalid weight distribution");
-                    let overrides = addrs.into_iter().map(|w| w.addr).collect();
-                    Routes::Override {
-                        distribution,
-                        overrides,
-                    }
-                }
-            }
-            Routes::Override { .. } => {
-                if addrs.len() == 1 {
-                    let new_addr = addrs.pop().unwrap().addr;
-                    Routes::Forward(Some(new_addr))
-                } else {
-                    let distribution = WeightedIndex::new(addrs.iter().map(|w| w.weight))
-                        .expect("invalid weight distribution");
-                    let overrides = addrs.into_iter().map(|w| w.addr).collect();
-                    Routes::Override {
-                        distribution,
-                        overrides,
-                    }
-                }
-            }
-        };
-
-        self.routes = routes.clone();
-        self.tx
-            .broadcast(routes)
-            .map_err(|_| error::LostService(()))
+impl std::fmt::Display for NoTargets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no targets available")
     }
 }
 
-pub mod error {
-    #[derive(Debug)]
-    pub struct LostService(pub(super) ());
-
-    impl std::fmt::Display for LostService {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "addrs lost")
-        }
-    }
-
-    impl std::error::Error for LostService {}
-}
+impl std::error::Error for NoTargets {}
