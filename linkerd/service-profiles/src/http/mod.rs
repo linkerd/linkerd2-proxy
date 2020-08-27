@@ -1,4 +1,4 @@
-use http;
+use crate::Receiver;
 use indexmap::IndexMap;
 use linkerd2_addr::Addr;
 use linkerd2_error::Error;
@@ -16,9 +16,6 @@ use tower::retry::budget::Budget;
 
 mod concrete;
 mod requests;
-pub mod service;
-
-pub use self::service::Layer;
 
 #[derive(Clone, Debug)]
 pub struct WeightedAddr {
@@ -31,9 +28,6 @@ pub struct Routes {
     pub routes: Vec<(RequestMatch, Route)>,
     pub dst_overrides: Vec<WeightedAddr>,
 }
-
-pub type Receiver = watch::Receiver<Routes>;
-pub type Sender = watch::Sender<Routes>;
 
 /// Watches a destination's Routes.
 ///

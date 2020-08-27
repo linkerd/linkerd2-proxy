@@ -13,7 +13,7 @@ use std::{
 };
 use tower::util::ServiceExt;
 
-pub fn layer<N, S>(rng: SmallRng) -> impl layer::Layer<N, Service = NewSplit<N, S>> {
+pub fn layer<N, S>(rng: SmallRng) -> impl layer::Layer<N, Service = NewSplit<N, S>> + Clone {
     layer::mk(move |inner| NewSplit {
         inner,
         rng: rng.clone(),

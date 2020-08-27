@@ -13,40 +13,26 @@
 use super::{GetRoutes, Receiver};
 use futures::{prelude::*, ready};
 use linkerd2_error::Error;
+use linkerd2_stack::layer;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::{util::ServiceExt, Service};
 
-#[derive(Clone, Debug)]
-pub struct Layer<G> {
-    get_routes: G,
+pub fn layer<G: Clone, M>(get_routes: G) -> impl layer::Layer<M, Service = Discover<G, M>> + Clone {
+    layer::mk(move |inner| Discover {
+        get_routes: get_routes.clone(),
+        inner,
+    })
 }
 
 #[derive(Clone, Debug)]
-pub struct MakeSvc<G, M> {
+pub struct Discover<G, M> {
     get_routes: G,
     inner: M,
 }
 
-impl<G> Layer<G> {
-    pub fn new(get_routes: G) -> Self {
-        Self { get_routes }
-    }
-}
-
-impl<G: Clone, M> tower::layer::Layer<M> for Layer<G> {
-    type Service = MakeSvc<G, M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            inner,
-            get_routes: self.get_routes.clone(),
-        }
-    }
-}
-
-impl<T, G, M> tower::Service<T> for MakeSvc<G, M>
+impl<T, G, M> tower::Service<T> for Discover<G, M>
 where
     T: Clone + Send + 'static,
     G: GetRoutes<T>,
