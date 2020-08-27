@@ -101,9 +101,7 @@ impl Resolver {
                 }
                 ResolveErrorKind::Proto(pe) if self.is_nx_domain(&pe) => Ok((
                     vec![],
-                    time::delay_until(Instant::from_std(
-                        std::time::Instant::now() + Self::DEFAULT_TTL,
-                    )),
+                    time::delay_for(Self::DEFAULT_TTL)),
                 )),
 
                 _ => Err(e),
@@ -112,10 +110,10 @@ impl Resolver {
     }
 
     fn is_nx_domain(&self, pe: &error::ProtoError) -> bool {
-        return match pe.kind() {
+        match pe.kind() {
             error::ProtoErrorKind::Message(msg) => *msg == "Nameserver responded with NXDomain",
             _ => false,
-        };
+        }
     }
 
     async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
@@ -138,9 +136,7 @@ impl Resolver {
                 }
                 ResolveErrorKind::Proto(pe) if self.is_nx_domain(&pe) => Ok((
                     vec![],
-                    time::delay_until(Instant::from_std(
-                        std::time::Instant::now() + Self::DEFAULT_TTL,
-                    )),
+                    time::delay_for(Self::DEFAULT_TTL)),
                 )),
                 _ => Err(e.into()),
             },
