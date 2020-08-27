@@ -48,9 +48,9 @@ pub trait GetRoutes<T> {
     fn get_routes(&mut self, target: T) -> Self::Future;
 }
 
-impl<T: Into<Addr>, S> GetRoutes<T> for S
+impl<T, S> GetRoutes<T> for S
 where
-    S: tower::Service<Addr, Response = watch::Receiver<Routes>>,
+    S: tower::Service<T, Response = watch::Receiver<Routes>>,
     S::Error: Into<Error>,
 {
     type Error = S::Error;
@@ -61,7 +61,7 @@ where
     }
 
     fn get_routes(&mut self, target: T) -> Self::Future {
-        tower::Service::call(self, target.into())
+        tower::Service::call(self, target)
     }
 }
 
