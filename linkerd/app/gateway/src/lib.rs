@@ -147,9 +147,12 @@ mod test {
                 ))
             };
 
+            let socket_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
             let target = inbound::Target {
-                addr: SocketAddr::from(([127, 0, 0, 1], 4143)),
-                dst_name: dst_name.map(|n| NameAddr::from_str(n).unwrap()),
+                socket_addr,
+                dst: dst_name
+                    .map(|n| NameAddr::from_str(n).unwrap().into())
+                    .unwrap_or_else(|| socket_addr.into()),
                 http_settings: http::Settings::Http2,
                 tls_client_id: peer_id,
             };

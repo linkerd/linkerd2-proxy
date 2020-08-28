@@ -5,7 +5,7 @@ use linkerd2_app_core::{
     proxy::{http, identity, tap},
     router, stack_tracing,
     transport::{connect, listen, tls},
-    Addr, Conditional, NameAddr, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::fmt;
 use std::net::SocketAddr;
@@ -14,14 +14,11 @@ use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
-    pub addr: SocketAddr,
-    pub dst_name: Option<NameAddr>,
+    pub dst: Addr,
+    pub socket_addr: SocketAddr,
     pub http_settings: http::Settings,
     pub tls_client_id: tls::PeerIdentity,
 }
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Profile(Addr);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpEndpoint {
@@ -59,7 +56,7 @@ impl http::settings::HasSettings for HttpEndpoint {
 impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
-            port: target.addr.port(),
+            port: target.dst.port(),
             settings: target.http_settings,
         }
     }
@@ -103,39 +100,19 @@ impl tls::HasPeerIdentity for TcpEndpoint {
 
 // === impl Profile ===
 
-impl From<Target> for Profile {
-    fn from(t: Target) -> Self {
-        Profile(
-            t.dst_name
-                .clone()
-                .map(|d| d.into())
-                .unwrap_or_else(|| t.addr.clone().into()),
-        )
-    }
-}
-
-impl Profile {
-    pub fn addr(&self) -> &Addr {
-        &self.0
-    }
-}
-
 pub(super) fn route(route: profiles::http::Route, target: Target) -> dst::Route {
     dst::Route {
         route,
-        target: target.into(),
+        target: target.dst,
         direction: metric_labels::Direction::In,
     }
 }
 
-// // === impl Target ===
+// === impl Target ===
 
-impl Into<Addr> for Target {
-    fn into(self) -> Addr {
-        match self.dst_name {
-            Some(n) => n.into(),
-            None => self.addr.into(),
-        }
+impl AsRef<Addr> for Target {
+    fn as_ref(&self) -> &Addr {
+        &self.dst
     }
 }
 
@@ -146,12 +123,7 @@ impl http::normalize_uri::ShouldNormalizeUri for Target {
             ..
         } = self.http_settings
         {
-            return Some(
-                self.dst_name
-                    .as_ref()
-                    .map(|dst| dst.as_http_authority())
-                    .unwrap_or_else(|| Addr::from(self.addr).to_http_authority()),
-            );
+            return Some(self.dst.to_http_authority());
         }
         None
     }
@@ -172,7 +144,7 @@ impl tls::HasPeerIdentity for Target {
 impl Into<metric_labels::EndpointLabels> for Target {
     fn into(self) -> metric_labels::EndpointLabels {
         metric_labels::EndpointLabels {
-            authority: self.dst_name.map(|d| d.as_http_authority()),
+            authority: self.dst.name_addr().map(|d| d.as_http_authority()),
             direction: metric_labels::Direction::In,
             tls_id: self.tls_client_id.map(metric_labels::TlsId::ClientId),
             labels: None,
@@ -206,7 +178,7 @@ impl tap::Inspect for Target {
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        Some(self.addr)
+        Some(self.socket_addr)
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
@@ -233,7 +205,7 @@ impl tap::Inspect for Target {
 
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.addr.fmt(f)
+        self.dst.fmt(f)
     }
 }
 
@@ -242,25 +214,25 @@ impl stack_tracing::GetSpan<()> for Target {
         use tracing::info_span;
 
         match self.http_settings {
-            http::Settings::Http2 => match self.dst_name.as_ref() {
+            http::Settings::Http2 => match self.dst.name_addr() {
                 None => info_span!(
                     "http2",
-                    port = %self.addr.port(),
+                    port = %self.dst.port(),
                 ),
                 Some(name) => info_span!(
                     "http2",
                     %name,
-                    port = %self.addr.port(),
+                    port = %self.dst.port(),
                 ),
             },
             http::Settings::Http1 {
                 keep_alive,
                 wants_h1_upgrade,
                 was_absolute_form,
-            } => match self.dst_name.as_ref() {
+            } => match self.dst.name_addr() {
                 None => info_span!(
                     "http1",
-                    port = %self.addr.port(),
+                    port = %self.dst.port(),
                     keep_alive,
                     wants_h1_upgrade,
                     was_absolute_form,
@@ -268,7 +240,7 @@ impl stack_tracing::GetSpan<()> for Target {
                 Some(name) => info_span!(
                     "http1",
                     %name,
-                    port = %self.addr.port(),
+                    port = %self.dst.port(),
                     keep_alive,
                     wants_h1_upgrade,
                     was_absolute_form,
@@ -290,7 +262,7 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
     type Key = Target;
 
     fn recognize(&self, req: &http::Request<A>) -> Self::Key {
-        let dst_name = req
+        let dst = req
             .headers()
             .get(CANONICAL_DST_HEADER)
             .and_then(|dst| {
@@ -311,29 +283,13 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
-            .or_else(|| self.accept.addrs.target_addr_if_not_local().map(Addr::from))
-            .and_then(|a| a.name_addr().cloned());
+            .unwrap_or_else(|| self.accept.addrs.target_addr().into());
 
         Target {
-            dst_name,
-            addr: self.accept.addrs.target_addr(),
+            dst,
+            socket_addr: self.accept.addrs.target_addr(),
             tls_client_id: self.accept.peer_identity.clone(),
             http_settings: http::Settings::from_request(req),
         }
-    }
-}
-
-// === impl ProfileTarget ===
-
-impl router::Recognize<Target> for ProfileTarget {
-    type Key = Profile;
-
-    fn recognize(&self, t: &Target) -> Self::Key {
-        Profile(
-            t.dst_name
-                .clone()
-                .map(Into::into)
-                .unwrap_or_else(|| t.addr.into()),
-        )
     }
 }

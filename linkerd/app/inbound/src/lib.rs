@@ -5,9 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::endpoint::{
-    HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
-};
+pub use self::endpoint::{HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpEndpoint};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::{future, prelude::*};
@@ -212,6 +210,7 @@ impl Config {
         // resolutions are shared even as the type of request may vary.
         let http_profile_cache = target
             .clone()
+            .push_on_response(svc::layers().box_http_request())
             .check_new_service::<Target, http::Request<_>>()
             .push_map_target(|(_, target): (profiles::Receiver, Target)| target)
             .push(profiles::http::route_request::layer(
@@ -220,7 +219,7 @@ impl Config {
                     // by tap.
                     .push_http_insert_target()
                     // Records per-route metrics.
-                    // FIXME .push(metrics.http_route.into_layer::<classify::Response>())
+                    .push(metrics.http_route.into_layer::<classify::Response>())
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())

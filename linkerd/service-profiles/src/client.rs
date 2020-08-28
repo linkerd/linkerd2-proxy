@@ -114,7 +114,7 @@ where
 
 impl<T, S, R> tower::Service<T> for Client<S, R>
 where
-    T: Into<Addr>,
+    T: AsRef<Addr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -134,7 +134,7 @@ where
     }
 
     fn call(&mut self, t: T) -> Self::Future {
-        let path = t.into().to_string();
+        let path = t.as_ref().to_string();
 
         let service = {
             // In case the ready service holds resources, pass it into the

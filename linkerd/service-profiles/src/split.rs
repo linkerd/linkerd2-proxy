@@ -76,7 +76,7 @@ where
 impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
-    T: Into<Addr> + Clone,
+    T: AsRef<Addr> + Clone,
     N: NewService<(Addr, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
@@ -103,14 +103,14 @@ where
             if targets.len() == 0 {
                 // If there were no overrides, build a default backend from the
                 // target.
-                let addr: Addr = self.target.clone().into();
-                if !prior.remove(&addr) {
+                let addr = self.target.as_ref();
+                if !prior.remove(addr) {
                     let svc = self
                         .new_service
                         .new_service((addr.clone(), self.target.clone()));
                     self.services.push(addr.clone(), svc);
                 }
-                addrs.insert(addr);
+                addrs.insert(addr.clone());
                 weights.push(1);
             } else {
                 // Create an updated distribution and set of services.

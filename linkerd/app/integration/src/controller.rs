@@ -484,7 +484,7 @@ pub fn destination_does_not_exist() -> pb::Update {
 pub fn profile<I>(
     routes: I,
     retry_budget: Option<pb::RetryBudget>,
-    targets: Vec<pb::WeightedDst>,
+    dst_overrides: Vec<pb::WeightedDst>,
 ) -> pb::DestinationProfile
 where
     I: IntoIterator,
@@ -494,7 +494,7 @@ where
     pb::DestinationProfile {
         routes,
         retry_budget,
-        targets,
+        dst_overrides,
         ..Default::default()
     }
 }
