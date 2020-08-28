@@ -1,4 +1,5 @@
-use super::{Receiver, RequestMatch, Route, Routes};
+use super::{Receiver, RequestMatch, Route};
+use crate::Profile;
 use futures::prelude::*;
 use linkerd2_stack::{layer, NewService, Proxy};
 use std::{
@@ -34,7 +35,7 @@ pub struct RequestRoute<T, S, N, R> {
     rx: Receiver,
     inner: S,
     new_route: N,
-    routes: Vec<(RequestMatch, Route)>,
+    http_routes: Vec<(RequestMatch, Route)>,
     proxies: HashMap<Route, R>,
     default: R,
 }
@@ -68,7 +69,7 @@ where
                         inner,
                         default,
                         new_route,
-                        routes: Vec::new(),
+                        http_routes: Vec::new(),
                         proxies: HashMap::new(),
                     }
                 }),
@@ -95,9 +96,9 @@ where
         }
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
-        if let Some(Routes { routes, .. }) = update {
-            let mut proxies = HashMap::with_capacity(routes.len());
-            for (_, ref route) in &routes {
+        if let Some(Profile { http_routes, .. }) = update {
+            let mut proxies = HashMap::with_capacity(http_routes.len());
+            for (_, ref route) in &http_routes {
                 // Reuse the prior services whenever possible.
                 let proxy = self.proxies.remove(&route).unwrap_or_else(|| {
                     self.new_route
@@ -105,7 +106,7 @@ where
                 });
                 proxies.insert(route.clone(), proxy);
             }
-            self.routes = routes;
+            self.http_routes = http_routes;
             self.proxies = proxies;
         }
 
@@ -113,7 +114,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        for (ref condition, ref route) in &self.routes {
+        for (ref condition, ref route) in &self.http_routes {
             if condition.is_match(&req) {
                 trace!(?condition, "Using configured route");
                 return self.proxies[route].proxy(&mut self.inner, req);

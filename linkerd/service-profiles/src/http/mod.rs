@@ -1,63 +1,18 @@
 use crate::Receiver;
 use indexmap::IndexMap;
-use linkerd2_addr::Addr;
-use linkerd2_error::Error;
 use regex::Regex;
-use std::fmt;
-use std::future::Future;
-use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
-use std::ops::Deref;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Duration;
-use tokio::sync::watch;
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    iter::FromIterator,
+    ops::Deref,
+    sync::Arc,
+    time::Duration,
+};
 use tower::retry::budget::Budget;
 
 mod concrete;
 mod requests;
-
-#[derive(Clone, Debug)]
-pub struct WeightedAddr {
-    pub addr: Addr,
-    pub weight: u32,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Routes {
-    pub routes: Vec<(RequestMatch, Route)>,
-    pub dst_overrides: Vec<WeightedAddr>,
-}
-
-/// Watches a destination's Routes.
-///
-/// The stream updates with all routes for the given destination. The stream
-/// never ends and cannot fail.
-pub trait GetRoutes<T> {
-    type Error: Into<Error>;
-    type Future: Future<Output = Result<Receiver, Self::Error>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
-
-    fn get_routes(&mut self, target: T) -> Self::Future;
-}
-
-impl<T, S> GetRoutes<T> for S
-where
-    S: tower::Service<T, Response = watch::Receiver<Routes>>,
-    S::Error: Into<Error>,
-{
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        tower::Service::poll_ready(self, cx)
-    }
-
-    fn get_routes(&mut self, target: T) -> Self::Future {
-        tower::Service::call(self, target)
-    }
-}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {

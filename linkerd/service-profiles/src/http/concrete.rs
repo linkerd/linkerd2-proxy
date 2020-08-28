@@ -1,4 +1,4 @@
-use super::{Receiver, Routes, WeightedAddr};
+use crate::{Profile, Receiver, Target};
 use futures::{future, prelude::*};
 use indexmap::IndexMap;
 use linkerd2_addr::Addr;
@@ -78,13 +78,13 @@ where
         }
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
-        if let Some(Routes { dst_overrides, .. }) = update {
+        if let Some(Profile { targets, .. }) = update {
             // Clear out the prior state and preserve its services for reuse.
             let mut prior = self.inner.take().map(|i| i.services).unwrap_or_default();
 
-            let mut services = IndexMap::with_capacity(dst_overrides.len().max(1));
-            let mut weights = Vec::with_capacity(dst_overrides.len().max(1));
-            if dst_overrides.len() == 0 {
+            let mut services = IndexMap::with_capacity(targets.len().max(1));
+            let mut weights = Vec::with_capacity(targets.len().max(1));
+            if targets.len() == 0 {
                 // If there were no overrides, build a default backend from the
                 // target.
                 let addr: Addr = self.target.clone().into();
@@ -96,7 +96,7 @@ where
                 weights.push(1);
             } else {
                 // Create an updated distribution and set of services.
-                for WeightedAddr { weight, addr } in dst_overrides.into_iter() {
+                for Target { weight, addr } in targets.into_iter() {
                     // Reuse the prior services whenever possible.
                     let svc = prior.remove(&addr).unwrap_or_else(|| {
                         self.new_service

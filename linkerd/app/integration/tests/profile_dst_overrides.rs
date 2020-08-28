@@ -110,7 +110,7 @@ async fn add_a_dst_override() {
 }
 
 #[tokio::test]
-async fn add_multiple_dst_overrides() {
+async fn add_multiple_targets() {
     let _trace = trace_init();
     let ctrl = controller::new_unordered();
 

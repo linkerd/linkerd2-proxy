@@ -1,7 +1,9 @@
-use crate::http as profiles;
+use crate::{
+    http::{RequestMatch, ResponseClass, ResponseMatch, Route},
+    Profile, Receiver, Target,
+};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
-use http;
 use http_body::Body as HttpBody;
 use linkerd2_addr::Addr;
 use linkerd2_error::{Error, Recover};
@@ -32,8 +34,6 @@ pub struct Client<S, R> {
     initial_timeout: Duration,
     context_token: String,
 }
-
-pub type Receiver = watch::Receiver<profiles::Routes>;
 
 #[derive(Clone, Debug)]
 pub struct InvalidProfileAddr(Addr);
@@ -92,7 +92,7 @@ impl<S, R> Client<S, R>
 where
     // These bounds aren't *required* here, they just help detect the problem
     // earlier (as Client::new), instead of when trying to passing a `Client`
-    // to something that wants `impl profiles::GetRoutes`.
+    // to something that wants `impl GetRoutes`.
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -195,7 +195,7 @@ where
                 }
 
                 info!("Using default service profile after timeout");
-                profiles::Routes::default()
+                Profile::default()
             }
             Poll::Ready(Ok(profile)) => profile,
         };
@@ -252,25 +252,25 @@ where
     fn poll_rx(
         rx: Pin<&mut grpc::Streaming<api::DestinationProfile>>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<profiles::Routes, grpc::Status>>> {
+    ) -> Poll<Option<Result<Profile, grpc::Status>>> {
         trace!("poll");
         let profile = ready!(rx.poll_next(cx)).map(|res| {
             res.map(|proto| {
                 debug!("profile received: {:?}", proto);
                 let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
-                let routes = proto
+                let http_routes = proto
                     .routes
                     .into_iter()
                     .filter_map(move |orig| convert_route(orig, retry_budget.as_ref()))
                     .collect();
-                let dst_overrides = proto
+                let targets = proto
                     .dst_overrides
                     .into_iter()
                     .filter_map(convert_dst_override)
                     .collect();
-                profiles::Routes {
-                    routes,
-                    dst_overrides,
+                Profile {
+                    http_routes,
+                    targets,
                 }
             })
         });
@@ -280,7 +280,7 @@ where
     fn poll_profile(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<profiles::Routes, Error>> {
+    ) -> Poll<Result<Profile, Error>> {
         let span = info_span!("poll_profile");
         let _enter = span.enter();
 
@@ -336,14 +336,14 @@ where
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-) -> Option<(profiles::RequestMatch, profiles::Route)> {
+) -> Option<(RequestMatch, Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
         .response_classes
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = profiles::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = Route::new(orig.metrics_labels.into_iter(), rsp_classes);
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }
@@ -355,15 +355,15 @@ fn convert_route(
 
 fn convert_dst_override(
     api::WeightedDst { authority, weight }: api::WeightedDst,
-) -> Option<profiles::WeightedAddr> {
+) -> Option<Target> {
     if weight == 0 {
         return None;
     }
     let addr = Addr::from_str(authority.as_str()).ok()?;
-    Some(profiles::WeightedAddr { addr, weight })
+    Some(Target { addr, weight })
 }
 
-fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget>>) {
+fn set_route_retry(route: &mut Route, retry_budget: Option<&Arc<Budget>>) {
     let budget = match retry_budget {
         Some(budget) => budget.clone(),
         None => {
@@ -375,7 +375,7 @@ fn set_route_retry(route: &mut profiles::Route, retry_budget: Option<&Arc<Budget
     route.set_retries(budget);
 }
 
-fn set_route_timeout(route: &mut profiles::Route, timeout: Result<Duration, Duration>) {
+fn set_route_timeout(route: &mut Route, timeout: Result<Duration, Duration>) {
     match timeout {
         Ok(dur) => {
             route.set_timeout(dur);
@@ -386,19 +386,19 @@ fn set_route_timeout(route: &mut profiles::Route, timeout: Result<Duration, Dura
     }
 }
 
-fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> {
+fn convert_req_match(orig: api::RequestMatch) -> Option<RequestMatch> {
     let m = match orig.r#match? {
         api::request_match::Match::All(ms) => {
             let ms = ms.matches.into_iter().filter_map(convert_req_match);
-            profiles::RequestMatch::All(ms.collect())
+            RequestMatch::All(ms.collect())
         }
         api::request_match::Match::Any(ms) => {
             let ms = ms.matches.into_iter().filter_map(convert_req_match);
-            profiles::RequestMatch::Any(ms.collect())
+            RequestMatch::Any(ms.collect())
         }
         api::request_match::Match::Not(m) => {
             let m = convert_req_match(*m)?;
-            profiles::RequestMatch::Not(Box::new(m))
+            RequestMatch::Not(Box::new(m))
         }
         api::request_match::Match::Path(api::PathMatch { regex }) => {
             let regex = regex.trim();
@@ -411,23 +411,23 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<profiles::RequestMatch> 
                     Regex::new(&re).ok()?
                 }
             };
-            profiles::RequestMatch::Path(re)
+            RequestMatch::Path(re)
         }
         api::request_match::Match::Method(mm) => {
             let m = mm.r#type.and_then(|m| (&m).try_into().ok())?;
-            profiles::RequestMatch::Method(m)
+            RequestMatch::Method(m)
         }
     };
 
     Some(m)
 }
 
-fn convert_rsp_class(orig: api::ResponseClass) -> Option<profiles::ResponseClass> {
+fn convert_rsp_class(orig: api::ResponseClass) -> Option<ResponseClass> {
     let c = orig.condition.and_then(convert_rsp_match)?;
-    Some(profiles::ResponseClass::new(orig.is_failure, c))
+    Some(ResponseClass::new(orig.is_failure, c))
 }
 
-fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch> {
+fn convert_rsp_match(orig: api::ResponseMatch) -> Option<ResponseMatch> {
     let m = match orig.r#match? {
         api::response_match::Match::All(ms) => {
             let ms = ms
@@ -438,7 +438,7 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch
             if ms.is_empty() {
                 return None;
             }
-            profiles::ResponseMatch::All(ms)
+            ResponseMatch::All(ms)
         }
         api::response_match::Match::Any(ms) => {
             let ms = ms
@@ -449,16 +449,16 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<profiles::ResponseMatch
             if ms.is_empty() {
                 return None;
             }
-            profiles::ResponseMatch::Any(ms)
+            ResponseMatch::Any(ms)
         }
         api::response_match::Match::Not(m) => {
             let m = convert_rsp_match(*m)?;
-            profiles::ResponseMatch::Not(Box::new(m))
+            ResponseMatch::Not(Box::new(m))
         }
         api::response_match::Match::Status(range) => {
-            let min = http::StatusCode::from_u16(range.min as u16).ok()?;
-            let max = http::StatusCode::from_u16(range.max as u16).ok()?;
-            profiles::ResponseMatch::Status { min, max }
+            let min = ::http::StatusCode::from_u16(range.min as u16).ok()?;
+            let max = ::http::StatusCode::from_u16(range.max as u16).ok()?;
+            ResponseMatch::Status { min, max }
         }
     };
 
