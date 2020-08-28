@@ -120,18 +120,24 @@ impl Profile {
     }
 }
 
-// impl profiles::WithRoute for Profile {
-//     type Route = dst::Route;
-//     fn with_route(self, route: profiles::Route) -> Self::Route {
-//         dst::Route {
-//             route,
-//             target: self.0.clone(),
-//             direction: metric_labels::Direction::In,
-//         }
-//     }
-// }
+pub(super) fn route(route: profiles::http::Route, target: Target) -> dst::Route {
+    dst::Route {
+        route,
+        target: target.into(),
+        direction: metric_labels::Direction::In,
+    }
+}
 
 // // === impl Target ===
+
+impl Into<Addr> for Target {
+    fn into(self) -> Addr {
+        match self.dst_name {
+            Some(n) => n.into(),
+            None => self.addr.into(),
+        }
+    }
+}
 
 impl http::normalize_uri::ShouldNormalizeUri for Target {
     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {

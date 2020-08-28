@@ -289,7 +289,6 @@ impl Config {
             })
             .check_new_service::<(Addr, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::split::layer())
-            // Shares the balancers, ensuring discovery errors are propagated.
             .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
             .check_new_clone::<(profiles::Receiver, Logical<HttpEndpoint>)>()
             .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
@@ -443,10 +442,7 @@ impl Config {
             // Initiates OpenCensus tracing.
             .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
                 SpanConverter::server(span_sink, trace_labels())
-            })))
-            // // Tracks proxy handletime.
-            // .push(metrics.clone().http_handle_time.layer())
-            ;
+            })));
 
         let http_server = svc::stack(http_router)
             // Resolve the application-emitted destination via DNS to determine
