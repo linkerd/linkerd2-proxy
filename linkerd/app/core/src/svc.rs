@@ -284,6 +284,14 @@ impl<S> Stack<S> {
         self
     }
 
+    pub fn check_new_clone<T>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Clone,
+    {
+        self
+    }
+
     /// Validates that this stack serves T-typed targets.
     pub fn check_new_service<T, Req>(self) -> Self
     where
@@ -293,18 +301,19 @@ impl<S> Stack<S> {
         self
     }
 
-    /// Validates that this stack can be cloned
-    pub fn check_clone(self) -> Self
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_clone_new_service<T, Req>(self) -> Self
     where
-        S: Clone,
+        S: NewService<T> + Clone,
+        S::Service: Service<Req>,
     {
         self
     }
 
-    pub fn check_new_clone_service<T>(self) -> Self
+    /// Validates that this stack can be cloned
+    pub fn check_clone(self) -> Self
     where
-        S: NewService<T>,
-        S::Service: Clone,
+        S: Clone,
     {
         self
     }
@@ -329,15 +338,6 @@ impl<S> Stack<S> {
     pub fn check_service_response<T, U>(self) -> Self
     where
         S: Service<T, Response = U>,
-    {
-        self
-    }
-
-    /// Validates that this stack serves T-typed targets.
-    pub fn check_new_service_routes<T, Req>(self) -> Self
-    where
-        S: NewService<T>,
-        S::Service: Service<Req>,
     {
         self
     }

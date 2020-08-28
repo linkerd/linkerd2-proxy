@@ -22,7 +22,7 @@ pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>>
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NewSplit<N, S, Req> {
     inner: N,
     rng: SmallRng,
@@ -43,6 +43,16 @@ pub struct Split<T, N, S, Req> {
 struct Inner {
     distribution: WeightedIndex<u32>,
     addrs: IndexSet<Addr>,
+}
+
+impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            rng: self.rng.clone(),
+            _service: self._service,
+        }
+    }
 }
 
 impl<T, N: Clone, S, Req> NewService<(Receiver, T)> for NewSplit<N, S, Req>

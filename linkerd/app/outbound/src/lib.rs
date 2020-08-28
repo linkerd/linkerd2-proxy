@@ -274,24 +274,24 @@ impl Config {
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)
-                    // Shares the balancer, ensuring discovery errors are propagated.
-                    .push_spawn_buffer(buffer_capacity)
                     .push(metrics.stack.layer(stack_labels("balance"))),
             )
+            .into_new_service()
             .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
-            .check_make_service::<Concrete<http::Settings>, http::Request<_>>()
-            .into_new_service();
+            .check_new_service::<Concrete<http::Settings>, http::Request<_>>();
 
         // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
         let logical_cache = balance
-            .check_new_service::<Concrete<http::Settings>, http::Request<_>>()
             .push_map_target(|(addr, l): (Addr, Logical<HttpEndpoint>)| Concrete {
                 addr,
                 inner: l.map(|e| e.settings),
             })
             .check_new_service::<(Addr, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::split::layer())
+            // Shares the balancers, ensuring discovery errors are propagated.
+            .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
+            .check_new_clone::<(profiles::Receiver, Logical<HttpEndpoint>)>()
             .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::http::route_request::layer(
                 svc::proxies()
@@ -305,9 +305,12 @@ impl Config {
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())
-                    .push_map_target(endpoint::route)
+                    .push_map_target(|(r, l): (profiles::http::Route, Logical<HttpEndpoint>)| {
+                        endpoint::route(r, l)
+                    })
                     .into_inner(),
             ))
+            .check_new::<(profiles::Receiver, Logical<HttpEndpoint>)>()
             .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::discover::layer(profiles_client))
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
