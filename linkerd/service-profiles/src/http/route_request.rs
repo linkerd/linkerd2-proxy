@@ -13,9 +13,9 @@ use tracing::trace;
 
 pub fn layer<M, N: Clone, R>(
     new_route: N,
-) -> impl layer::Layer<M, Service = NewRequestRoute<M, N, R>> {
+) -> impl layer::Layer<M, Service = NewRouteRequest<M, N, R>> {
     let default = Route::default();
-    layer::mk(move |inner| NewRequestRoute {
+    layer::mk(move |inner| NewRouteRequest {
         inner,
         new_route: new_route.clone(),
         default: default.clone(),
@@ -23,14 +23,14 @@ pub fn layer<M, N: Clone, R>(
     })
 }
 
-pub struct NewRequestRoute<M, N, R> {
+pub struct NewRouteRequest<M, N, R> {
     inner: M,
     new_route: N,
     default: Route,
     _route: PhantomData<R>,
 }
 
-pub struct RequestRoute<T, S, N, R> {
+pub struct RouteRequest<T, S, N, R> {
     target: T,
     rx: Receiver,
     inner: S,
@@ -40,14 +40,14 @@ pub struct RequestRoute<T, S, N, R> {
     default: R,
 }
 
-impl<T, M, N> tower::Service<(Receiver, T)> for NewRequestRoute<M, N, N::Service>
+impl<T, M, N> tower::Service<(Receiver, T)> for NewRouteRequest<M, N, N::Service>
 where
     T: Clone + Send + 'static,
     M: tower::Service<(Receiver, T)>,
     M::Future: Send + 'static,
     N: NewService<(Route, T)> + Clone + Send + 'static,
 {
-    type Response = RequestRoute<T, M::Response, N, N::Service>;
+    type Response = RouteRequest<T, M::Response, N, N::Service>;
     type Error = M::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, M::Error>> + Send + 'static>>;
 
@@ -63,7 +63,7 @@ where
                 .call((rx.clone(), target.clone()))
                 .map_ok(move |inner| {
                     let default = new_route.new_service((default_route, target.clone()));
-                    RequestRoute {
+                    RouteRequest {
                         rx,
                         target,
                         inner,
@@ -77,7 +77,7 @@ where
     }
 }
 
-impl<B, T, N, S, R> tower::Service<http::Request<B>> for RequestRoute<T, S, N, R>
+impl<B, T, N, S, R> tower::Service<http::Request<B>> for RouteRequest<T, S, N, R>
 where
     B: Send + 'static,
     T: Clone,
