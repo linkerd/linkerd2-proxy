@@ -16,7 +16,6 @@ indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-retry = { path = "../../retry" }
-rand = { version = "0.7", features = ["small_rng"] }
 tokio = { version = "0.2", features = ["sync"]}
 tracing = "0.1.19"
 pin-project = "0.4"

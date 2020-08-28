@@ -1,12 +1,9 @@
 use super::{Receiver, RequestMatch, Route};
 use crate::Profile;
-use futures::prelude::*;
 use linkerd2_stack::{layer, NewService, Proxy};
 use std::{
     collections::HashMap,
-    future::Future,
     marker::PhantomData,
-    pin::Pin,
     task::{Context, Poll},
 };
 use tracing::trace;
@@ -40,40 +37,39 @@ pub struct RouteRequest<T, S, N, R> {
     default: R,
 }
 
-impl<T, M, N> tower::Service<(Receiver, T)> for NewRouteRequest<M, N, N::Service>
-where
-    T: Clone + Send + 'static,
-    M: tower::Service<(Receiver, T)>,
-    M::Future: Send + 'static,
-    N: NewService<(Route, T)> + Clone + Send + 'static,
-{
-    type Response = RouteRequest<T, M::Response, N, N::Service>;
-    type Error = M::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, M::Error>> + Send + 'static>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            new_route: self.new_route.clone(),
+            default: self.default.clone(),
+            _route: self._route,
+        }
     }
+}
 
-    fn call(&mut self, (rx, target): (Receiver, T)) -> Self::Future {
-        let new_route = self.new_route.clone();
-        let default_route = self.default.clone();
-        Box::pin(
-            self.inner
-                .call((rx.clone(), target.clone()))
-                .map_ok(move |inner| {
-                    let default = new_route.new_service((default_route, target.clone()));
-                    RouteRequest {
-                        rx,
-                        target,
-                        inner,
-                        default,
-                        new_route,
-                        http_routes: Vec::new(),
-                        proxies: HashMap::new(),
-                    }
-                }),
-        )
+impl<T, M, N> NewService<(Receiver, T)> for NewRouteRequest<M, N, N::Service>
+where
+    T: Clone,
+    M: NewService<(Receiver, T)>,
+    N: NewService<(Route, T)> + Clone,
+{
+    type Service = RouteRequest<T, M::Service, N, N::Service>;
+
+    fn new_service(&self, (rx, target): (Receiver, T)) -> Self::Service {
+        let inner = self.inner.new_service((rx.clone(), target.clone()));
+        let default = self
+            .new_route
+            .new_service((self.default.clone(), target.clone()));
+        RouteRequest {
+            rx,
+            target,
+            inner,
+            default,
+            new_route: self.new_route.clone(),
+            http_routes: Vec::new(),
+            proxies: HashMap::new(),
+        }
     }
 }
 

@@ -55,10 +55,7 @@ impl<L> Layers<L> {
         Layers(Pair::new(self.0, outer))
     }
 
-    pub fn push_map_target<M: Clone>(
-        self,
-        map_target: M,
-    ) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
+    pub fn push_map_target<M>(self, map_target: M) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
         self.push(stack::MapTargetLayer::new(map_target))
     }
 
@@ -280,9 +277,18 @@ impl<S> Stack<S> {
     }
 
     /// Validates that this stack serves T-typed targets.
-    pub fn check_new_service<T>(self) -> Self
+    pub fn check_new<T>(self) -> Self
     where
         S: NewService<T>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_new_service<T, Req>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Service<Req>,
     {
         self
     }

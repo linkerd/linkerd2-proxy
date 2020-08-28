@@ -1,19 +1,20 @@
 use crate::{Profile, Receiver, Target};
-use futures::{future, prelude::*};
-use indexmap::IndexMap;
+use futures::{future, prelude::*, ready};
+use indexmap::IndexSet;
 use linkerd2_addr::Addr;
 use linkerd2_error::Error;
 use linkerd2_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
-use rand::rngs::SmallRng;
+use rand::{rngs::SmallRng, SeedableRng};
 use std::{
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
-use tower::util::ServiceExt;
+use tower::ready_cache::ReadyCache;
 
-pub fn layer<N, S>(rng: SmallRng) -> impl layer::Layer<N, Service = NewSplit<N, S>> + Clone {
+pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
+    let rng = SmallRng::from_entropy();
     layer::mk(move |inner| NewSplit {
         inner,
         rng: rng.clone(),
@@ -22,29 +23,33 @@ pub fn layer<N, S>(rng: SmallRng) -> impl layer::Layer<N, Service = NewSplit<N, 
 }
 
 #[derive(Clone, Debug)]
-pub struct NewSplit<N, S> {
+pub struct NewSplit<N, S, Req> {
     inner: N,
     rng: SmallRng,
-    _service: PhantomData<fn() -> S>,
+    _service: PhantomData<fn(Req) -> S>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Split<T, N, S> {
+#[derive(Debug)]
+pub struct Split<T, N, S, Req> {
     target: T,
     rx: Receiver,
     new_service: N,
     rng: SmallRng,
-    inner: Option<Inner<S>>,
+    inner: Option<Inner>,
+    services: ReadyCache<Addr, S, Req>,
 }
 
-#[derive(Clone, Debug)]
-struct Inner<S> {
+#[derive(Debug)]
+struct Inner {
     distribution: WeightedIndex<u32>,
-    services: IndexMap<Addr, S>,
+    addrs: IndexSet<Addr>,
 }
 
-impl<T, N: Clone, S> NewService<(Receiver, T)> for NewSplit<N, S> {
-    type Service = Split<T, N, S>;
+impl<T, N: Clone, S, Req> NewService<(Receiver, T)> for NewSplit<N, S, Req>
+where
+    S: tower::Service<Req>,
+{
+    type Service = Split<T, N, S, Req>;
 
     fn new_service(&self, (rx, target): (Receiver, T)) -> Self::Service {
         Split {
@@ -53,16 +58,17 @@ impl<T, N: Clone, S> NewService<(Receiver, T)> for NewSplit<N, S> {
             new_service: self.inner.clone(),
             rng: self.rng.clone(),
             inner: None,
+            services: ReadyCache::default(),
         }
     }
 }
 
-impl<Req, T, N, S> tower::Service<Req> for Split<T, N, S>
+impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
     T: Into<Addr> + Clone,
     N: NewService<(Addr, T), Service = S> + Clone,
-    S: tower::Service<Req> + Clone + Send + 'static,
+    S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send,
@@ -80,56 +86,64 @@ where
         // services that existed in the prior state.
         if let Some(Profile { targets, .. }) = update {
             // Clear out the prior state and preserve its services for reuse.
-            let mut prior = self.inner.take().map(|i| i.services).unwrap_or_default();
+            let mut prior = self.inner.take().map(|i| i.addrs).unwrap_or_default();
 
-            let mut services = IndexMap::with_capacity(targets.len().max(1));
+            let mut addrs = IndexSet::with_capacity(targets.len().max(0));
             let mut weights = Vec::with_capacity(targets.len().max(1));
             if targets.len() == 0 {
                 // If there were no overrides, build a default backend from the
                 // target.
                 let addr: Addr = self.target.clone().into();
-                let svc = prior.remove(&addr).unwrap_or_else(|| {
-                    self.new_service
-                        .new_service((addr.clone(), self.target.clone()))
-                });
-                services.insert(addr, svc);
+                if !prior.remove(&addr) {
+                    let svc = self
+                        .new_service
+                        .new_service((addr.clone(), self.target.clone()));
+                    self.services.push(addr.clone(), svc);
+                }
+                addrs.insert(addr);
                 weights.push(1);
             } else {
                 // Create an updated distribution and set of services.
                 for Target { weight, addr } in targets.into_iter() {
                     // Reuse the prior services whenever possible.
-                    let svc = prior.remove(&addr).unwrap_or_else(|| {
-                        self.new_service
-                            .new_service((addr.clone(), self.target.clone()))
-                    });
-                    services.insert(addr, svc);
+                    if !prior.remove(&addr) {
+                        let svc = self
+                            .new_service
+                            .new_service((addr.clone(), self.target.clone()));
+                        self.services.push(addr.clone(), svc);
+                    }
+                    addrs.insert(addr);
                     weights.push(weight);
                 }
             }
 
+            for addr in prior {
+                self.services.evict(&addr);
+            }
+
             self.inner = WeightedIndex::new(weights).ok().map(|distribution| Inner {
-                services,
+                addrs,
                 distribution,
             });
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(ready!(self.services.poll_pending(cx)).map_err(Into::into))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
         if let Some(Inner {
-            ref services,
+            ref addrs,
             ref distribution,
         }) = self.inner.as_ref()
         {
-            debug_assert_ne!(services.len(), 0);
-            let idx = if services.len() == 1 {
+            debug_assert_ne!(addrs.len(), 0);
+            let idx = if addrs.len() == 1 {
                 0
             } else {
                 distribution.sample(&mut self.rng)
             };
-            let (_, svc) = services.get_index(idx).expect("illegal service index");
-            Box::pin(svc.clone().oneshot(req).err_into::<Error>())
+            let addr = addrs.get_index(idx).expect("invalid index");
+            Box::pin(self.services.call_ready(addr, req).err_into::<Error>())
         } else {
             Box::pin(future::err(NoTargets(()).into()))
         }

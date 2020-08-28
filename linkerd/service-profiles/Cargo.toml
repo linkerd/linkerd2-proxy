@@ -34,6 +34,7 @@ default-features = false
 features = [
     "util",
     "retry",
+    "ready-cache",
 ]
 
 [dev-dependencies]

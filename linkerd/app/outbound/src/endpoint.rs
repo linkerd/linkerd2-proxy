@@ -26,14 +26,8 @@ pub type Logical<T> = Target<T>;
 
 pub type Concrete<T> = Target<Logical<T>>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Profile(Addr);
-
 #[derive(Clone, Debug)]
 pub struct LogicalPerRequest(listen::Addrs);
-
-#[derive(Clone, Debug)]
-pub struct ProfilePerTarget;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target<T> {
@@ -63,6 +57,12 @@ impl<T> Target<T> {
             addr: self.addr,
             inner: (map)(self.inner),
         }
+    }
+}
+
+impl<T> Into<Addr> for Target<T> {
+    fn into(self) -> Addr {
+        self.addr
     }
 }
 
@@ -412,23 +412,10 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
     }
 }
 
-// === impl ProfilePerTarget ===
-
-impl<T> router::Recognize<Target<T>> for ProfilePerTarget {
-    type Key = Profile;
-
-    fn recognize(&self, t: &Target<T>) -> Self::Key {
-        Profile(t.addr.clone())
+pub fn route<T>(route: profiles::http::Route, target: Logical<T>) -> dst::Route {
+    dst::Route {
+        route,
+        target: target.addr,
+        direction: metric_labels::Direction::Out,
     }
 }
-
-// impl profiles::WithRoute for Profile {
-//     type Route = dst::Route;
-//     fn with_route(self, route: profiles::Route) -> Self::Route {
-//         dst::Route {
-//             route,
-//             target: self.0.clone(),
-//             direction: metric_labels::Direction::Out,
-//         }
-//     }
-// }

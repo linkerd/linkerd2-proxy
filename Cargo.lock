@@ -936,7 +936,6 @@ dependencies = [
  "linkerd2-retry",
  "pin-project",
  "quickcheck",
- "rand 0.7.2",
  "tokio",
  "tower",
  "tracing",

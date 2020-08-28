@@ -5,16 +5,13 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::endpoint::{
-    Concrete, HttpEndpoint, Logical, LogicalPerRequest, Profile, ProfilePerTarget, Target,
-    TcpEndpoint,
-};
+pub use self::endpoint::{Concrete, HttpEndpoint, Logical, LogicalPerRequest, Target, TcpEndpoint};
 use ::http::header::HOST;
 use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
-    dns, drain, dst, errors, metric_labels,
+    dns, drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -25,10 +22,9 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, listen, tls},
-    Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use rand::{rngs::SmallRng, SeedableRng};
 use std::{collections::HashMap, net::IpAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
@@ -238,8 +234,9 @@ impl Config {
             + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P: profiles::GetRoutes<Logical<HttpEndpoint>> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
+        P::Error: Send,
     {
         let ProxyConfig {
             buffer_capacity,
@@ -271,27 +268,31 @@ impl Config {
             .push_spawn_ready()
             .check_service::<Target<HttpEndpoint>>()
             .push(discover)
-            .push_on_response(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
             .push_on_response(
                 svc::layers()
+                    .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)
                     // Shares the balancer, ensuring discovery errors are propagated.
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                    .push_spawn_buffer(buffer_capacity)
                     .push(metrics.stack.layer(stack_labels("balance"))),
             )
             .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
+            .check_make_service::<Concrete<http::Settings>, http::Request<_>>()
             .into_new_service();
 
         // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
         let logical_cache = balance
-            .check_new_service::<Concrete<HttpEndpoint>>()
-            // Provides route configuration. The profile service operates
-            // over `Concret` services. When overrides are in play, the
-            // Concrete destination may be overridden.
-            .push(profiles::split::layer(SmallRng::from_entropy()))
+            .check_new_service::<Concrete<http::Settings>, http::Request<_>>()
+            .push_map_target(|(addr, l): (Addr, Logical<HttpEndpoint>)| Concrete {
+                addr,
+                inner: l.map(|e| e.settings),
+            })
+            .check_new_service::<(Addr, Logical<HttpEndpoint>), http::Request<_>>()
+            .push(profiles::split::layer())
+            .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -304,20 +305,14 @@ impl Config {
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())
-                    .check_new_clone_service::<dst::Route>()
+                    .push_map_target(endpoint::route)
                     .into_inner(),
             ))
+            .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::discover::layer(profiles_client))
-            .check_make_service::<Profile, Concrete<HttpEndpoint>>()
-            // Use the `Logical` target as a `Concrete` target. It may be
-            // overridden by the profile layer.
-            .push_on_response(
-                svc::layers().push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
-                    addr: inner.addr.clone(),
-                    inner,
-                }),
-            )
+            .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .into_new_service()
+            .check_new_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -330,11 +325,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Profile| info_span!("profile"))
-            .check_make_service::<Profile, Logical<HttpEndpoint>>()
-            .push(router::Layer::new(|()| ProfilePerTarget))
-            .check_new_service_routes::<(), Logical<HttpEndpoint>>()
-            .new_service(());
+            .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.
         //
@@ -367,7 +358,7 @@ impl Config {
             .check_service::<Concrete<HttpEndpoint>>();
 
         // Routes requests to their logical target.
-        svc::stack(logical_cache)
+        logical_cache
             .check_service::<Logical<HttpEndpoint>>()
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
@@ -462,7 +453,7 @@ impl Config {
             .push_make_ready()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<listen::Addrs>()
+            .check_new_service::<listen::Addrs, http::Request<_>>()
             // Used by tap.
             .push_http_insert_target()
             .push_on_response(
@@ -475,7 +466,7 @@ impl Config {
             .instrument(
                 |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
             )
-            .check_new_service::<listen::Addrs>()
+            .check_new_service::<listen::Addrs, http::Request<_>>()
             .into_inner()
             .into_make_service();
 
