@@ -239,7 +239,7 @@ impl Config {
             .push_on_response(svc::layers().box_http_request())
             .check_service::<Target>()
             // Provides route configuration without pdestination overrides.
-            .push(profiles::Layer::without_overrides(
+            .push(profiles::discover::layer(
                 profiles_client,
                 http_profile_route_proxy.into_inner(),
             ))

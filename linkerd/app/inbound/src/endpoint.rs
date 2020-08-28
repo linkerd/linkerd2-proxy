@@ -120,23 +120,16 @@ impl Profile {
     }
 }
 
-impl profiles::HasDestination for Profile {
-    fn destination(&self) -> Addr {
-        self.0.clone()
-    }
-}
-
-impl profiles::WithRoute for Profile {
-    type Route = dst::Route;
-
-    fn with_route(self, route: profiles::Route) -> Self::Route {
-        dst::Route {
-            route,
-            target: self.0.clone(),
-            direction: metric_labels::Direction::In,
-        }
-    }
-}
+// impl profiles::WithRoute for Profile {
+//     type Route = dst::Route;
+//     fn with_route(self, route: profiles::Route) -> Self::Route {
+//         dst::Route {
+//             route,
+//             target: self.0.clone(),
+//             direction: metric_labels::Direction::In,
+//         }
+//     }
+// }
 
 // // === impl Target ===
 

@@ -28,9 +28,8 @@ use linkerd2_app_core::{
     Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::collections::HashMap;
-use std::net::IpAddr;
-use std::time::Duration;
+use rand::{rngs::SmallRng, SeedableRng};
+use std::{collections::HashMap, net::IpAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
@@ -303,14 +302,15 @@ impl Config {
         let logical_cache = balance
             .clone()
             .push_on_response(svc::layers().box_http_request())
-            .check_service::<Concrete<HttpEndpoint>>()
+            .check_new_service::<Concrete<HttpEndpoint>>()
             // Provides route configuration. The profile service operates
             // over `Concret` services. When overrides are in play, the
             // Concrete destination may be overridden.
-            .push(profiles::Layer::with_overrides(
-                profiles_client,
-                http_profile_route_proxy.into_inner(),
+            .push(profiles::split::layer(SmallRng::from_entropy()))
+            .push(profiles::http::route_request::layer(
+                request_routes.into_inner(),
             ))
+            .push(profiles::discover::layer(profiles_client))
             .check_make_service::<Profile, Concrete<HttpEndpoint>>()
             // Use the `Logical` target as a `Concrete` target. It may be
             // overridden by the profile layer.

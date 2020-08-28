@@ -9,11 +9,10 @@ use std::{
 
 mod client;
 pub mod discover;
-mod http;
+pub mod http;
 pub mod split;
 
 pub use self::client::{Client, InvalidProfileAddr};
-pub use self::http::*;
 
 pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
