@@ -284,31 +284,28 @@ impl Config {
             .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
             .into_new_service();
 
-        let request_routes = svc::proxies()
-            .push(metrics.http_route_actual.into_layer::<classify::Response>())
-            // Sets an optional retry policy.
-            .push(retry::layer(metrics.http_route_retry))
-            // Sets an optional request timeout.
-            .push(http::MakeTimeoutLayer::default())
-            // Records per-route metrics.
-            .push(metrics.http_route.into_layer::<classify::Response>())
-            // Sets the per-route response classifier as a request
-            // extension.
-            .push(classify::Layer::new())
-            .check_new_clone_service::<dst::Route>();
-
         // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
         let logical_cache = balance
-            .clone()
-            .push_on_response(svc::layers().box_http_request())
             .check_new_service::<Concrete<HttpEndpoint>>()
             // Provides route configuration. The profile service operates
             // over `Concret` services. When overrides are in play, the
             // Concrete destination may be overridden.
             .push(profiles::split::layer(SmallRng::from_entropy()))
             .push(profiles::http::route_request::layer(
-                request_routes.into_inner(),
+                svc::proxies()
+                    .push(metrics.http_route_actual.into_layer::<classify::Response>())
+                    // Sets an optional retry policy.
+                    .push(retry::layer(metrics.http_route_retry))
+                    // Sets an optional request timeout.
+                    .push(http::MakeTimeoutLayer::default())
+                    // Records per-route metrics.
+                    .push(metrics.http_route.into_layer::<classify::Response>())
+                    // Sets the per-route response classifier as a request
+                    // extension.
+                    .push(classify::Layer::new())
+                    .check_new_clone_service::<dst::Route>()
+                    .into_inner(),
             ))
             .push(profiles::discover::layer(profiles_client))
             .check_make_service::<Profile, Concrete<HttpEndpoint>>()
