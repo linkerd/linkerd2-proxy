@@ -60,12 +60,6 @@ impl<T> Target<T> {
     }
 }
 
-impl<T> Into<Addr> for Target<T> {
-    fn into(self) -> Addr {
-        self.addr
-    }
-}
-
 impl<T> std::fmt::Display for Target<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.addr.fmt(f)
