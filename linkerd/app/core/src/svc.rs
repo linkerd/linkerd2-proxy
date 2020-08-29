@@ -55,10 +55,7 @@ impl<L> Layers<L> {
         Layers(Pair::new(self.0, outer))
     }
 
-    pub fn push_map_target<M: Clone>(
-        self,
-        map_target: M,
-    ) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
+    pub fn push_map_target<M>(self, map_target: M) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
         self.push(stack::MapTargetLayer::new(map_target))
     }
 
@@ -280,9 +277,35 @@ impl<S> Stack<S> {
     }
 
     /// Validates that this stack serves T-typed targets.
-    pub fn check_new_service<T>(self) -> Self
+    pub fn check_new<T>(self) -> Self
     where
         S: NewService<T>,
+    {
+        self
+    }
+
+    pub fn check_new_clone<T>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Clone,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_new_service<T, Req>(self) -> Self
+    where
+        S: NewService<T>,
+        S::Service: Service<Req>,
+    {
+        self
+    }
+
+    /// Validates that this stack serves T-typed targets.
+    pub fn check_clone_new_service<T, Req>(self) -> Self
+    where
+        S: NewService<T> + Clone,
+        S::Service: Service<Req>,
     {
         self
     }
@@ -291,14 +314,6 @@ impl<S> Stack<S> {
     pub fn check_clone(self) -> Self
     where
         S: Clone,
-    {
-        self
-    }
-
-    pub fn check_new_clone_service<T>(self) -> Self
-    where
-        S: NewService<T>,
-        S::Service: Clone,
     {
         self
     }
@@ -323,15 +338,6 @@ impl<S> Stack<S> {
     pub fn check_service_response<T, U>(self) -> Self
     where
         S: Service<T, Response = U>,
-    {
-        self
-    }
-
-    /// Validates that this stack serves T-typed targets.
-    pub fn check_new_service_routes<T, Req>(self) -> Self
-    where
-        S: NewService<T>,
-        S::Service: Service<Req>,
     {
         self
     }
