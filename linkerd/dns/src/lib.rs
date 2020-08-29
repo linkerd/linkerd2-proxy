@@ -9,7 +9,8 @@ use std::{fmt, net};
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 use trust_dns_resolver::{
-    config::ResolverConfig, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
+    config::ResolverConfig, proto::error, proto::rr::rdata, system_conf, AsyncResolver,
+    TokioAsyncResolver,
 };
 pub use trust_dns_resolver::{
     config::ResolverOpts,
@@ -29,7 +30,10 @@ pub trait ConfigureResolver {
 struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
-    const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+    // When the DNS library does not return a TTL, we must assume one to prevent
+    // tight-looping. In practice, default kubernetes configs appear to have a
+    // 5s TTL, so we mirror that default here.
+    const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(5);
 
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
@@ -92,14 +96,7 @@ impl Resolver {
                 let ips = lookup.iter().collect::<Vec<_>>();
                 Ok((ips, time::delay_until(valid_until)))
             }
-            Err(e) => match e.kind() {
-                ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
-                    let expiry = valid_until
-                        .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
-                    Ok((vec![], time::delay_until(Instant::from_std(expiry))))
-                }
-                _ => Err(e),
-            },
+            Err(e) => Self::handle_error(e),
         }
     }
 
@@ -115,14 +112,32 @@ impl Resolver {
                 debug!(?addrs);
                 Ok((addrs, time::delay_until(valid_until)))
             }
-            Err(e) => match e.kind() {
-                ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
-                    let expiry = valid_until
-                        .unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
-                    Ok((vec![], time::delay_until(Instant::from_std(expiry))))
-                }
-                _ => Err(e.into()),
-            },
+            Err(e) => Self::handle_error(e).map_err(Into::into),
+        }
+    }
+
+    fn handle_error<T>(e: ResolveError) -> Result<(Vec<T>, time::Delay), ResolveError> {
+        match e.kind() {
+            ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
+                let expiry =
+                    valid_until.unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
+                Ok((vec![], time::delay_until(Instant::from_std(expiry))))
+            }
+            ResolveErrorKind::Proto(pe) if Self::is_nx_domain(&pe) => {
+                Ok((vec![], time::delay_for(Self::DEFAULT_TTL)))
+            }
+            _ => Err(e),
+        }
+    }
+
+    // XXX This is a workaround for
+    // https://github.com/bluejekyll/trust-dns/issues/1171.
+    //
+    // It should be removed once this bug is fixed upstream.
+    fn is_nx_domain(pe: &error::ProtoError) -> bool {
+        match pe.kind() {
+            error::ProtoErrorKind::Message(msg) => *msg == "Nameserver responded with NXDomain",
+            _ => false,
         }
     }
 

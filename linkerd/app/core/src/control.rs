@@ -53,16 +53,17 @@ impl Config {
         B::Error: Into<Error> + Send + Sync,
         I: Clone + tls::client::HasConfig + Send + 'static,
     {
+        let backoff = {
+            let backoff = self.connect.backoff;
+            move |_| Ok(backoff.stream())
+        };
         svc::connect(self.connect.keepalive)
             .push(tls::ConnectLayer::new(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push(reconnect::layer({
-                let backoff = self.connect.backoff;
-                move |_| Ok(backoff.stream())
-            }))
+            .push(reconnect::layer(backoff.clone()))
             .push_spawn_ready()
-            .push(self::resolve::layer(dns))
+            .push(self::resolve::layer(dns, backoff))
             .push_on_response(self::control::balance::layer())
             .push(metrics.into_layer::<classify::Response>())
             .push(self::add_origin::Layer::new())
@@ -209,25 +210,37 @@ mod resolve {
     use super::client::Target;
     use crate::{
         dns,
-        proxy::{discover, dns_resolve::DnsResolve, resolve::map_endpoint},
+        proxy::{
+            discover,
+            dns_resolve::DnsResolve,
+            resolve::{map_endpoint, recover},
+        },
         svc,
     };
+    use linkerd2_error::Recover;
     use std::net::SocketAddr;
 
-    pub fn layer<M>(
+    pub fn layer<M, R>(
         dns: dns::Resolver,
-    ) -> impl svc::Layer<
-        M,
-        Service = discover::MakeEndpoint<
-            discover::FromResolve<map_endpoint::Resolve<IntoTarget, DnsResolve>, Target>,
-            M,
-        >,
-    > {
+        recover: R,
+    ) -> impl svc::Layer<M, Service = Discover<M, R>>
+    where
+        R: Recover + Clone,
+        R::Backoff: Unpin,
+    {
         discover::resolve(map_endpoint::Resolve::new(
             IntoTarget(()),
-            DnsResolve::new(dns),
+            recover::Resolve::new(recover, DnsResolve::new(dns)),
         ))
     }
+
+    type Discover<M, R> = discover::MakeEndpoint<
+        discover::FromResolve<
+            map_endpoint::Resolve<IntoTarget, recover::Resolve<R, DnsResolve>>,
+            Target,
+        >,
+        M,
+    >;
 
     #[derive(Copy, Clone, Debug)]
     pub struct IntoTarget(());
