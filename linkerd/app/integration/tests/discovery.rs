@@ -500,9 +500,9 @@ macro_rules! generate_tests {
                 assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"foo\"");
 
                 // // Request 2 --- with override header
-                // let res = override_req(&client);
+                // let res = override_req(&client).await;
                 // assert_eq!(res.status(), http::StatusCode::OK);
-                // assert_eventually_contains!(metrics.get("/metrics"), "rt_hello=\"bar\"");
+                // assert_eventually_contains!(metrics.get("/metrics").await, "rt_hello=\"bar\"");
 
                 // Ensure panics are propagated.
                 proxy.join_servers().await;

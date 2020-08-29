@@ -12,6 +12,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::ready_cache::ReadyCache;
+use tracing::debug;
 
 pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
     let rng = SmallRng::from_entropy();
@@ -95,6 +96,8 @@ where
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
         if let Some(Profile { targets, .. }) = update {
+            debug!(?targets, "Updating");
+
             // Clear out the prior state and preserve its services for reuse.
             let mut prior = self.inner.take().map(|i| i.addrs).unwrap_or_default();
 
@@ -105,10 +108,13 @@ where
                 // target.
                 let addr = self.target.as_ref();
                 if !prior.remove(addr) {
+                    debug!(%addr, "Creating default target");
                     let svc = self
                         .new_service
                         .new_service((addr.clone(), self.target.clone()));
                     self.services.push(addr.clone(), svc);
+                } else {
+                    debug!(%addr, "Default target already exists");
                 }
                 addrs.insert(addr.clone());
                 weights.push(1);
@@ -117,10 +123,13 @@ where
                 for Target { weight, addr } in targets.into_iter() {
                     // Reuse the prior services whenever possible.
                     if !prior.remove(&addr) {
+                        debug!(%addr, "Creating target");
                         let svc = self
                             .new_service
                             .new_service((addr.clone(), self.target.clone()));
                         self.services.push(addr.clone(), svc);
+                    } else {
+                        debug!(%addr, "Target already exists");
                     }
                     addrs.insert(addr);
                     weights.push(weight);
@@ -137,6 +146,8 @@ where
             });
         }
 
+        // Wait for all target services to be ready. If any services fail, then
+        // the whole service fails.
         Poll::Ready(ready!(self.services.poll_pending(cx)).map_err(Into::into))
     }
 
@@ -153,8 +164,10 @@ where
                 distribution.sample(&mut self.rng)
             };
             let addr = addrs.get_index(idx).expect("invalid index");
+            debug!(%addr, "Dispatching");
             Box::pin(self.services.call_ready(addr, req).err_into::<Error>())
         } else {
+            debug!("No targets available");
             Box::pin(future::err(NoTargets(()).into()))
         }
     }

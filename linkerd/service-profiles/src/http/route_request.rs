@@ -1,12 +1,14 @@
 use super::{Receiver, RequestMatch, Route};
 use crate::Profile;
+use futures::{future::ErrInto, prelude::*, ready};
+use linkerd2_error::Error;
 use linkerd2_stack::{layer, NewService, Proxy};
 use std::{
     collections::HashMap,
     marker::PhantomData,
     task::{Context, Poll},
 };
-use tracing::trace;
+use tracing::{debug, trace};
 
 pub fn layer<M, N: Clone, R>(
     new_route: N,
@@ -80,10 +82,11 @@ where
     N: NewService<(Route, T), Service = R> + Clone,
     R: Proxy<http::Request<B>, S>,
     S: tower::Service<R::Request>,
+    S::Error: Into<Error>,
 {
     type Response = R::Response;
-    type Error = R::Error;
-    type Future = R::Future;
+    type Error = Error;
+    type Future = ErrInto<R::Future, Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
@@ -93,10 +96,12 @@ where
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
         if let Some(Profile { http_routes, .. }) = update {
+            debug!(routes = %http_routes.len(), "Updating HTTP routes");
             let mut proxies = HashMap::with_capacity(http_routes.len());
             for (_, ref route) in &http_routes {
                 // Reuse the prior services whenever possible.
                 let proxy = self.proxies.remove(&route).unwrap_or_else(|| {
+                    debug!(?route, "Creating HTTP route");
                     self.new_route
                         .new_service((route.clone(), self.target.clone()))
                 });
@@ -106,18 +111,20 @@ where
             self.proxies = proxies;
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(ready!(self.inner.poll_ready(cx)).map_err(Into::into))
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         for (ref condition, ref route) in &self.http_routes {
             if condition.is_match(&req) {
                 trace!(?condition, "Using configured route");
-                return self.proxies[route].proxy(&mut self.inner, req);
+                return self.proxies[route]
+                    .proxy(&mut self.inner, req)
+                    .err_into::<Error>();
             }
         }
 
         trace!("Using default route");
-        self.default.proxy(&mut self.inner, req)
+        self.default.proxy(&mut self.inner, req).err_into::<Error>()
     }
 }
