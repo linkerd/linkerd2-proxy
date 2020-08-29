@@ -14,7 +14,7 @@ use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
-    pub dst: Addr,
+    pub logical: Addr,
     pub socket_addr: SocketAddr,
     pub http_settings: http::Settings,
     pub tls_client_id: tls::PeerIdentity,
@@ -103,7 +103,7 @@ impl tls::HasPeerIdentity for TcpEndpoint {
 pub(super) fn route(route: profiles::http::Route, target: Target) -> dst::Route {
     dst::Route {
         route,
-        target: target.dst,
+        target: target.logical,
         direction: metric_labels::Direction::In,
     }
 }
@@ -112,7 +112,7 @@ pub(super) fn route(route: profiles::http::Route, target: Target) -> dst::Route 
 
 impl AsRef<Addr> for Target {
     fn as_ref(&self) -> &Addr {
-        &self.dst
+        &self.logical
     }
 }
 
@@ -123,7 +123,7 @@ impl http::normalize_uri::ShouldNormalizeUri for Target {
             ..
         } = self.http_settings
         {
-            return Some(self.dst.to_http_authority());
+            return Some(self.logical.to_http_authority());
         }
         None
     }
@@ -144,7 +144,7 @@ impl tls::HasPeerIdentity for Target {
 impl Into<metric_labels::EndpointLabels> for Target {
     fn into(self) -> metric_labels::EndpointLabels {
         metric_labels::EndpointLabels {
-            authority: self.dst.name_addr().map(|d| d.as_http_authority()),
+            authority: self.logical.name_addr().map(|d| d.as_http_authority()),
             direction: metric_labels::Direction::In,
             tls_id: self.tls_client_id.map(metric_labels::TlsId::ClientId),
             labels: None,
@@ -205,7 +205,7 @@ impl tap::Inspect for Target {
 
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.dst.fmt(f)
+        self.logical.fmt(f)
     }
 }
 
@@ -214,7 +214,7 @@ impl stack_tracing::GetSpan<()> for Target {
         use tracing::info_span;
 
         match self.http_settings {
-            http::Settings::Http2 => match self.dst.name_addr() {
+            http::Settings::Http2 => match self.logical.name_addr() {
                 None => info_span!(
                     "http2",
                     port = %self.socket_addr.port(),
@@ -229,7 +229,7 @@ impl stack_tracing::GetSpan<()> for Target {
                 keep_alive,
                 wants_h1_upgrade,
                 was_absolute_form,
-            } => match self.dst.name_addr() {
+            } => match self.logical.name_addr() {
                 None => info_span!(
                     "http1",
                     port = %self.socket_addr.port(),
@@ -262,7 +262,7 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
     type Key = Target;
 
     fn recognize(&self, req: &http::Request<A>) -> Self::Key {
-        let dst = req
+        let logical = req
             .headers()
             .get(CANONICAL_DST_HEADER)
             .and_then(|dst| {
@@ -286,7 +286,7 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             .unwrap_or_else(|| self.accept.addrs.target_addr().into());
 
         Target {
-            dst,
+            logical,
             socket_addr: self.accept.addrs.target_addr(),
             tls_client_id: self.accept.peer_identity.clone(),
             http_settings: http::Settings::from_request(req),
