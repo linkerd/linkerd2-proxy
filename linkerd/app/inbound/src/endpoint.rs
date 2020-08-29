@@ -56,7 +56,7 @@ impl http::settings::HasSettings for HttpEndpoint {
 impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
-            port: target.dst.port(),
+            port: target.socket_addr.port(),
             settings: target.http_settings,
         }
     }
@@ -217,12 +217,12 @@ impl stack_tracing::GetSpan<()> for Target {
             http::Settings::Http2 => match self.dst.name_addr() {
                 None => info_span!(
                     "http2",
-                    port = %self.dst.port(),
+                    port = %self.socket_addr.port(),
                 ),
                 Some(name) => info_span!(
                     "http2",
                     %name,
-                    port = %self.dst.port(),
+                    port = %self.socket_addr.port(),
                 ),
             },
             http::Settings::Http1 {
@@ -232,7 +232,7 @@ impl stack_tracing::GetSpan<()> for Target {
             } => match self.dst.name_addr() {
                 None => info_span!(
                     "http1",
-                    port = %self.dst.port(),
+                    port = %self.socket_addr.port(),
                     keep_alive,
                     wants_h1_upgrade,
                     was_absolute_form,
@@ -240,7 +240,7 @@ impl stack_tracing::GetSpan<()> for Target {
                 Some(name) => info_span!(
                     "http1",
                     %name,
-                    port = %self.dst.port(),
+                    port = %self.socket_addr.port(),
                     keep_alive,
                     wants_h1_upgrade,
                     was_absolute_form,
