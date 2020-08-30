@@ -118,9 +118,9 @@ where
 
                     // Create an outbound target using the resolved IP & name.
                     let dst_addr = (dst_ip, orig_dst.port()).into();
-                    let dst = NameAddr::new(name, orig_dst.port());
+                    let dst_name = NameAddr::new(name, orig_dst.port());
                     let endpoint = outbound::Logical {
-                        addr: dst.clone().into(),
+                        addr: dst_name.clone().into(),
                         inner: outbound::HttpEndpoint {
                             addr: dst_addr,
                             settings: http_settings,
@@ -132,7 +132,7 @@ where
                     };
 
                     let svc = outbound.call(endpoint).await.map_err(Into::into)?;
-                    Ok(Gateway::new(svc, source_identity, dst, local_identity))
+                    Ok(Gateway::new(svc, source_identity, dst_name, local_identity))
                 })
             }
         }
