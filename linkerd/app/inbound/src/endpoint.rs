@@ -129,7 +129,7 @@ impl profiles::HasDestination for Profile {
 impl profiles::WithRoute for Profile {
     type Route = dst::Route;
 
-    fn with_route(self, route: profiles::Route) -> Self::Route {
+    fn with_route(self, route: profiles::http::Route) -> Self::Route {
         dst::Route {
             route,
             target: self.0.clone(),

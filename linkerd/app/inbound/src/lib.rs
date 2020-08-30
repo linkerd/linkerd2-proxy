@@ -66,7 +66,7 @@ impl Config {
             + 'static,
         S::Error: Into<Error>,
         S::Future: Unpin + Send,
-        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Profile> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
     {
         let tcp_connect = self.build_tcp_connect(&metrics);
@@ -148,7 +148,7 @@ impl Config {
         C::Error: Into<Error>,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Profile> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
         // The loopback router processes requests sent to the inbound port.
         L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,

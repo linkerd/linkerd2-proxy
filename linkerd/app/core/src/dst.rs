@@ -9,7 +9,7 @@ use std::time::Duration;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
     pub target: Addr,
-    pub route: profiles::Route,
+    pub route: profiles::http::Route,
     pub direction: super::metric_labels::Direction,
 }
 

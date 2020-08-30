@@ -1,6 +1,7 @@
-use super::{OverrideDestination, WeightedAddr};
+use super::OverrideDestination;
+use crate::Target;
 use futures::{future, TryFutureExt};
-use linkerd2_addr::NameAddr;
+use linkerd2_addr::Addr;
 use linkerd2_error::Error;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::rngs::SmallRng;
@@ -38,10 +39,10 @@ pub struct Update {
 
 #[derive(Clone)]
 enum Routes {
-    Forward(Option<NameAddr>),
+    Forward(Option<Addr>),
     Override {
         distribution: WeightedIndex<u32>,
-        overrides: Vec<NameAddr>,
+        overrides: Vec<Addr>,
     },
 }
 
@@ -125,7 +126,7 @@ impl Update {
             .map_err(|_| error::LostService(()))
     }
 
-    pub fn set_split(&mut self, mut addrs: Vec<WeightedAddr>) -> Result<(), error::LostService> {
+    pub fn set_split(&mut self, mut addrs: Vec<Target>) -> Result<(), error::LostService> {
         let routes = match self.routes {
             Routes::Forward(ref addr) => {
                 if addrs.len() == 1 {

@@ -2,7 +2,7 @@
 //! middleware configurations
 //!
 //! As the router's Stack is built, a destination is extracted from the stack's
-//! target and it is used to get route profiles from ` GetRoutes` implementation.
+//! target and it is used to get route profiles from ` GetProfile` implementation.
 //!
 //! Each route uses a shared underlying concrete dst router.  The concrete dst
 //! router picks a concrete dst (NameAddr) from the profile's `dst_overrides` if
@@ -12,7 +12,8 @@
 
 use super::concrete;
 use super::requests::Requests;
-use super::{GetRoutes, OverrideDestination, Route, Routes, WithRoute};
+use super::{OverrideDestination, Route, WithRoute};
+use crate::{GetProfile, Receiver};
 use futures::{ready, TryFuture};
 use linkerd2_error::Error;
 use linkerd2_stack::{NewService, ProxyService};
@@ -21,7 +22,6 @@ use rand::{rngs::SmallRng, SeedableRng};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::sync::watch;
 use tracing::{debug, trace};
 
 #[derive(Clone, Debug)]
@@ -63,7 +63,7 @@ where
     T: WithRoute,
     R: NewService<T::Route>,
 {
-    profiles: watch::Receiver<Routes>,
+    profiles: Receiver,
     requests: Requests<T, R>,
     concrete: C,
 }
@@ -120,7 +120,7 @@ where
 impl<T, G, R, C> tower::Service<T> for MakeSvc<G, R, C, ()>
 where
     T: WithRoute + Clone,
-    G: GetRoutes<T>,
+    G: GetProfile<T>,
     R: NewService<T::Route> + Clone,
     C: Clone,
 {
@@ -151,7 +151,7 @@ where
 impl<T, G, R, C> tower::Service<T> for MakeSvc<G, R, C, SmallRng>
 where
     T: WithRoute + Clone,
-    G: GetRoutes<T>,
+    G: GetProfile<T>,
     R: NewService<T::Route> + Clone,
     C: Clone,
 {
@@ -182,7 +182,7 @@ where
 impl<T, F, R, C> Future for MakeFuture<T, F, R, C, ()>
 where
     T: WithRoute + Clone,
-    F: TryFuture<Ok = watch::Receiver<Routes>>,
+    F: TryFuture<Ok = Receiver>,
     F::Error: Into<Error>,
     R: NewService<T::Route>,
 {
@@ -216,7 +216,7 @@ where
 impl<T, F, R, C> Future for MakeFuture<T, F, R, C, SmallRng>
 where
     T: WithRoute + Clone,
-    F: TryFuture<Ok = watch::Receiver<Routes>>,
+    F: TryFuture<Ok = Receiver>,
     F::Error: Into<Error>,
     R: NewService<T::Route> + Clone,
 {
@@ -270,22 +270,22 @@ where
         }
 
         if let Some(profile) = profile {
-            if profile.dst_overrides.is_empty() {
+            if profile.targets.is_empty() {
                 self.concrete
                     .update
                     .set_forward()
                     .expect("both sides of the concrete updater must be held");
             } else {
-                debug!(services = profile.dst_overrides.len(), "updating split");
+                debug!(services = profile.targets.len(), "updating split");
 
                 self.concrete
                     .update
-                    .set_split(profile.dst_overrides)
+                    .set_split(profile.targets)
                     .expect("both sides of the concrete updater must be held");
             }
 
-            debug!(routes = profile.routes.len(), "updating routes");
-            self.requests.set_routes(profile.routes);
+            debug!(routes = profile.http_routes.len(), "updating routes");
+            self.requests.set_routes(profile.http_routes);
         }
     }
 }
@@ -304,8 +304,8 @@ where
         }
 
         if let Some(profile) = profile {
-            debug!(routes = profile.routes.len(), "updating routes");
-            self.requests.set_routes(profile.routes);
+            debug!(routes = profile.http_routes.len(), "updating routes");
+            self.requests.set_routes(profile.http_routes);
         }
     }
 }

@@ -12,14 +12,14 @@ use tracing::trace;
 #[derive(Clone, Debug)]
 pub enum Request {
     Default,
-    Profile(profiles::ResponseClasses),
+    Profile(profiles::http::ResponseClasses),
 }
 
 #[derive(Clone, Debug)]
 pub enum Response {
     Default,
     Grpc,
-    Profile(profiles::ResponseClasses),
+    Profile(profiles::http::ResponseClasses),
 }
 
 #[derive(Clone, Debug)]
@@ -51,8 +51,8 @@ pub enum SuccessOrFailure {
 
 // === impl Request ===
 
-impl From<profiles::ResponseClasses> for Request {
-    fn from(classes: profiles::ResponseClasses) -> Self {
+impl From<profiles::http::ResponseClasses> for Request {
+    fn from(classes: profiles::http::ResponseClasses) -> Self {
         if classes.is_empty() {
             Request::Default
         } else {
@@ -106,7 +106,7 @@ impl Default for Response {
 impl Response {
     fn match_class<B>(
         rsp: &http::Response<B>,
-        classes: &[profiles::ResponseClass],
+        classes: &[profiles::http::ResponseClass],
     ) -> Option<Class> {
         for class in classes {
             if class.is_match(rsp) {

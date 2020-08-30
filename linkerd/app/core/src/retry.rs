@@ -30,7 +30,7 @@ pub struct NewRetry<C = ()> {
 pub struct Retry<C = ()> {
     metrics: Handle,
     budget: Arc<Budget>,
-    response_classes: profiles::ResponseClasses,
+    response_classes: profiles::http::ResponseClasses,
     _clone_request: PhantomData<C>,
 }
 
