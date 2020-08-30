@@ -72,7 +72,7 @@ where
 
     fn call(&mut self, target: inbound::Target) -> Self::Future {
         let inbound::Target {
-            dst_name,
+            logical,
             http_settings,
             tls_client_id,
             ..
@@ -85,7 +85,7 @@ where
             }
         };
 
-        let orig_dst = match dst_name {
+        let orig_dst = match logical.into_name_addr() {
             Some(n) => n,
             None => {
                 return Box::pin(future::ok(Gateway::NoAuthority));
@@ -118,9 +118,9 @@ where
 
                     // Create an outbound target using the resolved IP & name.
                     let dst_addr = (dst_ip, orig_dst.port()).into();
-                    let dst_name = NameAddr::new(name, orig_dst.port());
+                    let dst = NameAddr::new(name, orig_dst.port());
                     let endpoint = outbound::Logical {
-                        addr: dst_name.clone().into(),
+                        addr: dst.clone().into(),
                         inner: outbound::HttpEndpoint {
                             addr: dst_addr,
                             settings: http_settings,
@@ -132,7 +132,7 @@ where
                     };
 
                     let svc = outbound.call(endpoint).await.map_err(Into::into)?;
-                    Ok(Gateway::new(svc, source_identity, dst_name, local_identity))
+                    Ok(Gateway::new(svc, source_identity, dst, local_identity))
                 })
             }
         }

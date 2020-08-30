@@ -24,8 +24,8 @@ impl admit::Admit<Target> for PreventLoop {
     type Error = LoopPrevented;
 
     fn admit(&mut self, ep: &Target) -> Result<(), Self::Error> {
-        tracing::debug!(addr = %ep.addr, self.port);
-        if ep.addr.port() == self.port {
+        tracing::debug!(addr = %ep.socket_addr, self.port);
+        if ep.socket_addr.port() == self.port {
             return Err(LoopPrevented { port: self.port });
         }
 
