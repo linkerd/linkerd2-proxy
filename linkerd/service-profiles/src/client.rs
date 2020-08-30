@@ -1,7 +1,4 @@
-use crate::{
-    http::{RequestMatch, ResponseClass, ResponseMatch, Route},
-    Profile, Receiver, Target,
-};
+use crate::{http, Profile, Receiver, Target};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
@@ -92,7 +89,7 @@ impl<S, R> Client<S, R>
 where
     // These bounds aren't *required* here, they just help detect the problem
     // earlier (as Client::new), instead of when trying to passing a `Client`
-    // to something that wants `impl GetRoutes`.
+    // to something that wants `impl GetProfile`.
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -337,14 +334,14 @@ where
 fn convert_route(
     orig: api::Route,
     retry_budget: Option<&Arc<Budget>>,
-) -> Option<(RequestMatch, Route)> {
+) -> Option<(http::RequestMatch, http::Route)> {
     let req_match = orig.condition.and_then(convert_req_match)?;
     let rsp_classes = orig
         .response_classes
         .into_iter()
         .filter_map(convert_rsp_class)
         .collect();
-    let mut route = Route::new(orig.metrics_labels.into_iter(), rsp_classes);
+    let mut route = http::Route::new(orig.metrics_labels.into_iter(), rsp_classes);
     if orig.is_retryable {
         set_route_retry(&mut route, retry_budget);
     }
@@ -354,17 +351,18 @@ fn convert_route(
     Some((req_match, route))
 }
 
-fn convert_dst_override(
-    api::WeightedDst { authority, weight }: api::WeightedDst,
-) -> Option<Target> {
-    if weight == 0 {
+fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
+    if orig.weight == 0 {
         return None;
     }
-    let addr = Addr::from_str(authority.as_str()).ok()?;
-    Some(Target { addr, weight })
+    let addr = Addr::from_str(orig.authority.as_str()).ok()?;
+    Some(Target {
+        addr,
+        weight: orig.weight,
+    })
 }
 
-fn set_route_retry(route: &mut Route, retry_budget: Option<&Arc<Budget>>) {
+fn set_route_retry(route: &mut http::Route, retry_budget: Option<&Arc<Budget>>) {
     let budget = match retry_budget {
         Some(budget) => budget.clone(),
         None => {
@@ -376,7 +374,7 @@ fn set_route_retry(route: &mut Route, retry_budget: Option<&Arc<Budget>>) {
     route.set_retries(budget);
 }
 
-fn set_route_timeout(route: &mut Route, timeout: Result<Duration, Duration>) {
+fn set_route_timeout(route: &mut http::Route, timeout: Result<Duration, Duration>) {
     match timeout {
         Ok(dur) => {
             route.set_timeout(dur);
@@ -387,19 +385,19 @@ fn set_route_timeout(route: &mut Route, timeout: Result<Duration, Duration>) {
     }
 }
 
-fn convert_req_match(orig: api::RequestMatch) -> Option<RequestMatch> {
+fn convert_req_match(orig: api::RequestMatch) -> Option<http::RequestMatch> {
     let m = match orig.r#match? {
         api::request_match::Match::All(ms) => {
             let ms = ms.matches.into_iter().filter_map(convert_req_match);
-            RequestMatch::All(ms.collect())
+            http::RequestMatch::All(ms.collect())
         }
         api::request_match::Match::Any(ms) => {
             let ms = ms.matches.into_iter().filter_map(convert_req_match);
-            RequestMatch::Any(ms.collect())
+            http::RequestMatch::Any(ms.collect())
         }
         api::request_match::Match::Not(m) => {
             let m = convert_req_match(*m)?;
-            RequestMatch::Not(Box::new(m))
+            http::RequestMatch::Not(Box::new(m))
         }
         api::request_match::Match::Path(api::PathMatch { regex }) => {
             let regex = regex.trim();
@@ -412,23 +410,23 @@ fn convert_req_match(orig: api::RequestMatch) -> Option<RequestMatch> {
                     Regex::new(&re).ok()?
                 }
             };
-            RequestMatch::Path(re)
+            http::RequestMatch::Path(re)
         }
         api::request_match::Match::Method(mm) => {
             let m = mm.r#type.and_then(|m| (&m).try_into().ok())?;
-            RequestMatch::Method(m)
+            http::RequestMatch::Method(m)
         }
     };
 
     Some(m)
 }
 
-fn convert_rsp_class(orig: api::ResponseClass) -> Option<ResponseClass> {
+fn convert_rsp_class(orig: api::ResponseClass) -> Option<http::ResponseClass> {
     let c = orig.condition.and_then(convert_rsp_match)?;
-    Some(ResponseClass::new(orig.is_failure, c))
+    Some(http::ResponseClass::new(orig.is_failure, c))
 }
 
-fn convert_rsp_match(orig: api::ResponseMatch) -> Option<ResponseMatch> {
+fn convert_rsp_match(orig: api::ResponseMatch) -> Option<http::ResponseMatch> {
     let m = match orig.r#match? {
         api::response_match::Match::All(ms) => {
             let ms = ms
@@ -439,7 +437,7 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<ResponseMatch> {
             if ms.is_empty() {
                 return None;
             }
-            ResponseMatch::All(ms)
+            http::ResponseMatch::All(ms)
         }
         api::response_match::Match::Any(ms) => {
             let ms = ms
@@ -450,16 +448,16 @@ fn convert_rsp_match(orig: api::ResponseMatch) -> Option<ResponseMatch> {
             if ms.is_empty() {
                 return None;
             }
-            ResponseMatch::Any(ms)
+            http::ResponseMatch::Any(ms)
         }
         api::response_match::Match::Not(m) => {
             let m = convert_rsp_match(*m)?;
-            ResponseMatch::Not(Box::new(m))
+            http::ResponseMatch::Not(Box::new(m))
         }
         api::response_match::Match::Status(range) => {
             let min = ::http::StatusCode::from_u16(range.min as u16).ok()?;
             let max = ::http::StatusCode::from_u16(range.max as u16).ok()?;
-            ResponseMatch::Status { min, max }
+            http::ResponseMatch::Status { min, max }
         }
     };
 

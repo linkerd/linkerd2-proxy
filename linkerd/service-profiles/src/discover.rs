@@ -1,4 +1,4 @@
-use super::{GetRoutes, Receiver};
+use super::{GetProfile, Receiver};
 use futures::prelude::*;
 use linkerd2_stack::{layer, NewService};
 use std::{
@@ -23,7 +23,7 @@ pub struct Discover<G, M> {
 impl<T, G, M> tower::Service<T> for Discover<G, M>
 where
     T: Clone + Send + 'static,
-    G: GetRoutes<T>,
+    G: GetProfile<T>,
     G::Future: Send + 'static,
     G::Error: Send,
     M: NewService<(Receiver, T)> + Clone + Send + 'static,

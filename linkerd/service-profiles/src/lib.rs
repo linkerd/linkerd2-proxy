@@ -18,7 +18,7 @@ pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
-    pub http_routes: Vec<(http::RequestMatch, http::Route)>,
+    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
     pub targets: Vec<Target>,
 }
 
@@ -32,7 +32,7 @@ pub struct Target {
 ///
 /// The stream updates with all routes for the given destination. The stream
 /// never ends and cannot fail.
-pub trait GetRoutes<T> {
+pub trait GetProfile<T> {
     type Error: Into<Error>;
     type Future: Future<Output = Result<Receiver, Self::Error>>;
 
@@ -41,7 +41,7 @@ pub trait GetRoutes<T> {
     fn get_routes(&mut self, target: T) -> Self::Future;
 }
 
-impl<T, S> GetRoutes<T> for S
+impl<T, S> GetProfile<T> for S
 where
     S: tower::Service<T, Response = Receiver>,
     S::Error: Into<Error>,

@@ -234,7 +234,7 @@ impl Config {
             + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        P: profiles::GetRoutes<Logical<HttpEndpoint>> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Logical<HttpEndpoint>> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
     {
