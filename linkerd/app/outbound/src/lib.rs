@@ -239,7 +239,7 @@ impl Config {
             + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        P: profiles::GetRoutes<Profile> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Profile> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
     {
         let ProxyConfig {
