@@ -12,7 +12,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::ready_cache::ReadyCache;
-use tracing::debug;
+use tracing::{debug, trace};
 
 pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
     let rng = SmallRng::from_entropy();
@@ -99,12 +99,13 @@ where
             debug!(?targets, "Updating");
             self.update_inner(targets);
         }
+
         // If, somehow, the watch hasn't been notified at least once, build the
         // default target. This shouldn't actually be exercised, though.
         if self.inner.is_none() {
             self.update_inner(Vec::new());
         }
-        debug_assert!(self.services.len() > 0 && self.inner.is_some());
+        debug_assert_ne!(self.services.len(), 0);
 
         // Wait for all target services to be ready. If any services fail, then
         // the whole service fails.
@@ -116,8 +117,8 @@ where
             ref addrs,
             ref distribution,
         } = self.inner.as_ref().expect("Called before ready");
-        debug_assert_ne!(addrs.len(), 0);
-        debug_assert_ne!(self.services.len(), 0);
+        debug_assert_ne!(addrs.len(), 0, "addrs empty");
+        debug_assert_eq!(self.services.len(), addrs.len());
 
         let idx = if addrs.len() == 1 {
             0
@@ -125,7 +126,7 @@ where
             distribution.sample(&mut self.rng)
         };
         let addr = addrs.get_index(idx).expect("invalid index");
-        debug!(%addr, "Dispatching");
+        trace!(%addr, "Dispatching");
         Box::pin(self.services.call_ready(addr, req).err_into::<Error>())
     }
 }
@@ -182,9 +183,17 @@ where
         for addr in prior {
             self.services.evict(&addr);
         }
+        if !addrs.contains(self.target.as_ref()) {
+            self.services.evict(self.target.as_ref());
+        }
 
+        debug_assert_ne!(addrs.len(), 0, "addrs empty");
+        debug_assert_eq!(addrs.len(), weights.len(), "addrs does not match weights");
+        // The cache may still contain evicted pending services until the next
+        // poll.
         debug_assert!(
-            addrs.len() > 0 && addrs.len() == weights.len() && addrs.len() == self.services.len()
+            addrs.len() <= self.services.len(),
+            "addrs does not match the number of services"
         );
         let distribution = WeightedIndex::new(weights).expect("Split must be valid");
         self.inner = Some(Inner {
