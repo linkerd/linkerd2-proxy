@@ -1,5 +1,5 @@
 use crate::{Profile, Receiver, Target};
-use futures::{future, prelude::*, ready};
+use futures::{prelude::*, ready};
 use indexmap::IndexSet;
 use linkerd2_addr::Addr;
 use linkerd2_error::Error;
@@ -97,54 +97,9 @@ where
         // services that existed in the prior state.
         if let Some(Profile { targets, .. }) = update {
             debug!(?targets, "Updating");
-
-            // Clear out the prior state and preserve its services for reuse.
-            let mut prior = self.inner.take().map(|i| i.addrs).unwrap_or_default();
-
-            let mut addrs = IndexSet::with_capacity(targets.len().max(0));
-            let mut weights = Vec::with_capacity(targets.len().max(1));
-            if targets.len() == 0 {
-                // If there were no overrides, build a default backend from the
-                // target.
-                let addr = self.target.as_ref();
-                if !prior.remove(addr) {
-                    debug!(%addr, "Creating default target");
-                    let svc = self
-                        .new_service
-                        .new_service((addr.clone(), self.target.clone()));
-                    self.services.push(addr.clone(), svc);
-                } else {
-                    debug!(%addr, "Default target already exists");
-                }
-                addrs.insert(addr.clone());
-                weights.push(1);
-            } else {
-                // Create an updated distribution and set of services.
-                for Target { weight, addr } in targets.into_iter() {
-                    // Reuse the prior services whenever possible.
-                    if !prior.remove(&addr) {
-                        debug!(%addr, "Creating target");
-                        let svc = self
-                            .new_service
-                            .new_service((addr.clone(), self.target.clone()));
-                        self.services.push(addr.clone(), svc);
-                    } else {
-                        debug!(%addr, "Target already exists");
-                    }
-                    addrs.insert(addr);
-                    weights.push(weight);
-                }
-            }
-
-            for addr in prior {
-                self.services.evict(&addr);
-            }
-
-            self.inner = WeightedIndex::new(weights).ok().map(|distribution| Inner {
-                addrs,
-                distribution,
-            });
+            self.update_inner(targets);
         }
+        debug_assert!(self.services.len() > 0 && self.inner.is_some());
 
         // Wait for all target services to be ready. If any services fail, then
         // the whole service fails.
@@ -152,34 +107,84 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        if let Some(Inner {
+        let Inner {
             ref addrs,
             ref distribution,
-        }) = self.inner.as_ref()
-        {
-            debug_assert_ne!(addrs.len(), 0);
-            let idx = if addrs.len() == 1 {
-                0
-            } else {
-                distribution.sample(&mut self.rng)
-            };
-            let addr = addrs.get_index(idx).expect("invalid index");
-            debug!(%addr, "Dispatching");
-            Box::pin(self.services.call_ready(addr, req).err_into::<Error>())
+        } = self.inner.as_ref().expect("Called before ready");
+        debug_assert_ne!(addrs.len(), 0);
+        debug_assert_ne!(self.services.len(), 0);
+
+        let idx = if addrs.len() == 1 {
+            0
         } else {
-            debug!("No targets available");
-            Box::pin(future::err(NoTargets(()).into()))
+            distribution.sample(&mut self.rng)
+        };
+        let addr = addrs.get_index(idx).expect("invalid index");
+        debug!(%addr, "Dispatching");
+        Box::pin(self.services.call_ready(addr, req).err_into::<Error>())
+    }
+}
+
+impl<T, N, S, Req> Split<T, N, S, Req>
+where
+    Req: Send + 'static,
+    T: AsRef<Addr> + Clone,
+    N: NewService<(Addr, T), Service = S> + Clone,
+    S: tower::Service<Req> + Send + 'static,
+    S::Response: Send + 'static,
+    S::Error: Into<Error>,
+    S::Future: Send,
+{
+    fn update_inner(&mut self, targets: Vec<Target>) {
+        // Clear out the prior state and preserve its services for reuse.
+        let mut prior = self.inner.take().map(|i| i.addrs).unwrap_or_default();
+
+        let mut addrs = IndexSet::with_capacity(targets.len().max(0));
+        let mut weights = Vec::with_capacity(targets.len().max(1));
+        if targets.len() == 0 {
+            // If there were no overrides, build a default backend from the
+            // target.
+            let addr = self.target.as_ref();
+            if !prior.remove(addr) {
+                debug!(%addr, "Creating default target");
+                let svc = self
+                    .new_service
+                    .new_service((addr.clone(), self.target.clone()));
+                self.services.push(addr.clone(), svc);
+            } else {
+                debug!(%addr, "Default target already exists");
+            }
+            addrs.insert(addr.clone());
+            weights.push(1);
+        } else {
+            // Create an updated distribution and set of services.
+            for Target { weight, addr } in targets.into_iter() {
+                // Reuse the prior services whenever possible.
+                if !prior.remove(&addr) {
+                    debug!(%addr, "Creating target");
+                    let svc = self
+                        .new_service
+                        .new_service((addr.clone(), self.target.clone()));
+                    self.services.push(addr.clone(), svc);
+                } else {
+                    debug!(%addr, "Target already exists");
+                }
+                addrs.insert(addr);
+                weights.push(weight);
+            }
         }
+
+        for addr in prior {
+            self.services.evict(&addr);
+        }
+
+        debug_assert!(
+            addrs.len() > 0 && addrs.len() == weights.len() && addrs.len() == self.services.len()
+        );
+        let distribution = WeightedIndex::new(weights).expect("Split must be valid");
+        self.inner = Some(Inner {
+            addrs,
+            distribution,
+        });
     }
 }
-
-#[derive(Copy, Clone, Debug)]
-pub struct NoTargets(());
-
-impl std::fmt::Display for NoTargets {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "no targets available")
-    }
-}
-
-impl std::error::Error for NoTargets {}
