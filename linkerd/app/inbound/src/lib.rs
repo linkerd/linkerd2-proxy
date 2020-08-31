@@ -206,12 +206,14 @@ impl Config {
             .into_new_service()
             .check_new_service::<Target, http::Request<_>>();
 
-        // Routes targets to a Profile stack, i.e. so that profile
-        // resolutions are shared even as the type of request may vary.
-        let profile_cache = target
+        // Attempts to discover a service profile for each logical target (as
+        // informed by the request's headers). The stack is cached until a
+        // request has not been received for `cache_max_idle_age`.
+        let profile = target
             .clone()
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .push_on_response(svc::layers().box_http_request())
-            .check_new_service::<Target, http::Request<_>>()
+            // The target stack doesn't use the profile resolution, so drop it.
             .push_map_target(|(_, target): (profiles::Receiver, Target)| target)
             .push(profiles::http::route_request::layer(
                 svc::proxies()
@@ -229,52 +231,40 @@ impl Config {
                     })
                     .into_inner(),
             ))
-            .check_new_service::<(profiles::Receiver, Target), http::Request<_>>()
             .push(profiles::discover::layer(profiles_client))
-            .check_make_service::<Target, http::Request<_>>()
             .into_new_service()
-            // Caches profile stacks.
-            .check_new_service::<Target, http::Request<_>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
                         .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
+                        .push(metrics.stack.layer(stack_labels("profile")))
+                        .box_http_response(),
                 ),
             )
             .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| info_span!("profile"))
             .check_make_service::<Target, http::Request<_>>();
 
-        let target_cache = target
+        let forward = target
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
                         .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("target"))),
+                        .push(metrics.stack.layer(stack_labels("forward")))
+                        .box_http_response(),
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| info_span!("target"))
+            .instrument(|_: &Target| info_span!("forward"))
             .check_make_service::<Target, http::Request<http::boxed::Payload>>();
 
-        profile_cache
-            .check_make_service::<Target, http::Request<_>>()
-            .push_on_response(svc::layers().box_http_response())
+        // Attempts to resolve the target as a service profile or, if that
+        // fails, skips that stack to forward to the local endpoint.
+        profile
             .push_make_ready()
-            .push_fallback(
-                target_cache
-                    .check_make_service::<Target, http::Request<_>>()
-                    .push_on_response(svc::layers().box_http_response()),
-            )
+            .push_fallback(forward)
             // If the traffic is targeted at the inbound port, send it through
             // the loopback service (i.e. as a gateway). This is done before
             // caching so that the loopback stack can determine whether it
