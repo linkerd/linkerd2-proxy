@@ -99,6 +99,11 @@ where
             debug!(?targets, "Updating");
             self.update_inner(targets);
         }
+        // If, somehow, the watch hasn't been notified at least once, build the
+        // default target. This shouldn't actually be exercised, though.
+        if self.inner.is_none() {
+            self.update_inner(Vec::new());
+        }
         debug_assert!(self.services.len() > 0 && self.inner.is_some());
 
         // Wait for all target services to be ready. If any services fail, then
