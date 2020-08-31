@@ -13,6 +13,8 @@ use tracing::{debug, trace};
 pub fn layer<M, N: Clone, R>(
     new_route: N,
 ) -> impl layer::Layer<M, Service = NewRouteRequest<M, N, R>> {
+    // This is saved so that the same `Arc`s are used and cloned instead of
+    // calling `Route::default()` every time.
     let default = Route::default();
     layer::mk(move |inner| NewRouteRequest {
         inner,

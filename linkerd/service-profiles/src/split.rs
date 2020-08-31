@@ -15,6 +15,8 @@ use tower::ready_cache::ReadyCache;
 use tracing::{debug, trace};
 
 pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
+    // This RNG doesn't need to be cryptographically secure. Small and fast is
+    // preferable.
     let rng = SmallRng::from_entropy();
     layer::mk(move |inner| NewSplit {
         inner,
