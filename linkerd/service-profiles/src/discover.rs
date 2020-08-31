@@ -7,16 +7,18 @@ use std::{
     task::{Context, Poll},
 };
 
-pub fn layer<G: Clone, M>(get_routes: G) -> impl layer::Layer<M, Service = Discover<G, M>> + Clone {
+pub fn layer<G: Clone, M>(
+    get_profile: G,
+) -> impl layer::Layer<M, Service = Discover<G, M>> + Clone {
     layer::mk(move |inner| Discover {
-        get_routes: get_routes.clone(),
+        get_profile: get_profile.clone(),
         inner,
     })
 }
 
 #[derive(Clone, Debug)]
 pub struct Discover<G, M> {
-    get_routes: G,
+    get_profile: G,
     inner: M,
 }
 
@@ -33,14 +35,14 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<M::Service, G::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_routes.poll_ready(cx)
+        self.get_profile.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
         let inner = self.inner.clone();
         Box::pin(
-            self.get_routes
-                .get_routes(target.clone())
+            self.get_profile
+                .get_profile(target.clone())
                 .map_ok(move |rx| inner.new_service((rx, target))),
         )
     }

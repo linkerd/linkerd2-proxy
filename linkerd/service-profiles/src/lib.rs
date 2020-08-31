@@ -38,7 +38,7 @@ pub trait GetProfile<T> {
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
-    fn get_routes(&mut self, target: T) -> Self::Future;
+    fn get_profile(&mut self, target: T) -> Self::Future;
 }
 
 impl<T, S> GetProfile<T> for S
@@ -53,7 +53,7 @@ where
         tower::Service::poll_ready(self, cx)
     }
 
-    fn get_routes(&mut self, target: T) -> Self::Future {
+    fn get_profile(&mut self, target: T) -> Self::Future {
         tower::Service::call(self, target)
     }
 }
