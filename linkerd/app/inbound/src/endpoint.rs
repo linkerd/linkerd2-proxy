@@ -5,7 +5,7 @@ use linkerd2_app_core::{
     proxy::{http, identity, tap},
     router, stack_tracing,
     transport::{connect, listen, tls},
-    Addr, Conditional, NameAddr, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::fmt;
 use std::net::SocketAddr;
@@ -14,8 +14,8 @@ use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
-    pub addr: SocketAddr,
-    pub dst_name: Option<NameAddr>,
+    pub logical: Addr,
+    pub socket_addr: SocketAddr,
     pub http_settings: http::Settings,
     pub tls_client_id: tls::PeerIdentity,
 }
@@ -59,7 +59,7 @@ impl http::settings::HasSettings for HttpEndpoint {
 impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
-            port: target.addr.port(),
+            port: target.socket_addr.port(),
             settings: target.http_settings,
         }
     }
@@ -105,24 +105,13 @@ impl tls::HasPeerIdentity for TcpEndpoint {
 
 impl From<Target> for Profile {
     fn from(t: Target) -> Self {
-        Profile(
-            t.dst_name
-                .clone()
-                .map(|d| d.into())
-                .unwrap_or_else(|| t.addr.clone().into()),
-        )
+        Profile(t.logical)
     }
 }
 
-impl Profile {
-    pub fn addr(&self) -> &Addr {
+impl AsRef<Addr> for Profile {
+    fn as_ref(&self) -> &Addr {
         &self.0
-    }
-}
-
-impl profiles::HasDestination for Profile {
-    fn destination(&self) -> Addr {
-        self.0.clone()
     }
 }
 
@@ -138,7 +127,7 @@ impl profiles::WithRoute for Profile {
     }
 }
 
-// // === impl Target ===
+// === impl Target ===
 
 impl http::normalize_uri::ShouldNormalizeUri for Target {
     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
@@ -147,12 +136,7 @@ impl http::normalize_uri::ShouldNormalizeUri for Target {
             ..
         } = self.http_settings
         {
-            return Some(
-                self.dst_name
-                    .as_ref()
-                    .map(|dst| dst.as_http_authority())
-                    .unwrap_or_else(|| Addr::from(self.addr).to_http_authority()),
-            );
+            return Some(self.logical.to_http_authority());
         }
         None
     }
@@ -173,7 +157,7 @@ impl tls::HasPeerIdentity for Target {
 impl Into<metric_labels::EndpointLabels> for Target {
     fn into(self) -> metric_labels::EndpointLabels {
         metric_labels::EndpointLabels {
-            authority: self.dst_name.map(|d| d.as_http_authority()),
+            authority: self.logical.name_addr().map(|d| d.as_http_authority()),
             direction: metric_labels::Direction::In,
             tls_id: self.tls_client_id.map(metric_labels::TlsId::ClientId),
             labels: None,
@@ -207,7 +191,7 @@ impl tap::Inspect for Target {
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        Some(self.addr)
+        Some(self.socket_addr)
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
@@ -234,7 +218,7 @@ impl tap::Inspect for Target {
 
 impl fmt::Display for Target {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.addr.fmt(f)
+        self.logical.fmt(f)
     }
 }
 
@@ -243,25 +227,25 @@ impl stack_tracing::GetSpan<()> for Target {
         use tracing::info_span;
 
         match self.http_settings {
-            http::Settings::Http2 => match self.dst_name.as_ref() {
+            http::Settings::Http2 => match self.logical.name_addr() {
                 None => info_span!(
                     "http2",
-                    port = %self.addr.port(),
+                    port = %self.socket_addr.port(),
                 ),
                 Some(name) => info_span!(
                     "http2",
                     %name,
-                    port = %self.addr.port(),
+                    port = %self.socket_addr.port(),
                 ),
             },
             http::Settings::Http1 {
                 keep_alive,
                 wants_h1_upgrade,
                 was_absolute_form,
-            } => match self.dst_name.as_ref() {
+            } => match self.logical.name_addr() {
                 None => info_span!(
                     "http1",
-                    port = %self.addr.port(),
+                    port = %self.socket_addr.port(),
                     keep_alive,
                     wants_h1_upgrade,
                     was_absolute_form,
@@ -269,7 +253,7 @@ impl stack_tracing::GetSpan<()> for Target {
                 Some(name) => info_span!(
                     "http1",
                     %name,
-                    port = %self.addr.port(),
+                    port = %self.socket_addr.port(),
                     keep_alive,
                     wants_h1_upgrade,
                     was_absolute_form,
@@ -291,7 +275,7 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
     type Key = Target;
 
     fn recognize(&self, req: &http::Request<A>) -> Self::Key {
-        let dst_name = req
+        let logical = req
             .headers()
             .get(CANONICAL_DST_HEADER)
             .and_then(|dst| {
@@ -312,12 +296,11 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
-            .or_else(|| self.accept.addrs.target_addr_if_not_local().map(Addr::from))
-            .and_then(|a| a.name_addr().cloned());
+            .unwrap_or_else(|| self.accept.addrs.target_addr().into());
 
         Target {
-            dst_name,
-            addr: self.accept.addrs.target_addr(),
+            logical,
+            socket_addr: self.accept.addrs.target_addr(),
             tls_client_id: self.accept.peer_identity.clone(),
             http_settings: http::Settings::from_request(req),
         }
@@ -330,11 +313,6 @@ impl router::Recognize<Target> for ProfileTarget {
     type Key = Profile;
 
     fn recognize(&self, t: &Target) -> Self::Key {
-        Profile(
-            t.dst_name
-                .clone()
-                .map(Into::into)
-                .unwrap_or_else(|| t.addr.into()),
-        )
+        Profile(t.logical.clone())
     }
 }

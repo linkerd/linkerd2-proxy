@@ -72,7 +72,7 @@ where
 
     fn call(&mut self, target: inbound::Target) -> Self::Future {
         let inbound::Target {
-            dst_name,
+            logical,
             http_settings,
             tls_client_id,
             ..
@@ -85,7 +85,7 @@ where
             }
         };
 
-        let orig_dst = match dst_name {
+        let orig_dst = match logical.into_name_addr() {
             Some(n) => n,
             None => {
                 return Box::pin(future::ok(Gateway::NoAuthority));

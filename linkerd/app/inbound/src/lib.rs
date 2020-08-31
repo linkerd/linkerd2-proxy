@@ -206,7 +206,7 @@ impl Config {
             // Sets the per-route response classifier as a request
             // extension.
             .push(classify::Layer::new())
-            .check_new_clone_service::<dst::Route>();
+            .check_new_clone::<dst::Route>();
 
         // An HTTP client is created for each target via the endpoint stack.
         let http_target_cache = http_endpoint
@@ -245,7 +245,7 @@ impl Config {
             ))
             .into_new_service()
             // Caches profile stacks.
-            .check_new_service_routes::<Profile, Target>()
+            .check_new_service::<Profile, Target>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -258,10 +258,10 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
+            .instrument(|p: &Profile| info_span!("profile", addr = %p.as_ref()))
             .check_make_service::<Profile, Target>()
             .push(router::Layer::new(|()| ProfileTarget))
-            .check_new_service_routes::<(), Target>()
+            .check_new_service::<(), Target>()
             .new_service(());
 
         svc::stack(http_profile_cache)
@@ -359,7 +359,7 @@ impl Config {
             .push(router::Layer::new(RequestTarget::from))
             // Used by tap.
             .push_http_insert_target()
-            .check_new_service::<tls::accept::Meta>()
+            .check_new_service::<tls::accept::Meta, http::Request<_>>()
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
@@ -368,7 +368,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .check_new_service::<tls::accept::Meta>()
+            .check_new_service::<tls::accept::Meta, http::Request<_>>()
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
                     "source",

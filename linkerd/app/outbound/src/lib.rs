@@ -334,21 +334,17 @@ impl Config {
             .check_service::<Concrete<HttpEndpoint>>();
 
         let http_profile_route_proxy = svc::proxies()
-            .check_new_clone_service::<dst::Route>()
             .push(metrics.http_route_actual.into_layer::<classify::Response>())
             // Sets an optional retry policy.
             .push(retry::layer(metrics.http_route_retry))
-            .check_new_clone_service::<dst::Route>()
             // Sets an optional request timeout.
             .push(http::MakeTimeoutLayer::default())
-            .check_new_clone_service::<dst::Route>()
             // Records per-route metrics.
             .push(metrics.http_route.into_layer::<classify::Response>())
-            .check_new_clone_service::<dst::Route>()
             // Sets the per-route response classifier as a request
             // extension.
             .push(classify::Layer::new())
-            .check_new_clone_service::<dst::Route>();
+            .check_new_clone::<dst::Route>();
 
         // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
@@ -388,7 +384,7 @@ impl Config {
             .instrument(|_: &Profile| info_span!("profile"))
             .check_make_service::<Profile, Logical<HttpEndpoint>>()
             .push(router::Layer::new(|()| ProfilePerTarget))
-            .check_new_service_routes::<(), Logical<HttpEndpoint>>()
+            .check_new_service::<(), Logical<HttpEndpoint>>()
             .new_service(());
 
         // Routes requests to their logical target.
@@ -487,7 +483,7 @@ impl Config {
             .push_make_ready()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<listen::Addrs>()
+            .check_new_service::<listen::Addrs, http::Request<_>>()
             // Used by tap.
             .push_http_insert_target()
             .push_on_response(
@@ -500,7 +496,7 @@ impl Config {
             .instrument(
                 |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
             )
-            .check_new_service::<listen::Addrs>()
+            .check_new_service::<listen::Addrs, http::Request<_>>()
             .into_inner()
             .into_make_service();
 
@@ -598,11 +594,13 @@ impl From<Error> for DiscoveryError {
 }
 
 fn is_discovery_rejected(err: &Error) -> bool {
-    tracing::trace!(?err, "is_discovery_rejected");
-
-    if let Some(e) = err.downcast_ref::<svc::buffer::error::ServiceError>() {
-        return is_discovery_rejected(e.inner());
+    fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
+        err.is::<DiscoveryRejected>()
+            || err.is::<profiles::InvalidProfileAddr>()
+            || err.source().map(is_rejected).unwrap_or(false)
     }
 
-    err.is::<DiscoveryRejected>() || err.is::<profiles::InvalidProfileAddr>()
+    let rejected = is_rejected(&**err);
+    tracing::debug!(rejected, %err);
+    rejected
 }

@@ -109,8 +109,9 @@ where
     }
 }
 
-impl<S, R> tower::Service<Addr> for Client<S, R>
+impl<T, S, R> tower::Service<T> for Client<S, R>
 where
+    T: AsRef<Addr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -129,8 +130,8 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: Addr) -> Self::Future {
-        let path = dst.to_string();
+    fn call(&mut self, dst: T) -> Self::Future {
+        let path = dst.as_ref().to_string();
 
         let service = {
             // In case the ready service holds resources, pass it into the

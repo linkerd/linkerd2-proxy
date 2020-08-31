@@ -28,12 +28,6 @@ pub trait OverrideDestination {
     fn dst_mut(&mut self) -> &mut Addr;
 }
 
-/// Implemented by target types that may have a `NameAddr` destination that
-/// can be discovered via `GetProfile`.
-pub trait HasDestination {
-    fn destination(&self) -> Addr;
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {
     labels: Labels,

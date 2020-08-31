@@ -26,7 +26,7 @@ use tracing::{debug, trace};
 
 #[derive(Clone, Debug)]
 pub struct Layer<G, R, O = ()> {
-    get_routes: G,
+    get_profile: G,
     make_route: R,
     dst_override: O,
     /// This is saved into a field so that the same `Arc`s are used and
@@ -37,7 +37,7 @@ pub struct Layer<G, R, O = ()> {
 #[derive(Clone, Debug)]
 pub struct MakeSvc<G, R, CMake, O = ()> {
     default_route: Route,
-    get_routes: G,
+    get_profile: G,
     make_route: R,
     make_concrete: CMake,
     dst_override: O,
@@ -76,9 +76,9 @@ pub struct Override<M> {
 }
 
 impl<G, R, O> Layer<G, R, O> {
-    fn new(get_routes: G, make_route: R, dst_override: O) -> Self {
+    fn new(get_profile: G, make_route: R, dst_override: O) -> Self {
         Self {
-            get_routes,
+            get_profile,
             make_route,
             dst_override,
             default_route: Route::default(),
@@ -87,14 +87,14 @@ impl<G, R, O> Layer<G, R, O> {
 }
 
 impl<G, R> Layer<G, R> {
-    pub fn without_overrides(get_routes: G, make_route: R) -> Self {
-        Self::new(get_routes, make_route, ())
+    pub fn without_overrides(get_profile: G, make_route: R) -> Self {
+        Self::new(get_profile, make_route, ())
     }
 }
 
 impl<G, R> Layer<G, R, SmallRng> {
-    pub fn with_overrides(get_routes: G, make_route: R) -> Self {
-        Self::new(get_routes, make_route, SmallRng::from_entropy())
+    pub fn with_overrides(get_profile: G, make_route: R) -> Self {
+        Self::new(get_profile, make_route, SmallRng::from_entropy())
     }
 }
 
@@ -109,7 +109,7 @@ where
     fn layer(&self, make_concrete: C) -> Self::Service {
         MakeSvc {
             make_concrete,
-            get_routes: self.get_routes.clone(),
+            get_profile: self.get_profile.clone(),
             make_route: self.make_route.clone(),
             default_route: self.default_route.clone(),
             dst_override: self.dst_override.clone(),
@@ -129,11 +129,11 @@ where
     type Future = MakeFuture<T, G::Future, R, C, ()>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_routes.poll_ready(cx).map_err(Into::into)
+        self.get_profile.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let future = self.get_routes.get_routes(target.clone());
+        let future = self.get_profile.get_profile(target.clone());
 
         MakeFuture {
             future,
@@ -160,11 +160,11 @@ where
     type Future = MakeFuture<T, G::Future, R, C, SmallRng>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(ready!(self.get_routes.poll_ready(cx)).map_err(Into::into))
+        Poll::Ready(ready!(self.get_profile.poll_ready(cx)).map_err(Into::into))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let future = self.get_routes.get_routes(target.clone());
+        let future = self.get_profile.get_profile(target.clone());
 
         MakeFuture {
             future,

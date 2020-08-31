@@ -430,9 +430,9 @@ impl<T> router::Recognize<Target<T>> for ProfilePerTarget {
 
 // === impl Profile ===
 
-impl profiles::HasDestination for Profile {
-    fn destination(&self) -> Addr {
-        self.0.clone()
+impl AsRef<Addr> for Profile {
+    fn as_ref(&self) -> &Addr {
+        &self.0
     }
 }
 

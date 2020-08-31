@@ -11,7 +11,7 @@ mod client;
 pub mod http;
 
 pub use self::client::{Client, InvalidProfileAddr};
-pub use self::http::{HasDestination, Layer, OverrideDestination, WithRoute};
+pub use self::http::{Layer, OverrideDestination, WithRoute};
 
 pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
@@ -37,13 +37,12 @@ pub trait GetProfile<T> {
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
-    fn get_routes(&mut self, target: T) -> Self::Future;
+    fn get_profile(&mut self, target: T) -> Self::Future;
 }
 
 impl<T, S> GetProfile<T> for S
 where
-    T: HasDestination,
-    S: tower::Service<Addr, Response = Receiver>,
+    S: tower::Service<T, Response = Receiver>,
     S::Error: Into<Error>,
 {
     type Error = S::Error;
@@ -53,7 +52,7 @@ where
         tower::Service::poll_ready(self, cx)
     }
 
-    fn get_routes(&mut self, target: T) -> Self::Future {
-        tower::Service::call(self, target.destination())
+    fn get_profile(&mut self, target: T) -> Self::Future {
+        tower::Service::call(self, target)
     }
 }
