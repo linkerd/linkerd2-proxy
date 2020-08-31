@@ -58,6 +58,6 @@ where
     fn layer(&self, discover: D) -> Self::Service {
         let instrument = PendingUntilFirstData::default();
         let loaded = PeakEwmaDiscover::new(discover, self.default_rtt, self.decay, instrument);
-        Balance::new(loaded, self.rng.clone())
+        Balance::from_rng(loaded, self.rng.clone()).expect("RNG must be valid")
     }
 }
