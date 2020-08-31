@@ -1,32 +1,17 @@
+use crate::Receiver;
 use indexmap::IndexMap;
-use linkerd2_addr::Addr;
 use regex::Regex;
-use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::iter::FromIterator;
-use std::ops::Deref;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    fmt,
+    hash::{Hash, Hasher},
+    iter::FromIterator,
+    ops::Deref,
+    sync::Arc,
+    time::Duration,
+};
 use tower::retry::budget::Budget;
 
-mod concrete;
-mod requests;
-pub mod service;
-
-pub use self::service::Layer;
-
-/// Implemented by target types that may be combined with a Route.
-pub trait WithRoute {
-    type Route;
-
-    fn with_route(self, route: Route) -> Self::Route;
-}
-
-/// Implemented by target types that can have their `NameAddr` destination
-/// changed.
-pub trait OverrideDestination {
-    fn dst_mut(&mut self) -> &mut Addr;
-}
+pub mod route_request;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Route {

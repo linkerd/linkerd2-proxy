@@ -26,14 +26,8 @@ pub type Logical<T> = Target<T>;
 
 pub type Concrete<T> = Target<Logical<T>>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Profile(Addr);
-
 #[derive(Clone, Debug)]
 pub struct LogicalPerRequest(listen::Addrs);
-
-#[derive(Clone, Debug)]
-pub struct ProfilePerTarget;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target<T> {
@@ -99,12 +93,6 @@ impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for
             return Some(self.addr.to_http_authority());
         }
         None
-    }
-}
-
-impl<T> profiles::OverrideDestination for Target<T> {
-    fn dst_mut(&mut self) -> &mut Addr {
-        &mut self.addr
     }
 }
 
@@ -418,32 +406,10 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
     }
 }
 
-// === impl ProfilePerTarget ===
-
-impl<T> router::Recognize<Target<T>> for ProfilePerTarget {
-    type Key = Profile;
-
-    fn recognize(&self, t: &Target<T>) -> Self::Key {
-        Profile(t.addr.clone())
-    }
-}
-
-// === impl Profile ===
-
-impl AsRef<Addr> for Profile {
-    fn as_ref(&self) -> &Addr {
-        &self.0
-    }
-}
-
-impl profiles::WithRoute for Profile {
-    type Route = dst::Route;
-
-    fn with_route(self, route: profiles::http::Route) -> Self::Route {
-        dst::Route {
-            route,
-            target: self.0.clone(),
-            direction: metric_labels::Direction::Out,
-        }
+pub fn route<T>(route: profiles::http::Route, target: Logical<T>) -> dst::Route {
+    dst::Route {
+        route,
+        target: target.addr,
+        direction: metric_labels::Direction::Out,
     }
 }

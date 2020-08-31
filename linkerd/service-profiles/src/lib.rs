@@ -8,16 +8,17 @@ use std::{
 };
 
 mod client;
+pub mod discover;
 pub mod http;
+pub mod split;
 
 pub use self::client::{Client, InvalidProfileAddr};
-pub use self::http::{Layer, OverrideDestination, WithRoute};
 
 pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
-    pub http_routes: Vec<(http::RequestMatch, http::Route)>,
+    pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
     pub targets: Vec<Target>,
 }
 
@@ -28,9 +29,6 @@ pub struct Target {
 }
 
 /// Watches a destination's Profile.
-///
-/// The stream updates with all routes for the given destination. The stream never ends and cannot
-/// fail.
 pub trait GetProfile<T> {
     type Error: Into<Error>;
     type Future: Future<Output = Result<Receiver, Self::Error>>;

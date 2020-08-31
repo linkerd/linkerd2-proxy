@@ -21,9 +21,6 @@ pub struct Target {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Profile(Addr);
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpEndpoint {
     pub port: u16,
     pub settings: http::Settings,
@@ -103,31 +100,21 @@ impl tls::HasPeerIdentity for TcpEndpoint {
 
 // === impl Profile ===
 
-impl From<Target> for Profile {
-    fn from(t: Target) -> Self {
-        Profile(t.logical)
-    }
-}
-
-impl AsRef<Addr> for Profile {
-    fn as_ref(&self) -> &Addr {
-        &self.0
-    }
-}
-
-impl profiles::WithRoute for Profile {
-    type Route = dst::Route;
-
-    fn with_route(self, route: profiles::http::Route) -> Self::Route {
-        dst::Route {
-            route,
-            target: self.0.clone(),
-            direction: metric_labels::Direction::In,
-        }
+pub(super) fn route(route: profiles::http::Route, target: Target) -> dst::Route {
+    dst::Route {
+        route,
+        target: target.logical,
+        direction: metric_labels::Direction::In,
     }
 }
 
 // === impl Target ===
+
+impl AsRef<Addr> for Target {
+    fn as_ref(&self) -> &Addr {
+        &self.logical
+    }
+}
 
 impl http::normalize_uri::ShouldNormalizeUri for Target {
     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
@@ -304,15 +291,5 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             tls_client_id: self.accept.peer_identity.clone(),
             http_settings: http::Settings::from_request(req),
         }
-    }
-}
-
-// === impl ProfileTarget ===
-
-impl router::Recognize<Target> for ProfileTarget {
-    type Key = Profile;
-
-    fn recognize(&self, t: &Target) -> Self::Key {
-        Profile(t.logical.clone())
     }
 }

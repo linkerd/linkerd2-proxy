@@ -5,9 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::endpoint::{
-    HttpEndpoint, Profile, ProfileTarget, RequestTarget, Target, TcpEndpoint,
-};
+pub use self::endpoint::{HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpEndpoint};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::{future, prelude::*};
@@ -66,8 +64,9 @@ impl Config {
             + 'static,
         S::Error: Into<Error>,
         S::Future: Unpin + Send,
-        P: profiles::GetProfile<Profile> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Target> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
+        P::Error: Send,
     {
         let tcp_connect = self.build_tcp_connect(&metrics);
         let prevent_loop = PreventLoop::from(listen_addr.port());
@@ -124,7 +123,7 @@ impl Config {
         &self,
         tcp_connect: C,
         prevent_loop: impl Into<PreventLoop>,
-        http_loopback: L,
+        loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -148,8 +147,9 @@ impl Config {
         C::Error: Into<Error>,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        P: profiles::GetProfile<Profile> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Target> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
+        P::Error: Send,
         // The loopback router processes requests sent to the inbound port.
         L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
@@ -178,15 +178,15 @@ impl Config {
         let prevent_loop = prevent_loop.into();
 
         // Creates HTTP clients for each inbound port & HTTP settings.
-        let http_endpoint = svc::stack(tcp_connect)
+        let endpoint = svc::stack(tcp_connect)
             .push(http::MakeClientLayer::new(connect.h2_settings))
             .push(reconnect::layer({
                 let backoff = connect.backoff.clone();
                 move |_| Ok(backoff.stream())
             }))
-            .check_service::<HttpEndpoint>();
+            .check_make_service::<HttpEndpoint, http::Request<_>>();
 
-        let http_target_observability = svc::layers()
+        let observe = svc::layers()
             // Registers the stack to be tapped.
             .push(tap_layer)
             // Records metrics for each `Target`.
@@ -197,91 +197,85 @@ impl Config {
                     .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             ));
 
-        let http_profile_route_proxy = svc::proxies()
-            // Sets the route as a request extension so that it can be used
-            // by tap.
-            .push_http_insert_target()
-            // Records per-route metrics.
-            .push(metrics.http_route.into_layer::<classify::Response>())
-            // Sets the per-route response classifier as a request
-            // extension.
-            .push(classify::Layer::new())
-            .check_new_clone::<dst::Route>();
-
-        // An HTTP client is created for each target via the endpoint stack.
-        let http_target_cache = http_endpoint
+        let target = endpoint
             .push_map_target(HttpEndpoint::from)
             // Normalizes the URI, i.e. if it was originally in
             // absolute-form on the outbound side.
             .push(normalize_uri::layer())
-            .push(http_target_observability)
-            .check_service::<Target>()
+            .push(observe)
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
-                        .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("target"))),
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| info_span!("target"))
-            .check_service::<Target>();
+            .check_new_service::<Target, http::Request<_>>();
 
-        // Routes targets to a Profile stack, i.e. so that profile
-        // resolutions are shared even as the type of request may vary.
-        let http_profile_cache = http_target_cache
+        // Attempts to discover a service profile for each logical target (as
+        // informed by the request's headers). The stack is cached until a
+        // request has not been received for `cache_max_idle_age`.
+        let profile = target
             .clone()
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .push_on_response(svc::layers().box_http_request())
-            .check_service::<Target>()
-            // Provides route configuration without pdestination overrides.
-            .push(profiles::Layer::without_overrides(
-                profiles_client,
-                http_profile_route_proxy.into_inner(),
+            // The target stack doesn't use the profile resolution, so drop it.
+            .push_map_target(|(_, target): (profiles::Receiver, Target)| target)
+            .push(profiles::http::route_request::layer(
+                svc::proxies()
+                    // Sets the route as a request extension so that it can be used
+                    // by tap.
+                    .push_http_insert_target()
+                    // Records per-route metrics.
+                    .push(metrics.http_route.into_layer::<classify::Response>())
+                    // Sets the per-route response classifier as a request
+                    // extension.
+                    .push(classify::Layer::new())
+                    .check_new_clone::<dst::Route>()
+                    .push_map_target(|(r, t): (profiles::http::Route, Target)| {
+                        endpoint::route(r, t)
+                    })
+                    .into_inner(),
             ))
+            .push(profiles::discover::layer(profiles_client))
             .into_new_service()
-            // Caches profile stacks.
-            .check_new_service::<Profile, Target>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
                         .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
+                        .push(metrics.stack.layer(stack_labels("profile")))
+                        .box_http_response(),
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|p: &Profile| info_span!("profile", addr = %p.as_ref()))
-            .check_make_service::<Profile, Target>()
-            .push(router::Layer::new(|()| ProfileTarget))
-            .check_new_service::<(), Target>()
-            .new_service(());
+            .instrument(|_: &Target| info_span!("profile"))
+            .check_make_service::<Target, http::Request<_>>();
 
-        svc::stack(http_profile_cache)
-            .push_on_response(svc::layers().box_http_response())
-            .push_make_ready()
-            .push_fallback(
-                http_target_cache
-                    .push_on_response(svc::layers().box_http_response().box_http_request()),
+        let forward = target
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("forward")))
+                        .box_http_response(),
+                ),
             )
+            .spawn_buffer(buffer_capacity)
+            .instrument(|_: &Target| info_span!("forward"))
+            .check_make_service::<Target, http::Request<http::boxed::Payload>>();
+
+        // Attempts to resolve the target as a service profile or, if that
+        // fails, skips that stack to forward to the local endpoint.
+        profile
+            .push_make_ready()
+            .push_fallback(forward)
             // If the traffic is targeted at the inbound port, send it through
             // the loopback service (i.e. as a gateway). This is done before
             // caching so that the loopback stack can determine whether it
             // should cache or not.
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
-                svc::stack(http_loopback)
-                    .push_on_response(svc::layers().box_http_request())
+                svc::stack(loopback)
+                    .check_make_service::<Target, http::Request<_>>()
                     .into_inner(),
             )
-            .check_service::<Target>()
+            .check_make_service::<Target, http::Request<http::boxed::Payload>>()
             .into_inner()
     }
 
@@ -335,13 +329,9 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        let http_server_observability = svc::layers()
-            .push(TraceContextLayer::new(span_sink.map(|span_sink| {
-                SpanConverter::server(span_sink, trace_labels())
-            })))
-            // // Tracks proxy handletime.
-            // .push(metrics.http_handle_time.layer())
-            ;
+        let http_server_observability = svc::layers().push(TraceContextLayer::new(
+            span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
+        ));
 
         let http_server = svc::stack(http_router)
             // Ensures that the built service is ready before it is returned
