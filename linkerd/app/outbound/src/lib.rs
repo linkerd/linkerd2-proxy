@@ -266,7 +266,6 @@ impl Config {
                     .box_http_request(),
             )
             .push_spawn_ready()
-            .check_service::<Target<HttpEndpoint>>()
             .push(discover)
             .push_on_response(
                 svc::layers()
@@ -287,11 +286,8 @@ impl Config {
                 addr,
                 inner: l.map(|e| e.settings),
             })
-            .check_new_service::<(Addr, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::split::layer())
             .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
-            .check_new_clone::<(profiles::Receiver, Logical<HttpEndpoint>)>()
-            .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -309,12 +305,8 @@ impl Config {
                     })
                     .into_inner(),
             ))
-            .check_new::<(profiles::Receiver, Logical<HttpEndpoint>)>()
-            .check_new_service::<(profiles::Receiver, Logical<HttpEndpoint>), http::Request<_>>()
             .push(profiles::discover::layer(profiles_client))
-            .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .into_new_service()
-            .check_new_service::<Logical<HttpEndpoint>, http::Request<_>>()
             // Each service is cached, holding the profile and endpoint
             // resolutions and the load balancer with all of its endpoint
             // connections.
@@ -364,11 +356,10 @@ impl Config {
                 addr: t.addr.into(),
                 inner: t.inner.inner,
             })
-            .check_service::<Concrete<HttpEndpoint>>();
+            .check_make_service::<Concrete<HttpEndpoint>, http::Request<_>>();
 
         // Routes requests to their logical target.
         logical_cache
-            .check_service::<Logical<HttpEndpoint>>()
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
             .push_fallback_with_predicate(
@@ -378,11 +369,9 @@ impl Config {
                         inner,
                     })
                     .push_on_response(svc::layers().box_http_response().box_http_request())
-                    .check_service::<Logical<HttpEndpoint>>()
                     .into_inner(),
                 is_discovery_rejected,
             )
-            .check_service::<Logical<HttpEndpoint>>()
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             // Strips headers that may be set by this proxy.
             .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
