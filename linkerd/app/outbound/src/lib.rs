@@ -526,37 +526,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
-#[derive(Clone, Debug)]
-enum DiscoveryError {
-    DiscoveryRejected,
-    Inner(String),
-}
-
-impl std::fmt::Display for DiscoveryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DiscoveryError::DiscoveryRejected => write!(f, "discovery rejected"),
-            DiscoveryError::Inner(e) => e.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for DiscoveryError {}
-
-impl From<Error> for DiscoveryError {
-    fn from(orig: Error) -> Self {
-        if let Some(inner) = orig.downcast_ref::<DiscoveryError>() {
-            return inner.clone();
-        }
-
-        if orig.is::<DiscoveryRejected>() || orig.is::<profiles::InvalidProfileAddr>() {
-            return DiscoveryError::DiscoveryRejected;
-        }
-
-        DiscoveryError::Inner(orig.to_string())
-    }
-}
-
 fn is_discovery_rejected(err: &Error) -> bool {
     fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
         err.is::<DiscoveryRejected>()
