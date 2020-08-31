@@ -28,10 +28,7 @@ pub struct Target {
     pub weight: u32,
 }
 
-/// Watches a destination's Routes.
-///
-/// The stream updates with all routes for the given destination. The stream
-/// never ends and cannot fail.
+/// Watches a destination's Profile.
 pub trait GetProfile<T> {
     type Error: Into<Error>;
     type Future: Future<Output = Result<Receiver, Self::Error>>;
