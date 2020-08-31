@@ -130,8 +130,8 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, t: T) -> Self::Future {
-        let path = t.as_ref().to_string();
+    fn call(&mut self, dst: T) -> Self::Future {
+        let path = dst.as_ref().to_string();
 
         let service = {
             // In case the ready service holds resources, pass it into the
