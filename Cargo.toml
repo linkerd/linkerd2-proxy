@@ -63,4 +63,4 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
-tower = { version = "0.3", git = "https://github.com/olix0r/tower", branch = "ver/ready-cache-error-fixup" }
+tower = { version = "0.3", git = "https://github.com/tower-rs/tower", rev = "ad348d8" }

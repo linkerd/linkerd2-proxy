@@ -2669,7 +2669,7 @@ dependencies = [
 [[package]]
 name = "tower"
 version = "0.3.1"
-source = "git+https://github.com/olix0r/tower?branch=ver/ready-cache-error-fixup#eebbc32640552a00442cb475cea309a1005445ee"
+source = "git+https://github.com/tower-rs/tower?rev=ad348d8#ad348d8ee5106f21b87155d2a0e8e18b90bd6b73"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2678,7 +2678,7 @@ dependencies = [
  "rand 0.7.2",
  "slab",
  "tokio",
- "tower-layer 0.3.0 (git+https://github.com/olix0r/tower?branch=ver/ready-cache-error-fixup)",
+ "tower-layer 0.3.0 (git+https://github.com/tower-rs/tower?rev=ad348d8)",
  "tower-service",
  "tracing",
 ]
@@ -2686,7 +2686,7 @@ dependencies = [
 [[package]]
 name = "tower-layer"
 version = "0.3.0"
-source = "git+https://github.com/olix0r/tower?branch=ver/ready-cache-error-fixup#eebbc32640552a00442cb475cea309a1005445ee"
+source = "git+https://github.com/tower-rs/tower?rev=ad348d8#ad348d8ee5106f21b87155d2a0e8e18b90bd6b73"
 
 [[package]]
 name = "tower-layer"
