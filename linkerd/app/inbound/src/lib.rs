@@ -258,7 +258,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|p: &Profile| info_span!("profile", addr = %p.addr()))
+            .instrument(|p: &Profile| info_span!("profile", addr = %p.as_ref()))
             .check_make_service::<Profile, Target>()
             .push(router::Layer::new(|()| ProfileTarget))
             .check_new_service::<(), Target>()
