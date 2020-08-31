@@ -197,7 +197,7 @@ impl Config {
                     .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             ));
 
-        let target = http_endpoint
+        let target = endpoint
             .push_map_target(HttpEndpoint::from)
             // Normalizes the URI, i.e. if it was originally in
             // absolute-form on the outbound side.
