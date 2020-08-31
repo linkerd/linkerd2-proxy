@@ -315,6 +315,13 @@ impl Config {
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>()
             .into_new_service()
             .check_new_service::<Logical<HttpEndpoint>, http::Request<_>>()
+            // Each service is cached, holding the profile and endpoint
+            // resolutions and the load balancer with all of its endpoint
+            // connections.
+            //
+            // When no new requests have been dispatched for
+            // `cache_max_idle_age`, the cached service is dropped. In-flight
+            // streams will continue to be processed.
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
