@@ -258,7 +258,7 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age));
 
         // Builds a balancer for each concrete destination.
-        let balance = svc::stack(endpoint.clone())
+        let concrete = svc::stack(endpoint.clone())
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -273,15 +273,15 @@ impl Config {
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)
-                    .push(metrics.stack.layer(stack_labels("balance"))),
+                    .push(metrics.stack.layer(stack_labels("concrete"))),
             )
             .into_new_service()
-            .instrument(|c: &Concrete<http::Settings>| info_span!("balance", addr = %c.addr))
+            .instrument(|c: &Concrete<http::Settings>| info_span!("concrete", addr = %c.addr))
             .check_new_service::<Concrete<http::Settings>, http::Request<_>>();
 
         // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
-        let logical_cache = balance
+        let logical = concrete
             .push_map_target(|(addr, l): (Addr, Logical<HttpEndpoint>)| Concrete {
                 addr,
                 inner: l.map(|e| e.settings),
@@ -332,7 +332,7 @@ impl Config {
         //
         // This is effectively the same as the endpoint stack; but the client layer captures the
         // requst body type (via PhantomData), so the stack cannot be shared directly.
-        let forward_cache = svc::stack(endpoint)
+        let forward = svc::stack(endpoint)
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .into_new_service()
             .cache(
@@ -359,11 +359,11 @@ impl Config {
             .check_make_service::<Concrete<HttpEndpoint>, http::Request<_>>();
 
         // Routes requests to their logical target.
-        logical_cache
+        logical
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
             .push_fallback_with_predicate(
-                forward_cache
+                forward
                     .push_map_target(|inner: Logical<HttpEndpoint>| Concrete {
                         addr: inner.addr.clone(),
                         inner,
