@@ -279,14 +279,25 @@ impl Config {
             .instrument(|c: &Concrete<http::Settings>| info_span!("concrete", addr = %c.addr))
             .check_new_service::<Concrete<http::Settings>, http::Request<_>>();
 
-        // Routes `Logical` targets to a cached `Profile` stack, i.e. so that profile
-        // resolutions are shared even as the type of request may vary.
+        // For each logical target, performs service profile resolution and
+        // builds concrete services, over which requests are dispatched
+        // (according to a split).
+        //
+        // Each service is cached, holding the profile and endpoint resolutions
+        // and the load balancer with all of its endpoint connections.
+        //
+        // When no new requests have been dispatched for `cache_max_idle_age`,
+        // the cached service is dropped. In-flight streams will continue to be
+        // processed.
         let logical = concrete
+            // Uses the split-provided target `Addr` to build a concrete target.
             .push_map_target(|(addr, l): (Addr, Logical<HttpEndpoint>)| Concrete {
                 addr,
                 inner: l.map(|e| e.settings),
             })
             .push(profiles::split::layer())
+            // Drives concrete stacks to readiness and makes the split
+            // cloneable, as required by the retry middleware.
             .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
             .push(profiles::http::route_request::layer(
                 svc::proxies()
@@ -305,22 +316,14 @@ impl Config {
                     })
                     .into_inner(),
             ))
+            // Discovers the service profile from the control plane and passes
+            // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
             .into_new_service()
-            // Each service is cached, holding the profile and endpoint
-            // resolutions and the load balancer with all of its endpoint
-            // connections.
-            //
-            // When no new requests have been dispatched for
-            // `cache_max_idle_age`, the cached service is dropped. In-flight
-            // streams will continue to be processed.
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
                         .push_failfast(dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
                         .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
@@ -329,9 +332,6 @@ impl Config {
             .check_make_service::<Logical<HttpEndpoint>, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.
-        //
-        // This is effectively the same as the endpoint stack; but the client layer captures the
-        // requst body type (via PhantomData), so the stack cannot be shared directly.
         let forward = svc::stack(endpoint)
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .into_new_service()
@@ -339,10 +339,7 @@ impl Config {
                 svc::layers()
                     .push_on_response(
                         svc::layers()
-                            // If the endpoint has been unavailable for an extended time, eagerly
-                            // fail requests.
                             .push_failfast(dispatch_timeout)
-                            // Shares the balancer, ensuring discovery errors are propagated.
                             .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
                             .box_http_request()
                             .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
@@ -358,7 +355,9 @@ impl Config {
             })
             .check_make_service::<Concrete<HttpEndpoint>, http::Request<_>>();
 
-        // Routes requests to their logical target.
+        // Attempts to route route request to a logical services that uses
+        // control plane for discovery. If the discovery is rejected, the
+        // `forward` stack is used instead, bypassing load balancing, etc.
         logical
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
