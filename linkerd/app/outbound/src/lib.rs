@@ -193,7 +193,7 @@ impl Config {
 
     pub fn build_http_router<B, E, S, R, P>(
         &self,
-        http_endpoint: E,
+        endpoint: E,
         resolve: R,
         profiles_client: P,
         metrics: ProxyMetrics,
@@ -258,7 +258,7 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age));
 
         // Builds a balancer for each concrete destination.
-        let balance = svc::stack(http_endpoint.clone())
+        let balance = svc::stack(endpoint.clone())
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -333,7 +333,7 @@ impl Config {
         //
         // This is effectively the same as the endpoint stack; but the client layer captures the
         // requst body type (via PhantomData), so the stack cannot be shared directly.
-        let forward_cache = svc::stack(http_endpoint)
+        let forward_cache = svc::stack(endpoint)
             .check_make_service::<Target<HttpEndpoint>, http::Request<http::boxed::Payload>>()
             .into_new_service()
             .cache(

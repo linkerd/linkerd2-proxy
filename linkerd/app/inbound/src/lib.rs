@@ -123,7 +123,7 @@ impl Config {
         &self,
         tcp_connect: C,
         prevent_loop: impl Into<PreventLoop>,
-        http_loopback: L,
+        loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
@@ -178,7 +178,7 @@ impl Config {
         let prevent_loop = prevent_loop.into();
 
         // Creates HTTP clients for each inbound port & HTTP settings.
-        let http_endpoint = svc::stack(tcp_connect)
+        let endpoint = svc::stack(tcp_connect)
             .push(http::MakeClientLayer::new(connect.h2_settings))
             .push(reconnect::layer({
                 let backoff = connect.backoff.clone();
@@ -208,7 +208,7 @@ impl Config {
 
         // Routes targets to a Profile stack, i.e. so that profile
         // resolutions are shared even as the type of request may vary.
-        let http_profile_cache = target
+        let profile_cache = target
             .clone()
             .push_on_response(svc::layers().box_http_request())
             .check_new_service::<Target, http::Request<_>>()
@@ -250,7 +250,7 @@ impl Config {
             .instrument(|_: &Target| info_span!("profile"))
             .check_make_service::<Target, http::Request<_>>();
 
-        let http_target_cache = target
+        let target_cache = target
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -266,12 +266,12 @@ impl Config {
             .instrument(|_: &Target| info_span!("target"))
             .check_make_service::<Target, http::Request<http::boxed::Payload>>();
 
-        http_profile_cache
+        profile_cache
             .check_make_service::<Target, http::Request<_>>()
             .push_on_response(svc::layers().box_http_response())
             .push_make_ready()
             .push_fallback(
-                http_target_cache
+                target_cache
                     .check_make_service::<Target, http::Request<_>>()
                     .push_on_response(svc::layers().box_http_response()),
             )
@@ -281,7 +281,7 @@ impl Config {
             // should cache or not.
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
-                svc::stack(http_loopback)
+                svc::stack(loopback)
                     .check_make_service::<Target, http::Request<_>>()
                     .into_inner(),
             )
