@@ -594,11 +594,13 @@ impl From<Error> for DiscoveryError {
 }
 
 fn is_discovery_rejected(err: &Error) -> bool {
-    tracing::trace!(?err, "is_discovery_rejected");
-
-    if let Some(e) = err.downcast_ref::<svc::buffer::error::ServiceError>() {
-        return is_discovery_rejected(e.inner());
+    fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
+        err.is::<DiscoveryRejected>()
+            || err.is::<profiles::InvalidProfileAddr>()
+            || err.source().map(is_rejected).unwrap_or(false)
     }
 
-    err.is::<DiscoveryRejected>() || err.is::<profiles::InvalidProfileAddr>()
+    let rejected = is_rejected(&**err);
+    tracing::debug!(rejected, %err);
+    rejected
 }
