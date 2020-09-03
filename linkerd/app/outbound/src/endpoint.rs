@@ -36,9 +36,9 @@ pub struct Target<T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Profile<T> {
+pub struct Profile {
     pub rx: profiles::Receiver,
-    pub target: Target<T>,
+    pub target: Target<HttpEndpoint>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,8 +55,8 @@ pub struct TcpEndpoint {
     pub identity: tls::PeerIdentity,
 }
 
-impl From<(Addr, Profile<HttpEndpoint>)> for Concrete<http::Settings> {
-    fn from((addr, Profile { target, .. }): (Addr, Profile<HttpEndpoint>)) -> Self {
+impl From<(Addr, Profile)> for Concrete<http::Settings> {
+    fn from((addr, Profile { target, .. }): (Addr, Profile)) -> Self {
         Self {
             addr,
             inner: target.map(|e| e.settings),
@@ -421,7 +421,7 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
     }
 }
 
-pub fn route<T>((route, profile): (profiles::http::Route, Profile<T>)) -> dst::Route {
+pub fn route((route, profile): (profiles::http::Route, Profile)) -> dst::Route {
     dst::Route {
         route,
         target: profile.target.addr,
@@ -431,26 +431,26 @@ pub fn route<T>((route, profile): (profiles::http::Route, Profile<T>)) -> dst::R
 
 // === impl Profile ===
 
-impl<T> From<(profiles::Receiver, Target<T>)> for Profile<T> {
-    fn from((rx, target): (profiles::Receiver, Target<T>)) -> Self {
+impl From<(profiles::Receiver, Target<HttpEndpoint>)> for Profile {
+    fn from((rx, target): (profiles::Receiver, Target<HttpEndpoint>)) -> Self {
         Self { rx, target }
     }
 }
 
-impl<T> AsRef<Addr> for Profile<T> {
+impl AsRef<Addr> for Profile {
     fn as_ref(&self) -> &Addr {
         &self.target.addr
     }
 }
 
-impl<T> AsRef<profiles::Receiver> for Profile<T> {
+impl AsRef<profiles::Receiver> for Profile {
     fn as_ref(&self) -> &profiles::Receiver {
         &self.rx
     }
 }
 
-impl<T> From<Profile<T>> for Target<T> {
-    fn from(Profile { target, .. }: Profile<T>) -> Self {
+impl From<Profile> for Target<HttpEndpoint> {
+    fn from(Profile { target, .. }: Profile) -> Self {
         target
     }
 }
