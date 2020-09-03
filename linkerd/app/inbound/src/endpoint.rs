@@ -4,7 +4,7 @@ use linkerd2_app_core::{
     http_request_l5d_override_dst_addr, metric_labels, profiles,
     proxy::{http, identity, tap},
     router, stack_tracing,
-    transport::{connect, listen, tls},
+    transport::{listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::fmt;
@@ -41,8 +41,8 @@ pub struct ProfileTarget;
 
 // === impl HttpEndpoint ===
 
-impl connect::ConnectAddr for HttpEndpoint {
-    fn connect_addr(&self) -> SocketAddr {
+impl Into<SocketAddr> for HttpEndpoint {
+    fn into(self) -> SocketAddr {
         ([127, 0, 0, 1], self.port).into()
     }
 }
@@ -86,8 +86,8 @@ impl From<tls::accept::Meta> for TcpEndpoint {
     }
 }
 
-impl connect::ConnectAddr for TcpEndpoint {
-    fn connect_addr(&self) -> SocketAddr {
+impl Into<SocketAddr> for TcpEndpoint {
+    fn into(self) -> SocketAddr {
         ([127, 0, 0, 1], self.port).into()
     }
 }

@@ -3,10 +3,6 @@ use std::{future::Future, io, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::net::TcpStream;
 use tracing::debug;
 
-pub trait ConnectAddr {
-    fn connect_addr(&self) -> SocketAddr;
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct Connect {
     keepalive: Option<Duration>,
@@ -18,7 +14,7 @@ impl Connect {
     }
 }
 
-impl<C: ConnectAddr> tower::Service<C> for Connect {
+impl<T: Into<SocketAddr>> tower::Service<T> for Connect {
     type Response = TcpStream;
     type Error = io::Error;
     type Future =
@@ -28,9 +24,9 @@ impl<C: ConnectAddr> tower::Service<C> for Connect {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, c: C) -> Self::Future {
+    fn call(&mut self, t: T) -> Self::Future {
         let keepalive = self.keepalive;
-        let addr = c.connect_addr();
+        let addr = t.into();
         debug!(peer.addr = %addr, "Connecting");
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;
