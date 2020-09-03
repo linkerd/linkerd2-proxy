@@ -214,7 +214,7 @@ impl Config {
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .push_on_response(svc::layers().box_http_request())
             // The target stack doesn't use the profile resolution, so drop it.
-            .push_map_target(|(_, target): (profiles::Receiver, Target)| target)
+            .push_map_target(endpoint::Target::from)
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     // Sets the route as a request extension so that it can be used
@@ -226,11 +226,10 @@ impl Config {
                     // extension.
                     .push(classify::Layer::new())
                     .check_new_clone::<dst::Route>()
-                    .push_map_target(|(r, t): (profiles::http::Route, Target)| {
-                        endpoint::route(r, t)
-                    })
+                    .push_map_target(endpoint::route)
                     .into_inner(),
             ))
+            .push_map_target(endpoint::Logical::from)
             .push(profiles::discover::layer(profiles_client))
             .into_new_service()
             .cache(

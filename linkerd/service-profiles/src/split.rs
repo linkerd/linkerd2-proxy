@@ -58,13 +58,15 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
     }
 }
 
-impl<T, N: Clone, S, Req> NewService<(Receiver, T)> for NewSplit<N, S, Req>
+impl<T, N: Clone, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
+    T: AsRef<Receiver>,
     S: tower::Service<Req>,
 {
     type Service = Split<T, N, S, Req>;
 
-    fn new_service(&self, (rx, target): (Receiver, T)) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
+        let rx = target.as_ref().clone();
         Split {
             rx,
             target,

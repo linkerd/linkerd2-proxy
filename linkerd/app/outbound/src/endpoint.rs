@@ -35,6 +35,12 @@ pub struct Target<T> {
     pub inner: T,
 }
 
+#[derive(Clone, Debug)]
+pub struct Profile {
+    pub rx: profiles::Receiver,
+    pub target: Target<HttpEndpoint>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpEndpoint {
     pub addr: SocketAddr,
@@ -47,6 +53,15 @@ pub struct HttpEndpoint {
 pub struct TcpEndpoint {
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
+}
+
+impl From<(Addr, Profile)> for Concrete<http::Settings> {
+    fn from((addr, Profile { target, .. }): (Addr, Profile)) -> Self {
+        Self {
+            addr,
+            inner: target.map(|e| e.settings),
+        }
+    }
 }
 
 // === impl Target ===
@@ -406,10 +421,36 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
     }
 }
 
-pub fn route<T>(route: profiles::http::Route, target: Logical<T>) -> dst::Route {
+pub fn route((route, profile): (profiles::http::Route, Profile)) -> dst::Route {
     dst::Route {
         route,
-        target: target.addr,
+        target: profile.target.addr,
         direction: metric_labels::Direction::Out,
+    }
+}
+
+// === impl Profile ===
+
+impl From<(profiles::Receiver, Target<HttpEndpoint>)> for Profile {
+    fn from((rx, target): (profiles::Receiver, Target<HttpEndpoint>)) -> Self {
+        Self { rx, target }
+    }
+}
+
+impl AsRef<Addr> for Profile {
+    fn as_ref(&self) -> &Addr {
+        &self.target.addr
+    }
+}
+
+impl AsRef<profiles::Receiver> for Profile {
+    fn as_ref(&self) -> &profiles::Receiver {
+        &self.rx
+    }
+}
+
+impl From<Profile> for Target<HttpEndpoint> {
+    fn from(Profile { target, .. }: Profile) -> Self {
+        target
     }
 }
