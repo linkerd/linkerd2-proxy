@@ -52,16 +52,17 @@ impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
     }
 }
 
-impl<T, M, N> NewService<(Receiver, T)> for NewRouteRequest<M, N, N::Service>
+impl<T, M, N> NewService<T> for NewRouteRequest<M, N, N::Service>
 where
-    T: Clone,
-    M: NewService<(Receiver, T)>,
+    T: AsRef<Receiver> + Clone,
+    M: NewService<T>,
     N: NewService<(Route, T)> + Clone,
 {
     type Service = RouteRequest<T, M::Service, N, N::Service>;
 
-    fn new_service(&self, (rx, target): (Receiver, T)) -> Self::Service {
-        let inner = self.inner.new_service((rx.clone(), target.clone()));
+    fn new_service(&self, target: T) -> Self::Service {
+        let rx = target.as_ref().clone();
+        let inner = self.inner.new_service(target.clone());
         let default = self
             .new_route
             .new_service((self.default.clone(), target.clone()));

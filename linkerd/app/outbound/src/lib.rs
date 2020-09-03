@@ -291,10 +291,7 @@ impl Config {
         // processed.
         let logical = concrete
             // Uses the split-provided target `Addr` to build a concrete target.
-            .push_map_target(|(addr, l): (Addr, Logical<HttpEndpoint>)| Concrete {
-                addr,
-                inner: l.map(|e| e.settings),
-            })
+            .push_map_target(Concrete::<http::Settings>::from)
             .push(profiles::split::layer())
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
@@ -311,11 +308,10 @@ impl Config {
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())
-                    .push_map_target(|(r, l): (profiles::http::Route, Logical<HttpEndpoint>)| {
-                        endpoint::route(r, l)
-                    })
+                    .push_map_target(endpoint::route)
                     .into_inner(),
             ))
+            .push_map_target(endpoint::Profile::from)
             // Discovers the service profile from the control plane and passes
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
