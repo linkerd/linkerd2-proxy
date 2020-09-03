@@ -22,7 +22,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::IpAddr, time::Duration};
