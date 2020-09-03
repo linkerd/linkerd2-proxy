@@ -303,8 +303,8 @@ struct Target(SocketAddr, Conditional<Name>);
 #[derive(Clone)]
 struct ClientTls(CrtKey);
 
-impl connect::ConnectAddr for Target {
-    fn connect_addr(&self) -> SocketAddr {
+impl Into<SocketAddr> for Target {
+    fn into(self) -> SocketAddr {
         self.0
     }
 }

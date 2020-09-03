@@ -13,7 +13,7 @@ use linkerd2_app_core::{
         tap,
     },
     router,
-    transport::{connect, listen, tls},
+    transport::{listen, tls},
     Addr, Conditional, L5D_REQUIRE_ID,
 };
 use std::net::SocketAddr;
@@ -144,9 +144,9 @@ impl<T: tap::Inspect> tap::Inspect for Target<T> {
     }
 }
 
-impl<T: connect::ConnectAddr> connect::ConnectAddr for Target<T> {
-    fn connect_addr(&self) -> SocketAddr {
-        self.inner.connect_addr()
+impl<T: Into<SocketAddr>> Into<SocketAddr> for Target<T> {
+    fn into(self) -> SocketAddr {
+        self.inner.into()
     }
 }
 
@@ -195,8 +195,8 @@ impl tls::HasPeerIdentity for HttpEndpoint {
     }
 }
 
-impl connect::ConnectAddr for HttpEndpoint {
-    fn connect_addr(&self) -> SocketAddr {
+impl Into<SocketAddr> for HttpEndpoint {
+    fn into(self) -> SocketAddr {
         self.addr
     }
 }
@@ -322,8 +322,8 @@ impl From<listen::Addrs> for TcpEndpoint {
     }
 }
 
-impl connect::ConnectAddr for TcpEndpoint {
-    fn connect_addr(&self) -> SocketAddr {
+impl Into<SocketAddr> for TcpEndpoint {
+    fn into(self) -> SocketAddr {
         self.addr
     }
 }

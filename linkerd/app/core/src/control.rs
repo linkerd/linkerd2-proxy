@@ -268,7 +268,7 @@ mod balance {
 
 /// Creates a client suitable for gRPC.
 mod client {
-    use crate::transport::{connect, tls};
+    use crate::transport::tls;
     use crate::{proxy::http, svc};
     use linkerd2_proxy_http::h2::Settings as H2Settings;
     use std::{
@@ -295,8 +295,8 @@ mod client {
 
     // === impl Target ===
 
-    impl connect::ConnectAddr for Target {
-        fn connect_addr(&self) -> SocketAddr {
+    impl Into<SocketAddr> for Target {
+        fn into(self) -> SocketAddr {
             self.addr
         }
     }
