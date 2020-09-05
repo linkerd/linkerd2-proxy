@@ -30,11 +30,7 @@ pub struct MakeClient<C, B> {
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
-pub enum Client<C, T, B>
-where
-    B: hyper::body::HttpBody + 'static,
-    C: tower::make::MakeConnection<T> + 'static,
-{
+pub enum Client<C, T, B> {
     Http1(hyper::Client<HyperConnect<C, T>, B>),
     Http2(h2::Connection<B>),
 }
