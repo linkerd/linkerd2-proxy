@@ -207,9 +207,17 @@ where
                         .instrument(span.clone()),
                 )
             }
-            Client::Http2(ref mut h2) => {
-                Box::pin(h2.call(req).err_into::<Error>().instrument(span.clone()))
-            }
+            Client::Http2(ref mut h2) => Box::pin(
+                h2.call(req)
+                    .map_ok(|rsp| {
+                        rsp.map(|b| Body {
+                            body: Some(b),
+                            upgrade: None,
+                        })
+                    })
+                    .err_into::<Error>()
+                    .instrument(span.clone()),
+            ),
         }
     }
 }
