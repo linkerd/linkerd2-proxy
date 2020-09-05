@@ -1,20 +1,20 @@
-use super::trace;
-use super::Body;
-use futures::{ready, TryFuture, TryFutureExt};
+use crate::{trace, Body};
+use futures::{future, prelude::*};
 use http;
 use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
 };
 use linkerd2_error::Error;
-use pin_project::pin_project;
-use std::future::Future;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    marker::PhantomData,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, info_span, trace_span};
-use tracing_futures::{Instrument, Instrumented};
+use tracing_futures::Instrument;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Settings {
@@ -34,54 +34,7 @@ pub struct Connection<B> {
     tx: SendRequest<B>,
 }
 
-#[pin_project]
-pub struct ConnectFuture<F, B>
-where
-    F: TryFuture + Send + 'static,
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<Error> + Send + Sync,
-    F::Ok: AsyncRead + AsyncWrite + Send + 'static,
-{
-    #[pin]
-    state: ConnectState<F, B>,
-    h2_settings: Settings,
-    span: tracing::Span,
-}
-
-#[pin_project(project = ConnectStateProj)]
-enum ConnectState<F, B>
-where
-    F: TryFuture + Send + 'static,
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<Error> + Send + Sync,
-    F::Ok: AsyncRead + AsyncWrite + Send + 'static,
-{
-    Connect(#[pin] F),
-    Handshake(
-        #[pin]
-        Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            (SendRequest<B>, hyper::client::conn::Connection<F::Ok, B>),
-                            hyper::Error,
-                        >,
-                    > + Send
-                    + 'static,
-            >,
-        >,
-    ),
-}
-
-#[pin_project]
-pub struct ResponseFuture {
-    #[pin]
-    inner: conn::ResponseFuture,
-}
-
-// ===== impl Connect =====
+// === impl Connect ===
 
 impl<C, B> Connect<C, B> {
     pub fn new(connect: C, h2_settings: Settings) -> Self {
@@ -115,79 +68,51 @@ where
 {
     type Response = Connection<B>;
     type Error = Error;
-    type Future = ConnectFuture<Instrumented<C::Future>, B>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let span = info_span!("h2");
-        ConnectFuture {
-            state: ConnectState::Connect(
-                self.connect
-                    .make_connection(target)
-                    .instrument(trace_span!(parent: &span, "connect")),
-            ),
-            h2_settings: self.h2_settings,
-            span,
-        }
+        let Settings {
+            initial_connection_window_size,
+            initial_stream_window_size,
+        } = self.h2_settings;
+
+        let connect = self
+            .connect
+            .make_connection(target)
+            .instrument(trace_span!("connect"));
+
+        Box::pin(
+            async move {
+                let io = connect.err_into::<Error>().await?;
+
+                let (tx, conn) = conn::Builder::new()
+                    .http2_only(true)
+                    .http2_initial_stream_window_size(initial_stream_window_size)
+                    .http2_initial_connection_window_size(initial_connection_window_size)
+                    .executor(trace::Executor::new())
+                    .handshake(io)
+                    .instrument(trace_span!("handshake"))
+                    .await?;
+
+                tokio::spawn(
+                    conn.map_err(|error| debug!(%error, "failed"))
+                        .instrument(trace_span!("conn"))
+                        .in_current_span(),
+                );
+
+                Ok(Connection { tx })
+            }
+            .instrument(info_span!("h2")),
+        )
     }
 }
 
-// ===== impl ConnectFuture =====
-
-impl<F, B> Future for ConnectFuture<F, B>
-where
-    F: TryFuture + Send + 'static,
-    F::Ok: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    F::Error: Into<Error>,
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<Error> + Send + Sync,
-{
-    type Output = Result<Connection<B>, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        let span = this.span;
-        let _guard = span.enter();
-        loop {
-            match this.state.as_mut().project() {
-                ConnectStateProj::Connect(fut) => {
-                    let io = ready!(fut.try_poll(cx)).map_err(Into::into)?;
-                    let hs = conn::Builder::new()
-                        .http2_only(true)
-                        .http2_initial_stream_window_size(
-                            this.h2_settings.initial_stream_window_size,
-                        )
-                        .http2_initial_connection_window_size(
-                            this.h2_settings.initial_connection_window_size,
-                        )
-                        .executor(trace::Executor::new())
-                        .handshake(io)
-                        .instrument(trace_span!("handshake"))
-                        .instrument(span.clone());
-
-                    this.state.set(ConnectState::Handshake(Box::pin(hs)));
-                }
-                ConnectStateProj::Handshake(hs) => {
-                    let (tx, conn) = ready!(hs.poll(cx))?;
-
-                    tokio::spawn(
-                        conn.map_err(|error| debug!(%error, "failed"))
-                            .instrument(trace_span!("conn"))
-                            .instrument(span.clone()),
-                    );
-
-                    return Poll::Ready(Ok(Connection { tx }));
-                }
-            };
-        }
-    }
-}
-
-// ===== impl Connection =====
+// === impl Connection ===
 
 impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
@@ -197,7 +122,10 @@ where
 {
     type Response = http::Response<Body>;
     type Error = hyper::Error;
-    type Future = ResponseFuture;
+    type Future = future::MapOk<
+        conn::ResponseFuture,
+        fn(http::Response<hyper::Body>) -> http::Response<Body>,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.tx.poll_ready(cx).map_err(From::from)
@@ -218,23 +146,11 @@ where
             *req.version_mut() = http::Version::HTTP_11;
         }
 
-        ResponseFuture {
-            inner: self.tx.send_request(req),
-        }
-    }
-}
-
-// ===== impl ResponseFuture =====
-
-impl Future for ResponseFuture {
-    type Output = Result<http::Response<Body>, hyper::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = ready!(self.project().inner.poll(cx))?;
-        let res = res.map(|body| Body {
-            body: Some(body),
-            upgrade: None,
-        });
-        Poll::Ready(Ok(res))
+        self.tx.send_request(req).map_ok(|rsp| {
+            rsp.map(|body| Body {
+                body: Some(body),
+                upgrade: None,
+            })
+        })
     }
 }

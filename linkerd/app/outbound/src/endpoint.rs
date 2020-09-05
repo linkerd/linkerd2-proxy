@@ -98,12 +98,12 @@ impl<'t, T> From<&'t Target<T>> for http::header::HeaderValue {
     }
 }
 
-impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for Target<T> {
+impl<T: AsRef<http::Settings>> http::normalize_uri::ShouldNormalizeUri for Target<T> {
     fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
         if let http::Settings::Http1 {
             was_absolute_form: false,
             ..
-        } = self.inner.http_settings()
+        } = *self.inner.as_ref()
         {
             return Some(self.addr.to_http_authority());
         }
@@ -111,9 +111,9 @@ impl<T: http::settings::HasSettings> http::normalize_uri::ShouldNormalizeUri for
     }
 }
 
-impl<T: http::settings::HasSettings> http::settings::HasSettings for Target<T> {
-    fn http_settings(&self) -> http::Settings {
-        self.inner.http_settings()
+impl<T: AsRef<http::Settings>> AsRef<http::Settings> for Target<T> {
+    fn as_ref(&self) -> &http::Settings {
+        self.inner.as_ref()
     }
 }
 
@@ -199,7 +199,7 @@ impl std::hash::Hash for HttpEndpoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
         self.identity.hash(state);
-        http::settings::HasSettings::http_settings(self).hash(state);
+        self.settings.hash(state);
         // Ignore metadata.
     }
 }
@@ -216,22 +216,9 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl http::settings::HasSettings for HttpEndpoint {
-    fn http_settings(&self) -> http::Settings {
-        match self.settings {
-            Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                was_absolute_form,
-            } => Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                // Always use absolute form when an onverride is present.
-                was_absolute_form: self.metadata.authority_override().is_some()
-                    || was_absolute_form,
-            },
-            settings => settings,
-        }
+impl AsRef<http::Settings> for HttpEndpoint {
+    fn as_ref(&self) -> &http::Settings {
+        &self.settings
     }
 }
 
@@ -291,6 +278,20 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
             });
 
+        let settings = match concrete.inner.inner {
+            Settings::Http1 {
+                keep_alive,
+                wants_h1_upgrade,
+                was_absolute_form,
+            } => Settings::Http1 {
+                keep_alive,
+                wants_h1_upgrade,
+                // Always use absolute form when an onverride is present.
+                was_absolute_form: metadata.authority_override().is_some() || was_absolute_form,
+            },
+            settings => settings,
+        };
+
         Target {
             // Use the logical addr for the target.
             addr: concrete.inner.addr.clone(),
@@ -298,7 +299,7 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
                 addr,
                 identity,
                 metadata,
-                settings: concrete.inner.inner,
+                settings,
             },
         }
     }
