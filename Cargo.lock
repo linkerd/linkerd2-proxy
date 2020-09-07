@@ -1373,7 +1373,9 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-duplex",
  "linkerd2-error",
+ "linkerd2-stack",
  "pin-project",
+ "rand 0.7.2",
  "tokio",
  "tower",
 ]

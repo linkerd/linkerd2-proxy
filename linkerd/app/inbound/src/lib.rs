@@ -371,7 +371,7 @@ impl Config {
         // tasks from their constructor. This helps to ensure that tasks are
         // spawned on the same runtime as the proxy.
         // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp::Forward::new(tcp_connect))
+        let tcp_forward = svc::stack(tcp::Forward::new(tcp::Connector::new(tcp_connect)))
             .push(admit::AdmitLayer::new(prevent_loop.into()));
 
         let http = DetectHttp::new(

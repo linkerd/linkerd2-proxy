@@ -22,7 +22,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, listen, tls},
-    Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::IpAddr, time::Duration};
@@ -375,11 +375,12 @@ impl Config {
             .into_inner()
     }
 
-    pub async fn build_server<R, C, H, S>(
+    pub async fn build_server<E, R, C, H, S>(
         self,
         listen_addr: std::net::SocketAddr,
         listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         refine: R,
+        resolve: E,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -387,6 +388,9 @@ impl Config {
         drain: drain::Watch,
     ) -> Result<(), Error>
     where
+        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E::Future: Unpin + Send,
+        E::Resolution: Unpin + Send,
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
             + Unpin
             + Clone
@@ -416,6 +420,8 @@ impl Config {
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
+            cache_max_idle_age,
+            buffer_capacity,
             ..
         } = self.proxy;
         let canonicalize_timeout = self.canonicalize_timeout;
@@ -460,19 +466,41 @@ impl Config {
             .into_inner()
             .into_make_service();
 
-        // The stack is served lazily since caching layers spawn tasks from
-        // their constructor. This helps to ensure that tasks are spawned on the
-        // same runtime as the proxy.
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp::Forward::new(tcp_connect))
+        let tcp_forward = svc::stack(tcp::Forward::new(tcp::Connector::new(tcp_connect.clone())))
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_map_target(TcpEndpoint::from);
+
+        // Load balances TCP streams that cannot be decoded as HTTP.
+        let tcp_balance = svc::stack(tcp::Connector::new(tcp_connect))
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .check_make_service::<TcpEndpoint, ()>()
+            .push(discover::resolve(map_endpoint::Resolve::new(
+                endpoint::FromMetadata,
+                resolve,
+            )))
+            .push(discover::buffer(1_000, cache_max_idle_age))
+            .push_on_response(svc::layers().push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)))
+            .into_new_service()
+            .check_new_service::<Addr, ()>()
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("tcp.balance"))),
+                ),
+            )
+            .spawn_buffer(buffer_capacity)
+            .check_make_service::<Addr, ()>()
+            .push(svc::layer::mk(tcp::Forward::new))
+            .push_map_target(|a: listen::Addrs| Addr::from(a.target_addr()))
+            .push_fallback_with_predicate(tcp_forward.clone().into_inner(), is_discovery_rejected);
 
         let http = http::DetectHttp::new(
             h2_settings,
             detect_protocol_timeout,
             http_server,
-            tcp_forward.clone(),
+            tcp_balance,
             drain.clone(),
         );
 

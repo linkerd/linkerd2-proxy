@@ -304,6 +304,23 @@ impl MapEndpoint<Concrete<http::Settings>, Metadata> for FromMetadata {
     }
 }
 
+impl MapEndpoint<Addr, Metadata> for FromMetadata {
+    type Out = TcpEndpoint;
+
+    fn map_endpoint(&self, _: &Addr, addr: SocketAddr, metadata: Metadata) -> Self::Out {
+        tracing::trace!(%addr, ?metadata, "Resolved endpoint");
+        let identity = metadata
+            .identity()
+            .cloned()
+            .map(Conditional::Some)
+            .unwrap_or_else(|| {
+                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
+            });
+
+        TcpEndpoint { addr, identity }
+    }
+}
+
 impl CanOverrideAuthority for Target<HttpEndpoint> {
     fn override_authority(&self) -> Option<Authority> {
         self.inner.metadata.authority_override().cloned()

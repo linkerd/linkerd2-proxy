@@ -143,7 +143,7 @@ impl Config {
 
             let outbound_http = outbound.build_http_router(
                 outbound_http_endpoint,
-                dst.resolve,
+                dst.resolve.clone(),
                 dst.profiles.clone(),
                 outbound_metrics.clone(),
             );
@@ -156,6 +156,7 @@ impl Config {
                         svc::stack(refine.clone())
                             .push_map_response(|(n, _)| n)
                             .into_inner(),
+                        dst.resolve,
                         outbound_connect,
                         outbound_http.clone(),
                         outbound_metrics,
