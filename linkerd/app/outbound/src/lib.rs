@@ -461,7 +461,7 @@ impl Config {
             .push_map_target(TcpEndpoint::from);
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let _tcp_balance = svc::stack(tcp_connect)
+        let tcp_balance = svc::stack(tcp_connect)
             .push_make_thunk()
             .push(admit::AdmitLayer::new(prevent_loop))
             .check_make_service::<TcpEndpoint, ()>()
@@ -491,7 +491,7 @@ impl Config {
             h2_settings,
             detect_protocol_timeout,
             http_server,
-            tcp_forward.clone(),
+            tcp_balance,
             drain.clone(),
         );
 
