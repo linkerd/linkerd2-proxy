@@ -302,12 +302,18 @@ impl Into<EndpointLabels> for HttpEndpoint {
 
 // === impl TcpEndpoint ===
 
-impl From<listen::Addrs> for TcpEndpoint {
-    fn from(addrs: listen::Addrs) -> Self {
+impl From<SocketAddr> for TcpEndpoint {
+    fn from(addr: SocketAddr) -> Self {
         Self {
-            addr: addrs.target_addr(),
+            addr,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
         }
+    }
+}
+
+impl From<listen::Addrs> for TcpEndpoint {
+    fn from(addrs: listen::Addrs) -> Self {
+        addrs.target_addr().into()
     }
 }
 
