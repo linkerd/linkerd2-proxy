@@ -18,11 +18,6 @@ use std::time::Duration;
 use tokio::time::{self, Timeout};
 use tracing::{debug, info};
 
-pub trait Target {
-    fn addr(&self) -> &Addr;
-    fn addr_mut(&mut self) -> &mut Addr;
-}
-
 // FIXME the resolver should be abstracted to a trait so that this can be tested
 // without a real DNS service.
 #[derive(Debug, Clone)]
@@ -80,7 +75,7 @@ impl<R: Clone, M> tower::layer::Layer<M> for Layer<R> {
 
 impl<T, R, M> tower::Service<T> for Canonicalize<R, M>
 where
-    T: Target + Clone,
+    T: AsRef<Addr> + AsMut<Addr> + Clone,
     R: tower::Service<Name, Response = Name> + Clone,
     R::Error: Into<Error>,
     M: tower::Service<T> + Clone,
@@ -97,7 +92,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        match target.addr().name_addr() {
+        match target.as_ref().name_addr() {
             None => {
                 self.resolver = self.resolver.clone();
                 MakeFuture {
@@ -126,7 +121,7 @@ where
 
 impl<T, R, M, E> Future for MakeFuture<T, R, M>
 where
-    T: Target,
+    T: AsRef<Addr> + AsMut<Addr>,
     R: Future<Output = Result<Name, E>>,
     E: Into<Error>,
     M: tower::Service<T> + Clone,
@@ -146,8 +141,8 @@ where
                     let target = match ready!(future.poll(cx)) {
                         Ok(Ok(refined)) => {
                             let mut target = original.take().expect("illegal state");
-                            let name = NameAddr::new(refined, target.addr().port());
-                            *target.addr_mut() = name.into();
+                            let name = NameAddr::new(refined, target.as_ref().port());
+                            *target.as_mut() = name.into();
                             target
                         }
                         Ok(Err(error)) => {
