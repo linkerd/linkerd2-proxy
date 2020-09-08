@@ -1,8 +1,6 @@
 use super::gateway::Gateway;
 use futures::{future, ready};
-use linkerd2_app_core::proxy::api_resolve::Metadata;
-use linkerd2_app_core::proxy::identity;
-use linkerd2_app_core::{dns, transport::tls, Error, NameAddr};
+use linkerd2_app_core::{dns, proxy::identity, transport::tls, Error, NameAddr};
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
 use std::future::Future;
@@ -52,7 +50,7 @@ where
     R: tower::Service<dns::Name, Response = (dns::Name, IpAddr)>,
     R::Error: Into<Error> + 'static,
     R::Future: Send + 'static,
-    O: tower::Service<outbound::Logical<outbound::HttpEndpoint>> + Send + Clone + 'static,
+    O: tower::Service<outbound::HttpLogical> + Send + Clone + 'static,
     O::Response: Send + 'static,
     O::Future: Send + 'static,
     O::Error: Into<Error>,
@@ -119,16 +117,11 @@ where
                     // Create an outbound target using the resolved IP & name.
                     let dst_addr = (dst_ip, orig_dst.port()).into();
                     let dst_name = NameAddr::new(name, orig_dst.port());
-                    let endpoint = outbound::Logical {
-                        addr: dst_name.clone().into(),
-                        inner: outbound::HttpEndpoint {
-                            addr: dst_addr,
-                            settings: http_settings,
-                            metadata: Metadata::empty(),
-                            identity: tls::PeerIdentity::None(
-                                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
-                            ),
-                        },
+                    let endpoint = outbound::HttpLogical {
+                        dst: dst_name.clone().into(),
+                        orig_dst: dst_addr,
+                        settings: http_settings,
+                        require_identity: None,
                     };
 
                     let svc = outbound.call(endpoint).await.map_err(Into::into)?;

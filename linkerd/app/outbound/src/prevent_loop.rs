@@ -1,4 +1,4 @@
-use super::endpoint::{HttpEndpoint, Target, TcpEndpoint};
+use super::endpoint::{HttpEndpoint, TcpEndpoint};
 use linkerd2_app_core::admit;
 
 /// A connection policy that drops
@@ -18,12 +18,12 @@ impl From<u16> for PreventLoop {
     }
 }
 
-impl admit::Admit<Target<HttpEndpoint>> for PreventLoop {
+impl admit::Admit<HttpEndpoint> for PreventLoop {
     type Error = LoopPrevented;
 
-    fn admit(&mut self, ep: &Target<HttpEndpoint>) -> Result<(), Self::Error> {
-        tracing::debug!(addr = %ep.inner.addr, self.port);
-        if ep.inner.addr.ip().is_loopback() && ep.inner.addr.port() == self.port {
+    fn admit(&mut self, ep: &HttpEndpoint) -> Result<(), Self::Error> {
+        tracing::debug!(addr = %ep.addr, self.port);
+        if ep.addr.ip().is_loopback() && ep.addr.port() == self.port {
             return Err(LoopPrevented { port: self.port });
         }
 

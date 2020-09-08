@@ -53,9 +53,9 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl http::settings::HasSettings for HttpEndpoint {
-    fn http_settings(&self) -> http::Settings {
-        self.settings
+impl AsRef<http::Settings> for HttpEndpoint {
+    fn as_ref(&self) -> &http::Settings {
+        &self.settings
     }
 }
 
@@ -135,9 +135,9 @@ impl http::normalize_uri::ShouldNormalizeUri for Target {
     }
 }
 
-impl http::settings::HasSettings for Target {
-    fn http_settings(&self) -> http::Settings {
-        self.http_settings
+impl AsRef<http::Settings> for Target {
+    fn as_ref(&self) -> &http::Settings {
+        &self.http_settings
     }
 }
 
