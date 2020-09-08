@@ -1,4 +1,5 @@
 use linkerd2_proxy_transport::io::{self, Peekable, PrefixedIo};
+use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Version {
@@ -16,6 +17,7 @@ impl Version {
         // http2 is easiest to detect
         if bytes.len() >= Self::H2_PREFACE.len() {
             if &bytes[..Self::H2_PREFACE.len()] == Self::H2_PREFACE {
+                trace!("Detected H2");
                 return Some(Version::H2);
             }
         }
@@ -34,11 +36,15 @@ impl Version {
             // We didn't want to keep parsing headers, just validate that
             // the first line is HTTP1.
             Ok(_) | Err(httparse::Error::TooManyHeaders) => {
+                trace!("Detected H1");
                 return Some(Version::Http1);
             }
             _ => {}
         }
 
+        debug!("Not HTTP");
+        trace!(?bytes);
+        trace!(h2.preface = ?Self::H2_PREFACE);
         None
     }
 

@@ -1,6 +1,8 @@
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "16289823"]
 #![recursion_limit = "256"]
+//https://github.com/linkerd/linkerd2/issues/4947
+#![cfg(feature = "flaky_tests")]
 
 use linkerd2_app_integration::*;
 use std::{
