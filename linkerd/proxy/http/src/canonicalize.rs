@@ -23,6 +23,16 @@ pub trait Target {
     fn addr_mut(&mut self) -> &mut Addr;
 }
 
+impl<T: AsRef<Addr> + AsMut<Addr>> Target for T {
+    fn addr(&self) -> &Addr {
+        self.as_ref()
+    }
+
+    fn addr_mut(&mut self) -> &mut Addr {
+        self.as_mut()
+    }
+}
+
 // FIXME the resolver should be abstracted to a trait so that this can be tested
 // without a real DNS service.
 #[derive(Debug, Clone)]

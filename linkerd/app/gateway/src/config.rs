@@ -35,10 +35,7 @@ impl Config {
         R: tower::Service<dns::Name, Response = (dns::Name, IpAddr)> + Send + Clone,
         R::Error: Into<Error> + 'static,
         R::Future: Send + 'static,
-        O: tower::Service<outbound::Logical<outbound::HttpEndpoint>, Response = S>
-            + Send
-            + Clone
-            + 'static,
+        O: tower::Service<outbound::HttpLogical, Response = S> + Send + Clone + 'static,
         O::Error: Into<Error> + Send + 'static,
         O::Future: Send + 'static,
         S: Send
