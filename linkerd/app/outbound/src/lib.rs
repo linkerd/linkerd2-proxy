@@ -482,7 +482,7 @@ impl Config {
                 resolve,
             )))
             .push(discover::buffer(1_000, cache_max_idle_age))
-            .push_on_response(svc::layers().push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY)))
+            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
             .push_make_ready()
             .into_new_service()
             .check_new_service::<Addr, ()>()
