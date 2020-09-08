@@ -339,7 +339,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|t: &HttpEndpoint| info_span!("forward", peer.addr = %t.addr))
+            .instrument(|t: &HttpEndpoint| info_span!("forward", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<HttpEndpoint, http::Request<_>>();
 
         // Attempts to route route request to a logical services that uses
