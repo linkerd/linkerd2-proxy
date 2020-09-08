@@ -466,12 +466,15 @@ impl Config {
             .into_inner()
             .into_make_service();
 
-        let tcp_forward = svc::stack(tcp::Forward::new(tcp::Connector::new(tcp_connect.clone())))
+        let tcp_forward = svc::stack(tcp_connect.clone())
+            .push_make_thunk()
+            .push(svc::layer::mk(tcp::Forward::new))
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_map_target(TcpEndpoint::from);
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let _tcp_balance = svc::stack(tcp::Connector::new(tcp_connect))
+        let _tcp_balance = svc::stack(tcp_connect)
+            .push_make_thunk()
             .push(admit::AdmitLayer::new(prevent_loop))
             .check_make_service::<TcpEndpoint, ()>()
             .push(discover::resolve(map_endpoint::Resolve::new(
