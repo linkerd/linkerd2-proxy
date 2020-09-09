@@ -159,6 +159,14 @@ impl<S> Stack<S> {
         self.push(stack::map_target::MapTargetLayer::new(map_target))
     }
 
+    /// Wraps a `Service<T>` as a `Service<()>`.
+    ///
+    /// Each time the service is called, the `T`-typed request is cloned and
+    /// issued into the inner service.
+    pub fn push_make_thunk(self) -> Stack<stack::make_thunk::MakeThunk<S>> {
+        self.push(layer::mk(stack::make_thunk::MakeThunk::new))
+    }
+
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
         self.push(InstrumentMakeLayer::new(get_span))
     }

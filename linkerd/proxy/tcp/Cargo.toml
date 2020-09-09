@@ -10,6 +10,8 @@ publish = false
 futures = { version = "0.3", features = ["compat"] }
 linkerd2-duplex = { path = "../../duplex" }
 linkerd2-error = { path = "../../error" }
+linkerd2-stack = { path = "../../stack" }
+rand = { version = "0.7", features = ["small_rng"] }
 tokio = { version = "0.2" }
 tower = { version = "0.3", default-features = false }
 pin-project = "0.4"

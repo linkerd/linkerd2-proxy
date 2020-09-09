@@ -58,6 +58,7 @@ pub struct HttpEndpoint {
 pub struct TcpEndpoint {
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
+    //pub labels: Option<String>,
 }
 
 // === impl HttpConrete ===
@@ -302,12 +303,19 @@ impl Into<EndpointLabels> for HttpEndpoint {
 
 // === impl TcpEndpoint ===
 
+impl From<SocketAddr> for TcpEndpoint {
+    fn from(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+            //labels: None,
+        }
+    }
+}
+
 impl From<listen::Addrs> for TcpEndpoint {
     fn from(addrs: listen::Addrs) -> Self {
-        Self {
-            addr: addrs.target_addr(),
-            identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
-        }
+        addrs.target_addr().into()
     }
 }
 
@@ -323,14 +331,35 @@ impl tls::HasPeerIdentity for TcpEndpoint {
     }
 }
 
-impl Into<EndpointLabels> for TcpEndpoint {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::{Direction, TlsId};
-        EndpointLabels {
-            direction: Direction::Out,
-            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-            authority: None,
-            labels: None,
+// impl Into<EndpointLabels> for TcpEndpoint {
+//     fn into(self) -> EndpointLabels {
+//         use linkerd2_app_core::metric_labels::{Direction, TlsId};
+//         EndpointLabels {
+//             authority: None,
+//             direction: Direction::Out,
+//             labels: self.labels,
+//             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+//         }
+//     }
+// }
+
+impl MapEndpoint<Addr, Metadata> for FromMetadata {
+    type Out = TcpEndpoint;
+
+    fn map_endpoint(&self, dst: &Addr, addr: SocketAddr, metadata: Metadata) -> Self::Out {
+        tracing::debug!(%dst, %addr, ?metadata, "Resolved endpoint");
+        let identity = metadata
+            .identity()
+            .cloned()
+            .map(Conditional::Some)
+            .unwrap_or_else(|| {
+                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
+            });
+
+        TcpEndpoint {
+            addr,
+            identity,
+            //labels: prefix_labels("dst", metadata.labels().into_iter()),
         }
     }
 }
