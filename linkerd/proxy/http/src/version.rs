@@ -44,7 +44,7 @@ impl Version {
 
         debug!("Not HTTP");
         trace!(?bytes);
-        trace!(h2.preface = ?Self::H2_PREFACE);
+        //trace!(h2.preface = ?Self::H2_PREFACE);
         None
     }
 
