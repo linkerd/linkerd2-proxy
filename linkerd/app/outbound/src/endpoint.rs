@@ -58,6 +58,7 @@ pub struct HttpEndpoint {
 pub struct TcpEndpoint {
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
+    //pub labels: Option<String>,
 }
 
 // === impl HttpConrete ===
@@ -307,6 +308,7 @@ impl From<SocketAddr> for TcpEndpoint {
         Self {
             addr,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+            //labels: None,
         }
     }
 }
@@ -329,23 +331,23 @@ impl tls::HasPeerIdentity for TcpEndpoint {
     }
 }
 
-impl Into<EndpointLabels> for TcpEndpoint {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::{Direction, TlsId};
-        EndpointLabels {
-            direction: Direction::Out,
-            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-            authority: None,
-            labels: None,
-        }
-    }
-}
+// impl Into<EndpointLabels> for TcpEndpoint {
+//     fn into(self) -> EndpointLabels {
+//         use linkerd2_app_core::metric_labels::{Direction, TlsId};
+//         EndpointLabels {
+//             authority: None,
+//             direction: Direction::Out,
+//             labels: self.labels,
+//             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+//         }
+//     }
+// }
 
 impl MapEndpoint<Addr, Metadata> for FromMetadata {
     type Out = TcpEndpoint;
 
-    fn map_endpoint(&self, _: &Addr, addr: SocketAddr, metadata: Metadata) -> Self::Out {
-        tracing::trace!(%addr, ?metadata, "Resolved endpoint");
+    fn map_endpoint(&self, dst: &Addr, addr: SocketAddr, metadata: Metadata) -> Self::Out {
+        tracing::debug!(%dst, %addr, ?metadata, "Resolved endpoint");
         let identity = metadata
             .identity()
             .cloned()
@@ -354,7 +356,11 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
             });
 
-        TcpEndpoint { addr, identity }
+        TcpEndpoint {
+            addr,
+            identity,
+            //labels: prefix_labels("dst", metadata.labels().into_iter()),
+        }
     }
 }
 
