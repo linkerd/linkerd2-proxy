@@ -8,6 +8,8 @@ pub use tower::{
 };
 use tower::{discover::Discover, load::CompleteOnResponse};
 
+/// Produces a PeakEWMA balancer that uses connect latency (and pending
+/// connections) as its load metric.
 pub fn layer<T, D>(
     default_rtt: Duration,
     decay: Duration,

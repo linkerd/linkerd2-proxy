@@ -2,52 +2,56 @@ use futures::future;
 use linkerd2_error::Never;
 use std::task::{Context, Poll};
 
+/// Wraps a `Service<T>` as a `Service<()>`.
+///
+/// Each time the service is called, the `T`-typed request is cloned and
+/// issued into the inner service.
 #[derive(Clone, Debug)]
-pub struct MakeThunk<M> {
-    make: M,
+pub struct MakeThunk<S> {
+    inner: S,
 }
 
 #[derive(Clone, Debug)]
-pub struct Thunk<M, T> {
-    make: M,
+pub struct Thunk<S, T> {
+    inner: S,
     target: T,
 }
 
-impl<M> MakeThunk<M> {
-    pub fn new(make: M) -> Self {
-        Self { make }
+impl<S> MakeThunk<S> {
+    pub fn new(inner: S) -> Self {
+        Self { inner }
     }
 }
 
-impl<M: Clone, T> tower::Service<T> for MakeThunk<M> {
-    type Response = Thunk<M, T>;
+impl<S: Clone, T> tower::Service<T> for MakeThunk<S> {
+    type Response = Thunk<S, T>;
     type Error = Never;
-    type Future = future::Ready<Result<Thunk<M, T>, Never>>;
+    type Future = future::Ready<Result<Thunk<S, T>, Never>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Never>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let make = self.make.clone();
-        future::ok(Thunk { make, target })
+        let inner = self.inner.clone();
+        future::ok(Thunk { inner, target })
     }
 }
 
-impl<M, T> tower::Service<()> for Thunk<M, T>
+impl<S, T> tower::Service<()> for Thunk<S, T>
 where
     T: Clone,
-    M: tower::Service<T>,
+    S: tower::Service<T>,
 {
-    type Response = M::Response;
-    type Error = M::Error;
-    type Future = M::Future;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
-        self.make.poll_ready(cx)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, (): ()) -> Self::Future {
-        self.make.call(self.target.clone())
+    fn call(&mut self, (): ()) -> S::Future {
+        self.inner.call(self.target.clone())
     }
 }

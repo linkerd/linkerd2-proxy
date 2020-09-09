@@ -461,6 +461,7 @@ impl Config {
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(tcp_connect.clone())
             .push_make_thunk()
+            .instrument(|t: &TcpEndpoint| info_span!("tcp.endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .push(admit::AdmitLayer::new(prevent_loop))
             .check_make_service::<TcpEndpoint, ()>()
             .push(discover::resolve(map_endpoint::Resolve::new(
@@ -470,11 +471,13 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age))
             .push_map_target(Addr::from)
             .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+            .instrument(|a: &SocketAddr| info_span!("tcp.balance", dst = %a))
             .push_fallback_with_predicate(
                 svc::stack(tcp_connect.clone())
                     .push_make_thunk()
                     .push(admit::AdmitLayer::new(prevent_loop))
-                    .push_map_target(TcpEndpoint::from),
+                    .push_map_target(TcpEndpoint::from)
+                    .instrument(|a: &SocketAddr| info_span!("tcp.forward", peer.addr = %a)),
                 is_discovery_rejected,
             )
             .into_new_service()
@@ -484,7 +487,7 @@ impl Config {
                     svc::layers()
                         .push_failfast(dispatch_timeout)
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("tcp.balancer"))),
+                        .push(metrics.stack.layer(stack_labels("tcp"))),
                 ),
             )
             .spawn_buffer(buffer_capacity)
