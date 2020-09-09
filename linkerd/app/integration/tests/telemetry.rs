@@ -18,6 +18,7 @@ struct TcpFixture {
     client: tcp::TcpClient,
     metrics: client::Client,
     proxy: proxy::Listening,
+    server_addr: std::net::SocketAddr,
 }
 
 impl Fixture {
@@ -90,9 +91,11 @@ impl TcpFixture {
 
     async fn inbound() -> Self {
         let ctrl = controller::new();
+        let server = TcpFixture::server().await;
+        let server_addr = server.addr;
         let proxy = proxy::new()
             .controller(ctrl.run().await)
-            .inbound(TcpFixture::server().await)
+            .inbound(server)
             .run()
             .await;
 
@@ -102,14 +105,17 @@ impl TcpFixture {
             client,
             metrics,
             proxy,
+            server_addr,
         }
     }
 
     async fn outbound() -> Self {
         let ctrl = controller::new();
+        let server = TcpFixture::server().await;
+        let server_addr = server.addr;
         let proxy = proxy::new()
             .controller(ctrl.run().await)
-            .outbound(TcpFixture::server().await)
+            .outbound(server)
             .run()
             .await;
 
@@ -119,6 +125,7 @@ impl TcpFixture {
             client,
             metrics,
             proxy,
+            server_addr,
         }
     }
 }
@@ -902,6 +909,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::inbound().await;
 
         let tcp_client = client.connect().await;
@@ -979,6 +987,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::inbound().await;
 
         let tcp_client = client.connect().await;
@@ -1022,6 +1031,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::inbound().await;
 
         let tcp_client = client.connect().await;
@@ -1061,6 +1071,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::inbound().await;
         let src_expected = format!(
             "tcp_write_bytes_total{{peer=\"src\",direction=\"inbound\",tls=\"disabled\"}} {}",
@@ -1089,6 +1100,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::inbound().await;
         let src_expected = format!(
             "tcp_read_bytes_total{{peer=\"src\",direction=\"inbound\",tls=\"disabled\"}} {}",
@@ -1111,12 +1123,12 @@ mod transport {
     }
 
     #[tokio::test]
-    #[ignore] // authority includes ephemeral ports, metrics can't be matched
     async fn outbound_tcp_connect() {
         let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
+            server_addr,
             proxy: _proxy,
         } = TcpFixture::outbound().await;
 
@@ -1124,8 +1136,8 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"} 1");
+        let expected = format!("tcp_open_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} 1", server_addr);
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected);
     }
 
     #[tokio::test]
@@ -1135,6 +1147,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::outbound().await;
 
         let tcp_client = client.connect().await;
@@ -1173,6 +1186,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::outbound().await;
 
         let tcp_client = client.connect().await;
@@ -1206,12 +1220,12 @@ mod transport {
     }
 
     #[tokio::test]
-    #[ignore] // authority includes ephemeral ports, metrics can't be matched
     async fn outbound_tcp_write_bytes_total() {
         let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
+            server_addr,
             proxy: _proxy,
         } = TcpFixture::outbound().await;
         let src_expected = format!(
@@ -1219,7 +1233,8 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_write_bytes_total{{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            "tcp_write_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            server_addr,
             TcpFixture::HELLO_MSG.len()
         );
 
@@ -1235,12 +1250,12 @@ mod transport {
     }
 
     #[tokio::test]
-    #[ignore] // authority includes ephemeral ports, metrics can't be matched
     async fn outbound_tcp_read_bytes_total() {
         let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
+            server_addr,
             proxy: _proxy,
         } = TcpFixture::outbound().await;
         let src_expected = format!(
@@ -1248,7 +1263,8 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_read_bytes_total{{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            "tcp_read_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            server_addr,
             TcpFixture::BYE_MSG.len()
         );
 
@@ -1270,6 +1286,7 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            server_addr: _,
         } = TcpFixture::outbound().await;
 
         let tcp_client = client.connect().await;
