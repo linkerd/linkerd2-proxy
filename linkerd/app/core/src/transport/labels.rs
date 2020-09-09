@@ -24,11 +24,11 @@ impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Accept(direction, identity) => {
-                write!(f, "peer=\"accept\",")?;
+                write!(f, "peer=\"src\",")?;
                 (direction, identity).fmt_labels(f)
             }
             Self::Connect(labels) => {
-                write!(f, "peer=\"connect\",")?;
+                write!(f, "peer=\"dst\",")?;
                 labels.fmt_labels(f)
             }
         }
