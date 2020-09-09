@@ -37,12 +37,6 @@ impl<A: Clone, S> tower::layer::Layer<S> for AdmitLayer<A> {
     }
 }
 
-impl<A, S> AdmitService<A, S> {
-    pub fn new(admit: A, inner: S) -> Self {
-        Self { admit, inner }
-    }
-}
-
 impl<A, T, S> tower::Service<T> for AdmitService<A, S>
 where
     A: Admit<T>,
