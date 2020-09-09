@@ -525,7 +525,7 @@ impl transport::metrics::TransportLabels<HttpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, endpoint: &HttpEndpoint) -> Self::Labels {
-        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+        transport::labels::Key::Connect(endpoint.clone().into())
     }
 }
 
@@ -533,7 +533,7 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, endpoint: &TcpEndpoint) -> Self::Labels {
-        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+        transport::labels::Key::Connect(endpoint.clone().into())
     }
 }
 
@@ -542,7 +542,7 @@ impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
 
     fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
         const NO_TLS: tls::Conditional<()> = Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::accept("outbound", NO_TLS)
+        transport::labels::Key::Accept(transport::labels::Direction::Out, NO_TLS.into())
     }
 }
 

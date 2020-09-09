@@ -58,7 +58,7 @@ pub struct HttpEndpoint {
 pub struct TcpEndpoint {
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
-    //pub labels: Option<String>,
+    pub labels: Option<String>,
 }
 
 // === impl HttpConrete ===
@@ -308,7 +308,7 @@ impl From<SocketAddr> for TcpEndpoint {
         Self {
             addr,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
-            //labels: None,
+            labels: None,
         }
     }
 }
@@ -331,17 +331,17 @@ impl tls::HasPeerIdentity for TcpEndpoint {
     }
 }
 
-// impl Into<EndpointLabels> for TcpEndpoint {
-//     fn into(self) -> EndpointLabels {
-//         use linkerd2_app_core::metric_labels::{Direction, TlsId};
-//         EndpointLabels {
-//             authority: None,
-//             direction: Direction::Out,
-//             labels: self.labels,
-//             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
-//         }
-//     }
-// }
+impl Into<EndpointLabels> for TcpEndpoint {
+    fn into(self) -> EndpointLabels {
+        use linkerd2_app_core::metric_labels::{Direction, TlsId};
+        EndpointLabels {
+            authority: None,
+            direction: Direction::Out,
+            labels: self.labels,
+            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+        }
+    }
+}
 
 impl MapEndpoint<Addr, Metadata> for FromMetadata {
     type Out = TcpEndpoint;
@@ -359,7 +359,7 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
         TcpEndpoint {
             addr,
             identity,
-            //labels: prefix_labels("dst", metadata.labels().into_iter()),
+            labels: prefix_labels("dst", metadata.labels().into_iter()),
         }
     }
 }
