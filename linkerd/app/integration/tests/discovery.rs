@@ -591,7 +591,7 @@ mod http2 {
         // Wait until the proxy has seen the `srv1` disconnect...
         assert_eventually_contains!(
             metrics.get("/metrics").await,
-            "tcp_close_total{direction=\"outbound\",peer=\"dst\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
+            "tcp_close_total{peer=\"dst\",authority=\"disco.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
         );
 
         // Start a new request to the destination, now that the server is dead.
