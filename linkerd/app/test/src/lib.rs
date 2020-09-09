@@ -5,6 +5,7 @@
 #![type_length_limit = "16289823"]
 
 mod test_env;
+pub mod test_plans;
 
 pub use self::test_env::TestEnv;
 pub use bytes::{Buf, BufMut, Bytes};
