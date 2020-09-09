@@ -950,6 +950,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-app-test"
+version = "0.1.0"
+
+[[package]]
 name = "linkerd2-buffer"
 version = "0.1.0"
 dependencies = [
