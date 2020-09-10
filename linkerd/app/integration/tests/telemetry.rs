@@ -90,10 +90,9 @@ impl TcpFixture {
 
     async fn inbound() -> Self {
         let ctrl = controller::new();
-        let server = TcpFixture::server().await;
         let proxy = proxy::new()
             .controller(ctrl.run().await)
-            .inbound(server)
+            .inbound(TcpFixture::server().await)
             .run()
             .await;
 
@@ -108,10 +107,9 @@ impl TcpFixture {
 
     async fn outbound() -> Self {
         let ctrl = controller::new();
-        let server = TcpFixture::server().await;
         let proxy = proxy::new()
             .controller(ctrl.run().await)
-            .outbound(server)
+            .outbound(TcpFixture::server().await)
             .run()
             .await;
 
