@@ -409,10 +409,12 @@ impl transport::metrics::TransportLabels<HttpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, _: &HttpEndpoint) -> Self::Labels {
-        transport::labels::Key::connect::<()>(
-            "inbound",
-            tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
-        )
+        transport::labels::Key::Connect(transport::labels::EndpointLabels {
+            direction: transport::labels::Direction::In,
+            authority: None,
+            labels: None,
+            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
+        })
     }
 }
 
@@ -420,10 +422,12 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, _: &TcpEndpoint) -> Self::Labels {
-        transport::labels::Key::connect::<()>(
-            "inbound",
-            tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
-        )
+        transport::labels::Key::Connect(transport::labels::EndpointLabels {
+            direction: transport::labels::Direction::In,
+            authority: None,
+            labels: None,
+            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
+        })
     }
 }
 
@@ -431,9 +435,9 @@ impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
-        transport::labels::Key::accept::<()>(
-            "inbound",
-            tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
+        transport::labels::Key::Accept(
+            transport::labels::Direction::In,
+            tls::Conditional::<()>::None(tls::ReasonForNoPeerName::PortSkipped).into(),
         )
     }
 }
@@ -442,7 +446,10 @@ impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels 
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
-        transport::labels::Key::accept("inbound", target.peer_identity.as_ref())
+        transport::labels::Key::Accept(
+            transport::labels::Direction::In,
+            target.peer_identity.as_ref().into(),
+        )
     }
 }
 

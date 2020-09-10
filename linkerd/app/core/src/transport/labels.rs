@@ -1,4 +1,5 @@
 use super::tls;
+pub use crate::metric_labels::{Direction, EndpointLabels};
 use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use std::fmt;
@@ -8,68 +9,28 @@ use std::fmt;
 /// A `Metrics` type exists for each unique `Key`.
 ///
 /// Implements `FmtLabels`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Key {
-    direction: Direction,
-    peer: Peer,
-    tls_status: TlsStatus,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-struct Direction(&'static str);
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-enum Peer {
-    /// Represents the side of the proxy that accepts connections.
-    Src,
-    /// Represents the side of the proxy that opens connections.
-    Dst,
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Key {
+    Accept(Direction, TlsStatus),
+    Connect(EndpointLabels),
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsStatus(tls::Conditional<()>);
 
-// ===== impl Key =====
-
-impl Key {
-    pub fn accept<T>(direction: &'static str, tls: tls::Conditional<T>) -> Self {
-        Self {
-            direction: Direction(direction),
-            tls_status: TlsStatus(tls.map(|_| ())),
-            peer: Peer::Src,
-        }
-    }
-
-    pub fn connect<T>(direction: &'static str, tls: tls::Conditional<T>) -> Self {
-        Self {
-            direction: Direction(direction),
-            tls_status: TlsStatus(tls.map(|_| ())),
-            peer: Peer::Dst,
-        }
-    }
-}
+// === impl Key ===
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ((self.direction, self.peer), self.tls_status).fmt_labels(f)
-    }
-}
-
-// ===== impl Peer =====
-
-impl FmtLabels for Direction {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "direction=\"{}\"", self.0)
-    }
-}
-
-// ===== impl Peer =====
-
-impl FmtLabels for Peer {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Peer::Src => f.pad("peer=\"src\""),
-            Peer::Dst => f.pad("peer=\"dst\""),
+            Self::Accept(direction, identity) => {
+                write!(f, "peer=\"src\",")?;
+                (direction, identity).fmt_labels(f)
+            }
+            Self::Connect(labels) => {
+                write!(f, "peer=\"dst\",")?;
+                labels.fmt_labels(f)
+            }
         }
     }
 }

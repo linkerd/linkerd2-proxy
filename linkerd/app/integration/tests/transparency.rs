@@ -1310,7 +1310,7 @@ async fn retry_reconnect_errors() {
     // all the other threads currently running...
     assert_eventually_contains!(
         metrics.get("/metrics").await,
-        "tcp_open_total{direction=\"inbound\",peer=\"src\",tls=\"disabled\"} 1"
+        "tcp_open_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\"} 1"
     );
 
     drop(tx); // start `listen` now

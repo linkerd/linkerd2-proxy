@@ -461,7 +461,7 @@ impl Config {
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(tcp_connect.clone())
             .push_make_thunk()
-            .instrument(|t: &TcpEndpoint| info_span!("tcp.endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
+            .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .push(admit::AdmitLayer::new(prevent_loop))
             .check_make_service::<TcpEndpoint, ()>()
             .push(discover::resolve(map_endpoint::Resolve::new(
@@ -471,13 +471,12 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age))
             .push_map_target(Addr::from)
             .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .instrument(|a: &SocketAddr| info_span!("tcp.balance", dst = %a))
             .push_fallback_with_predicate(
                 svc::stack(tcp_connect.clone())
                     .push_make_thunk()
                     .push(admit::AdmitLayer::new(prevent_loop))
                     .push_map_target(TcpEndpoint::from)
-                    .instrument(|a: &SocketAddr| info_span!("tcp.forward", peer.addr = %a)),
+                    .instrument(|_: &SocketAddr| info_span!("forward")),
                 is_discovery_rejected,
             )
             .into_new_service()
@@ -493,6 +492,7 @@ impl Config {
             .spawn_buffer(buffer_capacity)
             .check_make_service::<SocketAddr, ()>()
             .push(svc::layer::mk(tcp::Forward::new))
+            .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
             .push_map_target(|a: listen::Addrs| a.target_addr());
 
         let http = http::DetectHttp::new(
@@ -528,7 +528,7 @@ impl transport::metrics::TransportLabels<HttpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, endpoint: &HttpEndpoint) -> Self::Labels {
-        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+        transport::labels::Key::Connect(endpoint.clone().into())
     }
 }
 
@@ -536,7 +536,7 @@ impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, endpoint: &TcpEndpoint) -> Self::Labels {
-        transport::labels::Key::connect("outbound", endpoint.identity.as_ref())
+        transport::labels::Key::Connect(endpoint.clone().into())
     }
 }
 
@@ -545,7 +545,7 @@ impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
 
     fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
         const NO_TLS: tls::Conditional<()> = Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::accept("outbound", NO_TLS)
+        transport::labels::Key::Accept(transport::labels::Direction::Out, NO_TLS.into())
     }
 }
 
