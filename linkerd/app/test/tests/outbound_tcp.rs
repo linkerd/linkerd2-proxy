@@ -33,16 +33,23 @@ async fn it_basically_works() {
     let peer_addr = "127.0.0.1:420".parse::<SocketAddr>().unwrap();
     let prevent_loop = linkerd2_app_outbound::PreventLoop::from(local_addr.port());
 
-    let mut endpoint_io = mock::io();
-    endpoint_io.read(b"hello").write(b"world");
+    // Configure mock IO for the upstream "server". It will read "hello" and
+    // then write "world".
+    let mut srv_io = mock::io();
+    srv_io.read(b"hello").write(b"world");
+    let connect = mock::connect().endpoint_builder(target_addr, srv_io);
 
+    // Configure mock IO for the "client".
+    let client_io = mock::io().write(b"hello").read(b"world").build();
+
+    // Configure the mock destination resolver to just give us a single endpoint
+    // for the target, which always exists and has no metadata.
     let resolver = mock::resolver().endpoint_exists(
         Addr::from(target_addr),
         target_addr,
         mock::resolver::Metadata::empty(),
     );
 
-    let connect = mock::connect().endpoint_builder(target_addr, endpoint_io);
     let outbound_tcp =
         config
             .outbound
@@ -55,7 +62,5 @@ async fn it_basically_works() {
         ))
         .await
         .expect("make service should succeed");
-    svc.oneshot(mock::io().write(b"hello").read(b"world").build())
-        .await
-        .expect("conn should succeed")
+    svc.oneshot(client_io).await.expect("conn should succeed")
 }
