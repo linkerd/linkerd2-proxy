@@ -1,11 +1,19 @@
+pub mod connect;
 pub mod refine;
 pub mod resolver;
-use linkerd2_app_core::Error;
+pub use tokio_test::io;
 
-pub fn resolver<A, T, E>() -> resolver::Resolver<A, T, E>
+pub fn resolver<T, E>() -> resolver::Resolver<T, E>
 where
-    E: Into<Error>,
-    A: std::hash::Hash + Eq,
+    T: std::hash::Hash + Eq,
 {
     resolver::Resolver::new()
+}
+
+pub fn connect() -> connect::Connect {
+    connect::Connect::new()
+}
+
+pub fn io() -> io::Builder {
+    io::Builder::new()
 }

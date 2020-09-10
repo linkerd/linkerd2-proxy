@@ -10,7 +10,7 @@ pub mod metrics;
 pub mod oc_collector;
 pub mod tap;
 
-use self::metrics::Metrics;
+pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, trace};
 use linkerd2_app_core::{control::ControlAddr, dns, drain, svc, Error};

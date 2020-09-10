@@ -39,7 +39,7 @@ mod prevent_loop;
 mod require_identity_on_endpoint;
 
 use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
-use self::prevent_loop::PreventLoop;
+pub use self::prevent_loop::PreventLoop;
 use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);

@@ -15,6 +15,7 @@ pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
 pub use linkerd2_app as app;
 pub use linkerd2_app_core::drain;
+pub use linkerd2_app_core::Addr;
 use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;
