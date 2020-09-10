@@ -4,8 +4,8 @@
 #![recursion_limit = "256"]
 #![type_length_limit = "16289823"]
 
+pub mod mock;
 mod test_env;
-pub mod test_plans;
 
 pub use self::test_env::TestEnv;
 pub use bytes::{Buf, BufMut, Bytes};
