@@ -23,7 +23,7 @@ pub mod resolver;
 
 pub fn resolver<T, E>() -> resolver::Resolver<T, E>
 where
-    T: std::hash::Hash + Eq,
+    T: std::hash::Hash + Eq + std::fmt::Debug,
 {
     resolver::Resolver::new()
 }

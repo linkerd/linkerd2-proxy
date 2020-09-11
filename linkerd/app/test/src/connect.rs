@@ -1,6 +1,5 @@
 use linkerd2_app_core::Error;
 use std::collections::HashMap;
-use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -19,7 +18,7 @@ pub struct Connect {
 
 impl<E> tower::Service<E> for Connect
 where
-    E: Into<SocketAddr> + fmt::Debug,
+    E: Into<SocketAddr>,
 {
     type Response = io::Mock;
     type Future = ConnectFuture;
@@ -31,6 +30,7 @@ where
 
     fn call(&mut self, endpoint: E) -> Self::Future {
         let addr = endpoint.into();
+        tracing::trace!(%addr, "connect");
         match self.endpoints.lock().unwrap().get_mut(&addr) {
             Some(f) => (f)(),
             None => panic!("did not expect to connect to the endpoint {}", addr),

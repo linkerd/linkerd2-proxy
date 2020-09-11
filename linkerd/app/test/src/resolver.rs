@@ -71,7 +71,7 @@ where
 
 impl<T, E> tower::Service<T> for Resolver<T, E>
 where
-    T: Hash + Eq,
+    T: Hash + Eq + std::fmt::Debug,
 {
     type Response = Rx<E>;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
@@ -82,13 +82,21 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
+        let span = tracing::trace_span!("mock_resolver", ?target);
+        let _e = span.enter();
+
         let res = self
             .state
             .endpoints
             .lock()
             .unwrap()
             .remove(&target)
+            .map(|x| {
+                tracing::trace!("found endpoint for target");
+                x
+            })
             .unwrap_or_else(|| {
+                tracing::debug!(?target, "no endpoint configured for");
                 // An unknown endpoint was resolved!
                 self.state
                     .only
