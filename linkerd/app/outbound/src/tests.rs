@@ -52,7 +52,7 @@ fn default_config(orig_dst: SocketAddr) -> Config {
     }
 }
 
-#[tokio::test]
+#[tokio::test(core_threads = 1)]
 async fn hello_world() {
     let _trace = test_support::trace_init();
 
