@@ -955,35 +955,22 @@ dependencies = [
 name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.4",
- "flate2",
  "futures 0.3.5",
  "h2 0.2.6",
  "http 0.2.1",
  "http-body",
  "hyper",
- "linkerd2-app",
  "linkerd2-app-core",
- "linkerd2-app-outbound",
- "linkerd2-metrics",
- "linkerd2-proxy-api",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-transport",
- "quickcheck",
  "regex 0.1.80",
- "ring",
- "rustls",
- "socket2",
  "tokio",
- "tokio-rustls",
  "tokio-test",
- "tonic",
  "tower",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",
- "webpki",
 ]
 
 [[package]]
