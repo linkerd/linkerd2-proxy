@@ -7,6 +7,7 @@ use tower::ServiceExt;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 const LISTEN_PORT: u16 = 4140;
+
 fn default_config(orig_dst: SocketAddr) -> Config {
     use app_core::{
         config::{ConnectConfig, ProxyConfig, ServerConfig},
@@ -55,6 +56,10 @@ fn default_config(orig_dst: SocketAddr) -> Config {
 async fn hello_world() {
     let _trace = test_support::trace_init();
 
+    // Since all of the actual IO in this test is mocked out, we won't actually
+    // bind any of these addresses. Therefore, we don't need to use ephemeral
+    // ports or anything. These will just be used so that the proxy has a socket
+    // address to resolve, etc.
     let target_addr = SocketAddr::new(LOCALHOST.into(), 666);
     let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
     let peer_addr = SocketAddr::new(LOCALHOST.into(), 420);
@@ -68,6 +73,7 @@ async fn hello_world() {
     // then write "world".
     let mut srv_io = test_support::io();
     srv_io.read(b"hello").write(b"world");
+    // Build a mock "connector" that returns the upstream "server" IO.
     let connect = test_support::connect().endpoint_builder(target_addr, srv_io);
 
     // Configure mock IO for the "client".
@@ -80,6 +86,8 @@ async fn hello_world() {
         target_addr,
         test_support::resolver::Metadata::empty(),
     );
+
+    // Build the outbound TCP balancer stack.
     let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
     let svc = outbound_tcp
         .oneshot(listen::Addrs::new(local_addr, peer_addr, Some(target_addr)))
