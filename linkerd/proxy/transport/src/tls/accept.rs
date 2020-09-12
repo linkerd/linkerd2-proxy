@@ -286,3 +286,9 @@ impl std::fmt::Display for DetectTimeout {
 }
 
 impl std::error::Error for DetectTimeout {}
+
+impl<'t> Into<std::net::SocketAddr> for &'t Meta {
+    fn into(self) -> std::net::SocketAddr {
+        (&self.addrs).into()
+    }
+}

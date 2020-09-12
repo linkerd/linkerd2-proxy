@@ -1,19 +1,44 @@
 use super::h1;
-use std::task::{Context, Poll};
+use linkerd2_stack::{layer, NewService};
+use std::{
+    net::SocketAddr,
+    str::FromStr,
+    task::{Context, Poll},
+};
 use tracing::trace;
+
+pub fn layer<M>() -> impl layer::Layer<M, Service = MakeNormalizeUri<M>> + Copy {
+    layer::mk(|inner| MakeNormalizeUri { inner })
+}
+
+#[derive(Clone, Debug)]
+pub struct MakeNormalizeUri<S> {
+    inner: S,
+}
 
 #[derive(Clone, Debug)]
 pub struct NormalizeUri<S> {
     inner: S,
+    orig_dst: SocketAddr,
+}
+
+// === impl MakeNormalizeUri ===
+
+impl<T, M> NewService<T> for MakeNormalizeUri<M>
+where
+    for<'t> &'t T: Into<SocketAddr>,
+    M: NewService<T>,
+{
+    type Service = NormalizeUri<M::Service>;
+
+    fn new_service(&self, target: T) -> Self::Service {
+        let orig_dst = (&target).into();
+        let inner = self.inner.new_service(target);
+        NormalizeUri { inner, orig_dst }
+    }
 }
 
 // === impl NormalizeUri ===
-
-impl<S> NormalizeUri<S> {
-    pub fn new(inner: S) -> Self {
-        NormalizeUri { inner }
-    }
-}
 
 impl<S, B> tower::Service<http::Request<B>> for NormalizeUri<S>
 where
@@ -39,12 +64,11 @@ where
                     trace!(uri = ?req.uri(), "Absolute");
                     req.extensions_mut().insert(h1::WasAbsoluteForm(()));
                 } else if req.uri().authority().is_none() {
-                    if let Some(host) = h1::authority_from_host(&req) {
-                        trace!(%host, "Normalizing URI");
-                        h1::set_authority(req.uri_mut(), host);
-                    } else {
-                        trace!("Missing Host");
-                    }
+                    let host = h1::authority_from_host(&req).unwrap_or_else(|| {
+                        http::uri::Authority::from_str(&self.orig_dst.to_string()).unwrap()
+                    });
+                    trace!(%host, "Normalizing URI");
+                    h1::set_authority(req.uri_mut(), host);
                 }
             }
         }

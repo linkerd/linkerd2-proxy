@@ -2,7 +2,6 @@ use crate::{
     self as http,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
-    normalize_uri::NormalizeUri,
     trace, upgrade, Version as HttpVersion,
 };
 use futures::prelude::*;
@@ -164,7 +163,7 @@ where
                 Some(HttpVersion::Http1) => {
                     trace!("Handling as HTTP");
                     // Enable support for HTTP upgrades (CONNECT and websockets).
-                    let http = NormalizeUri::new(upgrade::Service::new(http, drain.clone()));
+                    let http = upgrade::Service::new(http, drain.clone());
                     let conn = server
                         .http1_only(true)
                         .serve_connection(io, HyperServerSvc::new(http))

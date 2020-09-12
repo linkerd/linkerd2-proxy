@@ -66,10 +66,7 @@ where
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == &http::Method::CONNECT;
 
-        // If there's a `HOST` header, it must have been set as the authority
-        // via NormalizeUri.
-        let is_missing_authority = req.uri().authority().is_none();
-
+        let is_missing_authority = req.headers().get(http::header::HOST).map(|v| v.is_empty()).unwrap_or(true);
         let rsp_fut = if req.version() == http::Version::HTTP_10 || is_missing_authority {
             // If there's no authority, we assume we're on some weird HTTP/1.0
             // ish, so we just build a one-off client for the connection.
@@ -90,12 +87,15 @@ where
             // (HTTP proxy-style) URIs, so we cache separate absolute/relative
             // clients lazily.
             let client = if absolute_form {
+                debug!("Using absolute client");
                 &mut self.absolute
             } else {
+                debug!("Using relative client");
                 &mut self.relative
             };
 
             if client.is_none() {
+                debug!("Caching new client");
                 *client = Some(hyper::Client::builder().set_host(absolute_form).build(
                     HyperConnect::new(self.connect.clone(), self.target.clone(), absolute_form),
                 ));
@@ -114,7 +114,7 @@ where
             }
 
             if is_upgrade(&rsp) {
-                trace!("client response is HTTP/1.1 upgrade");
+                trace!("Client response is HTTP/1.1 upgrade");
             } else {
                 strip_connection_headers(rsp.headers_mut());
             }
