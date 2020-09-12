@@ -22,7 +22,6 @@ pub struct UpgradeFuture<F> {
     can_upgrade: bool,
     #[pin]
     inner: F,
-    was_absolute: bool,
 }
 
 impl OrigProtoUpgradeLayer {
@@ -53,16 +52,14 @@ where
             return Either::B(self.inner.new_service(endpoint));
         }
 
-        let was_absolute = endpoint.settings.was_absolute_form();
         trace!(
             header = %orig_proto::L5D_ORIG_PROTO,
-            was_absolute,
             "Endpoint supports transparent HTTP/2 upgrades",
         );
         endpoint.settings = Settings::Http2;
 
         let inner = self.inner.new_service(endpoint);
-        Either::A(orig_proto::Upgrade::new(inner, was_absolute))
+        Either::A(orig_proto::Upgrade::new(inner))
     }
 }
 
@@ -81,23 +78,16 @@ where
     fn call(&mut self, mut endpoint: HttpEndpoint) -> Self::Future {
         let can_upgrade = endpoint.can_use_orig_proto();
 
-        let was_absolute = endpoint.settings.was_absolute_form();
-
         if can_upgrade {
             trace!(
                 header = %orig_proto::L5D_ORIG_PROTO,
-                %was_absolute,
                 "Endpoint supports transparent HTTP/2 upgrades",
             );
             endpoint.settings = Settings::Http2;
         }
 
         let inner = self.inner.call(endpoint);
-        UpgradeFuture {
-            can_upgrade,
-            inner,
-            was_absolute,
-        }
+        UpgradeFuture { can_upgrade, inner }
     }
 }
 
@@ -114,7 +104,7 @@ where
         let inner = ready!(this.inner.try_poll(cx))?;
 
         if *this.can_upgrade {
-            let upgrade = orig_proto::Upgrade::new(inner, *this.was_absolute);
+            let upgrade = orig_proto::Upgrade::new(inner);
             Poll::Ready(Ok(Either::A(upgrade)))
         } else {
             Poll::Ready(Ok(Either::B(inner)))

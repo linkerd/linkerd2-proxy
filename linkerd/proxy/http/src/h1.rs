@@ -1,45 +1,137 @@
-use super::upgrade::HttpConnect;
-use http;
-use http::header::{CONNECTION, HOST, UPGRADE};
-use http::uri::{Authority, Parts, Scheme, Uri};
-use std::mem;
+use crate::{
+    glue::{Body, HyperConnect},
+    upgrade::{Http11Upgrade, HttpConnect},
+};
+use futures::prelude::*;
+use http::{
+    header::{CONNECTION, HOST, UPGRADE},
+    uri::{Authority, Parts, Scheme, Uri},
+};
+use linkerd2_error::Error;
+use std::{future::Future, mem, pin::Pin};
 use tracing::{debug, trace};
 
-/// Tries to make sure the `Uri` of the request is in a form needed by
-/// hyper's Client.
-pub fn normalize_our_view_of_uri<B>(req: &mut http::Request<B>) {
-    trace!(uri = %req.uri());
-    debug_assert!(
-        req.uri().scheme().is_none(),
-        "normalize_uri shouldn't be called with absolute URIs: {:?}",
-        req.uri()
-    );
+#[derive(Debug)]
+pub struct UnsupportedHTTPVersion(http::Version);
 
-    // try to parse the Host header
-    if let Some(host) = authority_from_host(&req) {
-        trace!(%host, "normalizing URI");
-        set_authority(req.uri_mut(), host);
-        return;
+#[derive(Copy, Clone, Debug)]
+pub struct WasAbsoluteForm(pub(crate) ());
+
+pub struct Client<C, T, B> {
+    connect: C,
+    target: T,
+    absolute: Option<hyper::Client<HyperConnect<C, T>, B>>,
+    relative: Option<hyper::Client<HyperConnect<C, T>, B>>,
+}
+
+impl<C, T, B> Client<C, T, B> {
+    pub fn new(connect: C, target: T) -> Self {
+        Self {
+            connect,
+            target,
+            absolute: None,
+            relative: None,
+        }
     }
-
-    trace!("not normalizing");
 }
 
-/// Convert any URI into its origin-form (relative path part only).
-pub fn set_origin_form(uri: &mut Uri) {
-    trace!(%uri, "Setting origin form");
-    let mut parts = mem::replace(uri, Uri::default()).into_parts();
-    parts.scheme = None;
-    parts.authority = None;
-    *uri = Uri::from_parts(parts).expect("path only is valid origin-form uri")
+impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
+    fn clone(&self) -> Self {
+        Self {
+            connect: self.connect.clone(),
+            target: self.target.clone(),
+            absolute: self.absolute.clone(),
+            relative: self.relative.clone(),
+        }
+    }
 }
+
+impl<C, T, B> Client<C, T, B>
+where
+    T: Clone + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C::Connection: Unpin + Send + 'static,
+    C::Future: Unpin + Send + 'static,
+    C::Error: Into<Error>,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Error> + Send + Sync,
+{
+    pub fn request(
+        &mut self,
+        mut req: http::Request<B>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>
+    {
+        let absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
+        let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
+        let is_http_connect = req.method() == &http::Method::CONNECT;
+
+        // If there's a `HOST` header, it must have been set as the authority
+        // via NormalizeUri.
+        let is_missing_authority = req.uri().authority().is_none();
+
+        let rsp_fut = if req.version() == http::Version::HTTP_10 || is_missing_authority {
+            // If there's no authority, we assume we're on some weird HTTP/1.0
+            // ish, so we just build a one-off client for the connection.
+            // There's no real reason to hold the client for re-use.
+            debug!(absolute_form, is_missing_authority, "Using one-off client");
+            hyper::Client::builder()
+                .pool_max_idle_per_host(0)
+                .set_host(absolute_form)
+                .build(HyperConnect::new(
+                    self.connect.clone(),
+                    self.target.clone(),
+                    absolute_form,
+                ))
+                .request(req)
+        } else {
+            // Otherwise, use a cached client to take advantage of the
+            // connection pool. The client needs to be configured for absolute
+            // (HTTP proxy-style) URIs, so we cache separate absolute/relative
+            // clients lazily.
+            let client = if absolute_form {
+                &mut self.absolute
+            } else {
+                &mut self.relative
+            };
+
+            if client.is_none() {
+                *client = Some(hyper::Client::builder().set_host(absolute_form).build(
+                    HyperConnect::new(self.connect.clone(), self.target.clone(), absolute_form),
+                ));
+            }
+
+            client.as_ref().unwrap().request(req)
+        };
+
+        Box::pin(rsp_fut.map_ok(move |mut rsp| {
+            if is_http_connect {
+                debug_assert!(
+                    upgrade.is_some(),
+                    "Upgrade extension must be set on CONNECT requests"
+                );
+                rsp.extensions_mut().insert(HttpConnect);
+            }
+
+            if is_upgrade(&rsp) {
+                trace!("client response is HTTP/1.1 upgrade");
+            } else {
+                strip_connection_headers(rsp.headers_mut());
+            }
+
+            rsp.map(move |b| Body::new(b, upgrade))
+        }))
+    }
+}
+
+// === HTTP/1 utils ===
 
 /// Returns an Authority from a request's Host header.
 pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
     super::authority_from_header(req, HOST)
 }
 
-pub fn set_authority(uri: &mut http::Uri, auth: Authority) {
+pub(crate) fn set_authority(uri: &mut http::Uri, auth: Authority) {
     let mut parts = Parts::from(mem::replace(uri, Uri::default()));
 
     parts.authority = Some(auth);
@@ -59,7 +151,7 @@ pub fn set_authority(uri: &mut http::Uri, auth: Authority) {
     *uri = new;
 }
 
-pub fn strip_connection_headers(headers: &mut http::HeaderMap) {
+pub(crate) fn strip_connection_headers(headers: &mut http::HeaderMap) {
     if let Some(val) = headers.remove(CONNECTION) {
         if let Ok(conn_header) = val.to_str() {
             // A `Connection` header may have a comma-separated list of
@@ -82,7 +174,7 @@ pub fn strip_connection_headers(headers: &mut http::HeaderMap) {
 }
 
 /// Checks requests to determine if they want to perform an HTTP upgrade.
-pub fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
+pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
     // HTTP upgrades were added in 1.1, not 1.0.
     if req.version() != http::Version::HTTP_11 {
         return false;
@@ -106,7 +198,7 @@ pub fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
 }
 
 /// Checks responses to determine if they are successful HTTP upgrades.
-pub fn is_upgrade<B>(res: &http::Response<B>) -> bool {
+pub(crate) fn is_upgrade<B>(res: &http::Response<B>) -> bool {
     // Upgrades were introduced in HTTP/1.1
     if res.version() != http::Version::HTTP_11 {
         return false;
@@ -134,7 +226,7 @@ pub fn is_upgrade<B>(res: &http::Response<B>) -> bool {
 ///
 /// - `/docs`
 /// - `example.com`
-pub fn is_absolute_form(uri: &Uri) -> bool {
+pub(crate) fn is_absolute_form(uri: &Uri) -> bool {
     // It's sufficient just to check for a scheme, since in HTTP1,
     // it's required in absolute-form, and `http::Uri` doesn't
     // allow URIs with the other parts missing when the scheme is set.
@@ -160,7 +252,7 @@ fn is_origin_form(uri: &Uri) -> bool {
 ///
 /// - `GET example.com`
 /// - `CONNECT /just-a-path
-pub fn is_bad_request<B>(req: &http::Request<B>) -> bool {
+pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
     if req.method() == &http::Method::CONNECT {
         // CONNECT is only valid over HTTP/1.1
         if req.version() != http::Version::HTTP_11 {

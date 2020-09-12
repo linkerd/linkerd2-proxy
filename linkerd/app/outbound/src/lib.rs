@@ -179,8 +179,6 @@ impl Config {
                 HOST.as_str(),
                 CANONICAL_DST_HEADER,
             ]))
-            // Ensures that the request's URI is in the proper form.
-            .push(http::normalize_uri::layer())
             // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
             //
             // This sets headers so that the inbound proxy can downgrade the request

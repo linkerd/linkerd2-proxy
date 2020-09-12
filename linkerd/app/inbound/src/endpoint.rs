@@ -53,9 +53,9 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl AsRef<http::Settings> for HttpEndpoint {
-    fn as_ref(&self) -> &http::Settings {
-        &self.settings
+impl<'t> Into<http::Settings> for &'t HttpEndpoint {
+    fn into(self) -> http::Settings {
+        self.settings
     }
 }
 
@@ -119,19 +119,6 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 impl AsRef<Addr> for Target {
     fn as_ref(&self) -> &Addr {
         &self.dst
-    }
-}
-
-impl http::normalize_uri::ShouldNormalizeUri for Target {
-    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-        if let http::Settings::Http1 {
-            was_absolute_form: false,
-            ..
-        } = self.http_settings
-        {
-            return Some(self.dst.to_http_authority());
-        }
-        None
     }
 }
 
@@ -231,25 +218,15 @@ impl stack_tracing::GetSpan<()> for Target {
                     port = %self.socket_addr.port(),
                 ),
             },
-            http::Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                was_absolute_form,
-            } => match self.dst.name_addr() {
+            http::Settings::Http1 => match self.dst.name_addr() {
                 None => info_span!(
                     "http1",
                     port = %self.socket_addr.port(),
-                    keep_alive,
-                    wants_h1_upgrade,
-                    was_absolute_form,
                 ),
                 Some(name) => info_span!(
                     "http1",
                     %name,
                     port = %self.socket_addr.port(),
-                    keep_alive,
-                    wants_h1_upgrade,
-                    was_absolute_form,
                 ),
             },
         }

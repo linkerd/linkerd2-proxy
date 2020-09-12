@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
         http::override_authority::CanOverrideAuthority,
-        http::{self, identity_from_header, Settings},
+        http::{self, identity_from_header},
         identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
@@ -148,17 +148,7 @@ impl From<HttpLogical> for HttpEndpoint {
 
 impl HttpEndpoint {
     pub fn can_use_orig_proto(&self) -> bool {
-        if let ProtocolHint::Unknown = self.metadata.protocol_hint() {
-            return false;
-        }
-
-        // Look at the original settings, ignoring any authority overrides.
-        match self.settings {
-            http::Settings::Http2 => false,
-            http::Settings::Http1 {
-                wants_h1_upgrade, ..
-            } => !wants_h1_upgrade,
-        }
+        self.metadata.protocol_hint() == ProtocolHint::Http2
     }
 }
 
@@ -182,22 +172,9 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl AsRef<http::Settings> for HttpEndpoint {
-    fn as_ref(&self) -> &http::Settings {
-        &self.settings
-    }
-}
-
-impl http::normalize_uri::ShouldNormalizeUri for HttpEndpoint {
-    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-        if let http::Settings::Http1 {
-            was_absolute_form: false,
-            ..
-        } = self.settings
-        {
-            return Some(self.concrete.logical.dst.to_http_authority());
-        }
-        None
+impl<'t> Into<http::Settings> for &'t HttpEndpoint {
+    fn into(self) -> http::Settings {
+        self.settings
     }
 }
 
@@ -260,25 +237,11 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
             });
 
-        let settings = match concrete.logical.settings {
-            Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                was_absolute_form,
-            } => Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                // Always use absolute form when an onverride is present.
-                was_absolute_form: metadata.authority_override().is_some() || was_absolute_form,
-            },
-            settings => settings,
-        };
-
         HttpEndpoint {
             addr,
             identity,
             metadata,
-            settings,
+            settings: concrete.logical.settings,
             concrete: concrete.clone(),
         }
     }

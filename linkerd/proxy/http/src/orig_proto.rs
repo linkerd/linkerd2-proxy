@@ -1,4 +1,4 @@
-use super::h1;
+use super::{h1, upgrade};
 use futures::{future, ready, TryFuture, TryFutureExt};
 use http;
 use http::header::{HeaderValue, TRANSFER_ENCODING};
@@ -6,7 +6,7 @@ use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 
@@ -14,7 +14,6 @@ pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 #[derive(Clone, Debug)]
 pub struct Upgrade<S> {
     inner: S,
-    absolute_form: bool,
 }
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
@@ -27,11 +26,8 @@ pub struct Downgrade<S> {
 // ==== impl Upgrade =====
 
 impl<S> Upgrade<S> {
-    pub fn new(inner: S, absolute_form: bool) -> Self {
-        Self {
-            inner,
-            absolute_form,
-        }
+    pub fn new(inner: S) -> Self {
+        Self { inner }
     }
 }
 
@@ -48,31 +44,41 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
-        debug_assert!(
-            req.version() != http::Version::HTTP_2 && !h1::wants_upgrade(&req),
-            "illegal request routed to orig-proto Upgrade",
-        );
-
         let version = req.version();
+        if version != http::Version::HTTP_2
+            && version != http::Version::HTTP_3
+            && req.extensions().get::<upgrade::Http11Upgrade>().is_none()
+        {
+            let absolute_form = req
+                .extensions_mut()
+                .remove::<h1::WasAbsoluteForm>()
+                .is_some();
+            debug!(?version, absolute_form, "Upgrading request");
 
-        // absolute-form is far less common, origin-form is the usual,
-        // so only encode the extra information if it's different than
-        // the normal.
-        let val = match (version, self.absolute_form) {
-            (http::Version::HTTP_11, false) => "HTTP/1.1",
-            (http::Version::HTTP_11, true) => "HTTP/1.1; absolute-form",
-            (http::Version::HTTP_10, false) => "HTTP/1.0",
-            (http::Version::HTTP_10, true) => "HTTP/1.0; absolute-form",
-            (v, _) => unreachable!("bad orig-proto version: {:?}", v),
-        };
-        debug!("Upgrading request to HTTP2 from {}", val);
-        req.headers_mut()
-            .insert(L5D_ORIG_PROTO, HeaderValue::from_static(val));
+            // absolute-form is far less common, origin-form is the usual,
+            // so only encode the extra information if it's different than
+            // the normal.
+            let val = match (version, absolute_form) {
+                (http::Version::HTTP_11, false) => "HTTP/1.1",
+                (http::Version::HTTP_11, true) => "HTTP/1.1; absolute-form",
+                (http::Version::HTTP_10, false) => "HTTP/1.0",
+                (http::Version::HTTP_10, true) => "HTTP/1.0; absolute-form",
+                (v, _) => unreachable!("bad orig-proto version: {:?}", v),
+            };
+            req.headers_mut()
+                .insert(L5D_ORIG_PROTO, HeaderValue::from_static(val));
 
-        // transfer-encoding is illegal in HTTP2
-        req.headers_mut().remove(TRANSFER_ENCODING);
+            // transfer-encoding is illegal in HTTP2
+            req.headers_mut().remove(TRANSFER_ENCODING);
 
-        *req.version_mut() = http::Version::HTTP_2;
+            *req.version_mut() = http::Version::HTTP_2;
+        } else {
+            trace!(
+                ?version,
+                http.upgrade = req.extensions().get::<upgrade::Http11Upgrade>().is_some(),
+                "Skipping upgrade",
+            );
+        }
 
         UpgradeFuture {
             version,
@@ -156,8 +162,8 @@ where
                     warn!("unknown {} header value: {:?}", L5D_ORIG_PROTO, orig_proto,);
                 }
 
-                if !was_absolute_form(val) {
-                    h1::set_origin_form(req.uri_mut());
+                if was_absolute_form(val) {
+                    req.extensions_mut().insert(h1::WasAbsoluteForm(()));
                 }
                 upgrade_response = true;
             }
