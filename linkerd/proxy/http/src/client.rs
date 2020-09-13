@@ -1,6 +1,7 @@
 use crate::{glue::Body, h1, h2, Settings};
 use futures::prelude::*;
 use linkerd2_error::Error;
+use linkerd2_stack::layer;
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -9,13 +10,6 @@ use std::{
 use tower::ServiceExt;
 use tracing::{debug, debug_span, info, trace};
 use tracing_futures::{Instrument, Instrumented};
-
-/// Configures an HTTP client that uses a `C`-typed connector
-#[derive(Debug)]
-pub struct MakeClientLayer<B> {
-    h2_settings: crate::h2::Settings,
-    _marker: PhantomData<fn() -> B>,
-}
 
 /// A `MakeService` that can speak either HTTP/1 or HTTP/2.
 pub struct MakeClient<C, B> {
@@ -30,36 +24,14 @@ pub struct Client<C, T, B> {
     h2: Option<h2::Connection<B>>,
 }
 
-// === impl MakeClientLayer ===
-
-impl<B> MakeClientLayer<B> {
-    pub fn new(h2_settings: crate::h2::Settings) -> Self {
-        Self {
-            h2_settings,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<B> Clone for MakeClientLayer<B> {
-    fn clone(&self) -> Self {
-        Self {
-            h2_settings: self.h2_settings,
-            _marker: self._marker,
-        }
-    }
-}
-
-impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B> {
-    type Service = MakeClient<C, B>;
-
-    fn layer(&self, connect: C) -> Self::Service {
-        MakeClient {
-            connect,
-            h2_settings: self.h2_settings,
-            _marker: PhantomData,
-        }
-    }
+pub fn layer<C, B>(
+    h2_settings: h2::Settings,
+) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Copy {
+    layer::mk(move |connect: C| MakeClient {
+        connect,
+        h2_settings,
+        _marker: PhantomData,
+    })
 }
 
 // === impl MakeClient ===
@@ -88,20 +60,20 @@ where
         let connect = self.connect.clone();
         let h2_settings = self.h2_settings;
 
-        trace!("Building HTTP client");
-        let h1 = h1::Client::new(connect.clone(), target.clone());
-
         Box::pin(async move {
             let h2 = match (&target).into() {
                 Settings::Http1 => None,
                 Settings::Http2 => {
                     trace!("Building H2 client");
-                    let h2 = h2::Connect::new(connect, h2_settings)
-                        .oneshot(target)
+                    let h2 = h2::Connect::new(connect.clone(), h2_settings)
+                        .oneshot(target.clone())
                         .await?;
                     Some(h2)
                 }
             };
+
+            trace!("Building HTTP client");
+            let h1 = h1::Client::new(connect, target);
 
             Ok(Client { h1, h2 })
         })

@@ -25,7 +25,6 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    client::MakeClientLayer,
     detect::DetectHttp,
     glue::{Body, HyperServerSvc},
     settings::Settings,

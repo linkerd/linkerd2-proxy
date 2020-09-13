@@ -66,7 +66,11 @@ where
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == &http::Method::CONNECT;
 
-        let is_missing_authority = req.headers().get(http::header::HOST).map(|v| v.is_empty()).unwrap_or(true);
+        let is_missing_authority = req
+            .headers()
+            .get(http::header::HOST)
+            .map(|v| v.is_empty())
+            .unwrap_or(true);
         let rsp_fut = if req.version() == http::Version::HTTP_10 || is_missing_authority {
             // If there's no authority, we assume we're on some weird HTTP/1.0
             // ish, so we just build a one-off client for the connection.
