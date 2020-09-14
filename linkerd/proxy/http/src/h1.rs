@@ -57,25 +57,29 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    pub fn request(
+    pub(crate) fn request(
         &mut self,
         mut req: http::Request<B>,
     ) -> Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>
     {
-        let absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
+        // Marked by `upgrade`.
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == &http::Method::CONNECT;
 
-        let is_missing_authority = req
+        // Configured by `normalize_uri`.
+        let absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
+        debug_assert!(req.uri().authority().is_some());
+
+        let is_missing_host = req
             .headers()
             .get(http::header::HOST)
             .map(|v| v.is_empty())
             .unwrap_or(true);
-        let rsp_fut = if req.version() == http::Version::HTTP_10 || is_missing_authority {
+        let rsp_fut = if req.version() == http::Version::HTTP_10 || is_missing_host {
             // If there's no authority, we assume we're on some weird HTTP/1.0
             // ish, so we just build a one-off client for the connection.
             // There's no real reason to hold the client for re-use.
-            debug!(absolute_form, is_missing_authority, "Using one-off client");
+            debug!(absolute_form, is_missing_host, "Using one-off client");
             hyper::Client::builder()
                 .pool_max_idle_per_host(0)
                 .set_host(absolute_form)
@@ -269,8 +273,8 @@ pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
             debug!("CONNECT request with illegal URI: {:?}", req.uri());
             return true;
         }
-    // If not CONNECT, refuse any origin-form URIs
     } else if is_origin_form(req.uri()) {
+        // If not CONNECT, refuse any origin-form URIs
         debug!("{} request with illegal URI: {:?}", req.method(), req.uri());
         return true;
     }

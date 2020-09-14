@@ -449,7 +449,6 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .push(http::normalize_uri::layer())
             .instrument(
                 |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
             )

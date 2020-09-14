@@ -354,7 +354,6 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .push(http::normalize_uri::layer())
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
