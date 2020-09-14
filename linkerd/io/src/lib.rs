@@ -96,4 +96,23 @@ mod internal {
             self.poll_read_buf(cx, &mut buf)
         }
     }
+
+    #[cfg(feature = "test")]
+    impl Io for tokio_test::io::Mock {
+        fn poll_write_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            mut buf: &mut dyn Buf,
+        ) -> Poll<usize> {
+            self.poll_write_buf(cx, &mut buf)
+        }
+
+        fn poll_read_buf_erased(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            mut buf: &mut dyn BufMut,
+        ) -> Poll<usize> {
+            self.poll_read_buf(cx, &mut buf)
+        }
+    }
 }

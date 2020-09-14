@@ -68,9 +68,40 @@ impl Config {
     > + Unpin
            + Clone
            + Send {
+        let connect = svc::connect(self.proxy.connect.keepalive).into_inner();
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
-        svc::connect(self.proxy.connect.keepalive)
+        self.build_tcp_connect_with(connect, local_identity, metrics)
+    }
+
+    pub fn build_tcp_connect_with<C>(
+        &self,
+        connect: C,
+        local_identity: tls::Conditional<identity::Local>,
+        metrics: &ProxyMetrics,
+    ) -> impl tower::Service<
+        TcpEndpoint,
+        Error = Error,
+        Future = impl future::Future + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    > + tower::Service<
+        HttpEndpoint,
+        Error = Error,
+        Future = impl future::Future + Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    > + Unpin
+           + Clone
+           + Send
+    where
+        C: tower::Service<SocketAddr>,
+        C::Future: Send,
+        C::Error: Into<Error>,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        // Establishes connections to remote peers (for both TCP
+        // forwarding and HTTP proxying).
+        svc::stack(connect)
+            .push_map_target(Into::into)
             // Initiates mTLS if the target is configured with identity.
             .push(tls::client::ConnectLayer::new(local_identity))
             // Limits the time we wait for a connection to be established.

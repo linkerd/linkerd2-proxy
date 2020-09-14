@@ -961,6 +961,7 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd2-app-core",
+ "linkerd2-io",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-transport",

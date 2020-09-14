@@ -9,7 +9,6 @@ use std::io;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::net::TcpStream;
 use tracing::{debug, trace};
 
 pub trait HasConfig {
@@ -69,7 +68,9 @@ impl<L, C, T> tower::Service<T> for Connect<L, C>
 where
     T: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::Service<T, Response = TcpStream>,
+    C: tower::Service<T>,
+    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    Connection: From<C::Response> + From<tokio_rustls::client::TlsStream<C::Response>>,
     C::Future: Send + 'static,
     C::Error: ::std::error::Error + Send + Sync + 'static,
     C::Error: From<io::Error>,
@@ -103,7 +104,9 @@ where
 impl<L, F> Future for ConnectFuture<L, F>
 where
     L: HasConfig,
-    F: TryFuture<Ok = TcpStream>,
+    F: TryFuture,
+    F::Ok: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    Connection: From<F::Ok> + From<tokio_rustls::client::TlsStream<F::Ok>>,
     F::Error: From<io::Error>,
 {
     type Output = Result<Connection, F::Error>;
@@ -125,14 +128,14 @@ where
                         }
                         Conditional::None(reason) => {
                             trace!(%reason, "skipping TLS");
-                            return Poll::Ready(Ok(Connection::new(io)));
+                            return Poll::Ready(Ok(Connection::from(io)));
                         }
                     }
                 }
                 ConnectStateProj::Handshake(fut) => {
                     let io = futures::ready!(fut.poll(cx))?;
                     trace!("established TLS");
-                    return Poll::Ready(Ok(Connection::new(io)));
+                    return Poll::Ready(Ok(Connection::from(io)));
                 }
             };
         }

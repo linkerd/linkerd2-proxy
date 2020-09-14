@@ -1,6 +1,7 @@
 use super::{internal::Io, AsyncRead, AsyncWrite, Poll};
 use bytes::{Buf, BufMut};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
+use tokio::net::TcpStream;
 
 /// A public wrapper around a `Box<Io>`.
 ///
@@ -83,6 +84,31 @@ impl Io for BoxedIo {
         buf: &mut dyn BufMut,
     ) -> Poll<usize> {
         self.as_mut().0.as_mut().poll_read_buf_erased(cx, buf)
+    }
+}
+
+impl From<TcpStream> for BoxedIo {
+    fn from(stream: TcpStream) -> Self {
+        Self::new(stream)
+    }
+}
+
+impl<S: Io + Unpin + 'static> From<tokio_rustls::server::TlsStream<S>> for BoxedIo {
+    fn from(stream: tokio_rustls::server::TlsStream<S>) -> Self {
+        Self::new(stream)
+    }
+}
+
+impl<S: Io + Unpin + 'static> From<tokio_rustls::client::TlsStream<S>> for BoxedIo {
+    fn from(stream: tokio_rustls::client::TlsStream<S>) -> Self {
+        Self::new(stream)
+    }
+}
+
+#[cfg(feature = "test")]
+impl From<tokio_test::io::Mock> for BoxedIo {
+    fn from(stream: tokio_test::io::Mock) -> Self {
+        Self::new(stream)
     }
 }
 
