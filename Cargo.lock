@@ -939,6 +939,7 @@ dependencies = [
  "pin-project",
  "quickcheck",
  "tokio",
+ "tokio-rustls",
  "tower",
  "tracing",
 ]

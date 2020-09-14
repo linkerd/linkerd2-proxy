@@ -75,7 +75,11 @@ async fn plaintext_tcp() {
     srv_io.read(b"hello").write(b"world");
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = test_support::connect().endpoint_builder(target_addr, srv_io);
-
+    let connect = cfg.build_tcp_connect_with(
+        connect,
+        tls::Conditional::None(tls::ReasonForNoPeerName::Loopback),
+        &metrics.outbound,
+    );
     // Configure mock IO for the "client".
     let client_io = test_support::io().write(b"hello").read(b"world").build();
 

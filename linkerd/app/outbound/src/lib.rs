@@ -93,15 +93,22 @@ impl Config {
            + Clone
            + Send
     where
-        C: tower::Service<SocketAddr>,
-        C::Future: Send,
-        C::Error: Into<Error>,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C: tower::Service<HttpEndpoint, Error = std::io::Error> + Clone + Send + Unpin,
+        <C as tower::Service<HttpEndpoint>>::Future: Send + 'static,
+        <C as tower::Service<HttpEndpoint>>::Response:
+            tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        transport::BoxedIo: From<<C as tower::Service<HttpEndpoint>>::Response>
+            + From<tokio_rustls::client::TlsStream<<C as tower::Service<HttpEndpoint>>::Response>>,
+        C: tower::Service<TcpEndpoint, Error = std::io::Error> + Clone + Send + Unpin,
+        <C as tower::Service<TcpEndpoint>>::Future: Send + 'static,
+        <C as tower::Service<TcpEndpoint>>::Response:
+            tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        transport::BoxedIo: From<<C as tower::Service<TcpEndpoint>>::Response>
+            + From<tokio_rustls::client::TlsStream<<C as tower::Service<TcpEndpoint>>::Response>>,
     {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
         svc::stack(connect)
-            .push_map_target(Into::into)
             // Initiates mTLS if the target is configured with identity.
             .push(tls::client::ConnectLayer::new(local_identity))
             // Limits the time we wait for a connection to be established.

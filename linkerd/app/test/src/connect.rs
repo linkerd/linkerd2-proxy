@@ -1,4 +1,3 @@
-use linkerd2_app_core::Error;
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -9,7 +8,8 @@ use tokio_test::io;
 
 type ConnectFn = Box<dyn FnMut() -> ConnectFuture + Send>;
 
-pub type ConnectFuture = Pin<Box<dyn Future<Output = Result<io::Mock, Error>> + Send + 'static>>;
+pub type ConnectFuture =
+    Pin<Box<dyn Future<Output = Result<io::Mock, std::io::Error>> + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct Connect {
@@ -22,7 +22,7 @@ where
 {
     type Response = io::Mock;
     type Future = ConnectFuture;
-    type Error = Error;
+    type Error = std::io::Error;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

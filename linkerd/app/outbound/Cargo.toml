@@ -17,6 +17,7 @@ linkerd2-app-core = { path = "../core" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-retry = { path = "../../retry" }
 tokio = { version = "0.2", features = ["sync"]}
+tokio-rustls = "0.13"
 tracing = "0.1.19"
 pin-project = "0.4"
 
