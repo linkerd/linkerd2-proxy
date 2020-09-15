@@ -151,8 +151,8 @@ where
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         let span = match self {
             Self::H2(_) => debug_span!("h2"),
-            Self::Http1(_) => debug_span!("unmeshed http1"),
-            Self::OrigProtoUpgrade { .. } => debug_span!("meshed http1"),
+            Self::Http1(_) => debug_span!("http1"),
+            Self::OrigProtoUpgrade { .. } => debug_span!("orig-proto-upgrade"),
         };
         span.in_scope(|| {
             debug!(
