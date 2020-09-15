@@ -14,12 +14,18 @@ use tracing::{debug, trace};
 #[derive(Copy, Clone, Debug)]
 pub struct WasAbsoluteForm(pub(crate) ());
 
+/// Communicates with HTTP/1.x servers.
+///
+/// The client handles both absolute-form and origin-form requests by lazily
+/// building a client for each form, as needed. This is needed because Hyper
+/// requires that this is configured at the connection level; so we can possibly
+/// end up maintaining two independent connection pools, if needed.
 #[derive(Debug)]
 pub struct Client<C, T, B> {
     connect: C,
     target: T,
-    absolute: Option<hyper::Client<HyperConnect<C, T>, B>>,
-    relative: Option<hyper::Client<HyperConnect<C, T>, B>>,
+    absolute_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
+    origin_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
 }
 
 impl<C, T, B> Client<C, T, B> {
@@ -27,8 +33,8 @@ impl<C, T, B> Client<C, T, B> {
         Self {
             connect,
             target,
-            absolute: None,
-            relative: None,
+            absolute_form: None,
+            origin_form: None,
         }
     }
 }
@@ -38,13 +44,13 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
         Self {
             connect: self.connect.clone(),
             target: self.target.clone(),
-            absolute: self.absolute.clone(),
-            relative: self.relative.clone(),
+            absolute_form: self.absolute_form.clone(),
+            origin_form: self.origin_form.clone(),
         }
     }
 }
 
-pub type ResponseFuture =
+type RspFuture =
     Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
 
 impl<C, T, B> Client<C, T, B>
@@ -58,13 +64,13 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    pub(crate) fn request(&mut self, mut req: http::Request<B>) -> ResponseFuture {
+    pub(crate) fn request(&mut self, mut req: http::Request<B>) -> RspFuture {
         // Marked by `upgrade`.
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == &http::Method::CONNECT;
 
-        // Configured by `normalize_uri`.
-        let absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
+        // Configured by `normalize_uri` or `orig_proto::Downgrade`.
+        let use_absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
         debug_assert!(req.uri().authority().is_some());
 
         let is_missing_host = req
@@ -72,37 +78,38 @@ where
             .get(http::header::HOST)
             .map(|v| v.is_empty())
             .unwrap_or(true);
+
         let rsp_fut = if req.version() == http::Version::HTTP_10 || is_missing_host {
             // If there's no authority, we assume we're on some weird HTTP/1.0
             // ish, so we just build a one-off client for the connection.
             // There's no real reason to hold the client for re-use.
-            debug!(absolute_form, is_missing_host, "Using one-off client");
+            debug!(use_absolute_form, is_missing_host, "Using one-off client");
             hyper::Client::builder()
                 .pool_max_idle_per_host(0)
-                .set_host(absolute_form)
+                .set_host(use_absolute_form)
                 .build(HyperConnect::new(
                     self.connect.clone(),
                     self.target.clone(),
-                    absolute_form,
+                    use_absolute_form,
                 ))
                 .request(req)
         } else {
             // Otherwise, use a cached client to take advantage of the
             // connection pool. The client needs to be configured for absolute
-            // (HTTP proxy-style) URIs, so we cache separate absolute/relative
+            // (HTTP proxy-style) URIs, so we cache separate absolute/origin
             // clients lazily.
-            let client = if absolute_form {
-                debug!("Using absolute client");
-                &mut self.absolute
+            let client = if use_absolute_form {
+                trace!("Using absolute-form client");
+                &mut self.absolute_form
             } else {
-                debug!("Using relative client");
-                &mut self.relative
+                trace!("Using origin-form client");
+                &mut self.origin_form
             };
 
             if client.is_none() {
-                debug!("Caching new client");
-                *client = Some(hyper::Client::builder().set_host(absolute_form).build(
-                    HyperConnect::new(self.connect.clone(), self.target.clone(), absolute_form),
+                debug!(use_absolute_form, "Caching new client");
+                *client = Some(hyper::Client::builder().set_host(use_absolute_form).build(
+                    HyperConnect::new(self.connect.clone(), self.target.clone(), use_absolute_form),
                 ));
             }
 
