@@ -106,19 +106,15 @@ where
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        match req.version() {
-            http::Version::HTTP_2 | http::Version::HTTP_3 => {}
-            _ => {
-                // Http/1
-                if h1::is_absolute_form(req.uri()) {
-                    trace!(uri = ?req.uri(), "Absolute");
-                    req.extensions_mut().insert(h1::WasAbsoluteForm(()));
-                } else if req.uri().authority().is_none() {
-                    let authority =
-                        h1::authority_from_host(&req).unwrap_or_else(|| self.default.clone());
-                    trace!(%authority, "Normalizing URI");
-                    h1::set_authority(req.uri_mut(), authority);
-                }
+        if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
+            if h1::is_absolute_form(req.uri()) {
+                trace!(uri = ?req.uri(), "Absolute");
+                req.extensions_mut().insert(h1::WasAbsoluteForm(()));
+            } else if req.uri().authority().is_none() {
+                let authority =
+                    h1::authority_from_host(&req).unwrap_or_else(|| self.default.clone());
+                trace!(%authority, "Normalizing URI");
+                h1::set_authority(req.uri_mut(), authority);
             }
         }
 
