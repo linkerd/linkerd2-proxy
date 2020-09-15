@@ -67,11 +67,11 @@ fn from_prefix() {
         Some(DetectVersion::H2)
     );
     assert_eq!(
-        Version::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
+        DetectVersion::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
         Some(DetectVersion::Http1)
     );
     assert_eq!(
-        Version::from_prefix("GET /foo".as_ref()),
+        DetectVersion::from_prefix("GET /foo".as_ref()),
         Some(DetectVersion::Http1)
     );
     assert_eq!(
