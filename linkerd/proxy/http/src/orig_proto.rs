@@ -13,7 +13,7 @@ pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 
 /// Upgrades HTTP requests from their original protocol to HTTP2.
 #[derive(Debug)]
-pub(crate) struct Upgrade<C, T, B> {
+pub struct Upgrade<C, T, B> {
     http1: h1::Client<C, T, B>,
     h2: h2::Connection<B>,
 }

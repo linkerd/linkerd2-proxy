@@ -314,14 +314,14 @@ impl Config {
 
         // Handles requests as they are initially received by the proxy.
         let http_admit_request = svc::layers()
-            // Downgrades the protocol if upgraded by an outbound proxy.
-            .push(svc::layer::mk(orig_proto::Downgrade::new))
             // Limits the number of in-flight requests.
             .push_concurrency_limit(max_in_flight_requests)
             // Eagerly fail requests when the proxy is out of capacity for a
             // dispatch_timeout.
             .push_failfast(dispatch_timeout)
             .push(metrics.http_errors)
+            // Downgrades the protocol if upgraded by an outbound proxy.
+            .push(svc::layer::mk(orig_proto::Downgrade::new))
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 

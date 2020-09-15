@@ -16,7 +16,7 @@ use tracing::debug;
 pub struct Target {
     pub dst: Addr,
     pub socket_addr: SocketAddr,
-    pub http_settings: http::Settings,
+    pub http_version: http::Version,
     pub tls_client_id: tls::PeerIdentity,
 }
 
@@ -29,7 +29,7 @@ pub struct Logical {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpEndpoint {
     pub port: u16,
-    pub settings: http::Settings,
+    pub settings: http::client::Settings,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,8 +53,8 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl<'t> Into<http::Settings> for &'t HttpEndpoint {
-    fn into(self) -> http::Settings {
+impl<'t> Into<http::client::Settings> for &'t HttpEndpoint {
+    fn into(self) -> http::client::Settings {
         self.settings
     }
 }
@@ -63,7 +63,10 @@ impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
             port: target.socket_addr.port(),
-            settings: target.http_settings,
+            settings: match target.http_version {
+                http::Version::HTTP_2 => http::client::Settings::H2,
+                _ => http::client::Settings::UnmeshedHttp1,
+            },
         }
     }
 }
@@ -122,11 +125,11 @@ impl AsRef<Addr> for Target {
     }
 }
 
-impl AsRef<http::Settings> for Target {
-    fn as_ref(&self) -> &http::Settings {
-        &self.http_settings
-    }
-}
+// impl AsRef<http::Settings> for Target {
+//     fn as_ref(&self) -> &http::Settings {
+//         &self.http_settings
+//     }
+// }
 
 impl tls::HasPeerIdentity for Target {
     fn peer_identity(&self) -> tls::PeerIdentity {
@@ -206,8 +209,8 @@ impl stack_tracing::GetSpan<()> for Target {
     fn get_span(&self, _: &()) -> tracing::Span {
         use tracing::info_span;
 
-        match self.http_settings {
-            http::Settings::Http2 => match self.dst.name_addr() {
+        match self.http_version {
+            http::Version::HTTP_2 => match self.dst.name_addr() {
                 None => info_span!(
                     "http2",
                     port = %self.socket_addr.port(),
@@ -218,7 +221,7 @@ impl stack_tracing::GetSpan<()> for Target {
                     port = %self.socket_addr.port(),
                 ),
             },
-            http::Settings::Http1 => match self.dst.name_addr() {
+            _ => match self.dst.name_addr() {
                 None => info_span!(
                     "http1",
                     port = %self.socket_addr.port(),
@@ -272,7 +275,7 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             dst,
             socket_addr: self.accept.addrs.target_addr(),
             tls_client_id: self.accept.peer_identity.clone(),
-            http_settings: http::Settings::from_request(req),
+            http_version: req.version(),
         }
     }
 }

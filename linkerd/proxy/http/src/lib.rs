@@ -9,7 +9,7 @@ pub mod balance;
 pub mod canonicalize;
 pub mod client;
 pub mod detect;
-pub mod glue;
+mod glue;
 pub mod h1;
 pub mod h2;
 pub mod header_from_target;
@@ -25,12 +25,11 @@ mod version;
 
 pub use self::{
     detect::DetectHttp,
-    glue::{Body, HyperServerSvc},
-    settings::Settings,
+    glue::{Body as Payload, HyperServerSvc},
     timeout::MakeTimeoutLayer,
-    version::Version,
+    version::DetectVersion,
 };
-pub use http::{header, uri, Request, Response, StatusCode};
+pub use http::{header, uri, Request, Response, StatusCode, Version};
 pub use hyper::body::HttpBody;
 pub use linkerd2_http_box as boxed;
 

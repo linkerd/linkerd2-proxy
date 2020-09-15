@@ -2,23 +2,23 @@ use linkerd2_proxy_transport::io::{self, Peekable, PrefixedIo};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Version {
+pub enum DetectVersion {
     Http1,
     H2,
 }
 
-impl Version {
+impl DetectVersion {
     const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
     /// Tries to detect a known protocol in the peeked bytes.
     ///
     /// If no protocol can be determined, returns `None`.
-    pub fn from_prefix(bytes: &[u8]) -> Option<Version> {
+    pub fn from_prefix(bytes: &[u8]) -> Option<Self> {
         // http2 is easiest to detect
         if bytes.len() >= Self::H2_PREFACE.len() {
             if &bytes[..Self::H2_PREFACE.len()] == Self::H2_PREFACE {
                 trace!("Detected H2");
-                return Some(Version::H2);
+                return Some(Self::H2);
             }
         }
 
@@ -37,7 +37,7 @@ impl Version {
             // the first line is HTTP1.
             Ok(_) | Err(httparse::Error::TooManyHeaders) => {
                 trace!("Detected H1");
-                return Some(Version::Http1);
+                return Some(Self::Http1);
             }
             _ => {}
         }
@@ -47,14 +47,14 @@ impl Version {
         None
     }
 
-    pub async fn detect<I>(io: I) -> io::Result<(Option<Version>, PrefixedIo<I>)>
+    pub async fn detect<I>(io: I) -> io::Result<(Option<Self>, PrefixedIo<I>)>
     where
         I: io::AsyncRead + io::AsyncWrite + Unpin,
     {
         // If we don't find a newline, we consider the stream to be HTTP/1; so
         // we need enough capacity to prevent false-positives.
         let io = io.peek(8192).await?;
-        let version = Version::from_prefix(io.prefix());
+        let version = Self::from_prefix(io.prefix());
         Ok((version, io))
     }
 }
@@ -62,17 +62,20 @@ impl Version {
 #[cfg(test)]
 #[test]
 fn from_prefix() {
-    assert_eq!(Version::from_prefix(Version::H2_PREFACE), Some(Version::H2));
+    assert_eq!(
+        DetectVersion::from_prefix(DetectVersion::H2_PREFACE),
+        Some(DetectVersion::H2)
+    );
     assert_eq!(
         Version::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
-        Some(Version::Http1)
+        Some(DetectVersion::Http1)
     );
     assert_eq!(
         Version::from_prefix("GET /foo".as_ref()),
-        Some(Version::Http1)
+        Some(DetectVersion::Http1)
     );
     assert_eq!(
-        Version::from_prefix("GET /foo/barbasdklfja\n".as_ref()),
+        DetectVersion::from_prefix("GET /foo/barbasdklfja\n".as_ref()),
         None
     );
 }

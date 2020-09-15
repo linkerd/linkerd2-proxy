@@ -1,6 +1,6 @@
 //! HTTP/1.1 Upgrades
-use super::{h1, Body};
 
+use crate::{glue::Body, h1};
 use futures::{
     future::{self, Either},
     TryFutureExt,
