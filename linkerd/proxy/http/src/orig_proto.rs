@@ -56,10 +56,7 @@ where
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         debug_assert!(req.version() != http::Version::HTTP_2);
         if req.extensions().get::<upgrade::Http11Upgrade>().is_some() {
-            debug!(
-                http.upgrade = req.extensions().get::<upgrade::Http11Upgrade>().is_some(),
-                "Skipping orig-proto upgrade due to HTTP/1.1 upgrade",
-            );
+            debug!("Skipping orig-proto upgrade due to HTTP/1.1 upgrade");
             return self.http1.request(req);
         }
 
@@ -160,12 +157,10 @@ where
 
         if upgrade_response {
             fut.map_ok(|mut res| {
-                let orig_proto = if res.version() == http::Version::HTTP_11 {
-                    "HTTP/1.1"
-                } else if res.version() == http::Version::HTTP_10 {
-                    "HTTP/1.0"
-                } else {
-                    return res;
+                let orig_proto = match res.version() {
+                    http::Version::HTTP_11 => "HTTP/1.1",
+                    http::Version::HTTP_10 => "HTTP/1.0",
+                    _ => return res,
                 };
 
                 res.headers_mut()
