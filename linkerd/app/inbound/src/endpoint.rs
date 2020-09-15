@@ -125,12 +125,6 @@ impl AsRef<Addr> for Target {
     }
 }
 
-// impl AsRef<http::Settings> for Target {
-//     fn as_ref(&self) -> &http::Settings {
-//         &self.http_settings
-//     }
-// }
-
 impl tls::HasPeerIdentity for Target {
     fn peer_identity(&self) -> tls::PeerIdentity {
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
