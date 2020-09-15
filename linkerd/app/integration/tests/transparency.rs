@@ -1146,7 +1146,14 @@ async fn http10_without_host() {
 
     let tcp_client = client.connect().await;
 
-    tcp_client.write("GET / HTTP/1.0\r\n\r\n").await;
+    tcp_client
+        .write(
+            "\
+         GET / HTTP/1.0\r\n\
+         \r\n\
+         ",
+        )
+        .await;
 
     let expected = "HTTP/1.0 200 OK\r\n";
     assert_eq!(s(&tcp_client.read().await[..expected.len()]), expected);
