@@ -3,7 +3,7 @@ use crate::{
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
     normalize_uri::{MakeNormalizeUri, NormalizeUri},
-    trace, upgrade, DetectVersion,
+    trace, upgrade, Version as HttpVersion,
 };
 use futures::prelude::*;
 use linkerd2_drain as drain;
@@ -156,14 +156,14 @@ where
         let timeout = tokio::time::delay_for(self.timeout);
         Box::pin(async move {
             let (version, io) = tokio::select! {
-                res = DetectVersion::detect(io) => { res? }
+                res = HttpVersion::detect(io) => { res? }
                 () = timeout => {
                     return Err(DetectTimeout(()).into());
                 }
             };
 
             match version {
-                Some(DetectVersion::Http1) => {
+                Some(HttpVersion::Http1) => {
                     trace!("Handling as HTTP");
                     // Enable support for HTTP upgrades (CONNECT and websockets).
                     let http = upgrade::Service::new(http, drain.clone());
@@ -178,7 +178,7 @@ where
                         .await?;
                 }
 
-                Some(DetectVersion::H2) => {
+                Some(HttpVersion::H2) => {
                     trace!("Handling as H2");
                     let conn = server
                         .http2_only(true)

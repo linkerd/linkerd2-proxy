@@ -47,6 +47,15 @@ pub fn layer<C, B>(
     })
 }
 
+impl From<crate::Version> for Settings {
+    fn from(v: crate::Version) -> Self {
+        match v {
+            crate::Version::Http1 => Self::Http1,
+            crate::Version::H2 => Self::H2,
+        }
+    }
+}
+
 // === impl MakeClient ===
 
 impl<C, T, B> tower::Service<T> for MakeClient<C, B>

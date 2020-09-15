@@ -11,9 +11,6 @@ use linkerd2_error::Error;
 use std::{future::Future, mem, pin::Pin};
 use tracing::{debug, trace};
 
-#[derive(Debug)]
-pub struct UnsupportedHTTPVersion(http::Version);
-
 #[derive(Copy, Clone, Debug)]
 pub struct WasAbsoluteForm(pub(crate) ());
 

@@ -7,9 +7,7 @@ use linkerd2_app_core::{
     transport::{listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::fmt;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{convert::TryInto, fmt, net::SocketAddr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -63,10 +61,10 @@ impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
             port: target.socket_addr.port(),
-            settings: match target.http_version {
-                http::Version::HTTP_2 => http::client::Settings::H2,
-                _ => http::client::Settings::Http1,
-            },
+            settings: target
+                .http_version
+                .try_into()
+                .expect("HTTP version must be valid"),
         }
     }
 }
@@ -204,7 +202,7 @@ impl stack_tracing::GetSpan<()> for Target {
         use tracing::info_span;
 
         match self.http_version {
-            http::Version::HTTP_2 => match self.dst.name_addr() {
+            http::Version::H2 => match self.dst.name_addr() {
                 None => info_span!(
                     "http2",
                     port = %self.socket_addr.port(),
@@ -215,7 +213,7 @@ impl stack_tracing::GetSpan<()> for Target {
                     port = %self.socket_addr.port(),
                 ),
             },
-            _ => match self.dst.name_addr() {
+            http::Version::Http1 => match self.dst.name_addr() {
                 None => info_span!(
                     "http1",
                     port = %self.socket_addr.port(),
@@ -269,7 +267,10 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             dst,
             socket_addr: self.accept.addrs.target_addr(),
             tls_client_id: self.accept.peer_identity.clone(),
-            http_version: req.version(),
+            http_version: req
+                .version()
+                .try_into()
+                .expect("HTTP version must be valid"),
         }
     }
 }

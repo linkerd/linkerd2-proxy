@@ -16,8 +16,7 @@ use linkerd2_app_core::{
     transport::{listen, tls},
     Addr, Conditional, L5D_REQUIRE_ID,
 };
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
@@ -131,8 +130,8 @@ impl From<HttpLogical> for HttpEndpoint {
         Self {
             addr: logical.orig_dst,
             settings: match logical.version {
-                http::Version::HTTP_2 => http::client::Settings::H2,
-                _ => http::client::Settings::Http1,
+                http::Version::H2 => http::client::Settings::H2,
+                http::Version::Http1 => http::client::Settings::Http1,
             },
             identity: logical
                 .require_identity
@@ -235,14 +234,11 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
             });
 
         let settings = match concrete.logical.version {
-            http::Version::HTTP_2 => http::client::Settings::H2,
-            _ => {
-                if metadata.protocol_hint() == ProtocolHint::Unknown {
-                    http::client::Settings::Http1
-                } else {
-                    http::client::Settings::OrigProtoUpgrade
-                }
-            }
+            http::Version::H2 => http::client::Settings::H2,
+            http::Version::Http1 => match metadata.protocol_hint() {
+                ProtocolHint::Unknown => http::client::Settings::Http1,
+                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
+            },
         };
 
         HttpEndpoint {
@@ -384,8 +380,11 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
         HttpLogical {
             dst,
             orig_dst: self.0.target_addr(),
-            version: req.version(),
             require_identity,
+            version: req
+                .version()
+                .try_into()
+                .expect("HTTP version must be valid"),
         }
     }
 }

@@ -27,9 +27,9 @@ pub use self::{
     detect::DetectHttp,
     glue::{Body as Payload, HyperServerSvc},
     timeout::MakeTimeoutLayer,
-    version::DetectVersion,
+    version::Version,
 };
-pub use http::{header, uri, Request, Response, StatusCode, Version};
+pub use http::{header, uri, Request, Response, StatusCode};
 pub use hyper::body::HttpBody;
 pub use linkerd2_http_box as boxed;
 

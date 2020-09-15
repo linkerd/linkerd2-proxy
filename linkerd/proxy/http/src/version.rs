@@ -1,13 +1,27 @@
 use linkerd2_proxy_transport::io::{self, Peekable, PrefixedIo};
 use tracing::{debug, trace};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum DetectVersion {
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Version {
     Http1,
     H2,
 }
 
-impl DetectVersion {
+#[derive(Debug)]
+pub struct Unsupported(http::Version);
+
+impl std::convert::TryFrom<http::Version> for Version {
+    type Error = Unsupported;
+    fn try_from(v: http::Version) -> Result<Self, Unsupported> {
+        match v {
+            http::Version::HTTP_10 | http::Version::HTTP_11 => Ok(Self::Http1),
+            http::Version::HTTP_2 => Ok(Self::H2),
+            v => Err(Unsupported(v)),
+        }
+    }
+}
+
+impl Version {
     const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
     /// Tries to detect a known protocol in the peeked bytes.
@@ -59,23 +73,26 @@ impl DetectVersion {
     }
 }
 
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unsupported HTTP version")
+    }
+}
+
 #[cfg(test)]
 #[test]
 fn from_prefix() {
+    assert_eq!(Version::from_prefix(Version::H2_PREFACE), Some(Version::H2));
     assert_eq!(
-        DetectVersion::from_prefix(DetectVersion::H2_PREFACE),
-        Some(DetectVersion::H2)
+        Version::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
+        Some(Version::Http1)
     );
     assert_eq!(
-        DetectVersion::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
-        Some(DetectVersion::Http1)
+        Version::from_prefix("GET /foo".as_ref()),
+        Some(Version::Http1)
     );
     assert_eq!(
-        DetectVersion::from_prefix("GET /foo".as_ref()),
-        Some(DetectVersion::Http1)
-    );
-    assert_eq!(
-        DetectVersion::from_prefix("GET /foo/barbasdklfja\n".as_ref()),
+        Version::from_prefix("GET /foo/barbasdklfja\n".as_ref()),
         None
     );
 }
