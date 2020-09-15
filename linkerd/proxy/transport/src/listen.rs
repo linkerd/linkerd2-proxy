@@ -142,7 +142,7 @@ impl Addrs {
     }
 }
 
-impl<'t> Into<SocketAddr> for &'t Addrs {
+impl Into<SocketAddr> for &'_ Addrs {
     fn into(self) -> SocketAddr {
         self.target_addr()
     }
