@@ -1,7 +1,9 @@
+use linkerd2_proxy_identity::*;
 use std::{
     fs, io,
     path::{Path, PathBuf},
     sync::Arc,
+    time::{Duration, SystemTime},
 };
 
 const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
@@ -12,6 +14,8 @@ pub struct Identity {
     pub certs: Certificates,
     pub client_config: Arc<rustls::ClientConfig>,
     pub server_config: Arc<rustls::ServerConfig>,
+    pub key: Vec<u8>,
+    pub csr: Vec<u8>,
     _p: (),
 }
 
@@ -23,7 +27,7 @@ pub struct Certificates {
 
 impl Identity {
     pub fn new(dir: &'static str) -> Self {
-        let (id_dir, token_path, trust_anchors, certs, key) = {
+        let (id_dir, token_path, trust_anchors, certs, key, csr) = {
             let mut id = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             id.push("src");
             id.push("data");
@@ -41,12 +45,16 @@ impl Identity {
             let certs = Certificates::load(&id).expect("read cert");
 
             id.set_file_name("key.p8");
-            let key = load_key(&id);
+            let key = fs::read(&id).expect("read key");
 
-            (id_dir, token, trust_anchors, certs, key)
+            id.set_file_name("csr.der");
+            let csr = fs::read(&id).expect("read CSR");
+
+            (id_dir, token, trust_anchors, certs, key, csr)
         };
 
-        let (client_config, server_config) = configs(&trust_anchors, &certs, key);
+        let (client_config, server_config) =
+            configs(&trust_anchors, &certs, rustls::PrivateKey(key.clone()));
 
         Self {
             id_dir,
@@ -55,8 +63,43 @@ impl Identity {
             certs,
             client_config,
             server_config,
+            key,
+            csr,
             _p: (),
         }
+    }
+
+    pub fn config(&self, local_name: &[u8]) -> certify::Config {
+        let token =
+            TokenSource::if_nonempty_file(self.token_path.clone().to_string_lossy().to_string())
+                .expect("token exists");
+        certify::Config {
+            trust_anchors: TrustAnchors::from_pem(self.trust_anchors.as_ref())
+                .expect("trust anchors are valid"),
+            key: Key::from_pkcs8(&self.key[..]).expect("key is valid"),
+            csr: Csr::from_der(self.csr.clone()).expect("CSR is okay"),
+            local_name: Name::from_hostname(local_name).expect("hostname is valid"),
+            min_refresh: Duration::from_secs(1),
+            max_refresh: Duration::from_secs(4096),
+            token,
+        }
+    }
+
+    pub fn local_identity(&self, local_name: &[u8]) -> Local {
+        let config = self.config(local_name);
+        let crt = Crt::new(
+            Name::from_hostname(local_name).expect("hostname is valid"),
+            self.certs.leaf.clone(),
+            self.certs.intermediates.clone(),
+            SystemTime::now() + Duration::from_secs(4092),
+        );
+        let crt_key = config
+            .trust_anchors
+            .certify(config.key.clone(), crt)
+            .expect("crt is okay");
+        let (local, sender) = Local::new(&self.config(local_name));
+        sender.broadcast(Some(crt_key)).expect("rx not dropped");
+        local
     }
 }
 
@@ -91,14 +134,6 @@ impl Certificates {
     }
 }
 
-fn load_key<P>(p: P) -> rustls::PrivateKey
-where
-    P: AsRef<Path>,
-{
-    let p8 = fs::read(&p).expect("read key");
-    rustls::PrivateKey(p8)
-}
-
 fn configs(
     trust_anchors: &str,
     certs: &Certificates,
@@ -124,4 +159,3 @@ fn configs(
 
     (Arc::new(client_config), Arc::new(server_config))
 }
-'

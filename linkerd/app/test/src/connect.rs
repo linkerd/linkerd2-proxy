@@ -1,15 +1,14 @@
+use crate::io::{self, BoxedIo};
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use tokio_test::io;
 
 type ConnectFn = Box<dyn FnMut() -> ConnectFuture + Send>;
 
-pub type ConnectFuture =
-    Pin<Box<dyn Future<Output = Result<io::Mock, std::io::Error>> + Send + 'static>>;
+pub type ConnectFuture = Pin<Box<dyn Future<Output = Result<BoxedIo, io::Error>> + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct Connect {
@@ -20,9 +19,9 @@ impl<E> tower::Service<E> for Connect
 where
     E: Into<SocketAddr>,
 {
-    type Response = io::Mock;
+    type Response = BoxedIo;
     type Future = ConnectFuture;
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -45,7 +44,7 @@ impl Connect {
         }
     }
 
-    pub fn endpoint_fn(
+    pub fn endpoint_future(
         self,
         endpoint: impl Into<SocketAddr>,
         f: impl (FnMut() -> ConnectFuture) + Send + 'static,
@@ -57,14 +56,29 @@ impl Connect {
         self
     }
 
+    pub fn endpoint_fn<I>(
+        self,
+        endpoint: impl Into<SocketAddr>,
+        mut f: impl (FnMut() -> I) + Send + 'static,
+    ) -> Self
+    where
+        BoxedIo: From<I>,
+    {
+        self.endpoints.lock().unwrap().insert(
+            endpoint.into(),
+            Box::new(move || {
+                let io = BoxedIo::from(f());
+                Box::pin(async move { Ok(io) })
+            }),
+        );
+        self
+    }
+
     pub fn endpoint_builder(
         self,
         endpoint: impl Into<SocketAddr>,
         mut builder: io::Builder,
     ) -> Self {
-        self.endpoint_fn(endpoint, move || {
-            let io = builder.build();
-            Box::pin(async move { Ok(io) })
-        })
+        self.endpoint_fn(endpoint, move || builder.build())
     }
 }

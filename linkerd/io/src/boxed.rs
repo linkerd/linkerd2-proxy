@@ -112,6 +112,13 @@ impl From<tokio_test::io::Mock> for BoxedIo {
     }
 }
 
+#[cfg(feature = "test")]
+impl From<crate::duplex::DuplexStream> for BoxedIo {
+    fn from(stream: crate::duplex::DuplexStream) -> Self {
+        Self::new(stream)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

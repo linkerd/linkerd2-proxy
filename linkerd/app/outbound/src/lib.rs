@@ -407,11 +407,11 @@ impl Config {
     ) -> impl tower::Service<
         SocketAddr,
         Error = Error,
-        Future = impl Unpin + Send + 'static,
+        Future = impl Future + Unpin + Send + 'static,
         Response = impl tower::Service<
             I,
             Response = (),
-            Future = impl Unpin + Send + 'static,
+            Future = impl Future + Unpin + Send + 'static,
             Error = Error,
         > + Unpin
                        + Clone

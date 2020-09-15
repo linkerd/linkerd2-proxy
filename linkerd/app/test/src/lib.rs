@@ -3,7 +3,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
-
 pub use linkerd2_app_core::{self as app_core, Addr, Error};
 pub use std::net::SocketAddr;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -13,10 +12,9 @@ pub use tower::Service;
 pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
-pub use tokio_test::io;
-
 pub mod connect;
 pub mod identity;
+pub mod io;
 pub mod refine;
 pub mod resolver;
 
@@ -29,10 +27,6 @@ where
 
 pub fn connect() -> connect::Connect {
     connect::Connect::new()
-}
-
-pub fn io() -> io::Builder {
-    io::Builder::new()
 }
 
 pub fn identity(dir: &'static str) -> identity::Identity {
