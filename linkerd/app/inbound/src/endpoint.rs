@@ -61,10 +61,7 @@ impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
             port: target.socket_addr.port(),
-            settings: target
-                .http_version
-                .try_into()
-                .expect("HTTP version must be valid"),
+            settings: target.http_version.into(),
         }
     }
 }
