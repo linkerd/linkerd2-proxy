@@ -109,7 +109,6 @@ async fn tls_when_hinted() {
     let tls_addr = SocketAddr::new(LOCALHOST.into(), 5550);
     let plaintext_addr = SocketAddr::new(LOCALHOST.into(), 5551);
     let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
-    let peer_addr = SocketAddr::new(LOCALHOST.into(), 420);
 
     let cfg = default_config(plaintext_addr);
 
@@ -178,6 +177,112 @@ async fn tls_when_hinted() {
     // Configure mock IO for the "client".
     let mut client_io = io::mock();
     client_io.read(b"hello").write(b"world");
+
+    // Build the outbound TCP balancer stack.
+    let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
+
+    let make = outbound_tcp.clone().oneshot(tls_addr);
+    let io = client_io.build();
+    let tls_conn = async move {
+        make.await
+            .expect("make TLS service should succeed")
+            .oneshot(io)
+            .await
+            .expect("TLS connection should succeed");
+    }
+    .instrument(tracing::info_span!("tls_conn"));
+
+    let make = outbound_tcp.clone().oneshot(plaintext_addr);
+    let io = client_io.build();
+    let plain_conn = async move {
+        make.await
+            .expect("make plaintext service should succeed")
+            .oneshot(io)
+            .await
+            .expect("plaintext connection should succeed");
+    }
+    .instrument(tracing::info_span!("plaintext_conn"));
+    let x = tokio::try_join! {
+        tokio::spawn(tls_conn), tokio::spawn(plain_conn), tls_srv
+    };
+    x.unwrap();
+}
+
+#[tokio::test(basic_scheduler)]
+async fn server_first_tls_when_hinted() {
+    let _trace = test_support::trace_init();
+
+    let tls_addr = SocketAddr::new(LOCALHOST.into(), 5550);
+    let plaintext_addr = SocketAddr::new(LOCALHOST.into(), 5551);
+    let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
+
+    let cfg = default_config(plaintext_addr);
+
+    let (metrics, _) = Metrics::new(std::time::Duration::from_secs(10));
+    let prevent_loop = super::PreventLoop::from(local_addr.port());
+
+    let foo_id = test_support::identity("foo-ns1");
+    let proxy_id = test_support::identity("bar-ns1")
+        .local_identity(b"bar.ns1.serviceaccount.identity.linkerd.cluster.local");
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+    let srv_cfg = foo_id.server_config.clone();
+
+    // Configure mock IO for the upstream "server". It will read "hello" and
+    // then write "world".
+    let (d1, d2) = io::duplex(1024);
+    let tls_srv = tokio::spawn(async move {
+        let mut io = tokio_rustls::TlsAcceptor::from(srv_cfg)
+            .accept(d2)
+            .await
+            .expect("failed to accept TLS handshake!");
+        tracing::info!("handshake successful!");
+        let mut s = vec![0; 5];
+        io.write_all(b"hello").await.expect("write succeeds");
+        tracing::info!("wrote");
+        io.read(&mut s).await.expect("read succeeds");
+        tracing::info!(read = ?s);
+        assert_eq!(&s[..], b"world");
+        io.shutdown().await.expect("close TLS connection");
+        tracing::info!("shutdown");
+    });
+    let mut tls_srv_io = Some(d1);
+    let mut srv_io = io::mock();
+    srv_io.read(b"hello").write(b"world");
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = test_support::connect()
+        // The plaintext endpoint should use plaintext...
+        .endpoint_builder(plaintext_addr, srv_io)
+        .endpoint_fn(tls_addr, move || {
+            tls_srv_io.take().expect("connected to TLS endpoint twice!")
+        });
+    let connect =
+        cfg.build_tcp_connect_with(connect, tls::Conditional::Some(proxy_id), &metrics.outbound);
+
+    let tls_meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    // Configure the mock destination resolver to just give us a single endpoint
+    // for the target, which always exists and has no metadata.
+    let resolver = test_support::resolver()
+        .endpoint_exists(
+            Addr::from(plaintext_addr),
+            plaintext_addr,
+            test_support::resolver::Metadata::empty(),
+        )
+        .endpoint_exists(Addr::from(tls_addr), tls_addr, tls_meta);
+
+    // Configure mock IO for the "client".
+    let mut client_io = io::mock();
+    client_io.write(b"hello").read(b"world");
 
     // Build the outbound TCP balancer stack.
     let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
