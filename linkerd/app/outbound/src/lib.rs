@@ -377,7 +377,7 @@ impl Config {
         prevent_loop: PreventLoop,
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
-        listen::Addrs,
+        SocketAddr,
         Error = Error,
         Future = impl Unpin + Send + 'static,
         Response = impl tower::Service<
@@ -443,7 +443,6 @@ impl Config {
             .check_make_service::<SocketAddr, ()>()
             .push(svc::layer::mk(tcp::Forward::new))
             .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
-            .push_map_target(|a: listen::Addrs| a.target_addr())
     }
 
     pub async fn build_server<E, R, C, H, S>(
@@ -488,7 +487,10 @@ impl Config {
         let prevent_loop = PreventLoop::from(listen_addr.port());
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = self.build_tcp_balance(&tcp_connect, resolve, prevent_loop, &metrics);
+        let tcp_balance =
+            svc::stack(self.build_tcp_balance(&tcp_connect, resolve, prevent_loop, &metrics))
+                .push_map_target(|a: listen::Addrs| a.target_addr())
+                .into_inner();
 
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },

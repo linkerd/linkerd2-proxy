@@ -1,6 +1,6 @@
 use crate::Config;
 use indexmap::indexset;
-use linkerd2_app_core::{self as app_core, metrics::Metrics, transport::listen, Addr};
+use linkerd2_app_core::{self as app_core, metrics::Metrics, Addr};
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, time::Duration};
 use tower::ServiceExt;
@@ -13,6 +13,7 @@ fn default_config(orig_dst: SocketAddr) -> Config {
         config::{ConnectConfig, ProxyConfig, ServerConfig},
         exp_backoff::ExponentialBackoff,
         proxy::http::h2,
+        transport::listen,
     };
     let h2_settings = h2::Settings {
         initial_stream_window_size: Some(65_535), // Protocol default
@@ -62,7 +63,6 @@ async fn hello_world() {
     // address to resolve, etc.
     let target_addr = SocketAddr::new(LOCALHOST.into(), 666);
     let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
-    let peer_addr = SocketAddr::new(LOCALHOST.into(), 420);
 
     let cfg = default_config(target_addr);
 
@@ -90,7 +90,7 @@ async fn hello_world() {
     // Build the outbound TCP balancer stack.
     let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
     let svc = outbound_tcp
-        .oneshot(listen::Addrs::new(local_addr, peer_addr, Some(target_addr)))
+        .oneshot(target_addr)
         .await
         .expect("make service should succeed");
     svc.oneshot(client_io).await.expect("conn should succeed");
