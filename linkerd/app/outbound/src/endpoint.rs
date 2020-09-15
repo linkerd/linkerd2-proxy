@@ -129,10 +129,7 @@ impl From<HttpLogical> for HttpEndpoint {
     fn from(logical: HttpLogical) -> Self {
         Self {
             addr: logical.orig_dst,
-            settings: match logical.version {
-                http::Version::H2 => http::client::Settings::H2,
-                http::Version::Http1 => http::client::Settings::Http1,
-            },
+            settings: logical.version.into(),
             identity: logical
                 .require_identity
                 .clone()
