@@ -168,7 +168,7 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl<'t> Into<http::client::Settings> for &'t HttpEndpoint {
+impl Into<http::client::Settings> for &'_ HttpEndpoint {
     fn into(self) -> http::client::Settings {
         self.settings
     }
