@@ -99,3 +99,63 @@ async fn plaintext_tcp() {
         .expect("make service should succeed");
     svc.oneshot(client_io).await.expect("conn should succeed");
 }
+
+#[tokio::test(core_threads = 1)]
+async fn tls_when_hinted() {
+    let _trace = test_support::trace_init();
+
+    let tls_addr = SocketAddr::new(LOCALHOST.into(), 5550);
+    let plaintext_addr = SocketAddr::new(LOCALHOST.into(), 5551);
+    let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
+    let peer_addr = SocketAddr::new(LOCALHOST.into(), 420);
+
+    let cfg = default_config(plaintext_addr);
+
+    let (metrics, _) = Metrics::new(std::time::Duration::from_secs(10));
+    let prevent_loop = super::PreventLoop::from(local_addr.port());
+
+    // Configure mock IO for the upstream "server". It will read "hello" and
+    // then write "world".
+    let mut srv_io = test_support::io();
+    srv_io.read(b"hello").write(b"world");
+
+    let foo_id = test_support::identity("foo-ns1");
+    let srv_cfg = foo_id.server_config.clone();
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = test_support::connect()
+        // The plaintext endpoint should use plaintext...
+        .endpoint_builder(plaintext_addr, srv_io.clone())
+        .endpoint_fn(tls_addr, move |io| {
+            let srv_io = srv_io.clone().build();
+            let srv_cfg = srv_cfg.clone();
+            Box::pin(async move {
+                let io = tokio_rustls::TlsAcceptor::from(srv_cfg)
+                    .accept(io)
+                    .await
+                    .expect("failed to accept TLS handshake!");
+            })
+        });
+    let connect = cfg.build_tcp_connect_with(
+        connect,
+        tls::Conditional::None(tls::ReasonForNoPeerName::Loopback),
+        &metrics.outbound,
+    );
+    // Configure mock IO for the "client".
+    let client_io = test_support::io().write(b"hello").read(b"world").build();
+
+    // Configure the mock destination resolver to just give us a single endpoint
+    // for the target, which always exists and has no metadata.
+    let resolver = test_support::resolver().endpoint_exists(
+        Addr::from(target_addr),
+        target_addr,
+        test_support::resolver::Metadata::empty(),
+    );
+
+    // Build the outbound TCP balancer stack.
+    let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
+    let svc = outbound_tcp
+        .oneshot(listen::Addrs::new(local_addr, peer_addr, Some(target_addr)))
+        .await
+        .expect("make service should succeed");
+    svc.oneshot(client_io).await.expect("conn should succeed");
+}

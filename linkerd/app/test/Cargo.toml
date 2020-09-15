@@ -34,6 +34,7 @@ tokio-test = "0.2.1"
 tower = { version = "0.3", default-features = false} 
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
+rustls = "0.17"
 
 [dependencies.tracing-subscriber]
 version = "0.2.11"

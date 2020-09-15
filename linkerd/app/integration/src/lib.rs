@@ -16,7 +16,7 @@ pub use linkerd2_app::{
     self as app,
     core::{drain, Addr},
 };
-pub use linkerd2_app_test::*;
+pub use linkerd2_app_test::{trace_init, trace_subscriber};
 use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;

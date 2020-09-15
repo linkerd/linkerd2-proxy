@@ -967,6 +967,7 @@ dependencies = [
  "linkerd2-proxy-core",
  "linkerd2-proxy-transport",
  "regex 0.1.80",
+ "rustls",
  "tokio",
  "tokio-test",
  "tower",
