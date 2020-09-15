@@ -17,6 +17,7 @@ pub struct UnsupportedHTTPVersion(http::Version);
 #[derive(Copy, Clone, Debug)]
 pub struct WasAbsoluteForm(pub(crate) ());
 
+#[derive(Debug)]
 pub struct Client<C, T, B> {
     connect: C,
     target: T,
@@ -46,6 +47,9 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
     }
 }
 
+pub type ResponseFuture =
+    Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
+
 impl<C, T, B> Client<C, T, B>
 where
     T: Clone + Send + Sync + 'static,
@@ -57,11 +61,7 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    pub(crate) fn request(
-        &mut self,
-        mut req: http::Request<B>,
-    ) -> Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>
-    {
+    pub(crate) fn request(&mut self, mut req: http::Request<B>) -> ResponseFuture {
         // Marked by `upgrade`.
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
         let is_http_connect = req.method() == &http::Method::CONNECT;

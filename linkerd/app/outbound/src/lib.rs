@@ -34,11 +34,9 @@ use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 pub mod endpoint;
-mod orig_proto_upgrade;
 mod prevent_loop;
 mod require_identity_on_endpoint;
 
-use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 use self::prevent_loop::PreventLoop;
 use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
@@ -172,18 +170,13 @@ impl Config {
                 let backoff = self.proxy.connect.backoff.clone();
                 move |_| Ok(backoff.stream())
             }))
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
-            .push(observability.clone())
-            .push(identity_headers.clone())
             .push(http::override_authority::Layer::new(vec![
                 HOST.as_str(),
                 CANONICAL_DST_HEADER,
             ]))
-            // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
-            //
-            // This sets headers so that the inbound proxy can downgrade the request
-            // properly.
-            .push(OrigProtoUpgradeLayer::new())
+            .push(observability.clone())
+            .push(identity_headers.clone())
+            .push(admit::AdmitLayer::new(prevent_loop.into()))
             .push_on_response(svc::layers().box_http_response())
             .check_service::<HttpEndpoint>()
             .instrument(|e: &HttpEndpoint| info_span!("endpoint", peer.addr = %e.addr))

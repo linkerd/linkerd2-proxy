@@ -1,4 +1,4 @@
-use crate::{glue::Body, h1, h2, Settings};
+use crate::{glue::Body, h1, h2, orig_proto};
 use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_stack::layer;
@@ -8,20 +8,28 @@ use std::{
     task::{Context, Poll},
 };
 use tower::ServiceExt;
-use tracing::{debug, debug_span, info, trace};
+use tracing::{debug, debug_span};
 use tracing_futures::{Instrument, Instrumented};
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Settings {
+    UnmeshedHttp1,
+    MeshedHttp1,
+    H2,
+}
 
 /// A `MakeService` that can speak either HTTP/1 or HTTP/2.
 pub struct MakeClient<C, B> {
     connect: C,
-    h2_settings: crate::h2::Settings,
+    h2_settings: h2::Settings,
     _marker: PhantomData<fn(B)>,
 }
 
 /// The `Service` yielded by `MakeClient::new_service()`.
-pub struct Client<C, T, B> {
-    h1: h1::Client<C, T, B>,
-    h2: Option<h2::Connection<B>>,
+pub enum Client<C, T, B> {
+    H2(h2::Connection<B>),
+    UnmeshedHttp1(h1::Client<C, T, B>),
+    MeshedHttp1(orig_proto::Upgrade<C, T, B>),
 }
 
 pub fn layer<C, B>(
@@ -61,21 +69,27 @@ where
         let h2_settings = self.h2_settings;
 
         Box::pin(async move {
-            let h2 = match (&target).into() {
-                Settings::Http1 => None,
-                Settings::Http2 => {
-                    trace!("Building H2 client");
+            let settings = (&target).into();
+            debug!(?settings, "Building HTTP client");
+
+            let client = match settings {
+                Settings::H2 => {
+                    let h2 = h2::Connect::new(connect, h2_settings)
+                        .oneshot(target)
+                        .await?;
+                    Client::H2(h2)
+                }
+                Settings::UnmeshedHttp1 => Client::UnmeshedHttp1(h1::Client::new(connect, target)),
+                Settings::MeshedHttp1 => {
                     let h2 = h2::Connect::new(connect.clone(), h2_settings)
                         .oneshot(target.clone())
                         .await?;
-                    Some(h2)
+                    let http1 = h1::Client::new(connect, target);
+                    Client::MeshedHttp1(orig_proto::Upgrade::new(http1, h2))
                 }
             };
 
-            trace!("Building HTTP client");
-            let h1 = h1::Client::new(connect, target);
-
-            Ok(Client { h1, h2 })
+            Ok(client)
         })
     }
 }
@@ -111,40 +125,34 @@ where
     type Future = Instrumented<RspFuture>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let res = match self.h2.as_mut() {
-            Some(ref mut h2) => futures::ready!(h2.poll_ready(cx)),
-            None => Ok(()),
+        let res = match self {
+            Self::H2(ref mut svc) => futures::ready!(svc.poll_ready(cx)),
+            Self::MeshedHttp1(ref mut svc) => futures::ready!(svc.poll_ready(cx)),
+            Self::UnmeshedHttp1(_) => Ok(()),
         };
 
         Poll::Ready(res)
     }
 
-    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        let span = debug_span!(
-            "request",
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        let span = match self {
+            Self::H2(_) => debug_span!("h2"),
+            Self::UnmeshedHttp1(_) => debug_span!("unmeshed http1"),
+            Self::MeshedHttp1 { .. } => debug_span!("meshed http1"),
+        };
+        let _e = span.enter();
+        debug!(
             method = %req.method(),
             uri = %req.uri(),
             version = ?req.version(),
         );
-        let _e = span.enter();
-        debug!(headers = ?req.headers(), "client request");
+        debug!(headers = ?req.headers());
 
-        if req.version() == http::Version::HTTP_2 {
-            if let Some(ref mut client) = self.h2.as_mut() {
-                let fut: RspFuture = Box::pin(client.call(req).map_ok(|rsp| rsp.map(Body::from)));
-                return fut.instrument(span.clone());
-            }
-            debug!("H2 request to endpoint without an H2 client")
+        match self {
+            Self::UnmeshedHttp1(ref mut h1) => h1.request(req),
+            Self::MeshedHttp1(ref mut svc) => Box::pin(svc.call(req)) as RspFuture,
+            Self::H2(ref mut svc) => Box::pin(svc.call(req)) as RspFuture,
         }
-
-        match req.version() {
-            http::Version::HTTP_09 | http::Version::HTTP_10 | http::Version::HTTP_11 => {}
-            _ => {
-                info!("Downgrading version to HTTP/1.1");
-                *req.version_mut() = http::Version::HTTP_11
-            }
-        }
-
-        self.h1.request(req).instrument(span.clone())
+        .instrument(span.clone())
     }
 }

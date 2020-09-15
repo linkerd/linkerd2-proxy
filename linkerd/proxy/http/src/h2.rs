@@ -1,5 +1,5 @@
-use crate::trace;
-use futures::prelude::*;
+use crate::{glue::Body, trace};
+use futures::{future, prelude::*};
 use http;
 use hyper::{
     body::HttpBody,
@@ -120,29 +120,24 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<Body>;
     type Error = hyper::Error;
-    type Future = conn::ResponseFuture;
+    type Future = future::MapOk<
+        conn::ResponseFuture,
+        fn(http::Response<hyper::Body>) -> http::Response<Body>,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.tx.poll_ready(cx).map_err(From::from)
     }
 
-    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
         debug_assert_eq!(
             req.version(),
             http::Version::HTTP_2,
             "request version should be HTTP/2",
         );
 
-        // A request translated from HTTP/1 to 2 might not include an
-        // authority. In order to support that case, our h2 library requires
-        // the version to be dropped down from HTTP/2, as a form of us
-        // explicitly acknowledging that its not a normal HTTP/2 form.
-        if req.uri().authority().is_none() {
-            *req.version_mut() = http::Version::HTTP_11;
-        }
-
-        self.tx.send_request(req)
+        self.tx.send_request(req).map_ok(|rsp| rsp.map(Body::from))
     }
 }

@@ -1,19 +1,21 @@
-use super::{h1, upgrade};
-use futures::{future, ready, TryFuture, TryFutureExt};
-use http;
+use super::{glue::Body, h1, h2, upgrade};
+use futures::{future, prelude::*};
 use http::header::{HeaderValue, TRANSFER_ENCODING};
-use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use linkerd2_error::Error;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tracing::{debug, trace, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
 
 /// Upgrades HTTP requests from their original protocol to HTTP2.
-#[derive(Clone, Debug)]
-pub struct Upgrade<S> {
-    inner: S,
+#[derive(Debug)]
+pub(crate) struct Upgrade<C, T, B> {
+    http1: h1::Client<C, T, B>,
+    h2: h2::Connection<B>,
 }
 
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
@@ -25,100 +27,85 @@ pub struct Downgrade<S> {
 
 // ==== impl Upgrade =====
 
-impl<S> Upgrade<S> {
-    pub fn new(inner: S) -> Self {
-        Self { inner }
+impl<C, T, B> Upgrade<C, T, B> {
+    pub(crate) fn new(http1: h1::Client<C, T, B>, h2: h2::Connection<B>) -> Self {
+        Self { http1, h2 }
     }
 }
 
-impl<S, A, B> tower::Service<http::Request<A>> for Upgrade<S>
+impl<C, T, B> tower::Service<http::Request<B>> for Upgrade<C, T, B>
 where
-    S: tower::Service<http::Request<A>, Response = http::Response<B>>,
+    T: Clone + Send + Sync + 'static,
+    C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
+    C::Connection: Unpin + Send + 'static,
+    C::Future: Unpin + Send + 'static,
+    C::Error: Into<Error>,
+    B: hyper::body::HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Error> + Send + Sync,
 {
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = UpgradeFuture<S::Future>;
+    type Response = http::Response<Body>;
+    type Error = hyper::Error;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+        self.h2.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<A>) -> Self::Future {
-        let version = req.version();
-        if version != http::Version::HTTP_2
-            && version != http::Version::HTTP_3
-            && req.extensions().get::<upgrade::Http11Upgrade>().is_none()
-        {
-            let absolute_form = req
-                .extensions_mut()
-                .remove::<h1::WasAbsoluteForm>()
-                .is_some();
-            debug!(?version, absolute_form, "Upgrading request");
-
-            // absolute-form is far less common, origin-form is the usual,
-            // so only encode the extra information if it's different than
-            // the normal.
-            let val = match (version, absolute_form) {
-                (http::Version::HTTP_11, false) => "HTTP/1.1",
-                (http::Version::HTTP_11, true) => "HTTP/1.1; absolute-form",
-                (http::Version::HTTP_10, false) => "HTTP/1.0",
-                (http::Version::HTTP_10, true) => "HTTP/1.0; absolute-form",
-                (v, _) => unreachable!("bad orig-proto version: {:?}", v),
-            };
-            req.headers_mut()
-                .insert(L5D_ORIG_PROTO, HeaderValue::from_static(val));
-
-            // transfer-encoding is illegal in HTTP2
-            req.headers_mut().remove(TRANSFER_ENCODING);
-
-            *req.version_mut() = http::Version::HTTP_2;
-        } else {
-            trace!(
-                ?version,
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        debug_assert!(req.version() != http::Version::HTTP_2);
+        if req.extensions().get::<upgrade::Http11Upgrade>().is_some() {
+            debug!(
                 http.upgrade = req.extensions().get::<upgrade::Http11Upgrade>().is_some(),
-                "Skipping upgrade",
+                "Skipping orig-proto upgrade due to HTTP/1.1 upgrade",
             );
+            return self.http1.request(req);
         }
 
-        UpgradeFuture {
-            version,
-            inner: self.inner.call(req),
-        }
-    }
-}
+        let orig_version = req.version();
+        let absolute_form = req
+            .extensions_mut()
+            .remove::<h1::WasAbsoluteForm>()
+            .is_some();
+        debug!(version = ?orig_version, absolute_form, "Upgrading request");
 
-#[pin_project]
-pub struct UpgradeFuture<F> {
-    version: http::Version,
-    #[pin]
-    inner: F,
-}
+        // absolute-form is far less common, origin-form is the usual,
+        // so only encode the extra information if it's different than
+        // the normal.
+        let header = match (orig_version, absolute_form) {
+            (http::Version::HTTP_11, false) => "HTTP/1.1",
+            (http::Version::HTTP_11, true) => "HTTP/1.1; absolute-form",
+            (http::Version::HTTP_10, false) => "HTTP/1.0",
+            (http::Version::HTTP_10, true) => "HTTP/1.0; absolute-form",
+            (v, _) => unreachable!("bad orig-proto version: {:?}", v),
+        };
+        req.headers_mut()
+            .insert(L5D_ORIG_PROTO, HeaderValue::from_static(header));
 
-impl<F, B> Future for UpgradeFuture<F>
-where
-    F: TryFuture<Ok = http::Response<B>>,
-{
-    type Output = Result<F::Ok, F::Error>;
+        // transfer-encoding is illegal in HTTP2
+        req.headers_mut().remove(TRANSFER_ENCODING);
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let mut res = ready!(this.inner.try_poll(cx))?;
-        let version = res
-            .headers_mut()
-            .remove(L5D_ORIG_PROTO)
-            .and_then(|orig_proto| {
-                if orig_proto == "HTTP/1.1" {
-                    Some(http::Version::HTTP_11)
-                } else if orig_proto == "HTTP/1.0" {
-                    Some(http::Version::HTTP_10)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(*this.version);
-        debug!("Downgrading response to {:?}", version);
-        *res.version_mut() = version;
-        Poll::Ready(Ok(res.into()))
+        *req.version_mut() = http::Version::HTTP_2;
+
+        Box::pin(self.h2.call(req).map_ok(move |mut rsp| {
+            let version = rsp
+                .headers_mut()
+                .remove(L5D_ORIG_PROTO)
+                .and_then(|orig_proto| {
+                    if orig_proto == "HTTP/1.1" {
+                        Some(http::Version::HTTP_11)
+                    } else if orig_proto == "HTTP/1.0" {
+                        Some(http::Version::HTTP_10)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(orig_version);
+            trace!(?version, "Downgrading response");
+            *rsp.version_mut() = version;
+            rsp
+        }))
     }
 }
 
