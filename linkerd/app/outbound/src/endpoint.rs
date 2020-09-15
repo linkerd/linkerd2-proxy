@@ -132,7 +132,7 @@ impl From<HttpLogical> for HttpEndpoint {
             addr: logical.orig_dst,
             settings: match logical.version {
                 http::Version::HTTP_2 => http::client::Settings::H2,
-                _ => http::client::Settings::UnmeshedHttp1,
+                _ => http::client::Settings::Http1,
             },
             identity: logical
                 .require_identity
@@ -238,9 +238,9 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
             http::Version::HTTP_2 => http::client::Settings::H2,
             _ => {
                 if metadata.protocol_hint() == ProtocolHint::Unknown {
-                    http::client::Settings::UnmeshedHttp1
+                    http::client::Settings::Http1
                 } else {
-                    http::client::Settings::MeshedHttp1
+                    http::client::Settings::OrigProtoUpgrade
                 }
             }
         };

@@ -65,7 +65,7 @@ impl From<Target> for HttpEndpoint {
             port: target.socket_addr.port(),
             settings: match target.http_version {
                 http::Version::HTTP_2 => http::client::Settings::H2,
-                _ => http::client::Settings::UnmeshedHttp1,
+                _ => http::client::Settings::Http1,
             },
         }
     }
