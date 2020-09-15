@@ -26,7 +26,7 @@ pub struct FromMetadata;
 pub struct HttpLogical {
     pub dst: Addr,
     pub orig_dst: SocketAddr,
-    pub settings: http::Settings,
+    pub version: http::Version,
     pub require_identity: Option<identity::Name>,
 }
 
@@ -48,7 +48,7 @@ pub struct Profile {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpEndpoint {
     pub addr: SocketAddr,
-    pub settings: http::Settings,
+    pub settings: http::client::Settings,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
     pub concrete: HttpConcrete,
@@ -130,7 +130,10 @@ impl From<HttpLogical> for HttpEndpoint {
     fn from(logical: HttpLogical) -> Self {
         Self {
             addr: logical.orig_dst,
-            settings: logical.settings,
+            settings: match logical.version {
+                http::Version::HTTP_2 => http::client::Settings::H2,
+                _ => http::client::Settings::UnmeshedHttp1,
+            },
             identity: logical
                 .require_identity
                 .clone()
@@ -143,12 +146,6 @@ impl From<HttpLogical> for HttpEndpoint {
             concrete: logical.into(),
             metadata: Metadata::empty(),
         }
-    }
-}
-
-impl HttpEndpoint {
-    pub fn can_use_orig_proto(&self) -> bool {
-        self.metadata.protocol_hint() == ProtocolHint::Http2
     }
 }
 
@@ -172,8 +169,8 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl<'t> Into<http::Settings> for &'t HttpEndpoint {
-    fn into(self) -> http::Settings {
+impl<'t> Into<http::client::Settings> for &'t HttpEndpoint {
+    fn into(self) -> http::client::Settings {
         self.settings
     }
 }
@@ -237,11 +234,22 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
             });
 
+        let settings = match concrete.logical.version {
+            http::Version::HTTP_2 => http::client::Settings::H2,
+            _ => {
+                if metadata.protocol_hint() == ProtocolHint::Unknown {
+                    http::client::Settings::UnmeshedHttp1
+                } else {
+                    http::client::Settings::MeshedHttp1
+                }
+            }
+        };
+
         HttpEndpoint {
             addr,
             identity,
             metadata,
-            settings: concrete.logical.settings,
+            settings,
             concrete: concrete.clone(),
         }
     }
@@ -369,16 +377,14 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
                 addr.into()
             });
 
-        let settings = http::Settings::from_request(req);
-
-        tracing::debug!(headers = ?req.headers(), uri = %req.uri(), dst = %dst, http.settings = ?settings, "Setting target for request");
+        tracing::debug!(headers = ?req.headers(), uri = %req.uri(), dst = %dst, version = ?req.version(), "Setting target for request");
 
         let require_identity = identity_from_header(req, L5D_REQUIRE_ID);
 
         HttpLogical {
             dst,
             orig_dst: self.0.target_addr(),
-            settings,
+            version: req.version(),
             require_identity,
         }
     }
