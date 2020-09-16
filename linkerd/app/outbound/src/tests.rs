@@ -102,7 +102,7 @@ async fn plaintext_tcp() {
     svc.oneshot(client_io).await.expect("conn should succeed");
 }
 
-#[tokio::test(basic_scheduler)]
+#[tokio::test(core_threads = 1)]
 async fn tls_when_hinted() {
     let _trace = test_support::trace_init();
 
@@ -208,7 +208,7 @@ async fn tls_when_hinted() {
     x.unwrap();
 }
 
-#[tokio::test(basic_scheduler)]
+#[tokio::test(core_threads = 1)]
 async fn server_first_tls_when_hinted() {
     let _trace = test_support::trace_init();
 
