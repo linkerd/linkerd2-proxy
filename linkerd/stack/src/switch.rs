@@ -1,13 +1,9 @@
 //! A middleware that switches between two underlying stacks, depending on the
 //! target type.
 
-use futures::prelude::*;
+use futures::{future, prelude::*};
 use linkerd2_error::Error;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::task::{Context, Poll};
 use tower::util::ServiceExt;
 
 /// Determines whether the primary stack should be used.
@@ -59,11 +55,14 @@ where
 {
     type Response = SwitchService<P::Response, F::Response>;
     type Error = Error;
-    type Future = Pin<
-        Box<
-            dyn Future<Output = Result<SwitchService<P::Response, F::Response>, Error>>
-                + Send
-                + 'static,
+    type Future = future::Either<
+        future::MapOk<
+            future::ErrInto<tower::util::Oneshot<P, T>, Error>,
+            fn(P::Response) -> SwitchService<P::Response, F::Response>,
+        >,
+        future::MapOk<
+            future::ErrInto<tower::util::Oneshot<F, T>, Error>,
+            fn(F::Response) -> SwitchService<P::Response, F::Response>,
         >,
     >;
 
@@ -73,17 +72,21 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         if self.switch.use_primary(&target) {
-            let primary = self.primary.clone();
-            Box::pin(async move {
-                let d = primary.oneshot(target).err_into::<Error>().await?;
-                Ok(SwitchService::Primary(d))
-            })
+            future::Either::Left(
+                self.primary
+                    .clone()
+                    .oneshot(target)
+                    .err_into::<Error>()
+                    .map_ok(SwitchService::Primary),
+            )
         } else {
-            let fallback = self.fallback.clone();
-            Box::pin(async move {
-                let f = fallback.oneshot(target).err_into::<Error>().await?;
-                Ok(SwitchService::Fallback(f))
-            })
+            future::Either::Right(
+                self.fallback
+                    .clone()
+                    .oneshot(target)
+                    .err_into::<Error>()
+                    .map_ok(SwitchService::Fallback),
+            )
         }
     }
 }
@@ -99,7 +102,8 @@ where
 {
     type Response = P::Response;
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<P::Response, Error>> + Send + 'static>>;
+    type Future =
+        future::Either<future::ErrInto<P::Future, Error>, future::ErrInto<F::Future, Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         Poll::Ready(match self {
@@ -110,8 +114,8 @@ where
 
     fn call(&mut self, req: T) -> Self::Future {
         match self {
-            Self::Primary(d) => Box::pin(d.call(req).err_into::<Error>()),
-            Self::Fallback(f) => Box::pin(f.call(req).err_into::<Error>()),
+            Self::Primary(d) => future::Either::Left(d.call(req).err_into::<Error>()),
+            Self::Fallback(f) => future::Either::Right(f.call(req).err_into::<Error>()),
         }
     }
 }
