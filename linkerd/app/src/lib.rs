@@ -6,13 +6,12 @@ pub mod admin;
 pub mod dst;
 pub mod env;
 pub mod identity;
-pub mod metrics;
 pub mod oc_collector;
 pub mod tap;
 
-use self::metrics::Metrics;
+pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
-pub use linkerd2_app_core::{self as core, trace};
+pub use linkerd2_app_core::{self as core, metrics, trace};
 use linkerd2_app_core::{control::ControlAddr, dns, drain, svc, Error};
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;

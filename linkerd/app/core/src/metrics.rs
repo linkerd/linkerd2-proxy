@@ -1,10 +1,10 @@
-pub use linkerd2_app_core::{
+pub use crate::{
     classify::Class,
     errors, handle_time, http_metrics as metrics,
     metric_labels::{ControlLabels, EndpointLabels, RouteLabels},
-    metrics::FmtMetrics,
     opencensus, proxy, stack_metrics, telemetry, transport, ControlHttpMetrics, ProxyMetrics,
 };
+pub use linkerd2_metrics::*;
 use std::time::{Duration, SystemTime};
 
 pub struct Metrics {

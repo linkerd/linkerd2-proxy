@@ -906,6 +906,7 @@ dependencies = [
  "hyper",
  "linkerd2-app",
  "linkerd2-app-core",
+ "linkerd2-app-test",
  "linkerd2-metrics",
  "linkerd2-proxy-api",
  "quickcheck",
@@ -932,6 +933,7 @@ dependencies = [
  "http 0.2.1",
  "indexmap",
  "linkerd2-app-core",
+ "linkerd2-app-test",
  "linkerd2-identity",
  "linkerd2-retry",
  "pin-project",
@@ -947,6 +949,28 @@ version = "0.1.0"
 dependencies = [
  "linkerd2-app-integration",
  "tokio",
+]
+
+[[package]]
+name = "linkerd2-app-test"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.5",
+ "h2 0.2.6",
+ "http 0.2.1",
+ "http-body",
+ "hyper",
+ "linkerd2-app-core",
+ "linkerd2-proxy-api-resolve",
+ "linkerd2-proxy-core",
+ "linkerd2-proxy-transport",
+ "regex 0.1.80",
+ "tokio",
+ "tokio-test",
+ "tower",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1663,10 +1687,22 @@ dependencies = [
  "kernel32-sys",
  "libc",
  "log",
- "miow",
+ "miow 0.2.1",
  "net2",
  "slab",
  "winapi 0.2.8",
+]
+
+[[package]]
+name = "mio-named-pipes"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0840c1c50fd55e521b247f949c241c9997709f23bd7f023b9762cd561e935656"
+dependencies = [
+ "log",
+ "mio",
+ "miow 0.3.5",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -1690,6 +1726,16 @@ dependencies = [
  "net2",
  "winapi 0.2.8",
  "ws2_32-sys",
+]
+
+[[package]]
+name = "miow"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07b88fb9795d4d36d62a012dfbf49a8f5cf12751f36d31a9dbe66d528e58979e"
+dependencies = [
+ "socket2",
+ "winapi 0.3.8",
 ]
 
 [[package]]
@@ -2508,6 +2554,7 @@ dependencies = [
  "libc",
  "memchr 2.3.3",
  "mio",
+ "mio-named-pipes",
  "mio-uds",
  "num_cpus",
  "parking_lot",

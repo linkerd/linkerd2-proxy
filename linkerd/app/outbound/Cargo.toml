@@ -31,3 +31,5 @@ features = [
 
 [dev-dependencies]
 quickcheck = { version = "0.9", default-features = false }
+linkerd2-app-test = { path = "../test" }
+tokio = { version = "0.2", features = ["full", "macros"]}

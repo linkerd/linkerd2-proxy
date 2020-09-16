@@ -12,8 +12,11 @@ pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
 pub use http::{HeaderMap, Request, Response, StatusCode};
 pub use http_body::Body as HttpBody;
-pub use linkerd2_app as app;
-pub use linkerd2_app_core::drain;
+pub use linkerd2_app::{
+    self as app,
+    core::{drain, Addr},
+};
+pub use linkerd2_app_test::*;
 use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;
@@ -38,31 +41,6 @@ pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);
 
 pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-/// By default, disable logging in modules that are expected to error in tests.
-const DEFAULT_LOG: &'static str = "error,\
-                                   linkerd2_proxy_http=off,\
-                                   linkerd2_proxy_transport=off";
-
-pub fn trace_subscriber() -> (Dispatch, app::core::trace::Handle) {
-    use std::env;
-    let log_level = env::var("LINKERD2_PROXY_LOG")
-        .or_else(|_| env::var("RUST_LOG"))
-        .unwrap_or_else(|_| DEFAULT_LOG.to_owned());
-    env::set_var("RUST_LOG", &log_level);
-    env::set_var("LINKERD2_PROXY_LOG", &log_level);
-    let log_format = env::var("LINKERD2_PROXY_LOG_FORMAT").unwrap_or_else(|_| "PLAIN".to_string());
-    env::set_var("LINKERD2_PROXY_LOG_FORMAT", &log_format);
-    // This may fail, since the global log compat layer may have been
-    // initialized by another test.
-    let _ = app::core::trace::init_log_compat();
-    app::core::trace::with_filter_and_format(&log_level, &log_format)
-}
-
-pub fn trace_init() -> tracing::dispatcher::DefaultGuard {
-    let (d, _) = trace_subscriber();
-    tracing::dispatcher::set_default(&d)
-}
 
 /// Retry an assertion up to a specified number of times, waiting
 /// `RUST_TEST_PATIENCE_MS` between retries.

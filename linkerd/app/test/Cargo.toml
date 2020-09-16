@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-app-integration"
+name = "linkerd2-app-test"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
@@ -18,38 +18,27 @@ flaky_tests = []
 nyi = []
 
 [dependencies]
-bytes = "0.5"
 futures = "0.3" 
 h2 = "0.2.6"
 http = "0.2"
 http-body = "0.3"
 hyper = "0.13.7"
-linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
-linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13", features = ["arbitrary"] }
-linkerd2-app-test = { path = "../test" }
+linkerd2-proxy-core = { path = "../../proxy/core" }
+linkerd2-proxy-transport = { path = "../../proxy/transport" }
+linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 regex = "0.1"
-socket2 = "0.3.12"
-quickcheck = { version = "0.9", default-features = false }
-ring = "0.16"
-rustls = "0.17"
 tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
-tokio-rustls = "0.13"
+tokio-test = "0.2.1"
 tower = { version = "0.3", default-features = false} 
-tonic = { version = "0.2", default-features = false }
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
-webpki = "0.21.0"
 
 [dependencies.tracing-subscriber]
 version = "0.2.11"
 # we don't need `chrono` time formatting or ANSI colored output
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
-
-[dev-dependencies]
-flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies.tracing-subscriber]
 version = "0.2.8"
