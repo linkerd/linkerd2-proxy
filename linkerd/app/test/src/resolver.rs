@@ -4,15 +4,13 @@ pub use linkerd2_proxy_api_resolve::{Metadata, ProtocolHint};
 pub use linkerd2_proxy_core::resolve::{Resolve, Update};
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::net::SocketAddr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
-// use std::future::Future;
-use std::net::SocketAddr;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc;
-// use tower::Service;
 
 #[derive(Debug, Clone)]
 pub struct Resolver<T, E> {
