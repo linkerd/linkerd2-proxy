@@ -1,9 +1,11 @@
+#![allow(warnings)]
 use crate::Config;
 use indexmap::indexset;
 use linkerd2_app_core::{self as app_core, metrics::Metrics, transport::tls, Addr};
 use linkerd2_app_test::{self as test_support, io, TestMakeServiceExt};
 use std::{net::SocketAddr, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tower::ServiceExt;
 use tracing_futures::Instrument;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
@@ -288,5 +290,119 @@ async fn server_first_tls_when_hinted() {
 
     tokio::join! {
         tls_conn, plain_conn, tls_srv
+    };
+}
+
+#[tokio::test(core_threads = 1)]
+async fn tcp_endpoint_becomes_tls() {
+    let _trace = test_support::trace_init();
+
+    let target_addr = SocketAddr::new(LOCALHOST.into(), 5550);
+    let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
+    let cfg = default_config(target_addr);
+
+    let (metrics, _) = Metrics::new(std::time::Duration::from_secs(10));
+    let prevent_loop = super::PreventLoop::from(local_addr.port());
+
+    let foo_id = test_support::identity("foo-ns1");
+    let proxy_id = test_support::identity("bar-ns1")
+        .local_identity(b"bar.ns1.serviceaccount.identity.linkerd.cluster.local");
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+    let srv_cfg = foo_id.server_config.clone();
+
+    // Configure mock IO for the upstream "server". It will read "hello" and
+    // then write "world".
+    let (d1, d2) = io::duplex(1024);
+    let tls_srv = async move {
+        let mut io = tokio_rustls::TlsAcceptor::from(srv_cfg)
+            .accept(d2)
+            .await
+            .expect("failed to accept TLS handshake!");
+        tracing::info!("handshake successful!");
+        let mut s = vec![0; 5];
+        io.write_all(b"hello").await.expect("write succeeds");
+        tracing::info!("wrote");
+        io.read(&mut s).await.expect("read succeeds");
+        tracing::info!(read = ?s);
+        assert_eq!(&s[..], b"world");
+        io.shutdown().await.expect("close TLS connection");
+        tracing::info!("shutdown");
+    };
+    let mut tls_srv_io = Some(d1);
+    let mut srv_io = Some(io::mock().read(b"hello").write(b"world").build());
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = test_support::connect().endpoint_fn(target_addr, move || {
+        // For the first connection, speak plaintext
+        if let Some(plain) = srv_io.take() {
+            return io::BoxedIo::from(plain);
+        }
+
+        // Then, expect TLS.
+        io::BoxedIo::from(tls_srv_io.take().expect("connected a third time!"))
+    });
+    let connect =
+        cfg.build_tcp_connect_with(connect, tls::Conditional::Some(proxy_id), &metrics.outbound);
+
+    let resolver = test_support::resolver();
+    let mut endpoint = resolver.endpoint_tx(Addr::from(target_addr));
+    endpoint
+        .add(Some((
+            target_addr,
+            test_support::resolver::Metadata::empty(),
+        )))
+        .expect("resolution not dropped");
+
+    // Configure mock IO for the "client".
+    let mut client_io = io::mock();
+    client_io.write(b"hello").read(b"world");
+
+    // Build the outbound TCP balancer stack.
+    let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
+
+    // Connect to the endpoint. We will not receive a TLS hint.
+    let io = client_io.build();
+    let plain_svc = outbound_tcp
+        .clone()
+        .oneshot(target_addr)
+        .instrument(tracing::info_span!("plaintext"))
+        .await
+        .expect("failed to make plaintext service");
+    let plain_conn = async move {
+        plain_svc
+            .oneshot(io)
+            .await
+            .expect("plaintext service failed");
+    }
+    .instrument(tracing::info_span!("plaintext"));
+
+    endpoint
+        .remove(Some(target_addr))
+        .expect("resolution not dropped");
+    endpoint
+        .add(Some((
+            target_addr,
+            // test_support::resolver::Metadata::new(
+            //     Default::default(),
+            //     test_support::resolver::ProtocolHint::Unknown,
+            //     Some(id_name),
+            //     10_000,
+            //     None,
+            // ),
+            test_support::resolver::Metadata::empty(),
+        )))
+        .expect("resolution still not dropped");
+
+    let io = client_io.build();
+    let tls_conn = outbound_tcp
+        .clone()
+        .make_oneshot(target_addr, io)
+        .instrument(tracing::info_span!("tls"));
+
+    tokio::join! {
+        tls_conn, tls_srv, plain_conn
     };
 }
