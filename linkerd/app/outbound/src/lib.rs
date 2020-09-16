@@ -170,13 +170,13 @@ impl Config {
                 let backoff = self.proxy.connect.backoff.clone();
                 move |_| Ok(backoff.stream())
             }))
+            .push(admit::AdmitLayer::new(prevent_loop.into()))
+            .push(observability.clone())
+            .push(identity_headers.clone())
             .push(http::override_authority::Layer::new(vec![
                 HOST.as_str(),
                 CANONICAL_DST_HEADER,
             ]))
-            .push(observability.clone())
-            .push(identity_headers.clone())
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
             .push_on_response(svc::layers().box_http_response())
             .check_service::<HttpEndpoint>()
             .instrument(|e: &HttpEndpoint| info_span!("endpoint", peer.addr = %e.addr))
