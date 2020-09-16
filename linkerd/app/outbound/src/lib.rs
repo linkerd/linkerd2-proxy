@@ -544,8 +544,12 @@ impl Config {
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_map_target(TcpEndpoint::from);
 
-        let accept = svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp_forward))
-            .push(metrics.transport.layer_accept(TransportLabels));
+        let accept = svc::stack(svc::stack::MakeSwitch::new(
+            skip_detect.clone(),
+            http,
+            tcp_forward,
+        ))
+        .push(metrics.transport.layer_accept(TransportLabels));
 
         info!(addr = %listen_addr, "Serving");
         serve::serve(listen, accept, drain.signal()).await
