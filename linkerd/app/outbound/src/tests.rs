@@ -54,7 +54,7 @@ fn default_config(orig_dst: SocketAddr) -> Config {
 }
 
 #[tokio::test(core_threads = 1)]
-async fn hello_world() {
+async fn plaintext_tcp() {
     let _trace = test_support::trace_init();
 
     // Since all of the actual IO in this test is mocked out, we won't actually

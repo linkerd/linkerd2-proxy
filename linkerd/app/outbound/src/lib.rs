@@ -484,6 +484,15 @@ impl Config {
             + 'static,
         S::Future: Send,
     {
+        let ProxyConfig {
+            server: ServerConfig { h2_settings, .. },
+            disable_protocol_detection_for_ports: ref skip_detect,
+            dispatch_timeout,
+            max_in_flight_requests,
+            detect_protocol_timeout,
+            ..
+        } = self.proxy;
+        let canonicalize_timeout = self.canonicalize_timeout;
         let prevent_loop = PreventLoop::from(listen_addr.port());
 
         // Load balances TCP streams that cannot be decoded as HTTP.
@@ -491,16 +500,6 @@ impl Config {
             svc::stack(self.build_tcp_balance(&tcp_connect, resolve, prevent_loop, &metrics))
                 .push_map_target(|a: listen::Addrs| a.target_addr())
                 .into_inner();
-
-        let ProxyConfig {
-            server: ServerConfig { h2_settings, .. },
-            disable_protocol_detection_for_ports: skip_detect,
-            dispatch_timeout,
-            max_in_flight_requests,
-            detect_protocol_timeout,
-            ..
-        } = self.proxy;
-        let canonicalize_timeout = self.canonicalize_timeout;
 
         let http_admit_request = svc::layers()
             // Limits the number of in-flight requests.
@@ -555,7 +554,7 @@ impl Config {
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_map_target(TcpEndpoint::from);
 
-        let accept = svc::stack(SkipDetect::new(skip_detect, http, tcp_forward))
+        let accept = svc::stack(SkipDetect::new(skip_detect.clone(), http, tcp_forward))
             .push(metrics.transport.layer_accept(TransportLabels));
 
         info!(addr = %listen_addr, "Serving");
