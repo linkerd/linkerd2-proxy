@@ -16,7 +16,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        http::{self, normalize_uri, orig_proto, strip_header, DetectHttp},
+        http::{self, orig_proto, strip_header, DetectHttp},
         identity, tap, tcp, SkipDetect,
     },
     reconnect, router, serve,
@@ -179,7 +179,7 @@ impl Config {
 
         // Creates HTTP clients for each inbound port & HTTP settings.
         let endpoint = svc::stack(tcp_connect)
-            .push(http::MakeClientLayer::new(connect.h2_settings))
+            .push(http::client::layer(connect.h2_settings))
             .push(reconnect::layer({
                 let backoff = connect.backoff.clone();
                 move |_| Ok(backoff.stream())
@@ -199,9 +199,6 @@ impl Config {
 
         let target = endpoint
             .push_map_target(HttpEndpoint::from)
-            // Normalizes the URI, i.e. if it was originally in
-            // absolute-form on the outbound side.
-            .push(normalize_uri::layer())
             .push(observe)
             .into_new_service()
             .check_new_service::<Target, http::Request<_>>();

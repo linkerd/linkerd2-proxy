@@ -71,7 +71,7 @@ where
     fn call(&mut self, target: inbound::Target) -> Self::Future {
         let inbound::Target {
             dst,
-            http_settings,
+            http_version,
             tls_client_id,
             ..
         } = target;
@@ -120,7 +120,7 @@ where
                     let endpoint = outbound::HttpLogical {
                         dst: dst_name.clone().into(),
                         orig_dst: dst_addr,
-                        settings: http_settings,
+                        version: http_version,
                         require_identity: None,
                     };
 

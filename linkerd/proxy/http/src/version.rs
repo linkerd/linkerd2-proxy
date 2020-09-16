@@ -1,10 +1,24 @@
 use linkerd2_proxy_transport::io::{self, Peekable, PrefixedIo};
 use tracing::{debug, trace};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Version {
     Http1,
     H2,
+}
+
+#[derive(Debug)]
+pub struct Unsupported(http::Version);
+
+impl std::convert::TryFrom<http::Version> for Version {
+    type Error = Unsupported;
+    fn try_from(v: http::Version) -> Result<Self, Unsupported> {
+        match v {
+            http::Version::HTTP_10 | http::Version::HTTP_11 => Ok(Self::Http1),
+            http::Version::HTTP_2 => Ok(Self::H2),
+            v => Err(Unsupported(v)),
+        }
+    }
 }
 
 impl Version {
@@ -13,12 +27,12 @@ impl Version {
     /// Tries to detect a known protocol in the peeked bytes.
     ///
     /// If no protocol can be determined, returns `None`.
-    pub fn from_prefix(bytes: &[u8]) -> Option<Version> {
+    pub fn from_prefix(bytes: &[u8]) -> Option<Self> {
         // http2 is easiest to detect
         if bytes.len() >= Self::H2_PREFACE.len() {
             if &bytes[..Self::H2_PREFACE.len()] == Self::H2_PREFACE {
                 trace!("Detected H2");
-                return Some(Version::H2);
+                return Some(Self::H2);
             }
         }
 
@@ -37,7 +51,7 @@ impl Version {
             // the first line is HTTP1.
             Ok(_) | Err(httparse::Error::TooManyHeaders) => {
                 trace!("Detected H1");
-                return Some(Version::Http1);
+                return Some(Self::Http1);
             }
             _ => {}
         }
@@ -47,15 +61,21 @@ impl Version {
         None
     }
 
-    pub async fn detect<I>(io: I) -> io::Result<(Option<Version>, PrefixedIo<I>)>
+    pub async fn detect<I>(io: I) -> io::Result<(Option<Self>, PrefixedIo<I>)>
     where
         I: io::AsyncRead + io::AsyncWrite + Unpin,
     {
         // If we don't find a newline, we consider the stream to be HTTP/1; so
         // we need enough capacity to prevent false-positives.
         let io = io.peek(8192).await?;
-        let version = Version::from_prefix(io.prefix());
+        let version = Self::from_prefix(io.prefix());
         Ok((version, io))
+    }
+}
+
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unsupported HTTP version")
     }
 }
 

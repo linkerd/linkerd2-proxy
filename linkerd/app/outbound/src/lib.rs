@@ -34,11 +34,9 @@ use tokio::sync::mpsc;
 use tracing::{info, info_span};
 
 pub mod endpoint;
-mod orig_proto_upgrade;
 mod prevent_loop;
 mod require_identity_on_endpoint;
 
-use self::orig_proto_upgrade::OrigProtoUpgradeLayer;
 use self::prevent_loop::PreventLoop;
 use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
@@ -166,7 +164,7 @@ impl Config {
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
-            .push(http::MakeClientLayer::new(self.proxy.connect.h2_settings))
+            .push(http::client::layer(self.proxy.connect.h2_settings))
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
                 let backoff = self.proxy.connect.backoff.clone();
@@ -179,13 +177,6 @@ impl Config {
                 HOST.as_str(),
                 CANONICAL_DST_HEADER,
             ]))
-            // Ensures that the request's URI is in the proper form.
-            .push(http::normalize_uri::layer())
-            // Upgrades HTTP/1 requests to be transported over HTTP/2 connections.
-            //
-            // This sets headers so that the inbound proxy can downgrade the request
-            // properly.
-            .push(OrigProtoUpgradeLayer::new())
             .push_on_response(svc::layers().box_http_response())
             .check_service::<HttpEndpoint>()
             .instrument(|e: &HttpEndpoint| info_span!("endpoint", peer.addr = %e.addr))

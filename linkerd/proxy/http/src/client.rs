@@ -1,68 +1,57 @@
-use super::glue::{Body, HyperConnect};
-use super::upgrade::{Http11Upgrade, HttpConnect};
-use super::{h1, h2, settings::Settings, trace};
+//! The proxy's HTTP client.
+//!
+//! It can operate as a pure HTTP/1 client, a pure HTTP/2 client, or a
+//! mixed-mode "orig-proto" client. The orig-proto mode attempts to dispatch
+//! HTTP/1 messages over an H2 transport; however, some requests cannot be
+//! proxied via this method, so it also maintains a fallback HTTP/1 client.
+
+use crate::{glue::Body, h1, h2, orig_proto};
 use futures::prelude::*;
-use http;
-use hyper;
 use linkerd2_error::Error;
+use linkerd2_stack::layer;
 use std::{
-    future::Future,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
 use tower::ServiceExt;
-use tracing::{debug, debug_span, trace};
-use tracing_futures::Instrument;
+use tracing::{debug, debug_span};
+use tracing_futures::{Instrument, Instrumented};
 
-/// Configures an HTTP client that uses a `C`-typed connector
-#[derive(Debug)]
-pub struct MakeClientLayer<B> {
-    h2_settings: crate::h2::Settings,
-    _marker: PhantomData<fn() -> B>,
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum Settings {
+    Http1,
+    H2,
+    OrigProtoUpgrade,
 }
 
-/// A `MakeService` that can speak either HTTP/1 or HTTP/2.
 pub struct MakeClient<C, B> {
     connect: C,
-    h2_settings: crate::h2::Settings,
+    h2_settings: h2::Settings,
     _marker: PhantomData<fn(B)>,
 }
 
-/// The `Service` yielded by `MakeClient::new_service()`.
 pub enum Client<C, T, B> {
-    Http1(hyper::Client<HyperConnect<C, T>, B>),
-    Http2(h2::Connection<B>),
+    H2(h2::Connection<B>),
+    Http1(h1::Client<C, T, B>),
+    OrigProtoUpgrade(orig_proto::Upgrade<C, T, B>),
 }
 
-// === impl MakeClientLayer ===
-
-impl<B> MakeClientLayer<B> {
-    pub fn new(h2_settings: crate::h2::Settings) -> Self {
-        Self {
-            h2_settings,
-            _marker: PhantomData,
-        }
-    }
+pub fn layer<C, B>(
+    h2_settings: h2::Settings,
+) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Copy {
+    layer::mk(move |connect: C| MakeClient {
+        connect,
+        h2_settings,
+        _marker: PhantomData,
+    })
 }
 
-impl<B> Clone for MakeClientLayer<B> {
-    fn clone(&self) -> Self {
-        Self {
-            h2_settings: self.h2_settings,
-            _marker: self._marker,
-        }
-    }
-}
-
-impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B> {
-    type Service = MakeClient<C, B>;
-
-    fn layer(&self, connect: C) -> Self::Service {
-        MakeClient {
-            connect,
-            h2_settings: self.h2_settings,
-            _marker: PhantomData,
+impl From<crate::Version> for Settings {
+    fn from(v: crate::Version) -> Self {
+        match v {
+            crate::Version::Http1 => Self::Http1,
+            crate::Version::H2 => Self::H2,
         }
     }
 }
@@ -71,62 +60,50 @@ impl<C, B> tower::layer::Layer<C> for MakeClientLayer<B> {
 
 impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
+    T: Clone + Send + Sync + 'static,
+    for<'t> &'t T: Into<Settings>,
     C: tower::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
     C::Connection: Unpin + Send + 'static,
-    T: AsRef<Settings> + Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
     type Response = Client<C, T, B>;
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Client<C, T, B>, Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        trace!("Building HTTP client");
         let connect = self.connect.clone();
-        let h2_settings = self.h2_settings.clone();
+        let h2_settings = self.h2_settings;
 
         Box::pin(async move {
-            match *target.as_ref() {
-                Settings::Http1 {
-                    keep_alive,
-                    wants_h1_upgrade: _,
-                    was_absolute_form,
-                } => {
-                    let mut h1 = hyper::Client::builder();
-                    let h1 = if !keep_alive {
-                        // disable hyper's connection pooling by setting the maximum
-                        // number of idle connections to 0.
-                        h1.pool_max_idle_per_host(0)
-                    } else {
-                        &mut h1
-                    }
-                    // hyper should only try to automatically
-                    // set the host if the request was in absolute_form
-                    .executor(trace::Executor::new())
-                    .set_host(was_absolute_form)
-                    .build(HyperConnect::new(
-                        connect,
-                        target,
-                        was_absolute_form,
-                    ));
-                    Ok(Client::Http1(h1))
-                }
-                Settings::Http2 => {
+            let settings = (&target).into();
+            debug!(?settings, "Building HTTP client");
+
+            let client = match settings {
+                Settings::H2 => {
                     let h2 = h2::Connect::new(connect, h2_settings)
                         .oneshot(target)
                         .await?;
-                    Ok(Client::Http2(h2))
+                    Client::H2(h2)
                 }
-            }
+                Settings::Http1 => Client::Http1(h1::Client::new(connect, target)),
+                Settings::OrigProtoUpgrade => {
+                    let h2 = h2::Connect::new(connect.clone(), h2_settings)
+                        .oneshot(target.clone())
+                        .await?;
+                    let http1 = h1::Client::new(connect, target);
+                    Client::OrigProtoUpgrade(orig_proto::Upgrade::new(http1, h2))
+                }
+            };
+
+            Ok(client)
         })
     }
 }
@@ -143,77 +120,54 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 // === impl Client ===
 
+type RspFuture =
+    Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
+
 impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
+    T: Clone + Send + Sync + 'static,
     C: tower::make::MakeConnection<T> + Clone + Send + Sync + 'static,
     C::Connection: Unpin + Send + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
-    T: Clone + Send + Sync + 'static,
     B: hyper::body::HttpBody + Send + 'static,
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<Body>;
-    type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Error = hyper::Error;
+    type Future = Instrumented<RspFuture>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        match *self {
-            Client::Http1(_) => Poll::Ready(Ok(())),
-            Client::Http2(ref mut h2) => h2.poll_ready(cx).map_err(Into::into),
-        }
+        let res = match self {
+            Self::H2(ref mut svc) => futures::ready!(svc.poll_ready(cx)),
+            Self::OrigProtoUpgrade(ref mut svc) => futures::ready!(svc.poll_ready(cx)),
+            Self::Http1(_) => Ok(()),
+        };
+
+        Poll::Ready(res)
     }
 
-    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-        let span = debug_span!(
-            "request",
-            method = %req.method(),
-            uri = %req.uri(),
-            version = ?req.version(),
-        );
-        let _e = span.enter();
-        debug!(headers = ?req.headers(), "client request");
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        let span = match self {
+            Self::H2(_) => debug_span!("h2"),
+            Self::Http1(_) => debug_span!("http1"),
+            Self::OrigProtoUpgrade { .. } => debug_span!("orig-proto-upgrade"),
+        };
+        span.in_scope(|| {
+            debug!(
+                method = %req.method(),
+                uri = %req.uri(),
+                version = ?req.version(),
+            );
+            debug!(headers = ?req.headers());
 
-        match *self {
-            Client::Http1(ref h1) => {
-                let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
-                let is_http_connect = req.method() == &http::Method::CONNECT;
-                Box::pin(
-                    h1.request(req)
-                        .map_ok(move |mut rsp| {
-                            if is_http_connect {
-                                debug_assert!(upgrade.is_some());
-                                rsp.extensions_mut().insert(HttpConnect);
-                            }
-
-                            if h1::is_upgrade(&rsp) {
-                                trace!("client response is HTTP/1.1 upgrade");
-                            } else {
-                                h1::strip_connection_headers(rsp.headers_mut());
-                            }
-
-                            rsp.map(|b| Body {
-                                body: Some(b),
-                                upgrade,
-                            })
-                        })
-                        .err_into::<Error>()
-                        .instrument(span.clone()),
-                )
+            match self {
+                Self::Http1(ref mut h1) => h1.request(req),
+                Self::OrigProtoUpgrade(ref mut svc) => svc.call(req),
+                Self::H2(ref mut svc) => Box::pin(svc.call(req)) as RspFuture,
             }
-            Client::Http2(ref mut h2) => Box::pin(
-                h2.call(req)
-                    .map_ok(|rsp| {
-                        rsp.map(|b| Body {
-                            body: Some(b),
-                            upgrade: None,
-                        })
-                    })
-                    .err_into::<Error>()
-                    .instrument(span.clone()),
-            ),
-        }
+        })
+        .instrument(span)
     }
 }

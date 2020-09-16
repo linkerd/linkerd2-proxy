@@ -153,7 +153,7 @@ mod test {
                 dst: dst_name
                     .map(|n| NameAddr::from_str(n).unwrap().into())
                     .unwrap_or_else(|| socket_addr.into()),
-                http_settings: http::Settings::Http2,
+                http_version: http::Version::Http1,
                 tls_client_id: peer_id,
             };
             assert_ready_ok!(make_gateway.poll_ready());

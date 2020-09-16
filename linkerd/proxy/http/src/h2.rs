@@ -1,5 +1,5 @@
-use crate::trace;
-use futures::prelude::*;
+use crate::{glue::Body, trace};
+use futures::{future, prelude::*};
 use http;
 use hyper::{
     body::HttpBody,
@@ -120,9 +120,12 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<hyper::Body>;
+    type Response = http::Response<Body>;
     type Error = hyper::Error;
-    type Future = conn::ResponseFuture;
+    type Future = future::MapOk<
+        conn::ResponseFuture,
+        fn(http::Response<hyper::Body>) -> http::Response<Body>,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.tx.poll_ready(cx).map_err(From::from)
@@ -143,6 +146,6 @@ where
             *req.version_mut() = http::Version::HTTP_11;
         }
 
-        self.tx.send_request(req)
+        self.tx.send_request(req).map_ok(|rsp| rsp.map(Body::from))
     }
 }
