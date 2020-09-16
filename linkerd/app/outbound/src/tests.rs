@@ -127,7 +127,7 @@ async fn tls_when_hinted() {
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
     let (d1, d2) = io::duplex(1024);
-    let tls_srv = tokio::spawn(async move {
+    let tls_srv = async move {
         let mut io = tokio_rustls::TlsAcceptor::from(srv_cfg)
             .accept(d2)
             .await
@@ -141,7 +141,8 @@ async fn tls_when_hinted() {
         tracing::info!("wrote");
         io.shutdown().await.expect("close TLS connection");
         tracing::info!("shutdown");
-    });
+    };
+
     let mut tls_srv_io = Some(d1);
     let mut srv_io = io::mock();
     srv_io.write(b"hello").read(b"world");
@@ -202,10 +203,10 @@ async fn tls_when_hinted() {
             .expect("plaintext connection should succeed");
     }
     .instrument(tracing::info_span!("plaintext_conn"));
-    let x = tokio::try_join! {
-        tokio::spawn(tls_conn), tokio::spawn(plain_conn), tls_srv
+
+    tokio::join! {
+        tls_conn, plain_conn, tls_srv
     };
-    x.unwrap();
 }
 
 #[tokio::test(core_threads = 1)]
@@ -233,7 +234,7 @@ async fn server_first_tls_when_hinted() {
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
     let (d1, d2) = io::duplex(1024);
-    let tls_srv = tokio::spawn(async move {
+    let tls_srv = async move {
         let mut io = tokio_rustls::TlsAcceptor::from(srv_cfg)
             .accept(d2)
             .await
@@ -247,7 +248,7 @@ async fn server_first_tls_when_hinted() {
         assert_eq!(&s[..], b"world");
         io.shutdown().await.expect("close TLS connection");
         tracing::info!("shutdown");
-    });
+    };
     let mut tls_srv_io = Some(d1);
     let mut srv_io = io::mock();
     srv_io.read(b"hello").write(b"world");
@@ -308,8 +309,8 @@ async fn server_first_tls_when_hinted() {
             .expect("plaintext connection should succeed");
     }
     .instrument(tracing::info_span!("plaintext_conn"));
-    let x = tokio::try_join! {
-        tokio::spawn(tls_conn), tokio::spawn(plain_conn), tls_srv
+
+    tokio::join! {
+        tls_conn, plain_conn, tls_srv
     };
-    x.unwrap();
 }
