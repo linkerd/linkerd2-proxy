@@ -1,10 +1,9 @@
 use crate::Config;
 use indexmap::indexset;
 use linkerd2_app_core::{self as app_core, metrics::Metrics, transport::tls, Addr};
-use linkerd2_app_test::{self as test_support, io};
+use linkerd2_app_test::{self as test_support, io, TestMakeServiceExt};
 use std::{net::SocketAddr, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tower::ServiceExt;
 use tracing_futures::Instrument;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
@@ -95,11 +94,8 @@ async fn plaintext_tcp() {
 
     // Build the outbound TCP balancer stack.
     let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
-    let svc = outbound_tcp
-        .oneshot(target_addr)
-        .await
-        .expect("make service should succeed");
-    svc.oneshot(client_io).await.expect("conn should succeed");
+    // Oneshot the TCP stack with the target and request (client conn).
+    outbound_tcp.make_oneshot(target_addr, client_io).await
 }
 
 #[tokio::test(core_threads = 1)]
@@ -182,27 +178,17 @@ async fn tls_when_hinted() {
     // Build the outbound TCP balancer stack.
     let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
 
-    let make = outbound_tcp.clone().oneshot(tls_addr);
     let io = client_io.build();
-    let tls_conn = async move {
-        make.await
-            .expect("make TLS service should succeed")
-            .oneshot(io)
-            .await
-            .expect("TLS connection should succeed");
-    }
-    .instrument(tracing::info_span!("tls_conn"));
+    let tls_conn = outbound_tcp
+        .clone()
+        .make_oneshot(tls_addr, io)
+        .instrument(tracing::info_span!("tls_conn"));
 
-    let make = outbound_tcp.clone().oneshot(plaintext_addr);
     let io = client_io.build();
-    let plain_conn = async move {
-        make.await
-            .expect("make plaintext service should succeed")
-            .oneshot(io)
-            .await
-            .expect("plaintext connection should succeed");
-    }
-    .instrument(tracing::info_span!("plaintext_conn"));
+    let plain_conn = outbound_tcp
+        .clone()
+        .make_oneshot(plaintext_addr, io)
+        .instrument(tracing::info_span!("plaintext_conn"));
 
     tokio::join! {
         tls_conn, plain_conn, tls_srv
@@ -288,27 +274,17 @@ async fn server_first_tls_when_hinted() {
     // Build the outbound TCP balancer stack.
     let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
 
-    let make = outbound_tcp.clone().oneshot(tls_addr);
     let io = client_io.build();
-    let tls_conn = async move {
-        make.await
-            .expect("make TLS service should succeed")
-            .oneshot(io)
-            .await
-            .expect("TLS connection should succeed");
-    }
-    .instrument(tracing::info_span!("tls_conn"));
+    let tls_conn = outbound_tcp
+        .clone()
+        .make_oneshot(tls_addr, io)
+        .instrument(tracing::info_span!("tls_conn"));
 
-    let make = outbound_tcp.clone().oneshot(plaintext_addr);
     let io = client_io.build();
-    let plain_conn = async move {
-        make.await
-            .expect("make plaintext service should succeed")
-            .oneshot(io)
-            .await
-            .expect("plaintext connection should succeed");
-    }
-    .instrument(tracing::info_span!("plaintext_conn"));
+    let plain_conn = outbound_tcp
+        .clone()
+        .make_oneshot(plaintext_addr, io)
+        .instrument(tracing::info_span!("plaintext_conn"));
 
     tokio::join! {
         tls_conn, plain_conn, tls_srv
