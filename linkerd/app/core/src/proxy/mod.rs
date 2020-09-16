@@ -9,7 +9,3 @@ pub use linkerd2_proxy_identity as identity;
 pub use linkerd2_proxy_resolve as resolve;
 pub use linkerd2_proxy_tap as tap;
 pub use linkerd2_proxy_tcp as tcp;
-
-mod skip_detect;
-
-pub use self::skip_detect::SkipDetect;

@@ -13,6 +13,7 @@ pub mod new_service;
 pub mod on_response;
 mod oneshot;
 mod proxy;
+mod switch;
 
 pub use self::fallback::{Fallback, FallbackLayer};
 pub use self::future_service::FutureService;
@@ -24,3 +25,4 @@ pub use self::new_service::NewService;
 pub use self::on_response::{OnResponse, OnResponseLayer};
 pub use self::oneshot::{Oneshot, OneshotLayer};
 pub use self::proxy::{Proxy, ProxyService};
+pub use self::switch::{MakeSwitch, Switch};
