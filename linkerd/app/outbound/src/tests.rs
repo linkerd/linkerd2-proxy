@@ -1,4 +1,3 @@
-#![allow(warnings)]
 use crate::Config;
 use indexmap::indexset;
 use linkerd2_app_core::{self as app_core, metrics::Metrics, transport::tls, Addr};
@@ -311,12 +310,12 @@ async fn tcp_endpoint_becomes_tls() {
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
     .expect("hostname is valid");
-    let srv_cfg = foo_id.server_config.clone();
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
-    let (d1, d2) = io::duplex(1024);
-    let tls_srv = async move {
+    let (srv_io1, d2) = io::duplex(1024);
+    let srv_cfg = foo_id.server_config.clone();
+    let tls_srv1 = async move {
         let mut io = tokio_rustls::TlsAcceptor::from(srv_cfg)
             .accept(d2)
             .await
@@ -331,18 +330,29 @@ async fn tcp_endpoint_becomes_tls() {
         io.shutdown().await.expect("close TLS connection");
         tracing::info!("shutdown");
     };
-    let mut tls_srv_io = Some(d1);
-    let mut srv_io = Some(io::mock().read(b"hello").write(b"world").build());
+
+    let (srv_io2, d2) = io::duplex(1024);
+    let srv_cfg = foo_id.server_config.clone();
+    let tls_srv2 = async move {
+        let mut io = tokio_rustls::TlsAcceptor::from(srv_cfg)
+            .accept(d2)
+            .await
+            .expect("failed to accept TLS handshake!");
+        tracing::info!("handshake successful!");
+        let mut s = vec![0; 5];
+        io.write_all(b"hello").await.expect("write succeeds");
+        tracing::info!("wrote");
+        io.read(&mut s).await.expect("read succeeds");
+        tracing::info!(read = ?s);
+        assert_eq!(&s[..], b"world");
+        io.shutdown().await.expect("close TLS connection");
+        tracing::info!("shutdown");
+    };
+    let mut srv_ios = vec![srv_io1, srv_io2];
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = test_support::connect().endpoint_fn(target_addr, move || {
-        // For the first connection, speak plaintext
-        if let Some(plain) = srv_io.take() {
-            return io::BoxedIo::from(plain);
-        }
-
-        // Then, expect TLS.
-        io::BoxedIo::from(tls_srv_io.take().expect("connected a third time!"))
+        srv_ios.pop().expect("connected a third time!")
     });
     let connect =
         cfg.build_tcp_connect_with(connect, tls::Conditional::Some(proxy_id), &metrics.outbound);
@@ -365,19 +375,16 @@ async fn tcp_endpoint_becomes_tls() {
 
     // Connect to the endpoint. We will not receive a TLS hint.
     let io = client_io.build();
-    let plain_svc = outbound_tcp
+    let svc = outbound_tcp
         .clone()
         .oneshot(target_addr)
-        .instrument(tracing::info_span!("plaintext"))
+        .instrument(tracing::info_span!("conn1"))
         .await
-        .expect("failed to make plaintext service");
-    let plain_conn = async move {
-        plain_svc
-            .oneshot(io)
-            .await
-            .expect("plaintext service failed");
+        .expect("failed to make service");
+    let conn1 = async move {
+        svc.oneshot(io).await.expect("service failed");
     }
-    .instrument(tracing::info_span!("plaintext"));
+    .instrument(tracing::info_span!("conn1"));
 
     endpoint
         .remove(Some(target_addr))
@@ -385,24 +392,23 @@ async fn tcp_endpoint_becomes_tls() {
     endpoint
         .add(Some((
             target_addr,
-            // test_support::resolver::Metadata::new(
-            //     Default::default(),
-            //     test_support::resolver::ProtocolHint::Unknown,
-            //     Some(id_name),
-            //     10_000,
-            //     None,
-            // ),
-            test_support::resolver::Metadata::empty(),
+            test_support::resolver::Metadata::new(
+                Default::default(),
+                test_support::resolver::ProtocolHint::Unknown,
+                Some(id_name),
+                10_000,
+                None,
+            ),
         )))
         .expect("resolution still not dropped");
 
     let io = client_io.build();
-    let tls_conn = outbound_tcp
+    let conn2 = outbound_tcp
         .clone()
         .make_oneshot(target_addr, io)
-        .instrument(tracing::info_span!("tls"));
+        .instrument(tracing::info_span!("conn2"));
 
     tokio::join! {
-        tls_conn, tls_srv, plain_conn
+        conn1, tls_srv1, conn2, tls_srv2
     };
 }
