@@ -1,8 +1,6 @@
 //! Shared infrastructure for integration tests
 
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "256"]
-#![type_length_limit = "16289823"]
 
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
