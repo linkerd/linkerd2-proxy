@@ -39,14 +39,11 @@ impl<S, P, F> MakeSwitch<S, P, F> {
 
 impl<T, S, P, F> tower::Service<T> for MakeSwitch<S, P, F>
 where
-    T: Send + 'static,
     S: Switch<T>,
-    P: tower::Service<T> + Clone + Send + 'static,
+    P: tower::Service<T> + Clone,
     P::Error: Into<Error>,
-    P::Future: Send,
-    F: tower::Service<T> + Clone + Send + 'static,
+    F: tower::Service<T> + Clone,
     F::Error: Into<Error>,
-    F::Future: Send,
 {
     type Response = tower::util::Either<P::Response, F::Response>;
     type Error = Error;
