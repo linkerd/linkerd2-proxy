@@ -17,7 +17,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         http::{self, orig_proto, strip_header, DetectHttp},
-        identity, tap, tcp, SkipDetect,
+        identity, tap, tcp,
     },
     reconnect, router, serve,
     spans::SpanConverter,
@@ -392,7 +392,7 @@ impl Config {
             .push_map_target(TcpEndpoint::from)
             .push(metrics.transport.layer_accept(TransportLabels))
             .into_inner();
-        let accept = SkipDetect::new(skip_detect, tls, accept_fwd);
+        let accept = svc::stack::MakeSwitch::new(skip_detect, tls, accept_fwd);
 
         info!(addr = %listen_addr, "Serving");
         serve::serve(listen, accept, drain.signal()).await
