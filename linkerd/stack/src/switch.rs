@@ -19,11 +19,6 @@ pub struct MakeSwitch<S, P, F> {
     fallback: F,
 }
 
-pub enum SwitchService<P, F> {
-    Primary(P),
-    Fallback(F),
-}
-
 impl<S, P, F> MakeSwitch<S, P, F> {
     pub fn new(switch: S, primary: P, fallback: F) -> Self {
         MakeSwitch {
@@ -53,16 +48,16 @@ where
     F::Error: Into<Error>,
     F::Future: Send,
 {
-    type Response = SwitchService<P::Response, F::Response>;
+    type Response = tower::util::Either<P::Response, F::Response>;
     type Error = Error;
     type Future = future::Either<
         future::MapOk<
             future::ErrInto<tower::util::Oneshot<P, T>, Error>,
-            fn(P::Response) -> SwitchService<P::Response, F::Response>,
+            fn(P::Response) -> tower::util::Either<P::Response, F::Response>,
         >,
         future::MapOk<
             future::ErrInto<tower::util::Oneshot<F, T>, Error>,
-            fn(F::Response) -> SwitchService<P::Response, F::Response>,
+            fn(F::Response) -> tower::util::Either<P::Response, F::Response>,
         >,
     >;
 
@@ -77,7 +72,7 @@ where
                     .clone()
                     .oneshot(target)
                     .err_into::<Error>()
-                    .map_ok(SwitchService::Primary),
+                    .map_ok(tower::util::Either::A),
             )
         } else {
             future::Either::Right(
@@ -85,37 +80,8 @@ where
                     .clone()
                     .oneshot(target)
                     .err_into::<Error>()
-                    .map_ok(SwitchService::Fallback),
+                    .map_ok(tower::util::Either::B),
             )
-        }
-    }
-}
-
-impl<T, P, F> tower::Service<T> for SwitchService<P, F>
-where
-    P: tower::Service<T>,
-    P::Error: Into<Error>,
-    P::Future: Send + 'static,
-    F: tower::Service<T, Response = P::Response>,
-    F::Error: Into<Error>,
-    F::Future: Send + 'static,
-{
-    type Response = P::Response;
-    type Error = Error;
-    type Future =
-        future::Either<future::ErrInto<P::Future, Error>, future::ErrInto<F::Future, Error>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        Poll::Ready(match self {
-            Self::Primary(d) => futures::ready!(d.poll_ready(cx)).map_err(Into::into),
-            Self::Fallback(f) => futures::ready!(f.poll_ready(cx)).map_err(Into::into),
-        })
-    }
-
-    fn call(&mut self, req: T) -> Self::Future {
-        match self {
-            Self::Primary(d) => future::Either::Left(d.call(req).err_into::<Error>()),
-            Self::Fallback(f) => future::Either::Right(f.call(req).err_into::<Error>()),
         }
     }
 }
