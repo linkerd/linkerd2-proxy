@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
         http::override_authority::CanOverrideAuthority,
-        http::{self, identity_from_header, Settings},
+        http::{self, identity_from_header},
         identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
@@ -16,8 +16,7 @@ use linkerd2_app_core::{
     transport::{listen, tls},
     Addr, Conditional, L5D_REQUIRE_ID,
 };
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
@@ -26,7 +25,7 @@ pub struct FromMetadata;
 pub struct HttpLogical {
     pub dst: Addr,
     pub orig_dst: SocketAddr,
-    pub settings: http::Settings,
+    pub version: http::Version,
     pub require_identity: Option<identity::Name>,
 }
 
@@ -48,7 +47,7 @@ pub struct Profile {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpEndpoint {
     pub addr: SocketAddr,
-    pub settings: http::Settings,
+    pub settings: http::client::Settings,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
     pub concrete: HttpConcrete,
@@ -130,7 +129,7 @@ impl From<HttpLogical> for HttpEndpoint {
     fn from(logical: HttpLogical) -> Self {
         Self {
             addr: logical.orig_dst,
-            settings: logical.settings,
+            settings: logical.version.into(),
             identity: logical
                 .require_identity
                 .clone()
@@ -142,22 +141,6 @@ impl From<HttpLogical> for HttpEndpoint {
                 }),
             concrete: logical.into(),
             metadata: Metadata::empty(),
-        }
-    }
-}
-
-impl HttpEndpoint {
-    pub fn can_use_orig_proto(&self) -> bool {
-        if let ProtocolHint::Unknown = self.metadata.protocol_hint() {
-            return false;
-        }
-
-        // Look at the original settings, ignoring any authority overrides.
-        match self.settings {
-            http::Settings::Http2 => false,
-            http::Settings::Http1 {
-                wants_h1_upgrade, ..
-            } => !wants_h1_upgrade,
         }
     }
 }
@@ -182,22 +165,9 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl AsRef<http::Settings> for HttpEndpoint {
-    fn as_ref(&self) -> &http::Settings {
-        &self.settings
-    }
-}
-
-impl http::normalize_uri::ShouldNormalizeUri for HttpEndpoint {
-    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-        if let http::Settings::Http1 {
-            was_absolute_form: false,
-            ..
-        } = self.settings
-        {
-            return Some(self.concrete.logical.dst.to_http_authority());
-        }
-        None
+impl Into<http::client::Settings> for &'_ HttpEndpoint {
+    fn into(self) -> http::client::Settings {
+        self.settings
     }
 }
 
@@ -260,18 +230,12 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
             });
 
-        let settings = match concrete.logical.settings {
-            Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                was_absolute_form,
-            } => Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                // Always use absolute form when an onverride is present.
-                was_absolute_form: metadata.authority_override().is_some() || was_absolute_form,
+        let settings = match concrete.logical.version {
+            http::Version::H2 => http::client::Settings::H2,
+            http::Version::Http1 => match metadata.protocol_hint() {
+                ProtocolHint::Unknown => http::client::Settings::Http1,
+                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
             },
-            settings => settings,
         };
 
         HttpEndpoint {
@@ -406,17 +370,18 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
                 addr.into()
             });
 
-        let settings = http::Settings::from_request(req);
-
-        tracing::debug!(headers = ?req.headers(), uri = %req.uri(), dst = %dst, http.settings = ?settings, "Setting target for request");
+        tracing::debug!(headers = ?req.headers(), uri = %req.uri(), dst = %dst, version = ?req.version(), "Setting target for request");
 
         let require_identity = identity_from_header(req, L5D_REQUIRE_ID);
 
         HttpLogical {
             dst,
             orig_dst: self.0.target_addr(),
-            settings,
             require_identity,
+            version: req
+                .version()
+                .try_into()
+                .expect("HTTP version must be valid"),
         }
     }
 }

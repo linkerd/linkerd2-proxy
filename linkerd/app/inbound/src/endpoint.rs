@@ -7,16 +7,14 @@ use linkerd2_app_core::{
     transport::{listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::fmt;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{convert::TryInto, fmt, net::SocketAddr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
     pub dst: Addr,
     pub socket_addr: SocketAddr,
-    pub http_settings: http::Settings,
+    pub http_version: http::Version,
     pub tls_client_id: tls::PeerIdentity,
 }
 
@@ -29,7 +27,7 @@ pub struct Logical {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpEndpoint {
     pub port: u16,
-    pub settings: http::Settings,
+    pub settings: http::client::Settings,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,9 +51,9 @@ impl Into<SocketAddr> for HttpEndpoint {
     }
 }
 
-impl AsRef<http::Settings> for HttpEndpoint {
-    fn as_ref(&self) -> &http::Settings {
-        &self.settings
+impl Into<http::client::Settings> for &'_ HttpEndpoint {
+    fn into(self) -> http::client::Settings {
+        self.settings
     }
 }
 
@@ -63,7 +61,7 @@ impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
             port: target.socket_addr.port(),
-            settings: target.http_settings,
+            settings: target.http_version.into(),
         }
     }
 }
@@ -119,25 +117,6 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 impl AsRef<Addr> for Target {
     fn as_ref(&self) -> &Addr {
         &self.dst
-    }
-}
-
-impl http::normalize_uri::ShouldNormalizeUri for Target {
-    fn should_normalize_uri(&self) -> Option<http::uri::Authority> {
-        if let http::Settings::Http1 {
-            was_absolute_form: false,
-            ..
-        } = self.http_settings
-        {
-            return Some(self.dst.to_http_authority());
-        }
-        None
-    }
-}
-
-impl AsRef<http::Settings> for Target {
-    fn as_ref(&self) -> &http::Settings {
-        &self.http_settings
     }
 }
 
@@ -219,8 +198,8 @@ impl stack_tracing::GetSpan<()> for Target {
     fn get_span(&self, _: &()) -> tracing::Span {
         use tracing::info_span;
 
-        match self.http_settings {
-            http::Settings::Http2 => match self.dst.name_addr() {
+        match self.http_version {
+            http::Version::H2 => match self.dst.name_addr() {
                 None => info_span!(
                     "http2",
                     port = %self.socket_addr.port(),
@@ -231,25 +210,15 @@ impl stack_tracing::GetSpan<()> for Target {
                     port = %self.socket_addr.port(),
                 ),
             },
-            http::Settings::Http1 {
-                keep_alive,
-                wants_h1_upgrade,
-                was_absolute_form,
-            } => match self.dst.name_addr() {
+            http::Version::Http1 => match self.dst.name_addr() {
                 None => info_span!(
                     "http1",
                     port = %self.socket_addr.port(),
-                    keep_alive,
-                    wants_h1_upgrade,
-                    was_absolute_form,
                 ),
                 Some(name) => info_span!(
                     "http1",
                     %name,
                     port = %self.socket_addr.port(),
-                    keep_alive,
-                    wants_h1_upgrade,
-                    was_absolute_form,
                 ),
             },
         }
@@ -295,7 +264,10 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             dst,
             socket_addr: self.accept.addrs.target_addr(),
             tls_client_id: self.accept.peer_identity.clone(),
-            http_settings: http::Settings::from_request(req),
+            http_version: req
+                .version()
+                .try_into()
+                .expect("HTTP version must be valid"),
         }
     }
 }

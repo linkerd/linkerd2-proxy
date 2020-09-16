@@ -34,7 +34,7 @@ impl fmt::Display for ControlAddr {
 }
 
 type BalanceBody =
-    http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
+    http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, http::Payload>;
 
 type RspBody = linkerd2_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 

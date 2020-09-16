@@ -121,3 +121,21 @@ impl From<Addr> for DiscoveryRejected {
         Self::new()
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
+
+impl From<indexmap::IndexSet<u16>> for SkipByPort {
+    fn from(ports: indexmap::IndexSet<u16>) -> Self {
+        SkipByPort(ports.into())
+    }
+}
+
+impl<T> linkerd2_stack::Switch<T> for SkipByPort
+where
+    for<'t> &'t T: Into<std::net::SocketAddr>,
+{
+    fn use_primary(&self, addrs: &T) -> bool {
+        !self.0.contains(&addrs.into().port())
+    }
+}

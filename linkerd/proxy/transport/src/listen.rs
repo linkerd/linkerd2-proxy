@@ -142,6 +142,12 @@ impl Addrs {
     }
 }
 
+impl Into<SocketAddr> for &'_ Addrs {
+    fn into(self) -> SocketAddr {
+        self.target_addr()
+    }
+}
+
 impl OrigDstAddr for NoOrigDstAddr {
     fn orig_dst_addr(&self, _: &TcpStream) -> Option<SocketAddr> {
         None

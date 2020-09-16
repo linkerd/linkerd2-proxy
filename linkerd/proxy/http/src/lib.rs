@@ -9,15 +9,14 @@ pub mod balance;
 pub mod canonicalize;
 pub mod client;
 pub mod detect;
-pub mod glue;
+mod glue;
 pub mod h1;
 pub mod h2;
 pub mod header_from_target;
 pub mod insert;
-pub mod normalize_uri;
+mod normalize_uri;
 pub mod orig_proto;
 pub mod override_authority;
-pub mod settings;
 pub mod strip_header;
 pub mod timeout;
 pub mod trace;
@@ -25,10 +24,8 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    client::MakeClientLayer,
     detect::DetectHttp,
-    glue::{Body, HyperServerSvc},
-    settings::Settings,
+    glue::{Body as Payload, HyperServerSvc},
     timeout::MakeTimeoutLayer,
     version::Version,
 };
