@@ -80,6 +80,78 @@ impl Config {
             .into_inner()
     }
 
+    /// Constructs a TCP load balancer.
+    pub fn build_tcp_balance<C, E, I>(
+        &self,
+        tcp_connect: &C,
+        resolve: E,
+        metrics: &ProxyMetrics,
+    ) -> impl tower::Service<
+        SocketAddr,
+        Error = impl Into<Error>,
+        Future = impl Unpin + Send + 'static,
+        Response = impl tower::Service<
+            I,
+            Response = (),
+            Future = impl Unpin + Send + 'static,
+            Error = impl Into<Error>,
+        > + Unpin
+                       + Clone
+                       + Send
+                       + 'static,
+    > + Unpin
+           + Clone
+           + Send
+           + 'static
+    where
+        C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C::Future: Unpin + Send,
+        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E::Future: Unpin + Send,
+        E::Resolution: Unpin + Send,
+        I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+    {
+        let ProxyConfig {
+            dispatch_timeout,
+            cache_max_idle_age,
+            buffer_capacity,
+            ..
+        } = self.proxy;
+        svc::stack(tcp_connect.clone())
+            .push_make_thunk()
+            .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
+            .check_make_service::<TcpEndpoint, ()>()
+            .push(discover::resolve(map_endpoint::Resolve::new(
+                endpoint::FromMetadata,
+                resolve,
+            )))
+            .push(discover::buffer(1_000, cache_max_idle_age))
+            .push_map_target(Addr::from)
+            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+            .push_fallback_with_predicate(
+                svc::stack(tcp_connect.clone())
+                    .push_make_thunk()
+                    .push_map_target(TcpEndpoint::from)
+                    .instrument(|_: &SocketAddr| info_span!("forward")),
+                is_discovery_rejected,
+            )
+            .into_new_service()
+            .check_new_service::<SocketAddr, ()>()
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("tcp"))),
+                ),
+            )
+            .spawn_buffer(buffer_capacity)
+            .check_make_service::<SocketAddr, ()>()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
+    }
+
     pub fn build_dns_refine(
         &self,
         dns_resolver: dns::Resolver,
@@ -359,78 +431,6 @@ impl Config {
             .check_make_service_clone::<HttpLogical, http::Request<B>>()
             .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
             .into_inner()
-    }
-
-    /// Constructs a TCP load balancer.
-    pub fn build_tcp_balance<C, E, I>(
-        &self,
-        tcp_connect: &C,
-        resolve: E,
-        metrics: &ProxyMetrics,
-    ) -> impl tower::Service<
-        SocketAddr,
-        Error = impl Into<Error>,
-        Future = impl Unpin + Send + 'static,
-        Response = impl tower::Service<
-            I,
-            Response = (),
-            Future = impl Unpin + Send + 'static,
-            Error = impl Into<Error>,
-        > + Unpin
-                       + Clone
-                       + Send
-                       + 'static,
-    > + Unpin
-           + Clone
-           + Send
-           + 'static
-    where
-        C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-        C::Future: Unpin + Send,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
-        E::Future: Unpin + Send,
-        E::Resolution: Unpin + Send,
-        I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-    {
-        let ProxyConfig {
-            dispatch_timeout,
-            cache_max_idle_age,
-            buffer_capacity,
-            ..
-        } = self.proxy;
-        svc::stack(tcp_connect.clone())
-            .push_make_thunk()
-            .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
-            .check_make_service::<TcpEndpoint, ()>()
-            .push(discover::resolve(map_endpoint::Resolve::new(
-                endpoint::FromMetadata,
-                resolve,
-            )))
-            .push(discover::buffer(1_000, cache_max_idle_age))
-            .push_map_target(Addr::from)
-            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push_fallback_with_predicate(
-                svc::stack(tcp_connect.clone())
-                    .push_make_thunk()
-                    .push_map_target(TcpEndpoint::from)
-                    .instrument(|_: &SocketAddr| info_span!("forward")),
-                is_discovery_rejected,
-            )
-            .into_new_service()
-            .check_new_service::<SocketAddr, ()>()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("tcp"))),
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
-            .check_make_service::<SocketAddr, ()>()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
     }
 
     pub async fn build_server<E, R, C, H, S>(
