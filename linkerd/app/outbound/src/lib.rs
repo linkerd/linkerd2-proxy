@@ -140,8 +140,9 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .check_make_service::<SocketAddr, I>()
+            .push_make_ready()
             .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
+            .check_make_service::<SocketAddr, I>()
     }
 
     pub fn build_dns_refine(
@@ -385,6 +386,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
+            .push_make_ready()
             .check_make_service::<HttpLogical, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.
@@ -401,6 +403,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
+            .push_make_ready()
             .instrument(|t: &HttpEndpoint| info_span!("forward", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<HttpEndpoint, http::Request<_>>();
 
@@ -409,7 +412,6 @@ impl Config {
         // `forward` stack is used instead, bypassing load balancing, etc.
         logical
             .push_on_response(svc::layers().box_http_response())
-            .push_make_ready()
             .push_fallback_with_predicate(
                 forward
                     .push_map_target(HttpEndpoint::from)
@@ -493,7 +495,6 @@ impl Config {
             // its canonical FQDN to use for routing.
             .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
             .check_make_service::<HttpLogical, http::Request<_>>()
-            .push_make_ready()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
             .check_new_service::<listen::Addrs, http::Request<_>>()
@@ -521,7 +522,6 @@ impl Config {
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
-            .push_make_ready()
             .push_fallback_with_predicate(
                 svc::stack(tcp_forward.clone()).push_map_target(TcpEndpoint::from),
                 is_discovery_rejected,
