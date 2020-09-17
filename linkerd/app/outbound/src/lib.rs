@@ -83,7 +83,7 @@ impl Config {
     /// Constructs a TCP load balancer.
     pub fn build_tcp_balance<C, E, I>(
         &self,
-        tcp_connect: &C,
+        connect: C,
         resolve: E,
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
@@ -118,7 +118,14 @@ impl Config {
             buffer_capacity,
             ..
         } = self.proxy;
-        svc::stack(tcp_connect.clone())
+
+        let forward = svc::stack(connect.clone())
+            .push_make_thunk()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .push_map_target(TcpEndpoint::from)
+            .instrument(|_: &SocketAddr| info_span!("forward"));
+
+        svc::stack(connect)
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
@@ -129,15 +136,13 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age))
             .push_map_target(Addr::from)
             .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
             .push_fallback_with_predicate(
-                svc::stack(tcp_connect.clone())
-                    .push_make_thunk()
-                    .push_map_target(TcpEndpoint::from)
-                    .instrument(|_: &SocketAddr| info_span!("forward")),
+                forward,
                 is_discovery_rejected,
             )
             .into_new_service()
-            .check_new_service::<SocketAddr, ()>()
+            .check_new_service::<SocketAddr, I>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -147,8 +152,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .check_make_service::<SocketAddr, ()>()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .check_make_service::<SocketAddr, I>()
             .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
     }
 
@@ -482,11 +486,6 @@ impl Config {
         } = self.proxy;
         let canonicalize_timeout = self.canonicalize_timeout;
 
-        // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(&tcp_connect, resolve, &metrics))
-            .push_map_target(|a: listen::Addrs| a.target_addr())
-            .into_inner();
-
         let http_admit_request = svc::layers()
             // Limits the number of in-flight requests.
             .push_concurrency_limit(max_in_flight_requests)
@@ -525,6 +524,12 @@ impl Config {
             .check_new_service::<listen::Addrs, http::Request<_>>()
             .into_inner()
             .into_make_service();
+
+        // Load balances TCP streams that cannot be decoded as HTTP.
+        let tcp_balance =
+            svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve, &metrics))
+                .push_map_target(|a: listen::Addrs| a.target_addr())
+                .into_inner();
 
         let http = http::DetectHttp::new(
             h2_settings,
