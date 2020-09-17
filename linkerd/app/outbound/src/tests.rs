@@ -1,6 +1,7 @@
 use crate::Config;
+use futures::prelude::*;
 use indexmap::indexset;
-use linkerd2_app_core::{self as app_core, metrics::Metrics, Addr};
+use linkerd2_app_core::{self as app_core, Addr, Error};
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, time::Duration};
 use tower::ServiceExt;
@@ -61,13 +62,9 @@ async fn plaintext_tcp() {
     // bind any of these addresses. Therefore, we don't need to use ephemeral
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
-    let target_addr = SocketAddr::new(LOCALHOST.into(), 666);
-    let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
+    let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 0);
 
     let cfg = default_config(target_addr);
-
-    let (metrics, _) = Metrics::new(std::time::Duration::from_secs(10));
-    let prevent_loop = super::PreventLoop::from(local_addr.port());
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
@@ -88,10 +85,13 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
-    let svc = outbound_tcp
+    cfg.build_tcp_balance(connect, resolver)
         .oneshot(target_addr)
+        .err_into::<Error>()
         .await
-        .expect("make service should succeed");
-    svc.oneshot(client_io).await.expect("conn should succeed");
+        .expect("make service should succeed")
+        .oneshot(client_io)
+        .err_into::<Error>()
+        .await
+        .expect("conn should succeed");
 }

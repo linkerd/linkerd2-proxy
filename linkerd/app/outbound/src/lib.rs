@@ -85,7 +85,6 @@ impl Config {
         &self,
         connect: C,
         resolve: E,
-        metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         SocketAddr,
         Error = impl Into<Error>,
@@ -119,12 +118,6 @@ impl Config {
             ..
         } = self.proxy;
 
-        let forward = svc::stack(connect.clone())
-            .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .push_map_target(TcpEndpoint::from)
-            .instrument(|_: &SocketAddr| info_span!("forward"));
-
         svc::stack(connect)
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
@@ -137,10 +130,6 @@ impl Config {
             .push_map_target(Addr::from)
             .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
             .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .push_fallback_with_predicate(
-                forward,
-                is_discovery_rejected,
-            )
             .into_new_service()
             .check_new_service::<SocketAddr, I>()
             .cache(
@@ -148,7 +137,6 @@ impl Config {
                     svc::layers()
                         .push_failfast(dispatch_timeout)
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("tcp"))),
                 ),
             )
             .spawn_buffer(buffer_capacity)
@@ -525,11 +513,21 @@ impl Config {
             .into_inner()
             .into_make_service();
 
+        let tcp_forward = svc::stack(tcp_connect.clone())
+            .push_make_thunk()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .instrument(|_: &TcpEndpoint| info_span!("forward"))
+            .check_service::<TcpEndpoint>();
+
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance =
-            svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve, &metrics))
-                .push_map_target(|a: listen::Addrs| a.target_addr())
-                .into_inner();
+        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
+            .push_make_ready()
+            .push_fallback_with_predicate(
+                svc::stack(tcp_forward.clone()).push_map_target(TcpEndpoint::from),
+                is_discovery_rejected,
+            )
+            .push_map_target(|a: listen::Addrs| a.target_addr())
+            .into_inner();
 
         let http = http::DetectHttp::new(
             h2_settings,
@@ -539,15 +537,10 @@ impl Config {
             drain.clone(),
         );
 
-        let tcp_forward = svc::stack(tcp_connect)
-            .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .push_map_target(TcpEndpoint::from);
-
         let accept = svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
             http,
-            tcp_forward,
+            tcp_forward.push_map_target(TcpEndpoint::from),
         ))
         .push(metrics.transport.layer_accept(TransportLabels));
 
