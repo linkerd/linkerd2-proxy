@@ -6,7 +6,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
-use ::http::header::HOST;
 use futures::{future, prelude::*};
 use linkerd2_app_core::{
     admit, classify,
@@ -21,8 +20,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
-    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Conditional, DiscoveryRejected, Error, Never, ProxyMetrics, StackMetrics,
+    TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{
     collections::HashMap,
@@ -53,6 +52,7 @@ pub struct Config {
 impl Config {
     pub fn build_tcp_connect(
         &self,
+        prevent_loop: impl Into<PreventLoop>,
         local_identity: tls::Conditional<identity::Local>,
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
@@ -76,6 +76,7 @@ impl Config {
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect(TransportLabels))
+            .push(admit::AdmitLayer::new(prevent_loop.into()))
             .into_inner()
     }
 
@@ -119,14 +120,13 @@ impl Config {
 
     pub fn build_http_endpoint<B, C>(
         &self,
-        prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl tower::Service<
         HttpEndpoint,
-        Error = Error,
+        Error = Never,
         Future = impl Unpin + Send,
         Response = impl tower::Service<
             http::Request<B>,
@@ -169,18 +169,24 @@ impl Config {
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
                 let backoff = self.proxy.connect.backoff.clone();
-                move |_| Ok(backoff.stream())
+                move |e: Error| {
+                    if is_loop(&*e) {
+                        Err(e)
+                    } else {
+                        Ok(backoff.stream())
+                    }
+                }
             }))
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
             .push(observability.clone())
             .push(identity_headers.clone())
             .push(http::override_authority::Layer::new(vec![
-                HOST.as_str(),
+                ::http::header::HOST.as_str(),
                 CANONICAL_DST_HEADER,
             ]))
             .push_on_response(svc::layers().box_http_response())
             .check_service::<HttpEndpoint>()
             .instrument(|e: &HttpEndpoint| info_span!("endpoint", peer.addr = %e.addr))
+            .into_inner()
     }
 
     pub fn build_http_router<B, E, S, R, P>(
@@ -205,12 +211,8 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: tower::Service<HttpEndpoint, Error = Error, Response = S>
-            + Unpin
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        E: tower::Service<HttpEndpoint, Response = S> + Unpin + Clone + Send + Sync + 'static,
+        E::Error: Into<Error>,
         E::Future: Unpin + Send,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
@@ -364,7 +366,6 @@ impl Config {
         &self,
         tcp_connect: &C,
         resolve: E,
-        prevent_loop: PreventLoop,
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         SocketAddr,
@@ -401,7 +402,6 @@ impl Config {
         svc::stack(tcp_connect.clone())
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
-            .push(admit::AdmitLayer::new(prevent_loop))
             .check_make_service::<TcpEndpoint, ()>()
             .push(discover::resolve(map_endpoint::Resolve::new(
                 endpoint::FromMetadata,
@@ -413,7 +413,6 @@ impl Config {
             .push_fallback_with_predicate(
                 svc::stack(tcp_connect.clone())
                     .push_make_thunk()
-                    .push(admit::AdmitLayer::new(prevent_loop))
                     .push_map_target(TcpEndpoint::from)
                     .instrument(|_: &SocketAddr| info_span!("forward")),
                 is_discovery_rejected,
@@ -482,13 +481,11 @@ impl Config {
             ..
         } = self.proxy;
         let canonicalize_timeout = self.canonicalize_timeout;
-        let prevent_loop = PreventLoop::from(listen_addr.port());
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance =
-            svc::stack(self.build_tcp_balance(&tcp_connect, resolve, prevent_loop, &metrics))
-                .push_map_target(|a: listen::Addrs| a.target_addr())
-                .into_inner();
+        let tcp_balance = svc::stack(self.build_tcp_balance(&tcp_connect, resolve, &metrics))
+            .push_map_target(|a: listen::Addrs| a.target_addr())
+            .into_inner();
 
         let http_admit_request = svc::layers()
             // Limits the number of in-flight requests.
@@ -540,7 +537,6 @@ impl Config {
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .push(admit::AdmitLayer::new(prevent_loop))
             .push_map_target(TcpEndpoint::from);
 
         let accept = svc::stack(svc::stack::MakeSwitch::new(
@@ -603,4 +599,8 @@ fn is_discovery_rejected(err: &Error) -> bool {
     let rejected = is_rejected(&**err);
     tracing::debug!(rejected, %err);
     rejected
+}
+
+fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
+    err.is::<prevent_loop::LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
 }
