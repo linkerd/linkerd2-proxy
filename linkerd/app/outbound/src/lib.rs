@@ -368,13 +368,13 @@ impl Config {
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         SocketAddr,
-        Error = Error,
+        Error = impl Into<Error>,
         Future = impl Unpin + Send + 'static,
         Response = impl tower::Service<
             I,
             Response = (),
             Future = impl Unpin + Send + 'static,
-            Error = Error,
+            Error = impl Into<Error>,
         > + Unpin
                        + Clone
                        + Send
@@ -382,7 +382,6 @@ impl Config {
     > + Unpin
            + Clone
            + Send
-           + Sync
            + 'static
     where
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
@@ -431,7 +430,7 @@ impl Config {
             )
             .spawn_buffer(buffer_capacity)
             .check_make_service::<SocketAddr, ()>()
-            .push(svc::layer::mk(tcp::Forward::new))
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
             .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
     }
 
@@ -540,7 +539,7 @@ impl Config {
 
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
-            .push(svc::layer::mk(tcp::Forward::new))
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
             .push(admit::AdmitLayer::new(prevent_loop))
             .push_map_target(TcpEndpoint::from);
 
