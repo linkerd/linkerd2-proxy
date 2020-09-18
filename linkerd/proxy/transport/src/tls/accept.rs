@@ -6,6 +6,7 @@ use futures::prelude::*;
 use linkerd2_dns_name as dns;
 use linkerd2_error::{Error, Never};
 use linkerd2_identity as identity;
+use linkerd2_stack::layer;
 pub use rustls::ServerConfig as Config;
 use std::{
     pin::Pin,
@@ -73,6 +74,16 @@ impl<I: HasConfig, M> DetectTls<I, M> {
             inner,
             timeout,
         }
+    }
+
+    pub fn layer(
+        local_identity: Conditional<I>,
+        timeout: Duration,
+    ) -> impl layer::Layer<M, Service = Self>
+    where
+        I: Clone,
+    {
+        layer::mk(move |inner| Self::new(local_identity.clone(), inner, timeout))
     }
 }
 
