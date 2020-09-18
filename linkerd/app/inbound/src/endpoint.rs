@@ -200,26 +200,12 @@ impl stack_tracing::GetSpan<()> for Target {
 
         match self.http_version {
             http::Version::H2 => match self.dst.name_addr() {
-                None => info_span!(
-                    "http2",
-                    port = %self.socket_addr.port(),
-                ),
-                Some(name) => info_span!(
-                    "http2",
-                    %name,
-                    port = %self.socket_addr.port(),
-                ),
+                None => info_span!("http2"),
+                Some(name) => info_span!("http2", %name),
             },
             http::Version::Http1 => match self.dst.name_addr() {
-                None => info_span!(
-                    "http1",
-                    port = %self.socket_addr.port(),
-                ),
-                Some(name) => info_span!(
-                    "http1",
-                    %name,
-                    port = %self.socket_addr.port(),
-                ),
+                None => info_span!("http1"),
+                Some(name) => info_span!("http1", %name),
             },
         }
     }

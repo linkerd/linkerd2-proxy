@@ -122,7 +122,7 @@ impl From<Addr> for DiscoveryRejected {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 impl From<indexmap::IndexSet<u16>> for SkipByPort {
