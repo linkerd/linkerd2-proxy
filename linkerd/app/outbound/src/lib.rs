@@ -29,7 +29,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use tracing::{info, info_span};
+use tracing::{debug_span, info, info_span};
 
 pub mod endpoint;
 mod prevent_loop;
@@ -141,7 +141,7 @@ impl Config {
             )
             .spawn_buffer(buffer_capacity)
             .push_make_ready()
-            .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
+            .instrument(|_: &_| info_span!("tcp"))
             .check_make_service::<SocketAddr, I>()
     }
 
@@ -403,8 +403,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .push_make_ready()
-            .instrument(|t: &HttpEndpoint| info_span!("forward", peer.addr = %t.addr, peer.id = ?t.identity))
+            .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
             .check_make_service::<HttpEndpoint, http::Request<_>>();
 
         // Attempts to route route request to a logical services that uses
@@ -507,9 +506,8 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .instrument(
-                |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
-            )
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+            .instrument(|_: &listen::Addrs| debug_span!("source"))
             .check_new_service::<listen::Addrs, http::Request<_>>()
             .into_inner()
             .into_make_service();
