@@ -17,7 +17,7 @@ use std::{
     time::Duration,
 };
 use tower::{util::ServiceExt, Service};
-use tracing::{info_span, trace};
+use tracing::{debug, info_span, trace};
 use tracing_futures::Instrument;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
@@ -155,6 +155,7 @@ where
 
         let timeout = tokio::time::delay_for(self.timeout);
         Box::pin(async move {
+            trace!("Detecting");
             let (version, io) = tokio::select! {
                 res = HttpVersion::detect(io) => { res? }
                 () = timeout => {
@@ -164,7 +165,7 @@ where
 
             match version {
                 Some(HttpVersion::Http1) => {
-                    trace!("Handling as HTTP");
+                    debug!("Handling as HTTP");
                     // Enable support for HTTP upgrades (CONNECT and websockets).
                     let http = upgrade::Service::new(http, drain.clone());
                     let conn = server
@@ -179,7 +180,7 @@ where
                 }
 
                 Some(HttpVersion::H2) => {
-                    trace!("Handling as H2");
+                    debug!("Handling as H2");
                     let conn = server
                         .http2_only(true)
                         .serve_connection(io, HyperServerSvc::new(http));
@@ -191,7 +192,7 @@ where
                 }
 
                 None => {
-                    trace!("Forwarding TCP");
+                    debug!("Forwarding TCP");
                     let release = drain.ignore_signal();
                     tcp.oneshot(io).err_into::<Error>().await?;
                     drop(release);
