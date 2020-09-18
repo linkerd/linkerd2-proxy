@@ -1,8 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "16289823"]
-#![recursion_limit = "256"]
-
-use linkerd2_app_integration::*;
+use crate::*;
 
 macro_rules! generate_tests {
     (server: $make_server:path, client: $make_client:path) => {
@@ -549,7 +545,7 @@ macro_rules! generate_tests {
 }
 
 mod http2 {
-    use linkerd2_app_integration::*;
+    use crate::*;
 
     generate_tests! { server: server::new, client: client::new }
 
@@ -610,14 +606,14 @@ mod http2 {
 }
 
 mod http1 {
-    use linkerd2_app_integration::*;
+    use crate::*;
 
     generate_tests! {
         server: server::http1, client: client::http1
     }
 
     mod absolute_uris {
-        use linkerd2_app_integration::*;
+        use crate::*;
 
         generate_tests! {
             server: server::http1,

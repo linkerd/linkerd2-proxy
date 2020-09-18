@@ -1,8 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "16289823"]
-#![recursion_limit = "256"]
-
-use linkerd2_app_integration::*;
+use crate::*;
 use std::error::Error as _;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -1068,7 +1064,7 @@ macro_rules! http1_tests {
 }
 
 mod one_proxy {
-    use linkerd2_app_integration::*;
+    use crate::*;
 
     http1_tests! { proxy: |srv| async move {
         let ctrl = controller::new();
@@ -1078,7 +1074,7 @@ mod one_proxy {
 }
 
 mod proxy_to_proxy {
-    use linkerd2_app_integration::*;
+    use crate::*;
 
     struct ProxyToProxy {
         // Held to prevent closing, to reduce controller request noise during

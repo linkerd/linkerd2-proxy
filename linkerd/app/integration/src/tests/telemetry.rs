@@ -1,11 +1,8 @@
-#![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "16289823"]
-#![recursion_limit = "256"]
-// The compiler cannot figure out that the `use linkerd2_app_integration::*`
+// The compiler cannot figure out that the `use crate::*`
 // import is actually used, and putting the allow attribute on that import in
 // particular appears to do nothing... T_T
 #![allow(unused_imports)]
-use linkerd2_app_integration::*;
+use crate::*;
 use std::io::Read;
 
 struct Fixture {
@@ -165,7 +162,7 @@ async fn metrics_endpoint_outbound_request_count() {
 
 mod response_classification {
     use super::Fixture;
-    use linkerd2_app_integration::*;
+    use crate::*;
     use tracing::info;
 
     const REQ_STATUS_HEADER: &'static str = "x-test-status-requested";
@@ -462,8 +459,8 @@ async fn metrics_endpoint_outbound_response_latency() {
 // Tests for destination labels provided by control plane service discovery.
 mod outbound_dst_labels {
     use super::Fixture;
+    use crate::*;
     use controller::DstSender;
-    use linkerd2_app_integration::*;
 
     async fn fixture(dest: &str) -> (Fixture, SocketAddr, DstSender) {
         info!("running test server");
@@ -765,7 +762,7 @@ async fn metrics_has_start_time() {
 
 mod transport {
     use super::*;
-    use linkerd2_app_integration::*;
+    use crate::*;
 
     #[tokio::test]
     async fn inbound_http_accept() {
