@@ -68,8 +68,8 @@ impl Config {
         P::Future: Unpin + Send,
         P::Error: Send,
     {
-        let tcp_connect = self.build_tcp_connect(&metrics);
         let prevent_loop = PreventLoop::from(listen_addr.port());
+        let tcp_connect = self.build_tcp_connect(prevent_loop, &metrics);
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
@@ -82,7 +82,6 @@ impl Config {
         self.build_server(
             listen_addr,
             listen,
-            prevent_loop,
             tcp_connect,
             http_router,
             local_identity,
@@ -95,6 +94,7 @@ impl Config {
 
     pub fn build_tcp_connect(
         &self,
+        prevent_loop: PreventLoop,
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         TcpEndpoint,
@@ -116,6 +116,7 @@ impl Config {
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect(TransportLabels))
+            .push(admit::AdmitLayer::new(prevent_loop))
             .into_inner()
     }
 
@@ -279,7 +280,6 @@ impl Config {
         self,
         listen_addr: std::net::SocketAddr,
         listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
-        prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
         local_identity: tls::Conditional<identity::Local>,
@@ -370,8 +370,7 @@ impl Config {
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
-            .push(svc::layer::mk(tcp::Forward::new))
-            .push(admit::AdmitLayer::new(prevent_loop.into()));
+            .push(svc::layer::mk(tcp::Forward::new));
 
         let http = DetectHttp::new(
             h2_settings,
