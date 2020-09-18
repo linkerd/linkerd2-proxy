@@ -85,12 +85,14 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    cfg.build_tcp_balance(connect, resolver)
+    let make = cfg
+        .build_tcp_balance(connect, resolver)
         .oneshot(target_addr)
         .err_into::<Error>()
         .await
-        .expect("make service should succeed")
-        .oneshot(client_io)
+        .expect("make service should succeed");
+
+    make.oneshot(client_io)
         .err_into::<Error>()
         .await
         .expect("conn should succeed");
