@@ -27,7 +27,7 @@ use linkerd2_app_core::{
 };
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::info_span;
+use tracing::debug_span;
 
 pub mod endpoint;
 mod prevent_loop;
@@ -79,8 +79,8 @@ impl Config {
         P::Future: Unpin + Send,
         P::Error: Send,
     {
-        let tcp_connect = self.build_tcp_connect(&metrics);
         let prevent_loop = PreventLoop::from(listen_addr.port());
+        let tcp_connect = self.build_tcp_connect(prevent_loop, &metrics);
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
@@ -91,7 +91,6 @@ impl Config {
             span_sink.clone(),
         );
         self.build_server(
-            prevent_loop,
             tcp_connect,
             http_router,
             local_identity,
@@ -103,6 +102,7 @@ impl Config {
 
     pub fn build_tcp_connect(
         &self,
+        prevent_loop: PreventLoop,
         metrics: &ProxyMetrics,
     ) -> impl tower::Service<
         TcpEndpoint,
@@ -124,6 +124,7 @@ impl Config {
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect(TransportLabels))
+            .push(admit::AdmitLayer::new(prevent_loop))
             .into_inner()
     }
 
@@ -247,7 +248,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| info_span!("profile"))
+            .instrument(|_: &Target| debug_span!("profile"))
             .check_make_service::<Target, http::Request<_>>();
 
         let forward = target
@@ -261,7 +262,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| info_span!("forward"))
+            .instrument(|_: &Target| debug_span!("forward"))
             .check_make_service::<Target, http::Request<http::boxed::Payload>>();
 
         // Attempts to resolve the target as a service profile or, if that
@@ -285,7 +286,6 @@ impl Config {
 
     pub fn build_server<C, H, S>(
         self,
-        prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
         local_identity: tls::Conditional<identity::Local>,
@@ -364,6 +364,7 @@ impl Config {
             // Used by tap.
             .push_http_insert_target()
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
@@ -372,13 +373,8 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
+            .instrument(|_: &_| debug_span!("source"))
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
-            .instrument(|src: &tls::accept::Meta| {
-                info_span!(
-                    "source",
-                    target.addr = %src.addrs.target_addr(),
-                )
-            })
             .into_inner()
             .into_make_service();
 
@@ -388,8 +384,7 @@ impl Config {
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
-            .push(svc::layer::mk(tcp::Forward::new))
-            .push(admit::AdmitLayer::new(prevent_loop.into()));
+            .push_on_response(svc::layer::mk(tcp::Forward::new));
 
         let http = DetectHttp::new(
             h2_settings,

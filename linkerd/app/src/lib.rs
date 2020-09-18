@@ -127,13 +127,15 @@ impl Config {
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
-            let outbound_connect =
-                outbound.build_tcp_connect(local_identity.clone(), &outbound_metrics);
+            let outbound_connect = outbound.build_tcp_connect(
+                outbound_addr.port(),
+                local_identity.clone(),
+                &outbound_metrics,
+            );
 
             let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
 
             let outbound_http_endpoint = outbound.build_http_endpoint(
-                outbound_addr.port(),
                 outbound_connect.clone(),
                 tap_layer.clone(),
                 outbound_metrics.clone(),
@@ -154,7 +156,6 @@ impl Config {
                 serve::serve(
                     outbound_listen,
                     outbound.build_server(
-                        outbound_addr,
                         svc::stack(refine.clone())
                             .push_map_response(|(n, _)| n)
                             .into_inner(),

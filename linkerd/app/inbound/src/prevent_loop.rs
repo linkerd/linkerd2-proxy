@@ -1,4 +1,4 @@
-use super::endpoint::{Target, TcpEndpoint};
+use super::endpoint::{HttpEndpoint, Target, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{admit, proxy::http};
 use std::task::{Context, Poll};
@@ -26,6 +26,19 @@ impl admit::Admit<Target> for PreventLoop {
     fn admit(&mut self, ep: &Target) -> Result<(), Self::Error> {
         tracing::debug!(addr = %ep.socket_addr, self.port);
         if ep.socket_addr.port() == self.port {
+            return Err(LoopPrevented { port: self.port });
+        }
+
+        Ok(())
+    }
+}
+
+impl admit::Admit<HttpEndpoint> for PreventLoop {
+    type Error = LoopPrevented;
+
+    fn admit(&mut self, ep: &HttpEndpoint) -> Result<(), Self::Error> {
+        tracing::debug!(addr = %ep.port, self.port);
+        if ep.port == self.port {
             return Err(LoopPrevented { port: self.port });
         }
 
