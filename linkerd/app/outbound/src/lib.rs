@@ -523,6 +523,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .instrument(
                 |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
             )

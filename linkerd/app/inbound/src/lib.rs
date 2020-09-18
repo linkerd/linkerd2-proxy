@@ -346,6 +346,7 @@ impl Config {
             // Used by tap.
             .push_http_insert_target()
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
