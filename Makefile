@@ -68,6 +68,10 @@ endif
 fetch: Cargo.lock
 	$(CARGO) fetch --locked
 
+.PHONY: check
+check: fetch
+	$(CARGO) check
+
 .PHONY: build
 build: $(TARGET_BIN)
 
@@ -89,16 +93,9 @@ shellcheck:
 		! -path "$(CURDIR)"/.git/hooks/\*.sample \
 		| while read -r f; do [ "$$(file -b --mime-type "$$f")" = 'text/x-shellscript' ] && printf '%s\0' "$$f"; done | xargs -0)
 
-.PHONY: test-lib
-test-lib:: fetch
-	$(CARGO_TEST) --lib
-
-.PHONY: test-integration
-test-integration: fetch
-	$(CARGO_TEST) --tests
-
 .PHONY: test
-test: test-lib test-integration
+test: fetch
+	$(CARGO_TEST)
 
 .PHONY: test-flakey
 test-flakey: fetch

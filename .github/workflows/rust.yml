@@ -3,7 +3,7 @@ name: Rust PR
 on:
   push:
     branches:
-    - master
+      - master
   pull_request: {}
 
 jobs:
@@ -12,21 +12,20 @@ jobs:
     container:
       image: docker://rust:1.44.1-buster
     steps:
-    - uses: actions/checkout@v1
-    - run: rustup component add rustfmt
-    - run: make check-fmt
+      - uses: actions/checkout@v1
+      - run: rustup component add rustfmt
+      - run: make check-fmt
 
-  lib:
+  check:
     runs-on: ubuntu-18.04
     container:
       image: docker://rust:1.44.1-buster
     steps:
-    - uses: actions/checkout@v1
-    - run: make test-lib
+      - uses: actions/checkout@v1
+      - run: make check
 
-  integration:
+  test:
     runs-on: ubuntu-18.04
     steps:
-    - uses: actions/checkout@v1
-    - name: Test
-      run: make test-integration
+      - uses: actions/checkout@v1
+      - run: make test
