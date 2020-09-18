@@ -22,16 +22,18 @@ use linkerd2_app_core::{
     reconnect, router,
     spans::SpanConverter,
     svc::{self, NewService},
-    transport::{self, io::BoxedIo, listen, tls},
+    transport::{self, io, listen, tls},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
 use std::collections::HashMap;
-use tokio::sync::mpsc;
+use tokio::{net::TcpStream, sync::mpsc};
 use tracing::info_span;
 
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
+
+type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -64,7 +66,7 @@ impl Config {
     > + Send
            + 'static
     where
-        L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
+        L: tower::Service<Target, Response = S> + Unpin + Clone + Send + Sync + 'static,
         L::Error: Into<Error>,
         L::Future: Unpin + Send,
         S: tower::Service<
@@ -90,15 +92,23 @@ impl Config {
             metrics.clone(),
             span_sink.clone(),
         );
-        self.build_server(
-            prevent_loop,
-            tcp_connect,
+
+        // Forwards TCP streams that cannot be decoded as HTTP.
+        let tcp_forward = svc::stack(tcp_connect)
+            .push_make_thunk()
+            .push(svc::layer::mk(tcp::Forward::new))
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .into_inner();
+
+        let accept = self.build_accept(
+            tcp_forward.clone(),
             http_router,
-            local_identity,
-            metrics,
+            metrics.clone(),
             span_sink,
             drain,
-        )
+        );
+
+        self.build_tls_accept(accept, tcp_forward, local_identity, metrics)
     }
 
     pub fn build_tcp_connect(
@@ -120,7 +130,7 @@ impl Config {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
         svc::connect(self.proxy.connect.keepalive)
-            .push_map_response(BoxedIo::new) // Ensures the transport propagates shutdown properly.
+            .push_map_response(io::BoxedIo::new) // Ensures the transport propagates shutdown properly.
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect(TransportLabels))
@@ -283,34 +293,36 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<C, H, S>(
-        self,
-        prevent_loop: impl Into<PreventLoop>,
-        tcp_connect: C,
+    pub fn build_accept<I, F, A, H, S>(
+        &self,
+        tcp_forward: F,
         http_router: H,
-        local_identity: tls::Conditional<identity::Local>,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> impl tower::Service<
-        listen::Addrs,
+        tls::accept::Meta,
         Error = impl Into<Error>,
         Future = impl Send + 'static,
         Response = impl tower::Service<
-            tokio::net::TcpStream,
+            I,
             Response = (),
             Error = impl Into<Error>,
             Future = impl Send + 'static,
         > + Send
                        + 'static,
-    > + Send
+    > + Clone
+           + Send
            + 'static
     where
-        C: tower::Service<TcpEndpoint> + Unpin + Clone + Send + Sync + 'static,
-        C::Error: Into<Error>,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-        C::Future: Unpin + Send,
-        H: tower::Service<Target, Response = S, Error = Error> + Unpin + Send + Clone + 'static,
+        I: io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
+        F: tower::Service<TcpEndpoint, Response = A> + Unpin + Clone + Send + 'static,
+        F::Error: Into<Error>,
+        F::Future: Send,
+        A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
+        A::Error: Into<Error>,
+        A::Future: Send,
+        H: tower::Service<Target, Response = S, Error = Error> + Unpin + Clone + Send + 'static,
         H::Future: Send,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
@@ -322,13 +334,11 @@ impl Config {
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
-            disable_protocol_detection_for_ports: skip_detect,
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
             ..
-        } = self.proxy;
-        let require_identity = self.require_identity_for_inbound_ports;
+        } = self.proxy.clone();
 
         // Handles requests as they are initially received by the proxy.
         let http_admit_request = svc::layers()
@@ -372,45 +382,82 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .check_new_service::<tls::accept::Meta, http::Request<_>>()
             .instrument(|src: &tls::accept::Meta| {
                 info_span!(
                     "source",
                     target.addr = %src.addrs.target_addr(),
                 )
             })
+            .check_new_service::<tls::accept::Meta, http::Request<_>>()
             .into_inner()
             .into_make_service();
 
-        // The stack is served lazily since some layers (notably buffer) spawn
-        // tasks from their constructor. This helps to ensure that tasks are
-        // spawned on the same runtime as the proxy.
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp_connect)
-            .push_make_thunk()
-            .push(svc::layer::mk(tcp::Forward::new))
-            .push(admit::AdmitLayer::new(prevent_loop.into()));
-
-        let http = DetectHttp::new(
+        DetectHttp::new(
             h2_settings,
             detect_protocol_timeout,
             http_server,
-            tcp_forward.clone().push_map_target(TcpEndpoint::from),
+            svc::stack(tcp_forward)
+                .push_map_target(TcpEndpoint::from)
+                .into_inner(),
             drain.clone(),
-        );
+        )
+    }
 
-        let tls = svc::stack(http)
-            .push(admit::AdmitLayer::new(require_identity))
-            .push(metrics.transport.layer_accept(TransportLabels))
-            .push(svc::layer::mk(|inner| {
-                tls::DetectTls::new(local_identity.clone(), inner, detect_protocol_timeout)
-            }));
+    pub fn build_tls_accept<D, A, F, B>(
+        self,
+        detect: D,
+        tcp_forward: F,
+        identity: tls::Conditional<identity::Local>,
+        metrics: ProxyMetrics,
+    ) -> impl tower::Service<
+        listen::Addrs,
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+        Response = impl tower::Service<
+            TcpStream,
+            Response = (),
+            Error = impl Into<Error>,
+            Future = impl Send + 'static,
+        > + Send
+                       + 'static,
+    > + Send
+           + 'static
+    where
+        D: tower::Service<tls::accept::Meta, Response = A> + Unpin + Clone + Send + Sync + 'static,
+        D::Error: Into<Error>,
+        D::Future: Unpin + Send,
+        A: tower::Service<SensorIo<io::BoxedIo>, Response = ()> + Unpin + Send + 'static,
+        A::Error: Into<Error>,
+        A::Future: Send,
+        F: tower::Service<TcpEndpoint, Response = B> + Unpin + Clone + Send + Sync + 'static,
+        F::Error: Into<Error>,
+        F::Future: Unpin + Send,
+        B: tower::Service<SensorIo<TcpStream>, Response = ()> + Unpin + Send + 'static,
+        B::Error: Into<Error>,
+        B::Future: Send,
+    {
+        let ProxyConfig {
+            disable_protocol_detection_for_ports: skip_detect,
+            detect_protocol_timeout,
+            ..
+        } = self.proxy;
+        let require_identity = self.require_identity_for_inbound_ports;
 
-        let accept_fwd = tcp_forward
-            .push_map_target(TcpEndpoint::from)
-            .push(metrics.transport.layer_accept(TransportLabels))
-            .into_inner();
-        svc::stack::MakeSwitch::new(skip_detect, tls, accept_fwd)
+        svc::stack::MakeSwitch::new(
+            skip_detect,
+            svc::stack(detect)
+                .push(admit::AdmitLayer::new(require_identity))
+                .push(metrics.transport.layer_accept(TransportLabels))
+                .push(tls::DetectTls::layer(
+                    identity.clone(),
+                    detect_protocol_timeout,
+                ))
+                .into_inner(),
+            svc::stack(tcp_forward)
+                .push_map_target(TcpEndpoint::from)
+                .push(metrics.transport.layer_accept(TransportLabels))
+                .into_inner(),
+        )
     }
 }
 
