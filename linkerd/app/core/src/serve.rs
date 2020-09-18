@@ -36,6 +36,7 @@ where
                     let span = info_span!(
                         "accept",
                         peer.addr = %addrs.peer(),
+                        target.addr = %addrs.target_addr(),
                     );
 
                     // Ready the service before dispatching the request to it.

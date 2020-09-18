@@ -27,7 +27,7 @@ use linkerd2_app_core::{
 };
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{info, info_span};
+use tracing::{debug_span, info};
 
 pub mod endpoint;
 mod prevent_loop;
@@ -240,7 +240,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| info_span!("profile"))
+            .instrument(|_: &Target| debug_span!("profile"))
             .check_make_service::<Target, http::Request<_>>();
 
         let forward = target
@@ -254,7 +254,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| info_span!("forward"))
+            .instrument(|_: &Target| debug_span!("forward"))
             .check_make_service::<Target, http::Request<http::boxed::Payload>>();
 
         // Attempts to resolve the target as a service profile or, if that
@@ -355,13 +355,8 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
+            .instrument(|_: &_| debug_span!("source"))
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
-            .instrument(|src: &tls::accept::Meta| {
-                info_span!(
-                    "source",
-                    target.addr = %src.addrs.target_addr(),
-                )
-            })
             .into_inner()
             .into_make_service();
 
