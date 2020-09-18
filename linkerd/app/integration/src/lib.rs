@@ -6,6 +6,9 @@
 
 mod test_env;
 
+#[cfg(test)]
+mod tests;
+
 pub use self::test_env::TestEnv;
 pub use bytes::{Buf, BufMut, Bytes};
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};

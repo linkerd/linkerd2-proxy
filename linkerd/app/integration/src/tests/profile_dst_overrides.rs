@@ -1,8 +1,4 @@
-#![deny(warnings, rust_2018_idioms)]
-#![type_length_limit = "16289823"]
-#![recursion_limit = "256"]
-
-use linkerd2_app_integration::*;
+use crate::*;
 use linkerd2_proxy_api::destination as pb;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
