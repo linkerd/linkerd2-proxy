@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use tracing::{info, info_span};
+use tracing::{debug_span, info, info_span};
 
 pub mod endpoint;
 mod prevent_loop;
@@ -335,7 +335,7 @@ impl Config {
                 ),
             )
             .spawn_buffer(buffer_capacity)
-            .instrument(|t: &HttpEndpoint| info_span!("forward", peer.addr = %t.addr, peer.id = ?t.identity))
+            .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
             .check_make_service::<HttpEndpoint, http::Request<_>>();
 
         // Attempts to route route request to a logical services that uses
@@ -416,7 +416,7 @@ impl Config {
                     .push_make_thunk()
                     .push(admit::AdmitLayer::new(prevent_loop))
                     .push_map_target(TcpEndpoint::from)
-                    .instrument(|_: &SocketAddr| info_span!("forward")),
+                    .instrument(|_: &SocketAddr| debug_span!("forward")),
                 is_discovery_rejected,
             )
             .into_new_service()
@@ -432,7 +432,7 @@ impl Config {
             .spawn_buffer(buffer_capacity)
             .check_make_service::<SocketAddr, ()>()
             .push(svc::layer::mk(tcp::Forward::new))
-            .instrument(|a: &SocketAddr| info_span!("tcp", dst = %a))
+            .instrument(|_: &SocketAddr| info_span!("tcp"))
     }
 
     pub async fn build_server<E, R, C, H, S>(
@@ -523,9 +523,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .instrument(
-                |addrs: &listen::Addrs| info_span!("source", target.addr = %addrs.target_addr()),
-            )
+            .instrument(|_: &listen::Addrs| debug_span!("source"))
             .check_new_service::<listen::Addrs, http::Request<_>>()
             .into_inner()
             .into_make_service();
