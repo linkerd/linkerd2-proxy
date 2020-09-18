@@ -6,7 +6,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
-use futures::{future, prelude::*};
+use futures::future;
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
@@ -16,7 +16,7 @@ use linkerd2_app_core::{
     proxy::{
         self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
     },
-    reconnect, retry, router, serve,
+    reconnect, retry, router,
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, listen, tls},
@@ -29,7 +29,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc;
-use tracing::{debug_span, info, info_span};
+use tracing::{debug_span, info_span};
 
 pub mod endpoint;
 mod prevent_loop;
@@ -426,10 +426,8 @@ impl Config {
             .into_inner()
     }
 
-    pub async fn build_server<E, R, C, H, S>(
+    pub fn build_server<E, R, C, H, S, I>(
         self,
-        listen_addr: std::net::SocketAddr,
-        listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         refine: R,
         resolve: E,
         tcp_connect: C,
@@ -437,8 +435,21 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Result<(), Error>
+    ) -> impl tower::Service<
+        listen::Addrs,
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+        Response = impl tower::Service<
+            I,
+            Response = (),
+            Error = impl Into<Error>,
+            Future = impl Send + 'static,
+        > + Send
+                       + 'static,
+    > + Send
+           + 'static
     where
+        I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
         E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
@@ -535,15 +546,13 @@ impl Config {
             drain.clone(),
         );
 
-        let accept = svc::stack(svc::stack::MakeSwitch::new(
+        svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
             http,
             tcp_forward.push_map_target(TcpEndpoint::from),
         ))
-        .push(metrics.transport.layer_accept(TransportLabels));
-
-        info!(addr = %listen_addr, "Serving");
-        serve::serve(listen, accept, drain.signal()).await
+        .push(metrics.transport.layer_accept(TransportLabels))
+        .into_inner()
     }
 }
 
