@@ -12,7 +12,7 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, metrics, trace};
-use linkerd2_app_core::{control::ControlAddr, dns, drain, svc, Error};
+use linkerd2_app_core::{control::ControlAddr, dns, drain, serve, svc, Error};
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
@@ -147,11 +147,14 @@ impl Config {
                 outbound_metrics.clone(),
             );
 
+            let span = info_span!("outbound");
+            let _enter = span.enter();
+            info!(listen.addr = %outbound_addr);
             tokio::spawn(
-                outbound
-                    .build_server(
+                serve::serve(
+                    outbound_listen,
+                    outbound.build_server(
                         outbound_addr,
-                        outbound_listen,
                         svc::stack(refine.clone())
                             .push_map_response(|(n, _)| n)
                             .into_inner(),
@@ -161,10 +164,13 @@ impl Config {
                         outbound_metrics,
                         oc_span_sink.clone(),
                         drain_rx.clone(),
-                    )
-                    .map_err(|e| panic!("outbound failed: {}", e))
-                    .instrument(info_span!("outbound")),
+                    ),
+                    drain_rx.clone().signal(),
+                )
+                .map_err(|e| panic!("outbound failed: {}", e))
+                .instrument(span.clone()),
             );
+            drop(_enter);
 
             let http_gateway = gateway.build(
                 refine,
@@ -172,11 +178,14 @@ impl Config {
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 
+            let span = info_span!("inbound");
+            let _enter = span.enter();
+            info!(listen.addr = %inbound_addr);
             tokio::spawn(
-                inbound
-                    .build(
+                serve::serve(
+                    inbound_listen,
+                    inbound.build(
                         inbound_addr,
-                        inbound_listen,
                         local_identity,
                         svc::stack(http_gateway)
                             .push_on_response(svc::layers().box_http_request())
@@ -185,11 +194,14 @@ impl Config {
                         tap_layer,
                         inbound_metrics,
                         oc_span_sink,
-                        drain_rx,
-                    )
-                    .map_err(|e| panic!("inbound failed: {}", e))
-                    .instrument(info_span!("inbound")),
+                        drain_rx.clone(),
+                    ),
+                    drain_rx.signal(),
+                )
+                .map_err(|e| panic!("inbound failed: {}", e))
+                .instrument(span.clone()),
             );
+            drop(_enter);
         });
 
         Ok(App {

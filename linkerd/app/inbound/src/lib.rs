@@ -8,7 +8,7 @@
 pub use self::endpoint::{HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpEndpoint};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
-use futures::{future, prelude::*};
+use futures::future;
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
@@ -19,7 +19,7 @@ use linkerd2_app_core::{
         http::{self, orig_proto, strip_header, DetectHttp},
         identity, tap, tcp,
     },
-    reconnect, router, serve,
+    reconnect, router,
     spans::SpanConverter,
     svc::{self, NewService},
     transport::{self, io::BoxedIo, listen, tls},
@@ -27,7 +27,7 @@ use linkerd2_app_core::{
 };
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{info, info_span};
+use tracing::info_span;
 
 pub mod endpoint;
 mod prevent_loop;
@@ -40,10 +40,9 @@ pub struct Config {
 }
 
 impl Config {
-    pub async fn build<L, S, P>(
+    pub fn build<L, S, P>(
         self,
         listen_addr: std::net::SocketAddr,
-        listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         local_identity: tls::Conditional<identity::Local>,
         http_loopback: L,
         profiles_client: P,
@@ -51,7 +50,19 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Result<(), Error>
+    ) -> impl tower::Service<
+        listen::Addrs,
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+        Response = impl tower::Service<
+            tokio::net::TcpStream,
+            Response = (),
+            Error = impl Into<Error>,
+            Future = impl Send + 'static,
+        > + Send
+                       + 'static,
+    > + Send
+           + 'static
     where
         L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
         L::Error: Into<Error>,
@@ -80,8 +91,6 @@ impl Config {
             span_sink.clone(),
         );
         self.build_server(
-            listen_addr,
-            listen,
             prevent_loop,
             tcp_connect,
             http_router,
@@ -90,7 +99,6 @@ impl Config {
             span_sink,
             drain,
         )
-        .await
     }
 
     pub fn build_tcp_connect(
@@ -275,10 +283,8 @@ impl Config {
             .into_inner()
     }
 
-    pub async fn build_server<C, H, S>(
+    pub fn build_server<C, H, S>(
         self,
-        listen_addr: std::net::SocketAddr,
-        listen: impl Stream<Item = std::io::Result<listen::Connection>> + Send + 'static,
         prevent_loop: impl Into<PreventLoop>,
         tcp_connect: C,
         http_router: H,
@@ -286,7 +292,19 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> Result<(), Error>
+    ) -> impl tower::Service<
+        listen::Addrs,
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+        Response = impl tower::Service<
+            tokio::net::TcpStream,
+            Response = (),
+            Error = impl Into<Error>,
+            Future = impl Send + 'static,
+        > + Send
+                       + 'static,
+    > + Send
+           + 'static
     where
         C: tower::Service<TcpEndpoint> + Unpin + Clone + Send + Sync + 'static,
         C::Error: Into<Error>,
@@ -392,10 +410,7 @@ impl Config {
             .push_map_target(TcpEndpoint::from)
             .push(metrics.transport.layer_accept(TransportLabels))
             .into_inner();
-        let accept = svc::stack::MakeSwitch::new(skip_detect, tls, accept_fwd);
-
-        info!(addr = %listen_addr, "Serving");
-        serve::serve(listen, accept, drain.signal()).await
+        svc::stack::MakeSwitch::new(skip_detect, tls, accept_fwd)
     }
 }
 
