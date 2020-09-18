@@ -14,7 +14,7 @@ pub mod h1;
 pub mod h2;
 pub mod header_from_target;
 pub mod insert;
-mod normalize_uri;
+pub mod normalize_uri;
 pub mod orig_proto;
 pub mod override_authority;
 pub mod strip_header;
