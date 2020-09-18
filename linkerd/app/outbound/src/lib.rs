@@ -523,6 +523,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .instrument(|_: &listen::Addrs| debug_span!("source"))
             .check_new_service::<listen::Addrs, http::Request<_>>()
             .into_inner()

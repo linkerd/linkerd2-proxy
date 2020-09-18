@@ -39,7 +39,7 @@ pub struct NormalizeUri<S> {
 // === impl MakeNormalizeUri ===
 
 impl<N> MakeNormalizeUri<N> {
-    pub(crate) fn new(inner: N) -> Self {
+    pub fn new(inner: N) -> Self {
         Self { inner }
     }
 }

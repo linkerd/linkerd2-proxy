@@ -2,7 +2,6 @@ use crate::{
     self as http,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
-    normalize_uri::{MakeNormalizeUri, NormalizeUri},
     trace, upgrade, Version as HttpVersion,
 };
 use futures::prelude::*;
@@ -11,7 +10,6 @@ use linkerd2_error::Error;
 use linkerd2_io::{self as io, PrefixedIo};
 use std::{
     future::Future,
-    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -74,7 +72,6 @@ impl<F, H> DetectHttp<F, H> {
 impl<T, F, S> Service<T> for DetectHttp<F, S>
 where
     T: Clone + Send + 'static,
-    for<'t> &'t T: Into<SocketAddr>,
     F: tower::Service<T> + Clone + Send + 'static,
     F::Error: Into<Error>,
     F::Response: Send + 'static,
@@ -84,7 +81,7 @@ where
     S::Response: Send + 'static,
     S::Future: Send + 'static,
 {
-    type Response = AcceptHttp<F::Response, NormalizeUri<S::Response>>;
+    type Response = AcceptHttp<F::Response, S::Response>;
     type Error = Error;
     type Future =
         Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
@@ -96,7 +93,7 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         let drain = self.drain.clone();
         let tcp = self.tcp.clone();
-        let http = MakeNormalizeUri::new(self.http.clone());
+        let http = self.http.clone();
         let server = self.server.clone();
         let timeout = self.timeout;
 
