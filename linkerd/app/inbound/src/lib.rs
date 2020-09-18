@@ -366,7 +366,7 @@ impl Config {
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
-            .push(svc::layer::mk(tcp::Forward::new));
+            .push_on_response(svc::layer::mk(tcp::Forward::new));
 
         let http = DetectHttp::new(
             h2_settings,

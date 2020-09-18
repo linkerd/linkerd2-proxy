@@ -1,51 +1,35 @@
 use crate::Config;
-use indexmap::indexset;
-use linkerd2_app_core::{self as app_core, metrics::Metrics, Addr};
+use futures::prelude::*;
+use linkerd2_app_core::{config, exp_backoff, proxy::http::h2, transport::listen, Addr, Error};
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, time::Duration};
 use tower::ServiceExt;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
-const LISTEN_PORT: u16 = 4140;
 
 fn default_config(orig_dst: SocketAddr) -> Config {
-    use app_core::{
-        config::{ConnectConfig, ProxyConfig, ServerConfig},
-        exp_backoff::ExponentialBackoff,
-        proxy::http::h2,
-        transport::listen,
-    };
-    let h2_settings = h2::Settings {
-        initial_stream_window_size: Some(65_535), // Protocol default
-        initial_connection_window_size: Some(1_048_576), // 1MB ~ 16 streams at capacity
-    };
     Config {
         canonicalize_timeout: Duration::from_millis(100),
-        proxy: ProxyConfig {
-            server: ServerConfig {
-                bind: listen::Bind::new(SocketAddr::new(LOCALHOST.into(), LISTEN_PORT), None)
+        proxy: config::ProxyConfig {
+            server: config::ServerConfig {
+                bind: listen::Bind::new(SocketAddr::new(LOCALHOST.into(), 0), None)
                     .with_orig_dst_addr(orig_dst.into()),
-                h2_settings,
+                h2_settings: h2::Settings::default(),
             },
-            connect: ConnectConfig {
+            connect: config::ConnectConfig {
                 keepalive: None,
                 timeout: Duration::from_secs(1),
-                backoff: ExponentialBackoff::new(
+                backoff: exp_backoff::ExponentialBackoff::new(
                     Duration::from_millis(100),
                     Duration::from_millis(500),
                     0.1,
                 )
                 .unwrap(),
-                h2_settings,
+                h2_settings: h2::Settings::default(),
             },
             buffer_capacity: 10_000,
             cache_max_idle_age: Duration::from_secs(60),
-            disable_protocol_detection_for_ports: indexset![
-                25,   // SMTP
-                587,  // SMTP
-                3306, // MySQL
-            ]
-            .into(),
+            disable_protocol_detection_for_ports: Default::default(),
             dispatch_timeout: Duration::from_secs(3),
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(3),
@@ -61,13 +45,9 @@ async fn plaintext_tcp() {
     // bind any of these addresses. Therefore, we don't need to use ephemeral
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
-    let target_addr = SocketAddr::new(LOCALHOST.into(), 666);
-    let local_addr = SocketAddr::new(LOCALHOST.into(), LISTEN_PORT);
+    let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
 
     let cfg = default_config(target_addr);
-
-    let (metrics, _) = Metrics::new(std::time::Duration::from_secs(10));
-    let prevent_loop = super::PreventLoop::from(local_addr.port());
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
@@ -88,10 +68,15 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    let outbound_tcp = cfg.build_tcp_balance(&connect, resolver, prevent_loop, &metrics.outbound);
-    let svc = outbound_tcp
+    let make = cfg
+        .build_tcp_balance(connect, resolver)
         .oneshot(target_addr)
+        .err_into::<Error>()
         .await
         .expect("make service should succeed");
-    svc.oneshot(client_io).await.expect("conn should succeed");
+
+    make.oneshot(client_io)
+        .err_into::<Error>()
+        .await
+        .expect("conn should succeed");
 }
