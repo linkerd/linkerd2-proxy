@@ -21,6 +21,7 @@ use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Accept {
     pub target: SocketAddr,
 }
@@ -30,6 +31,18 @@ impl From<listen::Addrs> for Accept {
         Self {
             target: addrs.target_addr(),
         }
+    }
+}
+
+impl Into<Addr> for Accept {
+    fn into(self) -> Addr {
+        self.target.into()
+    }
+}
+
+impl Into<SocketAddr> for &'_ Accept {
+    fn into(self) -> SocketAddr {
+        self.target
     }
 }
 
@@ -48,7 +61,7 @@ pub struct HttpConcrete {
 }
 
 #[derive(Clone, Debug)]
-pub struct LogicalPerRequest(listen::Addrs);
+pub struct LogicalPerRequest(SocketAddr);
 
 #[derive(Clone, Debug)]
 pub struct Profile {
@@ -291,9 +304,9 @@ impl From<SocketAddr> for TcpEndpoint {
     }
 }
 
-impl From<listen::Addrs> for TcpEndpoint {
-    fn from(addrs: listen::Addrs) -> Self {
-        addrs.target_addr().into()
+impl From<Accept> for TcpEndpoint {
+    fn from(Accept { target }: Accept) -> Self {
+        target.into()
     }
 }
 
@@ -345,9 +358,9 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
 
 // === impl LogicalPerRequest ===
 
-impl From<listen::Addrs> for LogicalPerRequest {
-    fn from(t: listen::Addrs) -> Self {
-        LogicalPerRequest(t)
+impl From<Accept> for LogicalPerRequest {
+    fn from(Accept { target }: Accept) -> Self {
+        LogicalPerRequest(target)
     }
 }
 
@@ -377,7 +390,7 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
                 })
             })
             .unwrap_or_else(|_| {
-                let addr = self.0.target_addr();
+                let addr = self.0;
                 tracing::debug!(%addr, "using socket target");
                 addr.into()
             });
@@ -388,7 +401,7 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
 
         HttpLogical {
             dst,
-            orig_dst: self.0.target_addr(),
+            orig_dst: self.0,
             require_identity,
             version: req
                 .version()

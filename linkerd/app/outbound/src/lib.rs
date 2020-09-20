@@ -23,11 +23,7 @@ use linkerd2_app_core::{
     Addr, Conditional, DiscoveryRejected, Error, Never, ProxyMetrics, StackMetrics,
     TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::{collections::HashMap, net::IpAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -86,7 +82,7 @@ impl Config {
         connect: C,
         resolve: E,
     ) -> impl tower::Service<
-        SocketAddr,
+        endpoint::Accept,
         Error = impl Into<Error>,
         Future = impl Unpin + Send + 'static,
         Response = impl tower::Service<
@@ -127,11 +123,11 @@ impl Config {
                 resolve,
             )))
             .push(discover::buffer(1_000, cache_max_idle_age))
-            .push_map_target(Addr::from)
+            .push_map_target(Into::<Addr>::into)
             .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .into_new_service()
-            .check_new_service::<SocketAddr, I>()
+            .check_new_service::<endpoint::Accept, I>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -142,7 +138,7 @@ impl Config {
             .spawn_buffer(buffer_capacity)
             .push_make_ready()
             .instrument(|_: &_| info_span!("tcp"))
-            .check_make_service::<SocketAddr, I>()
+            .check_make_service::<endpoint::Accept, I>()
     }
 
     pub fn build_dns_refine(
@@ -507,7 +503,7 @@ impl Config {
             .check_make_service::<HttpLogical, http::Request<_>>()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<listen::Addrs, http::Request<_>>()
+            .check_new_service::<endpoint::Accept, http::Request<_>>()
             // Used by tap.
             .push_http_insert_target()
             .push_on_response(
@@ -518,8 +514,8 @@ impl Config {
                     .box_http_response(),
             )
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|_: &listen::Addrs| debug_span!("source"))
-            .check_new_service::<listen::Addrs, http::Request<_>>()
+            .instrument(|_: &endpoint::Accept| debug_span!("source"))
+            .check_new_service::<endpoint::Accept, http::Request<_>>()
             .into_inner()
             .into_make_service();
 
@@ -535,7 +531,6 @@ impl Config {
                 svc::stack(tcp_forward.clone()).push_map_target(TcpEndpoint::from),
                 is_discovery_rejected,
             )
-            .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 
         let http = http::DetectHttp::new(
@@ -551,7 +546,9 @@ impl Config {
             http,
             tcp_forward.push_map_target(TcpEndpoint::from),
         ))
+        //.push_map_target(endpoint::Accept::from)
         //.push(profiles::discover::layer(profiles_client))
+        .push_map_target(endpoint::Accept::from)
         .push(metrics.transport.layer_accept(TransportLabels))
         .into_inner()
     }
