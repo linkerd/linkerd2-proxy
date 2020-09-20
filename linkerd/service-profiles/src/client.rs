@@ -111,7 +111,7 @@ where
 
 impl<T, S, R> tower::Service<T> for Client<S, R>
 where
-    T: AsRef<Addr>,
+    T: std::fmt::Display,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -131,32 +131,20 @@ where
     }
 
     fn call(&mut self, dst: T) -> Self::Future {
-        let path = dst.as_ref().to_string();
-
-        let service = {
-            // In case the ready service holds resources, pass it into the
-            // response and use a new clone for the client.
-            let s = self.service.clone();
-            std::mem::replace(&mut self.service, s)
-        };
-
         let request = api::GetDestination {
-            path,
+            path: dst.to_string(),
             context_token: self.context_token.clone(),
             ..Default::default()
         };
 
-        let timeout = time::delay_for(self.initial_timeout);
-
-        let inner = Inner {
-            service,
-            request,
-            recover: self.recover.clone(),
-            state: State::Disconnected { backoff: None },
-        };
         ProfileFuture {
-            inner: Some(inner),
-            timeout,
+            timeout: time::delay_for(self.initial_timeout),
+            inner: Some(Inner {
+                request,
+                service: self.service.clone(),
+                recover: self.recover.clone(),
+                state: State::Disconnected { backoff: None },
+            }),
         }
     }
 }

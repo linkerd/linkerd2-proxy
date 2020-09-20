@@ -551,6 +551,7 @@ impl Config {
             http,
             tcp_forward.push_map_target(TcpEndpoint::from),
         ))
+        //.push(profiles::discover::layer(profiles_client))
         .push(metrics.transport.layer_accept(TransportLabels))
         .into_inner()
     }

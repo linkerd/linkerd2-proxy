@@ -21,6 +21,18 @@ use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
 
+pub struct Accept {
+    pub target: SocketAddr,
+}
+
+impl From<listen::Addrs> for Accept {
+    fn from(addrs: listen::Addrs) -> Self {
+        Self {
+            target: addrs.target_addr(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct HttpLogical {
     pub dst: Addr,
