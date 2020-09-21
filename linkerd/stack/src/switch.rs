@@ -13,6 +13,7 @@ pub trait Switch<T> {
 
 /// Makes either the primary or fallback stack, as determined by an `S`-typed
 /// `Switch`.
+#[derive(Clone)]
 pub struct MakeSwitch<S, P, F> {
     switch: S,
     primary: P,
