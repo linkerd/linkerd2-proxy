@@ -23,7 +23,7 @@ use linkerd2_app_core::{
     Addr, Conditional, DiscoveryRejected, Error, Never, ProxyMetrics, StackMetrics,
     TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{collections::HashMap, net::IpAddr, time::Duration};
+use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -108,7 +108,6 @@ impl Config {
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
         let ProxyConfig {
-            dispatch_timeout,
             cache_max_idle_age,
             buffer_capacity,
             ..
@@ -124,19 +123,8 @@ impl Config {
             )))
             .push(discover::buffer(1_000, cache_max_idle_age))
             .push_map_target(Into::<Addr>::into)
-            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .into_new_service()
-            .check_new_service::<endpoint::Accept, I>()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
-            .push_make_ready()
+            .push_on_response(svc::layers().push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+            .push(svc::layer::mk(tcp::Forward::new)).push_spawn_buffer(buffer_capacity))
             .instrument(|_: &_| info_span!("tcp"))
             .check_make_service::<endpoint::Accept, I>()
     }
@@ -147,7 +135,7 @@ impl Config {
         metrics: &StackMetrics,
     ) -> impl tower::Service<
         dns::Name,
-        Response = (dns::Name, IpAddr),
+        Response = (dns::Name, net::IpAddr),
         Error = Error,
         Future = impl Unpin + Send,
     > + Unpin
@@ -478,6 +466,8 @@ impl Config {
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
+            buffer_capacity,
+            cache_max_idle_age,
             ..
         } = self.proxy;
         let canonicalize_timeout = self.canonicalize_timeout;
@@ -519,38 +509,59 @@ impl Config {
             .into_inner()
             .into_make_service();
 
-        let tcp_forward = svc::stack(tcp_connect.clone())
-            .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .instrument(|_: &TcpEndpoint| info_span!("forward"))
-            .check_service::<TcpEndpoint>();
-
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
+        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
             .push_fallback_with_predicate(
-                svc::stack(tcp_forward.clone()).push_map_target(TcpEndpoint::from),
+                svc::stack(tcp_connect.clone())
+                    .push_make_thunk()
+                    .push_on_response(svc::layer::mk(tcp::Forward::new))
+                    .instrument(|_: &TcpEndpoint| info_span!("forward"))
+                    .check_service::<TcpEndpoint>()
+                    .push_map_target(TcpEndpoint::from)
+                    .into_inner(),
                 is_discovery_rejected,
             )
+            .check_service::<endpoint::Accept>()
             .into_inner();
 
-        let http = http::DetectHttp::new(
-            h2_settings,
-            detect_protocol_timeout,
-            http_server,
-            tcp_balance,
-            drain.clone(),
-        );
-
-        svc::stack(svc::stack::MakeSwitch::new(
+        let detect = svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
-            http,
-            tcp_forward.push_map_target(TcpEndpoint::from),
+            http::DetectHttp::new(
+                h2_settings,
+                detect_protocol_timeout,
+                http_server,
+                tcp_balance,
+                drain.clone(),
+            ),
+            svc::stack(tcp_connect.clone())
+                .push_make_thunk()
+                .push_on_response(svc::layer::mk(tcp::Forward::new))
+                .instrument(|_: &TcpEndpoint| info_span!("forward"))
+                .check_service::<TcpEndpoint>()
+                .push_map_target(TcpEndpoint::from)
+                .into_inner(),
         ))
-        //.push_map_target(endpoint::Accept::from)
-        //.push(profiles::discover::layer(profiles_client))
+        .check_service::<endpoint::Accept>()
         .push_map_target(endpoint::Accept::from)
-        .push(metrics.transport.layer_accept(TransportLabels))
-        .into_inner()
+        //.push(profiles::discover::layer(profiles_client))
+        .check_service::<net::SocketAddr>();
+
+        detect
+            .into_new_service()
+            .check_new::<net::SocketAddr>()
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+                ),
+            )
+            .check_service::<net::SocketAddr>()
+            .push_make_ready()
+            .spawn_buffer(buffer_capacity)
+            .push_map_target(|a: listen::Addrs| a.target_addr())
+            .push(metrics.transport.layer_accept(TransportLabels))
+            .into_inner()
     }
 }
 

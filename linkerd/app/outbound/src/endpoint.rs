@@ -26,11 +26,9 @@ pub struct Accept {
     pub target: SocketAddr,
 }
 
-impl From<listen::Addrs> for Accept {
-    fn from(addrs: listen::Addrs) -> Self {
-        Self {
-            target: addrs.target_addr(),
-        }
+impl From<SocketAddr> for Accept {
+    fn from(target: SocketAddr) -> Self {
+        Self { target }
     }
 }
 
