@@ -21,14 +21,23 @@ use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct Accept {
     pub target: SocketAddr,
+    pub rx: profiles::Receiver,
+}
+
+impl From<(profiles::Receiver, SocketAddr)> for Accept {
+    fn from((rx, target): (profiles::Receiver, SocketAddr)) -> Self {
+        Self { target, rx }
+    }
 }
 
 impl From<SocketAddr> for Accept {
     fn from(target: SocketAddr) -> Self {
-        Self { target }
+        // XXX(eliza): this is presently only needed by tests
+        let (_, rx) = tokio::sync::watch::channel(profiles::Profile::default());
+        Self { target, rx }
     }
 }
 
@@ -41,6 +50,12 @@ impl Into<Addr> for Accept {
 impl Into<SocketAddr> for &'_ Accept {
     fn into(self) -> SocketAddr {
         self.target
+    }
+}
+
+impl PartialEq for Accept {
+    fn eq(&self, other: &Self) -> bool {
+        self.target == other.target
     }
 }
 
@@ -303,7 +318,7 @@ impl From<SocketAddr> for TcpEndpoint {
 }
 
 impl From<Accept> for TcpEndpoint {
-    fn from(Accept { target }: Accept) -> Self {
+    fn from(Accept { target, .. }: Accept) -> Self {
         target.into()
     }
 }
@@ -357,7 +372,7 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
 // === impl LogicalPerRequest ===
 
 impl From<Accept> for LogicalPerRequest {
-    fn from(Accept { target }: Accept) -> Self {
+    fn from(Accept { target, .. }: Accept) -> Self {
         LogicalPerRequest(target)
     }
 }

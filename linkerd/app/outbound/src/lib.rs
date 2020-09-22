@@ -410,12 +410,13 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<E, R, C, H, S, I>(
+    pub fn build_server<E, R, C, H, S, I, P>(
         self,
         refine: R,
         resolve: E,
         tcp_connect: C,
         http_router: H,
+        profiles_client: P,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
@@ -459,6 +460,9 @@ impl Config {
             > + Send
             + 'static,
         S::Future: Send,
+        P: profiles::GetProfile<net::SocketAddr> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
+        P::Error: Send,
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
@@ -543,7 +547,10 @@ impl Config {
         ))
         .check_service::<endpoint::Accept>()
         .push_map_target(endpoint::Accept::from)
-        //.push(profiles::discover::layer(profiles_client))
+        // XXX(eliza): it's weird that we need this, because `MapTargetService`
+        // *should* already implement `NewService`...
+        .into_new_service()
+        .push(profiles::discover::layer(profiles_client))
         .check_service::<net::SocketAddr>();
 
         detect
