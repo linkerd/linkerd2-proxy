@@ -139,6 +139,7 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
                 ),
             )
+            .into_make()
             .spawn_buffer(buffer_capacity)
             .push_make_ready()
             .instrument(|_: &_| info_span!("tcp"))
@@ -176,6 +177,7 @@ impl Config {
                         .push(metrics.layer(stack_labels("refine"))),
                 ),
             )
+            .into_make()
             .spawn_buffer(self.proxy.buffer_capacity)
             .instrument(|name: &dns::Name| info_span!("refine", %name))
             // Obtains the service, advances the state of the resolution
@@ -385,6 +387,7 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
             )
+            .into_make()
             .spawn_buffer(buffer_capacity)
             .push_make_ready()
             .check_make_service::<HttpLogical, http::Request<_>>();
@@ -402,6 +405,7 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                 ),
             )
+            .into_make()
             .spawn_buffer(buffer_capacity)
             .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
             .check_make_service::<HttpEndpoint, http::Request<_>>();

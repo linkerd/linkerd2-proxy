@@ -180,6 +180,13 @@ impl<S> Stack<S> {
         self.push(stack::new_service::FromMakeServiceLayer::default())
     }
 
+    pub fn into_make<T>(self) -> Stack<stack::new_service::IntoMakeService<S>>
+    where
+        S: NewService<T>,
+    {
+        Stack(self.0.into_make_service())
+    }
+
     pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
         self.push(stack::MakeReadyLayer::new())
     }
