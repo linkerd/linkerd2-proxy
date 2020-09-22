@@ -257,6 +257,7 @@ impl Config {
                         .box_http_response(),
                 ),
             )
+            .into_make()
             .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| debug_span!("profile"))
             .check_make_service::<Target, http::Request<_>>();
@@ -271,6 +272,7 @@ impl Config {
                         .box_http_response(),
                 ),
             )
+            .into_make()
             .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| debug_span!("forward"))
             .check_make_service::<Target, http::Request<http::boxed::Payload>>();
