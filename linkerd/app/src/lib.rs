@@ -162,6 +162,7 @@ impl Config {
                         dst.resolve,
                         outbound_connect,
                         outbound_http.clone(),
+                        dst.profiles.clone(),
                         outbound_metrics,
                         oc_span_sink.clone(),
                         drain_rx.clone(),
