@@ -38,7 +38,7 @@ enum State {
 impl NewService<Name> for MakeRefine {
     type Service = Refine;
 
-    fn new_service(&self, name: Name) -> Self::Service {
+    fn new_service(&mut self, name: Name) -> Self::Service {
         Refine {
             name,
             state: State::Init,

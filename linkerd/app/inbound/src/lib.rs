@@ -21,7 +21,7 @@ use linkerd2_app_core::{
     },
     reconnect, router,
     spans::SpanConverter,
-    svc::{self, NewService},
+    svc::{self},
     transport::{self, io, listen, tls},
     Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
@@ -257,6 +257,7 @@ impl Config {
                         .box_http_response(),
                 ),
             )
+            .into_make_service()
             .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| debug_span!("profile"))
             .check_make_service::<Target, http::Request<_>>();
@@ -271,6 +272,7 @@ impl Config {
                         .box_http_response(),
                 ),
             )
+            .into_make_service()
             .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| debug_span!("forward"))
             .check_make_service::<Target, http::Request<http::boxed::Payload>>();
@@ -386,8 +388,8 @@ impl Config {
             )
             .instrument(|_: &_| debug_span!("source"))
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
-            .into_inner()
-            .into_make_service();
+            .into_make_service()
+            .into_inner();
 
         DetectHttp::new(
             h2_settings,

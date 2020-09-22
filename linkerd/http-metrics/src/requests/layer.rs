@@ -170,7 +170,7 @@ where
 {
     type Service = Service<M::Service, C>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
                 r.by_target

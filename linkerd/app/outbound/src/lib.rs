@@ -18,7 +18,7 @@ use linkerd2_app_core::{
     },
     reconnect, retry, router,
     spans::SpanConverter,
-    svc::{self, NewService},
+    svc::{self},
     transport::{self, listen, tls},
     Addr, Conditional, DiscoveryRejected, Error, Never, ProxyMetrics, StackMetrics,
     TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
@@ -139,6 +139,7 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
                 ),
             )
+            .into_make_service()
             .spawn_buffer(buffer_capacity)
             .push_make_ready()
             .instrument(|_: &_| info_span!("tcp"))
@@ -176,6 +177,7 @@ impl Config {
                         .push(metrics.layer(stack_labels("refine"))),
                 ),
             )
+            .into_make_service()
             .spawn_buffer(self.proxy.buffer_capacity)
             .instrument(|name: &dns::Name| info_span!("refine", %name))
             // Obtains the service, advances the state of the resolution
@@ -385,6 +387,7 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("profile"))),
                 ),
             )
+            .into_make_service()
             .spawn_buffer(buffer_capacity)
             .push_make_ready()
             .check_make_service::<HttpLogical, http::Request<_>>();
@@ -402,6 +405,7 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
                 ),
             )
+            .into_make_service()
             .spawn_buffer(buffer_capacity)
             .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
             .check_make_service::<HttpEndpoint, http::Request<_>>();
@@ -520,8 +524,8 @@ impl Config {
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .instrument(|_: &listen::Addrs| debug_span!("source"))
             .check_new_service::<listen::Addrs, http::Request<_>>()
-            .into_inner()
-            .into_make_service();
+            .into_make_service()
+            .into_inner();
 
         let tcp_forward = svc::stack(tcp_connect.clone())
             .push_make_thunk()

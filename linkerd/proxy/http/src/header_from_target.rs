@@ -65,7 +65,7 @@ where
 {
     type Service = Service<H, M::Service>;
 
-    fn new_service(&self, t: T) -> Self::Service {
+    fn new_service(&mut self, t: T) -> Self::Service {
         let header = self.header.clone();
         let value = (&t).into();
         let inner = self.inner.new_service(t);

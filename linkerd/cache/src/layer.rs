@@ -60,7 +60,7 @@ where
 {
     type Service = <L::Service as NewService<T>>::Service;
 
-    fn new_service(&self, (target, _handle): (T, Handle)) -> Self::Service {
+    fn new_service(&mut self, (target, _handle): (T, Handle)) -> Self::Service {
         let inner = Track {
             _handle,
             inner: self.inner.clone(),
@@ -72,7 +72,7 @@ where
 impl<T, N: NewService<T>> NewService<T> for Track<N> {
     type Service = Track<N::Service>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         Self::Service {
             _handle: self._handle.clone(),
             inner: self.inner.new_service(target),

@@ -51,7 +51,7 @@ impl Service<usize> for NeverEvict {
 impl NewService<(usize, Handle)> for NewNeverEvict {
     type Service = NeverEvict;
 
-    fn new_service(&self, target: (usize, Handle)) -> Self::Service {
+    fn new_service(&mut self, target: (usize, Handle)) -> Self::Service {
         NeverEvict {
             val: target.0,
             handle: target.1,
@@ -76,7 +76,7 @@ impl Service<usize> for AlwaysEvict {
 impl NewService<(usize, Handle)> for NewAlwaysEvict {
     type Service = AlwaysEvict;
 
-    fn new_service(&self, target: (usize, Handle)) -> Self::Service {
+    fn new_service(&mut self, target: (usize, Handle)) -> Self::Service {
         AlwaysEvict { val: target.0 }
     }
 }
@@ -98,7 +98,7 @@ impl Service<usize> for SometimesEvict {
 impl NewService<(usize, Handle)> for NewSometimesEvict {
     type Service = SometimesEvict;
 
-    fn new_service(&self, target: (usize, Handle)) -> Self::Service {
+    fn new_service(&mut self, target: (usize, Handle)) -> Self::Service {
         if target.0 % 2 == 0 {
             SometimesEvict {
                 val: target.0,

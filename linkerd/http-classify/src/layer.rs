@@ -36,7 +36,7 @@ where
 {
     type Service = Proxy<T::Classify, N::Service>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         let classify = target.classify();
         let inner = self.inner.new_service(target);
         Proxy { classify, inner }
