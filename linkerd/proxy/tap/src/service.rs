@@ -94,7 +94,7 @@ where
 {
     type Service = Service<M::Service, I, T>;
 
-    fn new_service(&self, target: I) -> Self::Service {
+    fn new_service(&mut self, target: I) -> Self::Service {
         let inspect = target.clone();
         Service {
             inner: self.inner.new_service(target),

@@ -44,7 +44,7 @@ pub struct IdentityProxy(());
 
 impl<T> NewService<T> for IdentityProxy {
     type Service = ();
-    fn new_service(&self, _: T) -> Self::Service {
+    fn new_service(&mut self, _: T) -> Self::Service {
         ()
     }
 }
@@ -389,7 +389,7 @@ where
 {
     type Service = N::Service;
 
-    fn new_service(&self, t: T) -> Self::Service {
+    fn new_service(&mut self, t: T) -> Self::Service {
         self.0.new_service(t)
     }
 }

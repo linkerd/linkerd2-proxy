@@ -39,7 +39,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let inner = self.inner.clone();
+        let mut inner = self.inner.clone();
         Box::pin(
             self.get_profile
                 .get_profile(target.clone())

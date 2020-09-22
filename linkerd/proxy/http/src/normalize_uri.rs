@@ -51,7 +51,7 @@ where
 {
     type Service = NormalizeUri<N::Service>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         let target_addr = (&target).into();
         let inner = self.inner.new_service(target);
         NormalizeUri::new(inner, target_addr)

@@ -177,7 +177,7 @@ pub mod target {
     {
         type Service = Insert<M::Service, super::ValLazy<T>, T>;
 
-        fn new_service(&self, target: T) -> Self::Service {
+        fn new_service(&mut self, target: T) -> Self::Service {
             let inner = self.0.new_service(target.clone());
             super::Insert::new(inner, super::ValLazy(target))
         }

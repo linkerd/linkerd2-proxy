@@ -69,7 +69,7 @@ where
 {
     type Service = Instrument<N::Service>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         trace!(?target, "new_service");
         let span = self.get_span.get_span(&target);
         let inner = span.in_scope(move || self.make.new_service(target));

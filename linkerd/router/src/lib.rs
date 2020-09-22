@@ -64,7 +64,7 @@ where
 {
     type Service = Router<K::Service, M>;
 
-    fn new_service(&self, t: T) -> Self::Service {
+    fn new_service(&mut self, t: T) -> Self::Service {
         Router {
             recognize: self.new_recgonize.new_service(t),
             make: self.make_route.clone(),
