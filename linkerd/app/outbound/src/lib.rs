@@ -141,7 +141,6 @@ impl Config {
             )
             .into_make_service()
             .spawn_buffer(buffer_capacity)
-            .push_make_ready()
             .instrument(|_: &_| info_span!("tcp"))
             .check_make_service::<SocketAddr, I>()
     }
@@ -379,36 +378,13 @@ impl Config {
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .push_make_ready()
-            .check_make_service::<HttpLogical, http::Request<_>>();
+            .check_new_service::<HttpLogical, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.
         let forward = svc::stack(endpoint)
-            .check_make_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .box_http_request()
-                        .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
             .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
-            .check_make_service::<HttpEndpoint, http::Request<_>>();
+            .check_new_service::<HttpEndpoint, http::Request<_>>();
 
         // Attempts to route route request to a logical services that uses
         // control plane for discovery. If the discovery is rejected, the
@@ -422,6 +398,17 @@ impl Config {
                     .into_inner(),
                 is_discovery_rejected,
             )
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("profile"))),
+                ),
+            )
+            .into_make_service()
+            .spawn_buffer(buffer_capacity)
+            .check_make_service::<HttpLogical, http::Request<_>>()
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             // Strips headers that may be set by this proxy.
             .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))

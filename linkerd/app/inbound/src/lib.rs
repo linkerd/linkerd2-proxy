@@ -353,9 +353,6 @@ impl Config {
         ));
 
         let http_server = svc::stack(http_router)
-            // Ensures that the built service is ready before it is returned
-            // to the router to dispatch a request.
-            .push_make_ready()
             // Limits the amount of time each request waits to obtain a
             // ready service.
             .push_timeout(dispatch_timeout)
