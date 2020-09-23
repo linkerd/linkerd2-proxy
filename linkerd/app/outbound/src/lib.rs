@@ -85,21 +85,18 @@ impl Config {
         &self,
         connect: C,
         resolve: E,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         SocketAddr,
-        Error = impl Into<Error>,
-        Future = impl Unpin + Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             I,
             Response = (),
             Future = impl Unpin + Send + 'static,
             Error = impl Into<Error>,
         > + Unpin
-                       + Clone
-                       + Send
-                       + 'static,
-    > + Unpin
-           + Clone
+                      + Send
+                      + 'static,
+    > + Clone
+           + Unpin
            + Send
            + 'static
     where
@@ -112,10 +109,7 @@ impl Config {
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
         let ProxyConfig {
-            dispatch_timeout,
-            cache_max_idle_age,
-            buffer_capacity,
-            ..
+            cache_max_idle_age, ..
         } = self.proxy;
 
         svc::stack(connect)
@@ -132,17 +126,6 @@ impl Config {
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .into_new_service()
             .check_new_service::<SocketAddr, I>()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .instrument(|_: &_| info_span!("tcp"))
-            .check_make_service::<SocketAddr, I>()
     }
 
     pub fn build_dns_refine(
@@ -473,6 +456,8 @@ impl Config {
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
+            cache_max_idle_age,
+            buffer_capacity,
             ..
         } = self.proxy;
         let canonicalize_timeout = self.canonicalize_timeout;
@@ -523,9 +508,22 @@ impl Config {
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
             .push_fallback_with_predicate(
-                svc::stack(tcp_forward.clone()).push_map_target(TcpEndpoint::from),
+                svc::stack(tcp_forward.clone())
+                    .push_map_target(TcpEndpoint::from)
+                    .into_new_service()
+                    .into_inner(),
                 is_discovery_rejected,
             )
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+                ),
+            )
+            .into_make_service()
+            .spawn_buffer(buffer_capacity)
+            .instrument(|_: &_| info_span!("tcp"))
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 

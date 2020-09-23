@@ -86,6 +86,12 @@ impl Io for BoxedIo {
     }
 }
 
+impl std::fmt::Debug for BoxedIo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoxedIo").finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
