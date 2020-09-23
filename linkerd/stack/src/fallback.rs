@@ -26,10 +26,10 @@ pub struct Fallback<I, F, P = fn(&Error) -> bool> {
     predicate: P,
 }
 
-pub struct ReadyFallback<N, T, A, B, P> {
+// Falls back to an alternate service if the primary service does not become ready.
+pub struct ReadyFallback<NewB, T, A, B, P> {
     inner: Either<A, B>,
-    fallback: Option<(N, T)>,
-    predicate: P,
+    fallback: Option<(NewB, T, P)>,
 }
 
 #[pin_project]
@@ -124,8 +124,7 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         ReadyFallback {
             inner: Either::A(self.inner.new_service(target.clone())),
-            fallback: Some((self.fallback.clone(), target)),
-            predicate: self.predicate.clone(),
+            fallback: Some((self.fallback.clone(), target, self.predicate.clone())),
         }
     }
 }
@@ -221,20 +220,25 @@ where
         match self.fallback {
             None => self.inner.poll_ready(cx),
             ref mut fallback => {
-                debug_assert!(matches!(self.inner, Either::A(_)));
+                debug_assert!(
+                    matches!(self.inner, Either::A(_)),
+                    "must not be in fallback yet"
+                );
+
                 match futures::ready!(self.inner.poll_ready(cx)) {
                     Ok(()) => {
                         // If the primary service becomes ready, drop the
                         // fallback.
-                        drop(fallback.take());
+                        drop(fallback.take().expect("fallback expected"));
                         Poll::Ready(Ok(()))
                     }
                     Err(e) => {
+                        let (mut alt, target, predicate) =
+                            fallback.take().expect("fallback expected");
                         // If the initial readiness failed in an expected way,
                         // use the fallback service.
-                        if (self.predicate)(&e) {
-                            let (mut new, target) = fallback.take().expect("illegal state");
-                            self.inner = Either::B(new.new_service(target));
+                        if (predicate)(&e) {
+                            self.inner = Either::B(alt.new_service(target));
                             self.inner.poll_ready(cx)
                         } else {
                             Poll::Ready(Err(e))
