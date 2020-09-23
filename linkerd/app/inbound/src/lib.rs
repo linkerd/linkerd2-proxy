@@ -219,6 +219,7 @@ impl Config {
         let target = endpoint
             .push_map_target(HttpEndpoint::from)
             .push(observe)
+            .push_on_response(svc::layers().box_http_response())
             .into_new_service()
             .check_new_service::<Target, http::Request<_>>();
 
@@ -248,21 +249,30 @@ impl Config {
             .push_map_target(endpoint::Logical::from)
             .push(profiles::discover::layer(profiles_client))
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile")))
-                        .box_http_response(),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
             .instrument(|_: &Target| debug_span!("profile"))
-            .check_make_service::<Target, http::Request<_>>();
+            .push_on_response(svc::layers().box_http_response())
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>();
 
         let forward = target
+            .instrument(|_: &Target| debug_span!("forward"))
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>();
+
+        // Attempts to resolve the target as a service profile or, if that
+        // fails, skips that stack to forward to the local endpoint.
+        profile
+            .push_fallback(forward)
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
+            // If the traffic is targeted at the inbound port, send it through
+            // the loopback service (i.e. as a gateway).
+            .push(admit::AdmitLayer::new(prevent_loop))
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
+                svc::stack(loopback)
+                    .into_new_service()
+                    .check_new_service::<Target, http::Request<_>>()
+                    .into_inner(),
+            )
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -274,24 +284,6 @@ impl Config {
             )
             .into_make_service()
             .spawn_buffer(buffer_capacity)
-            .instrument(|_: &Target| debug_span!("forward"))
-            .check_make_service::<Target, http::Request<http::boxed::Payload>>();
-
-        // Attempts to resolve the target as a service profile or, if that
-        // fails, skips that stack to forward to the local endpoint.
-        profile
-            .push_make_ready()
-            .push_fallback(forward)
-            // If the traffic is targeted at the inbound port, send it through
-            // the loopback service (i.e. as a gateway). This is done before
-            // caching so that the loopback stack can determine whether it
-            // should cache or not.
-            .push(admit::AdmitLayer::new(prevent_loop))
-            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
-                svc::stack(loopback)
-                    .check_make_service::<Target, http::Request<_>>()
-                    .into_inner(),
-            )
             .check_make_service::<Target, http::Request<http::boxed::Payload>>()
             .into_inner()
     }

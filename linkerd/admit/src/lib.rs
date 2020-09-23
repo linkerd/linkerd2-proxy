@@ -4,6 +4,7 @@
 
 use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
+use linkerd2_stack::{NewService, ResultService};
 use std::task::{Context, Poll};
 
 pub struct AdmitLayer<A>(A);
@@ -33,6 +34,21 @@ impl<A: Clone, S> tower::layer::Layer<S> for AdmitLayer<A> {
         Self::Service {
             admit: self.0.clone(),
             inner,
+        }
+    }
+}
+
+impl<A, T, S> NewService<T> for AdmitService<A, S>
+where
+    A: Admit<T>,
+    S: NewService<T>,
+{
+    type Service = ResultService<S::Service, A::Error>;
+
+    fn new_service(&mut self, t: T) -> Self::Service {
+        match self.admit.admit(&t) {
+            Ok(()) => ResultService::ok(self.inner.new_service(t)),
+            Err(e) => ResultService::err(e),
         }
     }
 }
