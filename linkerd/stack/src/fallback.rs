@@ -14,19 +14,32 @@ use tower::util::{Either, Oneshot, ServiceExt};
 /// If the future returned by the primary service fails with an error matching a
 /// given predicate, the fallback service is called. The result is returned in an `Either`.
 #[derive(Clone, Debug)]
-pub struct FallbackLayer<F, P = fn(&Error) -> bool> {
-    fallback: F,
+pub struct FallbackLayer<B, P = fn(&Error) -> bool> {
+    fallback: B,
     predicate: P,
 }
 
+/// Attempts to build a primary service or, if that fails, a fallback service.
+///
+/// `Fallback` may be used either as a `MakeService` or a `NewService`.
+///
+/// As a `MakeService`, the primary's response future is checked for failure
+/// (with the `P`-typed predicate) and, if the predicate returns true, the
+/// fallback service is invoked.
+///
+/// As a `NewService`, the primary service is built immediately an, if it fails
+/// to become ready (and the predicate returns true for the error), then the
+/// fallback service is built and used. Note that the fallback is discarded if
+/// the primary service becomes ready without failing.
 #[derive(Clone, Debug)]
-pub struct Fallback<I, F, P = fn(&Error) -> bool> {
-    inner: I,
-    fallback: F,
+pub struct Fallback<A, B, P = fn(&Error) -> bool> {
+    primary: A,
+    fallback: B,
     predicate: P,
 }
 
-// Falls back to an alternate service if the primary service does not become ready.
+// Falls back to an alternate service if the primary service fails its initial
+// readiness probe.
 pub struct ReadyFallback<NewB, T, A, B, P> {
     inner: Either<A, B>,
     fallback: Option<(NewB, T, P)>,
@@ -100,9 +113,9 @@ where
 {
     type Service = Fallback<A, B, P>;
 
-    fn layer(&self, inner: A) -> Self::Service {
+    fn layer(&self, primary: A) -> Self::Service {
         Self::Service {
-            inner,
+            primary,
             fallback: self.fallback.clone(),
             predicate: self.predicate.clone(),
         }
@@ -123,7 +136,7 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         ReadyFallback {
-            inner: Either::A(self.inner.new_service(target.clone())),
+            inner: Either::A(self.primary.new_service(target.clone())),
             fallback: Some((self.fallback.clone(), target, self.predicate.clone())),
         }
     }
@@ -144,13 +157,13 @@ where
     type Future = MakeFuture<A::Future, Oneshot<B, T>, P>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(Into::into)
+        self.primary.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
         MakeFuture {
             state: State::A {
-                primary: self.inner.call(target.clone()),
+                primary: self.primary.call(target.clone()),
                 fallback: Some(self.fallback.clone().oneshot(target)),
                 predicate: self.predicate.clone(),
             },
@@ -182,7 +195,7 @@ where
                     Ok(ok) => return Poll::Ready(Ok(Either::A(ok))),
                     Err(e) => {
                         let error = e.into();
-                        if !(predicate)(&error) {
+                        if !predicate(&error) {
                             return Poll::Ready(Err(error));
                         }
                         let fallback = fallback.take().unwrap();
@@ -237,7 +250,7 @@ where
                             fallback.take().expect("fallback expected");
                         // If the initial readiness failed in an expected way,
                         // use the fallback service.
-                        if (predicate)(&e) {
+                        if predicate(&e) {
                             self.inner = Either::B(alt.new_service(target));
                             self.inner.poll_ready(cx)
                         } else {
