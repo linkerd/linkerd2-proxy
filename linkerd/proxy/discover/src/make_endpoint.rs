@@ -120,17 +120,21 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Change<D::Key, E::Service>, Error>>> {
-        let this = self.as_mut().project();
-        Poll::Ready(match ready!(this.discover.poll_discover(cx)) {
-            Some(change) => Some(Ok(match change.map_err(Into::into)? {
-                Change::Insert(key, target) => {
-                    let endpoint = this.new_endpoint.new_service(target);
-                    Change::Insert(key, endpoint)
+        loop {
+            let this = self.as_mut().project();
+            match ready!(this.discover.poll_discover(cx)) {
+                Some(change) => {
+                    return Poll::Ready(Some(Ok(match change.map_err(Into::into)? {
+                        Change::Insert(key, target) => {
+                            let endpoint = this.new_endpoint.new_service(target);
+                            Change::Insert(key, endpoint)
+                        }
+                        Change::Remove(key) => Change::Remove(key),
+                    })))
                 }
-                Change::Remove(key) => Change::Remove(key),
-            })),
 
-            None => None,
-        })
+                None => continue,
+            }
+        }
     }
 }
