@@ -23,6 +23,15 @@ impl<S> MakeThunk<S> {
     }
 }
 
+impl<S: Clone, T> super::NewService<T> for MakeThunk<S> {
+    type Service = Thunk<S, T>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        let inner = self.inner.clone();
+        Thunk { inner, target }
+    }
+}
+
 impl<S: Clone, T> tower::Service<T> for MakeThunk<S> {
     type Response = Thunk<S, T>;
     type Error = Never;

@@ -85,21 +85,18 @@ impl Config {
         &self,
         connect: C,
         resolve: E,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         SocketAddr,
-        Error = impl Into<Error>,
-        Future = impl Unpin + Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             I,
             Response = (),
             Future = impl Unpin + Send + 'static,
             Error = impl Into<Error>,
         > + Unpin
-                       + Clone
-                       + Send
-                       + 'static,
-    > + Unpin
-           + Clone
+                      + Send
+                      + 'static,
+    > + Clone
+           + Unpin
            + Send
            + 'static
     where
@@ -112,10 +109,7 @@ impl Config {
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
         let ProxyConfig {
-            dispatch_timeout,
-            cache_max_idle_age,
-            buffer_capacity,
-            ..
+            cache_max_idle_age, ..
         } = self.proxy;
 
         svc::stack(connect)
@@ -132,18 +126,6 @@ impl Config {
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .into_new_service()
             .check_new_service::<SocketAddr, I>()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .push_make_ready()
-            .instrument(|_: &_| info_span!("tcp"))
-            .check_make_service::<SocketAddr, I>()
     }
 
     pub fn build_dns_refine(
@@ -327,7 +309,8 @@ impl Config {
                     .box_http_request(),
             )
             .push_spawn_ready()
-            .check_make_service::<HttpEndpoint, http::Request<_>>()
+            .into_new_service()
+            .check_new_service::<HttpEndpoint, http::Request<_>>()
             .push(discover)
             .check_service::<HttpConcrete>()
             .push_on_response(
@@ -379,36 +362,13 @@ impl Config {
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .push_make_ready()
-            .check_make_service::<HttpLogical, http::Request<_>>();
+            .check_new_service::<HttpLogical, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.
         let forward = svc::stack(endpoint)
-            .check_make_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .box_http_request()
-                        .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
             .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
-            .check_make_service::<HttpEndpoint, http::Request<_>>();
+            .check_new_service::<HttpEndpoint, http::Request<_>>();
 
         // Attempts to route route request to a logical services that uses
         // control plane for discovery. If the discovery is rejected, the
@@ -422,6 +382,17 @@ impl Config {
                     .into_inner(),
                 is_discovery_rejected,
             )
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("logical"))),
+                ),
+            )
+            .into_make_service()
+            .spawn_buffer(buffer_capacity)
+            .check_make_service::<HttpLogical, http::Request<_>>()
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             // Strips headers that may be set by this proxy.
             .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
@@ -486,6 +457,8 @@ impl Config {
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
+            cache_max_idle_age,
+            buffer_capacity,
             ..
         } = self.proxy;
         let canonicalize_timeout = self.canonicalize_timeout;
@@ -536,9 +509,22 @@ impl Config {
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
             .push_fallback_with_predicate(
-                svc::stack(tcp_forward.clone()).push_map_target(TcpEndpoint::from),
+                svc::stack(tcp_forward.clone())
+                    .check_new::<TcpEndpoint>()
+                    .push_map_target(TcpEndpoint::from)
+                    .into_inner(),
                 is_discovery_rejected,
             )
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+                ),
+            )
+            .into_make_service()
+            .spawn_buffer(buffer_capacity)
+            .instrument(|_: &_| info_span!("tcp"))
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 

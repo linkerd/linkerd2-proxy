@@ -63,6 +63,7 @@ impl Config {
             .push(self::client::layer())
             .push(reconnect::layer(backoff.clone()))
             .push_spawn_ready()
+            .into_new_service()
             .push(self::resolve::layer(dns, backoff))
             .push_on_response(self::control::balance::layer())
             .push(metrics.into_layer::<classify::Response>())

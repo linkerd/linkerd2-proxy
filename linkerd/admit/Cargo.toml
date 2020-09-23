@@ -8,5 +8,6 @@ publish = false
 [dependencies]
 futures = "0.3"
 linkerd2-error = { path = "../error" }
+linkerd2-stack = { path = "../stack" }
 tower = { version = "0.3", default-features = false, features = ["util"] }
 tracing = "0.1.19"
