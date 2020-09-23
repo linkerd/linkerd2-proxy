@@ -1,4 +1,6 @@
 //! A middleware that may retry a request in a fallback service.
+
+use super::NewService;
 use futures::TryFuture;
 use linkerd2_error::Error;
 use pin_project::pin_project;
@@ -6,6 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::util::{Either, Oneshot, ServiceExt};
+
 /// A Layer that augments the underlying service with a fallback service.
 ///
 /// If the future returned by the primary service fails with an error matching a
@@ -21,6 +24,12 @@ pub struct Fallback<I, F, P = fn(&Error) -> bool> {
     inner: I,
     fallback: F,
     predicate: P,
+}
+
+// Falls back to an alternate service if the primary service does not become ready.
+pub struct ReadyFallback<NewB, T, A, B, P> {
+    inner: Either<A, B>,
+    fallback: Option<(NewB, T, P)>,
 }
 
 #[pin_project]
@@ -102,6 +111,24 @@ where
 
 // === impl Fallback ===
 
+impl<A, N, T, P> NewService<T> for Fallback<A, N, P>
+where
+    T: Clone,
+    A: NewService<T>,
+    N: NewService<T> + Clone,
+    P: Fn(&Error) -> bool,
+    P: Clone,
+{
+    type Service = ReadyFallback<N, T, A::Service, N::Service, P>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        ReadyFallback {
+            inner: Either::A(self.inner.new_service(target.clone())),
+            fallback: Some((self.fallback.clone(), target, self.predicate.clone())),
+        }
+    }
+}
+
 impl<A, B, P, T> tower::Service<T> for Fallback<A, B, P>
 where
     T: Clone,
@@ -170,5 +197,59 @@ where
                 }
             };
         }
+    }
+}
+
+// === impl ReadyFallback ===
+
+impl<N, T, A, B, P, Req> tower::Service<Req> for ReadyFallback<N, T, A, B, P>
+where
+    A: tower::Service<Req>,
+    A::Error: Into<Error>,
+    N: NewService<T, Service = B>,
+    B: tower::Service<Req, Response = A::Response>,
+    B::Error: Into<Error>,
+    P: Fn(&Error) -> bool,
+{
+    type Response = A::Response;
+    type Error = Error;
+    type Future = Either<A::Future, B::Future>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Fallback may only be set until the initial state is polled to ready.
+        match self.fallback {
+            None => self.inner.poll_ready(cx),
+            ref mut fallback => {
+                debug_assert!(
+                    matches!(self.inner, Either::A(_)),
+                    "must not be in fallback yet"
+                );
+
+                match futures::ready!(self.inner.poll_ready(cx)) {
+                    Ok(()) => {
+                        // If the primary service becomes ready, drop the
+                        // fallback.
+                        drop(fallback.take().expect("fallback expected"));
+                        Poll::Ready(Ok(()))
+                    }
+                    Err(e) => {
+                        let (mut alt, target, predicate) =
+                            fallback.take().expect("fallback expected");
+                        // If the initial readiness failed in an expected way,
+                        // use the fallback service.
+                        if (predicate)(&e) {
+                            self.inner = Either::B(alt.new_service(target));
+                            self.inner.poll_ready(cx)
+                        } else {
+                            Poll::Ready(Err(e))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn call(&mut self, req: Req) -> Self::Future {
+        self.inner.call(req)
     }
 }
