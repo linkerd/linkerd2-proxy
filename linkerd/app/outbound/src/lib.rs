@@ -403,7 +403,7 @@ impl Config {
                     svc::layers()
                         .push_failfast(dispatch_timeout)
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
+                        .push(metrics.stack.layer(stack_labels("logical"))),
                 ),
             )
             .into_make_service()
