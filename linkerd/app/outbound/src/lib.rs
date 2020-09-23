@@ -509,8 +509,8 @@ impl Config {
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
             .push_fallback_with_predicate(
                 svc::stack(tcp_forward.clone())
+                    .check_new::<TcpEndpoint>()
                     .push_map_target(TcpEndpoint::from)
-                    .into_new_service()
                     .into_inner(),
                 is_discovery_rejected,
             )
