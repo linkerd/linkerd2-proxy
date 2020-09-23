@@ -309,7 +309,8 @@ impl Config {
                     .box_http_request(),
             )
             .push_spawn_ready()
-            .check_make_service::<HttpEndpoint, http::Request<_>>()
+            .into_new_service()
+            .check_new_service::<HttpEndpoint, http::Request<_>>()
             .push(discover)
             .check_service::<HttpConcrete>()
             .push_on_response(
