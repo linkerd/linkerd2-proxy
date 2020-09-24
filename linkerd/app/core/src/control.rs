@@ -62,14 +62,11 @@ impl Config {
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
             .push(reconnect::layer(backoff.clone()))
-            .push_spawn_ready()
-            .into_new_service()
             .push(self::resolve::layer(dns, backoff))
             .push_on_response(self::control::balance::layer())
-            .push(metrics.into_layer::<classify::Response>())
-            .push(self::add_origin::Layer::new())
             .into_new_service()
-            .check_new_service()
+            .push(metrics.into_layer::<classify::Response>())
+            .push(self::add_origin::layer())
             .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
             .new_service(self.addr)
     }
@@ -78,126 +75,54 @@ impl Config {
 /// Sets the request's URI from `Config`.
 mod add_origin {
     use super::ControlAddr;
-    use futures::{ready, TryFuture};
-    use linkerd2_error::Error;
-    use pin_project::pin_project;
-    use std::future::Future;
+    use linkerd2_stack::{layer, NewService, ResultService};
     use std::marker::PhantomData;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
     use tower_request_modifier::{Builder, RequestModifier};
 
-    #[derive(Debug)]
-    pub struct Layer<B> {
-        _marker: PhantomData<fn(B)>,
+    pub fn layer<M, B>() -> impl layer::Layer<M, Service = NewAddOrigin<M, B>> + Clone {
+        layer::mk(|inner| NewAddOrigin {
+            inner,
+            _marker: PhantomData,
+        })
     }
 
     #[derive(Debug)]
-    pub struct MakeAddOrigin<M, B> {
+    pub struct NewAddOrigin<M, B> {
         inner: M,
         _marker: PhantomData<fn(B)>,
     }
 
-    #[pin_project]
-    pub struct MakeFuture<F, B> {
-        #[pin]
-        inner: F,
-        authority: http::uri::Authority,
-        _marker: PhantomData<fn(B)>,
-    }
+    // === impl NewAddOrigin ===
 
-    // === impl Layer ===
-
-    impl<B> Layer<B> {
-        pub fn new() -> Self {
-            Layer {
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<B> Clone for Layer<B> {
+    impl<M: Clone, B> Clone for NewAddOrigin<M, B> {
         fn clone(&self) -> Self {
             Self {
+                inner: self.inner.clone(),
                 _marker: self._marker,
             }
         }
     }
 
-    impl<M, B> tower::layer::Layer<M> for Layer<B> {
-        type Service = MakeAddOrigin<M, B>;
-
-        fn layer(&self, inner: M) -> Self::Service {
-            Self::Service {
-                inner,
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    // === impl MakeAddOrigin ===
-
-    impl<M, B> tower::Service<ControlAddr> for MakeAddOrigin<M, B>
+    impl<M, B> NewService<ControlAddr> for NewAddOrigin<M, B>
     where
-        M: tower::Service<ControlAddr>,
-        M::Error: Into<Error>,
+        M: NewService<ControlAddr>,
     {
-        type Response = RequestModifier<M::Response, B>;
-        type Error = Error;
-        type Future = MakeFuture<M::Future, B>;
+        type Service = ResultService<RequestModifier<M::Service, B>, BuildError>;
 
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            self.inner.poll_ready(cx).map_err(Into::into)
-        }
-
-        fn call(&mut self, target: ControlAddr) -> Self::Future {
+        fn new_service(&mut self, target: ControlAddr) -> Self::Service {
             let authority = target.addr.to_http_authority();
-            let inner = self.inner.call(target);
-            MakeFuture {
-                inner,
-                authority,
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    impl<M, B> Clone for MakeAddOrigin<M, B>
-    where
-        M: tower::Service<ControlAddr> + Clone,
-    {
-        fn clone(&self) -> Self {
-            Self {
-                inner: self.inner.clone(),
-                _marker: PhantomData,
-            }
-        }
-    }
-
-    // === impl MakeFuture ===
-
-    impl<F, B> Future for MakeFuture<F, B>
-    where
-        F: TryFuture,
-        F::Error: Into<Error>,
-    {
-        type Output = Result<RequestModifier<F::Ok, B>, Error>;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let this = self.project();
-            let inner = ready!(this.inner.try_poll(cx).map_err(Into::into))?;
-
-            Poll::Ready(
+            ResultService::from(
                 Builder::new()
-                    .set_origin(format!("http://{}", this.authority))
-                    .build(inner)
-                    .map_err(|_| BuildError.into()),
+                    .set_origin(format!("http://{}", authority))
+                    .build(self.inner.new_service(target))
+                    .map_err(|_| BuildError(())),
             )
         }
     }
 
     // XXX the request_modifier build error does not implement Error...
     #[derive(Debug)]
-    struct BuildError;
+    pub struct BuildError(());
 
     impl std::error::Error for BuildError {}
     impl std::fmt::Display for BuildError {
