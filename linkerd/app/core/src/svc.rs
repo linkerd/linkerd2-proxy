@@ -44,7 +44,7 @@ pub struct IdentityProxy(());
 
 impl<T> NewService<T> for IdentityProxy {
     type Service = ();
-    fn new_service(&self, _: T) -> Self::Service {
+    fn new_service(&mut self, _: T) -> Self::Service {
         ()
     }
 }
@@ -178,6 +178,13 @@ impl<S> Stack<S> {
     /// Wraps an inner `MakeService` to be a `NewService`.
     pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
         self.push(stack::new_service::FromMakeServiceLayer::default())
+    }
+
+    pub fn into_make_service<T>(self) -> Stack<stack::new_service::IntoMakeService<S>>
+    where
+        S: NewService<T>,
+    {
+        Stack(stack::new_service::IntoMakeService::new(self.0))
     }
 
     pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
@@ -389,7 +396,7 @@ where
 {
     type Service = N::Service;
 
-    fn new_service(&self, t: T) -> Self::Service {
+    fn new_service(&mut self, t: T) -> Self::Service {
         self.0.new_service(t)
     }
 }

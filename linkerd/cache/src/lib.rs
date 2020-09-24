@@ -1,11 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
-use futures::future;
-use linkerd2_error::Never;
+
 use linkerd2_stack::NewService;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
-use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
 pub mod layer;
@@ -43,25 +41,19 @@ where
     }
 }
 
-impl<T, N> tower::Service<T> for Cache<T, N>
+impl<T, N> NewService<T> for Cache<T, N>
 where
-    T: Clone + Eq + Hash + Send,
+    T: Clone + Eq + Hash,
     N: NewService<(T, Handle)>,
-    N::Service: Clone + Send,
+    N::Service: Clone,
 {
-    type Response = N::Service;
-    type Error = Never;
-    type Future = future::Ready<Result<Self::Response, Self::Error>>;
+    type Service = N::Service;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
+    fn new_service(&mut self, target: T) -> N::Service {
         if let Some((service, weak)) = self.services.get(&target) {
             if weak.upgrade().is_some() {
                 trace!("Using cached service");
-                return future::ok(service.clone());
+                return service.clone();
             }
         }
 
@@ -91,6 +83,6 @@ where
         debug!("Caching new service");
         self.services.insert(target, (service.clone(), weak));
 
-        future::ok(service.into())
+        service.into()
     }
 }

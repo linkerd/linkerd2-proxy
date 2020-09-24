@@ -18,7 +18,7 @@ use linkerd2_app_core::{
     },
     reconnect, retry, router,
     spans::SpanConverter,
-    svc::{self, NewService},
+    svc::{self},
     transport::{self, listen, tls},
     Addr, Conditional, DiscoveryRejected, Error, Never, ProxyMetrics, StackMetrics,
     TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
@@ -81,21 +81,18 @@ impl Config {
         &self,
         connect: C,
         resolve: E,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         endpoint::Accept,
-        Error = impl Into<Error>,
-        Future = impl Unpin + Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             I,
             Response = (),
             Future = impl Unpin + Send + 'static,
             Error = impl Into<Error>,
         > + Unpin
-                       + Clone
-                       + Send
-                       + 'static,
-    > + Unpin
-           + Clone
+                      + Send
+                      + 'static,
+    > + Clone
+           + Unpin
            + Send
            + 'static
     where
@@ -108,25 +105,28 @@ impl Config {
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
         let ProxyConfig {
-            cache_max_idle_age,
-            buffer_capacity,
-            ..
+            cache_max_idle_age, ..
         } = self.proxy;
 
         svc::stack(connect)
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
-            .check_make_service::<TcpEndpoint, ()>()
+            .check_new_service::<TcpEndpoint, ()>()
             .push(discover::resolve(map_endpoint::Resolve::new(
                 endpoint::FromMetadata,
                 resolve,
             )))
             .push(discover::buffer(1_000, cache_max_idle_age))
             .push_map_target(Into::<Addr>::into)
-            .push_on_response(svc::layers().push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push(svc::layer::mk(tcp::Forward::new)).push_spawn_buffer(buffer_capacity))
+            .push_on_response(
+                svc::layers()
+                    .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(svc::layer::mk(tcp::Forward::new))
+            )
             .instrument(|_: &_| info_span!("tcp"))
             .check_make_service::<endpoint::Accept, I>()
+            .into_new_service()
+            .into_inner()
     }
 
     pub fn build_dns_refine(
@@ -160,6 +160,7 @@ impl Config {
                         .push(metrics.layer(stack_labels("refine"))),
                 ),
             )
+            .into_make_service()
             .spawn_buffer(self.proxy.buffer_capacity)
             .instrument(|name: &dns::Name| info_span!("refine", %name))
             // Obtains the service, advances the state of the resolution
@@ -309,7 +310,8 @@ impl Config {
                     .box_http_request(),
             )
             .push_spawn_ready()
-            .check_make_service::<HttpEndpoint, http::Request<_>>()
+            .into_new_service()
+            .check_new_service::<HttpEndpoint, http::Request<_>>()
             .push(discover)
             .check_service::<HttpConcrete>()
             .push_on_response(
@@ -361,34 +363,13 @@ impl Config {
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("profile"))),
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
-            .push_make_ready()
-            .check_make_service::<HttpLogical, http::Request<_>>();
+            .check_new_service::<HttpLogical, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.
         let forward = svc::stack(endpoint)
-            .check_make_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .into_new_service()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .box_http_request()
-                        .push(metrics.stack.layer(stack_labels("forward.endpoint"))),
-                ),
-            )
-            .spawn_buffer(buffer_capacity)
             .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
-            .check_make_service::<HttpEndpoint, http::Request<_>>();
+            .check_new_service::<HttpEndpoint, http::Request<_>>();
 
         // Attempts to route route request to a logical services that uses
         // control plane for discovery. If the discovery is rejected, the
@@ -402,6 +383,17 @@ impl Config {
                     .into_inner(),
                 is_discovery_rejected,
             )
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                        .push(metrics.stack.layer(stack_labels("logical"))),
+                ),
+            )
+            .into_make_service()
+            .spawn_buffer(buffer_capacity)
+            .check_make_service::<HttpLogical, http::Request<_>>()
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             // Strips headers that may be set by this proxy.
             .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
@@ -510,8 +502,8 @@ impl Config {
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .instrument(|_: &endpoint::Accept| debug_span!("source"))
             .check_new_service::<endpoint::Accept, http::Request<_>>()
-            .into_inner()
-            .into_make_service();
+            .into_make_service()
+            .into_inner();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
@@ -520,12 +512,15 @@ impl Config {
                     .push_make_thunk()
                     .push_on_response(svc::layer::mk(tcp::Forward::new))
                     .instrument(|_: &TcpEndpoint| info_span!("forward"))
-                    .check_service::<TcpEndpoint>()
+                    .check_new::<TcpEndpoint>()
                     .push_map_target(TcpEndpoint::from)
                     .into_inner(),
                 is_discovery_rejected,
             )
-            .check_service::<endpoint::Accept>()
+            .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
+            .check_new_service::<endpoint::Accept, transport::io::PrefixedIo<SensorIo<I>>>()
+            .into_make_service()
+            .instrument(|_: &_| info_span!("tcp"))
             .into_inner();
 
         let detect = svc::stack(svc::stack::MakeSwitch::new(
@@ -549,11 +544,11 @@ impl Config {
         .into_new_service()
         .push_map_target(endpoint::Accept::from)
         .push(profiles::discover::layer(profiles_client))
-        .check_service::<net::SocketAddr>();
+        .check_make_service::<net::SocketAddr, SensorIo<I>>();
 
         detect
             .into_new_service()
-            .check_new::<net::SocketAddr>()
+            .check_new_service::<net::SocketAddr, SensorIo<I>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -561,14 +556,15 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
                 ),
             )
-            .check_service::<net::SocketAddr>()
-            .push_make_ready()
-            .spawn_buffer(buffer_capacity)
+            .check_new_service::<net::SocketAddr, SensorIo<I>>()
+            .into_make_service()
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .push(metrics.transport.layer_accept(TransportLabels))
             .into_inner()
     }
 }
+
+type SensorIo<T> = transport::io::SensorIo<T, transport::metrics::Sensor>;
 
 fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
     metric_labels::StackLabels::outbound(name)

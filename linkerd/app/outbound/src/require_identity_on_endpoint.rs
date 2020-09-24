@@ -61,7 +61,7 @@ where
 {
     type Service = RequireIdentity<M::Service>;
 
-    fn new_service(&self, target: HttpEndpoint) -> Self::Service {
+    fn new_service(&mut self, target: HttpEndpoint) -> Self::Service {
         let peer_identity = target.peer_identity().clone();
         let inner = self.inner.new_service(target);
         RequireIdentity {

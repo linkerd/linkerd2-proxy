@@ -1,6 +1,8 @@
 use crate::{endpoint, Config};
 use futures::prelude::*;
-use linkerd2_app_core::{config, exp_backoff, proxy::http::h2, transport::listen, Addr, Error};
+use linkerd2_app_core::{
+    config, exp_backoff, proxy::http::h2, svc::NewService, transport::listen, Addr, Error,
+};
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, time::Duration};
 use tower::ServiceExt;
@@ -68,15 +70,27 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    let make = cfg
+    let forward = cfg
         .build_tcp_balance(connect, resolver)
+<<<<<<< HEAD
         .oneshot(endpoint::Accept::from(target_addr))
         .err_into::<Error>()
         .await
         .expect("make service should succeed");
+||||||| 7cda3033
+        .oneshot(target_addr)
+        .err_into::<Error>()
+        .await
+        .expect("make service should succeed");
+=======
+        .new_service(target_addr);
+>>>>>>> main
 
-    make.oneshot(client_io)
+    forward
+        .oneshot(client_io)
         .err_into::<Error>()
         .await
         .expect("conn should succeed");
+    }
+    }
 }

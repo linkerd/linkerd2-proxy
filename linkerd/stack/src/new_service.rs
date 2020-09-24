@@ -8,14 +8,7 @@ use tower::util::{Oneshot, ServiceExt};
 pub trait NewService<T> {
     type Service;
 
-    fn new_service(&self, target: T) -> Self::Service;
-
-    fn into_make_service(self) -> IntoMakeService<Self>
-    where
-        Self: Sized,
-    {
-        IntoMakeService { new_service: self }
-    }
+    fn new_service(&mut self, target: T) -> Self::Service;
 }
 
 /// A Layer that modifies inner `MakeService`s to be exposd as a `NewService`.
@@ -42,7 +35,7 @@ where
 {
     type Service = S;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         (self)(target)
     }
 }
@@ -65,8 +58,16 @@ where
 {
     type Service = FutureService<Oneshot<S, T>, S::Response>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         FutureService::new(self.make_service.clone().oneshot(target))
+    }
+}
+
+// === impl FromMakeService ===
+
+impl<N> IntoMakeService<N> {
+    pub fn new(new_service: N) -> Self {
+        Self { new_service }
     }
 }
 

@@ -65,7 +65,7 @@ where
 {
     type Service = Split<T, N, S, Req>;
 
-    fn new_service(&self, target: T) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         let rx = target.as_ref().clone();
         Split {
             rx,
