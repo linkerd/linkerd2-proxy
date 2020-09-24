@@ -361,7 +361,6 @@ impl Config {
             // Discovers the service profile from the control plane and passes
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
-            .into_new_service()
             .check_new_service::<HttpLogical, http::Request<_>>();
 
         // Caches clients that bypass discovery/balancing.

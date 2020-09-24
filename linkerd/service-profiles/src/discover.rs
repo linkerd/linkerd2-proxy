@@ -1,11 +1,7 @@
 use super::{GetProfile, Receiver};
 use futures::prelude::*;
-use linkerd2_stack::{layer, NewService};
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use linkerd2_stack::{layer, FutureService, NewService};
+use std::{future::Future, pin::Pin};
 
 pub fn layer<G: Clone, M>(
     get_profile: G,
@@ -22,7 +18,7 @@ pub struct Discover<G, M> {
     inner: M,
 }
 
-impl<T, G, M> tower::Service<T> for Discover<G, M>
+impl<T, G, M> NewService<T> for Discover<G, M>
 where
     T: Clone + Send + 'static,
     G: GetProfile<T>,
@@ -30,20 +26,17 @@ where
     G::Error: Send,
     M: NewService<(Receiver, T)> + Clone + Send + 'static,
 {
-    type Response = M::Service;
-    type Error = G::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<M::Service, G::Error>> + Send + 'static>>;
+    type Service = FutureService<
+        Pin<Box<dyn Future<Output = Result<M::Service, G::Error>> + Send + 'static>>,
+        M::Service,
+    >;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.get_profile.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
+    fn new_service(&mut self, target: T) -> Self::Service {
         let mut inner = self.inner.clone();
-        Box::pin(
+        FutureService::new(Box::pin(
             self.get_profile
                 .get_profile(target.clone())
                 .map_ok(move |rx| inner.new_service((rx, target))),
-        )
+        ))
     }
 }
