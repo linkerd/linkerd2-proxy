@@ -1,10 +1,7 @@
 use super::h1;
-use futures::{ready, TryFuture};
 use http::{self, header::AsHeaderName, uri::Authority};
-use pin_project::pin_project;
+use linkerd2_stack::NewService;
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 use std::task::{Context, Poll};
 use tracing::debug;
 
@@ -20,14 +17,6 @@ pub struct Layer<H> {
 #[derive(Clone, Debug)]
 pub struct MakeSvc<H, M> {
     headers_to_strip: Vec<H>,
-    inner: M,
-}
-
-#[pin_project]
-pub struct MakeSvcFut<M, H> {
-    authority: Option<Authority>,
-    headers_to_strip: Vec<H>,
-    #[pin]
     inner: M,
 }
 
@@ -71,46 +60,22 @@ where
     }
 }
 
-impl<H, T, M> tower::Service<T> for MakeSvc<H, M>
+impl<H, T, M> NewService<T> for MakeSvc<H, M>
 where
     T: CanOverrideAuthority + Clone + Send + Sync + 'static,
-    M: tower::Service<T>,
+    M: NewService<T>,
     H: AsHeaderName + Clone,
 {
-    type Response = Service<M::Response, H>;
-    type Error = M::Error;
-    type Future = MakeSvcFut<M::Future, H>;
+    type Service = Service<M::Service, H>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, t: T) -> Self::Future {
+    fn new_service(&mut self, t: T) -> Self::Service {
         let authority = t.override_authority();
-        let inner = self.inner.call(t);
-        MakeSvcFut {
+        let inner = self.inner.new_service(t);
+        Service {
             authority,
             headers_to_strip: self.headers_to_strip.clone(),
             inner,
         }
-    }
-}
-
-impl<F, H> Future for MakeSvcFut<F, H>
-where
-    F: TryFuture,
-    H: AsHeaderName + Clone,
-{
-    type Output = Result<Service<F::Ok, H>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let inner = ready!(this.inner.try_poll(cx))?;
-        Poll::Ready(Ok(Service {
-            authority: this.authority.clone(),
-            headers_to_strip: this.headers_to_strip.clone(),
-            inner,
-        }))
     }
 }
 

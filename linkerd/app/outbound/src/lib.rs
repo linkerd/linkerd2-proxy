@@ -20,8 +20,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, Never, ProxyMetrics, StackMetrics,
-    TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{
     collections::HashMap,
@@ -173,18 +173,15 @@ impl Config {
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         HttpEndpoint,
-        Error = Never,
-        Future = impl Unpin + Send,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
             Future = impl Send,
         > + Send,
-    > + Unpin
-           + Clone
+    > + Clone
            + Send
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
@@ -226,6 +223,7 @@ impl Config {
                     }
                 }
             }))
+            .check_new::<HttpEndpoint>()
             .push(observability.clone())
             .push(identity_headers.clone())
             .push(http::override_authority::Layer::new(vec![
@@ -233,7 +231,7 @@ impl Config {
                 CANONICAL_DST_HEADER,
             ]))
             .push_on_response(svc::layers().box_http_response())
-            .check_service::<HttpEndpoint>()
+            .check_new::<HttpEndpoint>()
             .instrument(|e: &HttpEndpoint| info_span!("endpoint", peer.addr = %e.addr))
             .into_inner()
     }
@@ -260,9 +258,7 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: tower::Service<HttpEndpoint, Response = S> + Unpin + Clone + Send + Sync + 'static,
-        E::Error: Into<Error>,
-        E::Future: Unpin + Send,
+        E: svc::NewService<HttpEndpoint, Service = S> + Clone + Send + Sync + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -302,14 +298,12 @@ impl Config {
 
         // Builds a balancer for each concrete destination.
         let concrete = svc::stack(endpoint.clone())
-            .check_make_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
+            .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
                     .push(metrics.stack.layer(stack_labels("balance.endpoint")))
                     .box_http_request(),
             )
-            .push_spawn_ready()
-            .into_new_service()
             .check_new_service::<HttpEndpoint, http::Request<_>>()
             .push(discover)
             .check_service::<HttpConcrete>()
@@ -366,7 +360,6 @@ impl Config {
 
         // Caches clients that bypass discovery/balancing.
         let forward = svc::stack(endpoint)
-            .into_new_service()
             .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
             .check_new_service::<HttpEndpoint, http::Request<_>>();
 

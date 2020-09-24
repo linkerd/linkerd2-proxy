@@ -2,13 +2,33 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_error::Recover;
+use linkerd2_stack::{layer, NewService};
 
-mod layer;
 mod service;
 
-pub use self::layer::Layer;
-pub use self::service::Service;
+pub fn layer<C, R: Clone>(
+    recover: R,
+) -> impl layer::Layer<C, Service = NewReconnect<C, R>> + Clone {
+    layer::mk(move |connect| NewReconnect {
+        connect,
+        recover: recover.clone(),
+    })
+}
 
-pub fn layer<R: Recover + Clone>(recover: R) -> Layer<R> {
-    recover.into()
+#[derive(Clone, Debug)]
+pub struct NewReconnect<C, R> {
+    connect: C,
+    recover: R,
+}
+
+impl<C, R, T> NewService<T> for NewReconnect<C, R>
+where
+    R: Recover + Clone,
+    C: tower::Service<T> + Clone,
+{
+    type Service = service::Service<T, R, C>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        service::Service::new(target, self.connect.clone(), self.recover.clone())
+    }
 }

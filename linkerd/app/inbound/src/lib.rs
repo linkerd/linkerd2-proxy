@@ -203,7 +203,7 @@ impl Config {
                 let backoff = connect.backoff.clone();
                 move |_| Ok(backoff.stream())
             }))
-            .check_make_service::<HttpEndpoint, http::Request<_>>();
+            .check_new_service::<HttpEndpoint, http::Request<_>>();
 
         let observe = svc::layers()
             // Registers the stack to be tapped.
@@ -220,7 +220,6 @@ impl Config {
             .push_map_target(HttpEndpoint::from)
             .push(observe)
             .push_on_response(svc::layers().box_http_response())
-            .into_new_service()
             .check_new_service::<Target, http::Request<_>>();
 
         // Attempts to discover a service profile for each logical target (as
