@@ -72,25 +72,11 @@ async fn plaintext_tcp() {
     // Build the outbound TCP balancer stack.
     let forward = cfg
         .build_tcp_balance(connect, resolver)
-<<<<<<< HEAD
-        .oneshot(endpoint::Accept::from(target_addr))
-        .err_into::<Error>()
-        .await
-        .expect("make service should succeed");
-||||||| 7cda3033
-        .oneshot(target_addr)
-        .err_into::<Error>()
-        .await
-        .expect("make service should succeed");
-=======
-        .new_service(target_addr);
->>>>>>> main
+        .new_service(endpoint::Accept::from(target_addr));
 
     forward
         .oneshot(client_io)
         .err_into::<Error>()
         .await
         .expect("conn should succeed");
-    }
-    }
 }

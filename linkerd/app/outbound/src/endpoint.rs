@@ -33,9 +33,9 @@ impl From<(profiles::Receiver, SocketAddr)> for Accept {
     }
 }
 
+#[cfg(test)]
 impl From<SocketAddr> for Accept {
     fn from(target: SocketAddr) -> Self {
-        // XXX(eliza): this is presently only needed by tests
         let (_, rx) = tokio::sync::watch::channel(profiles::Profile::default());
         Self { target, rx }
     }
