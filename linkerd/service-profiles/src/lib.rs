@@ -6,6 +6,7 @@ use std::{
     future::Future,
     task::{Context, Poll},
 };
+use tower::util::{Oneshot, ServiceExt};
 
 mod client;
 pub mod discover;
@@ -28,29 +29,50 @@ pub struct Target {
     pub weight: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct GetProfileService<P>(P);
+
 /// Watches a destination's Profile.
 pub trait GetProfile<T> {
     type Error: Into<Error>;
     type Future: Future<Output = Result<Receiver, Self::Error>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
-
     fn get_profile(&mut self, target: T) -> Self::Future;
+
+    fn into_service(self) -> GetProfileService<Self>
+    where
+        Self: Sized,
+    {
+        GetProfileService(self)
+    }
 }
 
 impl<T, S> GetProfile<T> for S
 where
-    S: tower::Service<T, Response = Receiver>,
+    S: tower::Service<T, Response = Receiver> + Clone,
     S::Error: Into<Error>,
 {
     type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        tower::Service::poll_ready(self, cx)
-    }
+    type Future = Oneshot<S, T>;
 
     fn get_profile(&mut self, target: T) -> Self::Future {
-        tower::Service::call(self, target)
+        self.clone().oneshot(target)
+    }
+}
+
+impl<T, P> tower::Service<T> for GetProfileService<P>
+where
+    P: GetProfile<T>,
+{
+    type Response = Receiver;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        self.0.get_profile(target)
     }
 }

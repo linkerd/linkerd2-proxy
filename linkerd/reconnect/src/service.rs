@@ -34,13 +34,10 @@ enum State<F: TryFuture, B> {
 
 impl<T, R, M> Service<T, R, M>
 where
-    T: Clone,
     R: Recover,
-    R::Backoff: Unpin,
     M: tower::Service<T>,
-    M::Error: Into<Error>,
 {
-    pub fn new(target: T, make_service: M, recover: R) -> Self {
+    pub(crate) fn new(target: T, make_service: M, recover: R) -> Self {
         Self {
             target,
             recover,
