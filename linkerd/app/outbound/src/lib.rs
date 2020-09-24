@@ -536,11 +536,9 @@ impl Config {
         .into_new_service()
         .push_map_target(endpoint::Accept::from)
         .push(profiles::discover::layer(profiles_client))
-        .check_make_service::<net::SocketAddr, SensorIo<I>>();
+        .check_new_service::<net::SocketAddr, SensorIo<I>>();
 
         detect
-            .into_new_service()
-            .check_new_service::<net::SocketAddr, SensorIo<I>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
