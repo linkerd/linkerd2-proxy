@@ -10,7 +10,7 @@ use crate::{
 use futures::{future, TryFutureExt};
 use http::StatusCode;
 use hyper::{Body, Request, Response};
-use linkerd2_error::{Error, Never};
+use linkerd2_error::Error;
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::{
     future::Future,
@@ -110,17 +110,11 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
     }
 }
 
-impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<tls::accept::Meta> for Accept<M> {
-    type Response = Serve<M>;
-    type Error = Never;
-    type Future = future::Ready<Result<Self::Response, Self::Error>>;
+impl<M: FmtMetrics + Clone + Send + 'static> svc::NewService<tls::accept::Meta> for Accept<M> {
+    type Service = Serve<M>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, meta: tls::accept::Meta) -> Self::Future {
-        future::ok(Serve(meta, self.clone()))
+    fn new_service(&mut self, meta: tls::accept::Meta) -> Self::Service {
+        Serve(meta, self.clone())
     }
 }
 

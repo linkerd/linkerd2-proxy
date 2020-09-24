@@ -5,7 +5,7 @@ use linkerd2_io as io;
 use linkerd2_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
 };
-use linkerd2_stack::layer;
+use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
 use std::fmt;
 use std::future::Future;
@@ -246,22 +246,14 @@ where
     }
 }
 
-impl<L, T, M> tower::Service<T> for MakeAccept<L, L::Labels, M>
+impl<L, T, M> NewService<T> for MakeAccept<L, L::Labels, M>
 where
     L: TransportLabels<T>,
-    M: tower::Service<T>,
-    M::Future: Send + 'static,
+    M: NewService<T>,
 {
-    type Response = Accept<M::Response>;
-    type Error = M::Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Accept<M::Response>, M::Error>> + Send + 'static>>;
+    type Service = Accept<M::Service>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
+    fn new_service(&mut self, target: T) -> Self::Service {
         let labels = self.label.transport_labels(&target);
         let metrics = self
             .registry
@@ -270,11 +262,8 @@ where
             .get_or_default(labels)
             .clone();
 
-        let fut = self.inner.call(target);
-        Box::pin(async move {
-            let inner = fut.await?;
-            Ok(Accept { metrics, inner })
-        })
+        let inner = self.inner.new_service(target);
+        Accept { metrics, inner }
     }
 }
 
