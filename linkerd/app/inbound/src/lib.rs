@@ -248,7 +248,6 @@ impl Config {
             ))
             .push_map_target(endpoint::Logical::from)
             .push(profiles::discover::layer(profiles_client))
-            .into_new_service()
             .instrument(|_: &Target| debug_span!("profile"))
             .push_on_response(svc::layers().box_http_response())
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
