@@ -546,10 +546,8 @@ impl Config {
                 .into_inner(),
         ))
         .check_service::<endpoint::Accept>()
-        .push_map_target(endpoint::Accept::from)
-        // XXX(eliza): it's weird that we need this, because `MapTargetService`
-        // *should* already implement `NewService`...
         .into_new_service()
+        .push_map_target(endpoint::Accept::from)
         .push(profiles::discover::layer(profiles_client))
         .check_service::<net::SocketAddr>();
 
