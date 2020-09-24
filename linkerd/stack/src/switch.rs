@@ -38,6 +38,23 @@ impl<S, P, F> MakeSwitch<S, P, F> {
     }
 }
 
+impl<T, S, P, F> super::NewService<T> for MakeSwitch<S, P, F>
+where
+    S: Switch<T>,
+    P: super::NewService<T>,
+    F: super::NewService<T>,
+{
+    type Service = tower::util::Either<P::Service, F::Service>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        if self.switch.use_primary(&target) {
+            tower::util::Either::A(self.primary.new_service(target))
+        } else {
+            tower::util::Either::B(self.fallback.new_service(target))
+        }
+    }
+}
+
 impl<T, S, P, F> tower::Service<T> for MakeSwitch<S, P, F>
 where
     S: Switch<T>,
