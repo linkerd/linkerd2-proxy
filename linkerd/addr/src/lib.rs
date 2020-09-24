@@ -117,6 +117,18 @@ impl fmt::Display for Addr {
     }
 }
 
+impl From<&'_ Addr> for Addr {
+    fn from(a: &Addr) -> Self {
+        a.clone()
+    }
+}
+
+impl From<&'_ SocketAddr> for Addr {
+    fn from(sa: &SocketAddr) -> Self {
+        Addr::Socket(*sa)
+    }
+}
+
 impl From<SocketAddr> for Addr {
     fn from(sa: SocketAddr) -> Self {
         Addr::Socket(sa)

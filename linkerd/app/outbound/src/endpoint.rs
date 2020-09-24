@@ -107,6 +107,12 @@ impl From<(Addr, Profile)> for HttpConcrete {
     }
 }
 
+impl Into<Addr> for &'_ HttpConcrete {
+    fn into(self) -> Addr {
+        self.dst.clone()
+    }
+}
+
 impl AsRef<Addr> for HttpConcrete {
     fn as_ref(&self) -> &Addr {
         &self.dst
@@ -152,6 +158,12 @@ impl Into<SocketAddr> for HttpLogical {
 impl AsRef<Addr> for HttpLogical {
     fn as_ref(&self) -> &Addr {
         &self.dst
+    }
+}
+
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 
