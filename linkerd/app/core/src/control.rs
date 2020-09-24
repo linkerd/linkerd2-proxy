@@ -65,11 +65,8 @@ impl Config {
             .push(self::resolve::layer(dns, backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()
-            .check_new_service::<ControlAddr, http::Request<_>>()
             .push(metrics.into_layer::<classify::Response>())
-            .check_new_service::<ControlAddr, http::Request<_>>()
             .push(self::add_origin::layer())
-            .check_new_service::<ControlAddr, http::Request<B>>()
             .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
             .new_service(self.addr)
     }
