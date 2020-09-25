@@ -16,7 +16,7 @@ use linkerd2_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
-        http::{self, orig_proto, strip_header, DetectHttp},
+        http::{self, orig_proto, strip_header},
         identity, tap, tcp,
     },
     reconnect, router,
@@ -367,15 +367,19 @@ impl Config {
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
             .into_inner();
 
-        DetectHttp::new(
+        svc::stack(http::DetectHttp::new(
             h2_settings,
-            detect_protocol_timeout,
             http_server,
             svc::stack(tcp_forward)
                 .push_map_target(TcpEndpoint::from)
                 .into_inner(),
             drain.clone(),
-        )
+        ))
+        .push_on_response(transport::Prefix::layer(
+            http::Version::DETECT_BUFFER_CAPACITY,
+            detect_protocol_timeout,
+        ))
+        .into_inner()
     }
 
     pub fn build_tls_accept<D, A, F, B>(
