@@ -518,7 +518,6 @@ impl Config {
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 
-        const DETECT_BUFFER_CAPACITY: usize = 8192;
         let http = svc::stack(http::DetectHttp::new(
             h2_settings,
             http_server,
@@ -526,7 +525,7 @@ impl Config {
             drain.clone(),
         ))
         .push_on_response(transport::Prefix::layer(
-            DETECT_BUFFER_CAPACITY,
+            http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
         ))
         .into_new_service()
