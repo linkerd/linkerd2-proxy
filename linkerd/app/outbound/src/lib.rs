@@ -518,17 +518,23 @@ impl Config {
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 
-        let http = http::DetectHttp::new(
+        const DETECT_BUFFER_CAPACITY: usize = 8192;
+        let http = svc::stack(http::DetectHttp::new(
             h2_settings,
-            detect_protocol_timeout,
             http_server,
             tcp_balance,
             drain.clone(),
-        );
+        ))
+        .push_on_response(transport::Prefix::layer(
+            DETECT_BUFFER_CAPACITY,
+            detect_protocol_timeout,
+        ))
+        .into_new_service()
+        .into_inner();
 
         svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
-            svc::stack(http).into_new_service().into_inner(),
+            http,
             tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
         ))
         .push(metrics.transport.layer_accept(TransportLabels))

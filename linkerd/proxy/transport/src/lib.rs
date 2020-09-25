@@ -7,12 +7,14 @@ pub mod connect;
 pub use linkerd2_io as io;
 pub mod listen;
 pub mod metrics;
+pub mod prefix;
 pub mod tls;
 
 pub use self::{
     connect::Connect,
     io::BoxedIo,
     listen::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
+    prefix::Prefix,
 };
 
 // Misc.

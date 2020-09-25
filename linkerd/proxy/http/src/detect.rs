@@ -13,22 +13,17 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    time::Duration,
 };
 use tower::{util::ServiceExt, Service};
-use tracing::{debug, info_span, trace};
+use tracing::{debug, info_span};
 use tracing_futures::Instrument;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
-
-#[derive(Copy, Clone, Debug)]
-pub struct DetectTimeout(());
 
 #[derive(Clone, Debug)]
 pub struct DetectHttp<F, H> {
     tcp: F,
     http: H,
-    timeout: Duration,
     server: Server,
     drain: drain::Watch,
 }
@@ -45,7 +40,6 @@ pub struct DetectHttp<F, H> {
 pub struct AcceptHttp<F, H> {
     tcp: F,
     http: H,
-    timeout: Duration,
     server: hyper::server::conn::Http<trace::Executor>,
     drain: drain::Watch,
 }
@@ -54,14 +48,13 @@ pub struct AcceptHttp<F, H> {
 
 impl<F, H> DetectHttp<F, H> {
     /// Creates a new `AcceptHttp`.
-    pub fn new(h2: H2Settings, timeout: Duration, http: H, tcp: F, drain: drain::Watch) -> Self {
+    pub fn new(h2: H2Settings, http: H, tcp: F, drain: drain::Watch) -> Self {
         let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
         server
             .http2_initial_stream_window_size(h2.initial_stream_window_size)
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
 
         Self {
-            timeout,
             server,
             tcp,
             http,
@@ -81,7 +74,6 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         AcceptHttp::new(
             self.server.clone(),
-            self.timeout,
             self.http.new_service(target.clone()),
             self.tcp.new_service(target),
             self.drain.clone(),
@@ -115,7 +107,6 @@ where
         let tcp = self.tcp.clone();
         let http = self.http.clone();
         let server = self.server.clone();
-        let timeout = self.timeout;
 
         Box::pin(async move {
             let (tcp, http) = futures::try_join!(
@@ -123,7 +114,7 @@ where
                 http.oneshot(target).map_err(Into::<Error>::into)
             )?;
 
-            Ok(AcceptHttp::new(server, timeout, http, tcp, drain))
+            Ok(AcceptHttp::new(server, http, tcp, drain))
         })
     }
 }
@@ -131,10 +122,9 @@ where
 // === impl AcceptHttp ===
 
 impl<F, H> AcceptHttp<F, H> {
-    pub fn new(server: Server, timeout: Duration, http: H, tcp: F, drain: drain::Watch) -> Self {
+    pub fn new(server: Server, http: H, tcp: F, drain: drain::Watch) -> Self {
         Self {
             server,
-            timeout,
             tcp,
             http,
             drain,
@@ -142,7 +132,7 @@ impl<F, H> AcceptHttp<F, H> {
     }
 }
 
-impl<I, F, S> Service<I> for AcceptHttp<F, S>
+impl<I, F, S> Service<PrefixedIo<I>> for AcceptHttp<F, S>
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
     F: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
@@ -164,22 +154,14 @@ where
         Poll::Ready(Ok(().into()))
     }
 
-    fn call(&mut self, io: I) -> Self::Future {
+    fn call(&mut self, io: PrefixedIo<I>) -> Self::Future {
         let drain = self.drain.clone();
         let tcp = self.tcp.clone();
         let http = self.http.clone();
         let mut server = self.server.clone();
 
-        let timeout = tokio::time::delay_for(self.timeout);
+        let version = HttpVersion::from_prefix(io.prefix());
         Box::pin(async move {
-            trace!("Detecting");
-            let (version, io) = tokio::select! {
-                res = HttpVersion::detect(io) => { res? }
-                () = timeout => {
-                    return Err(DetectTimeout(()).into());
-                }
-            };
-
             match version {
                 Some(HttpVersion::Http1) => {
                     debug!("Handling as HTTP");
@@ -220,11 +202,3 @@ where
         })
     }
 }
-
-impl std::fmt::Display for DetectTimeout {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP detection timeout")
-    }
-}
-
-impl std::error::Error for DetectTimeout {}
