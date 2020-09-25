@@ -55,7 +55,7 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        debug!(capacity = %self.capacity, "Buffering prefix");
+        debug!(capacity = self.capacity, "Buffering prefix");
         let accept = self.inner.clone();
         let peek = time::timeout(self.timeout, io.peek(self.capacity)).map_err(|_| ReadTimeout(()));
         Box::pin(async move {
@@ -68,7 +68,7 @@ where
 
 impl std::fmt::Display for ReadTimeout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Timed out while reading client stream")
+        write!(f, "Timed out while reading client stream prefix")
     }
 }
 
