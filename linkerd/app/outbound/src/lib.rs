@@ -402,17 +402,15 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         listen::Addrs,
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             I,
             Response = (),
             Error = impl Into<Error>,
             Future = impl Send + 'static,
         > + Send
-                       + 'static,
+                      + 'static,
     > + Send
            + 'static
     where
@@ -530,8 +528,8 @@ impl Config {
 
         svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
-            http,
-            tcp_forward.push_map_target(TcpEndpoint::from),
+            svc::stack(http).into_new_service().into_inner(),
+            tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
         ))
         .push(metrics.transport.layer_accept(TransportLabels))
         .into_inner()

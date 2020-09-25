@@ -52,17 +52,15 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         listen::Addrs,
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             tokio::net::TcpStream,
             Response = (),
             Error = impl Into<Error>,
             Future = impl Send + 'static,
         > + Send
-                       + 'static,
+                      + 'static,
     > + Send
            + 'static
     where
@@ -147,17 +145,15 @@ impl Config {
         tap_layer: tap::Layer,
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         Target,
-        Error = Error,
-        Future = impl Send,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
             Future = impl Send,
         > + Unpin
-                       + Send,
+                      + Send,
     > + Unpin
            + Clone
            + Send
@@ -282,7 +278,8 @@ impl Config {
             )
             .into_make_service()
             .spawn_buffer(buffer_capacity)
-            .check_make_service::<Target, http::Request<http::boxed::Payload>>()
+            .into_new_service()
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .into_inner()
     }
 
@@ -293,30 +290,25 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         tls::accept::Meta,
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             I,
             Response = (),
             Error = impl Into<Error>,
             Future = impl Send + 'static,
         > + Send
-                       + 'static,
+                      + 'static,
     > + Clone
            + Send
            + 'static
     where
         I: io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
-        F: tower::Service<TcpEndpoint, Response = A> + Unpin + Clone + Send + 'static,
-        F::Error: Into<Error>,
-        F::Future: Send,
+        F: svc::NewService<TcpEndpoint, Service = A> + Unpin + Clone + Send + 'static,
         A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
         A::Error: Into<Error>,
         A::Future: Send,
-        H: tower::Service<Target, Response = S, Error = Error> + Unpin + Clone + Send + 'static,
-        H::Future: Send,
+        H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -351,15 +343,13 @@ impl Config {
         ));
 
         let http_server = svc::stack(http_router)
-            // Limits the amount of time each request waits to obtain a
-            // ready service.
-            .push_timeout(dispatch_timeout)
             // Removes the override header after it has been used to
             // determine a reuquest target.
             .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
+            .into_make_service()
             .push(router::Layer::new(RequestTarget::from))
             // Used by tap.
             .push_http_insert_target()
@@ -375,7 +365,6 @@ impl Config {
             )
             .instrument(|_: &_| debug_span!("source"))
             .check_new_service::<tls::accept::Meta, http::Request<_>>()
-            .into_make_service()
             .into_inner();
 
         DetectHttp::new(
@@ -395,29 +384,23 @@ impl Config {
         tcp_forward: F,
         identity: tls::Conditional<identity::Local>,
         metrics: ProxyMetrics,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         listen::Addrs,
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             TcpStream,
             Response = (),
             Error = impl Into<Error>,
             Future = impl Send + 'static,
         > + Send
-                       + 'static,
+                      + 'static,
     > + Send
            + 'static
     where
-        D: tower::Service<tls::accept::Meta, Response = A> + Unpin + Clone + Send + Sync + 'static,
-        D::Error: Into<Error>,
-        D::Future: Unpin + Send,
+        D: svc::NewService<tls::accept::Meta, Service = A> + Unpin + Clone + Send + Sync + 'static,
         A: tower::Service<SensorIo<io::BoxedIo>, Response = ()> + Unpin + Send + 'static,
         A::Error: Into<Error>,
         A::Future: Send,
-        F: tower::Service<TcpEndpoint, Response = B> + Unpin + Clone + Send + Sync + 'static,
-        F::Error: Into<Error>,
-        F::Future: Unpin + Send,
+        F: svc::NewService<TcpEndpoint, Service = B> + Unpin + Clone + Send + Sync + 'static,
         B: tower::Service<SensorIo<TcpStream>, Response = ()> + Unpin + Send + 'static,
         B::Error: Into<Error>,
         B::Future: Send,

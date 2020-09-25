@@ -8,6 +8,7 @@ use futures::prelude::*;
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_io::{self as io, PrefixedIo};
+use linkerd2_stack::NewService;
 use std::{
     future::Future,
     pin::Pin,
@@ -66,6 +67,25 @@ impl<F, H> DetectHttp<F, H> {
             http,
             drain,
         }
+    }
+}
+
+impl<T, F, S> NewService<T> for DetectHttp<F, S>
+where
+    T: Clone,
+    F: NewService<T>,
+    S: NewService<T>,
+{
+    type Service = AcceptHttp<F::Service, S::Service>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        AcceptHttp::new(
+            self.server.clone(),
+            self.timeout,
+            self.http.new_service(target.clone()),
+            self.tcp.new_service(target),
+            self.drain.clone(),
+        )
     }
 }
 
