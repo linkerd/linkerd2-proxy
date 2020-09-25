@@ -19,6 +19,7 @@ use linkerd2_proxy_transport::{
     io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BoxedIo},
     Bind,
 };
+use linkerd2_stack::NewService;
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tower::{
@@ -148,13 +149,13 @@ where
 
         let (listen_addr, listen) = Bind::new(addr, None).bind().expect("must bind");
 
-        let detect = DetectTls::new(
+        let mut detect = DetectTls::new(
             server_tls,
-            service_fn(move |meta: accept::Meta| {
+            move |meta: accept::Meta| {
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                futures::future::ok::<_, Never>(service_fn(move |conn: BoxedIo| {
+                service_fn(move |conn: BoxedIo| {
                     let server = server.clone();
                     let sender = sender.clone();
                     let peer_identity = peer_identity.clone();
@@ -172,8 +173,8 @@ where
                         }
                         .instrument(tracing::info_span!("test_svc")),
                     )
-                }))
-            }),
+                })
+            },
             std::time::Duration::from_secs(10),
         );
 
@@ -185,7 +186,7 @@ where
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            let accept = detect.oneshot(meta).await.expect("accept failed");
+            let accept = detect.new_service(meta);
             accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
