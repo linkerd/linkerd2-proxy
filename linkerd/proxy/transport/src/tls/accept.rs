@@ -121,7 +121,7 @@ where
 
     fn call(&mut self, tcp: TcpStream) -> Self::Future {
         let addrs = self.addrs.clone();
-        let mut make = self.inner.clone();
+        let mut new_accept = self.inner.clone();
 
         match self.local_identity.as_ref() {
             Conditional::Some(local) => {
@@ -140,7 +140,11 @@ where
                         peer_identity,
                         addrs,
                     };
-                    make.new_service(meta).oneshot(io).err_into::<Error>().await
+                    new_accept
+                        .new_service(meta)
+                        .oneshot(io)
+                        .err_into::<Error>()
+                        .await
                 })
             }
 
@@ -149,7 +153,7 @@ where
                     peer_identity: Conditional::None(reason),
                     addrs,
                 };
-                let svc = make.new_service(meta);
+                let svc = new_accept.new_service(meta);
                 Box::pin(svc.oneshot(BoxedIo::new(tcp)).err_into::<Error>())
             }
         }
