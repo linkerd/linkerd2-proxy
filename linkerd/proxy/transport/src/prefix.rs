@@ -10,7 +10,7 @@ use std::{
 };
 use tokio::time;
 use tower::util::ServiceExt;
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[derive(Copy, Clone)]
 pub struct Prefix<S> {
@@ -60,6 +60,7 @@ where
         let peek = time::timeout(self.timeout, io.peek(self.capacity)).map_err(|_| ReadTimeout(()));
         Box::pin(async move {
             let io = peek.await??;
+            trace!(read = %io.prefix().len());
             accept.oneshot(io).err_into::<Error>().await?;
             Ok(())
         })
