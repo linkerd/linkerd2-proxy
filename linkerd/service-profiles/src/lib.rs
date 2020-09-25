@@ -13,7 +13,7 @@ pub mod discover;
 pub mod http;
 pub mod split;
 
-pub use self::client::{Client, InvalidProfileAddr};
+pub use self::client::Client;
 
 pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 

@@ -117,6 +117,12 @@ impl AsRef<Addr> for HttpLogical {
     }
 }
 
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
+    }
+}
+
 impl AsMut<Addr> for HttpLogical {
     fn as_mut(&mut self) -> &mut Addr {
         &mut self.dst

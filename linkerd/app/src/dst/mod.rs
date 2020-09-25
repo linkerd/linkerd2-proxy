@@ -1,3 +1,4 @@
+mod default_profile;
 mod permit;
 mod resolve;
 
@@ -21,14 +22,19 @@ pub struct Config {
     pub initial_profile_timeout: Duration,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct InvalidProfileAddr(());
+
 /// Handles to destination service clients.
 ///
 /// The addr is preserved for logging.
 pub struct Dst {
     pub addr: control::ControlAddr,
-    pub profiles: request_filter::Service<
-        PermitConfiguredDsts<profiles::InvalidProfileAddr>,
-        profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
+    pub profiles: default_profile::RecoverDefaultProfile<
+        request_filter::Service<
+            PermitConfiguredDsts<InvalidProfileAddr>,
+            profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
+        >,
     >,
     pub resolve:
         request_filter::Service<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
@@ -59,8 +65,9 @@ impl Config {
         ))
         .push_request_filter(
             PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
-                .with_error::<profiles::InvalidProfileAddr>(),
+                .with_error::<InvalidProfileAddr>(),
         )
+        .push(default_profile::layer())
         .into_inner();
 
         Ok(Dst {
@@ -70,3 +77,11 @@ impl Config {
         })
     }
 }
+
+impl std::fmt::Display for InvalidProfileAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "invalid profile addr")
+    }
+}
+
+impl std::error::Error for InvalidProfileAddr {}

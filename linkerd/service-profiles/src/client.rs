@@ -32,9 +32,6 @@ pub struct Client<S, R> {
     context_token: String,
 }
 
-#[derive(Clone, Debug)]
-pub struct InvalidProfileAddr(Addr);
-
 #[pin_project]
 pub struct ProfileFuture<S, R>
 where
@@ -526,25 +523,5 @@ mod tests {
             // simply not panicking is good enough
             true
         }
-    }
-}
-
-impl InvalidProfileAddr {
-    pub fn addr(&self) -> &Addr {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for InvalidProfileAddr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid profile addr: {}", self.0)
-    }
-}
-
-impl std::error::Error for InvalidProfileAddr {}
-
-impl From<Addr> for InvalidProfileAddr {
-    fn from(addr: Addr) -> Self {
-        Self(addr)
     }
 }

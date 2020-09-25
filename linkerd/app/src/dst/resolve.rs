@@ -50,7 +50,7 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
         match err.downcast::<Status>() {
             Ok(ref status) if status.code() == Code::InvalidArgument => {
                 tracing::debug!(message = "cannot recover", %status);
-                return Err(DiscoveryRejected::new().into());
+                return Err(DiscoveryRejected::default().into());
             }
             Ok(status) => tracing::trace!(message = "recovering", %status),
             Err(error) => tracing::trace!(message = "recovering", %error),

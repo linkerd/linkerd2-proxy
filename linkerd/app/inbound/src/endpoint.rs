@@ -120,6 +120,12 @@ impl AsRef<Addr> for Target {
     }
 }
 
+impl Into<Addr> for &'_ Target {
+    fn into(self) -> Addr {
+        self.dst.clone()
+    }
+}
+
 impl tls::HasPeerIdentity for Target {
     fn peer_identity(&self) -> tls::PeerIdentity {
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())

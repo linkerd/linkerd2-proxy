@@ -26,10 +26,7 @@ impl PermitConfiguredDsts {
 
     /// Configures the returned error type when the target is outside of the
     /// configured set of destinations.
-    pub fn with_error<E>(self) -> PermitConfiguredDsts<E>
-    where
-        E: Into<Error> + From<Addr>,
-    {
+    pub fn with_error<E>(self) -> PermitConfiguredDsts<E> {
         PermitConfiguredDsts {
             name_suffixes: self.name_suffixes,
             networks: self.networks,
@@ -50,14 +47,13 @@ impl<E> Clone for PermitConfiguredDsts<E> {
 
 impl<T, E> request_filter::RequestFilter<T> for PermitConfiguredDsts<E>
 where
-    E: Into<Error> + From<Addr>,
     T: AsRef<Addr>,
+    E: Into<Error> + Default,
 {
     type Error = E;
 
     fn filter(&self, t: T) -> Result<T, Self::Error> {
-        let addr = t.as_ref();
-        let permitted = match addr {
+        let permitted = match t.as_ref() {
             Addr::Name(ref name) => self
                 .name_suffixes
                 .iter()
@@ -72,7 +68,7 @@ where
         if permitted {
             Ok(t)
         } else {
-            Err(E::from(addr.clone()))
+            Err(E::default())
         }
     }
 }
