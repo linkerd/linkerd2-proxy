@@ -73,8 +73,15 @@ impl Into<Addr> for &'_ HttpConcrete {
     fn into(self) -> Addr {
         self.resolve
             .clone()
-            .map(Into::into)
             .unwrap_or_else(|| self.logical.dst.clone())
+    }
+}
+
+impl AsRef<Addr> for HttpConcrete {
+    fn as_ref(&self) -> &Addr {
+        self.resolve
+            .as_ref()
+            .unwrap_or_else(|| self.logical.dst.as_ref())
     }
 }
 
@@ -123,15 +130,15 @@ impl Into<SocketAddr> for HttpLogical {
     }
 }
 
-impl Into<Addr> for &'_ HttpLogical {
-    fn into(self) -> Addr {
-        self.dst.clone()
-    }
-}
-
 impl AsRef<Addr> for HttpLogical {
     fn as_ref(&self) -> &Addr {
         &self.dst
+    }
+}
+
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 

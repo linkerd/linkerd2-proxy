@@ -99,14 +99,8 @@ pub struct ProxyMetrics {
     pub transport: transport::Metrics,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct DiscoveryRejected(());
-
-impl DiscoveryRejected {
-    pub fn new() -> Self {
-        DiscoveryRejected(())
-    }
-}
 
 impl std::fmt::Display for DiscoveryRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -115,12 +109,6 @@ impl std::fmt::Display for DiscoveryRejected {
 }
 
 impl std::error::Error for DiscoveryRejected {}
-
-impl From<Addr> for DiscoveryRejected {
-    fn from(_: Addr) -> Self {
-        Self::new()
-    }
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);

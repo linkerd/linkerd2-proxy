@@ -585,9 +585,7 @@ pub fn trace_labels() -> HashMap<String, String> {
 
 fn is_discovery_rejected(err: &Error) -> bool {
     fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-        err.is::<DiscoveryRejected>()
-            || err.is::<profiles::InvalidProfileAddr>()
-            || err.source().map(is_rejected).unwrap_or(false)
+        err.is::<DiscoveryRejected>() || err.source().map(is_rejected).unwrap_or(false)
     }
 
     let rejected = is_rejected(&**err);
