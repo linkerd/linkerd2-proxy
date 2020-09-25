@@ -12,7 +12,7 @@ use tracing_futures::Instrument;
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, A, I>(
     listen: impl Stream<Item = std::io::Result<(Addrs, I)>>,
-    mut make_accept: M,
+    mut new_accept: M,
     shutdown: impl Future,
 ) -> Result<(), Error>
 where
@@ -38,11 +38,7 @@ where
                         target.addr = %addrs.target_addr(),
                     );
 
-                    // Ready the service before dispatching the request to it.
-                    //
-                    // This allows the service to propagate errors and to exert backpressure on the
-                    // listener. It also avoids a `Clone` requirement.
-                    let accept = make_accept.new_service(addrs);
+                    let accept = new_accept.new_service(addrs);
 
                     // Dispatch all of the work for a given connection onto a connection-specific task.
                     tokio::spawn(
