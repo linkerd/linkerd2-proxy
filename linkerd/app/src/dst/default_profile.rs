@@ -1,4 +1,4 @@
-use super::InvalidProfileAddr;
+use super::Rejected;
 use futures::prelude::*;
 use linkerd2_app_core::{profiles, svc, Addr, Error};
 use std::{
@@ -37,7 +37,7 @@ where
 
         Box::pin(self.inner.call(dst).or_else(move |e| {
             let err = e.into();
-            if is_rejected(&*err) {
+            if Rejected::matches(&*err) {
                 debug!("Handling rejected discovery");
 
                 let (mut tx, rx) = watch::channel(profiles::Profile {
@@ -54,16 +54,4 @@ where
             }
         }))
     }
-}
-
-fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-    if err.is::<InvalidProfileAddr>() {
-        return true;
-    }
-
-    if let Some(status) = err.downcast_ref::<tonic::Status>() {
-        return status.code() == tonic::Code::InvalidArgument;
-    }
-
-    err.source().map(is_rejected).unwrap_or(false)
 }

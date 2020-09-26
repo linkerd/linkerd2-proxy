@@ -41,8 +41,8 @@ pub enum ProtocolHint {
 
 // === impl Metadata ===
 
-impl Metadata {
-    pub fn empty() -> Self {
+impl Default for Metadata {
+    fn default() -> Self {
         Self {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
@@ -51,7 +51,9 @@ impl Metadata {
             authority_override: None,
         }
     }
+}
 
+impl Metadata {
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,

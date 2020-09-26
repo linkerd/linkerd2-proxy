@@ -1,4 +1,3 @@
-pub use super::permit::PermitConfiguredDsts;
 use http_body::Body as HttpBody;
 use linkerd2_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
