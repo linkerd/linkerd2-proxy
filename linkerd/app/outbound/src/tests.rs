@@ -1,4 +1,4 @@
-use crate::{Config, endpoint::TcpLogical};
+use crate::{endpoint::TcpLogical, Config};
 use futures::prelude::*;
 use linkerd2_app_core::{
     config, exp_backoff, proxy::http::h2, svc::NewService, transport::listen, Error,

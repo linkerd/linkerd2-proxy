@@ -5,7 +5,7 @@ use linkerd2_app_core::{
         api_resolve as api,
         resolve::{self, recover},
     },
-    DiscoveryRejected, Error, Recover,
+    Error, Recover,
 };
 use tonic::{
     body::{Body, BoxBody},
@@ -49,7 +49,7 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
         match err.downcast::<Status>() {
             Ok(ref status) if status.code() == Code::InvalidArgument => {
                 tracing::debug!(message = "cannot recover", %status);
-                return Err(DiscoveryRejected::default().into());
+                return Err(super::Rejected(()).into());
             }
             Ok(status) => tracing::trace!(message = "recovering", %status),
             Err(error) => tracing::trace!(message = "recovering", %error),
