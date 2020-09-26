@@ -55,10 +55,15 @@ pub struct HttpEndpoint {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TcpEndpoint {
-    pub dst: Addr,
     pub addr: SocketAddr,
+    pub logical: TcpLogical,
     pub identity: tls::PeerIdentity,
     pub labels: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TcpLogical {
+    pub addr: SocketAddr,
 }
 
 // === impl HttpConrete ===
@@ -69,9 +74,15 @@ impl From<(Addr, Profile)> for HttpConcrete {
     }
 }
 
-impl AsRef<Addr> for HttpConcrete {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
+impl Into<Addr> for &'_ HttpConcrete {
+    fn into(self) -> Addr {
+        self.dst.clone()
+    }
+}
+
+impl Into<SocketAddr> for &'_ HttpConcrete {
+    fn into(self) -> SocketAddr {
+        self.logical.orig_dst
     }
 }
 
@@ -272,13 +283,39 @@ impl Into<EndpointLabels> for HttpEndpoint {
     }
 }
 
+// === impl TcpLogical ===
+
+impl From<SocketAddr> for TcpLogical {
+    fn from(addr: SocketAddr) -> Self {
+        TcpLogical { addr }
+    }
+}
+
+impl Into<SocketAddr> for &'_ TcpLogical {
+    fn into(self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Into<Addr> for &'_ TcpLogical {
+    fn into(self) -> Addr {
+        Addr::from(self.addr)
+    }
+}
+
+impl std::fmt::Display for TcpLogical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.addr.fmt(f)
+    }
+}
+
 // === impl TcpEndpoint ===
 
-impl From<SocketAddr> for TcpEndpoint {
-    fn from(addr: SocketAddr) -> Self {
+impl From<TcpLogical> for TcpEndpoint {
+    fn from(logical: TcpLogical) -> Self {
         Self {
-            addr,
-            dst: addr.into(),
+            addr: logical.addr,
+            logical,
             identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
             labels: None,
         }
@@ -287,7 +324,7 @@ impl From<SocketAddr> for TcpEndpoint {
 
 impl From<listen::Addrs> for TcpEndpoint {
     fn from(addrs: listen::Addrs) -> Self {
-        addrs.target_addr().into()
+        TcpLogical::from(addrs.target_addr()).into()
     }
 }
 
@@ -307,7 +344,7 @@ impl Into<EndpointLabels> for TcpEndpoint {
     fn into(self) -> EndpointLabels {
         use linkerd2_app_core::metric_labels::{Direction, TlsId};
         EndpointLabels {
-            authority: Some(self.dst.to_http_authority()),
+            authority: Some(Addr::from(self.logical.addr).to_http_authority()),
             direction: Direction::Out,
             labels: self.labels,
             tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
@@ -315,11 +352,16 @@ impl Into<EndpointLabels> for TcpEndpoint {
     }
 }
 
-impl MapEndpoint<Addr, Metadata> for FromMetadata {
+impl MapEndpoint<TcpLogical, Metadata> for FromMetadata {
     type Out = TcpEndpoint;
 
-    fn map_endpoint(&self, dst: &Addr, addr: SocketAddr, metadata: Metadata) -> Self::Out {
-        tracing::debug!(%dst, %addr, ?metadata, "Resolved endpoint");
+    fn map_endpoint(
+        &self,
+        logical: &TcpLogical,
+        addr: SocketAddr,
+        metadata: Metadata,
+    ) -> Self::Out {
+        tracing::debug!(%logical, %addr, ?metadata, "Resolved endpoint");
         let identity = metadata
             .identity()
             .cloned()
@@ -331,7 +373,7 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
         TcpEndpoint {
             addr,
             identity,
-            dst: dst.clone(),
+            logical: logical.clone(),
             labels: prefix_labels("dst", metadata.labels().into_iter()),
         }
     }

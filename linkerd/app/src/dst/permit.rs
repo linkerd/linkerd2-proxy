@@ -24,11 +24,14 @@ impl PermitConfiguredDsts {
     }
 }
 
-impl<T: AsRef<Addr>> request_filter::RequestFilter<T> for PermitConfiguredDsts {
+impl<T> request_filter::RequestFilter<T> for PermitConfiguredDsts
+where
+    for<'t> &'t T: Into<Addr>,
+{
     type Error = Error;
 
     fn filter(&self, t: T) -> Result<T, Self::Error> {
-        let permitted = match t.as_ref() {
+        let permitted = match (&t).into() {
             Addr::Name(ref name) => self
                 .name_suffixes
                 .iter()

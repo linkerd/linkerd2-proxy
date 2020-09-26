@@ -2,7 +2,7 @@ use super::Rejected;
 use futures::{future, prelude::*, stream};
 use linkerd2_app_core::{
     proxy::core::{Resolve, Update},
-    svc,
+    svc, Error,
 };
 use std::{
     future::Future,
@@ -20,8 +20,7 @@ pub struct RecoverDefaultResolve<S>(S);
 impl<T, S> tower::Service<T> for RecoverDefaultResolve<S>
 where
     for<'t> &'t T: Into<std::net::SocketAddr>,
-    S: Resolve<T>,
-    S::Error: std::error::Error + Send + 'static,
+    S: Resolve<T, Error = Error>,
     S::Endpoint: Default + Send + 'static,
     S::Resolution: Send + 'static,
     S::Future: Send + 'static,
@@ -30,10 +29,10 @@ where
 {
     type Response = future::Either<
         S::Resolution,
-        stream::Once<future::Ready<Result<Update<S::Endpoint>, S::Error>>>,
+        stream::Once<future::Ready<Result<Update<S::Endpoint>, Error>>>,
     >;
-    type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, S::Error>> + Send + 'static>>;
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.0.poll_ready(cx)
@@ -47,7 +46,7 @@ where
                 .resolve(dst)
                 .map_ok(future::Either::Left)
                 .or_else(move |err| {
-                    if Rejected::matches(&err) {
+                    if Rejected::matches(&*err) {
                         tracing::debug!("Handling rejected discovery");
 
                         let res: stream::Once<

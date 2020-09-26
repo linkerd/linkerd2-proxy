@@ -5,7 +5,9 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
+pub use self::endpoint::{
+    HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint, TcpLogical,
+};
 use futures::future;
 use linkerd2_app_core::{
     admit, classify,
@@ -20,14 +22,10 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::{collections::HashMap, net::IpAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -86,7 +84,7 @@ impl Config {
         connect: C,
         resolve: E,
     ) -> impl svc::NewService<
-        SocketAddr,
+        TcpLogical,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -103,7 +101,11 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E: Resolve<TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
@@ -121,11 +123,14 @@ impl Config {
                 resolve,
             )))
             .push(discover::buffer(1_000, cache_max_idle_age))
-            .push_map_target(Addr::from)
-            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .check_service::<TcpLogical>()
+            .push_on_response(
+                svc::layers()
+                    .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(svc::layer::mk(tcp::Forward::new))
+            )
             .into_new_service()
-            .check_new_service::<SocketAddr, I>()
+            .check_new_service::<TcpLogical, I>()
     }
 
     pub fn build_dns_refine(
@@ -405,7 +410,11 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E: Resolve<TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
@@ -505,7 +514,7 @@ impl Config {
             .into_make_service()
             .spawn_buffer(buffer_capacity)
             .instrument(|_: &_| info_span!("tcp"))
-            .push_map_target(|a: listen::Addrs| a.target_addr())
+            .push_map_target(|a: listen::Addrs| TcpLogical::from(a.target_addr()))
             .into_inner();
 
         let http = svc::stack(http::DetectHttp::new(

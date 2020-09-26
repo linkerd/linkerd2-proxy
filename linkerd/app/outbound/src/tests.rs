@@ -1,7 +1,7 @@
-use crate::Config;
+use crate::{Config, endpoint::TcpLogical};
 use futures::prelude::*;
 use linkerd2_app_core::{
-    config, exp_backoff, proxy::http::h2, svc::NewService, transport::listen, Addr, Error,
+    config, exp_backoff, proxy::http::h2, svc::NewService, transport::listen, Error,
 };
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, time::Duration};
@@ -64,15 +64,15 @@ async fn plaintext_tcp() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver().endpoint_exists(
-        Addr::from(target_addr),
+        TcpLogical::from(target_addr),
         target_addr,
-        test_support::resolver::Metadata::empty(),
+        test_support::resolver::Metadata::default(),
     );
 
     // Build the outbound TCP balancer stack.
     let forward = cfg
         .build_tcp_balance(connect, resolver)
-        .new_service(target_addr);
+        .new_service(target_addr.into());
 
     forward
         .oneshot(client_io)
