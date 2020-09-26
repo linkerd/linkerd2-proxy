@@ -1,4 +1,4 @@
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     config::ServerConfig,
@@ -6,7 +6,7 @@ use linkerd2_app_core::{
     proxy::{identity, tap},
     serve,
     transport::{io, tls},
-    Error, Never,
+    Error,
 };
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -55,15 +55,15 @@ impl Config {
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server);
                 let accept = tls::DetectTls::new(
                     identity,
-                    service_fn(move |meta: tls::accept::Meta| {
+                    move |meta: tls::accept::Meta| {
                         let service = service.clone();
-                        future::ok::<_, Never>(service_fn(move |io: io::BoxedIo| {
+                        service_fn(move |io: io::BoxedIo| {
                             let fut = service.clone().oneshot((meta.clone(), io));
                             Box::pin(async move {
                                 fut.err_into::<Error>().await?.err_into::<Error>().await
                             })
-                        }))
-                    }),
+                        })
+                    },
                     std::time::Duration::from_secs(1),
                 );
 

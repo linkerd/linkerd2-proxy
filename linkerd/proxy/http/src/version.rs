@@ -1,4 +1,3 @@
-use linkerd2_proxy_transport::io::{self, Peekable, PrefixedIo};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -22,6 +21,7 @@ impl std::convert::TryFrom<http::Version> for Version {
 }
 
 impl Version {
+    pub const DETECT_BUFFER_CAPACITY: usize = 8192;
     const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
     /// Tries to detect a known protocol in the peeked bytes.
@@ -59,17 +59,6 @@ impl Version {
         debug!("Not HTTP");
         trace!(?bytes);
         None
-    }
-
-    pub async fn detect<I>(io: I) -> io::Result<(Option<Self>, PrefixedIo<I>)>
-    where
-        I: io::AsyncRead + io::AsyncWrite + Unpin,
-    {
-        // If we don't find a newline, we consider the stream to be HTTP/1; so
-        // we need enough capacity to prevent false-positives.
-        let io = io.peek(8192).await?;
-        let version = Self::from_prefix(io.prefix());
-        Ok((version, io))
     }
 }
 

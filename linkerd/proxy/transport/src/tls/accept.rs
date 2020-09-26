@@ -4,9 +4,9 @@ use crate::listen::Addrs;
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd2_dns_name as dns;
-use linkerd2_error::{Error, Never};
+use linkerd2_error::Error;
 use linkerd2_identity as identity;
-use linkerd2_stack::layer;
+use linkerd2_stack::{layer, NewService};
 pub use rustls::ServerConfig as Config;
 use std::{
     pin::Pin,
@@ -87,36 +87,27 @@ impl<I: HasConfig, M> DetectTls<I, M> {
     }
 }
 
-impl<I: HasConfig, M> tower::Service<Addrs> for DetectTls<I, M>
+impl<I, M> NewService<Addrs> for DetectTls<I, M>
 where
-    I: Clone,
-    M: tower::Service<Meta> + Clone,
+    I: HasConfig + Clone,
+    M: NewService<Meta> + Clone,
 {
-    type Response = AcceptTls<I, M>;
-    type Error = Never;
-    type Future = future::Ready<Result<AcceptTls<I, M>, Never>>;
+    type Service = AcceptTls<I, M>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        // The `accept` is cloned into the response future, so its readiness isn't important.
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, addrs: Addrs) -> Self::Future {
-        future::ok(AcceptTls {
+    fn new_service(&mut self, addrs: Addrs) -> Self::Service {
+        AcceptTls {
             addrs,
             local_identity: self.local_identity.clone(),
             inner: self.inner.clone(),
             timeout: self.timeout,
-        })
+        }
     }
 }
 
 impl<I: HasConfig, M, A> tower::Service<TcpStream> for AcceptTls<I, M>
 where
-    M: tower::Service<Meta, Response = A> + Clone + Send + 'static,
-    M::Error: Into<Error>,
-    M::Future: Send,
-    A: tower::Service<BoxedIo, Response = ()> + Send,
+    M: NewService<Meta, Service = A> + Clone + Send + 'static,
+    A: tower::Service<BoxedIo, Response = ()> + Send + 'static,
     A::Error: Into<Error>,
     A::Future: Send,
 {
@@ -130,7 +121,7 @@ where
 
     fn call(&mut self, tcp: TcpStream) -> Self::Future {
         let addrs = self.addrs.clone();
-        let make = self.inner.clone();
+        let mut new_accept = self.inner.clone();
 
         match self.local_identity.as_ref() {
             Conditional::Some(local) => {
@@ -149,27 +140,22 @@ where
                         peer_identity,
                         addrs,
                     };
-                    make.oneshot(meta)
-                        .err_into::<Error>()
-                        .await?
+                    new_accept
+                        .new_service(meta)
                         .oneshot(io)
                         .err_into::<Error>()
                         .await
                 })
             }
 
-            Conditional::None(reason) => Box::pin(async move {
+            Conditional::None(reason) => {
                 let meta = Meta {
                     peer_identity: Conditional::None(reason),
                     addrs,
                 };
-                make.oneshot(meta)
-                    .err_into::<Error>()
-                    .await?
-                    .oneshot(BoxedIo::new(tcp))
-                    .err_into::<Error>()
-                    .await
-            }),
+                let svc = new_accept.new_service(meta);
+                Box::pin(svc.oneshot(BoxedIo::new(tcp)).err_into::<Error>())
+            }
         }
     }
 }

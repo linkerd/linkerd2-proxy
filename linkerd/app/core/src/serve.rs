@@ -1,8 +1,9 @@
+use crate::svc;
 use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
-use tracing::{debug, error, info, info_span};
+use tracing::{debug, info, info_span};
 use tracing_futures::Instrument;
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
@@ -11,15 +12,13 @@ use tracing_futures::Instrument;
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, A, I>(
     listen: impl Stream<Item = std::io::Result<(Addrs, I)>>,
-    mut make_accept: M,
+    mut new_accept: M,
     shutdown: impl Future,
 ) -> Result<(), Error>
 where
     I: Send + 'static,
-    M: tower::Service<Addrs, Response = A>,
-    M::Error: Into<Error>,
-    M::Future: Send + 'static,
-    A: tower::Service<I, Response = ()> + Send,
+    M: svc::NewService<Addrs, Service = A>,
+    A: tower::Service<I, Response = ()> + Send + 'static,
     A::Error: Into<Error>,
     A::Future: Send + 'static,
 {
@@ -39,26 +38,14 @@ where
                         target.addr = %addrs.target_addr(),
                     );
 
-                    // Ready the service before dispatching the request to it.
-                    //
-                    // This allows the service to propagate errors and to exert backpressure on the
-                    // listener. It also avoids a `Clone` requirement.
-                    let accept = make_accept
-                        .ready_and()
-                        .err_into::<Error>()
-                        .instrument(span.clone())
-                        .await?
-                        .call(addrs);
+                    let accept = new_accept.new_service(addrs);
 
                     // Dispatch all of the work for a given connection onto a connection-specific task.
                     tokio::spawn(
                         async move {
-                            match accept.err_into::<Error>().await {
-                                Err(error) => error!(%error, "Failed to dispatch connection"),
-                                Ok(accept) => match accept.oneshot(io).err_into::<Error>().await {
-                                    Ok(()) => debug!("Connection closed"),
-                                    Err(error) => info!(%error, "Connection closed"),
-                                },
+                            match accept.oneshot(io).err_into::<Error>().await {
+                                Ok(()) => debug!("Connection closed"),
+                                Err(error) => info!(%error, "Connection closed"),
                             }
                         }
                         .instrument(span),

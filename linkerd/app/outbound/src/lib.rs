@@ -404,17 +404,15 @@ impl Config {
         metrics: ProxyMetrics,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         listen::Addrs,
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             I,
             Response = (),
             Error = impl Into<Error>,
             Future = impl Send + 'static,
         > + Send
-                       + 'static,
+                      + 'static,
     > + Send
            + 'static
     where
@@ -511,29 +509,37 @@ impl Config {
             )
             .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
             .check_new_service::<endpoint::Accept, transport::io::PrefixedIo<SensorIo<I>>>()
-            .into_make_service()
             .instrument(|_: &_| info_span!("tcp"))
+            .into_make_service()
+            .into_inner();
+
+        let http = svc::stack(http::DetectHttp::new(
+            h2_settings,
+            http_server,
+            tcp_balance,
+            drain.clone(),
+        ))
+        .push_on_response(transport::Prefix::layer(
+            http::Version::DETECT_BUFFER_CAPACITY,
+            detect_protocol_timeout,
+        ))
+        .into_new_service()
+        .into_inner();
+
+        let tcp_forward = svc::stack(tcp_connect.clone())
+            .push_make_thunk()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .instrument(|_: &TcpEndpoint| info_span!("forward"))
+            .check_new::<TcpEndpoint>()
+            .push_map_target(TcpEndpoint::from)
             .into_inner();
 
         let detect = svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
-            http::DetectHttp::new(
-                h2_settings,
-                detect_protocol_timeout,
-                http_server,
-                tcp_balance,
-                drain.clone(),
-            ),
-            svc::stack(tcp_connect.clone())
-                .push_make_thunk()
-                .push_on_response(svc::layer::mk(tcp::Forward::new))
-                .instrument(|_: &TcpEndpoint| info_span!("forward"))
-                .check_service::<TcpEndpoint>()
-                .push_map_target(TcpEndpoint::from)
-                .into_inner(),
+            http,
+            tcp_forward,
         ))
-        .check_service::<endpoint::Accept>()
-        .into_new_service()
+        .check_new::<endpoint::Accept>()
         .push_map_target(endpoint::Accept::from)
         .push(profiles::discover::layer(profiles_client))
         .check_new_service::<net::SocketAddr, SensorIo<I>>();
@@ -547,7 +553,6 @@ impl Config {
                 ),
             )
             .check_new_service::<net::SocketAddr, SensorIo<I>>()
-            .into_make_service()
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .push(metrics.transport.layer_accept(TransportLabels))
             .into_inner()

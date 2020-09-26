@@ -211,7 +211,7 @@ const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff 
     max: Duration::from_millis(500),
     jitter: 0.1,
 };
-const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(100);
+const DEFAULT_DNS_CANONICALIZE_TIMEOUT: Duration = Duration::from_millis(500);
 const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
