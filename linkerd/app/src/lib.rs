@@ -169,7 +169,7 @@ impl Config {
                     drain_rx.clone().signal(),
                 )
                 .map_err(|e| panic!("outbound failed: {}", e))
-                .instrument(span.clone()),
+                .in_current_span(),
             );
             drop(_enter);
 
@@ -188,9 +188,7 @@ impl Config {
                     inbound.build(
                         inbound_addr,
                         local_identity,
-                        svc::stack(http_gateway)
-                            .push_on_response(svc::layers().box_http_request())
-                            .into_inner(),
+                        svc::stack(http_gateway).into_new_service().into_inner(),
                         dst.profiles,
                         tap_layer,
                         inbound_metrics,
@@ -200,7 +198,7 @@ impl Config {
                     drain_rx.signal(),
                 )
                 .map_err(|e| panic!("inbound failed: {}", e))
-                .instrument(span.clone()),
+                .in_current_span(),
             );
             drop(_enter);
         });

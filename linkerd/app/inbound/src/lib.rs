@@ -64,9 +64,7 @@ impl Config {
     > + Send
            + 'static
     where
-        L: tower::Service<Target, Response = S> + Unpin + Clone + Send + Sync + 'static,
-        L::Error: Into<Error>,
-        L::Future: Unpin + Send,
+        L: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -166,9 +164,7 @@ impl Config {
         P::Future: Unpin + Send,
         P::Error: Send,
         // The loopback router processes requests sent to the inbound port.
-        L: tower::Service<Target, Response = S> + Unpin + Send + Clone + 'static,
-        L::Error: Into<Error>,
-        L::Future: Unpin + Send,
+        L: svc::NewService<Target, Service = S> + Unpin + Send + Clone + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -253,13 +249,7 @@ impl Config {
             // If the traffic is targeted at the inbound port, send it through
             // the loopback service (i.e. as a gateway).
             .push(admit::AdmitLayer::new(prevent_loop))
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
-            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
-                svc::stack(loopback)
-                    .into_new_service()
-                    .check_new_service::<Target, http::Request<_>>()
-                    .into_inner(),
-            )
+            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(loopback)
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .cache(
                 svc::layers().push_on_response(
