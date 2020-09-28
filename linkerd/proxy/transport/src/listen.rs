@@ -77,13 +77,18 @@ impl<A: OrigDstAddr> Bind<A> {
                 let listen = tokio::net::TcpListener::from_std(listen).expect("listener must be valid");
             };
 
-            while let (tcp, local_addr) = listen.accept().await? {
+            while let (tcp, peer_addr) = listen.accept().await? {
                 super::set_nodelay_or_warn(&tcp);
                 super::set_keepalive_or_warn(&tcp, keepalive);
 
-                let peer_addr = tcp.peer_addr()?;
+                let local_addr = tcp.local_addr()?;
                 let orig_dst = get_orig.orig_dst_addr(&tcp);
-                trace!(peer.addr = %peer_addr, orig.addr =  ?orig_dst, "Accepted");
+                trace!(
+                    local.addr = %local_addr,
+                    peer.addr = %peer_addr,
+                    orig.addr = ?orig_dst,
+                    "Accepted",
+                );
                 yield (Addrs::new(local_addr, peer_addr, orig_dst), tcp);
             }
         };
