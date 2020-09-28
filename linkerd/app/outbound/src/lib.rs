@@ -292,7 +292,7 @@ impl Config {
         let discover = svc::layers()
             .push(discover::resolve(map_endpoint::Resolve::new(
                 endpoint::FromMetadata,
-                resolve.clone(),
+                resolve,
             )))
             .push(discover::buffer(1_000, cache_max_idle_age));
 
@@ -301,6 +301,7 @@ impl Config {
             .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
+                    .push(svc::layer::mk(svc::SpawnReady::new))
                     .push(metrics.stack.layer(stack_labels("balance.endpoint")))
                     .box_http_request(),
             )
@@ -332,6 +333,7 @@ impl Config {
         let logical = concrete
             // Uses the split-provided target `Addr` to build a concrete target.
             .push_map_target(HttpConcrete::from)
+            .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
             .push(profiles::split::layer())
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
