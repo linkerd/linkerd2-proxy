@@ -21,7 +21,7 @@ pub struct Target {
 #[derive(Clone, Debug)]
 pub struct Logical {
     target: Target,
-    profiles: profiles::Receiver,
+    profiles: Option<profiles::Receiver>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -272,14 +272,14 @@ impl From<Logical> for Target {
 
 // === impl Logical ===
 
-impl From<(profiles::Receiver, Target)> for Logical {
-    fn from((profiles, target): (profiles::Receiver, Target)) -> Self {
+impl From<(Option<profiles::Receiver>, Target)> for Logical {
+    fn from((profiles, target): (Option<profiles::Receiver>, Target)) -> Self {
         Self { profiles, target }
     }
 }
 
-impl AsRef<profiles::Receiver> for Logical {
-    fn as_ref(&self) -> &profiles::Receiver {
+impl AsRef<Option<profiles::Receiver>> for Logical {
+    fn as_ref(&self) -> &Option<profiles::Receiver> {
         &self.profiles
     }
 }

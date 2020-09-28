@@ -118,7 +118,7 @@ where
     R: Recover + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
-    type Response = Receiver;
+    type Response = Option<Receiver>;
     type Error = Error;
     type Future = ProfileFuture<S, R>;
 
@@ -169,7 +169,7 @@ where
     R::Backoff: Unpin,
     R::Backoff: Send,
 {
-    type Output = Result<Receiver, Error>;
+    type Output = Result<Option<Receiver>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
@@ -218,7 +218,7 @@ where
                                 trace!(?profile, "publishing");
                                 if tx.broadcast(profile).is_err() {
                                     trace!("failed to publish profile");
-                                    return
+                                    return;
                                 }
                             }
                         }
@@ -228,7 +228,7 @@ where
         };
         tokio::spawn(daemon.in_current_span());
 
-        Poll::Ready(Ok(rx))
+        Poll::Ready(Ok(Some(rx)))
     }
 }
 

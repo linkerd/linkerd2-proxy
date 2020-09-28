@@ -35,7 +35,7 @@ pub struct GetProfileService<P>(P);
 /// Watches a destination's Profile.
 pub trait GetProfile<T> {
     type Error: Into<Error>;
-    type Future: Future<Output = Result<Receiver, Self::Error>>;
+    type Future: Future<Output = Result<Option<Receiver>, Self::Error>>;
 
     fn get_profile(&mut self, target: T) -> Self::Future;
 
@@ -49,7 +49,7 @@ pub trait GetProfile<T> {
 
 impl<T, S> GetProfile<T> for S
 where
-    S: tower::Service<T, Response = Receiver> + Clone,
+    S: tower::Service<T, Response = Option<Receiver>> + Clone,
     S::Error: Into<Error>,
 {
     type Error = S::Error;
@@ -64,7 +64,7 @@ impl<T, P> tower::Service<T> for GetProfileService<P>
 where
     P: GetProfile<T>,
 {
-    type Response = Receiver;
+    type Response = Option<Receiver>;
     type Error = P::Error;
     type Future = P::Future;
 

@@ -35,7 +35,7 @@ pub struct NewSplit<N, S, Req> {
 #[derive(Debug)]
 pub struct Split<T, N, S, Req> {
     target: T,
-    rx: Receiver,
+    rx: Option<Receiver>,
     new_service: N,
     rng: SmallRng,
     inner: Option<Inner>,
@@ -60,7 +60,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N: Clone, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: AsRef<Receiver>,
+    T: AsRef<Option<Receiver>>,
     S: tower::Service<Req>,
 {
     type Service = Split<T, N, S, Req>;
@@ -94,9 +94,12 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
-        while let Poll::Ready(Some(up)) = self.rx.poll_recv_ref(cx) {
-            update = Some(up.clone());
+        if let Some(rx) = self.rx.as_mut() {
+            while let Poll::Ready(Some(up)) = rx.poll_recv_ref(cx) {
+                update = Some(up.clone());
+            }
         }
+
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
         if let Some(Profile { targets, .. }) = update {

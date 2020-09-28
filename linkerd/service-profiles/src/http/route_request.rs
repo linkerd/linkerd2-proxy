@@ -33,7 +33,7 @@ pub struct NewRouteRequest<M, N, R> {
 
 pub struct RouteRequest<T, S, N, R> {
     target: T,
-    rx: Receiver,
+    rx: Option<Receiver>,
     inner: S,
     new_route: N,
     http_routes: Vec<(RequestMatch, Route)>,
@@ -54,7 +54,7 @@ impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
 
 impl<T, M, N> NewService<T> for NewRouteRequest<M, N, N::Service>
 where
-    T: AsRef<Receiver> + Clone,
+    T: AsRef<Option<Receiver>> + Clone,
     M: NewService<T>,
     N: NewService<(Route, T)> + Clone,
 {
@@ -93,9 +93,12 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
-        while let Poll::Ready(Some(up)) = self.rx.poll_recv_ref(cx) {
-            update = Some(up.clone());
+        if let Some(rx) = self.rx.as_mut() {
+            while let Poll::Ready(Some(up)) = rx.poll_recv_ref(cx) {
+                update = Some(up.clone());
+            }
         }
+
         // Every time the profile updates, rebuild the distribution, reusing
         // services that existed in the prior state.
         if let Some(Profile { http_routes, .. }) = update {
