@@ -364,7 +364,8 @@ impl Config {
                     .box_http_response(),
             )
             .instrument(|_: &_| debug_span!("source"))
-            .check_new_service::<tls::accept::Meta, http::Request<_>>()
+            .push_map_target(|(_, accept): (http::Version, tls::accept::Meta)| accept)
+            .check_new_service::<(http::Version, tls::accept::Meta), http::Request<_>>()
             .into_inner();
 
         svc::stack(http::DetectHttp::new(

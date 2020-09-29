@@ -199,13 +199,10 @@ where
                 let tcp = if let Some(svc) = self.tcp.clone() {
                     svc
                 } else {
-                    let svc = self
-                        .new_tcp
-                        .new_service(self.target.clone());
+                    let svc = self.new_tcp.new_service(self.target.clone());
                     self.tcp = Some(svc.clone());
                     svc
                 };
-
 
                 Box::pin(
                     self.drain.clone().ignore_signal().release_after(
