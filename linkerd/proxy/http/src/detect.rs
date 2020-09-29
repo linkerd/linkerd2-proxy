@@ -37,9 +37,13 @@ pub struct DetectHttp<F, H> {
 /// Otherwise, the `F` type forwarding service is used to handle the TCP
 /// connection.
 #[derive(Clone, Debug)]
-pub struct AcceptHttp<F, H> {
-    tcp: F,
-    http: H,
+pub struct AcceptHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
+    target: T,
+    new_tcp: F,
+    tcp: Option<F::Service>,
+    new_http: H,
+    http1: Option<H::Service>,
+    h2: Option<H::Service>,
     server: hyper::server::conn::Http<trace::Executor>,
     drain: drain::Watch,
 }
@@ -63,87 +67,61 @@ impl<F, H> DetectHttp<F, H> {
     }
 }
 
-impl<T, F, S> NewService<T> for DetectHttp<F, S>
+impl<T, F, H> NewService<T> for DetectHttp<F, H>
 where
     T: Clone,
-    F: NewService<T>,
-    S: NewService<T>,
+    F: NewService<T> + Clone,
+    H: NewService<(HttpVersion, T)> + Clone,
 {
-    type Service = AcceptHttp<F::Service, S::Service>;
+    type Service = AcceptHttp<T, F, H>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
         AcceptHttp::new(
+            target,
             self.server.clone(),
-            self.http.new_service(target.clone()),
-            self.tcp.new_service(target),
+            self.http.clone(),
+            self.tcp.clone(),
             self.drain.clone(),
         )
     }
 }
 
-impl<T, F, S> Service<T> for DetectHttp<F, S>
-where
-    T: Clone + Send + 'static,
-    F: tower::Service<T> + Clone + Send + 'static,
-    F::Error: Into<Error>,
-    F::Response: Send + 'static,
-    F::Future: Send + 'static,
-    S: Service<T> + Clone + Unpin + Send + 'static,
-    S::Error: Into<Error>,
-    S::Response: Send + 'static,
-    S::Future: Send + 'static,
-{
-    type Response = AcceptHttp<F::Response, S::Response>;
-    type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let drain = self.drain.clone();
-        let tcp = self.tcp.clone();
-        let http = self.http.clone();
-        let server = self.server.clone();
-
-        Box::pin(async move {
-            let (tcp, http) = futures::try_join!(
-                tcp.oneshot(target.clone()).map_err(Into::<Error>::into),
-                http.oneshot(target).map_err(Into::<Error>::into)
-            )?;
-
-            Ok(AcceptHttp::new(server, http, tcp, drain))
-        })
-    }
-}
-
 // === impl AcceptHttp ===
 
-impl<F, H> AcceptHttp<F, H> {
-    pub fn new(server: Server, http: H, tcp: F, drain: drain::Watch) -> Self {
+impl<T, F, H> AcceptHttp<T, F, H>
+where
+    F: NewService<T>,
+    H: NewService<(HttpVersion, T)>,
+{
+    pub fn new(target: T, server: Server, new_http: H, new_tcp: F, drain: drain::Watch) -> Self {
         Self {
+            target,
             server,
-            tcp,
-            http,
+            new_tcp,
+            tcp: None,
+            new_http,
+            http1: None,
+            h2: None,
             drain,
         }
     }
 }
 
-impl<I, F, S> Service<PrefixedIo<I>> for AcceptHttp<F, S>
+impl<T, I, F, FSvc, H, HSvc> Service<PrefixedIo<I>> for AcceptHttp<T, F, H>
 where
+    T: Clone,
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-    F: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
-    F::Error: Into<Error>,
-    F::Future: Send + 'static,
-    S: Service<http::Request<Body>, Response = http::Response<http::boxed::Payload>, Error = Error>
+    F: NewService<T, Service = FSvc> + Clone,
+    FSvc: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
+    FSvc::Error: Into<Error>,
+    FSvc::Future: Send + 'static,
+    H: NewService<(HttpVersion, T), Service = HSvc> + Clone,
+    HSvc: Service<http::Request<Body>, Response = http::Response<http::boxed::Payload>, Error = Error>
         + Clone
         + Unpin
         + Send
         + 'static,
-    S::Future: Send + 'static,
+    HSvc::Future: Send + 'static,
 {
     type Response = ();
     type Error = Error;
@@ -155,50 +133,88 @@ where
     }
 
     fn call(&mut self, io: PrefixedIo<I>) -> Self::Future {
-        let drain = self.drain.clone();
-        let tcp = self.tcp.clone();
-        let http = self.http.clone();
-        let mut server = self.server.clone();
-
         let version = HttpVersion::from_prefix(io.prefix());
-        Box::pin(async move {
-            match version {
-                Some(HttpVersion::Http1) => {
-                    debug!("Handling as HTTP");
-                    // Enable support for HTTP upgrades (CONNECT and websockets).
-                    let http = upgrade::Service::new(http, drain.clone());
-                    let conn = server
-                        .http1_only(true)
-                        .serve_connection(io, HyperServerSvc::new(http))
-                        .with_upgrades();
+        match version {
+            Some(HttpVersion::Http1) => {
+                debug!("Handling as HTTP");
+                let http1 = if let Some(svc) = self.http1.clone() {
+                    svc
+                } else {
+                    let svc = self
+                        .new_http
+                        .new_service((HttpVersion::Http1, self.target.clone()));
+                    self.http1 = Some(svc.clone());
+                    svc
+                };
 
-                    drain
+                // Enable support for HTTP upgrades (CONNECT and websockets).
+                let conn = self
+                    .server
+                    .clone()
+                    .http1_only(true)
+                    .serve_connection(
+                        io,
+                        HyperServerSvc::new(upgrade::Service::new(http1, self.drain.clone())),
+                    )
+                    .with_upgrades();
+
+                Box::pin(
+                    self.drain
+                        .clone()
                         .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .instrument(info_span!("h1"))
-                        .await?;
-                }
-
-                Some(HttpVersion::H2) => {
-                    debug!("Handling as H2");
-                    let conn = server
-                        .http2_only(true)
-                        .serve_connection(io, HyperServerSvc::new(http));
-
-                    drain
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .instrument(info_span!("h2"))
-                        .await?;
-                }
-
-                None => {
-                    debug!("Forwarding TCP");
-                    let release = drain.ignore_signal();
-                    tcp.oneshot(io).err_into::<Error>().await?;
-                    drop(release);
-                }
+                        .err_into::<Error>()
+                        .instrument(info_span!("h1")),
+                )
             }
 
-            Ok(())
-        })
+            Some(HttpVersion::H2) => {
+                debug!("Handling as H2");
+                let h2 = if let Some(svc) = self.h2.clone() {
+                    svc
+                } else {
+                    let svc = self
+                        .new_http
+                        .new_service((HttpVersion::H2, self.target.clone()));
+                    self.h2 = Some(svc.clone());
+                    svc
+                };
+
+                let conn = self
+                    .server
+                    .clone()
+                    .http2_only(true)
+                    .serve_connection(io, HyperServerSvc::new(h2));
+
+                Box::pin(
+                    self.drain
+                        .clone()
+                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
+                        .err_into::<Error>()
+                        .instrument(info_span!("h2")),
+                )
+            }
+
+            None => {
+                debug!("Forwarding TCP");
+                let tcp = if let Some(svc) = self.tcp.clone() {
+                    svc
+                } else {
+                    let svc = self
+                        .new_tcp
+                        .new_service(self.target.clone());
+                    self.tcp = Some(svc.clone());
+                    svc
+                };
+
+
+                Box::pin(
+                    self.drain.clone().ignore_signal().release_after(
+                        tcp.oneshot(io)
+                            .err_into::<Error>()
+                            .instrument(info_span!("tcp")),
+                    ),
+                )
+            }
+        }
     }
 }
