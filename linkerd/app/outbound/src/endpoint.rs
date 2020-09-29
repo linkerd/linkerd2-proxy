@@ -14,7 +14,7 @@ use linkerd2_app_core::{
     },
     router,
     transport::{listen, tls},
-    Addr, Conditional, NameAddr, L5D_REQUIRE_ID,
+    Addr, Conditional, L5D_REQUIRE_ID,
 };
 use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 
@@ -31,7 +31,7 @@ pub struct HttpLogical {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpConcrete {
-    pub name: Option<NameAddr>,
+    pub resolve: Option<Addr>,
     pub logical: HttpLogical,
 }
 
@@ -63,15 +63,15 @@ pub struct TcpEndpoint {
 
 // === impl HttpConrete ===
 
-impl From<(Option<NameAddr>, Profile)> for HttpConcrete {
-    fn from((name, Profile { logical, .. }): (Option<NameAddr>, Profile)) -> Self {
-        Self { name, logical }
+impl From<(Option<Addr>, Profile)> for HttpConcrete {
+    fn from((resolve, Profile { logical, .. }): (Option<Addr>, Profile)) -> Self {
+        Self { resolve, logical }
     }
 }
 
 impl Into<Addr> for &'_ HttpConcrete {
     fn into(self) -> Addr {
-        self.name
+        self.resolve
             .clone()
             .map(Into::into)
             .unwrap_or_else(|| self.logical.dst.clone())
@@ -86,7 +86,7 @@ impl Into<SocketAddr> for &'_ HttpConcrete {
 
 impl std::fmt::Display for HttpConcrete {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.name.as_ref() {
+        match self.resolve.as_ref() {
             Some(name) => name.fmt(f),
             None => self.logical.dst.fmt(f),
         }
@@ -96,7 +96,7 @@ impl std::fmt::Display for HttpConcrete {
 impl From<HttpLogical> for HttpConcrete {
     fn from(logical: HttpLogical) -> Self {
         Self {
-            name: None,
+            resolve: None,
             logical,
         }
     }
@@ -423,6 +423,12 @@ impl From<(Option<profiles::Receiver>, HttpLogical)> for Profile {
 impl AsRef<Addr> for Profile {
     fn as_ref(&self) -> &Addr {
         &self.logical.dst
+    }
+}
+
+impl Into<Addr> for &'_ Profile {
+    fn into(self) -> Addr {
+        self.logical.dst.clone()
     }
 }
 

@@ -1,6 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_addr::NameAddr;
+use linkerd2_addr::Addr;
 use linkerd2_error::Error;
 use std::{
     future::Future,
@@ -25,7 +25,7 @@ pub struct Profile {
 
 #[derive(Clone, Debug)]
 pub struct Target {
-    pub name: NameAddr,
+    pub addr: Addr,
     pub weight: u32,
 }
 

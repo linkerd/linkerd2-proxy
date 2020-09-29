@@ -1,7 +1,7 @@
 use crate::{Profile, Receiver, Target};
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
-use linkerd2_addr::NameAddr;
+use linkerd2_addr::Addr;
 use linkerd2_error::Error;
 use linkerd2_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
@@ -46,8 +46,8 @@ enum Inner<T, N, S, Req> {
         target: T,
         new_service: N,
         distribution: WeightedIndex<u32>,
-        addrs: IndexSet<Option<NameAddr>>,
-        services: ReadyCache<Option<NameAddr>, S, Req>,
+        addrs: IndexSet<Addr>,
+        services: ReadyCache<Addr, S, Req>,
     },
 }
 
@@ -64,7 +64,8 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
     T: AsRef<Option<Receiver>> + Clone,
-    N: NewService<(Option<NameAddr>, T), Service = S> + Clone,
+    for<'t> &'t T: Into<Addr>,
+    N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
@@ -74,27 +75,22 @@ where
         let inner = match target.as_ref().clone() {
             None => Inner::Default(self.inner.new_service((None, target))),
             Some(rx) => {
-                let targets = rx.borrow().targets.clone();
+                let mut targets = rx.borrow().targets.clone();
+                if targets.len() == 0 {
+                    let addr = (&target).into();
+                    targets.push(Target { addr, weight: 1 })
+                }
+
+                let mut addrs = IndexSet::with_capacity(targets.len());
+                let mut weights = Vec::with_capacity(targets.len());
+                let mut services = ReadyCache::default();
                 let mut new_service = self.inner.clone();
 
-                let mut addrs = IndexSet::with_capacity(targets.len().max(1));
-                let mut weights = Vec::with_capacity(targets.len().max(1));
-                let mut services = ReadyCache::default();
-
-                // Create an updated distribution and set of services.
-                if targets.len() == 0 {
-                    services.push(None, new_service.new_service((None, target.clone())));
-                    addrs.insert(None);
-                    weights.push(1);
-                } else {
-                    for Target { weight, name } in targets.into_iter() {
-                        services.push(
-                            Some(name.clone()),
-                            new_service.new_service((Some(name.clone()), target.clone())),
-                        );
-                        addrs.insert(Some(name));
-                        weights.push(weight);
-                    }
+                for Target { weight, addr } in targets.into_iter() {
+                    let svc = new_service.new_service((Some(addr.clone()), target.clone()));
+                    services.push(addr.clone(), svc);
+                    addrs.insert(addr);
+                    weights.push(weight);
                 }
 
                 Inner::Split {
@@ -117,7 +113,8 @@ impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
     T: Clone,
-    N: NewService<(Option<NameAddr>, T), Service = S> + Clone,
+    for<'t> &'t T: Into<Addr>,
+    N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
@@ -146,39 +143,30 @@ where
 
                 // Every time the profile updates, rebuild the distribution, reusing
                 // services that existed in the prior state.
-                if let Some(Profile { targets, .. }) = update {
+                if let Some(Profile { mut targets, .. }) = update {
                     debug!(?targets, "Updating");
 
-                    let mut prior_addrs =
-                        std::mem::replace(addrs, IndexSet::with_capacity(targets.len().max(1)));
-                    let mut weights = Vec::with_capacity(targets.len().max(1));
-
                     if targets.len() == 0 {
+                        let addr = target.into();
+                        targets.push(Target { addr, weight: 1 });
+                    }
+
+                    let mut prior_addrs =
+                        std::mem::replace(addrs, IndexSet::with_capacity(targets.len()));
+                    let mut weights = Vec::with_capacity(targets.len());
+
+                    // Create an updated distribution and set of services.
+                    for Target { weight, addr } in targets.into_iter() {
                         // Reuse the prior services whenever possible.
-                        if !prior_addrs.remove(&None) {
-                            debug!("Creating default target");
-                            let svc = new_service.new_service((None, target.clone()));
-                            services.push(None, svc);
+                        if !prior_addrs.remove(&addr) {
+                            debug!(%addr, "Creating target");
+                            let svc = new_service.new_service((Some(addr.clone()), target.clone()));
+                            services.push(addr.clone(), svc);
                         } else {
-                            debug!("Default target already exists");
+                            trace!(%addr, "Target already exists");
                         }
-                        addrs.insert(None);
-                        weights.push(1);
-                    } else {
-                        // Create an updated distribution and set of services.
-                        for Target { weight, name } in targets.into_iter() {
-                            let addr = Some(name.clone());
-                            // Reuse the prior services whenever possible.
-                            if !prior_addrs.remove(&addr) {
-                                debug!(%name, "Creating target");
-                                let svc = new_service.new_service((addr.clone(), target.clone()));
-                                services.push(addr.clone(), svc);
-                            } else {
-                                trace!(%name, "Target already exists");
-                            }
-                            addrs.insert(addr);
-                            weights.push(weight);
-                        }
+                        addrs.insert(addr);
+                        weights.push(weight);
                     }
 
                     *distribution = WeightedIndex::new(weights).unwrap();

@@ -20,8 +20,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, NameAddr, ProxyMetrics, StackMetrics,
-    TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;
@@ -313,9 +313,9 @@ impl Config {
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
             .into_new_service()
-            .instrument(|c: &HttpConcrete| match c.name.as_ref() {
+            .instrument(|c: &HttpConcrete| match c.resolve.as_ref() {
                 None => info_span!("concrete"),
-                Some(name) => info_span!("concrete", %name),
+                Some(addr) => info_span!("concrete", %addr),
             })
             .check_new_service::<HttpConcrete, http::Request<_>>();
 
@@ -330,10 +330,11 @@ impl Config {
         // the cached service is dropped. In-flight streams will continue to be
         // processed.
         let logical = concrete
-            // Uses the split-provided target `Addr` to build a concrete target.
-            .push_map_target(HttpConcrete::from)
             .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
-            .check_new_service::<(Option<NameAddr>, endpoint::Profile), http::Request<_>>()
+            // Uses the split-provided target `Addr` to build a concrete target.
+            .check_new_service::<HttpConcrete, http::Request<_>>()
+            .push_map_target(HttpConcrete::from)
+            .check_new_service::<(Option<Addr>, endpoint::Profile), http::Request<_>>()
             .push(profiles::split::layer())
             .check_new_service::<endpoint::Profile, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
