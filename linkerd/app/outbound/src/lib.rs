@@ -507,6 +507,7 @@ impl Config {
             )
             .push_on_response(
                 svc::layers()
+                    .push_failfast(dispatch_timeout)
                     .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             )
             .check_new::<endpoint::TcpLogical>()
