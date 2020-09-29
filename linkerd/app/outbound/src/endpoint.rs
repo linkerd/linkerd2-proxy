@@ -23,8 +23,8 @@ pub struct FromMetadata;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct HttpAccept {
-    orig_dst: SocketAddr,
-    version: http::Version,
+    pub orig_dst: SocketAddr,
+    pub version: http::Version,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

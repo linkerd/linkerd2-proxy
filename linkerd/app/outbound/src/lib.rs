@@ -487,7 +487,7 @@ impl Config {
                     .box_http_response(),
             )
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|_: &_| debug_span!("source"))
+            .instrument(|a: &endpoint::HttpAccept| info_span!("http", version=%a.version))
             .push_map_target(endpoint::HttpAccept::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
@@ -495,7 +495,7 @@ impl Config {
         let tcp_forward = svc::stack(tcp_connect.clone())
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .instrument(|_: &TcpEndpoint| info_span!("forward"))
+            .instrument(|_: &TcpEndpoint| debug_span!("forward"))
             .check_new::<TcpEndpoint>();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
@@ -513,6 +513,7 @@ impl Config {
                     .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             )
             .check_new::<endpoint::TcpLogical>()
+            .instrument(|_: &_| info_span!("tcp"))
             .into_inner();
 
         let http = svc::stack(http::DetectHttp::new(
@@ -531,7 +532,10 @@ impl Config {
         svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
             http,
-            tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
+            tcp_forward
+                .push_map_target(TcpEndpoint::from)
+                .instrument(|_: &_| info_span!("tcp"))
+                .into_inner(),
         ))
         .cache(
             svc::layers().push_on_response(

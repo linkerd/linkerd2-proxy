@@ -15,8 +15,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::{util::ServiceExt, Service};
-use tracing::{debug, info_span};
-use tracing_futures::Instrument;
+use tracing::debug;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
@@ -146,13 +145,13 @@ where
                     svc
                 };
 
-                // Enable support for HTTP upgrades (CONNECT and websockets).
                 let conn = self
                     .server
                     .clone()
                     .http1_only(true)
                     .serve_connection(
                         io,
+                        // Enable support for HTTP upgrades (CONNECT and websockets).
                         HyperServerSvc::new(upgrade::Service::new(http1, self.drain.clone())),
                     )
                     .with_upgrades();
@@ -161,8 +160,7 @@ where
                     self.drain
                         .clone()
                         .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .err_into::<Error>()
-                        .instrument(info_span!("h1")),
+                        .err_into::<Error>(),
                 )
             }
 
@@ -188,8 +186,7 @@ where
                     self.drain
                         .clone()
                         .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .err_into::<Error>()
-                        .instrument(info_span!("h2")),
+                        .err_into::<Error>(),
                 )
             }
 
@@ -204,11 +201,10 @@ where
                 };
 
                 Box::pin(
-                    self.drain.clone().ignore_signal().release_after(
-                        tcp.oneshot(io)
-                            .err_into::<Error>()
-                            .instrument(info_span!("tcp")),
-                    ),
+                    self.drain
+                        .clone()
+                        .ignore_signal()
+                        .release_after(tcp.oneshot(io).err_into::<Error>()),
                 )
             }
         }

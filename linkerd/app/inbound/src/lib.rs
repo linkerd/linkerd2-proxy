@@ -27,7 +27,7 @@ use linkerd2_app_core::{
 };
 use std::collections::HashMap;
 use tokio::{net::TcpStream, sync::mpsc};
-use tracing::debug_span;
+use tracing::{debug_span, info_span};
 
 pub mod endpoint;
 mod prevent_loop;
@@ -95,6 +95,7 @@ impl Config {
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .instrument(|_: &_| info_span!("tcp"))
             .into_inner();
 
         let accept = self.build_accept(
@@ -363,8 +364,10 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .instrument(|_: &_| debug_span!("source"))
             .push_map_target(|(_, accept): (http::Version, tls::accept::Meta)| accept)
+            .instrument(
+                |(version, _): &(http::Version, tls::accept::Meta)| info_span!("http", %version),
+            )
             .check_new_service::<(http::Version, tls::accept::Meta), http::Request<_>>()
             .into_inner();
 
