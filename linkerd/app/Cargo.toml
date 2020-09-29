@@ -26,7 +26,7 @@ linkerd2-opencensus = { path = "../opencensus" }
 linkerd2-error = { path = "../error" }
 regex = "1.0.0"
 tokio = { version = "0.2", features = ["rt-util"] }
-tonic = { version = "0.2", default-features = false, features = ["prost"] }
+tonic = { version = "0.3", default-features = false, features = ["prost"] }
 tower = "0.3"
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"]}
@@ -38,7 +38,7 @@ h2 = "0.2.6"
 http = "0.2"
 hyper = "0.13.7"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.13", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.14", features = ["arbitrary"] }
 quickcheck = { version = "0.9", default-features = false }
 ring = "0.16"
 rustls = "0.17"

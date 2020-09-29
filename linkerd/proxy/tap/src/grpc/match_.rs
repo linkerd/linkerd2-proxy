@@ -229,7 +229,7 @@ impl TryFrom<observe_request::r#match::tcp::Netmask> for NetMatch {
                 NetMatch::Net4(net)
             }
             ip_address::Ip::Ipv6(n) => {
-                let ip = (&n).into();
+                let ip = n.into();
                 let net = Ipv6Net::new(ip, mask).map_err(|_| InvalidMatch::InvalidNetwork)?;
                 NetMatch::Net6(net)
             }

@@ -523,7 +523,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
         } else {
             api::tap_event::ProxyDirection::Inbound.into()
         },
-        source: inspect.src_addr(req).as_ref().map(|a| a.into()),
+        source: inspect.src_addr(req).map(|a| a.into()),
         source_meta: {
             let mut m = api::tap_event::EndpointMeta::default();
             match inspect.src_tls(req) {
@@ -538,7 +538,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
             }
             Some(m)
         },
-        destination: inspect.dst_addr(req).as_ref().map(|a| a.into()),
+        destination: inspect.dst_addr(req).map(|a| a.into()),
         destination_meta: inspect.dst_labels(req).map(|labels| {
             let mut m = api::tap_event::EndpointMeta::default();
             m.labels
