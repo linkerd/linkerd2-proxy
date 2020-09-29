@@ -477,8 +477,6 @@ impl Config {
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
             .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
-            // Used by tap.
-            //FIXME .push_http_insert_target()
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
@@ -486,9 +484,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
             .instrument(|_: &_| debug_span!("source"))
             .push_map_target(endpoint::HttpAccept::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
