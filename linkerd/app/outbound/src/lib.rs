@@ -116,10 +116,12 @@ impl Config {
                 endpoint::FromMetadata,
                 resolve,
             )))
-            .check_service::<endpoint::TcpLogical>()
-            .push_on_response(svc::layers().push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push(svc::layer::mk(tcp::Forward::new)))
-            .check_make_service::<endpoint::TcpLogical, I>()
+            .push(discover::buffer(1_000, self.proxy.cache_max_idle_age))
+            .push_on_response(
+                svc::layers()
+                    .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                .push(svc::layer::mk(tcp::Forward::new))
+            )
             .into_new_service()
             .check_new_service::<endpoint::TcpLogical, I>()
     }
