@@ -478,7 +478,7 @@ impl Config {
             .push(router::Layer::new(LogicalPerRequest::from))
             .check_new_service::<listen::Addrs, http::Request<_>>()
             // Used by tap.
-            .push_http_insert_target()
+            //FIXME .push_http_insert_target()
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
@@ -489,7 +489,6 @@ impl Config {
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .instrument(|_: &listen::Addrs| debug_span!("source"))
             .check_new_service::<listen::Addrs, http::Request<_>>()
-            .into_make_service()
             .into_inner();
 
         let tcp_forward = svc::stack(tcp_connect.clone())
@@ -507,16 +506,7 @@ impl Config {
                     .into_inner(),
                 is_discovery_rejected,
             )
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .instrument(|_: &_| info_span!("tcp"))
+            .into_new_service()
             .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 
@@ -538,6 +528,13 @@ impl Config {
             http,
             tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
         ))
+        .cache(
+            svc::layers().push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+            ),
+        )
         .push(metrics.transport.layer_accept(TransportLabels))
         .into_inner()
     }
