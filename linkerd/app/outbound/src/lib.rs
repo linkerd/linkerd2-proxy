@@ -120,7 +120,7 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                .push(svc::layer::mk(tcp::Forward::new))
+                    .push(svc::layer::mk(tcp::Forward::new))
             )
             .into_new_service()
             .check_new_service::<endpoint::TcpLogical, I>()
