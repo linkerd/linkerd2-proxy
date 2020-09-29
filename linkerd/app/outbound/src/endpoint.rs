@@ -14,7 +14,7 @@ use linkerd2_app_core::{
     },
     router,
     transport::{listen, tls},
-    Addr, Conditional, L5D_REQUIRE_ID,
+    Addr, Conditional, NameAddr, L5D_REQUIRE_ID,
 };
 use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 
@@ -31,7 +31,7 @@ pub struct HttpLogical {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpConcrete {
-    pub dst: Addr,
+    pub name: Option<NameAddr>,
     pub logical: HttpLogical,
 }
 
@@ -40,7 +40,7 @@ pub struct LogicalPerRequest(listen::Addrs);
 
 #[derive(Clone, Debug)]
 pub struct Profile {
-    pub rx: profiles::Receiver,
+    pub rx: Option<profiles::Receiver>,
     pub logical: HttpLogical,
 }
 
@@ -68,15 +68,18 @@ pub struct TcpLogical {
 
 // === impl HttpConrete ===
 
-impl From<(Addr, Profile)> for HttpConcrete {
-    fn from((dst, Profile { logical, .. }): (Addr, Profile)) -> Self {
-        Self { dst, logical }
+impl From<(Option<NameAddr>, Profile)> for HttpConcrete {
+    fn from((name, Profile { logical, .. }): (Option<NameAddr>, Profile)) -> Self {
+        Self { name, logical }
     }
 }
 
 impl Into<Addr> for &'_ HttpConcrete {
     fn into(self) -> Addr {
-        self.dst.clone()
+        self.name
+            .clone()
+            .map(Into::into)
+            .unwrap_or(self.logical.orig_dst.into())
     }
 }
 
@@ -88,18 +91,21 @@ impl Into<SocketAddr> for &'_ HttpConcrete {
 
 impl std::fmt::Display for HttpConcrete {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.dst.fmt(f)
-    }
-}
-
-impl From<HttpLogical> for HttpConcrete {
-    fn from(logical: HttpLogical) -> Self {
-        Self {
-            dst: logical.dst.clone(),
-            logical,
+        match self.name.as_ref() {
+            Some(name) => name.fmt(f),
+            None => self.logical.dst.fmt(f),
         }
     }
 }
+
+// impl From<HttpLogical> for HttpConcrete {
+//     fn from(logical: HttpLogical) -> Self {
+//         Self {
+//             name: Some(logical.dst.clone()),
+//             logical,
+//         }
+//     }
+// }
 
 // === impl HttpLogical ===
 
@@ -142,25 +148,25 @@ impl AsMut<Addr> for HttpLogical {
 
 // === impl HttpEndpoint ===
 
-impl From<HttpLogical> for HttpEndpoint {
-    fn from(logical: HttpLogical) -> Self {
-        Self {
-            addr: logical.orig_dst,
-            settings: logical.version.into(),
-            identity: logical
-                .require_identity
-                .clone()
-                .map(Conditional::Some)
-                .unwrap_or_else(|| {
-                    Conditional::None(
-                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
-                    )
-                }),
-            concrete: logical.into(),
-            metadata: Metadata::default(),
-        }
-    }
-}
+// impl From<HttpLogical> for HttpEndpoint {
+//     fn from(logical: HttpLogical) -> Self {
+//         Self {
+//             addr: logical.orig_dst,
+//             settings: logical.version.into(),
+//             identity: logical
+//                 .require_identity
+//                 .clone()
+//                 .map(Conditional::Some)
+//                 .unwrap_or_else(|| {
+//                     Conditional::None(
+//                         tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+//                     )
+//                 }),
+//             concrete: logical.into(),
+//             metadata: Metadata::default(),
+//         }
+//     }
+// }
 
 impl std::hash::Hash for HttpEndpoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -444,8 +450,8 @@ pub fn route((route, profile): (profiles::http::Route, Profile)) -> dst::Route {
 
 // === impl Profile ===
 
-impl From<(profiles::Receiver, HttpLogical)> for Profile {
-    fn from((rx, logical): (profiles::Receiver, HttpLogical)) -> Self {
+impl From<(Option<profiles::Receiver>, HttpLogical)> for Profile {
+    fn from((rx, logical): (Option<profiles::Receiver>, HttpLogical)) -> Self {
         Self { rx, logical }
     }
 }
@@ -456,8 +462,8 @@ impl AsRef<Addr> for Profile {
     }
 }
 
-impl AsRef<profiles::Receiver> for Profile {
-    fn as_ref(&self) -> &profiles::Receiver {
+impl AsRef<Option<profiles::Receiver>> for Profile {
+    fn as_ref(&self) -> &Option<profiles::Receiver> {
         &self.rx
     }
 }
