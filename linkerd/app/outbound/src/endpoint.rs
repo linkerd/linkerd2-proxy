@@ -172,7 +172,7 @@ impl Into<http::client::Settings> for &'_ HttpEndpoint {
 }
 
 impl tap::Inspect for HttpEndpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+    fn src_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
         None
     }
 
