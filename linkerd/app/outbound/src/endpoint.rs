@@ -86,6 +86,18 @@ impl Into<SocketAddr> for &'_ TcpLogical {
     }
 }
 
+impl Into<Addr> for &'_ TcpLogical {
+    fn into(self) -> Addr {
+        self.addr.into()
+    }
+}
+
+impl std::fmt::Display for TcpLogical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.addr.fmt(f)
+    }
+}
+
 // === impl HttpAccept ===
 
 impl From<(http::Version, TcpLogical)> for HttpAccept {
@@ -114,6 +126,12 @@ impl From<(Addr, Profile)> for HttpConcrete {
 impl AsRef<Addr> for HttpConcrete {
     fn as_ref(&self) -> &Addr {
         &self.dst
+    }
+}
+
+impl Into<Addr> for &'_ HttpConcrete {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 
@@ -150,6 +168,12 @@ impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
 impl Into<SocketAddr> for HttpLogical {
     fn into(self) -> SocketAddr {
         self.orig_dst
+    }
+}
+
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 
