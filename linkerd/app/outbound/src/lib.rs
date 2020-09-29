@@ -361,23 +361,11 @@ impl Config {
             .push(profiles::discover::layer(profiles_client))
             .check_new_service::<HttpLogical, http::Request<_>>();
 
-        // Caches clients that bypass discovery/balancing.
-        let forward = svc::stack(endpoint)
-            .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
-            .check_new_service::<HttpEndpoint, http::Request<_>>();
-
         // Attempts to route route request to a logical services that uses
         // control plane for discovery. If the discovery is rejected, the
         // `forward` stack is used instead, bypassing load balancing, etc.
         logical
             .push_on_response(svc::layers().box_http_response())
-            .push_fallback_with_predicate(
-                forward
-                    .push_map_target(HttpEndpoint::from)
-                    .push_on_response(svc::layers().box_http_response().box_http_request())
-                    .into_inner(),
-                is_discovery_rejected,
-            )
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()

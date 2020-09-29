@@ -247,14 +247,9 @@ impl Config {
             .push_on_response(svc::layers().box_http_response())
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
 
-        let forward = target
-            .instrument(|_: &Target| debug_span!("forward"))
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>();
-
         // Attempts to resolve the target as a service profile or, if that
         // fails, skips that stack to forward to the local endpoint.
         profile
-            .push_fallback(forward)
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             // If the traffic is targeted at the inbound port, send it through
             // the loopback service (i.e. as a gateway).
