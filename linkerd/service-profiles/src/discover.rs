@@ -24,7 +24,7 @@ where
     G: GetProfile<T>,
     G::Future: Send + 'static,
     G::Error: Send,
-    M: NewService<(Receiver, T)> + Clone + Send + 'static,
+    M: NewService<(Option<Receiver>, T)> + Clone + Send + 'static,
 {
     type Service = FutureService<
         Pin<Box<dyn Future<Output = Result<M::Service, G::Error>> + Send + 'static>>,

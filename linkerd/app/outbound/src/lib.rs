@@ -20,14 +20,10 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
-    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Conditional, DiscoveryRejected, Error, NameAddr, ProxyMetrics, StackMetrics,
+    TraceContextLayer, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -86,7 +82,7 @@ impl Config {
         connect: C,
         resolve: E,
     ) -> impl svc::NewService<
-        SocketAddr,
+        net::SocketAddr,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -125,7 +121,7 @@ impl Config {
             .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .into_new_service()
-            .check_new_service::<SocketAddr, I>()
+            .check_new_service::<net::SocketAddr, I>()
     }
 
     pub fn build_dns_refine(
@@ -134,7 +130,7 @@ impl Config {
         metrics: &StackMetrics,
     ) -> impl tower::Service<
         dns::Name,
-        Response = (dns::Name, IpAddr),
+        Response = (dns::Name, net::IpAddr),
         Error = Error,
         Future = impl Unpin + Send,
     > + Unpin
@@ -317,7 +313,10 @@ impl Config {
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
             .into_new_service()
-            .instrument(|c: &HttpConcrete| info_span!("concrete", dst = %c.dst))
+            .instrument(|c: &HttpConcrete| match c.name.as_ref() {
+                None => info_span!("concrete"),
+                Some(name) => info_span!("concrete", %name),
+            })
             .check_new_service::<HttpConcrete, http::Request<_>>();
 
         // For each logical target, performs service profile resolution and
@@ -334,7 +333,9 @@ impl Config {
             // Uses the split-provided target `Addr` to build a concrete target.
             .push_map_target(HttpConcrete::from)
             .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
+            .check_new_service::<(Option<NameAddr>, endpoint::Profile), http::Request<_>>()
             .push(profiles::split::layer())
+            .check_new_service::<endpoint::Profile, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
             .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))

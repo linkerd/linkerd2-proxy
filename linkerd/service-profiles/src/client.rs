@@ -2,7 +2,7 @@ use crate::{http, Profile, Receiver, Target};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
-use linkerd2_addr::Addr;
+use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
@@ -111,7 +111,7 @@ where
 
 impl<T, S, R> tower::Service<T> for Client<S, R>
 where
-    T: AsRef<Addr>,
+    T: ToString,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -121,7 +121,7 @@ where
     R: Recover + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
-    type Response = Receiver;
+    type Response = Option<Receiver>;
     type Error = Error;
     type Future = ProfileFuture<S, R>;
 
@@ -131,17 +131,8 @@ where
     }
 
     fn call(&mut self, dst: T) -> Self::Future {
-        let path = dst.as_ref().to_string();
-
-        let service = {
-            // In case the ready service holds resources, pass it into the
-            // response and use a new clone for the client.
-            let s = self.service.clone();
-            std::mem::replace(&mut self.service, s)
-        };
-
         let request = api::GetDestination {
-            path,
+            path: dst.to_string(),
             context_token: self.context_token.clone(),
             ..Default::default()
         };
@@ -149,8 +140,8 @@ where
         let timeout = time::delay_for(self.initial_timeout);
 
         let inner = Inner {
-            service,
             request,
+            service: self.service.clone(),
             recover: self.recover.clone(),
             state: State::Disconnected { backoff: None },
         };
@@ -172,7 +163,7 @@ where
     R::Backoff: Unpin,
     R::Backoff: Send,
 {
-    type Output = Result<Receiver, Error>;
+    type Output = Result<Option<Receiver>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
@@ -221,7 +212,7 @@ where
                                 trace!(?profile, "publishing");
                                 if tx.broadcast(profile).is_err() {
                                     trace!("failed to publish profile");
-                                    return
+                                    return;
                                 }
                             }
                         }
@@ -231,7 +222,7 @@ where
         };
         tokio::spawn(daemon.in_current_span());
 
-        Poll::Ready(Ok(rx))
+        Poll::Ready(Ok(Some(rx)))
     }
 }
 
@@ -355,9 +346,9 @@ fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
     if orig.weight == 0 {
         return None;
     }
-    let addr = Addr::from_str(orig.authority.as_str()).ok()?;
+    let name = NameAddr::from_str(orig.authority.as_str()).ok()?;
     Some(Target {
-        addr,
+        name,
         weight: orig.weight,
     })
 }

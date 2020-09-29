@@ -51,12 +51,12 @@ impl<E> Clone for PermitConfiguredDsts<E> {
 impl<T, E> request_filter::RequestFilter<T> for PermitConfiguredDsts<E>
 where
     E: Into<Error> + From<Addr>,
-    T: AsRef<Addr>,
+    for<'t> &'t T: Into<Addr>,
 {
     type Error = E;
 
     fn filter(&self, t: T) -> Result<T, Self::Error> {
-        let addr = t.as_ref();
+        let addr = (&t).into();
         let permitted = match addr {
             Addr::Name(ref name) => self
                 .name_suffixes
@@ -72,7 +72,7 @@ where
         if permitted {
             Ok(t)
         } else {
-            Err(E::from(addr.clone()))
+            Err(E::from(addr))
         }
     }
 }

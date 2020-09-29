@@ -14,7 +14,7 @@ use linkerd2_app_core::{
     },
     router,
     transport::{listen, tls},
-    Addr, Conditional, L5D_REQUIRE_ID,
+    Addr, Conditional, NameAddr, L5D_REQUIRE_ID,
 };
 use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 
@@ -31,7 +31,7 @@ pub struct HttpLogical {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpConcrete {
-    pub dst: Addr,
+    pub name: Option<NameAddr>,
     pub logical: HttpLogical,
 }
 
@@ -40,7 +40,7 @@ pub struct LogicalPerRequest(listen::Addrs);
 
 #[derive(Clone, Debug)]
 pub struct Profile {
-    pub rx: profiles::Receiver,
+    pub rx: Option<profiles::Receiver>,
     pub logical: HttpLogical,
 }
 
@@ -63,28 +63,40 @@ pub struct TcpEndpoint {
 
 // === impl HttpConrete ===
 
-impl From<(Addr, Profile)> for HttpConcrete {
-    fn from((dst, Profile { logical, .. }): (Addr, Profile)) -> Self {
-        Self { dst, logical }
+impl From<(Option<NameAddr>, Profile)> for HttpConcrete {
+    fn from((name, Profile { logical, .. }): (Option<NameAddr>, Profile)) -> Self {
+        Self { name, logical }
     }
 }
 
-impl AsRef<Addr> for HttpConcrete {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
+impl Into<Addr> for &'_ HttpConcrete {
+    fn into(self) -> Addr {
+        self.name
+            .clone()
+            .map(Into::into)
+            .unwrap_or_else(|| self.logical.dst.clone())
+    }
+}
+
+impl Into<SocketAddr> for &'_ HttpConcrete {
+    fn into(self) -> SocketAddr {
+        self.logical.orig_dst
     }
 }
 
 impl std::fmt::Display for HttpConcrete {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.dst.fmt(f)
+        match self.name.as_ref() {
+            Some(name) => name.fmt(f),
+            None => self.logical.dst.fmt(f),
+        }
     }
 }
 
 impl From<HttpLogical> for HttpConcrete {
     fn from(logical: HttpLogical) -> Self {
         Self {
-            dst: logical.dst.clone(),
+            name: None,
             logical,
         }
     }
@@ -108,6 +120,12 @@ impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
 impl Into<SocketAddr> for HttpLogical {
     fn into(self) -> SocketAddr {
         self.orig_dst
+    }
+}
+
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 
@@ -396,8 +414,8 @@ pub fn route((route, profile): (profiles::http::Route, Profile)) -> dst::Route {
 
 // === impl Profile ===
 
-impl From<(profiles::Receiver, HttpLogical)> for Profile {
-    fn from((rx, logical): (profiles::Receiver, HttpLogical)) -> Self {
+impl From<(Option<profiles::Receiver>, HttpLogical)> for Profile {
+    fn from((rx, logical): (Option<profiles::Receiver>, HttpLogical)) -> Self {
         Self { rx, logical }
     }
 }
@@ -408,8 +426,8 @@ impl AsRef<Addr> for Profile {
     }
 }
 
-impl AsRef<profiles::Receiver> for Profile {
-    fn as_ref(&self) -> &profiles::Receiver {
+impl AsRef<Option<profiles::Receiver>> for Profile {
+    fn as_ref(&self) -> &Option<profiles::Receiver> {
         &self.rx
     }
 }
