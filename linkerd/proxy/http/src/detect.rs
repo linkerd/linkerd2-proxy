@@ -69,7 +69,6 @@ impl<F, H> DetectHttp<F, H> {
 
 impl<T, F, H> NewService<T> for DetectHttp<F, H>
 where
-    T: Clone,
     F: NewService<T> + Clone,
     H: NewService<(HttpVersion, T)> + Clone,
 {

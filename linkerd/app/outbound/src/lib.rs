@@ -20,14 +20,10 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
     CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{
-    collections::HashMap,
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
+use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -86,7 +82,7 @@ impl Config {
         connect: C,
         resolve: E,
     ) -> impl svc::NewService<
-        SocketAddr,
+        endpoint::TcpLogical,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -103,15 +99,15 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
-        let ProxyConfig {
-            cache_max_idle_age, ..
-        } = self.proxy;
-
         svc::stack(connect)
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
@@ -120,12 +116,12 @@ impl Config {
                 endpoint::FromMetadata,
                 resolve,
             )))
-            .push(discover::buffer(1_000, cache_max_idle_age))
-            .push_map_target(Addr::from)
-            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .check_service::<endpoint::TcpLogical>()
+            .push_on_response(svc::layers().push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+            .push(svc::layer::mk(tcp::Forward::new)))
+            .check_make_service::<endpoint::TcpLogical, I>()
             .into_new_service()
-            .check_new_service::<SocketAddr, I>()
+            .check_new_service::<endpoint::TcpLogical, I>()
     }
 
     pub fn build_dns_refine(
@@ -134,7 +130,7 @@ impl Config {
         metrics: &StackMetrics,
     ) -> impl tower::Service<
         dns::Name,
-        Response = (dns::Name, IpAddr),
+        Response = (dns::Name, net::IpAddr),
         Error = Error,
         Future = impl Unpin + Send,
     > + Unpin
@@ -417,7 +413,11 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
@@ -476,7 +476,7 @@ impl Config {
             .check_make_service::<HttpLogical, http::Request<_>>()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<listen::Addrs, http::Request<_>>()
+            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
             // Used by tap.
             //FIXME .push_http_insert_target()
             .push_on_response(
@@ -486,16 +486,19 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
+            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|_: &listen::Addrs| debug_span!("source"))
-            .check_new_service::<listen::Addrs, http::Request<_>>()
+            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
+            .instrument(|_: &_| debug_span!("source"))
+            .push_map_target(endpoint::HttpAccept::from)
+            .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
 
         let tcp_forward = svc::stack(tcp_connect.clone())
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .instrument(|_: &TcpEndpoint| info_span!("forward"))
-            .check_service::<TcpEndpoint>();
+            .check_new::<TcpEndpoint>();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
@@ -506,8 +509,11 @@ impl Config {
                     .into_inner(),
                 is_discovery_rejected,
             )
-            .into_new_service()
-            .push_map_target(|a: listen::Addrs| a.target_addr())
+            .push_on_response(
+                svc::layers()
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+            )
+            .check_new::<endpoint::TcpLogical>()
             .into_inner();
 
         let http = svc::stack(http::DetectHttp::new(
@@ -516,17 +522,20 @@ impl Config {
             tcp_balance,
             drain.clone(),
         ))
+        .check_new::<endpoint::TcpLogical>()
         .push_on_response(transport::Prefix::layer(
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
         ))
-        .into_new_service()
         .into_inner();
 
         svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
             http,
-            tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
+            tcp_forward
+                .check_new::<TcpEndpoint>()
+                .push_map_target(TcpEndpoint::from)
+                .into_inner(),
         ))
         .cache(
             svc::layers().push_on_response(
@@ -535,6 +544,7 @@ impl Config {
                     .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             ),
         )
+        .push_map_target(endpoint::TcpLogical::from)
         .push(metrics.transport.layer_accept(TransportLabels))
         .into_inner()
     }
