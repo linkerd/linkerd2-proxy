@@ -12,7 +12,7 @@ linkerd2-metrics = { path = "../metrics" }
 linkerd2-stack = { path = "../stack" }
 opencensus-proto = { path = "../../opencensus-proto" }
 tokio = "0.2"
-tonic = { version = "0.2", default-features = false, features = ["prost", "codegen"] }
+tonic = { version = "0.3", default-features = false, features = ["prost", "codegen"] }
 tracing = "0.1.19"
 pin-project = "0.4"
 http = "0.2"

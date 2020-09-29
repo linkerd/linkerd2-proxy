@@ -114,15 +114,15 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
-impl AsRef<Addr> for Target {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
-    }
-}
-
 impl Into<Addr> for &'_ Target {
     fn into(self) -> Addr {
         self.dst.clone()
+    }
+}
+
+impl AsRef<Addr> for Target {
+    fn as_ref(&self) -> &Addr {
+        &self.dst
     }
 }
 

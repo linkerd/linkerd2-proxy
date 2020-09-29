@@ -16,10 +16,16 @@ use linkerd2_app_core::{
     transport::{listen, tls},
     Addr, Conditional, L5D_REQUIRE_ID,
 };
-use std::{convert::TryInto, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct HttpAccept {
+    pub orig_dst: SocketAddr,
+    pub version: http::Version,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct HttpLogical {
@@ -36,7 +42,7 @@ pub struct HttpConcrete {
 }
 
 #[derive(Clone, Debug)]
-pub struct LogicalPerRequest(listen::Addrs);
+pub struct LogicalPerRequest(HttpAccept);
 
 #[derive(Clone, Debug)]
 pub struct Profile {
@@ -53,12 +59,60 @@ pub struct HttpEndpoint {
     pub concrete: HttpConcrete,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TcpLogical {
+    pub addr: SocketAddr,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TcpEndpoint {
     pub dst: Addr,
     pub addr: SocketAddr,
     pub identity: tls::PeerIdentity,
     pub labels: Option<String>,
+}
+
+impl From<listen::Addrs> for TcpLogical {
+    fn from(addrs: listen::Addrs) -> Self {
+        Self {
+            addr: addrs.target_addr(),
+        }
+    }
+}
+
+impl Into<SocketAddr> for &'_ TcpLogical {
+    fn into(self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl Into<Addr> for &'_ TcpLogical {
+    fn into(self) -> Addr {
+        self.addr.into()
+    }
+}
+
+impl std::fmt::Display for TcpLogical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.addr.fmt(f)
+    }
+}
+
+// === impl HttpAccept ===
+
+impl From<(http::Version, TcpLogical)> for HttpAccept {
+    fn from((version, TcpLogical { addr }): (http::Version, TcpLogical)) -> Self {
+        Self {
+            version,
+            orig_dst: addr,
+        }
+    }
+}
+
+impl Into<SocketAddr> for &'_ HttpAccept {
+    fn into(self) -> SocketAddr {
+        self.orig_dst
+    }
 }
 
 // === impl HttpConrete ===
@@ -130,15 +184,15 @@ impl Into<SocketAddr> for HttpLogical {
     }
 }
 
-impl AsRef<Addr> for HttpLogical {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
-    }
-}
-
 impl Into<Addr> for &'_ HttpLogical {
     fn into(self) -> Addr {
         self.dst.clone()
+    }
+}
+
+impl AsRef<Addr> for HttpLogical {
+    fn as_ref(&self) -> &Addr {
+        &self.dst
     }
 }
 
@@ -197,8 +251,8 @@ impl Into<http::client::Settings> for &'_ HttpEndpoint {
 }
 
 impl tap::Inspect for HttpEndpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<listen::Addrs>().map(|s| s.peer())
+    fn src_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
+        None
     }
 
     fn src_tls<'a, B>(
@@ -304,9 +358,9 @@ impl From<SocketAddr> for TcpEndpoint {
     }
 }
 
-impl From<listen::Addrs> for TcpEndpoint {
-    fn from(addrs: listen::Addrs) -> Self {
-        addrs.target_addr().into()
+impl From<TcpLogical> for TcpEndpoint {
+    fn from(l: TcpLogical) -> Self {
+        l.addr.into()
     }
 }
 
@@ -334,11 +388,16 @@ impl Into<EndpointLabels> for TcpEndpoint {
     }
 }
 
-impl MapEndpoint<Addr, Metadata> for FromMetadata {
+impl MapEndpoint<TcpLogical, Metadata> for FromMetadata {
     type Out = TcpEndpoint;
 
-    fn map_endpoint(&self, dst: &Addr, addr: SocketAddr, metadata: Metadata) -> Self::Out {
-        tracing::debug!(%dst, %addr, ?metadata, "Resolved endpoint");
+    fn map_endpoint(
+        &self,
+        logical: &TcpLogical,
+        addr: SocketAddr,
+        metadata: Metadata,
+    ) -> Self::Out {
+        tracing::debug!(?logical, %addr, ?metadata, "Resolved endpoint");
         let identity = metadata
             .identity()
             .cloned()
@@ -350,7 +409,7 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
         TcpEndpoint {
             addr,
             identity,
-            dst: dst.clone(),
+            dst: logical.addr.into(),
             labels: prefix_labels("dst", metadata.labels().into_iter()),
         }
     }
@@ -358,9 +417,9 @@ impl MapEndpoint<Addr, Metadata> for FromMetadata {
 
 // === impl LogicalPerRequest ===
 
-impl From<listen::Addrs> for LogicalPerRequest {
-    fn from(t: listen::Addrs) -> Self {
-        LogicalPerRequest(t)
+impl From<HttpAccept> for LogicalPerRequest {
+    fn from(accept: HttpAccept) -> Self {
+        LogicalPerRequest(accept)
     }
 }
 
@@ -390,7 +449,7 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
                 })
             })
             .unwrap_or_else(|_| {
-                let addr = self.0.target_addr();
+                let addr = self.0.orig_dst;
                 tracing::debug!(%addr, "using socket target");
                 addr.into()
             });
@@ -401,12 +460,9 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
 
         HttpLogical {
             dst,
-            orig_dst: self.0.target_addr(),
+            orig_dst: self.0.orig_dst,
             require_identity,
-            version: req
-                .version()
-                .try_into()
-                .expect("HTTP version must be valid"),
+            version: self.0.version,
         }
     }
 }

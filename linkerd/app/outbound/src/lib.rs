@@ -82,7 +82,7 @@ impl Config {
         connect: C,
         resolve: E,
     ) -> impl svc::NewService<
-        net::SocketAddr,
+        endpoint::TcpLogical,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -99,15 +99,15 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
-        let ProxyConfig {
-            cache_max_idle_age, ..
-        } = self.proxy;
-
         svc::stack(connect)
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
@@ -116,12 +116,14 @@ impl Config {
                 endpoint::FromMetadata,
                 resolve,
             )))
-            .push(discover::buffer(1_000, cache_max_idle_age))
-            .push_map_target(Addr::from)
-            .push_on_response(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .push(discover::buffer(1_000, self.proxy.cache_max_idle_age))
+            .push_on_response(
+                svc::layers()
+                    .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(svc::layer::mk(tcp::Forward::new))
+            )
             .into_new_service()
-            .check_new_service::<net::SocketAddr, I>()
+            .check_new_service::<endpoint::TcpLogical, I>()
     }
 
     pub fn build_dns_refine(
@@ -407,7 +409,11 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        E: Resolve<Addr, Endpoint = proxy::api_resolve::Metadata> + Unpin + Clone + Send + 'static,
+        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+            + Unpin
+            + Clone
+            + Send
+            + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
         R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
@@ -466,9 +472,7 @@ impl Config {
             .check_make_service::<HttpLogical, http::Request<_>>()
             .push_timeout(dispatch_timeout)
             .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<listen::Addrs, http::Request<_>>()
-            // Used by tap.
-            .push_http_insert_target()
+            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
@@ -477,37 +481,33 @@ impl Config {
                     .box_http_response(),
             )
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|_: &listen::Addrs| debug_span!("source"))
-            .check_new_service::<listen::Addrs, http::Request<_>>()
-            .into_make_service()
+            .instrument(|a: &endpoint::HttpAccept| info_span!("http", version=%a.version))
+            .push_map_target(endpoint::HttpAccept::from)
+            .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
 
         let tcp_forward = svc::stack(tcp_connect.clone())
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .instrument(|_: &TcpEndpoint| info_span!("forward"))
-            .check_service::<TcpEndpoint>();
+            .instrument(|_: &TcpEndpoint| debug_span!("forward"))
+            .check_new::<TcpEndpoint>();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
             .push_fallback_with_predicate(
-                svc::stack(tcp_forward.clone())
-                    .check_new::<TcpEndpoint>()
+                tcp_forward
+                    .clone()
                     .push_map_target(TcpEndpoint::from)
                     .into_inner(),
                 is_discovery_rejected,
             )
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-                ),
+            .push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
+            .check_new::<endpoint::TcpLogical>()
             .instrument(|_: &_| info_span!("tcp"))
-            .push_map_target(|a: listen::Addrs| a.target_addr())
             .into_inner();
 
         let http = svc::stack(http::DetectHttp::new(
@@ -516,18 +516,29 @@ impl Config {
             tcp_balance,
             drain.clone(),
         ))
+        .check_new::<endpoint::TcpLogical>()
         .push_on_response(transport::Prefix::layer(
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
         ))
-        .into_new_service()
         .into_inner();
 
         svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
             http,
-            tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
+            tcp_forward
+                .push_map_target(TcpEndpoint::from)
+                .instrument(|_: &_| info_span!("tcp"))
+                .into_inner(),
         ))
+        .cache(
+            svc::layers().push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+            ),
+        )
+        .push_map_target(endpoint::TcpLogical::from)
         .push(metrics.transport.layer_accept(TransportLabels))
         .into_inner()
     }

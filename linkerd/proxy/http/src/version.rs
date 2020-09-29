@@ -62,11 +62,23 @@ impl Version {
     }
 }
 
+// A convenience for tracing contexts.
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Http1 => write!(f, "http/1.x"),
+            Self::H2 => write!(f, "h2"),
+        }
+    }
+}
+
 impl std::fmt::Display for Unsupported {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Unsupported HTTP version")
     }
 }
+
+impl std::error::Error for Unsupported {}
 
 #[cfg(test)]
 #[test]
