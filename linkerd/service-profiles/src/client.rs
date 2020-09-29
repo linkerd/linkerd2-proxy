@@ -2,7 +2,7 @@ use crate::{http, Profile, Receiver, Target};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
-use linkerd2_addr::Addr;
+use linkerd2_addr::{Addr, NameAddr};
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
@@ -352,9 +352,9 @@ fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
     if orig.weight == 0 {
         return None;
     }
-    let addr = Addr::from_str(orig.authority.as_str()).ok()?;
+    let name = NameAddr::from_str(orig.authority.as_str()).ok()?;
     Some(Target {
-        addr,
+        name,
         weight: orig.weight,
     })
 }
