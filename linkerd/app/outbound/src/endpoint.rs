@@ -173,7 +173,7 @@ impl Into<http::client::Settings> for &'_ HttpEndpoint {
 
 impl tap::Inspect for HttpEndpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<listen::Addrs>().map(|s| s.peer())
+        None
     }
 
     fn src_tls<'a, B>(
