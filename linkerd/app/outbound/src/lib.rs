@@ -501,8 +501,8 @@ impl Config {
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
             .push_fallback_with_predicate(
-                svc::stack(tcp_forward.clone())
-                    .check_new::<TcpEndpoint>()
+                tcp_forward
+                    .clone()
                     .push_map_target(TcpEndpoint::from)
                     .into_inner(),
                 is_discovery_rejected,
@@ -531,10 +531,7 @@ impl Config {
         svc::stack(svc::stack::MakeSwitch::new(
             skip_detect.clone(),
             http,
-            tcp_forward
-                .check_new::<TcpEndpoint>()
-                .push_map_target(TcpEndpoint::from)
-                .into_inner(),
+            tcp_forward.push_map_target(TcpEndpoint::from).into_inner(),
         ))
         .cache(
             svc::layers().push_on_response(
