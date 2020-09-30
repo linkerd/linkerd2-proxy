@@ -6,7 +6,7 @@ use linkerd2_app_core::{
         api_resolve as api,
         resolve::{self, recover},
     },
-    DiscoveryRejected, Error, Recover,
+    Error, Recover,
 };
 use tonic::{
     body::{Body, BoxBody},
@@ -46,16 +46,15 @@ impl From<ExponentialBackoff> for BackoffUnlessInvalidArgument {
 impl Recover<Error> for BackoffUnlessInvalidArgument {
     type Backoff = ExponentialBackoffStream;
 
-    fn recover(&self, err: Error) -> Result<Self::Backoff, Error> {
-        match err.downcast::<Status>() {
-            Ok(ref status) if status.code() == Code::InvalidArgument => {
-                tracing::debug!(message = "cannot recover", %status);
-                return Err(DiscoveryRejected::default().into());
+    fn recover(&self, error: Error) -> Result<Self::Backoff, Error> {
+        if let Some(status) = error.downcast_ref::<Status>() {
+            if status.code() == Code::InvalidArgument {
+                tracing::debug!(%status, "Cannot recover");
+                return Err(error);
             }
-            Ok(status) => tracing::trace!(message = "recovering", %status),
-            Err(error) => tracing::trace!(message = "recovering", %error),
         }
 
+        tracing::trace!(%error, "Recovering");
         Ok(self.0.stream())
     }
 }

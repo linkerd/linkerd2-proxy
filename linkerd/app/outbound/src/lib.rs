@@ -20,8 +20,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, DiscoveryRejected, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
-    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;
@@ -494,13 +494,6 @@ impl Config {
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
-            .push_fallback_with_predicate(
-                tcp_forward
-                    .clone()
-                    .push_map_target(TcpEndpoint::from)
-                    .into_inner(),
-                is_discovery_rejected,
-            )
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
@@ -580,16 +573,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     let mut l = HashMap::new();
     l.insert("direction".to_string(), "outbound".to_string());
     l
-}
-
-fn is_discovery_rejected(err: &Error) -> bool {
-    fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-        err.is::<DiscoveryRejected>() || err.source().map(is_rejected).unwrap_or(false)
-    }
-
-    let rejected = is_rejected(&**err);
-    tracing::debug!(rejected, %err);
-    rejected
 }
 
 fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {

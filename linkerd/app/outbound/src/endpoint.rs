@@ -219,7 +219,7 @@ impl From<HttpLogical> for HttpEndpoint {
                     )
                 }),
             concrete: logical.into(),
-            metadata: Metadata::empty(),
+            metadata: Metadata::default(),
         }
     }
 }

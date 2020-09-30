@@ -100,17 +100,6 @@ pub struct ProxyMetrics {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DiscoveryRejected(());
-
-impl std::fmt::Display for DiscoveryRejected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "discovery rejected")
-    }
-}
-
-impl std::error::Error for DiscoveryRejected {}
-
-#[derive(Clone, Debug, Default)]
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 impl From<indexmap::IndexSet<u16>> for SkipByPort {

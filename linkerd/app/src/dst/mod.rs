@@ -1,7 +1,10 @@
 mod default_profile;
+mod default_resolve;
 mod permit;
 mod resolve;
 
+use self::default_profile::RecoverDefaultProfile;
+use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     control, dns, profiles, proxy::identity, request_filter, svc, transport::tls,
@@ -22,22 +25,23 @@ pub struct Config {
     pub initial_profile_timeout: Duration,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct InvalidProfileAddr(());
+#[derive(Clone, Debug)]
+struct Rejected(());
 
 /// Handles to destination service clients.
 ///
 /// The addr is preserved for logging.
 pub struct Dst {
     pub addr: control::ControlAddr,
-    pub profiles: default_profile::RecoverDefaultProfile<
+    pub profiles: RecoverDefaultProfile<
         request_filter::Service<
-            PermitConfiguredDsts<InvalidProfileAddr>,
+            PermitConfiguredDsts,
             profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
         >,
     >,
-    pub resolve:
+    pub resolve: RecoverDefaultResolve<
         request_filter::Service<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
+    >,
 }
 
 impl Config {
@@ -55,6 +59,7 @@ impl Config {
                 self.get_suffixes,
                 self.get_networks,
             ))
+            .push(default_resolve::layer())
             .into_inner();
 
         let profiles = svc::stack(profiles::Client::new(
@@ -63,10 +68,10 @@ impl Config {
             self.initial_profile_timeout,
             self.context,
         ))
-        .push_request_filter(
-            PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
-                .with_error::<InvalidProfileAddr>(),
-        )
+        .push_request_filter(PermitConfiguredDsts::new(
+            self.profile_suffixes,
+            self.profile_networks,
+        ))
         .push(default_profile::layer())
         .into_inner();
 
@@ -78,10 +83,24 @@ impl Config {
     }
 }
 
-impl std::fmt::Display for InvalidProfileAddr {
+impl std::fmt::Display for Rejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid profile addr")
+        write!(f, "rejected discovery")
     }
 }
 
-impl std::error::Error for InvalidProfileAddr {}
+impl std::error::Error for Rejected {}
+
+impl Rejected {
+    fn matches(err: &(dyn std::error::Error + 'static)) -> bool {
+        if err.is::<Self>() {
+            return true;
+        }
+
+        if let Some(status) = err.downcast_ref::<tonic::Status>() {
+            return status.code() == tonic::Code::InvalidArgument;
+        }
+
+        err.source().map(Self::matches).unwrap_or(false)
+    }
+}
