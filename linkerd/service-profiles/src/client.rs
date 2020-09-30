@@ -8,14 +8,18 @@ use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
 use regex::Regex;
-use std::convert::TryInto;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Duration;
-use tokio::sync::watch;
-use tokio::time::{self, Delay};
+use std::{
+    convert::{TryFrom, TryInto},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
+use tokio::{
+    sync::watch,
+    time::{self, Delay},
+};
 use tonic::{
     self as grpc,
     body::{Body, BoxBody},
@@ -24,7 +28,6 @@ use tonic::{
 use tower::retry::budget::Budget;
 use tracing::{debug, error, info, info_span, trace, warn};
 use tracing_futures::Instrument;
-use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 pub struct Client<S, R> {
