@@ -1,20 +1,22 @@
 use crate::http::uri::Authority;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    dst, metric_labels,
+    dst,
+    metric_labels,
     metric_labels::{prefix_labels, EndpointLabels},
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
         http::override_authority::CanOverrideAuthority,
-        http::{self, identity_from_header},
+        http::{self},
         identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
     },
     router,
     transport::{listen, tls},
-    Addr, Conditional, L5D_REQUIRE_ID,
+    Addr,
+    Conditional, //L5D_REQUIRE_ID,
 };
 use std::{net::SocketAddr, sync::Arc};
 
@@ -32,7 +34,6 @@ pub struct HttpLogical {
     pub dst: Addr,
     pub orig_dst: SocketAddr,
     pub version: http::Version,
-    pub require_identity: Option<identity::Name>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,15 +216,9 @@ impl From<HttpLogical> for HttpEndpoint {
         Self {
             addr: logical.orig_dst,
             settings: logical.version.into(),
-            identity: logical
-                .require_identity
-                .clone()
-                .map(Conditional::Some)
-                .unwrap_or_else(|| {
-                    Conditional::None(
-                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
-                    )
-                }),
+            identity: Conditional::None(
+                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+            ),
             concrete: logical.into(),
             metadata: Metadata::default(),
         }
@@ -304,11 +299,8 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
         metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
-        let identity = concrete
-            .logical
-            .require_identity
-            .as_ref()
-            .or_else(|| metadata.identity())
+        let identity = metadata
+            .identity()
             .cloned()
             .map(Conditional::Some)
             .unwrap_or_else(|| {
@@ -462,12 +454,9 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
 
         tracing::debug!(headers = ?req.headers(), uri = %req.uri(), dst = %dst, version = ?req.version(), "Setting target for request");
 
-        let require_identity = identity_from_header(req, L5D_REQUIRE_ID);
-
         HttpLogical {
             dst,
             orig_dst: self.0.orig_dst,
-            require_identity,
             version: self.0.version,
         }
     }
