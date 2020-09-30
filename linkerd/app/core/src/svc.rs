@@ -268,7 +268,7 @@ impl<S> Stack<S> {
     }
 
     pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<request_filter::Service<F, S>> {
-        self.push(request_filter::RequestFilterLayer::new(filter))
+        self.push(request_filter::Service::layer(filter))
     }
 
     // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>

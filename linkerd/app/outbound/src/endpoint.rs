@@ -126,7 +126,7 @@ impl Into<Addr> for &'_ HttpConcrete {
     fn into(self) -> Addr {
         self.resolve
             .clone()
-            .unwrap_or_else(|| self.logical.dst.clone())
+            .unwrap_or_else(|| self.logical.orig_dst)
     }
 }
 
