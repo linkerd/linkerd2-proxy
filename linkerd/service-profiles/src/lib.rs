@@ -1,6 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_addr::Addr;
+use linkerd2_dns_name::Name;
 use linkerd2_error::Error;
 use std::{
     future::Future,
@@ -19,6 +20,7 @@ pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
+    pub name: Option<Name>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
     pub targets: Vec<Target>,
 }

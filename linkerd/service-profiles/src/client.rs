@@ -3,18 +3,23 @@ use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
 use linkerd2_addr::Addr;
+use linkerd2_dns_name::Name;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
 use pin_project::pin_project;
 use regex::Regex;
-use std::convert::TryInto;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Duration;
-use tokio::sync::watch;
-use tokio::time::{self, Delay};
+use std::{
+    convert::{TryFrom, TryInto},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
+use tokio::{
+    sync::watch,
+    time::{self, Delay},
+};
 use tonic::{
     self as grpc,
     body::{Body, BoxBody},
@@ -111,7 +116,7 @@ where
 
 impl<T, S, R> tower::Service<T> for Client<S, R>
 where
-    T: AsRef<Addr>,
+    T: ToString,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -130,18 +135,9 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: T) -> Self::Future {
-        let path = dst.as_ref().to_string();
-
-        let service = {
-            // In case the ready service holds resources, pass it into the
-            // response and use a new clone for the client.
-            let s = self.service.clone();
-            std::mem::replace(&mut self.service, s)
-        };
-
+    fn call(&mut self, t: T) -> Self::Future {
         let request = api::GetDestination {
-            path,
+            path: t.to_string(),
             context_token: self.context_token.clone(),
             ..Default::default()
         };
@@ -149,8 +145,8 @@ where
         let timeout = time::delay_for(self.initial_timeout);
 
         let inner = Inner {
-            service,
             request,
+            service: self.service.clone(),
             recover: self.recover.clone(),
             state: State::Disconnected { backoff: None },
         };
@@ -255,6 +251,7 @@ where
         let profile = ready!(rx.poll_next(cx)).map(|res| {
             res.map(|proto| {
                 debug!("profile received: {:?}", proto);
+                let name = Name::try_from(proto.fully_qualified_name.as_bytes()).ok();
                 let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
                 let http_routes = proto
                     .routes
@@ -267,6 +264,7 @@ where
                     .filter_map(convert_dst_override)
                     .collect();
                 Profile {
+                    name,
                     http_routes,
                     targets,
                 }

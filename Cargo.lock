@@ -1500,6 +1500,7 @@ dependencies = [
  "http-body",
  "indexmap",
  "linkerd2-addr",
+ "linkerd2-dns-name",
  "linkerd2-error",
  "linkerd2-proxy-api",
  "linkerd2-stack",
