@@ -104,5 +104,6 @@ mod tests {
             )
         }
         assert!(Name::try_from(".".as_bytes()).is_err());
+        assert!(Name::try_from("".as_bytes()).is_err());
     }
 }
