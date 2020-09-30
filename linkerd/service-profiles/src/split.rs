@@ -63,8 +63,8 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: AsRef<Option<Receiver>> + Clone,
-    for<'t> &'t T: Into<Addr>,
+    T: Clone,
+    for<'t> &'t T: Into<Addr> + Into<Option<Receiver>>,
     N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -72,13 +72,15 @@ where
     type Service = Split<T, N, S, Req>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let inner = match target.as_ref().clone() {
+        let inner = match Into::<Option<Receiver>>::into(&target) {
             None => Inner::Default(self.inner.new_service((None, target))),
             Some(rx) => {
                 let mut targets = rx.borrow().targets.clone();
                 if targets.len() == 0 {
-                    let addr = (&target).into();
-                    targets.push(Target { addr, weight: 1 })
+                    targets.push(Target {
+                        addr: (&target).into(),
+                        weight: 1,
+                    })
                 }
 
                 let mut addrs = IndexSet::with_capacity(targets.len());
@@ -87,8 +89,10 @@ where
                 let mut new_service = self.inner.clone();
 
                 for Target { weight, addr } in targets.into_iter() {
-                    let svc = new_service.new_service((Some(addr.clone()), target.clone()));
-                    services.push(addr.clone(), svc);
+                    services.push(
+                        addr.clone(),
+                        new_service.new_service((Some(addr.clone()), target.clone())),
+                    );
                     addrs.insert(addr);
                     weights.push(weight);
                 }
@@ -144,12 +148,13 @@ where
                 // Every time the profile updates, rebuild the distribution, reusing
                 // services that existed in the prior state.
                 if let Some(Profile { mut targets, .. }) = update {
-                    debug!(?targets, "Updating");
-
                     if targets.len() == 0 {
-                        let addr = target.into();
-                        targets.push(Target { addr, weight: 1 });
+                        targets.push(Target {
+                            addr: target.into(),
+                            weight: 1,
+                        })
                     }
+                    debug!(?targets, "Updating");
 
                     let mut prior_addrs =
                         std::mem::replace(addrs, IndexSet::with_capacity(targets.len()));

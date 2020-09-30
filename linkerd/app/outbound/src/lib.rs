@@ -357,6 +357,7 @@ impl Config {
                     .push_map_target(endpoint::route)
                     .into_inner(),
             ))
+            .check_new_service::<endpoint::Profile, http::Request<_>>()
             .push_map_target(endpoint::Profile::from)
             // Discovers the service profile from the control plane and passes
             // it to inner stack to build the router and traffic split.

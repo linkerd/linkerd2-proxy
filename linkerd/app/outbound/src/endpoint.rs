@@ -202,6 +202,12 @@ impl AsMut<Addr> for HttpLogical {
     }
 }
 
+impl From<Profile> for HttpLogical {
+    fn from(Profile { logical, .. }: Profile) -> Self {
+        logical
+    }
+}
+
 // === impl HttpEndpoint ===
 
 impl From<HttpLogical> for HttpEndpoint {
@@ -495,14 +501,8 @@ impl Into<Addr> for &'_ Profile {
     }
 }
 
-impl AsRef<Option<profiles::Receiver>> for Profile {
-    fn as_ref(&self) -> &Option<profiles::Receiver> {
-        &self.rx
-    }
-}
-
-impl From<Profile> for HttpLogical {
-    fn from(Profile { logical, .. }: Profile) -> Self {
-        logical
+impl Into<Option<profiles::Receiver>> for &'_ Profile {
+    fn into(self) -> Option<profiles::Receiver> {
+        self.rx.clone()
     }
 }

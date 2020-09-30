@@ -134,8 +134,6 @@ where
             ..Default::default()
         };
 
-        let timeout = time::delay_for(self.initial_timeout);
-
         let inner = Inner {
             request,
             service: self.service.clone(),
@@ -144,7 +142,7 @@ where
         };
         ProfileFuture {
             inner: Some(inner),
-            timeout,
+            timeout: time::delay_for(self.initial_timeout),
         }
     }
 }

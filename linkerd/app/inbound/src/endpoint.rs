@@ -278,8 +278,8 @@ impl From<(Option<profiles::Receiver>, Target)> for Logical {
     }
 }
 
-impl AsRef<Option<profiles::Receiver>> for Logical {
-    fn as_ref(&self) -> &Option<profiles::Receiver> {
-        &self.profiles
+impl Into<Option<profiles::Receiver>> for &'_ Logical {
+    fn into(self) -> Option<profiles::Receiver> {
+        self.profiles.clone()
     }
 }
