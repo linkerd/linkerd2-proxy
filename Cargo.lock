@@ -781,7 +781,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.14",
+ "linkerd2-proxy-api",
  "quickcheck",
  "regex 1.3.9",
  "ring",
@@ -791,7 +791,7 @@ dependencies = [
  "tokio-current-thread",
  "tokio-io",
  "tokio-rustls",
- "tonic 0.3.1",
+ "tonic",
  "tower",
  "tracing",
  "tracing-futures",
@@ -828,7 +828,7 @@ dependencies = [
  "linkerd2-http-metrics",
  "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api 0.1.14",
+ "linkerd2-proxy-api",
  "linkerd2-proxy-api-resolve",
  "linkerd2-proxy-core",
  "linkerd2-proxy-discover",
@@ -859,7 +859,7 @@ dependencies = [
  "tokio",
  "tokio-timer",
  "tokio-trace",
- "tonic 0.3.1",
+ "tonic",
  "tower",
  "tower-request-modifier",
  "tracing",
@@ -915,7 +915,7 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-app-test",
  "linkerd2-metrics",
- "linkerd2-proxy-api 0.1.14",
+ "linkerd2-proxy-api",
  "quickcheck",
  "regex 0.1.80",
  "ring",
@@ -923,7 +923,7 @@ dependencies = [
  "socket2",
  "tokio",
  "tokio-rustls",
- "tonic 0.3.1",
+ "tonic",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1206,7 +1206,7 @@ dependencies = [
  "opencensus-proto",
  "pin-project",
  "tokio",
- "tonic 0.3.1",
+ "tonic",
  "tower",
  "tracing",
 ]
@@ -1226,21 +1226,6 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.13"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.13#f9a95345ef44c3d6f22559442e35f07e0af477e2"
-dependencies = [
- "h2 0.2.6",
- "http 0.2.1",
- "prost",
- "prost-types",
- "quickcheck",
- "rand 0.7.2",
- "tonic 0.2.1",
- "tonic-build 0.2.0",
-]
-
-[[package]]
-name = "linkerd2-proxy-api"
 version = "0.1.14"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.14#76470482fb53c359e6f823d0279d1c7b26030a6a"
 dependencies = [
@@ -1250,8 +1235,8 @@ dependencies = [
  "prost-types",
  "quickcheck",
  "rand 0.7.2",
- "tonic 0.3.1",
- "tonic-build 0.3.1",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -1264,11 +1249,11 @@ dependencies = [
  "http-body",
  "indexmap",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.14",
+ "linkerd2-proxy-api",
  "linkerd2-proxy-core",
  "pin-project",
  "prost",
- "tonic 0.3.1",
+ "tonic",
  "tower",
  "tracing",
 ]
@@ -1361,11 +1346,11 @@ dependencies = [
  "http-body",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.14",
+ "linkerd2-proxy-api",
  "linkerd2-proxy-transport",
  "pin-project",
  "tokio",
- "tonic 0.3.1",
+ "tonic",
  "tracing",
 ]
 
@@ -1396,7 +1381,7 @@ dependencies = [
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
- "linkerd2-proxy-api 0.1.14",
+ "linkerd2-proxy-api",
  "linkerd2-proxy-core",
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
@@ -1406,7 +1391,7 @@ dependencies = [
  "quickcheck",
  "rand 0.7.2",
  "tokio",
- "tonic 0.3.1",
+ "tonic",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1516,7 +1501,7 @@ dependencies = [
  "indexmap",
  "linkerd2-addr",
  "linkerd2-error",
- "linkerd2-proxy-api 0.1.13",
+ "linkerd2-proxy-api",
  "linkerd2-stack",
  "pin-project",
  "prost-types",
@@ -1524,7 +1509,7 @@ dependencies = [
  "rand 0.7.2",
  "regex 1.3.9",
  "tokio",
- "tonic 0.2.1",
+ "tonic",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1847,8 +1832,8 @@ dependencies = [
  "bytes 0.5.4",
  "prost",
  "prost-types",
- "tonic 0.3.1",
- "tonic-build 0.3.1",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
@@ -2704,30 +2689,6 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4afef9ce97ea39593992cf3fa00ff33b1ad5eb07665b31355df63a690e38c736"
-dependencies = [
- "async-stream",
- "async-trait",
- "base64 0.11.0",
- "bytes 0.5.4",
- "futures-core",
- "futures-util",
- "http 0.2.1",
- "http-body",
- "percent-encoding",
- "pin-project",
- "prost",
- "prost-derive",
- "tokio-util",
- "tower-make",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74a5d6e7439ecf910463667080de772a9c7ddf26bc9fb4f3252ac3862e43337d"
@@ -2748,18 +2709,6 @@ dependencies = [
  "tower-make",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "tonic-build"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71d8d21cb568e802d77055ab7fcd43f0992206de5028de95c8d3a41118d32e8e"
-dependencies = [
- "proc-macro2 1.0.10",
- "prost-build",
- "quote 1.0.2",
- "syn 1.0.21",
 ]
 
 [[package]]
