@@ -3,7 +3,7 @@ mod resolve;
 
 use indexmap::IndexSet;
 use linkerd2_app_core::{
-    control, dns, profiles, proxy::identity, request_filter, svc, transport::tls,
+    control, dns, profiles, proxy::identity, request_filter::RequestFilter, svc, transport::tls,
     ControlHttpMetrics, Error,
 };
 use permit::PermitConfiguredDsts;
@@ -26,12 +26,11 @@ pub struct Config {
 /// The addr is preserved for logging.
 pub struct Dst {
     pub addr: control::ControlAddr,
-    pub profiles: request_filter::Service<
+    pub profiles: RequestFilter<
         PermitConfiguredDsts<profiles::InvalidProfileAddr>,
         profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
     >,
-    pub resolve:
-        request_filter::Service<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
+    pub resolve: RequestFilter<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
 }
 
 impl Config {
@@ -45,10 +44,10 @@ impl Config {
         let backoff = self.control.connect.backoff.clone();
         let svc = self.control.build(dns, metrics, identity);
         let resolve = svc::stack(resolve::new(svc.clone(), &self.context, backoff))
-            .push_request_filter(PermitConfiguredDsts::new(
+            .push(RequestFilter::layer(PermitConfiguredDsts::new(
                 self.get_suffixes,
                 self.get_networks,
-            ))
+            )))
             .into_inner();
 
         let profiles = svc::stack(profiles::Client::new(
@@ -57,10 +56,10 @@ impl Config {
             self.initial_profile_timeout,
             self.context,
         ))
-        .push_request_filter(
+        .push(RequestFilter::layer(
             PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
                 .with_error::<profiles::InvalidProfileAddr>(),
-        )
+        ))
         .into_inner();
 
         Ok(Dst {
