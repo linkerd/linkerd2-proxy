@@ -1,8 +1,7 @@
 use crate::http::uri::Authority;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    dst,
-    metric_labels,
+    dst, metric_labels,
     metric_labels::{prefix_labels, EndpointLabels},
     profiles,
     proxy::{
@@ -15,8 +14,7 @@ use linkerd2_app_core::{
     },
     router,
     transport::{listen, tls},
-    Addr,
-    Conditional, //L5D_REQUIRE_ID,
+    Addr, Conditional,
 };
 use std::{net::SocketAddr, sync::Arc};
 
