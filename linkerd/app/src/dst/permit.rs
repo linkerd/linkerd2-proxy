@@ -1,5 +1,7 @@
 use ipnet::{Contains, IpNet};
-use linkerd2_app_core::{dns::Suffix, request_filter, Addr, DiscoveryRejected, Error};
+use linkerd2_app_core::{
+    dns::Suffix, request_filter::FilterRequest, Addr, DiscoveryRejected, Error,
+};
 use std::marker::PhantomData;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -48,14 +50,14 @@ impl<E> Clone for PermitConfiguredDsts<E> {
     }
 }
 
-impl<T, E> request_filter::RequestFilter<T> for PermitConfiguredDsts<E>
+impl<T, E> FilterRequest<T> for PermitConfiguredDsts<E>
 where
     E: Into<Error> + From<Addr>,
     for<'t> &'t T: Into<Addr>,
 {
-    type Error = E;
+    type Request = T;
 
-    fn filter(&self, t: T) -> Result<T, Self::Error> {
+    fn filter(&self, t: T) -> Result<T, Error> {
         let addr = (&t).into();
         let permitted = match addr {
             Addr::Name(ref name) => self
@@ -72,7 +74,7 @@ where
         if permitted {
             Ok(t)
         } else {
-            Err(E::from(addr.clone()))
+            Err(E::from(addr.clone()).into())
         }
     }
 }

@@ -3,71 +3,51 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+use futures::{future, prelude::*};
 use linkerd2_error::Error;
-use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
+use linkerd2_stack::layer;
 use std::task::{Context, Poll};
 
-pub trait RequestFilter<T> {
-    type Error: Into<Error>;
+pub trait FilterRequest<Req> {
+    type Request;
 
-    fn filter(&self, request: T) -> Result<T, Self::Error>;
+    fn filter(&self, request: Req) -> Result<Self::Request, Error>;
 }
 
 #[derive(Clone, Debug)]
-pub struct RequestFilterLayer<T> {
-    filter: T,
-}
-
-#[derive(Clone, Debug)]
-pub struct Service<I, S> {
+pub struct RequestFilter<I, S> {
     filter: I,
     service: S,
 }
 
-#[pin_project(project = ResponseFutureProj)]
-#[derive(Debug)]
-pub enum ResponseFuture<F> {
-    Future(#[pin] F),
-    Rejected(Option<Error>),
-}
+// === impl RequestFilter ===
 
-// === impl Layer ===
-
-impl<T: Clone> RequestFilterLayer<T> {
-    pub fn new(filter: T) -> Self {
-        Self { filter }
-    }
-}
-
-impl<T: Clone, S> tower::Layer<S> for RequestFilterLayer<T> {
-    type Service = Service<T, S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        Service::new(self.filter.clone(), inner)
-    }
-}
-
-// === impl Service ===
-
-impl<I, S> Service<I, S> {
+impl<I, S> RequestFilter<I, S> {
     pub fn new(filter: I, service: S) -> Self {
         Self { filter, service }
     }
+
+    pub fn layer(filter: I) -> impl layer::Layer<S, Service = Self> + Clone
+    where
+        I: Clone,
+    {
+        layer::mk(move |inner| Self::new(filter.clone(), inner))
+    }
 }
 
-impl<T, I, S> tower::Service<T> for Service<I, S>
+impl<T, F, S> tower::Service<T> for RequestFilter<F, S>
 where
-    I: RequestFilter<T>,
-    S: tower::Service<T>,
+    F: FilterRequest<T>,
+    S: tower::Service<F::Request>,
     S::Error: Into<Error>,
 {
     type Response = S::Response;
     type Error = Error;
-    type Future = ResponseFuture<S::Future>;
+    type Future = future::Either<
+        future::ErrInto<S::Future, Error>,
+        future::Ready<Result<S::Response, Error>>,
+    >;
 
-    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx).map_err(Into::into)
     }
@@ -76,30 +56,12 @@ where
         match self.filter.filter(request) {
             Ok(req) => {
                 tracing::trace!("accepted");
-                let f = self.service.call(req);
-                ResponseFuture::Future(f)
+                future::Either::Left(self.service.call(req).err_into::<Error>())
             }
             Err(e) => {
                 tracing::trace!("rejected");
-                ResponseFuture::Rejected(Some(e.into()))
+                future::Either::Right(future::err(e))
             }
-        }
-    }
-}
-
-// === impl ResponseFuture ===
-
-impl<F, T, E> Future for ResponseFuture<F>
-where
-    F: Future<Output = Result<T, E>>,
-    E: Into<Error>,
-{
-    type Output = Result<T, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.project() {
-            ResponseFutureProj::Future(f) => f.poll(cx).map(|r| r.map_err(Into::into)),
-            ResponseFutureProj::Rejected(e) => Poll::Ready(Err(e.take().unwrap())),
         }
     }
 }
