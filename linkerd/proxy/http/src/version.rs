@@ -66,7 +66,7 @@ impl Version {
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Http1 => write!(f, "http/1.x"),
+            Self::Http1 => write!(f, "1.x"),
             Self::H2 => write!(f, "h2"),
         }
     }
