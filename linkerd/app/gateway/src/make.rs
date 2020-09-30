@@ -121,7 +121,6 @@ where
                         dst: dst_name.clone().into(),
                         orig_dst: dst_addr,
                         version: http_version,
-                        require_identity: None,
                     };
 
                     let svc = outbound.call(endpoint).await.map_err(Into::into)?;
