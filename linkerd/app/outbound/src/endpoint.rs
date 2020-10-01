@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use linkerd2_app_core::{
     dst,
     metric_labels,
-    metric_labels::{prefix_labels, EndpointLabels},
+    metric_labels::{prefix_labels, EndpointLabels, TlsStatus},
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
@@ -314,11 +314,11 @@ impl CanOverrideAuthority for HttpEndpoint {
 
 impl Into<EndpointLabels> for HttpEndpoint {
     fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::{Direction, TlsId};
+        use linkerd2_app_core::metric_labels::Direction;
         EndpointLabels {
             authority: Some(self.concrete.logical.dst.to_http_authority()),
             direction: Direction::Out,
-            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+            tls_id: TlsStatus::server(self.identity.clone()),
             labels: prefix_labels("dst", self.metadata.labels().into_iter()),
         }
     }
@@ -357,12 +357,12 @@ impl tls::HasPeerIdentity for TcpEndpoint {
 
 impl Into<EndpointLabels> for TcpEndpoint {
     fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::{Direction, TlsId};
+        use linkerd2_app_core::metric_labels::Direction;
         EndpointLabels {
             authority: Some(self.dst.to_http_authority()),
             direction: Direction::Out,
             labels: self.labels,
-            tls_id: self.identity.as_ref().map(|id| TlsId::ServerId(id.clone())),
+            tls_id: TlsStatus::server(self.identity),
         }
     }
 }

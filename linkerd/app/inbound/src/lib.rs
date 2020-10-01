@@ -471,9 +471,9 @@ impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
-        transport::labels::Key::Accept(
+        transport::labels::Key::accept(
             transport::labels::Direction::In,
-            tls::Conditional::<()>::None(tls::ReasonForNoPeerName::PortSkipped).into(),
+            tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
         )
     }
 }
@@ -482,9 +482,9 @@ impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels 
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
-        transport::labels::Key::Accept(
+        transport::labels::Key::accept(
             transport::labels::Direction::In,
-            target.peer_identity.as_ref().into(),
+            target.peer_identity.clone(),
         )
     }
 }

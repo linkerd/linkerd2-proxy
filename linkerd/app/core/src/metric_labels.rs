@@ -1,7 +1,6 @@
 use crate::proxy::identity;
-use crate::transport::{labels::TlsStatus, tls};
+pub use crate::transport::labels::TlsStatus;
 use linkerd2_addr::Addr;
-use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use std::fmt::{self, Write};
 
@@ -16,7 +15,7 @@ pub struct ControlLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EndpointLabels {
     pub direction: Direction,
-    pub tls_id: Conditional<TlsId, tls::ReasonForNoPeerName>,
+    pub tls_id: TlsStatus,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
 }
@@ -55,7 +54,7 @@ impl From<control::ControlAddr> for ControlLabels {
     fn from(c: control::ControlAddr) -> Self {
         ControlLabels {
             addr: c.addr.clone(),
-            tls_status: c.identity.as_ref().into(),
+            tls_status: c.identity.map(|id| TlsId::ServerId(id)).into(),
         }
     }
 }
@@ -106,12 +105,7 @@ impl FmtLabels for EndpointLabels {
         }
 
         write!(f, ",")?;
-        TlsStatus::from(self.tls_id.as_ref()).fmt_labels(f)?;
-
-        if let Conditional::Some(ref id) = self.tls_id {
-            write!(f, ",")?;
-            id.fmt_labels(f)?;
-        }
+        self.tls_id.fmt_labels(f)?;
 
         Ok(())
     }
