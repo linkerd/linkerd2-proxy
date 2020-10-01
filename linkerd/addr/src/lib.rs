@@ -135,12 +135,6 @@ impl AsRef<Self> for Addr {
     }
 }
 
-impl Into<Addr> for &'_ Addr {
-    fn into(self) -> Addr {
-        self.clone()
-    }
-}
-
 // === impl NameAddr ===
 
 impl NameAddr {
