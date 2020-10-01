@@ -377,7 +377,6 @@ impl Config {
         // control plane for discovery. If the discovery is rejected, the
         // `forward` stack is used instead, bypassing load balancing, etc.
         logical
-            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
             .push_on_response(svc::layers().box_http_response())
             .cache(
                 svc::layers().push_on_response(
