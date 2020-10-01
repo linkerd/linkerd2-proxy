@@ -1,8 +1,9 @@
 use super::Rejected;
 use ipnet::{Contains, IpNet};
-use linkerd2_app_core::{dns::Suffix, request_filter, Addr, Error};
-use std::net::IpAddr;
-use std::sync::Arc;
+use linkerd2_app_core::{
+    dns::Suffix, request_filter::FilterRequest, Addr, DiscoveryRejected, Error,
+};
+use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub struct PermitConfiguredDsts {
@@ -24,13 +25,13 @@ impl PermitConfiguredDsts {
     }
 }
 
-impl<T> request_filter::RequestFilter<T> for PermitConfiguredDsts
+impl<T, E> FilterRequest<T> for PermitConfiguredDsts<E>
 where
     for<'t> &'t T: Into<Addr>,
 {
-    type Error = Error;
+    type Request = T;
 
-    fn filter(&self, t: T) -> Result<T, Self::Error> {
+    fn filter(&self, t: T) -> Result<T, Error> {
         let addr = (&t).into();
         let permitted = match addr {
             Addr::Name(ref name) => self

@@ -8,21 +8,21 @@ use linkerd2_error::Error;
 use linkerd2_stack::layer;
 use std::task::{Context, Poll};
 
-pub trait RequestFilter<Req> {
+pub trait FilterRequest<Req> {
     type Request;
 
     fn filter(&self, request: Req) -> Result<Self::Request, Error>;
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<I, S> {
+pub struct RequestFilter<I, S> {
     filter: I,
     service: S,
 }
 
-// === impl Service ===
+// === impl RequestFilter ===
 
-impl<I, S> Service<I, S> {
+impl<I, S> RequestFilter<I, S> {
     pub fn new(filter: I, service: S) -> Self {
         Self { filter, service }
     }
@@ -35,10 +35,10 @@ impl<I, S> Service<I, S> {
     }
 }
 
-impl<T, I, S> tower::Service<T> for Service<I, S>
+impl<T, F, S> tower::Service<T> for RequestFilter<F, S>
 where
-    I: RequestFilter<T>,
-    S: tower::Service<I::Request>,
+    F: FilterRequest<T>,
+    S: tower::Service<F::Request>,
     S::Error: Into<Error>,
 {
     type Response = S::Response;

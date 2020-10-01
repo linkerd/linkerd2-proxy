@@ -2,7 +2,7 @@
 
 pub use crate::proxy::http;
 use crate::transport::Connect;
-use crate::{cache, request_filter, Error};
+use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
 pub use linkerd2_stack::{self as stack, layer, NewService};
@@ -265,10 +265,6 @@ impl<S> Stack<S> {
         P: Fn(&Error) -> bool + Clone,
     {
         self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
-    }
-
-    pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<request_filter::Service<F, S>> {
-        self.push(request_filter::Service::layer(filter))
     }
 
     // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
