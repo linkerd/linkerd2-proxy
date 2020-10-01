@@ -63,23 +63,23 @@ impl<G: Clone, M> tower::layer::Layer<M> for InstrumentMakeLayer<G> {
 
 impl<T, G, N> NewService<T> for InstrumentMake<G, N>
 where
-    T: std::fmt::Debug,
     G: GetSpan<T>,
     N: NewService<T>,
 {
     type Service = Instrument<N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        trace!(?target, "new_service");
         let span = self.get_span.get_span(&target);
-        let inner = span.in_scope(move || self.make.new_service(target));
+        let inner = span.in_scope(move || {
+            trace!("new");
+            self.make.new_service(target)
+        });
         Instrument { inner, span }
     }
 }
 
 impl<T, G, M> tower::Service<T> for InstrumentMake<G, M>
 where
-    T: std::fmt::Debug,
     G: GetSpan<T>,
     M: tower::Service<T>,
 {
@@ -88,16 +88,21 @@ where
     type Future = Instrument<M::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        trace!("poll_ready");
+        trace!("make ready");
         let ready = self.make.poll_ready(cx);
-        trace!(ready = ready.is_ready());
+        match ready {
+            Poll::Pending => trace!(ready = false),
+            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok()),
+        }
         ready
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        trace!(?target, "make_service");
         let span = self.get_span.get_span(&target);
-        let inner = span.in_scope(|| self.make.call(target));
+        let inner = span.in_scope(|| {
+            trace!("make");
+            self.make.call(target)
+        });
         Instrument { inner, span }
     }
 }
@@ -162,9 +167,12 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let _enter = self.span.enter();
 
-        trace!("poll ready");
+        trace!("ready");
         let ready = self.inner.poll_ready(cx);
-        trace!(ready = ready.is_ready());
+        match ready {
+            Poll::Pending => trace!(ready = false),
+            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok()),
+        }
         ready
     }
 
