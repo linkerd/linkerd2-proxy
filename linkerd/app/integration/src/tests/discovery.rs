@@ -115,11 +115,7 @@ macro_rules! generate_tests {
 
             const NAME: &'static str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new();
-            ctrl.profile_tx_default(NAME);
-            ctrl.destination_fail(
-                NAME,
-                grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"),
-            );
+            ctrl.profile_fail(NAME, grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"));
             ctrl.no_more_destinations();
 
             let proxy = proxy::new()

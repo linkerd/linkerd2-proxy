@@ -38,24 +38,20 @@ where
         self.0.poll_ready(cx)
     }
 
-    fn call(&mut self, dst: T) -> Self::Future {
-        let addr = (&dst).into();
-
+    fn call(&mut self, t: T) -> Self::Future {
+        let addr = (&t).into();
         Box::pin(
             self.0
-                .resolve(dst)
+                .resolve(t)
                 .map_ok(future::Either::Left)
-                .or_else(move |err| {
-                    if Rejected::matches(&*err) {
-                        tracing::debug!("Handling rejected discovery");
-
-                        let res = stream::once(future::ok(Update::Reset(vec![(
-                            addr,
-                            S::Endpoint::default(),
-                        )])));
+                .or_else(move |error| {
+                    if Rejected::matches(&*error) {
+                        tracing::debug!(%error, %addr, "Synthesizing endpoint");
+                        let endpoint = (addr, S::Endpoint::default());
+                        let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
                         future::ok(future::Either::Right(res))
                     } else {
-                        future::err(err)
+                        future::err(error)
                     }
                 }),
         )
