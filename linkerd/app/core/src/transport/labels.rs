@@ -87,7 +87,7 @@ impl FmtLabels for TlsStatus {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
             Conditional::Some(ref id) => {
-                write!(f, "tls=\"true\"")?;
+                write!(f, "tls=\"true\",")?;
                 id.fmt_labels(f)
             }
         }
