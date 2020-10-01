@@ -99,7 +99,7 @@ macro_rules! generate_tests {
                 .outbound(srv)
                 .run().await;
 
-            let client = $make_client(proxy.outbound, "example.com");
+            let client = $make_client(proxy.outbound, "my-great-websute.net");
 
             assert_eq!(client.get("/").await, "hello from my great website");
 
@@ -115,7 +115,11 @@ macro_rules! generate_tests {
 
             const NAME: &'static str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new();
-            ctrl.profile_fail(NAME, grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"));
+            ctrl.profile_tx_default(NAME);
+            ctrl.destination_fail(
+                NAME,
+                grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"),
+            );
             ctrl.no_more_destinations();
 
             let proxy = proxy::new()
