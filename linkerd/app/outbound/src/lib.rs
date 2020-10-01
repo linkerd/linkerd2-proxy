@@ -487,7 +487,7 @@ impl Config {
                     .box_http_response(),
             )
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|a: &endpoint::HttpAccept| info_span!("http", version=%a.version))
+            .instrument(|a: &endpoint::HttpAccept| info_span!("http", v=%a.version))
             .push_map_target(endpoint::HttpAccept::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
