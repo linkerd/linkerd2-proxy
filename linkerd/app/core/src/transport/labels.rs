@@ -1,5 +1,5 @@
 use super::tls;
-pub use crate::metric_labels::{Direction, EndpointLabels};
+pub use crate::metric_labels::{Direction, EndpointLabels, TlsId};
 use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use std::fmt;
@@ -15,10 +15,16 @@ pub enum Key {
     Connect(EndpointLabels),
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsStatus(tls::Conditional<()>);
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TlsStatus(tls::Conditional<TlsId>);
 
 // === impl Key ===
+
+impl Key {
+    pub fn accept(direction: Direction, id: tls::PeerIdentity) -> Self {
+        Self::Accept(direction, TlsStatus::client(id))
+    }
+}
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,36 +43,53 @@ impl FmtLabels for Key {
 
 // === impl TlsStatus ===
 
-impl<T> From<tls::Conditional<T>> for TlsStatus {
-    fn from(inner: tls::Conditional<T>) -> Self {
-        TlsStatus(inner.map(|_| ()))
+impl TlsStatus {
+    pub fn client(id: tls::PeerIdentity) -> Self {
+        Self(id.map(TlsId::ClientId))
+    }
+
+    pub fn server(id: tls::PeerIdentity) -> Self {
+        Self(id.map(TlsId::ServerId))
     }
 }
 
-impl Into<tls::Conditional<()>> for TlsStatus {
-    fn into(self) -> tls::Conditional<()> {
-        self.0
+impl From<tls::Conditional<TlsId>> for TlsStatus {
+    fn from(inner: tls::Conditional<TlsId>) -> Self {
+        TlsStatus(inner)
+    }
+}
+
+impl Into<tls::PeerIdentity> for TlsStatus {
+    fn into(self) -> tls::PeerIdentity {
+        self.0.map(|id| match id {
+            TlsId::ClientId(id) => id,
+            TlsId::ServerId(id) => id,
+        })
     }
 }
 
 impl fmt::Display for TlsStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Conditional::Some(()) => write!(f, "true"),
-            Conditional::None(r) => fmt::Display::fmt(&r, f),
+            Conditional::Some(_) => write!(f, "true"),
+            Conditional::None(ref r) => fmt::Display::fmt(&r, f),
         }
     }
 }
 
 impl FmtLabels for TlsStatus {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Self(Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)) = self {
-            return write!(f, "tls=\"disabled\"");
+        match self.0 {
+            Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled) => {
+                write!(f, "tls=\"disabled\"")
+            }
+            Conditional::None(ref why) => {
+                write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
+            }
+            Conditional::Some(ref id) => {
+                write!(f, "tls=\"true\",")?;
+                id.fmt_labels(f)
+            }
         }
-        if let Self(Conditional::None(why)) = self {
-            return write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why);
-        }
-
-        write!(f, "tls=\"{}\"", self)
     }
 }

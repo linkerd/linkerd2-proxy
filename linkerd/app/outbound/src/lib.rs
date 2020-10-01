@@ -574,8 +574,9 @@ impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
     type Labels = transport::labels::Key;
 
     fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
-        const NO_TLS: tls::Conditional<()> = Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::Accept(transport::labels::Direction::Out, NO_TLS.into())
+        const NO_TLS: tls::Conditional<identity::Name> =
+            Conditional::None(tls::ReasonForNoPeerName::Loopback);
+        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS.into())
     }
 }
 

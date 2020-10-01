@@ -137,7 +137,10 @@ impl Into<metric_labels::EndpointLabels> for Target {
         metric_labels::EndpointLabels {
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
             direction: metric_labels::Direction::In,
-            tls_id: self.tls_client_id.map(metric_labels::TlsId::ClientId),
+            tls_id: self
+                .tls_client_id
+                .map(metric_labels::TlsId::ClientId)
+                .into(),
             labels: None,
         }
     }
