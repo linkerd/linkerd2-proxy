@@ -1,7 +1,9 @@
 use futures::{ready, TryFuture, TryFutureExt};
 use linkerd2_error::Error;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// Implements a `Service` from a `Future` that produces a `Service`.
 #[derive(Debug)]
@@ -41,7 +43,9 @@ where
             self.inner = match self.inner {
                 Inner::Future(ref mut fut) => {
                     let fut = Pin::new(fut);
+                    tracing::trace!("Polling pending service");
                     let svc = ready!(fut.try_poll(cx).map_err(Into::into)?);
+                    tracing::trace!("Service acquired");
                     Inner::Service(svc)
                 }
                 Inner::Service(ref mut svc) => return svc.poll_ready(cx).map_err(Into::into),

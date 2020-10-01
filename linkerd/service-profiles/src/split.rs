@@ -73,7 +73,10 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let inner = match Into::<Option<Receiver>>::into(&target) {
-            None => Inner::Default(self.inner.new_service((None, target))),
+            None => {
+                trace!("Building default service");
+                Inner::Default(self.inner.new_service((None, target)))
+            }
             Some(rx) => {
                 let mut targets = rx.borrow().targets.clone();
                 if targets.len() == 0 {
@@ -82,12 +85,12 @@ where
                         weight: 1,
                     })
                 }
+                trace!(?targets, "Building split service");
 
                 let mut addrs = IndexSet::with_capacity(targets.len());
                 let mut weights = Vec::with_capacity(targets.len());
                 let mut services = ReadyCache::default();
                 let mut new_service = self.inner.clone();
-
                 for Target { weight, addr } in targets.into_iter() {
                     services.push(
                         addr.clone(),

@@ -99,7 +99,7 @@ macro_rules! generate_tests {
                 .outbound(srv)
                 .run().await;
 
-            let client = $make_client(proxy.outbound, "my-great-websute.net");
+            let client = $make_client(proxy.outbound, "example.com");
 
             assert_eq!(client.get("/").await, "hello from my great website");
 

@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Delay};
 use tower::discover;
-use tracing::warn;
+use tracing::{trace, warn};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -79,6 +79,7 @@ where
     }
 
     fn call(&mut self, req: T) -> Self::Future {
+        trace!(%req, "Discovering resolution");
         let future = self.inner.call(req);
         Self::Future {
             future,
@@ -102,6 +103,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let discover = ready!(this.future.try_poll(cx))?;
+        trace!("Resolution acquired");
 
         let (tx, rx) = mpsc::channel(*this.capacity);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
@@ -196,6 +198,7 @@ where
                 }
             };
 
+            trace!("Resolution update");
             this.tx.try_send(up).ok().expect("sender must be ready");
         }
     }

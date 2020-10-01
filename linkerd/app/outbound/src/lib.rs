@@ -295,7 +295,7 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age));
 
         // Builds a balancer for each concrete destination.
-        let concrete = svc::stack(endpoint.clone())
+        let concrete = svc::stack(endpoint)
             .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -314,11 +314,11 @@ impl Config {
                     .push_failfast(dispatch_timeout)
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
-            .into_new_service()
             .instrument(|c: &HttpConcrete| match c.resolve.as_ref() {
                 None => info_span!("concrete"),
                 Some(addr) => info_span!("concrete", %addr),
             })
+            .into_new_service()
             .check_new_service::<HttpConcrete, http::Request<_>>();
 
         // For each logical target, performs service profile resolution and
@@ -332,7 +332,11 @@ impl Config {
         // the cached service is dropped. In-flight streams will continue to be
         // processed.
         let logical = concrete
-            .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
+            .push_on_response(
+                svc::layers()
+                    .push(svc::layer::mk(svc::SpawnReady::new))
+                    .push_failfast(dispatch_timeout),
+            )
             // Uses the split-provided target `Addr` to build a concrete target.
             .check_new_service::<HttpConcrete, http::Request<_>>()
             .push_map_target(HttpConcrete::from)
@@ -341,7 +345,11 @@ impl Config {
             .check_new_service::<endpoint::Profile, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
-            .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
+            .push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity),
+            )
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -368,6 +376,7 @@ impl Config {
         // control plane for discovery. If the discovery is rejected, the
         // `forward` stack is used instead, bypassing load balancing, etc.
         logical
+            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
             .push_on_response(svc::layers().box_http_response())
             .cache(
                 svc::layers().push_on_response(
@@ -384,7 +393,6 @@ impl Config {
             // Strips headers that may be set by this proxy.
             .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
             .check_make_service_clone::<HttpLogical, http::Request<B>>()
-            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
             .into_inner()
     }
 
