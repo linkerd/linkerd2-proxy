@@ -209,18 +209,9 @@ impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         trace!("Polling resolution");
         return match self.project().rx.poll_next(cx) {
-            Poll::Pending => {
-                trace!("Resolution stream pending");
-                Poll::Pending
-            }
-            Poll::Ready(Some(change)) => {
-                trace!("Resolution stream updated");
-                Poll::Ready(Some(Ok(change)))
-            }
-            Poll::Ready(None) => {
-                trace!("Resolution stream ended");
-                Poll::Ready(None)
-            }
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(Some(change)) => Poll::Ready(Some(Ok(change))),
+            Poll::Ready(None) => Poll::Ready(None),
         };
     }
 }
