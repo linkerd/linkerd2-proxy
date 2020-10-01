@@ -48,9 +48,6 @@ pub struct Daemon<D: discover::Discover> {
     watchdog_timeout: Duration,
 }
 
-#[derive(Clone, Debug)]
-pub struct Lost(());
-
 impl<M> Buffer<M> {
     pub fn new(capacity: usize, watchdog_timeout: Duration, inner: M) -> Self {
         Self {
@@ -222,16 +219,8 @@ impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
             }
             Poll::Ready(None) => {
                 trace!("Resolution stream ended");
-                Poll::Ready(Some(Err(Lost(()).into())))
+                Poll::Ready(None)
             }
         };
     }
 }
-
-impl std::fmt::Display for Lost {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "discovery task failed")
-    }
-}
-
-impl std::error::Error for Lost {}

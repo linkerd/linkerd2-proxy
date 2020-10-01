@@ -139,7 +139,7 @@ where
                     })))
                 }
 
-                None => continue,
+                None => return Poll::Ready(None),
             }
         }
     }
