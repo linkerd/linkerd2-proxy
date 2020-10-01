@@ -1,8 +1,6 @@
 use super::Rejected;
 use ipnet::{Contains, IpNet};
-use linkerd2_app_core::{
-    dns::Suffix, request_filter::FilterRequest, Addr, DiscoveryRejected, Error,
-};
+use linkerd2_app_core::{dns::Suffix, request_filter::FilterRequest, Addr, Error};
 use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
@@ -25,14 +23,21 @@ impl PermitConfiguredDsts {
     }
 }
 
-impl<T, E> FilterRequest<T> for PermitConfiguredDsts<E>
+impl<T> FilterRequest<T> for PermitConfiguredDsts
 where
-    for<'t> &'t T: Into<Addr>,
+    for<'t> &'t T: Into<Option<Addr>>,
 {
-    type Request = T;
+    type Request = Addr;
 
-    fn filter(&self, t: T) -> Result<T, Error> {
-        let addr = (&t).into();
+    fn filter(&self, t: T) -> Result<Addr, Error> {
+        let addr = match (&t).into() {
+            Some(addr) => addr,
+            None => {
+                tracing::debug!("No resolveable address");
+                return Err(Rejected(()).into());
+            }
+        };
+
         let permitted = match addr {
             Addr::Name(ref name) => self
                 .name_suffixes
@@ -47,7 +52,7 @@ where
 
         tracing::debug!(%addr, permitted);
         if permitted {
-            Ok(t)
+            Ok(addr)
         } else {
             Err(Rejected(()).into())
         }

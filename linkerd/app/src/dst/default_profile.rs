@@ -1,6 +1,6 @@
 use super::Rejected;
 use futures::prelude::*;
-use linkerd2_app_core::{profiles, svc, Addr, Error};
+use linkerd2_app_core::{profiles, svc, Error};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -18,7 +18,6 @@ pub struct RecoverDefaultProfile<S> {
 
 impl<T, S> tower::Service<T> for RecoverDefaultProfile<S>
 where
-    for<'t> &'t T: Into<Addr>,
     S: tower::Service<T, Response = Option<profiles::Receiver>>,
     S::Error: Into<Error>,
     S::Future: Send + 'static,
@@ -33,7 +32,7 @@ where
     }
 
     fn call(&mut self, dst: T) -> Self::Future {
-        Box::pin(self.inner.call(dst).or_else(move |e| {
+        Box::pin(self.inner.call(dst).or_else(|e| {
             let err = e.into();
             if Rejected::matches(&*err) {
                 debug!("Handling rejected discovery");

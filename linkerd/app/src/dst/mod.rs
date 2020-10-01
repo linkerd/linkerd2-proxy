@@ -68,9 +68,9 @@ impl Config {
             self.initial_profile_timeout,
             self.context,
         ))
-        .push(RequestFilter::layer(
-            PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
-                .with_error::<profiles::InvalidProfileAddr>(),
+        .push(RequestFilter::layer(PermitConfiguredDsts::new(
+            self.profile_suffixes,
+            self.profile_networks,
         )))
         .push(default_profile::layer())
         .into_inner();

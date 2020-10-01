@@ -85,9 +85,9 @@ impl Into<SocketAddr> for &'_ TcpLogical {
     }
 }
 
-impl Into<Addr> for &'_ TcpLogical {
-    fn into(self) -> Addr {
-        self.addr.into()
+impl Into<Option<Addr>> for &'_ TcpLogical {
+    fn into(self) -> Option<Addr> {
+        Some(self.addr.into())
     }
 }
 
@@ -122,11 +122,9 @@ impl From<(Option<Addr>, Profile)> for HttpConcrete {
     }
 }
 
-impl Into<Addr> for &'_ HttpConcrete {
-    fn into(self) -> Addr {
-        self.resolve
-            .clone()
-            .unwrap_or_else(|| self.logical.orig_dst)
+impl Into<Option<Addr>> for &'_ HttpConcrete {
+    fn into(self) -> Option<Addr> {
+        self.resolve.clone()
     }
 }
 
@@ -140,7 +138,10 @@ impl AsRef<Addr> for HttpConcrete {
 
 impl Into<SocketAddr> for &'_ HttpConcrete {
     fn into(self) -> SocketAddr {
-        self.logical.orig_dst
+        self.resolve
+            .as_ref()
+            .and_then(|a| a.socket_addr())
+            .unwrap_or_else(|| self.logical.orig_dst)
     }
 }
 
@@ -183,9 +184,9 @@ impl Into<SocketAddr> for HttpLogical {
     }
 }
 
-impl Into<Addr> for &'_ HttpLogical {
-    fn into(self) -> Addr {
-        self.dst.clone()
+impl Into<Option<Addr>> for &'_ HttpLogical {
+    fn into(self) -> Option<Addr> {
+        Some(self.dst.clone())
     }
 }
 
