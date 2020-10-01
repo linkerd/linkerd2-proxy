@@ -309,6 +309,7 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(svc::layer::mk(svc::SpawnReady::new))
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)

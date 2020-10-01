@@ -163,6 +163,7 @@ where
                 }
                 Poll::Pending => {
                     if this.watchdog.as_mut().as_pin_mut().is_none() {
+                        trace!("Setting watchdog timeout");
                         this.watchdog
                             .as_mut()
                             .set(Some(time::delay_for(*this.watchdog_timeout)));
@@ -185,6 +186,7 @@ where
                 }
             }
 
+            trace!("Polling discovery resolution");
             let up = match ready!(this.discover.poll_discover(cx)) {
                 Some(Ok(up)) => up,
                 Some(Err(e)) => {
@@ -193,12 +195,12 @@ where
                     return Poll::Ready(());
                 }
                 None => {
-                    warn!("Discovery stream ended!");
+                    warn!("Discovery task ended!");
                     return Poll::Ready(());
                 }
             };
 
-            trace!("Resolution update");
+            trace!("Discovery task update");
             this.tx.try_send(up).ok().expect("sender must be ready");
         }
     }
@@ -208,10 +210,20 @@ impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
     type Item = Result<tower::discover::Change<K, S>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        trace!("Polling resolution");
         return match self.project().rx.poll_next(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(change)) => Poll::Ready(Some(Ok(change))),
-            Poll::Ready(None) => Poll::Ready(Some(Err(Lost(()).into()))),
+            Poll::Pending => {
+                trace!("Resolution stream pending");
+                Poll::Pending
+            }
+            Poll::Ready(Some(change)) => {
+                trace!("Resolution stream updated");
+                Poll::Ready(Some(Ok(change)))
+            }
+            Poll::Ready(None) => {
+                trace!("Resolution stream ended");
+                Poll::Ready(Some(Err(Lost(()).into())))
+            }
         };
     }
 }
