@@ -365,9 +365,7 @@ impl Config {
                     .box_http_response(),
             )
             .push_map_target(|(_, accept): (http::Version, tls::accept::Meta)| accept)
-            .instrument(
-                |(version, _): &(http::Version, tls::accept::Meta)| info_span!("http", %version),
-            )
+            .instrument(|(v, _): &(http::Version, tls::accept::Meta)| info_span!("http", %v))
             .check_new_service::<(http::Version, tls::accept::Meta), http::Request<_>>()
             .into_inner();
 

@@ -382,6 +382,7 @@ impl Config {
                         .push(metrics.stack.layer(stack_labels("logical"))),
                 ),
             )
+            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
             .into_make_service()
             .spawn_buffer(buffer_capacity)
             .check_make_service::<HttpLogical, http::Request<_>>()
@@ -389,7 +390,6 @@ impl Config {
             // Strips headers that may be set by this proxy.
             .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
             .check_make_service_clone::<HttpLogical, http::Request<B>>()
-            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
             .into_inner()
     }
 
@@ -487,7 +487,7 @@ impl Config {
                     .box_http_response(),
             )
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|a: &endpoint::HttpAccept| info_span!("http", version=%a.version))
+            .instrument(|a: &endpoint::HttpAccept| info_span!("http", v = %a.version))
             .push_map_target(endpoint::HttpAccept::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
