@@ -63,7 +63,6 @@ impl<G: Clone, M> tower::layer::Layer<M> for InstrumentMakeLayer<G> {
 
 impl<T, G, N> NewService<T> for InstrumentMake<G, N>
 where
-    T: std::fmt::Debug,
     G: GetSpan<T>,
     N: NewService<T>,
 {
@@ -72,7 +71,7 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         let span = self.get_span.get_span(&target);
         let inner = span.in_scope(move || {
-            trace!(?target, "new_service");
+            trace!("new");
             self.make.new_service(target)
         });
         Instrument { inner, span }
@@ -81,7 +80,6 @@ where
 
 impl<T, G, M> tower::Service<T> for InstrumentMake<G, M>
 where
-    T: std::fmt::Debug,
     G: GetSpan<T>,
     M: tower::Service<T>,
 {
@@ -90,16 +88,18 @@ where
     type Future = Instrument<M::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        trace!("poll_ready");
         let ready = self.make.poll_ready(cx);
-        trace!(ready = ready.is_ready());
+        match ready {
+            Poll::Pending => trace!(ready = false, "make"),
+            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok(), "make"),
+        }
         ready
     }
 
     fn call(&mut self, target: T) -> Self::Future {
         let span = self.get_span.get_span(&target);
         let inner = span.in_scope(|| {
-            trace!(?target, "make_service");
+            trace!("make");
             self.make.call(target)
         });
         Instrument { inner, span }
@@ -166,16 +166,18 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let _enter = self.span.enter();
 
-        trace!("poll ready");
         let ready = self.inner.poll_ready(cx);
-        trace!(ready = ready.is_ready());
+        match ready {
+            Poll::Pending => trace!(ready = false, "service"),
+            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok(), "service"),
+        }
         ready
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
         let _enter = self.span.enter();
 
-        trace!(?request, "call");
+        trace!(?request, "service");
         self.inner.call(request).instrument(self.span.clone())
     }
 }
