@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Delay};
 use tower::discover;
-use tracing::{trace, warn};
+use tracing::warn;
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -76,7 +76,6 @@ where
     }
 
     fn call(&mut self, req: T) -> Self::Future {
-        trace!(%req, "Discovering resolution");
         let future = self.inner.call(req);
         Self::Future {
             future,
@@ -100,7 +99,6 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let discover = ready!(this.future.try_poll(cx))?;
-        trace!("Resolution acquired");
 
         let (tx, rx) = mpsc::channel(*this.capacity);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
@@ -160,7 +158,6 @@ where
                 }
                 Poll::Pending => {
                     if this.watchdog.as_mut().as_pin_mut().is_none() {
-                        trace!("Setting watchdog timeout");
                         this.watchdog
                             .as_mut()
                             .set(Some(time::delay_for(*this.watchdog_timeout)));
@@ -183,7 +180,6 @@ where
                 }
             }
 
-            trace!("Polling discovery resolution");
             let up = match ready!(this.discover.poll_discover(cx)) {
                 Some(Ok(up)) => up,
                 Some(Err(e)) => {
@@ -192,12 +188,11 @@ where
                     return Poll::Ready(());
                 }
                 None => {
-                    warn!("Discovery task ended!");
+                    warn!("Discovery stream ended!");
                     return Poll::Ready(());
                 }
             };
 
-            trace!("Discovery task update");
             this.tx.try_send(up).ok().expect("sender must be ready");
         }
     }
@@ -207,7 +202,6 @@ impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
     type Item = Result<tower::discover::Change<K, S>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        trace!("Polling resolution");
         return match self.project().rx.poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(change)) => Poll::Ready(Some(Ok(change))),

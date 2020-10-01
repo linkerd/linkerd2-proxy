@@ -8,7 +8,6 @@ use std::hash::Hash;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::discover::{self, Change};
-use tracing::trace;
 
 #[derive(Clone, Debug)]
 pub struct MakeEndpoint<D, E> {
@@ -86,7 +85,6 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let resolution = ready!(this.future.try_poll(cx))?;
-        trace!("Resolution acquired");
         let new_endpoint = this.new_endpoint.take().expect("polled after ready");
         Poll::Ready(Ok(Discover::new(resolution, new_endpoint)))
     }
@@ -101,7 +99,7 @@ where
     D::Error: Into<Error>,
     E: NewService<D::Service>,
 {
-    fn new(discover: D, new_endpoint: E) -> Self {
+    pub fn new(discover: D, new_endpoint: E) -> Self {
         Self {
             discover,
             new_endpoint,
@@ -128,14 +126,10 @@ where
                 Some(change) => {
                     return Poll::Ready(Some(Ok(match change.map_err(Into::into)? {
                         Change::Insert(key, target) => {
-                            trace!("Adding endpoint");
                             let endpoint = this.new_endpoint.new_service(target);
                             Change::Insert(key, endpoint)
                         }
-                        Change::Remove(key) => {
-                            trace!("Removing endpoint");
-                            Change::Remove(key)
-                        }
+                        Change::Remove(key) => Change::Remove(key),
                     })))
                 }
 
