@@ -88,11 +88,10 @@ where
     type Future = Instrument<M::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        trace!("make ready");
         let ready = self.make.poll_ready(cx);
         match ready {
-            Poll::Pending => trace!(ready = false),
-            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok()),
+            Poll::Pending => trace!(ready = false, "make"),
+            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok(), "make"),
         }
         ready
     }
@@ -167,11 +166,10 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let _enter = self.span.enter();
 
-        trace!("ready");
         let ready = self.inner.poll_ready(cx);
         match ready {
-            Poll::Pending => trace!(ready = false),
-            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok()),
+            Poll::Pending => trace!(ready = false, "service"),
+            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok(), "service"),
         }
         ready
     }
@@ -179,7 +177,7 @@ where
     fn call(&mut self, request: Req) -> Self::Future {
         let _enter = self.span.enter();
 
-        trace!(?request, "call");
+        trace!(?request, "service");
         self.inner.call(request).instrument(self.span.clone())
     }
 }
