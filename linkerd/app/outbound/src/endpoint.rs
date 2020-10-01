@@ -349,7 +349,9 @@ impl From<SocketAddr> for TcpEndpoint {
         Self {
             addr,
             dst: addr.into(),
-            identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+            identity: Conditional::None(
+                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
+            ),
             labels: None,
         }
     }
