@@ -49,7 +49,7 @@ impl TlsStatus {
     }
 
     pub fn server(id: tls::PeerIdentity) -> Self {
-        Self(id.map(TlsId::ClientId))
+        Self(id.map(TlsId::ServerId))
     }
 }
 
