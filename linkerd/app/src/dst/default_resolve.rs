@@ -24,12 +24,17 @@ where
     S::Endpoint: Default + Send + 'static,
     S::Resolution: Send + 'static,
     S::Future: Send + 'static,
-    stream::Once<future::Ready<Result<Update<S::Endpoint>, S::Error>>>:
-        stream::TryStream<Ok = Update<S::Endpoint>, Error = S::Error>,
+    stream::Chain<
+        stream::Once<future::Ready<Result<Update<S::Endpoint>, Error>>>,
+        stream::Pending<Result<Update<S::Endpoint>, Error>>,
+    >: stream::TryStream<Ok = Update<S::Endpoint>, Error = S::Error>,
 {
     type Response = future::Either<
         S::Resolution,
-        stream::Once<future::Ready<Result<Update<S::Endpoint>, Error>>>,
+        stream::Chain<
+            stream::Once<future::Ready<Result<Update<S::Endpoint>, Error>>>,
+            stream::Pending<Result<Update<S::Endpoint>, Error>>,
+        >,
     >;
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Error>> + Send + 'static>>;
@@ -48,7 +53,8 @@ where
                     if Rejected::matches(&*error) {
                         tracing::debug!(%error, %addr, "Synthesizing endpoint");
                         let endpoint = (addr, S::Endpoint::default());
-                        let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
+                        let res = stream::once(future::ok(Update::Reset(vec![endpoint])))
+                            .chain(stream::pending());
                         future::ok(future::Either::Right(res))
                     } else {
                         future::err(error)
