@@ -349,7 +349,7 @@ impl From<SocketAddr> for TcpEndpoint {
         Self {
             addr,
             dst: addr.into(),
-            identity: Conditional::None(tls::ReasonForNoPeerName::OpaqueTcp.into()),
+            identity: Conditional::None(tls::ReasonForNoPeerName::PortSkipped.into()),
             labels: None,
         }
     }

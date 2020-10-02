@@ -21,10 +21,6 @@ pub trait HasPeerIdentity {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReasonForNoPeerName {
-    /// The connection is a non-HTTP connection so we don't know anything
-    /// about the destination besides its address.
-    OpaqueTcp,
-
     /// The destination service didn't give us the identity, which is its way
     /// of telling us that we shouldn't do TLS for this endpoint.
     NotProvidedByServiceDiscovery,
@@ -51,7 +47,6 @@ impl fmt::Display for ReasonForNoPeerName {
         match self {
             ReasonForNoPeerName::LocalIdentityDisabled => write!(f, "disabled"),
             ReasonForNoPeerName::Loopback => write!(f, "loopback"),
-            ReasonForNoPeerName::OpaqueTcp => write!(f, "opaque_tcp"),
             ReasonForNoPeerName::PortSkipped => write!(f, "port_skipped"),
             ReasonForNoPeerName::NoTlsFromRemote => write!(f, "no_tls_from_remote"),
             ReasonForNoPeerName::NoPeerIdFromRemote => write!(f, "no_peer_id_from_remote"),
