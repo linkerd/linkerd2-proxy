@@ -331,11 +331,14 @@ impl Config {
         // When no new requests have been dispatched for `cache_max_idle_age`,
         // the cached service is dropped. In-flight streams will continue to be
         // processed.
-        let logical = concrete
+        concrete
             // Uses the split-provided target `Addr` to build a concrete target.
             .check_new_service::<HttpConcrete, http::Request<_>>()
             .push_map_target(HttpConcrete::from)
             .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
+            // The concrete address is only set when the profile could be
+            // resolved. Endpoint resolution is skipped when there is no
+            // concrete address.
             .check_new_service::<(Option<Addr>, endpoint::Profile), http::Request<_>>()
             .push(profiles::split::layer())
             .check_new_service::<endpoint::Profile, http::Request<_>>()
@@ -366,12 +369,7 @@ impl Config {
             // Discovers the service profile from the control plane and passes
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
-            .check_new_service::<HttpLogical, http::Request<_>>();
-
-        // Attempts to route route request to a logical services that uses
-        // control plane for discovery. If the discovery is rejected, the
-        // `forward` stack is used instead, bypassing load balancing, etc.
-        logical
+            .check_new_service::<HttpLogical, http::Request<_>>()
             .push_on_response(svc::layers().box_http_response())
             .cache(
                 svc::layers().push_on_response(
