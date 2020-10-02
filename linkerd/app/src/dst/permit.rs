@@ -38,7 +38,7 @@ where
     fn filter(&self, t: T) -> Result<Addr, Error> {
         let addr = (&t).into();
         let permitted = self.0.matches(&addr);
-        tracing::debug!(%addr, permitted, "Profile");
+        tracing::debug!(permitted, "Profile");
         if permitted {
             Ok(addr)
         } else {
@@ -68,20 +68,15 @@ where
     type Request = Addr;
 
     fn filter(&self, t: T) -> Result<Addr, Error> {
-        let addr = match (&t).into() {
-            Some(addr) => addr,
-            None => {
-                tracing::debug!("No resolveable address");
-                return Err(Rejected(()).into());
+        let permitted = (&t).into().and_then(|addr| {
+            if self.0.matches(&addr) {
+                Some(addr)
+            } else {
+                None
             }
-        };
-        let permitted = self.0.matches(&addr);
-        tracing::debug!(%addr, permitted, "Resolve");
-        if permitted {
-            Ok(addr)
-        } else {
-            Err(Rejected(()).into())
-        }
+        });
+        tracing::debug!(permitted = %permitted.is_some(), "Resolve");
+        permitted.ok_or_else(|| Rejected(()).into())
     }
 }
 
