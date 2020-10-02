@@ -74,6 +74,12 @@ where
     type Service = Split<T, N, S, Req>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
+        // If there is a profile, it is used to configure one or more inner
+        // services and a concrete address is provided so that the endpoint
+        // discovery is performed.
+        //
+        // Otherwise, profile lookup was rejected and, therefore, no concrete
+        // address is provided.
         let inner = match Into::<Option<Receiver>>::into(&target) {
             None => {
                 trace!("Building default service");
@@ -163,6 +169,10 @@ where
                     }
                     debug!(?targets, "Updating");
 
+                    // Replace the old set of addresses with an empty set. The
+                    // prior set is used to determine whether a new service
+                    // needs to be created and what stale services should be
+                    // removed.
                     let mut prior_addrs =
                         std::mem::replace(addrs, IndexSet::with_capacity(targets.len()));
                     let mut weights = Vec::with_capacity(targets.len());
@@ -183,6 +193,8 @@ where
 
                     *distribution = WeightedIndex::new(weights).unwrap();
 
+                    // Remove all prior services that did not exist in the new
+                    // set of targets.
                     for addr in prior_addrs.into_iter() {
                         services.evict(&addr);
                     }
