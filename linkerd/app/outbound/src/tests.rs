@@ -67,7 +67,7 @@ async fn plaintext_tcp() {
     let resolver = test_support::resolver().endpoint_exists(
         logical.clone(),
         target_addr,
-        test_support::resolver::Metadata::empty(),
+        test_support::resolver::Metadata::default(),
     );
 
     // Build the outbound TCP balancer stack.
