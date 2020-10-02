@@ -309,7 +309,6 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                    .push(svc::layer::mk(svc::SpawnReady::new))
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)
@@ -333,14 +332,10 @@ impl Config {
         // the cached service is dropped. In-flight streams will continue to be
         // processed.
         let logical = concrete
-            .push_on_response(
-                svc::layers()
-                    .push(svc::layer::mk(svc::SpawnReady::new))
-                    .push_failfast(dispatch_timeout),
-            )
             // Uses the split-provided target `Addr` to build a concrete target.
             .check_new_service::<HttpConcrete, http::Request<_>>()
             .push_map_target(HttpConcrete::from)
+            .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
             .check_new_service::<(Option<Addr>, endpoint::Profile), http::Request<_>>()
             .push(profiles::split::layer())
             .check_new_service::<endpoint::Profile, http::Request<_>>()
