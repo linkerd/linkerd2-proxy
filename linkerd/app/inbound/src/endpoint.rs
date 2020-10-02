@@ -114,9 +114,9 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
-impl Into<Option<Addr>> for &'_ Target {
-    fn into(self) -> Option<Addr> {
-        Some(self.dst.clone())
+impl Into<Addr> for &'_ Target {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 

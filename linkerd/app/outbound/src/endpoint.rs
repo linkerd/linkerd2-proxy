@@ -184,9 +184,9 @@ impl Into<SocketAddr> for HttpLogical {
     }
 }
 
-impl Into<Option<Addr>> for &'_ HttpLogical {
-    fn into(self) -> Option<Addr> {
-        Some(self.dst.clone())
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 
