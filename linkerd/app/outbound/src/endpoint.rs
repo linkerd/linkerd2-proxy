@@ -1,8 +1,7 @@
 use crate::http::uri::Authority;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    dst,
-    metric_labels,
+    dst, metric_labels,
     metric_labels::{prefix_labels, EndpointLabels, TlsStatus},
     profiles,
     proxy::{
@@ -15,8 +14,7 @@ use linkerd2_app_core::{
     },
     router,
     transport::{listen, tls},
-    Addr,
-    Conditional, //L5D_REQUIRE_ID,
+    Addr, Conditional,
 };
 use std::{net::SocketAddr, sync::Arc};
 
@@ -38,7 +36,7 @@ pub struct HttpLogical {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpConcrete {
-    pub dst: Addr,
+    pub resolve: Option<Addr>,
     pub logical: HttpLogical,
 }
 
@@ -47,7 +45,7 @@ pub struct LogicalPerRequest(HttpAccept);
 
 #[derive(Clone, Debug)]
 pub struct Profile {
-    pub rx: profiles::Receiver,
+    pub rx: Option<profiles::Receiver>,
     pub logical: HttpLogical,
 }
 
@@ -81,21 +79,17 @@ impl From<listen::Addrs> for TcpLogical {
     }
 }
 
+/// Used as a default destination when resolution is rejected.
 impl Into<SocketAddr> for &'_ TcpLogical {
     fn into(self) -> SocketAddr {
         self.addr
     }
 }
 
-impl Into<Addr> for &'_ TcpLogical {
-    fn into(self) -> Addr {
-        self.addr.into()
-    }
-}
-
-impl std::fmt::Display for TcpLogical {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.addr.fmt(f)
+/// Used to resolve endpoints.
+impl Into<Option<Addr>> for &'_ TcpLogical {
+    fn into(self) -> Option<Addr> {
+        Some(self.addr.into())
     }
 }
 
@@ -118,55 +112,54 @@ impl Into<SocketAddr> for &'_ HttpAccept {
 
 // === impl HttpConrete ===
 
-impl From<(Addr, Profile)> for HttpConcrete {
-    fn from((dst, Profile { logical, .. }): (Addr, Profile)) -> Self {
-        Self { dst, logical }
+impl From<(Option<Addr>, Profile)> for HttpConcrete {
+    fn from((resolve, Profile { logical, .. }): (Option<Addr>, Profile)) -> Self {
+        Self { resolve, logical }
     }
 }
 
-impl AsRef<Addr> for HttpConcrete {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
+/// Produces an address to resolve to individual endpoints. This address is only
+/// present if the initial profile resolution was not rejected.
+impl Into<Option<Addr>> for &'_ HttpConcrete {
+    fn into(self) -> Option<Addr> {
+        self.resolve.clone()
     }
 }
 
-impl Into<Addr> for &'_ HttpConcrete {
-    fn into(self) -> Addr {
-        self.dst.clone()
-    }
-}
-
+/// Produces an address to be used if resolution is rejected.
 impl Into<SocketAddr> for &'_ HttpConcrete {
     fn into(self) -> SocketAddr {
-        self.dst
-            .socket_addr()
+        self.resolve
+            .as_ref()
+            .and_then(|a| a.socket_addr())
             .unwrap_or_else(|| self.logical.orig_dst)
-    }
-}
-
-impl std::fmt::Display for HttpConcrete {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.dst.fmt(f)
-    }
-}
-
-impl From<HttpLogical> for HttpConcrete {
-    fn from(logical: HttpLogical) -> Self {
-        Self {
-            dst: logical.dst.clone(),
-            logical,
-        }
     }
 }
 
 // === impl HttpLogical ===
 
-impl std::fmt::Display for HttpLogical {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.dst.fmt(f)
+/// Produces an address for profile discovery.
+impl Into<Addr> for &'_ HttpLogical {
+    fn into(self) -> Addr {
+        self.dst.clone()
     }
 }
 
+/// Needed for canonicalization.
+impl AsRef<Addr> for HttpLogical {
+    fn as_ref(&self) -> &Addr {
+        &self.dst
+    }
+}
+
+/// Needed for canonicalization.
+impl AsMut<Addr> for HttpLogical {
+    fn as_mut(&mut self) -> &mut Addr {
+        &mut self.dst
+    }
+}
+
+// Used to set the l5d-canonical-dst header.
 impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
     fn from(target: &'t HttpLogical) -> Self {
         http::header::HeaderValue::from_str(&target.dst.to_string())
@@ -174,45 +167,7 @@ impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
     }
 }
 
-impl Into<SocketAddr> for HttpLogical {
-    fn into(self) -> SocketAddr {
-        self.orig_dst
-    }
-}
-
-impl Into<Addr> for &'_ HttpLogical {
-    fn into(self) -> Addr {
-        self.dst.clone()
-    }
-}
-
-impl AsRef<Addr> for HttpLogical {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
-    }
-}
-
-impl AsMut<Addr> for HttpLogical {
-    fn as_mut(&mut self) -> &mut Addr {
-        &mut self.dst
-    }
-}
-
 // === impl HttpEndpoint ===
-
-impl From<HttpLogical> for HttpEndpoint {
-    fn from(logical: HttpLogical) -> Self {
-        Self {
-            addr: logical.orig_dst,
-            settings: logical.version.into(),
-            identity: Conditional::None(
-                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
-            ),
-            concrete: logical.into(),
-            metadata: Metadata::default(),
-        }
-    }
-}
 
 impl std::hash::Hash for HttpEndpoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -461,8 +416,8 @@ pub fn route((route, profile): (profiles::http::Route, Profile)) -> dst::Route {
 
 // === impl Profile ===
 
-impl From<(profiles::Receiver, HttpLogical)> for Profile {
-    fn from((rx, logical): (profiles::Receiver, HttpLogical)) -> Self {
+impl From<(Option<profiles::Receiver>, HttpLogical)> for Profile {
+    fn from((rx, logical): (Option<profiles::Receiver>, HttpLogical)) -> Self {
         Self { rx, logical }
     }
 }
@@ -473,14 +428,14 @@ impl AsRef<Addr> for Profile {
     }
 }
 
-impl AsRef<profiles::Receiver> for Profile {
-    fn as_ref(&self) -> &profiles::Receiver {
-        &self.rx
+impl Into<Addr> for &'_ Profile {
+    fn into(self) -> Addr {
+        self.logical.dst.clone()
     }
 }
 
-impl From<Profile> for HttpLogical {
-    fn from(Profile { logical, .. }: Profile) -> Self {
-        logical
+impl Into<Option<profiles::Receiver>> for &'_ Profile {
+    fn into(self) -> Option<profiles::Receiver> {
+        self.rx.clone()
     }
 }

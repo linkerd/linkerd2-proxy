@@ -37,9 +37,6 @@ pub struct Client<S, R> {
     context_token: String,
 }
 
-#[derive(Clone, Debug)]
-pub struct InvalidProfileAddr(Addr);
-
 #[pin_project]
 pub struct ProfileFuture<S, R>
 where
@@ -126,7 +123,7 @@ where
     R: Recover + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
-    type Response = Receiver;
+    type Response = Option<Receiver>;
     type Error = Error;
     type Future = ProfileFuture<S, R>;
 
@@ -142,8 +139,6 @@ where
             ..Default::default()
         };
 
-        let timeout = time::delay_for(self.initial_timeout);
-
         let inner = Inner {
             request,
             service: self.service.clone(),
@@ -152,7 +147,7 @@ where
         };
         ProfileFuture {
             inner: Some(inner),
-            timeout,
+            timeout: time::delay_for(self.initial_timeout),
         }
     }
 }
@@ -168,7 +163,7 @@ where
     R::Backoff: Unpin,
     R::Backoff: Send,
 {
-    type Output = Result<Receiver, Error>;
+    type Output = Result<Option<Receiver>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
@@ -217,7 +212,7 @@ where
                                 trace!(?profile, "publishing");
                                 if tx.broadcast(profile).is_err() {
                                     trace!("failed to publish profile");
-                                    return
+                                    return;
                                 }
                             }
                         }
@@ -227,7 +222,7 @@ where
         };
         tokio::spawn(daemon.in_current_span());
 
-        Poll::Ready(Ok(rx))
+        Poll::Ready(Ok(Some(rx)))
     }
 }
 
@@ -524,25 +519,5 @@ mod tests {
             // simply not panicking is good enough
             true
         }
-    }
-}
-
-impl InvalidProfileAddr {
-    pub fn addr(&self) -> &Addr {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for InvalidProfileAddr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "invalid profile addr: {}", self.0)
-    }
-}
-
-impl std::error::Error for InvalidProfileAddr {}
-
-impl From<Addr> for InvalidProfileAddr {
-    fn from(addr: Addr) -> Self {
-        Self(addr)
     }
 }

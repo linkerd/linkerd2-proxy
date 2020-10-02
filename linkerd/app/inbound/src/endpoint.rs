@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     transport::{listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::{convert::TryInto, fmt, net::SocketAddr, sync::Arc};
+use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -21,7 +21,7 @@ pub struct Target {
 #[derive(Clone, Debug)]
 pub struct Logical {
     target: Target,
-    profiles: profiles::Receiver,
+    profiles: Option<profiles::Receiver>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -114,15 +114,10 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
+/// Used for profile discovery.
 impl Into<Addr> for &'_ Target {
     fn into(self) -> Addr {
         self.dst.clone()
-    }
-}
-
-impl AsRef<Addr> for Target {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
     }
 }
 
@@ -194,12 +189,6 @@ impl tap::Inspect for Target {
 
     fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
         false
-    }
-}
-
-impl fmt::Display for Target {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.dst.fmt(f)
     }
 }
 
@@ -275,14 +264,14 @@ impl From<Logical> for Target {
 
 // === impl Logical ===
 
-impl From<(profiles::Receiver, Target)> for Logical {
-    fn from((profiles, target): (profiles::Receiver, Target)) -> Self {
+impl From<(Option<profiles::Receiver>, Target)> for Logical {
+    fn from((profiles, target): (Option<profiles::Receiver>, Target)) -> Self {
         Self { profiles, target }
     }
 }
 
-impl AsRef<profiles::Receiver> for Logical {
-    fn as_ref(&self) -> &profiles::Receiver {
-        &self.profiles
+impl Into<Option<profiles::Receiver>> for &'_ Logical {
+    fn into(self) -> Option<profiles::Receiver> {
+        self.profiles.clone()
     }
 }

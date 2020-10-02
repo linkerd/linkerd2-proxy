@@ -1,14 +1,16 @@
+mod default_profile;
 mod default_resolve;
 mod permit;
 mod resolve;
 
+use self::default_profile::RecoverDefaultProfile;
 use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     control, dns, profiles, proxy::identity, request_filter::RequestFilter, svc, transport::tls,
-    Addr, ControlHttpMetrics, Error,
+    ControlHttpMetrics, Error,
 };
-use permit::PermitConfiguredDsts;
+use permit::{PermitProfile, PermitResolve};
 use std::time::Duration;
 use tonic::body::BoxBody;
 
@@ -23,20 +25,26 @@ pub struct Config {
     pub initial_profile_timeout: Duration,
 }
 
+/// Indicates that discovery was rejected due to configuration.
 #[derive(Clone, Debug)]
-pub struct Rejected(());
+struct Rejected(());
 
 /// Handles to destination service clients.
-///
-/// The addr is preserved for logging.
 pub struct Dst {
+    /// The address of the destination service, used for logging.
     pub addr: control::ControlAddr,
-    pub profiles: RequestFilter<
-        PermitConfiguredDsts<profiles::InvalidProfileAddr>,
-        profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
+
+    /// Resolves profiles.
+    pub profiles: RecoverDefaultProfile<
+        RequestFilter<
+            PermitProfile,
+            profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
+        >,
     >,
+
+    /// Resolves endpoints.
     pub resolve: RecoverDefaultResolve<
-        RequestFilter<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
+        RequestFilter<PermitResolve, resolve::Resolve<control::Client<BoxBody>>>,
     >,
 }
 
@@ -51,7 +59,7 @@ impl Config {
         let backoff = self.control.connect.backoff.clone();
         let svc = self.control.build(dns, metrics, identity);
         let resolve = svc::stack(resolve::new(svc.clone(), &self.context, backoff))
-            .push(RequestFilter::layer(PermitConfiguredDsts::new(
+            .push(RequestFilter::layer(PermitResolve::new(
                 self.get_suffixes,
                 self.get_networks,
             )))
@@ -64,10 +72,11 @@ impl Config {
             self.initial_profile_timeout,
             self.context,
         ))
-        .push(RequestFilter::layer(
-            PermitConfiguredDsts::new(self.profile_suffixes, self.profile_networks)
-                .with_error::<profiles::InvalidProfileAddr>(),
-        ))
+        .push(RequestFilter::layer(PermitProfile::new(
+            self.profile_suffixes,
+            self.profile_networks,
+        )))
+        .push(default_profile::layer())
         .into_inner();
 
         Ok(Dst {
@@ -78,21 +87,11 @@ impl Config {
     }
 }
 
-impl std::fmt::Display for Rejected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "rejected discovery")
-    }
-}
-
-impl std::error::Error for Rejected {}
-
-impl From<Addr> for Rejected {
-    fn from(_: Addr) -> Self {
-        Rejected(())
-    }
-}
+// === impl Rejected ===
 
 impl Rejected {
+    /// Checks whether discovery was rejected, either due to configuration or by
+    /// the destination service.
     fn matches(err: &(dyn std::error::Error + 'static)) -> bool {
         if err.is::<Self>() {
             return true;
@@ -105,3 +104,11 @@ impl Rejected {
         err.source().map(Self::matches).unwrap_or(false)
     }
 }
+
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rejected discovery")
+    }
+}
+
+impl std::error::Error for Rejected {}

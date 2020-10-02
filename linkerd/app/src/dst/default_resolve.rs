@@ -14,6 +14,8 @@ pub fn layer<S>() -> impl svc::Layer<S, Service = RecoverDefaultResolve<S>> + Cl
     svc::layer::mk(RecoverDefaultResolve)
 }
 
+/// Wraps a `Resolve` to produce a default resolution when the resolution is
+/// rejected.
 #[derive(Clone, Debug)]
 pub struct RecoverDefaultResolve<S>(S);
 
@@ -24,7 +26,7 @@ where
     S::Endpoint: Default + Send + 'static,
     S::Resolution: Send + 'static,
     S::Future: Send + 'static,
-    stream::Once<future::Ready<Result<Update<S::Endpoint>, S::Error>>>:
+    stream::Once<future::Ready<Result<Update<S::Endpoint>, Error>>>:
         stream::TryStream<Ok = Update<S::Endpoint>, Error = S::Error>,
 {
     type Response = future::Either<
@@ -34,7 +36,7 @@ where
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         self.0.poll_ready(cx)
     }
 

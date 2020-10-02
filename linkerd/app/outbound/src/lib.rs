@@ -20,7 +20,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    Addr, Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net, time::Duration};
@@ -295,7 +295,7 @@ impl Config {
             .push(discover::buffer(1_000, cache_max_idle_age));
 
         // Builds a balancer for each concrete destination.
-        let concrete = svc::stack(endpoint.clone())
+        let concrete = svc::stack(endpoint)
             .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -314,8 +314,11 @@ impl Config {
                     .push_failfast(dispatch_timeout)
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
+            .instrument(|c: &HttpConcrete| match c.resolve.as_ref() {
+                None => info_span!("concrete"),
+                Some(addr) => info_span!("concrete", %addr),
+            })
             .into_new_service()
-            .instrument(|c: &HttpConcrete| info_span!("concrete", dst = %c.dst))
             .check_new_service::<HttpConcrete, http::Request<_>>();
 
         // For each logical target, performs service profile resolution and
@@ -328,14 +331,24 @@ impl Config {
         // When no new requests have been dispatched for `cache_max_idle_age`,
         // the cached service is dropped. In-flight streams will continue to be
         // processed.
-        let logical = concrete
+        concrete
             // Uses the split-provided target `Addr` to build a concrete target.
+            .check_new_service::<HttpConcrete, http::Request<_>>()
             .push_map_target(HttpConcrete::from)
             .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
+            // The concrete address is only set when the profile could be
+            // resolved. Endpoint resolution is skipped when there is no
+            // concrete address.
+            .check_new_service::<(Option<Addr>, endpoint::Profile), http::Request<_>>()
             .push(profiles::split::layer())
+            .check_new_service::<endpoint::Profile, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
-            .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity))
+            .push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity),
+            )
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -351,29 +364,13 @@ impl Config {
                     .push_map_target(endpoint::route)
                     .into_inner(),
             ))
+            .check_new_service::<endpoint::Profile, http::Request<_>>()
             .push_map_target(endpoint::Profile::from)
             // Discovers the service profile from the control plane and passes
             // it to inner stack to build the router and traffic split.
             .push(profiles::discover::layer(profiles_client))
-            .check_new_service::<HttpLogical, http::Request<_>>();
-
-        // Caches clients that bypass discovery/balancing.
-        let forward = svc::stack(endpoint)
-            .instrument(|t: &HttpEndpoint| debug_span!("forward", peer.id = ?t.identity))
-            .check_new_service::<HttpEndpoint, http::Request<_>>();
-
-        // Attempts to route route request to a logical services that uses
-        // control plane for discovery. If the discovery is rejected, the
-        // `forward` stack is used instead, bypassing load balancing, etc.
-        logical
+            .check_new_service::<HttpLogical, http::Request<_>>()
             .push_on_response(svc::layers().box_http_response())
-            .push_fallback_with_predicate(
-                forward
-                    .push_map_target(HttpEndpoint::from)
-                    .push_on_response(svc::layers().box_http_response().box_http_request())
-                    .into_inner(),
-                is_discovery_rejected,
-            )
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -492,14 +489,8 @@ impl Config {
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
 
-        let tcp_forward = svc::stack(tcp_connect.clone())
-            .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .instrument(|_: &TcpEndpoint| debug_span!("forward"))
-            .check_new::<TcpEndpoint>();
-
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
+        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
@@ -522,24 +513,25 @@ impl Config {
         ))
         .into_inner();
 
-        svc::stack(svc::stack::MakeSwitch::new(
-            skip_detect.clone(),
-            http,
-            tcp_forward
-                .push_map_target(TcpEndpoint::from)
-                .instrument(|_: &_| info_span!("tcp"))
-                .into_inner(),
-        ))
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
-        )
-        .push_map_target(endpoint::TcpLogical::from)
-        .push(metrics.transport.layer_accept(TransportLabels))
-        .into_inner()
+        let tcp = svc::stack(tcp_connect)
+            .push_make_thunk()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .instrument(|_: &TcpEndpoint| debug_span!("tcp.forward"))
+            .check_new::<TcpEndpoint>()
+            .push_map_target(TcpEndpoint::from)
+            .into_inner();
+
+        svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+                ),
+            )
+            .push_map_target(endpoint::TcpLogical::from)
+            .push(metrics.transport.layer_accept(TransportLabels))
+            .into_inner()
     }
 }
 
@@ -580,16 +572,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     let mut l = HashMap::new();
     l.insert("direction".to_string(), "outbound".to_string());
     l
-}
-
-fn is_discovery_rejected(err: &Error) -> bool {
-    fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-        err.is::<profiles::InvalidProfileAddr>() || err.source().map(is_rejected).unwrap_or(false)
-    }
-
-    let rejected = is_rejected(&**err);
-    tracing::debug!(rejected, %err);
-    rejected
 }
 
 fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
