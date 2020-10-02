@@ -491,14 +491,8 @@ impl Config {
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
 
-        let tcp_forward = svc::stack(tcp_connect.clone())
-            .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .instrument(|_: &TcpEndpoint| debug_span!("forward"))
-            .check_new::<TcpEndpoint>();
-
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect, resolve))
+        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
@@ -521,24 +515,25 @@ impl Config {
         ))
         .into_inner();
 
-        svc::stack(svc::stack::MakeSwitch::new(
-            skip_detect.clone(),
-            http,
-            tcp_forward
-                .push_map_target(TcpEndpoint::from)
-                .instrument(|_: &_| info_span!("tcp"))
-                .into_inner(),
-        ))
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
-        )
-        .push_map_target(endpoint::TcpLogical::from)
-        .push(metrics.transport.layer_accept(TransportLabels))
-        .into_inner()
+        let tcp = svc::stack(tcp_connect)
+            .push_make_thunk()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .instrument(|_: &TcpEndpoint| debug_span!("tcp.forward"))
+            .check_new::<TcpEndpoint>()
+            .push_map_target(TcpEndpoint::from)
+            .into_inner();
+
+        svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+                ),
+            )
+            .push_map_target(endpoint::TcpLogical::from)
+            .push(metrics.transport.layer_accept(TransportLabels))
+            .into_inner()
     }
 }
 
