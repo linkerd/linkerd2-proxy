@@ -1,12 +1,11 @@
+use super::Rejected;
 use ipnet::{Contains, IpNet};
-use linkerd2_app_core::{
-    dns::Suffix, request_filter::FilterRequest, Addr, DiscoveryRejected, Error,
-};
+use linkerd2_app_core::{dns::Suffix, request_filter::FilterRequest, Addr, Error};
 use std::marker::PhantomData;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-pub struct PermitConfiguredDsts<E = DiscoveryRejected> {
+pub struct PermitConfiguredDsts<E = Rejected> {
     name_suffixes: Arc<Vec<Suffix>>,
     networks: Arc<Vec<IpNet>>,
     _error: PhantomData<fn(E)>,
@@ -74,7 +73,7 @@ where
         if permitted {
             Ok(t)
         } else {
-            Err(E::from(addr.clone()).into())
+            Err(E::from(addr).into())
         }
     }
 }

@@ -1,10 +1,12 @@
+mod default_resolve;
 mod permit;
 mod resolve;
 
+use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     control, dns, profiles, proxy::identity, request_filter::RequestFilter, svc, transport::tls,
-    ControlHttpMetrics, Error,
+    Addr, ControlHttpMetrics, Error,
 };
 use permit::PermitConfiguredDsts;
 use std::time::Duration;
@@ -21,6 +23,9 @@ pub struct Config {
     pub initial_profile_timeout: Duration,
 }
 
+#[derive(Clone, Debug)]
+pub struct Rejected(());
+
 /// Handles to destination service clients.
 ///
 /// The addr is preserved for logging.
@@ -30,7 +35,9 @@ pub struct Dst {
         PermitConfiguredDsts<profiles::InvalidProfileAddr>,
         profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
     >,
-    pub resolve: RequestFilter<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
+    pub resolve: RecoverDefaultResolve<
+        RequestFilter<PermitConfiguredDsts, resolve::Resolve<control::Client<BoxBody>>>,
+    >,
 }
 
 impl Config {
@@ -48,6 +55,7 @@ impl Config {
                 self.get_suffixes,
                 self.get_networks,
             )))
+            .push(default_resolve::layer())
             .into_inner();
 
         let profiles = svc::stack(profiles::Client::new(
@@ -67,5 +75,33 @@ impl Config {
             resolve,
             profiles,
         })
+    }
+}
+
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rejected discovery")
+    }
+}
+
+impl std::error::Error for Rejected {}
+
+impl From<Addr> for Rejected {
+    fn from(_: Addr) -> Self {
+        Rejected(())
+    }
+}
+
+impl Rejected {
+    fn matches(err: &(dyn std::error::Error + 'static)) -> bool {
+        if err.is::<Self>() {
+            return true;
+        }
+
+        if let Some(status) = err.downcast_ref::<tonic::Status>() {
+            return status.code() == tonic::Code::InvalidArgument;
+        }
+
+        err.source().map(Self::matches).unwrap_or(false)
     }
 }
