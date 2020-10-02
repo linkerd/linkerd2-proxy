@@ -1,7 +1,6 @@
 use futures::{ready, Stream, TryFuture};
 use linkerd2_error::{Error, Never};
 use pin_project::pin_project;
-use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -60,7 +59,6 @@ impl<M> Buffer<M> {
 
 impl<T, M, D> tower::Service<T> for Buffer<M>
 where
-    T: fmt::Display,
     M: tower::Service<T, Response = D>,
     D: discover::Discover + Send + 'static,
     D::Error: Into<Error>,
