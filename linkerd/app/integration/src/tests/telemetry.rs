@@ -932,7 +932,7 @@ mod transport {
         // Connection to the server should be a failure with the EXFULL error
         // code.
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"EXFULL\"} 1");
+            "tcp_close_total{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"EXFULL\"} 1");
         // Connection from the client should have closed cleanly.
         assert_eventually_contains!(
             metrics.get("/metrics").await,
@@ -963,7 +963,7 @@ mod transport {
         // Connection to the server should be a failure with the EXFULL error
         // code.
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"EXFULL\"} 1");
+            "tcp_close_total{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"EXFULL\"} 1");
         // Connection from the client should have closed cleanly.
         assert_eventually_contains!(metrics.get("/metrics").await,
             "tcp_close_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
@@ -1121,7 +1121,7 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         let expected = format!(
-            "tcp_open_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} 1",
+            "tcp_open_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
             proxy.outbound_server.as_ref().unwrap().addr,
         );
         assert_eventually_contains!(metrics.get("/metrics").await, &expected);
@@ -1184,7 +1184,7 @@ mod transport {
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
         assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"\"} 1");
+            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1");
 
         let tcp_client = client.connect().await;
 
@@ -1194,14 +1194,14 @@ mod transport {
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
         assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"\"} 1");
+            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1");
 
         tcp_client.shutdown().await;
         let out = metrics.get("/metrics").await;
         assert_eventually_contains!(out,
             "tcp_connection_duration_ms_count{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
         assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\",errno=\"\"} 2");
+            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 2");
     }
 
     #[tokio::test]
@@ -1217,7 +1217,7 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_write_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            "tcp_write_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
             proxy.outbound_server.as_ref().unwrap().addr,
             TcpFixture::HELLO_MSG.len()
         );
@@ -1246,7 +1246,7 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_read_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_http\"}} {}",
+            "tcp_read_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
             proxy.outbound_server.as_ref().unwrap().addr,
             TcpFixture::BYE_MSG.len()
         );

@@ -136,6 +136,14 @@ impl Into<Addr> for &'_ HttpConcrete {
     }
 }
 
+impl Into<SocketAddr> for &'_ HttpConcrete {
+    fn into(self) -> SocketAddr {
+        self.dst
+            .socket_addr()
+            .unwrap_or_else(|| self.logical.orig_dst)
+    }
+}
+
 impl std::fmt::Display for HttpConcrete {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.dst.fmt(f)
@@ -201,7 +209,7 @@ impl From<HttpLogical> for HttpEndpoint {
                 tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into(),
             ),
             concrete: logical.into(),
-            metadata: Metadata::empty(),
+            metadata: Metadata::default(),
         }
     }
 }
@@ -331,7 +339,7 @@ impl From<SocketAddr> for TcpEndpoint {
         Self {
             addr,
             dst: addr.into(),
-            identity: Conditional::None(tls::ReasonForNoPeerName::NotHttp.into()),
+            identity: Conditional::None(tls::ReasonForNoPeerName::PortSkipped.into()),
             labels: None,
         }
     }
