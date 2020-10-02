@@ -38,7 +38,7 @@ pub struct ProfileSender(mpsc::UnboundedSender<pb::DestinationProfile>);
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
     expect_dst_calls: Arc<Mutex<VecDeque<Dst>>>,
-    expect_profile_calls: Arc<Mutex<VecDeque<ProfileCall>>>,
+    expect_profile_calls: Arc<Mutex<VecDeque<(pb::GetDestination, ProfileReceiver)>>>,
     unordered: bool,
 }
 
@@ -59,9 +59,6 @@ enum Dst {
     Call(pb::GetDestination, Result<DstReceiver, grpc::Status>),
     Done,
 }
-
-#[derive(Debug)]
-struct ProfileCall(pb::GetDestination, Result<ProfileReceiver, grpc::Status>);
 
 impl Controller {
     pub fn new() -> Self {
@@ -150,24 +147,8 @@ impl Controller {
         self.expect_profile_calls
             .lock()
             .unwrap()
-            .push_back(ProfileCall(dst, Ok(rx)));
+            .push_back((dst, rx));
         ProfileSender(tx)
-    }
-
-    pub fn profile_fail(&self, dest: &str, status: grpc::Status) {
-        let path = if dest.contains(":") {
-            dest.to_owned()
-        } else {
-            format!("{}:80", dest)
-        };
-        let dst = pb::GetDestination {
-            path,
-            ..Default::default()
-        };
-        self.expect_profile_calls
-            .lock()
-            .unwrap()
-            .push_back(ProfileCall(dst, Err(status)));
     }
 
     pub async fn run(self) -> Listening {
@@ -295,15 +276,12 @@ impl pb::destination_server::Destination for Controller {
         req: grpc::Request<pb::GetDestination>,
     ) -> Result<grpc::Response<Self::GetProfileStream>, grpc::Status> {
         if let Ok(mut calls) = self.expect_profile_calls.lock() {
-            if let Some(ProfileCall(dst, res)) = calls.pop_front() {
+            if let Some((dst, profile)) = calls.pop_front() {
                 if &dst == req.get_ref() {
-                    return res.map(|rx| {
-                        let stream: Self::GetProfileStream = Box::pin(rx.map(Ok));
-                        grpc::Response::new(stream)
-                    });
+                    return Ok(grpc::Response::new(Box::pin(profile.map(Ok))));
                 }
 
-                calls.push_front(ProfileCall(dst, res));
+                calls.push_front((dst, profile));
                 return Err(grpc_unexpected_request());
             }
         }
