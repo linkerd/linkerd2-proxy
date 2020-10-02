@@ -51,6 +51,8 @@ enum Inner<T, N, S, Req> {
     },
 }
 
+// === impl NewSplit ===
+
 impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
     fn clone(&self) -> Self {
         Self {
@@ -115,6 +117,8 @@ where
         Split { inner }
     }
 }
+
+// === impl Split ===
 
 impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where

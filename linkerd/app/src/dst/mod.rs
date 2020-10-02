@@ -25,20 +25,24 @@ pub struct Config {
     pub initial_profile_timeout: Duration,
 }
 
+/// Indicates that discovery was rejected due to configuration.
 #[derive(Clone, Debug)]
 struct Rejected(());
 
 /// Handles to destination service clients.
-///
-/// The addr is preserved for logging.
 pub struct Dst {
+    /// The address of the destination service, used for logging.
     pub addr: control::ControlAddr,
+
+    /// Resolves profiles.
     pub profiles: RecoverDefaultProfile<
         RequestFilter<
             PermitProfile,
             profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
         >,
     >,
+
+    /// Resolves endpoints.
     pub resolve: RecoverDefaultResolve<
         RequestFilter<PermitResolve, resolve::Resolve<control::Client<BoxBody>>>,
     >,
@@ -83,15 +87,11 @@ impl Config {
     }
 }
 
-impl std::fmt::Display for Rejected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "rejected discovery")
-    }
-}
-
-impl std::error::Error for Rejected {}
+// === impl Rejected ===
 
 impl Rejected {
+    /// Checks whether discovery was rejected, either due to configuration or by
+    /// the destination service.
     fn matches(err: &(dyn std::error::Error + 'static)) -> bool {
         if err.is::<Self>() {
             return true;
@@ -104,3 +104,11 @@ impl Rejected {
         err.source().map(Self::matches).unwrap_or(false)
     }
 }
+
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rejected discovery")
+    }
+}
+
+impl std::error::Error for Rejected {}

@@ -8,18 +8,16 @@ use std::{
 use tracing::debug;
 
 pub fn layer<S>() -> impl svc::Layer<S, Service = RecoverDefaultProfile<S>> + Clone {
-    svc::layer::mk(|inner| RecoverDefaultProfile { inner })
+    svc::layer::mk(RecoverDefaultProfile)
 }
 
+/// Wraps a `GetProfile to produce no profile when the lookup is rejected.
 #[derive(Clone, Debug)]
-pub struct RecoverDefaultProfile<S> {
-    inner: S,
-}
+pub struct RecoverDefaultProfile<S>(S);
 
 impl<T, S> tower::Service<T> for RecoverDefaultProfile<S>
 where
-    S: tower::Service<T, Response = Option<profiles::Receiver>>,
-    S::Error: Into<Error>,
+    S: profiles::GetProfile<T, Error = Error>,
     S::Future: Send + 'static,
 {
     type Response = Option<profiles::Receiver>;
@@ -27,13 +25,12 @@ where
     type Future =
         Pin<Box<dyn Future<Output = Result<Option<profiles::Receiver>, Error>> + Send + 'static>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(Into::into)
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, dst: T) -> Self::Future {
-        Box::pin(self.inner.call(dst).or_else(|e| {
-            let err = e.into();
+        Box::pin(self.0.get_profile(dst).or_else(|err| {
             if Rejected::matches(&*err) {
                 debug!("Handling rejected discovery");
                 future::ok(None)

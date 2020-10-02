@@ -3,9 +3,13 @@ use ipnet::{Contains, IpNet};
 use linkerd2_app_core::{dns::Suffix, request_filter::FilterRequest, Addr, Error};
 use std::{net::IpAddr, sync::Arc};
 
+/// Rejects profile ookups if the destinatino address is outside of the
+/// configured networks/domains.
 #[derive(Clone, Debug)]
 pub struct PermitProfile(Inner);
 
+/// Rejects endpoint resolutions if the destinatino address is outside of the
+/// configured networks/domains or if there is no resolveable concrete address.
 #[derive(Clone, Debug)]
 pub struct PermitResolve(Inner);
 
