@@ -11,7 +11,7 @@ pub fn layer<S>() -> impl svc::Layer<S, Service = RecoverDefaultProfile<S>> + Cl
     svc::layer::mk(RecoverDefaultProfile)
 }
 
-/// Wraps a `GetProfile to produce no profile when the lookup is rejected.
+/// Wraps a `GetProfile` to produce no profile when the lookup is rejected.
 #[derive(Clone, Debug)]
 pub struct RecoverDefaultProfile<S>(S);
 
