@@ -12,7 +12,6 @@ use linkerd2_app_core::{
         resolve::map_endpoint::MapEndpoint,
         tap,
     },
-    router,
     transport::{listen, tls},
     Addr, Conditional,
 };
@@ -20,12 +19,6 @@ use std::{net::SocketAddr, sync::Arc};
 
 #[derive(Copy, Clone, Debug)]
 pub struct FromMetadata;
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct HttpAccept {
-    pub orig_dst: SocketAddr,
-    pub version: http::Version,
-}
 
 #[derive(Clone, Debug)]
 pub struct HttpLogical {
@@ -42,9 +35,6 @@ pub struct HttpConcrete {
 }
 
 #[derive(Clone, Debug)]
-pub struct LogicalPerRequest(HttpAccept);
-
-#[derive(Clone, Debug)]
 pub struct HttpEndpoint {
     pub addr: SocketAddr,
     pub settings: http::client::Settings,
@@ -54,8 +44,14 @@ pub struct HttpEndpoint {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TcpAccept {
+    pub addr: SocketAddr,
+}
+
+#[derive(Clone, Debug)]
 pub struct TcpLogical {
     pub addr: SocketAddr,
+    pub profile: Option<profiles::Receiver>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,11 +62,27 @@ pub struct TcpEndpoint {
     pub labels: Option<String>,
 }
 
-impl From<listen::Addrs> for TcpLogical {
+// === impl TcpAccept ===
+
+impl From<listen::Addrs> for TcpAccept {
     fn from(addrs: listen::Addrs) -> Self {
         Self {
             addr: addrs.target_addr(),
         }
+    }
+}
+
+impl Into<Addr> for &'_ TcpAccept {
+    fn into(self) -> Addr {
+        self.addr.into()
+    }
+}
+
+// === impl TcpLogical ===
+
+impl From<(Option<profiles::Receiver>, TcpAccept)> for TcpLogical {
+    fn from((profile, TcpAccept { addr }): (Option<profiles::Receiver>, TcpAccept)) -> Self {
+        Self { addr, profile }
     }
 }
 
@@ -88,50 +100,25 @@ impl Into<Option<Addr>> for &'_ TcpLogical {
     }
 }
 
-// === impl HttpAccept ===
+// === impl HttpLogical ===
 
-impl From<(http::Version, TcpLogical)> for HttpAccept {
-    fn from((version, TcpLogical { addr }): (http::Version, TcpLogical)) -> Self {
+impl From<(http::Version, TcpLogical)> for HttpLogical {
+    fn from((version, TcpLogical { addr, profile }): (http::Version, TcpLogical)) -> Self {
         Self {
+            dst: addr.into(), // FIXME
             version,
             orig_dst: addr,
+            profile,
         }
     }
 }
 
-impl Into<SocketAddr> for &'_ HttpAccept {
+/// For normalization when no host is present.
+impl Into<SocketAddr> for &'_ HttpLogical {
     fn into(self) -> SocketAddr {
         self.orig_dst
     }
 }
-
-// === impl HttpConrete ===
-
-impl From<(Option<Addr>, HttpLogical)> for HttpConcrete {
-    fn from((resolve, logical): (Option<Addr>, HttpLogical)) -> Self {
-        Self { resolve, logical }
-    }
-}
-
-/// Produces an address to resolve to individual endpoints. This address is only
-/// present if the initial profile resolution was not rejected.
-impl Into<Option<Addr>> for &'_ HttpConcrete {
-    fn into(self) -> Option<Addr> {
-        self.resolve.clone()
-    }
-}
-
-/// Produces an address to be used if resolution is rejected.
-impl Into<SocketAddr> for &'_ HttpConcrete {
-    fn into(self) -> SocketAddr {
-        self.resolve
-            .as_ref()
-            .and_then(|a| a.socket_addr())
-            .unwrap_or_else(|| self.logical.orig_dst)
-    }
-}
-
-// === impl HttpLogical ===
 
 /// Produces an address for profile discovery.
 impl Into<Addr> for &'_ HttpLogical {
@@ -165,6 +152,32 @@ impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
     fn from(target: &'t HttpLogical) -> Self {
         http::header::HeaderValue::from_str(&target.dst.to_string())
             .expect("addr must be a valid header")
+    }
+}
+
+// === impl HttpConrete ===
+
+impl From<(Option<Addr>, HttpLogical)> for HttpConcrete {
+    fn from((resolve, logical): (Option<Addr>, HttpLogical)) -> Self {
+        Self { resolve, logical }
+    }
+}
+
+/// Produces an address to resolve to individual endpoints. This address is only
+/// present if the initial profile resolution was not rejected.
+impl Into<Option<Addr>> for &'_ HttpConcrete {
+    fn into(self) -> Option<Addr> {
+        self.resolve.clone()
+    }
+}
+
+/// Produces an address to be used if resolution is rejected.
+impl Into<SocketAddr> for &'_ HttpConcrete {
+    fn into(self) -> SocketAddr {
+        self.resolve
+            .as_ref()
+            .and_then(|a| a.socket_addr())
+            .unwrap_or_else(|| self.logical.orig_dst)
     }
 }
 
@@ -354,56 +367,6 @@ impl MapEndpoint<TcpLogical, Metadata> for FromMetadata {
             identity,
             dst: logical.addr.into(),
             labels: prefix_labels("dst", metadata.labels().into_iter()),
-        }
-    }
-}
-
-// === impl LogicalPerRequest ===
-
-impl From<HttpAccept> for LogicalPerRequest {
-    fn from(accept: HttpAccept) -> Self {
-        LogicalPerRequest(accept)
-    }
-}
-
-impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
-    type Key = HttpLogical;
-
-    fn recognize(&self, req: &http::Request<B>) -> Self::Key {
-        use linkerd2_app_core::{
-            http_request_authority_addr, http_request_host_addr, http_request_l5d_override_dst_addr,
-        };
-
-        let dst = http_request_l5d_override_dst_addr(req)
-            .map(|addr| {
-                tracing::debug!(%addr, "using dst-override");
-                addr
-            })
-            .or_else(|_| {
-                http_request_authority_addr(req).map(|addr| {
-                    tracing::debug!(%addr, "using authority");
-                    addr
-                })
-            })
-            .or_else(|_| {
-                http_request_host_addr(req).map(|addr| {
-                    tracing::debug!(%addr, "using host");
-                    addr
-                })
-            })
-            .unwrap_or_else(|_| {
-                let addr = self.0.orig_dst;
-                tracing::debug!(%addr, "using socket target");
-                addr.into()
-            });
-
-        tracing::debug!(headers = ?req.headers(), uri = %req.uri(), dst = %dst, version = ?req.version(), "Setting target for request");
-
-        HttpLogical {
-            dst,
-            orig_dst: self.0.orig_dst,
-            version: self.0.version,
-            profile: None,
         }
     }
 }

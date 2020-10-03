@@ -5,7 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
+pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
     admit, classify,
@@ -16,7 +16,7 @@ use linkerd2_app_core::{
     proxy::{
         self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
     },
-    reconnect, retry, router,
+    reconnect, retry,
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
@@ -372,10 +372,10 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<E, R, C, H, S, I>(
+    pub fn build_server<E, P, C, H, S, I>(
         self,
-        refine: R,
-        resolve: E,
+        endpoints: E,
+        profiles: P,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -401,21 +401,10 @@ impl Config {
             + 'static,
         E::Future: Unpin + Send,
         E::Resolution: Unpin + Send,
-        R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
-        R::Future: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        H: tower::Service<HttpLogical, Error = Error, Response = S>
-            + Unpin
-            + Send
-            + Clone
-            + 'static,
-        H::Future: Unpin + Send,
+        H: svc::NewService<HttpLogical, Service = S> + Unpin + Send + Clone + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -423,6 +412,9 @@ impl Config {
             > + Send
             + 'static,
         S::Future: Send,
+        P: profiles::GetProfile<endpoint::TcpAccept> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
+        P::Error: Send,
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
@@ -434,52 +426,45 @@ impl Config {
             buffer_capacity,
             ..
         } = self.proxy;
-        let canonicalize_timeout = self.canonicalize_timeout;
-
-        let http_admit_request = svc::layers()
-            // Limits the number of in-flight requests.
-            .push_concurrency_limit(max_in_flight_requests)
-            // Eagerly fail requests when the proxy is out of capacity for a
-            // dispatch_timeout.
-            .push_failfast(dispatch_timeout)
-            .push(metrics.http_errors.clone())
-            // Synthesizes responses for proxy errors.
-            .push(errors::layer())
-            // Initiates OpenCensus tracing.
-            .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
-                SpanConverter::server(span_sink, trace_labels())
-            })));
 
         let http_server = svc::stack(http_router)
-            // Resolve the application-emitted destination via DNS to determine
-            // its canonical FQDN to use for routing.
-            .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
-            .check_make_service::<HttpLogical, http::Request<_>>()
-            .push_timeout(dispatch_timeout)
-            .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
+            .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
             .push_on_response(
                 svc::layers()
-                    .push(http_admit_request)
-                    .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
+                    // Limits the number of in-flight requests.
+                    .push_concurrency_limit(max_in_flight_requests)
+                    // Eagerly fail requests when the proxy is out of capacity for a
+                    // dispatch_timeout.
+                    .push_failfast(dispatch_timeout)
+                    .push(metrics.http_errors.clone())
+                    // Synthesizes responses for proxy errors.
+                    .push(errors::layer())
+                    // Initiates OpenCensus tracing.
+                    .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
+                    .push(metrics.stack.layer(stack_labels("source")))
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity)
                     .box_http_response(),
             )
+            .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|a: &endpoint::HttpAccept| info_span!("http", v = %a.version))
-            .push_map_target(endpoint::HttpAccept::from)
+            .instrument(|l: &endpoint::HttpLogical| info_span!("http", v = %l.version))
+            .push_map_target(endpoint::HttpLogical::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
+        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), endpoints))
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
                     .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             )
-            .check_new::<endpoint::TcpLogical>()
             .instrument(|_: &_| info_span!("tcp"))
+            .check_new_service::<endpoint::TcpLogical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
             .into_inner();
 
         let http = svc::stack(http::DetectHttp::new(
@@ -488,22 +473,30 @@ impl Config {
             tcp_balance,
             drain.clone(),
         ))
-        .check_new::<endpoint::TcpLogical>()
+        .check_new_service::<
+            endpoint::TcpLogical,
+            transport::io::PrefixedIo<transport::metrics::SensorIo<I>>,
+        >()
         .push_on_response(transport::Prefix::layer(
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
         ))
+        .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
         let tcp = svc::stack(tcp_connect)
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .instrument(|_: &TcpEndpoint| debug_span!("tcp.forward"))
-            .check_new::<TcpEndpoint>()
+            .check_new_service::<TcpEndpoint, transport::metrics::SensorIo<I>>()
             .push_map_target(TcpEndpoint::from)
             .into_inner();
 
         svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
+            .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
+            .push_map_target(endpoint::TcpLogical::from)
+            .push(profiles::discover::layer(profiles))
+            .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -511,8 +504,10 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
                 ),
             )
-            .push_map_target(endpoint::TcpLogical::from)
+            .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
+            .push_map_target(endpoint::TcpAccept::from)
             .push(metrics.transport.layer_accept(TransportLabels))
+            .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }
 }
