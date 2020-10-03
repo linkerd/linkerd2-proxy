@@ -49,7 +49,7 @@ impl<P, O> MakeGateway<P, O> {
             tls::Conditional::None(_) => return Self::NoIdentity,
             tls::Conditional::Some(id) => id,
         };
-        MakeGateway::Enabled {
+        Self::Enabled {
             profiles,
             outbound,
             local_identity,
@@ -59,7 +59,7 @@ impl<P, O> MakeGateway<P, O> {
     }
 }
 
-impl<P, O> tower::Service<inbound::Target> for MakeGateway<P, O>
+impl<P, O> tower::Service<inbound::Logical> for MakeGateway<P, O>
 where
     P: profiles::GetProfile<ProfileAddr>,
     P::Future: Send + 'static,
@@ -77,12 +77,15 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, target: inbound::Target) -> Self::Future {
-        let inbound::Target {
-            dst,
-            http_version,
-            tls_client_id,
-            ..
+    fn call(&mut self, target: inbound::Logical) -> Self::Future {
+        let inbound::Logical {
+            profiles,
+            target: inbound::Target {
+                dst,
+                http_version,
+                tls_client_id,
+                ..
+            },
         } = target;
 
         let source_identity = match tls_client_id {
