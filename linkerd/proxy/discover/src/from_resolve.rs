@@ -100,7 +100,7 @@ impl<R: TryStream, E> Discover<R, E> {
 impl<R, E> Stream for Discover<R, E>
 where
     R: TryStream<Ok = Update<E>>,
-    E: Clone + PartialEq,
+    E: Clone,
 {
     type Item = Result<Change<SocketAddr, E>, R::Error>;
 
