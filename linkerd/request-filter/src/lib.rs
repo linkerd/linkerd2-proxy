@@ -3,15 +3,15 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{future, prelude::*};
-use linkerd2_error::Error;
+use futures::future;
 use linkerd2_stack::layer;
 use std::task::{Context, Poll};
 
 pub trait FilterRequest<Req> {
     type Request;
+    type Error;
 
-    fn filter(&self, request: Req) -> Result<Self::Request, Error>;
+    fn filter(&self, request: Req) -> Result<Self::Request, Self::Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -38,15 +38,11 @@ impl<I, S> RequestFilter<I, S> {
 impl<T, F, S> tower::Service<T> for RequestFilter<F, S>
 where
     F: FilterRequest<T>,
-    S: tower::Service<F::Request>,
-    S::Error: Into<Error>,
+    S: tower::Service<F::Request, Error = F::Error>,
 {
     type Response = S::Response;
-    type Error = Error;
-    type Future = future::Either<
-        future::ErrInto<S::Future, Error>,
-        future::Ready<Result<S::Response, Error>>,
-    >;
+    type Error = S::Error;
+    type Future = future::Either<S::Future, future::Ready<Result<S::Response, F::Error>>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx).map_err(Into::into)
@@ -56,7 +52,7 @@ where
         match self.filter.filter(request) {
             Ok(req) => {
                 tracing::trace!("accepted");
-                future::Either::Left(self.service.call(req).err_into::<Error>())
+                future::Either::Left(self.service.call(req))
             }
             Err(e) => {
                 tracing::trace!("rejected");

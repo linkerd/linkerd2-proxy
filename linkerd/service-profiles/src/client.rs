@@ -16,24 +16,20 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio::{
-    sync::watch,
-    time::{self, Delay},
-};
+use tokio::sync::watch;
 use tonic::{
     self as grpc,
     body::{Body, BoxBody},
     client::GrpcService,
 };
 use tower::retry::budget::Budget;
-use tracing::{debug, error, info, info_span, trace, warn};
+use tracing::{debug, error, info_span, trace, warn};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Client<S, R> {
     service: DestinationClient<S>,
     recover: R,
-    initial_timeout: Duration,
     context_token: String,
 }
 
@@ -41,19 +37,17 @@ pub struct Client<S, R> {
 pub struct ProfileFuture<S, R>
 where
     S: GrpcService<BoxBody>,
-    R: Recover,
+    R: Recover<grpc::Status>,
 {
     #[pin]
     inner: Option<Inner<S, R>>,
-    #[pin]
-    timeout: Delay,
 }
 
 #[pin_project]
 struct Inner<S, R>
 where
     S: GrpcService<BoxBody>,
-    R: Recover,
+    R: Recover<grpc::Status>,
 {
     service: DestinationClient<S>,
     recover: R,
@@ -101,11 +95,10 @@ where
     R: Recover,
     R::Backoff: Unpin,
 {
-    pub fn new(service: S, recover: R, initial_timeout: Duration, context_token: String) -> Self {
+    pub fn new(service: S, recover: R, context_token: String) -> Self {
         Self {
             service: DestinationClient::new(service),
             recover,
-            initial_timeout,
             context_token,
         }
     }
@@ -120,11 +113,11 @@ where
     <S::ResponseBody as HttpBody>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
-    R: Recover + Send + Clone + 'static,
+    R: Recover<grpc::Status> + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
     type Response = Option<Receiver>;
-    type Error = Error;
+    type Error = tonic::Status;
     type Future = ProfileFuture<S, R>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -145,10 +138,7 @@ where
             recover: self.recover.clone(),
             state: State::Disconnected { backoff: None },
         };
-        ProfileFuture {
-            inner: Some(inner),
-            timeout: time::delay_for(self.initial_timeout),
-        }
+        ProfileFuture { inner: Some(inner) }
     }
 }
 
@@ -159,11 +149,11 @@ where
     <S::ResponseBody as Body>::Data: Send,
     <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
-    R: Recover + Send + 'static,
+    R: Recover<grpc::Status> + Send + 'static,
     R::Backoff: Unpin,
     R::Backoff: Send,
 {
-    type Output = Result<Option<Receiver>, Error>;
+    type Output = Result<Option<Receiver>, grpc::Status>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
@@ -174,19 +164,9 @@ where
             .expect("polled after ready")
             .poll_profile(cx)
         {
-            Poll::Ready(Err(error)) => {
-                trace!(%error, "failed to fetch profile");
-                return Poll::Ready(Err(error));
-            }
-            Poll::Pending => {
-                if this.timeout.poll(cx).is_pending() {
-                    return Poll::Pending;
-                }
-
-                info!("Using default service profile after timeout");
-                Profile::default()
-            }
             Poll::Ready(Ok(profile)) => profile,
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
         };
 
         trace!("daemonizing");
@@ -205,7 +185,7 @@ where
                         ).fuse() => {
                         match profile {
                             Err(error) => {
-                                error!(%error, "profile client died");
+                                error!(%error, "profile client failed");
                                 return;
                             }
                             Ok(profile) => {
@@ -235,7 +215,7 @@ where
     <S::ResponseBody as Body>::Data: Send + 'static,
     <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
-    R: Recover,
+    R: Recover<grpc::Status>,
     R::Backoff: Unpin,
 {
     fn poll_rx(
@@ -271,7 +251,7 @@ where
     fn poll_profile(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<Profile, Error>> {
+    ) -> Poll<Result<Profile, grpc::Status>> {
         let span = info_span!("poll_profile");
         let _enter = span.enter();
 
@@ -291,10 +271,9 @@ where
                     trace!("waiting");
                     match ready!(Pin::new(future).poll(cx)) {
                         Ok(rsp) => this.state.set(State::Streaming(rsp.into_inner())),
-                        Err(e) => {
-                            let error = e.into();
-                            warn!(%error, "Could not fetch profile");
-                            let new_backoff = this.recover.recover(error)?;
+                        Err(status) => {
+                            warn!(%status, "Could not fetch profile");
+                            let new_backoff = this.recover.recover(status)?;
                             let backoff = Some(backoff.take().unwrap_or(new_backoff));
                             this.state.set(State::Disconnected { backoff });
                         }
@@ -308,7 +287,7 @@ where
                         Some(Err(status)) => status,
                     };
                     trace!(?status);
-                    let backoff = this.recover.recover(status.into())?;
+                    let backoff = this.recover.recover(status)?;
                     this.state.set(State::Backoff(Some(backoff)));
                 }
                 StateProj::Backoff(ref mut backoff) => {

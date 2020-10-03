@@ -80,12 +80,13 @@ where
     fn call(&mut self, target: inbound::Logical) -> Self::Future {
         let inbound::Logical {
             profiles,
-            target: inbound::Target {
-                dst,
-                http_version,
-                tls_client_id,
-                ..
-            },
+            target:
+                inbound::Target {
+                    dst,
+                    http_version,
+                    tls_client_id,
+                    ..
+                },
         } = target;
 
         let source_identity = match tls_client_id {
