@@ -276,20 +276,7 @@ impl Config {
             ..
         } = self.proxy.clone();
 
-        // Resolves each target via the control plane on a background task, buffering results.
-        //
-        // This buffer controls how many discovery updates may be pending/unconsumed by the
-        // balancer before backpressure is applied on the resolution stream. If the buffer is
-        // full for `cache_max_idle_age`, then the resolution task fails.
-        let discover = svc::layers()
-            .push(discover::resolve(map_endpoint::Resolve::new(
-                endpoint::FromMetadata,
-                resolve,
-            )))
-            .push(discover::buffer(1_000, cache_max_idle_age));
-
-        // Builds a balancer for each concrete destination.
-        let concrete = svc::stack(endpoint)
+        svc::stack(endpoint)
             .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -298,41 +285,32 @@ impl Config {
                     .box_http_request(),
             )
             .check_new_service::<HttpEndpoint, http::Request<_>>()
-            .push(discover)
+            .push(discover::resolve(map_endpoint::Resolve::new(
+                endpoint::FromMetadata,
+                resolve,
+            )))
+            .push(discover::buffer(1_000, cache_max_idle_age))
             .check_service::<HttpConcrete>()
             .push_on_response(
                 svc::layers()
                     .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(svc::layer::mk(svc::SpawnReady::new))
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
+            .into_new_service()
+            .check_new_service::<HttpConcrete, http::Request<_>>()
             .instrument(|c: &HttpConcrete| match c.resolve.as_ref() {
                 None => info_span!("concrete"),
                 Some(addr) => info_span!("concrete", %addr),
             })
-            .into_new_service()
-            .check_new_service::<HttpConcrete, http::Request<_>>();
-
-        // For each logical target, performs service profile resolution and
-        // builds concrete services, over which requests are dispatched
-        // (according to a split).
-        //
-        // Each service is cached, holding the profile and endpoint resolutions
-        // and the load balancer with all of its endpoint connections.
-        //
-        // When no new requests have been dispatched for `cache_max_idle_age`,
-        // the cached service is dropped. In-flight streams will continue to be
-        // processed.
-        concrete
-            // Uses the split-provided target `Addr` to build a concrete target.
             .check_new_service::<HttpConcrete, http::Request<_>>()
-            .push_map_target(HttpConcrete::from)
-            .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
             // The concrete address is only set when the profile could be
             // resolved. Endpoint resolution is skipped when there is no
             // concrete address.
+            .push_map_target(HttpConcrete::from)
             .check_new_service::<(Option<Addr>, HttpLogical), http::Request<_>>()
             .push(profiles::split::layer())
             .check_new_service::<HttpLogical, http::Request<_>>()
