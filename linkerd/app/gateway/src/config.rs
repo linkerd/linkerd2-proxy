@@ -1,10 +1,9 @@
-use super::make::MakeGateway;
+use super::make::{MakeGateway, ProfileAddr};
 use indexmap::IndexSet;
-use linkerd2_app_core::proxy::http;
-use linkerd2_app_core::{dns, transport::tls, Error};
+use linkerd2_app_core::{dns, profiles, proxy::http, transport::tls, Error};
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
-use std::net::IpAddr;
+use std::net::SocketAddr;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
@@ -16,23 +15,23 @@ impl Config {
         self,
         resolve: R,
         outbound: O,
+        default_addr: SocketAddr,
         local_id: tls::PeerIdentity,
-    ) -> impl Clone
-           + Send
-           + tower::Service<
+    ) -> impl tower::Service<
         inbound::Target,
-        Error = impl Into<Error>,
+        Error = Error,
         Future = impl Send + 'static,
-        Response = impl Send
-                       + tower::Service<
+        Response = impl tower::Service<
             http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
             Error = impl Into<Error>,
             Future = impl Send,
-        > + 'static,
-    >
+        > + Send
+                       + 'static,
+    > + Clone
+           + Send
     where
-        R: tower::Service<dns::Name, Response = (dns::Name, IpAddr)> + Send + Clone,
+        R: profiles::GetProfile<ProfileAddr> + Send + Clone,
         R::Error: Into<Error> + 'static,
         R::Future: Send + 'static,
         O: tower::Service<outbound::HttpLogical, Response = S> + Send + Clone + 'static,
@@ -46,6 +45,12 @@ impl Config {
         S::Error: Into<Error> + Send + 'static,
         S::Future: Send,
     {
-        MakeGateway::new(resolve, outbound, local_id, self.suffixes.clone())
+        MakeGateway::new(
+            resolve,
+            outbound,
+            default_addr,
+            local_id,
+            self.suffixes.clone(),
+        )
     }
 }

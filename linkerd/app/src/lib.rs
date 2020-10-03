@@ -145,7 +145,6 @@ impl Config {
             let outbound_http = outbound.build_http_router(
                 outbound_http_endpoint,
                 dst.resolve.clone(),
-                dst.profiles.clone(),
                 outbound_metrics.clone(),
             );
 
@@ -156,9 +155,7 @@ impl Config {
                 serve::serve(
                     outbound_listen,
                     outbound.build_server(
-                        svc::stack(refine.clone())
-                            .push_map_response(|(n, _)| n)
-                            .into_inner(),
+                        dst.profiles.clone(),
                         dst.resolve,
                         outbound_connect,
                         outbound_http.clone(),
@@ -174,8 +171,9 @@ impl Config {
             drop(_enter);
 
             let http_gateway = gateway.build(
-                refine,
+                dst.profiles.clone(),
                 outbound_http,
+                outbound_addr,
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 

@@ -352,8 +352,8 @@ impl Config {
 
     pub fn build_server<E, P, C, H, S, I>(
         self,
-        endpoints: E,
         profiles: P,
+        endpoints: E,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
