@@ -27,11 +27,12 @@ pub struct HttpAccept {
     pub version: http::Version,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug)]
 pub struct HttpLogical {
     pub dst: Addr,
     pub orig_dst: SocketAddr,
     pub version: http::Version,
+    pub profile: Option<profiles::Receiver>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,12 +43,6 @@ pub struct HttpConcrete {
 
 #[derive(Clone, Debug)]
 pub struct LogicalPerRequest(HttpAccept);
-
-#[derive(Clone, Debug)]
-pub struct Profile {
-    pub rx: Option<profiles::Receiver>,
-    pub logical: HttpLogical,
-}
 
 #[derive(Clone, Debug)]
 pub struct HttpEndpoint {
@@ -112,8 +107,8 @@ impl Into<SocketAddr> for &'_ HttpAccept {
 
 // === impl HttpConrete ===
 
-impl From<(Option<Addr>, Profile)> for HttpConcrete {
-    fn from((resolve, Profile { logical, .. }): (Option<Addr>, Profile)) -> Self {
+impl From<(Option<Addr>, HttpLogical)> for HttpConcrete {
+    fn from((resolve, logical): (Option<Addr>, HttpLogical)) -> Self {
         Self { resolve, logical }
     }
 }
@@ -156,6 +151,12 @@ impl AsRef<Addr> for HttpLogical {
 impl AsMut<Addr> for HttpLogical {
     fn as_mut(&mut self) -> &mut Addr {
         &mut self.dst
+    }
+}
+
+impl Into<Option<profiles::Receiver>> for &'_ HttpLogical {
+    fn into(self) -> Option<profiles::Receiver> {
+        self.profile.clone()
     }
 }
 
@@ -402,40 +403,15 @@ impl<B> router::Recognize<http::Request<B>> for LogicalPerRequest {
             dst,
             orig_dst: self.0.orig_dst,
             version: self.0.version,
+            profile: None,
         }
     }
 }
 
-pub fn route((route, profile): (profiles::http::Route, Profile)) -> dst::Route {
+pub fn route((route, logical): (profiles::http::Route, HttpLogical)) -> dst::Route {
     dst::Route {
         route,
-        target: profile.logical.dst,
+        target: logical.dst,
         direction: metric_labels::Direction::Out,
-    }
-}
-
-// === impl Profile ===
-
-impl From<(Option<profiles::Receiver>, HttpLogical)> for Profile {
-    fn from((rx, logical): (Option<profiles::Receiver>, HttpLogical)) -> Self {
-        Self { rx, logical }
-    }
-}
-
-impl AsRef<Addr> for Profile {
-    fn as_ref(&self) -> &Addr {
-        &self.logical.dst
-    }
-}
-
-impl Into<Addr> for &'_ Profile {
-    fn into(self) -> Addr {
-        self.logical.dst.clone()
-    }
-}
-
-impl Into<Option<profiles::Receiver>> for &'_ Profile {
-    fn into(self) -> Option<profiles::Receiver> {
-        self.rx.clone()
     }
 }

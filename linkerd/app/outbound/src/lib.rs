@@ -234,17 +234,14 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<B, E, S, R, P>(
+    pub fn build_http_router<B, E, S, R>(
         &self,
         endpoint: E,
         resolve: R,
-        profiles_client: P,
         metrics: ProxyMetrics,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         HttpLogical,
-        Error = Error,
-        Future = impl Unpin + Send,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
@@ -256,7 +253,7 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: svc::NewService<HttpEndpoint, Service = S> + Clone + Send + Sync + 'static,
+        E: svc::NewService<HttpEndpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -271,9 +268,6 @@ impl Config {
             + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        P: profiles::GetProfile<HttpLogical> + Unpin + Clone + Send + 'static,
-        P::Future: Unpin + Send,
-        P::Error: Send,
     {
         let ProxyConfig {
             buffer_capacity,
@@ -339,9 +333,9 @@ impl Config {
             // The concrete address is only set when the profile could be
             // resolved. Endpoint resolution is skipped when there is no
             // concrete address.
-            .check_new_service::<(Option<Addr>, endpoint::Profile), http::Request<_>>()
+            .check_new_service::<(Option<Addr>, HttpLogical), http::Request<_>>()
             .push(profiles::split::layer())
-            .check_new_service::<endpoint::Profile, http::Request<_>>()
+            .check_new_service::<HttpLogical, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
             .push_on_response(
@@ -349,6 +343,7 @@ impl Config {
                     .push_failfast(dispatch_timeout)
                     .push_spawn_buffer(buffer_capacity),
             )
+            .check_new_service::<HttpLogical, http::Request<_>>()
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -364,29 +359,16 @@ impl Config {
                     .push_map_target(endpoint::route)
                     .into_inner(),
             ))
-            .check_new_service::<endpoint::Profile, http::Request<_>>()
-            .push_map_target(endpoint::Profile::from)
-            // Discovers the service profile from the control plane and passes
-            // it to inner stack to build the router and traffic split.
-            .push(profiles::discover::layer(profiles_client))
             .check_new_service::<HttpLogical, http::Request<_>>()
-            .push_on_response(svc::layers().box_http_response())
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("logical"))),
-                ),
+            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+            .push_on_response(
+                svc::layers()
+                    // Strips headers that may be set by this proxy.
+                    .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
+                    .push(svc::layers().box_http_response()),
             )
             .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .check_make_service::<HttpLogical, http::Request<_>>()
-            .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-            // Strips headers that may be set by this proxy.
-            .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-            .check_make_service_clone::<HttpLogical, http::Request<B>>()
+            .check_new_service::<HttpLogical, http::Request<_>>()
             .into_inner()
     }
 
