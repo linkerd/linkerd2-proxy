@@ -345,7 +345,7 @@ impl Config {
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                     .push(svc::layers().box_http_response()),
             )
-            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
+            .instrument(|l: &HttpLogical| info_span!("logical", dst = %l.addr()))
             .check_new_service::<HttpLogical, http::Request<_>>()
             .into_inner()
     }

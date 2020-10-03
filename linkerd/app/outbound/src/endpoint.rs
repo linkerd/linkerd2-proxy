@@ -22,7 +22,6 @@ pub struct FromMetadata;
 
 #[derive(Clone, Debug)]
 pub struct HttpLogical {
-    pub dst: Addr,
     pub orig_dst: SocketAddr,
     pub version: http::Version,
     pub profile: Option<profiles::Receiver>,
@@ -102,10 +101,19 @@ impl Into<Option<Addr>> for &'_ TcpLogical {
 
 // === impl HttpLogical ===
 
+impl HttpLogical {
+    pub fn addr(&self) -> Addr {
+        self.profile
+            .as_ref()
+            .and_then(|p| p.borrow().name.clone())
+            .map(|n| Addr::from((n, self.orig_dst.port())))
+            .unwrap_or_else(|| self.orig_dst.into())
+    }
+}
+
 impl From<(http::Version, TcpLogical)> for HttpLogical {
     fn from((version, TcpLogical { addr, profile }): (http::Version, TcpLogical)) -> Self {
         Self {
-            dst: addr.into(), // FIXME
             version,
             orig_dst: addr,
             profile,
@@ -120,24 +128,9 @@ impl Into<SocketAddr> for &'_ HttpLogical {
     }
 }
 
-/// Produces an address for profile discovery.
 impl Into<Addr> for &'_ HttpLogical {
     fn into(self) -> Addr {
-        self.dst.clone()
-    }
-}
-
-/// Needed for canonicalization.
-impl AsRef<Addr> for HttpLogical {
-    fn as_ref(&self) -> &Addr {
-        &self.dst
-    }
-}
-
-/// Needed for canonicalization.
-impl AsMut<Addr> for HttpLogical {
-    fn as_mut(&mut self) -> &mut Addr {
-        &mut self.dst
+        self.addr()
     }
 }
 
@@ -150,7 +143,7 @@ impl Into<Option<profiles::Receiver>> for &'_ HttpLogical {
 // Used to set the l5d-canonical-dst header.
 impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
     fn from(target: &'t HttpLogical) -> Self {
-        http::header::HeaderValue::from_str(&target.dst.to_string())
+        http::header::HeaderValue::from_str(&target.addr().to_string())
             .expect("addr must be a valid header")
     }
 }
@@ -293,7 +286,7 @@ impl Into<EndpointLabels> for HttpEndpoint {
     fn into(self) -> EndpointLabels {
         use linkerd2_app_core::metric_labels::Direction;
         EndpointLabels {
-            authority: Some(self.concrete.logical.dst.to_http_authority()),
+            authority: Some(self.concrete.logical.addr().to_http_authority()),
             direction: Direction::Out,
             tls_id: TlsStatus::server(self.identity.clone()),
             labels: prefix_labels("dst", self.metadata.labels().into_iter()),
@@ -374,7 +367,7 @@ impl MapEndpoint<TcpLogical, Metadata> for FromMetadata {
 pub fn route((route, logical): (profiles::http::Route, HttpLogical)) -> dst::Route {
     dst::Route {
         route,
-        target: logical.dst,
+        target: logical.addr(),
         direction: metric_labels::Direction::Out,
     }
 }
