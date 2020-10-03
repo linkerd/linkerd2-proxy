@@ -34,7 +34,7 @@ pub struct HttpLogical {
     pub version: http::Version,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct HttpConcrete {
     pub resolve: Option<Addr>,
     pub logical: HttpLogical,
@@ -49,7 +49,7 @@ pub struct Profile {
     pub logical: HttpLogical,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct HttpEndpoint {
     pub addr: SocketAddr,
     pub settings: http::client::Settings,
