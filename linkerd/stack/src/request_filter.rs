@@ -1,9 +1,6 @@
 //! A `Service` middleware that applies arbitrary-user provided logic to each
 //! target before it is issued to an inner service.
 
-#![deny(warnings, rust_2018_idioms)]
-
-use super::layer;
 use futures::{future, prelude::*};
 use linkerd2_error::Error;
 use std::task::{Context, Poll};
@@ -25,13 +22,6 @@ pub struct RequestFilter<I, S> {
 impl<I, S> RequestFilter<I, S> {
     pub fn new(filter: I, service: S) -> Self {
         Self { filter, service }
-    }
-
-    pub fn layer(filter: I) -> impl layer::Layer<S, Service = Self> + Clone
-    where
-        I: Clone,
-    {
-        layer::mk(move |inner| Self::new(filter.clone(), inner))
     }
 }
 

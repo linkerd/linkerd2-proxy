@@ -62,10 +62,7 @@ impl Config {
         let backoff = self.control.connect.backoff.clone();
         let svc = self.control.build(dns, metrics, identity);
         let resolve = svc::stack(resolve::new(svc.clone(), &self.context, backoff))
-            .push_request_filter(PermitResolve::new(
-                self.get_suffixes,
-                self.get_networks,
-            ))
+            .push_request_filter(PermitResolve::new(self.get_suffixes, self.get_networks))
             .push(default_resolve::layer())
             .into_inner();
 

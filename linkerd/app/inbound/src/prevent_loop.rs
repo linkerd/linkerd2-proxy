@@ -1,6 +1,5 @@
 //use futures::future;
 use linkerd2_app_core::{svc::stack::FilterRequest, Error};
-//use std::task::{Context, Poll};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -35,34 +34,6 @@ where
         Ok(t)
     }
 }
-
-// impl tower::Service<Target> for PreventLoop {
-//     type Response = PreventLoop;
-//     type Error = LoopPrevented;
-//     type Future = future::Ready<Result<Self::Response, Self::Error>>;
-
-//     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-//         Poll::Ready(Err(LoopPrevented { port: self.port }))
-//     }
-
-//     fn call(&mut self, _: Target) -> Self::Future {
-//         future::err(LoopPrevented { port: self.port })
-//     }
-// }
-
-// impl<B> tower::Service<http::Request<B>> for PreventLoop {
-//     type Response = http::Response<http::boxed::Payload>;
-//     type Error = LoopPrevented;
-//     type Future = future::Ready<Result<Self::Response, Self::Error>>;
-
-//     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-//         Poll::Ready(Err(LoopPrevented { port: self.port }))
-//     }
-
-//     fn call(&mut self, _: http::Request<B>) -> Self::Future {
-//         future::err(LoopPrevented { port: self.port })
-//     }
-// }
 
 impl std::fmt::Display for LoopPrevented {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
