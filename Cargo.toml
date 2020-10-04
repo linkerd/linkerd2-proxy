@@ -2,7 +2,6 @@
 members = [
     "hyper-balance",
     "linkerd/addr",
-    "linkerd/admit",
     "linkerd/app/core",
     "linkerd/app/gateway",
     "linkerd/app/inbound",

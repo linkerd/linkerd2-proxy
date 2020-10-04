@@ -10,7 +10,7 @@ use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
 use linkerd2_app_core::{
-    admit, classify,
+    classify,
     config::{ProxyConfig, ServerConfig},
     drain, dst, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
@@ -133,7 +133,7 @@ impl Config {
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect(TransportLabels))
-            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_request_filter(prevent_loop)
             .into_inner()
     }
 
@@ -254,7 +254,7 @@ impl Config {
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             // If the traffic is targeted at the inbound port, send it through
             // the loopback service (i.e. as a gateway).
-            .push(admit::AdmitLayer::new(prevent_loop))
+            .push_request_filter(prevent_loop)
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(
                 svc::stack(loopback)
@@ -416,7 +416,7 @@ impl Config {
         svc::stack::MakeSwitch::new(
             skip_detect,
             svc::stack(detect)
-                .push(admit::AdmitLayer::new(require_identity))
+                .push_request_filter(require_identity)
                 .push(metrics.transport.layer_accept(TransportLabels))
                 .push(tls::DetectTls::layer(
                     identity.clone(),

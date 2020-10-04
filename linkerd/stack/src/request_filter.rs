@@ -35,6 +35,27 @@ impl<I, S> RequestFilter<I, S> {
     }
 }
 
+impl<T, F, S> super::NewService<T> for RequestFilter<F, S>
+where
+    F: FilterRequest<T>,
+    S: super::NewService<F::Request>,
+{
+    type Service = super::ResultService<S::Service, Error>;
+
+    fn new_service(&mut self, request: T) -> Self::Service {
+        match self.filter.filter(request) {
+            Ok(req) => {
+                tracing::trace!("accepted");
+                super::ResultService::ok(self.service.new_service(req))
+            }
+            Err(e) => {
+                tracing::trace!("rejected");
+                super::ResultService::err(e)
+            }
+        }
+    }
+}
+
 impl<T, F, S> tower::Service<T> for RequestFilter<F, S>
 where
     F: FilterRequest<T>,
