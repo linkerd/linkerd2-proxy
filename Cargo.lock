@@ -1508,7 +1508,6 @@ dependencies = [
  "linkerd2-error",
  "pin-project",
  "tower",
- "tracing",
 ]
 
 [[package]]

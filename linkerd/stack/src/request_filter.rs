@@ -33,16 +33,10 @@ where
     type Service = super::ResultService<S::Service, Error>;
 
     fn new_service(&mut self, request: T) -> Self::Service {
-        match self.filter.filter(request) {
-            Ok(req) => {
-                tracing::trace!("accepted");
-                super::ResultService::ok(self.service.new_service(req))
-            }
-            Err(e) => {
-                tracing::trace!("rejected");
-                super::ResultService::err(e)
-            }
-        }
+        self.filter
+            .filter(request)
+            .map(move |req| super::ResultService::ok(self.service.new_service(req)))
+            .unwrap_or_else(super::ResultService::err)
     }
 }
 
@@ -64,15 +58,9 @@ where
     }
 
     fn call(&mut self, request: T) -> Self::Future {
-        match self.filter.filter(request) {
-            Ok(req) => {
-                tracing::trace!("accepted");
-                future::Either::Left(self.service.call(req).err_into::<Error>())
-            }
-            Err(e) => {
-                tracing::trace!("rejected");
-                future::Either::Right(future::err(e))
-            }
-        }
+        self.filter
+            .filter(request)
+            .map(move |req| future::Either::Left(self.service.call(req).err_into::<Error>()))
+            .unwrap_or_else(|e| future::Either::Right(future::err(e)))
     }
 }
