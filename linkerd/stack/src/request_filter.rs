@@ -3,9 +3,9 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+use super::layer;
 use futures::{future, prelude::*};
 use linkerd2_error::Error;
-use linkerd2_stack::layer;
 use std::task::{Context, Poll};
 
 pub trait FilterRequest<Req> {

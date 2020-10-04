@@ -13,6 +13,7 @@ pub mod new_service;
 pub mod on_response;
 mod oneshot;
 mod proxy;
+mod request_filter;
 mod result;
 mod switch;
 
@@ -26,5 +27,6 @@ pub use self::new_service::NewService;
 pub use self::on_response::{OnResponse, OnResponseLayer};
 pub use self::oneshot::{Oneshot, OneshotLayer};
 pub use self::proxy::{Proxy, ProxyService};
+pub use self::request_filter::{FilterRequest, RequestFilter};
 pub use self::result::ResultService;
 pub use self::switch::{MakeSwitch, Switch};

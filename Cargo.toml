@@ -41,7 +41,6 @@ members = [
     "linkerd/proxy/tap",
     "linkerd/proxy/tcp",
     "linkerd/proxy/transport",
-    "linkerd/request-filter",
     "linkerd/reconnect",
     "linkerd/retry",
     "linkerd/router",

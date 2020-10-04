@@ -7,7 +7,10 @@ use self::default_profile::RecoverDefaultProfile;
 use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
-    control, dns, profiles, proxy::identity, request_filter::RequestFilter, svc, transport::tls,
+    control, dns, profiles,
+    proxy::identity,
+    svc::{self, stack::RequestFilter},
+    transport::tls,
     ControlHttpMetrics, Error,
 };
 use permit::{PermitProfile, PermitResolve};
