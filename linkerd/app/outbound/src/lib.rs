@@ -10,7 +10,7 @@ use futures::future;
 use linkerd2_app_core::{
     admit, classify,
     config::{ProxyConfig, ServerConfig},
-    dns, drain, errors, metric_labels,
+    drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -20,10 +20,10 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    Addr, Conditional, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{collections::HashMap, net, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -124,45 +124,6 @@ impl Config {
             )
             .into_new_service()
             .check_new_service::<endpoint::TcpLogical, I>()
-    }
-
-    pub fn build_dns_refine(
-        &self,
-        dns_resolver: dns::Resolver,
-        metrics: &StackMetrics,
-    ) -> impl tower::Service<
-        dns::Name,
-        Response = (dns::Name, net::IpAddr),
-        Error = Error,
-        Future = impl Unpin + Send,
-    > + Unpin
-           + Clone
-           + Send {
-        // Caches DNS refinements from relative names to canonical names.
-        //
-        // For example, a client may send requests to `foo` or `foo.ns`; and the canonical form
-        // of these names is `foo.ns.svc.cluster.local
-        svc::stack(dns_resolver.into_make_refine())
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
-                        .push_failfast(self.proxy.dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(
-                            self.proxy.buffer_capacity,
-                            self.proxy.cache_max_idle_age,
-                        )
-                        .push(metrics.layer(stack_labels("refine"))),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(self.proxy.buffer_capacity)
-            .instrument(|name: &dns::Name| info_span!("refine", %name))
-            // Obtains the service, advances the state of the resolution
-            .push(svc::make_response::Layer)
-            .into_inner()
     }
 
     pub fn build_http_endpoint<B, C>(

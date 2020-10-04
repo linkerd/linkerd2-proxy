@@ -1,6 +1,6 @@
-use super::make::{MakeGateway, ProfileAddr};
+use super::make::MakeGateway;
 use indexmap::IndexSet;
-use linkerd2_app_core::{dns, profiles, proxy::http, transport::tls, Error};
+use linkerd2_app_core::{dns, profiles, proxy::http, svc, transport::tls, Error};
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
 use std::net::SocketAddr;
@@ -11,46 +11,31 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build<R, O, S>(
+    pub fn build<O, P, S>(
         self,
-        resolve: R,
         outbound: O,
+        profils: P,
         default_addr: SocketAddr,
         local_id: tls::PeerIdentity,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         inbound::Target,
-        Error = Error,
-        Future = impl Send + 'static,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
             Error = impl Into<Error>,
             Future = impl Send,
         > + Send
-                       + 'static,
+                      + 'static,
     > + Clone
            + Send
     where
-        R: profiles::GetProfile<ProfileAddr> + Send + Clone,
-        R::Error: Into<Error> + 'static,
-        R::Future: Send + 'static,
-        O: tower::Service<outbound::HttpLogical, Response = S> + Send + Clone + 'static,
-        O::Error: Into<Error> + Send + 'static,
-        O::Future: Send + 'static,
-        S: Send
-            + tower::Service<
-                http::Request<http::boxed::Payload>,
-                Response = http::Response<http::boxed::Payload>,
-            > + 'static,
-        S::Error: Into<Error> + Send + 'static,
-        S::Future: Send,
+        P: profiles::GetProfile<inbound::Target>,
+        O: svc::NewService<outbound::HttpLogical, Service = S> + Clone,
+        S: tower::Service<
+            http::Request<http::boxed::Payload>,
+            Response = http::Response<http::boxed::Payload>,
+        >,
     {
-        MakeGateway::new(
-            resolve,
-            outbound,
-            default_addr,
-            local_id,
-            self.suffixes.clone(),
-        )
+        svc::stack(MakeGateway::new(outbound, default_addr))
     }
 }

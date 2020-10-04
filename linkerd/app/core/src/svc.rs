@@ -5,6 +5,7 @@ use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
+pub use linkerd2_request_filter::{FilterRequest, RequestFilter};
 pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;

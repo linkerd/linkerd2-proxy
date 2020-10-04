@@ -7,17 +7,31 @@ use futures::future;
 use linkerd2_stack::layer;
 use std::task::{Context, Poll};
 
-pub trait FilterRequest<Req> {
+pub trait FilterRequest<T> {
     type Request;
     type Error;
 
-    fn filter(&self, request: Req) -> Result<Self::Request, Self::Error>;
+    fn filter(&self, request: T) -> Result<Self::Request, Self::Error>;
 }
 
 #[derive(Clone, Debug)]
 pub struct RequestFilter<I, S> {
     filter: I,
     service: S,
+}
+
+// === impl FilterRequest ===
+
+impl<T, E, F> FilterRequest<T> for F
+where
+    F: Fn(T) -> Result<T, E>,
+{
+    type Request = T;
+    type Error = E;
+
+    fn filter(&self, req: T) -> Result<Self::Request, Self::Error> {
+        (self)(req)
+    }
 }
 
 // === impl RequestFilter ===
