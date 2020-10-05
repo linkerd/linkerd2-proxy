@@ -55,10 +55,6 @@ impl<L> Layers<L> {
         Layers(Pair::new(self.0, outer))
     }
 
-    pub fn push_map_target<M>(self, map_target: M) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
-        self.push(stack::MapTargetLayer::new(map_target))
-    }
-
     /// Wraps an inner `MakeService` to be a `NewService`.
     pub fn push_into_new_service(
         self,
@@ -152,7 +148,9 @@ impl<S> Stack<S> {
         self,
         map_target: M,
     ) -> Stack<stack::map_target::MapTargetService<S, M>> {
-        self.push(stack::map_target::MapTargetLayer::new(map_target))
+        self.push(layer::mk(|inner| {
+            stack::map_target::MapTargetService::new(map_target.clone(), inner)
+        }))
     }
 
     pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<stack::RequestFilter<F, S>> {

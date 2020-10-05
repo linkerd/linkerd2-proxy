@@ -1,18 +1,15 @@
-mod default_profile;
-mod default_resolve;
 mod permit;
 mod resolve;
 
-use self::default_profile::RecoverDefaultProfile;
-use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
     control, dns, profiles,
-    proxy::identity,
+    proxy::{api, identity},
     svc::{self, stack::RequestFilter},
     transport::tls,
     ControlHttpMetrics, Error,
 };
+use linkerd2_proxy_api::destination as api;
 use permit::{PermitProfile, PermitResolve};
 use std::time::Duration;
 use tonic::body::BoxBody;
@@ -21,11 +18,11 @@ use tonic::body::BoxBody;
 pub struct Config {
     pub control: control::Config,
     pub context: String,
-    pub get_suffixes: IndexSet<dns::Suffix>,
-    pub get_networks: IndexSet<ipnet::IpNet>,
-    pub profile_suffixes: IndexSet<dns::Suffix>,
-    pub profile_networks: IndexSet<ipnet::IpNet>,
-    pub initial_profile_timeout: Duration,
+    // pub get_suffixes: IndexSet<dns::Suffix>,
+    // pub get_networks: IndexSet<ipnet::IpNet>,
+    // pub profile_suffixes: IndexSet<dns::Suffix>,
+    // pub profile_networks: IndexSet<ipnet::IpNet>,
+    // pub initial_profile_timeout: Duration,
 }
 
 /// Indicates that discovery was rejected due to configuration.
@@ -37,18 +34,19 @@ pub struct Dst {
     /// The address of the destination service, used for logging.
     pub addr: control::ControlAddr,
 
-    /// Resolves profiles.
-    pub profiles: RecoverDefaultProfile<
-        RequestFilter<
-            PermitProfile,
-            profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
-        >,
-    >,
+    pub client: svc::stack::MapTargetService<control::Client<BoxBody>, SetContext>,
+}
 
-    /// Resolves endpoints.
-    pub resolve: RecoverDefaultResolve<
-        RequestFilter<PermitResolve, resolve::Resolve<control::Client<BoxBody>>>,
-    >,
+#[derive(Clone, Debug)]
+pub struct SetContext(String);
+
+impl svc::stack::MapTarget<api::GetDestination> for SetContext {
+    type Target = api::GetDestination;
+
+    fn map_target(&self, req: api::GetDestination) -> Self::Target {
+        api.context = self.0.clone();
+        api
+    }
 }
 
 impl Config {
@@ -59,31 +57,10 @@ impl Config {
         identity: tls::Conditional<identity::Local>,
     ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();
-        let backoff = self.control.connect.backoff.clone();
-        let svc = self.control.build(dns, metrics, identity);
-        let resolve = svc::stack(resolve::new(svc.clone(), &self.context, backoff))
-            .push_request_filter(PermitResolve::new(self.get_suffixes, self.get_networks))
-            .push(default_resolve::layer())
+        let client = svc::stack(self.control.build(dns, metrics, identity))
+            .push_map_target(SetContext(self.context))
             .into_inner();
-
-        let profiles = svc::stack(profiles::Client::new(
-            svc,
-            resolve::BackoffUnlessInvalidArgument::from(backoff),
-            self.initial_profile_timeout,
-            self.context,
-        ))
-        .push_request_filter(PermitProfile::new(
-            self.profile_suffixes,
-            self.profile_networks,
-        ))
-        .push(default_profile::layer())
-        .into_inner();
-
-        Ok(Dst {
-            addr,
-            resolve,
-            profiles,
-        })
+        Ok(Dst { addr, client })
     }
 }
 
