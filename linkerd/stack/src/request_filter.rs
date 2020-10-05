@@ -1,11 +1,8 @@
 //! A `Service` middleware that applies arbitrary-user provided logic to each
 //! target before it is issued to an inner service.
 
-#![deny(warnings, rust_2018_idioms)]
-
 use futures::{future, prelude::*};
 use linkerd2_error::Error;
-use linkerd2_stack::layer;
 use std::task::{Context, Poll};
 
 pub trait FilterRequest<Req> {
@@ -26,12 +23,20 @@ impl<I, S> RequestFilter<I, S> {
     pub fn new(filter: I, service: S) -> Self {
         Self { filter, service }
     }
+}
 
-    pub fn layer(filter: I) -> impl layer::Layer<S, Service = Self> + Clone
-    where
-        I: Clone,
-    {
-        layer::mk(move |inner| Self::new(filter.clone(), inner))
+impl<T, F, S> super::NewService<T> for RequestFilter<F, S>
+where
+    F: FilterRequest<T>,
+    S: super::NewService<F::Request>,
+{
+    type Service = super::ResultService<S::Service, Error>;
+
+    fn new_service(&mut self, request: T) -> Self::Service {
+        self.filter
+            .filter(request)
+            .map(move |req| super::ResultService::ok(self.service.new_service(req)))
+            .unwrap_or_else(super::ResultService::err)
     }
 }
 
@@ -53,15 +58,9 @@ where
     }
 
     fn call(&mut self, request: T) -> Self::Future {
-        match self.filter.filter(request) {
-            Ok(req) => {
-                tracing::trace!("accepted");
-                future::Either::Left(self.service.call(req).err_into::<Error>())
-            }
-            Err(e) => {
-                tracing::trace!("rejected");
-                future::Either::Right(future::err(e))
-            }
-        }
+        self.filter
+            .filter(request)
+            .map(move |req| future::Either::Left(self.service.call(req).err_into::<Error>()))
+            .unwrap_or_else(|e| future::Either::Right(future::err(e)))
     }
 }

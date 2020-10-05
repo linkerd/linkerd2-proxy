@@ -155,6 +155,12 @@ impl<S> Stack<S> {
         self.push(stack::map_target::MapTargetLayer::new(map_target))
     }
 
+    pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<stack::RequestFilter<F, S>> {
+        self.push(layer::mk(|inner| {
+            stack::RequestFilter::new(filter.clone(), inner)
+        }))
+    }
+
     /// Wraps a `Service<T>` as a `Service<()>`.
     ///
     /// Each time the service is called, the `T`-typed request is cloned and

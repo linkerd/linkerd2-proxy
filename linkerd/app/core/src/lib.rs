@@ -10,7 +10,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
-pub use linkerd2_admit as admit;
 pub use linkerd2_cache as cache;
 pub use linkerd2_conditional::Conditional;
 pub use linkerd2_dns;
@@ -20,7 +19,6 @@ pub use linkerd2_exp_backoff as exp_backoff;
 pub use linkerd2_http_metrics as http_metrics;
 pub use linkerd2_opencensus as opencensus;
 pub use linkerd2_reconnect as reconnect;
-pub use linkerd2_request_filter as request_filter;
 pub use linkerd2_router as router;
 pub use linkerd2_service_profiles as profiles;
 pub use linkerd2_stack_metrics as stack_metrics;

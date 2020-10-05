@@ -47,6 +47,12 @@ pub struct ProfileTarget;
 
 impl Into<SocketAddr> for HttpEndpoint {
     fn into(self) -> SocketAddr {
+        (&self).into()
+    }
+}
+
+impl Into<SocketAddr> for &'_ HttpEndpoint {
+    fn into(self) -> SocketAddr {
         ([127, 0, 0, 1], self.port).into()
     }
 }
@@ -92,6 +98,12 @@ impl From<tls::accept::Meta> for TcpEndpoint {
 
 impl Into<SocketAddr> for TcpEndpoint {
     fn into(self) -> SocketAddr {
+        (&self).into()
+    }
+}
+
+impl Into<SocketAddr> for &'_ TcpEndpoint {
+    fn into(self) -> SocketAddr {
         ([127, 0, 0, 1], self.port).into()
     }
 }
@@ -118,6 +130,13 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 impl Into<Addr> for &'_ Target {
     fn into(self) -> Addr {
         self.dst.clone()
+    }
+}
+
+/// Used for profile discovery.
+impl Into<SocketAddr> for &'_ Target {
+    fn into(self) -> SocketAddr {
+        self.socket_addr
     }
 }
 

@@ -1,6 +1,6 @@
 use super::Rejected;
 use ipnet::{Contains, IpNet};
-use linkerd2_app_core::{dns::Suffix, request_filter::FilterRequest, Addr, Error};
+use linkerd2_app_core::{dns::Suffix, svc::stack::FilterRequest, Addr, Error};
 use std::{net::IpAddr, sync::Arc};
 
 /// Rejects profile lookups if the destination address is outside of the
