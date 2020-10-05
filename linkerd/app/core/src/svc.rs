@@ -5,7 +5,6 @@ use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
-pub use linkerd2_request_filter::{FilterRequest, RequestFilter};
 pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
@@ -154,6 +153,12 @@ impl<S> Stack<S> {
         map_target: M,
     ) -> Stack<stack::map_target::MapTargetService<S, M>> {
         self.push(stack::map_target::MapTargetLayer::new(map_target))
+    }
+
+    pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<stack::RequestFilter<F, S>> {
+        self.push(layer::mk(|inner| {
+            stack::RequestFilter::new(filter.clone(), inner)
+        }))
     }
 
     /// Wraps a `Service<T>` as a `Service<()>`.

@@ -1,5 +1,4 @@
-use super::endpoint::{HttpEndpoint, TcpEndpoint};
-use linkerd2_app_core::admit;
+use linkerd2_app_core::{svc::stack::FilterRequest, Error};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -18,29 +17,20 @@ impl From<u16> for PreventLoop {
     }
 }
 
-impl admit::Admit<HttpEndpoint> for PreventLoop {
-    type Error = LoopPrevented;
+impl<T> FilterRequest<T> for PreventLoop
+where
+    for<'t> &'t T: Into<std::net::SocketAddr>,
+{
+    type Request = T;
 
-    fn admit(&mut self, ep: &HttpEndpoint) -> Result<(), Self::Error> {
-        tracing::debug!(addr = %ep.addr, self.port);
-        if ep.addr.ip().is_loopback() && ep.addr.port() == self.port {
-            return Err(LoopPrevented { port: self.port });
+    fn filter(&self, t: T) -> Result<T, Error> {
+        let addr = (&t).into();
+        tracing::debug!(%addr, self.port);
+        if addr.ip().is_loopback() && addr.port() == self.port {
+            return Err(LoopPrevented { port: self.port }.into());
         }
 
-        Ok(())
-    }
-}
-
-impl admit::Admit<TcpEndpoint> for PreventLoop {
-    type Error = LoopPrevented;
-
-    fn admit(&mut self, ep: &TcpEndpoint) -> Result<(), Self::Error> {
-        tracing::debug!(addr = %ep.addr, self.port);
-        if ep.addr.ip().is_loopback() && ep.addr.port() == self.port {
-            return Err(LoopPrevented { port: self.port });
-        }
-
-        Ok(())
+        Ok(t)
     }
 }
 

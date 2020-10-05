@@ -192,6 +192,12 @@ impl tls::HasPeerIdentity for HttpEndpoint {
 
 impl Into<SocketAddr> for HttpEndpoint {
     fn into(self) -> SocketAddr {
+        (&self).into()
+    }
+}
+
+impl Into<SocketAddr> for &'_ HttpEndpoint {
+    fn into(self) -> SocketAddr {
         self.addr
     }
 }
@@ -314,6 +320,12 @@ impl From<TcpLogical> for TcpEndpoint {
 }
 
 impl Into<SocketAddr> for TcpEndpoint {
+    fn into(self) -> SocketAddr {
+        (&self).into()
+    }
+}
+
+impl Into<SocketAddr> for &'_ TcpEndpoint {
     fn into(self) -> SocketAddr {
         self.addr
     }

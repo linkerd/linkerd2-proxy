@@ -8,7 +8,7 @@
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
-    admit, classify,
+    classify,
     config::{ProxyConfig, ServerConfig},
     drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
@@ -72,7 +72,7 @@ impl Config {
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect(TransportLabels))
-            .push(admit::AdmitLayer::new(prevent_loop.into()))
+            .push_request_filter(prevent_loop.into())
             .into_inner()
     }
 

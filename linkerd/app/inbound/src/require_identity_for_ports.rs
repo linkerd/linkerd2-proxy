@@ -1,5 +1,5 @@
 use indexmap::IndexSet;
-use linkerd2_app_core::{admit, transport::tls};
+use linkerd2_app_core::{svc::stack::FilterRequest, transport::tls, Error};
 use std::sync::Arc;
 
 /// A connection policy that drops
@@ -19,19 +19,19 @@ impl<T: IntoIterator<Item = u16>> From<T> for RequireIdentityForPorts {
     }
 }
 
-impl admit::Admit<tls::accept::Meta> for RequireIdentityForPorts {
-    type Error = IdentityRequired;
+impl FilterRequest<tls::accept::Meta> for RequireIdentityForPorts {
+    type Request = tls::accept::Meta;
 
-    fn admit(&mut self, meta: &tls::accept::Meta) -> Result<(), Self::Error> {
+    fn filter(&self, meta: tls::accept::Meta) -> Result<tls::accept::Meta, Error> {
         let port = meta.addrs.target_addr().port();
         let id_required = self.ports.contains(&port);
 
         tracing::debug!(%port, peer.id = ?meta.peer_identity, %id_required);
         if id_required && meta.peer_identity.is_none() {
-            return Err(IdentityRequired(()));
+            return Err(IdentityRequired(()).into());
         }
 
-        Ok(())
+        Ok(meta)
     }
 }
 

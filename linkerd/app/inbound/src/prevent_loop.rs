@@ -1,7 +1,5 @@
-use super::endpoint::{HttpEndpoint, Target, TcpEndpoint};
-use futures::future;
-use linkerd2_app_core::{admit, proxy::http};
-use std::task::{Context, Poll};
+//use futures::future;
+use linkerd2_app_core::{svc::stack::FilterRequest, Error};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -20,70 +18,20 @@ impl From<u16> for PreventLoop {
     }
 }
 
-impl admit::Admit<Target> for PreventLoop {
-    type Error = LoopPrevented;
+impl<T> FilterRequest<T> for PreventLoop
+where
+    for<'t> &'t T: Into<std::net::SocketAddr>,
+{
+    type Request = T;
 
-    fn admit(&mut self, ep: &Target) -> Result<(), Self::Error> {
-        tracing::debug!(addr = %ep.socket_addr, self.port);
-        if ep.socket_addr.port() == self.port {
-            return Err(LoopPrevented { port: self.port });
+    fn filter(&self, t: T) -> Result<T, Error> {
+        let addr = (&t).into();
+        tracing::debug!(%addr, self.port);
+        if addr.port() == self.port {
+            return Err(LoopPrevented { port: self.port }.into());
         }
 
-        Ok(())
-    }
-}
-
-impl admit::Admit<HttpEndpoint> for PreventLoop {
-    type Error = LoopPrevented;
-
-    fn admit(&mut self, ep: &HttpEndpoint) -> Result<(), Self::Error> {
-        tracing::debug!(addr = %ep.port, self.port);
-        if ep.port == self.port {
-            return Err(LoopPrevented { port: self.port });
-        }
-
-        Ok(())
-    }
-}
-
-impl admit::Admit<TcpEndpoint> for PreventLoop {
-    type Error = LoopPrevented;
-
-    fn admit(&mut self, ep: &TcpEndpoint) -> Result<(), Self::Error> {
-        tracing::debug!(port = %ep.port, self.port);
-        if ep.port == self.port {
-            return Err(LoopPrevented { port: self.port });
-        }
-
-        Ok(())
-    }
-}
-
-impl tower::Service<Target> for PreventLoop {
-    type Response = PreventLoop;
-    type Error = LoopPrevented;
-    type Future = future::Ready<Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Err(LoopPrevented { port: self.port }))
-    }
-
-    fn call(&mut self, _: Target) -> Self::Future {
-        future::err(LoopPrevented { port: self.port })
-    }
-}
-
-impl<B> tower::Service<http::Request<B>> for PreventLoop {
-    type Response = http::Response<http::boxed::Payload>;
-    type Error = LoopPrevented;
-    type Future = future::Ready<Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Err(LoopPrevented { port: self.port }))
-    }
-
-    fn call(&mut self, _: http::Request<B>) -> Self::Future {
-        future::err(LoopPrevented { port: self.port })
+        Ok(t)
     }
 }
 

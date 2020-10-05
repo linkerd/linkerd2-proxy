@@ -55,7 +55,6 @@ where
     }
 }
 
-
 // === impl FromMakeServiceLayer ===
 
 impl<S> tower::layer::Layer<S> for FromMakeServiceLayer {

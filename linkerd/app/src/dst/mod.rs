@@ -7,7 +7,10 @@ use self::default_profile::RecoverDefaultProfile;
 use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
-    control, dns, profiles, proxy::identity, request_filter::RequestFilter, svc, transport::tls,
+    control, dns, profiles,
+    proxy::identity,
+    svc::{self, stack::RequestFilter},
+    transport::tls,
     ControlHttpMetrics, Error,
 };
 use permit::{PermitProfile, PermitResolve};
@@ -59,10 +62,7 @@ impl Config {
         let backoff = self.control.connect.backoff.clone();
         let svc = self.control.build(dns, metrics, identity);
         let resolve = svc::stack(resolve::new(svc.clone(), &self.context, backoff))
-            .push(RequestFilter::layer(PermitResolve::new(
-                self.get_suffixes,
-                self.get_networks,
-            )))
+            .push_request_filter(PermitResolve::new(self.get_suffixes, self.get_networks))
             .push(default_resolve::layer())
             .into_inner();
 
@@ -72,10 +72,10 @@ impl Config {
             self.initial_profile_timeout,
             self.context,
         ))
-        .push(RequestFilter::layer(PermitProfile::new(
+        .push_request_filter(PermitProfile::new(
             self.profile_suffixes,
             self.profile_networks,
-        )))
+        ))
         .push(default_profile::layer())
         .into_inner();
 
