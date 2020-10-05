@@ -16,6 +16,7 @@ pub use tracing_subscriber::prelude::*;
 pub use tokio_test::io;
 
 pub mod connect;
+pub mod identity;
 pub mod refine;
 pub mod resolver;
 
@@ -32,6 +33,10 @@ pub fn connect() -> connect::Connect {
 
 pub fn io() -> io::Builder {
     io::Builder::new()
+}
+
+pub fn identity(dir: &'static str) -> identity::Identity {
+    identity::Identity::new(dir)
 }
 
 /// By default, disable logging in modules that are expected to error in tests.
