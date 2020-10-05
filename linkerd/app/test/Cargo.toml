@@ -27,12 +27,10 @@ linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-proxy-core = { path = "../../proxy/core" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
-linkerd2-proxy-identity = { path = "../../proxy/identity" }
 regex = "0.1"
-rustls = "0.17"
 tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
 tokio-test = "0.2.1"
-tower = { version = "0.3", default-features = false}
+tower = { version = "0.3", default-features = false} 
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 
