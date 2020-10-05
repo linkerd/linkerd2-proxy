@@ -1,7 +1,11 @@
 use crate::{endpoint::TcpLogical, Config};
 use futures::prelude::*;
 use linkerd2_app_core::{
-    config, exp_backoff, proxy::http::h2, svc::NewService, transport::listen, Error,
+    config, exp_backoff,
+    proxy::http::h2,
+    svc::NewService,
+    transport::{listen, tls},
+    Error,
 };
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, time::Duration};
@@ -80,4 +84,75 @@ async fn plaintext_tcp() {
         .err_into::<Error>()
         .await
         .expect("conn should succeed");
+}
+
+#[tokio::test(core_threads = 1)]
+async fn tls_when_hinted() {
+    use super::TcpEndpoint;
+    let _trace = test_support::trace_init();
+
+    let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
+    let tls_logical = TcpLogical { addr: tls_addr };
+    let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
+    let plain_logical = TcpLogical { addr: plain_addr };
+
+    let cfg = default_config(plain_addr);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+    let mut srv_io = test_support::io();
+    srv_io.write(b"hello").read(b"world");
+    let id_name2 = id_name.clone();
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = test_support::connect()
+        // The plaintext endpoint should use plaintext...
+        .endpoint_builder(plain_addr, srv_io.clone())
+        .endpoint_fn(tls_addr, move |endpoint: TcpEndpoint| {
+            use tls::HasPeerIdentity;
+            assert_eq!(
+                endpoint.peer_identity(),
+                tls::Conditional::Some(id_name2.clone())
+            );
+            let io = srv_io.build();
+            Ok(io)
+        });
+
+    let tls_meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    // Configure the mock destination resolver to just give us a single endpoint
+    // for the target, which always exists and has no metadata.
+    let resolver = test_support::resolver()
+        .endpoint_exists(
+            plain_logical.clone(),
+            plain_addr,
+            test_support::resolver::Metadata::default(),
+        )
+        .endpoint_exists(tls_logical.clone(), tls_addr, tls_meta);
+
+    // Configure mock IO for the "client".
+    let mut client_io = test_support::io();
+    client_io.read(b"hello").write(b"world");
+
+    // Build the outbound TCP balancer stack.
+    let mut balance = cfg.build_tcp_balance(connect, resolver);
+
+    let plain = balance
+        .new_service(plain_logical)
+        .oneshot(client_io.build())
+        .err_into::<Error>();
+    let tls = balance
+        .new_service(tls_logical)
+        .oneshot(client_io.build())
+        .err_into::<Error>();
+
+    let res = tokio::try_join! { plain, tls };
+    res.expect("neither connection should fail");
 }
