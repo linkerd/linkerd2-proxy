@@ -9,7 +9,6 @@ use self::allow_discovery::AllowProfile;
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
-    addr_match::AddrMatch,
     classify,
     config::{ProxyConfig, ServerConfig},
     dns, drain, errors, metric_labels,
@@ -22,8 +21,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, AddrMatch, Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
+    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;

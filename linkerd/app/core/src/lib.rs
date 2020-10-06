@@ -25,7 +25,7 @@ pub use linkerd2_stack_metrics as stack_metrics;
 pub use linkerd2_stack_tracing as stack_tracing;
 pub use linkerd2_trace_context::TraceContextLayer;
 
-pub mod addr_match;
+mod addr_match;
 pub mod admin;
 pub mod classify;
 pub mod config;
@@ -44,6 +44,8 @@ pub mod svc;
 pub mod telemetry;
 pub mod trace;
 pub mod transport;
+
+pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 
 pub const CANONICAL_DST_HEADER: &'static str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &'static str = "l5d-dst-override";

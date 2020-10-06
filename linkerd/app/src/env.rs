@@ -1,11 +1,10 @@
 use crate::core::{
     addr,
-    addr_match::{AddrMatch, NameMatch},
     config::*,
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::h2,
     transport::{listen, tls},
-    Addr,
+    Addr, AddrMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;

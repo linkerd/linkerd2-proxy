@@ -1,6 +1,6 @@
 use ipnet::IpNet;
 use linkerd2_app_core::{
-    addr_match::AddrMatch, discovery_rejected, dns::Suffix, svc::stack::FilterRequest, Addr, Error,
+    discovery_rejected, dns::Suffix, svc::stack::FilterRequest, Addr, AddrMatch, Error,
 };
 
 /// Rejects endpoint resolutions if the destinatino address is outside of the

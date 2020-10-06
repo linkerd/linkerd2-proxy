@@ -1,7 +1,5 @@
 use crate::endpoint::HttpLogical;
-use linkerd2_app_core::{
-    addr_match::AddrMatch, discovery_rejected, svc::stack::FilterRequest, Addr, Error,
-};
+use linkerd2_app_core::{discovery_rejected, svc::stack::FilterRequest, Addr, AddrMatch, Error};
 
 #[derive(Clone, Debug)]
 pub struct AllowProfile(pub AddrMatch);

@@ -1,6 +1,6 @@
 use crate::endpoint::Target;
 use linkerd2_app_core::{
-    addr_match::NameMatch, discovery_rejected, svc::stack::FilterRequest, Error, NameAddr,
+    discovery_rejected, svc::stack::FilterRequest, Error, NameAddr, NameMatch,
 };
 
 #[derive(Clone, Debug)]

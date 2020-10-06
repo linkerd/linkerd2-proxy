@@ -11,7 +11,6 @@ use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
 use linkerd2_app_core::{
-    addr_match::NameMatch,
     classify,
     config::{ProxyConfig, ServerConfig},
     drain, dst, errors, metric_labels,
@@ -25,7 +24,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Error, NameAddr, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
+    Error, NameAddr, NameMatch, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
 use std::collections::HashMap;
 use tokio::{net::TcpStream, sync::mpsc};
