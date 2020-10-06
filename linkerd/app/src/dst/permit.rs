@@ -1,7 +1,6 @@
-use super::Rejected;
 use ipnet::IpNet;
 use linkerd2_app_core::{
-    addr_match::AddrMatch, dns::Suffix, svc::stack::FilterRequest, Addr, Error,
+    addr_match::AddrMatch, discovery_rejected, dns::Suffix, svc::stack::FilterRequest, Addr, Error,
 };
 
 /// Rejects profile lookups if the destination address is outside of the
@@ -38,7 +37,7 @@ where
         if permitted {
             Ok(addr)
         } else {
-            Err(Rejected(()).into())
+            Err(discovery_rejected().into())
         }
     }
 }
@@ -69,6 +68,6 @@ where
             }
         });
         tracing::debug!(permitted = %permitted.is_some(), "Resolve");
-        permitted.ok_or_else(|| Rejected(()).into())
+        permitted.ok_or_else(|| discovery_rejected().into())
     }
 }

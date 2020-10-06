@@ -51,6 +51,10 @@ pub const L5D_REQUIRE_ID: &'static str = "l5d-require-id";
 
 const DEFAULT_PORT: u16 = 80;
 
+pub fn discovery_rejected() -> tonic::Status {
+    tonic::Status::new(tonic::Code::InvalidArgument, "Discovery rejected")
+}
+
 pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
     proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
         .ok_or_else(|| {

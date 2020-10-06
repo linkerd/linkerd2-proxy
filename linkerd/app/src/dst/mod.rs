@@ -24,10 +24,6 @@ pub struct Config {
     pub profile_networks: IndexSet<ipnet::IpNet>,
 }
 
-/// Indicates that discovery was rejected due to configuration.
-#[derive(Clone, Debug)]
-struct Rejected(());
-
 /// Handles to destination service clients.
 pub struct Dst {
     /// The address of the destination service, used for logging.
@@ -78,29 +74,3 @@ impl Config {
         })
     }
 }
-
-// === impl Rejected ===
-
-impl Rejected {
-    /// Checks whether discovery was rejected, either due to configuration or by
-    /// the destination service.
-    fn matches(err: &(dyn std::error::Error + 'static)) -> bool {
-        if err.is::<Self>() {
-            return true;
-        }
-
-        if let Some(status) = err.downcast_ref::<tonic::Status>() {
-            return status.code() == tonic::Code::InvalidArgument;
-        }
-
-        err.source().map(Self::matches).unwrap_or(false)
-    }
-}
-
-impl std::fmt::Display for Rejected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "rejected discovery")
-    }
-}
-
-impl std::error::Error for Rejected {}
