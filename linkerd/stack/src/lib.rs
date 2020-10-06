@@ -16,6 +16,7 @@ mod proxy;
 mod request_filter;
 mod result;
 mod switch;
+pub mod switch_ready;
 
 pub use self::fallback::{Fallback, FallbackLayer};
 pub use self::future_service::FutureService;
