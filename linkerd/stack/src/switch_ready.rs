@@ -7,12 +7,6 @@ use std::{
 };
 use tokio::time::{delay_for, Delay, Instant};
 
-#[derive(Debug, Clone)]
-pub struct SwitchReadyLayer<B> {
-    secondary: B,
-    switch_after: Duration,
-}
-
 /// A service which falls back to a secondary service if the primary service
 /// takes too long to become ready.
 #[derive(Debug)]
@@ -31,34 +25,27 @@ enum State {
     Secondary,
 }
 
-impl<B: Clone> SwitchReadyLayer<B> {
+// === impl SwitchReady ===
+
+impl<A, B> SwitchReady<A, B> {
     /// Returns a new `SwitchReadyLayer`.
     ///
-    /// This will forward requests to the wrapped service, unless it takes over
+    /// This will forward requests to the primary service, unless it takes over
     /// `switch_after` duration to become ready. If the duration is exceeded,
     /// the `secondary` service is used until the primary service becomes ready again.
-    pub fn new(secondary: B, switch_after: Duration) -> Self {
+    pub fn new(primary: A, secondary: B, switch_after: Duration) -> Self {
         Self {
+            primary,
             secondary,
             switch_after,
-        }
-    }
-}
-
-impl<A, B: Clone> tower::Layer<A> for SwitchReadyLayer<B> {
-    type Service = SwitchReady<A, B>;
-    fn layer(&self, primary: A) -> Self::Service {
-        SwitchReady {
-            primary,
-            secondary: self.secondary.clone(),
-            switch_after: self.switch_after,
-            delay: delay_for(self.switch_after),
+            // the delay is reset whenever the service becomes unready; this
+            // initial one will never actually be used, so it's okay to start it
+            // now.
+            delay: delay_for(switch_after),
             state: State::Primary,
         }
     }
 }
-
-// === impl SwitchReady ===
 
 impl<A, B, R> tower::Service<R> for SwitchReady<A, B>
 where
@@ -138,7 +125,6 @@ impl<A: Clone, B: Clone> Clone for SwitchReady<A, B> {
 mod tests {
     use super::*;
     use tokio_test::{assert_pending, assert_ready_err, assert_ready_ok};
-    use tower::Layer;
     use tower_test::mock;
 
     #[tokio::test]
@@ -148,8 +134,7 @@ mod tests {
         let dur = Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
 
-        let layer = SwitchReadyLayer::new(b, dur);
-        let (mut switch, mut a_handle) = mock::spawn_with(|a| layer.layer(a));
+        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
         b_handle.allow(0);
         a_handle.allow(1);
 
@@ -170,8 +155,7 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let layer = SwitchReadyLayer::new(b, dur);
-        let (mut switch, mut a_handle) = mock::spawn_with(|a| layer.layer(a));
+        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -196,8 +180,7 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let layer = SwitchReadyLayer::new(b, dur);
-        let (mut switch, mut a_handle) = mock::spawn_with(|a| layer.layer(a));
+        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -226,8 +209,7 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let layer = SwitchReadyLayer::new(b, dur);
-        let (mut switch, mut a_handle) = mock::spawn_with(|a| layer.layer(a));
+        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -280,8 +262,7 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let layer = SwitchReadyLayer::new(b, dur);
-        let (mut switch, mut a_handle) = mock::spawn_with(|a| layer.layer(a));
+        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -342,8 +323,7 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let layer = SwitchReadyLayer::new(b, dur);
-        let (mut switch, mut a_handle) = mock::spawn_with(|a| layer.layer(a));
+        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
