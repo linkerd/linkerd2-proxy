@@ -1,9 +1,7 @@
-mod default_profile;
 mod default_resolve;
 mod permit;
 mod resolve;
 
-use self::default_profile::RecoverDefaultProfile;
 use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
@@ -36,11 +34,9 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: RecoverDefaultProfile<
-        RequestFilter<
-            PermitProfile,
-            profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
-        >,
+    pub profiles: RequestFilter<
+        PermitProfile,
+        profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
     >,
 
     /// Resolves endpoints.
@@ -73,7 +69,6 @@ impl Config {
             self.profile_suffixes,
             self.profile_networks,
         ))
-        .push(default_profile::layer())
         .into_inner();
 
         Ok(Dst {
