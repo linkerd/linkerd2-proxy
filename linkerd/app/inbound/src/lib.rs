@@ -26,7 +26,7 @@ use linkerd2_app_core::{
     transport::{self, io, listen, tls},
     Error, NameAddr, NameMatch, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{debug_span, info_span};
 
@@ -42,6 +42,7 @@ pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
+    pub profile_idle_timeout: Duration,
 }
 
 impl Config {

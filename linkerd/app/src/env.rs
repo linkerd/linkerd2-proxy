@@ -229,7 +229,7 @@ const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
 
 const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
-//const DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT: Duration = Duration::from_millis(500);
+const DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT: Duration = Duration::from_millis(500);
 
 const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
 const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
@@ -332,11 +332,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
     let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
     let dst_get_networks = parse(strings, ENV_DESTINATION_GET_NETWORKS, parse_networks);
-    // let dst_profile_initial_timeout = parse(
-    //     strings,
-    //     ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT,
-    //     parse_duration,
-    // );
+    let dst_profile_idle_timeout = parse(
+        strings,
+        ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT,
+        parse_duration,
+    );
     let dst_profile_suffixes = parse(
         strings,
         ENV_DESTINATION_PROFILE_SUFFIXES,
@@ -488,6 +488,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 max_in_flight_requests: inbound_max_in_flight?
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
+                profile_idle_timeout: dst_profile_idle_timeout?
+                    .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
             },
             require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
         }

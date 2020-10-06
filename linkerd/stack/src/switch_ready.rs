@@ -18,6 +18,13 @@ pub struct SwitchReady<A, B> {
     state: State,
 }
 
+#[derive(Debug, Clone)]
+pub struct NewSwitchReady<A, B> {
+    new_primary: A,
+    new_secondary: B,
+    switch_after: Duration,
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum State {
     Primary,
@@ -25,10 +32,44 @@ enum State {
     Secondary,
 }
 
+// === impl NewSwitchReady ===
+
+impl<A, B> NewSwitchReady<A, B> {
+    /// Returns a new `NewSwitchReady`.
+    ///
+    /// This will forward requests to the primary service, unless it takes over
+    /// `switch_after` duration to become ready. If the duration is exceeded,
+    /// the `secondary` service is used until the primary service becomes ready again.
+    pub fn new(new_primary: A, new_secondary: B, switch_after: Duration) -> Self {
+        Self {
+            new_primary,
+            new_secondary,
+            switch_after,
+        }
+    }
+}
+
+impl<A, B, T, P> NewService<T> for NewSwitchReady<A, B>
+where
+    T: Clone,
+    A: NewService<T>,
+    B: NewService<T>,
+{
+    type Service = SwitchReady<A::Service, B::Service>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        SwitchReady::new(
+            self.new_primary.new_service(target.clone()),
+            self.new_secondary.new_service(target.clone()),
+            self.switch_after,
+        )
+    }
+}
+
 // === impl SwitchReady ===
 
 impl<A, B> SwitchReady<A, B> {
-    /// Returns a new `SwitchReadyLayer`.
+    /// Returns a new `SwitchReady`.
     ///
     /// This will forward requests to the primary service, unless it takes over
     /// `switch_after` duration to become ready. If the duration is exceeded,
