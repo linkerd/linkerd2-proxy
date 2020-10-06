@@ -243,6 +243,8 @@ impl Config {
                     .into_inner(),
             ))
             .push_map_target(endpoint::Logical::from)
+            // TODO: Profile resolution should be time-bounded so that slowness
+            // cannot cause inbound requests to fail.
             .push(profiles::discover::layer(profiles_client))
             .instrument(|_: &Target| debug_span!("profile"))
             .push_on_response(svc::layers().box_http_response())

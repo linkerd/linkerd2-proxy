@@ -14,7 +14,6 @@ use linkerd2_app_core::{
     ControlHttpMetrics, Error,
 };
 use permit::{PermitProfile, PermitResolve};
-use std::time::Duration;
 use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
@@ -25,7 +24,6 @@ pub struct Config {
     pub get_networks: IndexSet<ipnet::IpNet>,
     pub profile_suffixes: IndexSet<dns::Suffix>,
     pub profile_networks: IndexSet<ipnet::IpNet>,
-    pub initial_profile_timeout: Duration,
 }
 
 /// Indicates that discovery was rejected due to configuration.
@@ -69,7 +67,6 @@ impl Config {
         let profiles = svc::stack(profiles::Client::new(
             svc,
             resolve::BackoffUnlessInvalidArgument::from(backoff),
-            self.initial_profile_timeout,
             self.context,
         ))
         .push_request_filter(PermitProfile::new(
