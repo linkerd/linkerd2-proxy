@@ -20,13 +20,13 @@ pub(crate) enum Gateway<O> {
 impl<O> Gateway<O> {
     pub fn new(
         outbound: O,
+        dst: NameAddr,
         source_identity: identity::Name,
-        dst_name: NameAddr,
         local_identity: identity::Name,
     ) -> Self {
         let fwd = format!(
             "by={};for={};host={};proto=https",
-            local_identity, source_identity, dst_name
+            local_identity, source_identity, dst
         );
         Gateway::Outbound {
             outbound,

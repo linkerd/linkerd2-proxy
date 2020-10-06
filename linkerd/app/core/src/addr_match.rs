@@ -3,13 +3,13 @@ use linkerd2_addr::Addr;
 use linkerd2_dns::{Name, Suffix};
 use std::{net::IpAddr, sync::Arc};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AddrMatch(NameMatch, IpMatch);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct NameMatch(Arc<Vec<Suffix>>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct IpMatch(Arc<Vec<IpNet>>);
 
 // === impl NameMatch ===
