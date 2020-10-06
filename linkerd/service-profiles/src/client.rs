@@ -164,9 +164,9 @@ where
             .expect("polled after ready")
             .poll_profile(cx)
         {
-            Poll::Ready(Ok(profile)) => profile,
             Poll::Pending => return Poll::Pending,
             Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Ready(Ok(profile)) => profile,
         };
 
         trace!("daemonizing");

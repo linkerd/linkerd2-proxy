@@ -5,6 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+use self::allow_discovery::AllowProfile;
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
@@ -20,13 +21,14 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, Error, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    Addr, Conditional, Error, IpMatch, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
+mod allow_discovery;
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_on_endpoint;
@@ -43,6 +45,7 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 pub struct Config {
     pub proxy: ProxyConfig,
     pub canonicalize_timeout: Duration,
+    pub allow_discovery: IpMatch,
 }
 
 impl Config {
@@ -351,7 +354,7 @@ impl Config {
             > + Send
             + 'static,
         S::Future: Send,
-        P: profiles::GetProfile<endpoint::TcpAccept> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<SocketAddr> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
     {
@@ -434,7 +437,10 @@ impl Config {
         svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
             .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
             .push_map_target(endpoint::TcpLogical::from)
-            .push(profiles::discover::layer(profiles))
+            .push(profiles::discover::layer(
+                profiles,
+                AllowProfile(self.allow_discovery),
+            ))
             .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
             .cache(
                 svc::layers().push_on_response(

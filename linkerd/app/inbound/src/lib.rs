@@ -5,6 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+use self::allow_discovery::AllowProfile;
 pub use self::endpoint::{HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpEndpoint};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
@@ -23,12 +24,13 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Error, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
+    Error, NameAddr, NameMatch, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
 use std::collections::HashMap;
 use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{debug_span, info_span};
 
+mod allow_discovery;
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
@@ -37,6 +39,7 @@ type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
 
 #[derive(Clone, Debug)]
 pub struct Config {
+    pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
 }
@@ -75,7 +78,7 @@ impl Config {
             + 'static,
         S::Error: Into<Error>,
         S::Future: Unpin + Send,
-        P: profiles::GetProfile<Target> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
     {
@@ -163,7 +166,7 @@ impl Config {
         C::Error: Into<Error>,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        P: profiles::GetProfile<Target> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
         // The loopback router processes requests sent to the inbound port.
@@ -180,6 +183,7 @@ impl Config {
         S::Future: Unpin + Send,
     {
         let Config {
+            allow_discovery,
             proxy:
                 ProxyConfig {
                     connect,
@@ -243,7 +247,14 @@ impl Config {
                     .into_inner(),
             ))
             .push_map_target(endpoint::Logical::from)
-            .push(profiles::discover::layer(profiles_client))
+            // TODO: Profile resolution should be time-bounded so that slowness
+            // cannot cause inbound requests to fail.
+            .check_new_service::<(Option<profiles::Receiver>, Target), http::Request<http::boxed::Payload>>()
+            .push(profiles::discover::layer(
+                profiles_client,
+                AllowProfile(allow_discovery),
+            ))
+            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .instrument(|_: &Target| debug_span!("profile"))
             .push_on_response(svc::layers().box_http_response())
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
