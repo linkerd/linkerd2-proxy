@@ -13,6 +13,7 @@ pub use tower::Service;
 pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
+use std::fmt;
 pub use tokio_test::io;
 
 pub mod connect;
@@ -21,12 +22,12 @@ pub mod resolver;
 
 pub fn resolver<T, E>() -> resolver::Resolver<T, E>
 where
-    T: std::hash::Hash + Eq + std::fmt::Debug,
+    T: std::hash::Hash + Eq + fmt::Debug,
 {
     resolver::Resolver::new()
 }
 
-pub fn connect() -> connect::Connect {
+pub fn connect<E: fmt::Debug>() -> connect::Connect<E> {
     connect::Connect::new()
 }
 
