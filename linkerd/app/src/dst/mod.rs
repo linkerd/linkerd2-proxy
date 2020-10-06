@@ -11,7 +11,7 @@ use linkerd2_app_core::{
     transport::tls,
     ControlHttpMetrics, Error,
 };
-use permit::{PermitProfile, PermitResolve};
+use permit::PermitResolve;
 use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
@@ -30,10 +30,7 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: RequestFilter<
-        PermitProfile,
-        profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
-    >,
+    pub profiles: profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
 
     /// Resolves endpoints.
     pub resolve: RecoverDefaultResolve<
@@ -60,10 +57,6 @@ impl Config {
             svc,
             resolve::BackoffUnlessInvalidArgument::from(backoff),
             self.context,
-        ))
-        .push_request_filter(PermitProfile::new(
-            self.profile_suffixes,
-            self.profile_networks,
         ))
         .into_inner();
 

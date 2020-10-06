@@ -1,13 +1,26 @@
-use super::{default::RecoverDefault, GetProfile, Receiver};
+#![allow(warnings)]
+
+use super::{default::RecoverDefault, GetProfile, GetProfileService, Receiver};
 use futures::prelude::*;
-use linkerd2_stack::{layer, FutureService, NewService};
+use linkerd2_stack::{layer, FilterRequest, FutureService, NewService, RequestFilter};
 use std::{future::Future, pin::Pin};
 
-pub fn layer<G: Clone, M>(
+pub fn layer<T, G: Clone, F: Clone, M: Clone>(
     get_profile: G,
-) -> impl layer::Layer<M, Service = Discover<RecoverDefault<G>, M>> + Clone {
+    filter: F,
+) -> impl layer::Layer<
+    M,
+    Service = Discover<RecoverDefault<RequestFilter<F, GetProfileService<G>>>, M>,
+> + Clone
+where
+    M: NewService<(Option<Receiver>, T)>,
+    F: FilterRequest<T>,
+    G: GetProfile<F::Request>,
+    Discover<RecoverDefault<RequestFilter<F, GetProfileService<G>>>, M>: NewService<T>,
+{
+    let get_profile = RecoverDefault::new(RequestFilter::new(filter, get_profile.into_service()));
     layer::mk(move |inner| Discover {
-        get_profile: RecoverDefault::new(get_profile.clone()),
+        get_profile: get_profile.clone(),
         inner,
     })
 }

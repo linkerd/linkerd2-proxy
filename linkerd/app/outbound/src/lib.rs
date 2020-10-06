@@ -5,9 +5,11 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+use self::allow_discovery::AllowProfile;
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
+    addr_match::AddrMatch,
     classify,
     config::{ProxyConfig, ServerConfig},
     dns, drain, errors, metric_labels,
@@ -27,6 +29,7 @@ use std::{collections::HashMap, net, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
+mod allow_discovery;
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_on_endpoint;
@@ -43,6 +46,7 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 pub struct Config {
     pub proxy: ProxyConfig,
     pub canonicalize_timeout: Duration,
+    pub allow_discovery: AddrMatch,
 }
 
 impl Config {
@@ -271,7 +275,7 @@ impl Config {
             + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        P: profiles::GetProfile<HttpLogical> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<Addr> + Unpin + Clone + Send + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
     {
@@ -281,6 +285,7 @@ impl Config {
             dispatch_timeout,
             ..
         } = self.proxy.clone();
+        let allow_discovery = self.allow_discovery.clone();
 
         // Resolves each target via the control plane on a background task, buffering results.
         //
@@ -368,7 +373,10 @@ impl Config {
             .push_map_target(endpoint::Profile::from)
             // Discovers the service profile from the control plane and passes
             // it to inner stack to build the router and traffic split.
-            .push(profiles::discover::layer(profiles_client))
+            .push(profiles::discover::layer(
+                profiles_client,
+                AllowProfile(allow_discovery),
+            ))
             .check_new_service::<HttpLogical, http::Request<_>>()
             .push_on_response(svc::layers().box_http_response())
             .cache(
