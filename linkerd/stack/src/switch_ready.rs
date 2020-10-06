@@ -134,7 +134,8 @@ mod tests {
         let dur = Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
 
-        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
         b_handle.allow(0);
         a_handle.allow(1);
 
@@ -155,7 +156,8 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -180,7 +182,8 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -209,7 +212,8 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -262,7 +266,8 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
@@ -323,7 +328,8 @@ mod tests {
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
-        let (mut switch, mut a_handle) = mock::spawn_with(move |a| SwitchReady::new(a, b, dur));
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
 
         // Initially, nothing happens.
         a_handle.allow(0);
