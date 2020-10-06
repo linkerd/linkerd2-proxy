@@ -16,24 +16,20 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio::{
-    sync::watch,
-    time::{self, Delay},
-};
+use tokio::sync::watch;
 use tonic::{
     self as grpc,
     body::{Body, BoxBody},
     client::GrpcService,
 };
 use tower::retry::budget::Budget;
-use tracing::{debug, error, info, info_span, trace, warn};
+use tracing::{debug, error, info_span, trace, warn};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Client<S, R> {
     service: DestinationClient<S>,
     recover: R,
-    initial_timeout: Duration,
     context_token: String,
 }
 
@@ -45,8 +41,6 @@ where
 {
     #[pin]
     inner: Option<Inner<S, R>>,
-    #[pin]
-    timeout: Delay,
 }
 
 #[pin_project]
@@ -101,11 +95,10 @@ where
     R: Recover,
     R::Backoff: Unpin,
 {
-    pub fn new(service: S, recover: R, initial_timeout: Duration, context_token: String) -> Self {
+    pub fn new(service: S, recover: R, context_token: String) -> Self {
         Self {
             service: DestinationClient::new(service),
             recover,
-            initial_timeout,
             context_token,
         }
     }
@@ -145,10 +138,7 @@ where
             recover: self.recover.clone(),
             state: State::Disconnected { backoff: None },
         };
-        ProfileFuture {
-            inner: Some(inner),
-            timeout: time::delay_for(self.initial_timeout),
-        }
+        ProfileFuture { inner: Some(inner) }
     }
 }
 
@@ -174,17 +164,10 @@ where
             .expect("polled after ready")
             .poll_profile(cx)
         {
+            Poll::Pending => return Poll::Pending,
             Poll::Ready(Err(error)) => {
                 trace!(%error, "failed to fetch profile");
                 return Poll::Ready(Err(error));
-            }
-            Poll::Pending => {
-                if this.timeout.poll(cx).is_pending() {
-                    return Poll::Pending;
-                }
-
-                info!("Using default service profile after timeout");
-                Profile::default()
             }
             Poll::Ready(Ok(profile)) => profile,
         };

@@ -1,9 +1,7 @@
-mod default_profile;
 mod default_resolve;
 mod permit;
 mod resolve;
 
-use self::default_profile::RecoverDefaultProfile;
 use self::default_resolve::RecoverDefaultResolve;
 use indexmap::IndexSet;
 use linkerd2_app_core::{
@@ -13,8 +11,7 @@ use linkerd2_app_core::{
     transport::tls,
     ControlHttpMetrics, Error,
 };
-use permit::{PermitProfile, PermitResolve};
-use std::time::Duration;
+use permit::PermitResolve;
 use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
@@ -25,12 +22,7 @@ pub struct Config {
     pub get_networks: IndexSet<ipnet::IpNet>,
     pub profile_suffixes: IndexSet<dns::Suffix>,
     pub profile_networks: IndexSet<ipnet::IpNet>,
-    pub initial_profile_timeout: Duration,
 }
-
-/// Indicates that discovery was rejected due to configuration.
-#[derive(Clone, Debug)]
-struct Rejected(());
 
 /// Handles to destination service clients.
 pub struct Dst {
@@ -38,12 +30,7 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: RecoverDefaultProfile<
-        RequestFilter<
-            PermitProfile,
-            profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
-        >,
-    >,
+    pub profiles: profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
 
     /// Resolves endpoints.
     pub resolve: RecoverDefaultResolve<
@@ -69,14 +56,8 @@ impl Config {
         let profiles = svc::stack(profiles::Client::new(
             svc,
             resolve::BackoffUnlessInvalidArgument::from(backoff),
-            self.initial_profile_timeout,
             self.context,
         ))
-        .push_request_filter(PermitProfile::new(
-            self.profile_suffixes,
-            self.profile_networks,
-        ))
-        .push(default_profile::layer())
         .into_inner();
 
         Ok(Dst {
@@ -86,29 +67,3 @@ impl Config {
         })
     }
 }
-
-// === impl Rejected ===
-
-impl Rejected {
-    /// Checks whether discovery was rejected, either due to configuration or by
-    /// the destination service.
-    fn matches(err: &(dyn std::error::Error + 'static)) -> bool {
-        if err.is::<Self>() {
-            return true;
-        }
-
-        if let Some(status) = err.downcast_ref::<tonic::Status>() {
-            return status.code() == tonic::Code::InvalidArgument;
-        }
-
-        err.source().map(Self::matches).unwrap_or(false)
-    }
-}
-
-impl std::fmt::Display for Rejected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "rejected discovery")
-    }
-}
-
-impl std::error::Error for Rejected {}

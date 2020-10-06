@@ -8,7 +8,7 @@ async fn h2_goaways_connections() {
 
     let srv = server::http2().route("/", "hello").run().await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
-    let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
+    let client = client::http2(proxy.inbound, "shutdown.example.com");
 
     assert_eq!(client.get("/").await, "hello");
 
@@ -34,7 +34,7 @@ async fn h2_exercise_goaways_connections() {
         .run()
         .await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
-    let client = client::http2(proxy.inbound, "shutdown.test.svc.cluster.local");
+    let client = client::http2(proxy.inbound, "shutdown.example.com");
 
     let reqs = (0..NUM_REQUESTS)
         .into_iter()
@@ -87,7 +87,7 @@ async fn http1_closes_idle_connections() {
         .run()
         .await;
     let proxy = proxy::new().inbound(srv).shutdown_signal(rx).run().await;
-    let client = client::http1(proxy.inbound, "shutdown.test.svc.cluster.local");
+    let client = client::http1(proxy.inbound, "shutdown.example.com");
 
     let res_body = client.get("/").await;
     assert_eq!(res_body.len(), RESPONSE_SIZE);
