@@ -3,7 +3,7 @@ use linkerd2_app_core::{
     discovery_rejected, dns::Suffix, svc::stack::FilterRequest, Addr, AddrMatch, Error,
 };
 
-/// Rejects endpoint resolutions if the destinatino address is outside of the
+/// Rejects endpoint resolutions if the destination address is outside of the
 /// configured networks/domains or if there is no resolvable concrete address.
 #[derive(Clone, Debug)]
 pub struct PermitResolve(AddrMatch);
