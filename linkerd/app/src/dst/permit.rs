@@ -1,35 +1,27 @@
 use super::Rejected;
-use ipnet::{Contains, IpNet};
-use linkerd2_app_core::{dns::Suffix, svc::stack::FilterRequest, Addr, Error};
-use std::{net::IpAddr, sync::Arc};
+use ipnet::IpNet;
+use linkerd2_app_core::{
+    addr_match::AddrMatch, dns::Suffix, svc::stack::FilterRequest, Addr, Error,
+};
 
 /// Rejects profile lookups if the destination address is outside of the
 /// configured networks/domains.
 #[derive(Clone, Debug)]
-pub struct PermitProfile(Inner);
+pub struct PermitProfile(AddrMatch);
 
 /// Rejects endpoint resolutions if the destinatino address is outside of the
 /// configured networks/domains or if there is no resolvable concrete address.
 #[derive(Clone, Debug)]
-pub struct PermitResolve(Inner);
-
-#[derive(Clone, Debug)]
-struct Inner {
-    names: Arc<Vec<Suffix>>,
-    networks: Arc<Vec<IpNet>>,
-}
+pub struct PermitResolve(AddrMatch);
 
 // === impl PermitProfile ===
 
 impl PermitProfile {
     pub(super) fn new(
-        name_suffixes: impl IntoIterator<Item = Suffix>,
+        suffixes: impl IntoIterator<Item = Suffix>,
         nets: impl IntoIterator<Item = IpNet>,
     ) -> Self {
-        Self(Inner {
-            names: Arc::new(name_suffixes.into_iter().collect()),
-            networks: Arc::new(nets.into_iter().collect()),
-        })
+        Self(AddrMatch::new(suffixes, nets))
     }
 }
 
@@ -55,13 +47,10 @@ where
 
 impl PermitResolve {
     pub(super) fn new(
-        name_suffixes: impl IntoIterator<Item = Suffix>,
+        suffixes: impl IntoIterator<Item = Suffix>,
         nets: impl IntoIterator<Item = IpNet>,
     ) -> Self {
-        Self(Inner {
-            names: Arc::new(name_suffixes.into_iter().collect()),
-            networks: Arc::new(nets.into_iter().collect()),
-        })
+        Self(AddrMatch::new(suffixes, nets))
     }
 }
 
@@ -81,20 +70,5 @@ where
         });
         tracing::debug!(permitted = %permitted.is_some(), "Resolve");
         permitted.ok_or_else(|| Rejected(()).into())
-    }
-}
-
-// === impl Inner ===
-
-impl Inner {
-    fn matches(&self, addr: &Addr) -> bool {
-        match addr {
-            Addr::Name(ref name) => self.names.iter().any(|sfx| sfx.contains(name.name())),
-            Addr::Socket(sa) => self.networks.iter().any(|net| match (net, sa.ip()) {
-                (IpNet::V4(net), IpAddr::V4(addr)) => net.contains(&addr),
-                (IpNet::V6(net), IpAddr::V6(addr)) => net.contains(&addr),
-                _ => false,
-            }),
-        }
     }
 }
