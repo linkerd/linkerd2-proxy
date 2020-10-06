@@ -798,6 +798,7 @@ dependencies = [
  "http-body",
  "hyper",
  "indexmap",
+ "ipnet 1.0.0",
  "libc",
  "linkerd2-addr",
  "linkerd2-buffer",

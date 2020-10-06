@@ -9,6 +9,7 @@ struct Fixture {
     client: client::Client,
     metrics: client::Client,
     proxy: proxy::Listening,
+    _profile: controller::ProfileSender,
 }
 
 struct TcpFixture {
@@ -30,7 +31,7 @@ impl Fixture {
 
     async fn inbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let _profile = ctrl.profile_tx_default("tele.test.svc.cluster.local");
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .inbound(srv)
@@ -43,12 +44,13 @@ impl Fixture {
             client,
             metrics,
             proxy,
+            _profile,
         }
     }
 
     async fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let _profile = ctrl.profile_tx_default("tele.test.svc.cluster.local");
         ctrl.destination_tx("tele.test.svc.cluster.local")
             .send_addr(srv.addr);
         let proxy = proxy::new()
@@ -63,6 +65,7 @@ impl Fixture {
             client,
             metrics,
             proxy,
+            _profile,
         }
     }
 }
@@ -127,6 +130,7 @@ async fn metrics_endpoint_inbound_request_count() {
         client,
         metrics,
         proxy: _proxy,
+        _profile,
     } = Fixture::inbound().await;
 
     // prior to seeing any requests, request count should be empty.
@@ -147,6 +151,7 @@ async fn metrics_endpoint_outbound_request_count() {
         client,
         metrics,
         proxy: _proxy,
+        _profile,
     } = Fixture::outbound().await;
 
     // prior to seeing any requests, request count should be empty.
@@ -233,6 +238,7 @@ mod response_classification {
             client,
             metrics,
             proxy: _proxy,
+            _profile,
         } = Fixture::inbound_with_server(make_test_server().await).await;
 
         for (i, status) in STATUSES.iter().enumerate() {
@@ -265,6 +271,7 @@ mod response_classification {
             client,
             metrics,
             proxy: _proxy,
+            _profile,
         } = Fixture::outbound_with_server(make_test_server().await).await;
 
         for (i, status) in STATUSES.iter().enumerate() {
@@ -316,6 +323,7 @@ async fn metrics_endpoint_inbound_response_latency() {
         client,
         metrics,
         proxy: _proxy,
+        _profile,
     } = Fixture::inbound_with_server(srv).await;
 
     info!("client.get(/hey)");
@@ -396,6 +404,7 @@ async fn metrics_endpoint_outbound_response_latency() {
         client,
         metrics,
         proxy: _proxy,
+        _profile,
     } = Fixture::outbound_with_server(srv).await;
 
     info!("client.get(/hey)");
@@ -469,6 +478,7 @@ mod outbound_dst_labels {
         let addr = srv.addr;
 
         let ctrl = controller::new();
+        let _profile = ctrl.profile_tx_default(dest);
         let dst_tx = ctrl.destination_tx(dest);
 
         let proxy = proxy::new()
@@ -484,6 +494,7 @@ mod outbound_dst_labels {
             client,
             metrics,
             proxy,
+            _profile,
         };
 
         (f, addr, dst_tx)
@@ -497,6 +508,7 @@ mod outbound_dst_labels {
                 client,
                 metrics,
                 proxy: _proxy,
+                _profile,
             },
             addr,
             dst_tx,
@@ -528,6 +540,7 @@ mod outbound_dst_labels {
                 client,
                 metrics,
                 proxy: _proxy,
+                _profile,
             },
             addr,
             dst_tx,
@@ -559,6 +572,7 @@ mod outbound_dst_labels {
                 client,
                 metrics,
                 proxy: _proxy,
+                _profile,
             },
             addr,
             dst_tx,
@@ -597,6 +611,7 @@ mod outbound_dst_labels {
                 client,
                 metrics,
                 proxy: _proxy,
+                _profile,
             },
             addr,
             dst_tx,
@@ -660,6 +675,7 @@ mod outbound_dst_labels {
                 client,
                 metrics,
                 proxy: _proxy,
+                _profile,
             },
             addr,
             dst_tx,
@@ -718,7 +734,8 @@ async fn metrics_have_no_double_commas() {
     let outbound_srv = server::new().route("/hey", "hello").run().await;
 
     let ctrl = controller::new();
-    ctrl.profile_tx_default("tele.test.svc.cluster.local");
+    let _profile_in = ctrl.profile_tx_default("tele.test.svc.cluster.local");
+    let _profile_out = ctrl.profile_tx_default("tele.test.svc.cluster.local");
     ctrl.destination_tx("tele.test.svc.cluster.local")
         .send_addr(outbound_srv.addr);
     let proxy = proxy::new()
@@ -753,6 +770,7 @@ async fn metrics_has_start_time() {
     let Fixture {
         metrics,
         proxy: _proxy,
+        _profile,
         ..
     } = Fixture::inbound().await;
     let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
@@ -771,6 +789,7 @@ mod transport {
             client,
             metrics,
             proxy,
+            _profile,
         } = Fixture::inbound().await;
 
         info!("client.get(/)");
@@ -810,6 +829,7 @@ mod transport {
             client,
             metrics,
             proxy,
+            _profile,
         } = Fixture::inbound().await;
 
         info!("client.get(/)");
@@ -838,6 +858,7 @@ mod transport {
             client,
             metrics,
             proxy,
+            _profile,
         } = Fixture::outbound().await;
 
         info!("client.get(/)");
@@ -875,6 +896,7 @@ mod transport {
             client,
             metrics,
             proxy,
+            _profile,
         } = Fixture::outbound().await;
 
         info!("client.get(/)");
@@ -1307,6 +1329,7 @@ mod transport {
             client,
             metrics,
             proxy,
+            _profile,
         } = Fixture::outbound().await;
 
         info!("client.get(/)");
@@ -1350,6 +1373,7 @@ async fn metrics_compression() {
         client,
         metrics,
         proxy: _proxy,
+        _profile,
     } = Fixture::inbound().await;
 
     let do_scrape = |encoding: &str| {

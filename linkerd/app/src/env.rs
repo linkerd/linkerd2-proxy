@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::h2,
     transport::{listen, tls},
-    Addr,
+    Addr, AddrMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
@@ -381,6 +381,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let (inbound_orig_dst, outbound_orig_dst): (DefaultOrigDstAddr, DefaultOrigDstAddr) =
         Default::default();
 
+    let dst_profile_suffixes = dst_profile_suffixes?
+        .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
+    let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
+
     let outbound = {
         let bind = listen::Bind::new(
             outbound_listener_addr?
@@ -405,7 +409,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
+        let allow_discovery =
+            AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks.clone());
+
         outbound::Config {
+            allow_discovery,
             canonicalize_timeout: dns_canonicalize_timeout?
                 .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT),
             proxy: ProxyConfig {
@@ -466,6 +474,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         }
 
         inbound::Config {
+            allow_discovery: NameMatch::new(dst_profile_suffixes.clone()),
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -496,9 +505,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             get_suffixes: dst_get_suffixes?
                 .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
             get_networks: dst_get_networks?.unwrap_or_default(),
-            profile_suffixes: dst_profile_suffixes?
-                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap()),
-            profile_networks: dst_profile_networks?.unwrap_or_default(),
+            profile_suffixes: dst_profile_suffixes,
+            profile_networks: dst_profile_networks,
             //initial_profile_timeout: dst_profile_initial_timeout?
             //    .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
             control: ControlConfig {
