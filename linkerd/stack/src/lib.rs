@@ -31,4 +31,4 @@ pub use self::proxy::{Proxy, ProxyService};
 pub use self::request_filter::{FilterRequest, RequestFilter};
 pub use self::result::ResultService;
 pub use self::switch::{MakeSwitch, Switch};
-pub use self::switch_ready::SwitchReady;
+pub use self::switch_ready::{NewSwitchReady, SwitchReady};

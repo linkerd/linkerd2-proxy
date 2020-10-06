@@ -488,10 +488,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 max_in_flight_requests: inbound_max_in_flight?
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout: dispatch_timeout,
-                profile_idle_timeout: dst_profile_idle_timeout?
-                    .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
             },
             require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
+            profile_idle_timeout: dst_profile_idle_timeout?
+                .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
         }
     };
 

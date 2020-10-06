@@ -230,33 +230,37 @@ impl Config {
         let profile = target
             .clone()
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
-            .push_on_response(svc::layers().box_http_request())
-            // The target stack doesn't use the profile resolution, so drop it.
-            .push_map_target(endpoint::Target::from)
-            .push(profiles::http::route_request::layer(
-                svc::proxies()
-                    // Sets the route as a request extension so that it can be used
-                    // by tap.
-                    .push_http_insert_target()
-                    // Records per-route metrics.
-                    .push(metrics.http_route.into_layer::<classify::Response>())
-                    // Sets the per-route response classifier as a request
-                    // extension.
-                    .push(classify::Layer::new())
-                    .check_new_clone::<dst::Route>()
-                    .push_map_target(endpoint::route)
-                    .into_inner(),
-            ))
-            .push_map_target(endpoint::Logical::from)
-            // TODO: Profile resolution should be time-bounded so that slowness
-            // cannot cause inbound requests to fail.
-            .push(profiles::discover::layer(
-                profiles_client,
-                AllowProfile(allow_discovery),
-            ))
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
+            // Skip the profile stack if it takes too long to become ready.
+            .push_skip_ready(
+                svc::layers()
+                    .push_on_response(svc::layers().box_http_request())
+                    // The target stack doesn't use the profile resolution, so drop it.
+                    .push_map_target(endpoint::Target::from)
+                    .push(profiles::http::route_request::layer(
+                        svc::proxies()
+                            // Sets the route as a request extension so that it can be used
+                            // by tap.
+                            .push_http_insert_target()
+                            // Records per-route metrics.
+                            .push(metrics.http_route.into_layer::<classify::Response>())
+                            // Sets the per-route response classifier as a request
+                            // extension.
+                            .push(classify::Layer::new())
+                            .check_new_clone::<dst::Route>()
+                            .push_map_target(endpoint::route)
+                            .into_inner(),
+                    ))
+                    .push_map_target(endpoint::Logical::from)
+                    // TODO: Profile resolution should be time-bounded so that slowness
+                    // cannot cause inbound requests to fail.
+                    .push(profiles::discover::layer(
+                        profiles_client,
+                        AllowProfile(allow_discovery),
+                    ))
+                    .push_on_response(svc::layers().box_http_response()),
+                self.profile_idle_timeout,
+            )
             .instrument(|_: &Target| debug_span!("profile"))
-            .push_on_response(svc::layers().box_http_response())
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
 
         // Attempts to resolve the target as a service profile or, if that

@@ -1,3 +1,4 @@
+use super::NewService;
 use futures::future::Either;
 use std::{
     future::Future,
@@ -6,7 +7,6 @@ use std::{
     time::Duration,
 };
 use tokio::time::{delay_for, Delay, Instant};
-
 /// A service which falls back to a secondary service if the primary service
 /// takes too long to become ready.
 #[derive(Debug)]
@@ -49,7 +49,7 @@ impl<A, B> NewSwitchReady<A, B> {
     }
 }
 
-impl<A, B, T, P> NewService<T> for NewSwitchReady<A, B>
+impl<A, B, T> NewService<T> for NewSwitchReady<A, B>
 where
     T: Clone,
     A: NewService<T>,
