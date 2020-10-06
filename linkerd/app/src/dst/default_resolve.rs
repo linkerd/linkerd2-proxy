@@ -1,4 +1,3 @@
-use super::Rejected;
 use futures::{future, prelude::*, stream};
 use linkerd2_app_core::{
     proxy::core::{Resolve, Update},
@@ -47,14 +46,16 @@ where
                 .resolve(t)
                 .map_ok(future::Either::Left)
                 .or_else(move |error| {
-                    if Rejected::matches(&*error) {
-                        tracing::debug!(%error, %addr, "Synthesizing endpoint");
-                        let endpoint = (addr, S::Endpoint::default());
-                        let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
-                        future::ok(future::Either::Right(res))
-                    } else {
-                        future::err(error)
+                    if let Some(status) = error.downcast_ref::<tonic::Status>() {
+                        if status.code() == tonic::Code::InvalidArgument {
+                            tracing::debug!(%error, %addr, "Synthesizing endpoint");
+                            let endpoint = (addr, S::Endpoint::default());
+                            let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
+                            return future::ok(future::Either::Right(res));
+                        }
                     }
+
+                    future::err(error)
                 }),
         )
     }
