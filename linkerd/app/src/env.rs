@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::h2,
     transport::{listen, tls},
-    Addr, AddrMatch, NameMatch,
+    Addr, AddrMatch, IpMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
@@ -409,11 +409,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
-        let allow_discovery =
-            AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks.clone());
-
         outbound::Config {
-            allow_discovery,
+            allow_discovery: IpMatch::new(dst_profile_networks.clone()),
             canonicalize_timeout: dns_canonicalize_timeout?
                 .unwrap_or(DEFAULT_DNS_CANONICALIZE_TIMEOUT),
             proxy: ProxyConfig {
