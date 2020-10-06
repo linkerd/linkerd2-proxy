@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 use super::{default::RecoverDefault, GetProfile, GetProfileService, Receiver};
 use futures::prelude::*;
 use linkerd2_stack::{layer, FilterRequest, FutureService, NewService, RequestFilter};
