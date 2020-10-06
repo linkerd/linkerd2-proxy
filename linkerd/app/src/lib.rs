@@ -133,8 +133,6 @@ impl Config {
                 &outbound_metrics,
             );
 
-            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
-
             let outbound_http_endpoint = outbound.build_http_endpoint(
                 outbound_connect.clone(),
                 tap_layer.clone(),

@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::h2,
     transport::{listen, tls},
-    Addr, AddrMatch, IpMatch, NameMatch,
+    Addr, IpMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;

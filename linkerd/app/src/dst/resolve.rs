@@ -1,4 +1,4 @@
-pub use super::permit::PermitResolve;
+use super::default_resolve::RecoverDefaultResolve;
 use http_body::Body as HttpBody;
 use linkerd2_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
@@ -14,8 +14,9 @@ use tonic::{
     Code, Status,
 };
 
-pub type Resolve<S> =
-    recover::Resolve<BackoffUnlessInvalidArgument, resolve::make_unpin::Resolve<api::Resolve<S>>>;
+pub type Resolve<S> = RecoverDefaultResolve<
+    recover::Resolve<BackoffUnlessInvalidArgument, resolve::make_unpin::Resolve<api::Resolve<S>>>,
+>;
 
 pub fn new<S>(service: S, token: &str, backoff: ExponentialBackoff) -> Resolve<S>
 where
@@ -26,10 +27,10 @@ where
     <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
 {
-    recover::Resolve::new(
+    RecoverDefaultResolve(recover::Resolve::new(
         backoff.into(),
         resolve::make_unpin(api::Resolve::new(service).with_context_token(token)),
-    )
+    ))
 }
 
 #[derive(Clone, Debug, Default)]
