@@ -4,7 +4,7 @@ use linkerd2_app_core::{
     config, exp_backoff,
     proxy::http::h2,
     svc::NewService,
-    transport::{listen, tls}, 
+    transport::{listen, tls},
     AddrMatch, Error,
 };
 use linkerd2_app_test as test_support;
