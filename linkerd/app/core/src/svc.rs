@@ -259,6 +259,19 @@ impl<S> Stack<S> {
         self.push(stack::FallbackLayer::new(fallback).on_error::<E>())
     }
 
+    /// Push a service that either calls the inner service if it is ready, or
+    /// calls a `secondary` service if the inner service fails to become ready
+    /// for the `skip_after` duration.
+    pub fn push_when_unready<B: Clone>(
+        self,
+        secondary: B,
+        skip_after: Duration,
+    ) -> Stack<stack::NewSwitchReady<S, B>> {
+        self.push(layer::mk(|inner: S| {
+            stack::NewSwitchReady::new(inner, secondary.clone(), skip_after)
+        }))
+    }
+
     pub fn push_fallback_with_predicate<F, P>(
         self,
         fallback: F,

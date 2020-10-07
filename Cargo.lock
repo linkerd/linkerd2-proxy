@@ -1510,7 +1510,12 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-error",
  "pin-project",
+ "tokio",
+ "tokio-test",
  "tower",
+ "tower-test",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

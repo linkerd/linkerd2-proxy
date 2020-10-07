@@ -16,6 +16,7 @@ mod proxy;
 mod request_filter;
 mod result;
 mod switch;
+mod switch_ready;
 
 pub use self::fallback::{Fallback, FallbackLayer};
 pub use self::future_service::FutureService;
@@ -30,3 +31,4 @@ pub use self::proxy::{Proxy, ProxyService};
 pub use self::request_filter::{FilterRequest, RequestFilter};
 pub use self::result::ResultService;
 pub use self::switch::{MakeSwitch, Switch};
+pub use self::switch_ready::{NewSwitchReady, SwitchReady};
