@@ -26,7 +26,7 @@ use linkerd2_app_core::{
     transport::{self, io, listen, tls},
     Error, NameAddr, NameMatch, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{debug_span, info_span};
 
@@ -42,6 +42,7 @@ pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
+    pub profile_idle_timeout: Duration,
 }
 
 impl Config {
@@ -247,16 +248,14 @@ impl Config {
                     .into_inner(),
             ))
             .push_map_target(endpoint::Logical::from)
-            // TODO: Profile resolution should be time-bounded so that slowness
-            // cannot cause inbound requests to fail.
-            .check_new_service::<(Option<profiles::Receiver>, Target), http::Request<http::boxed::Payload>>()
             .push(profiles::discover::layer(
                 profiles_client,
                 AllowProfile(allow_discovery),
             ))
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
-            .instrument(|_: &Target| debug_span!("profile"))
             .push_on_response(svc::layers().box_http_response())
+            .instrument(|_: &Target| debug_span!("profile"))
+            // Skip the profile stack if it takes too long to become ready.
+            .push_when_unready(target.clone(), self.profile_idle_timeout)
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
 
         // Attempts to resolve the target as a service profile or, if that
