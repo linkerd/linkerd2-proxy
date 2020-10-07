@@ -31,10 +31,10 @@ where
 
     fn new_service(&mut self, (profile, target): Target) -> Self::Service {
         let inbound::Target {
-            dst: _,
+            dst,
             tls_client_id,
             http_version,
-            socket_addr,
+            socket_addr: _,
         } = target;
 
         let (source_id, local_id) = match (tls_client_id, self.local_id.clone()) {
@@ -43,8 +43,8 @@ where
         };
 
         let dst = match profile.as_ref().and_then(|p| p.borrow().name.clone()) {
-            Some(name) => NameAddr::from((name, socket_addr.port())),
-            None => match target.dst.name_addr() {
+            Some(name) => NameAddr::from((name, dst.port())),
+            None => match dst.name_addr() {
                 Some(n) => return Gateway::BadDomain(n.name().clone()),
                 None => return Gateway::NoAuthority,
             },
