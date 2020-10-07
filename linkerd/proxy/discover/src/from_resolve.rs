@@ -37,10 +37,7 @@ pub struct Discover<R: TryStream, E> {
 // === impl FromResolve ===
 
 impl<R, E> FromResolve<R, E> {
-    pub fn new<T>(resolve: R) -> Self
-    where
-        R: Resolve<T>,
-    {
+    pub fn new(resolve: R) -> Self {
         Self {
             resolve,
             _marker: std::marker::PhantomData,

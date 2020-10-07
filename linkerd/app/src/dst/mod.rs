@@ -1,11 +1,12 @@
-mod default_resolve;
-mod resolve;
-
-pub use default_resolve::RecoverDefaultResolve;
 use linkerd2_app_core::{
-    control, dns, profiles, proxy::identity, transport::tls, ControlHttpMetrics, Error,
+    control, dns,
+    exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    profiles,
+    proxy::{api_resolve as api, identity, resolve::recover},
+    transport::tls,
+    ControlHttpMetrics, Error, Recover,
 };
-use tonic::body::BoxBody;
+use tonic::{body::BoxBody, Code, Status};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -19,11 +20,17 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::Client<control::Client<BoxBody>, resolve::BackoffUnlessInvalidArgument>,
+    pub profiles: profiles::Client<control::Client<BoxBody>, BackoffUnlessInvalidArgument>,
 
     /// Resolves endpoints.
-    pub resolve: RecoverDefaultResolve<resolve::Resolve<control::Client<BoxBody>>>,
+    pub resolve:
+        recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<control::Client<BoxBody>>>,
 }
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct BackoffUnlessInvalidArgument(ExponentialBackoff);
+
+// === impl Config ===
 
 impl Config {
     pub fn build(
@@ -33,21 +40,43 @@ impl Config {
         identity: tls::Conditional<identity::Local>,
     ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();
-        let backoff = self.control.connect.backoff.clone();
+        let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
         let svc = self.control.build(dns, metrics, identity);
-
-        let resolve = resolve::new(svc.clone(), &self.context, backoff);
-
-        let profiles = profiles::Client::new(
-            svc,
-            resolve::BackoffUnlessInvalidArgument::from(backoff),
-            self.context,
-        );
 
         Ok(Dst {
             addr,
-            resolve,
-            profiles,
+            profiles: profiles::Client::new(svc.clone(), backoff, self.context.clone()),
+            resolve: recover::Resolve::new(backoff, api::Resolve::new(svc, self.context)),
         })
+    }
+}
+
+// === impl BackoffUnlessInvalidArgument ===
+
+impl Recover<Status> for BackoffUnlessInvalidArgument {
+    type Backoff = ExponentialBackoffStream;
+
+    fn recover(&self, status: Status) -> Result<Self::Backoff, Status> {
+        if status.code() == Code::InvalidArgument {
+            return Err(status);
+        }
+
+        tracing::trace!(%status, "Recovering");
+        Ok(self.0.stream())
+    }
+}
+
+impl Recover<Error> for BackoffUnlessInvalidArgument {
+    type Backoff = ExponentialBackoffStream;
+
+    fn recover(&self, error: Error) -> Result<Self::Backoff, Error> {
+        if let Some(status) = error.downcast_ref::<Status>() {
+            if status.code() == Code::InvalidArgument {
+                return Err(error);
+            }
+        }
+
+        tracing::trace!(%error, "Recovering");
+        Ok(self.0.stream())
     }
 }

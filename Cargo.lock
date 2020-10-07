@@ -934,6 +934,7 @@ dependencies = [
  "pin-project",
  "quickcheck",
  "tokio",
+ "tonic",
  "tower",
  "tracing",
 ]

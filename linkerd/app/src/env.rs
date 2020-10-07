@@ -431,7 +431,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let gateway = gateway::Config {
-        suffixes: gateway_suffixes?.unwrap_or_default(),
+        allow_discovery: NameMatch::new(gateway_suffixes?.unwrap_or_default()),
     };
 
     let inbound = {
@@ -499,13 +499,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         };
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
-            get_suffixes: dst_get_suffixes?
-                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
-            get_networks: dst_get_networks?.unwrap_or_default(),
-            profile_suffixes: dst_profile_suffixes,
-            profile_networks: dst_profile_networks,
-            //initial_profile_timeout: dst_profile_initial_timeout?
-            //    .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
             control: ControlConfig {
                 addr,
                 connect,

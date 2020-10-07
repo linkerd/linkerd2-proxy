@@ -1,26 +1,20 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_proxy_core::Resolve;
-use linkerd2_stack::layer;
-use std::time::Duration;
 
 pub mod buffer;
 pub mod from_resolve;
 pub mod make_endpoint;
 
-use self::buffer::Buffer;
+pub use self::buffer::Buffer;
 pub use self::from_resolve::FromResolve;
 pub use self::make_endpoint::MakeEndpoint;
 
-pub fn buffer<M>(capacity: usize, watchdog: Duration) -> impl layer::Layer<M, Service = Buffer<M>> {
-    layer::mk(move |inner: M| Buffer::new(capacity, watchdog, inner))
-}
+pub type Stack<N, R, E> = MakeEndpoint<FromResolve<R, E>, N>;
 
-pub fn resolve<T, R, M>(
-    resolve: R,
-) -> impl layer::Layer<M, Service = MakeEndpoint<FromResolve<R, R::Endpoint>, M>>
+pub fn resolve<T, N, R>(endpoint: N, resolve: R) -> Stack<N, R, R::Endpoint>
 where
-    R: Resolve<T> + Clone,
+    R: Resolve<T>,
 {
-    layer::mk(move |inner: M| MakeEndpoint::new(inner, FromResolve::new(resolve.clone())))
+    MakeEndpoint::new(endpoint, FromResolve::new(resolve))
 }

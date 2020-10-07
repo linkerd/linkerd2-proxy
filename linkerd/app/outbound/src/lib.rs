@@ -5,7 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use self::allow_discovery::AllowProfile;
+use self::allow_discovery::{AllowHttpResolve, AllowProfile, AllowTcpResolve};
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
@@ -14,9 +14,7 @@ use linkerd2_app_core::{
     drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::{
-        self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
-    },
+    proxy::{self, api_resolve::Metadata, core::resolve::Resolve, http, identity, tap, tcp},
     reconnect, retry,
     spans::SpanConverter,
     svc::{self},
@@ -32,6 +30,7 @@ mod allow_discovery;
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_on_endpoint;
+mod resolve;
 #[cfg(test)]
 mod tests;
 
@@ -80,10 +79,10 @@ impl Config {
     }
 
     /// Constructs a TCP load balancer.
-    pub fn build_tcp_balance<C, E, I>(
+    pub fn build_tcp_balance<C, R, I>(
         &self,
         connect: C,
-        resolve: E,
+        resolve: R,
     ) -> impl svc::NewService<
         endpoint::TcpLogical,
         Service = impl tower::Service<
@@ -102,29 +101,25 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
-        E::Future: Unpin + Send,
-        E::Resolution: Unpin + Send,
+        R: Resolve<SocketAddr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
+        R::Future: Unpin + Send,
+        R::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
+        let allow = AllowTcpResolve(self.allow_discovery.clone());
+        let watchdog = self.proxy.cache_max_idle_age * 2;
         svc::stack(connect)
             .push_make_thunk()
+            .check_make_service::<TcpEndpoint, ()>()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
-            .push(discover::resolve(map_endpoint::Resolve::new(
-                endpoint::FromMetadata,
-                resolve,
-            )))
-            .push(discover::buffer(1_000, self.proxy.cache_max_idle_age))
+            .push(svc::layer::mk(|endpoint| resolve::new(allow.clone(), resolve.clone(), endpoint, watchdog)))
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(svc::layer::mk(tcp::Forward::new))
             )
+            .check_make_service::<endpoint::TcpLogical, I>()
             .into_new_service()
             .check_new_service::<endpoint::TcpLogical, I>()
     }
@@ -225,11 +220,7 @@ impl Config {
             > + Send
             + 'static,
         S::Future: Send,
-        R: Resolve<HttpConcrete, Endpoint = proxy::api_resolve::Metadata>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
+        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
     {
@@ -239,6 +230,7 @@ impl Config {
             dispatch_timeout,
             ..
         } = self.proxy.clone();
+        let watchdog = cache_max_idle_age * 2;
 
         svc::stack(endpoint)
             .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
@@ -249,11 +241,9 @@ impl Config {
                     .box_http_request(),
             )
             .check_new_service::<HttpEndpoint, http::Request<_>>()
-            .push(discover::resolve(map_endpoint::Resolve::new(
-                endpoint::FromMetadata,
-                resolve,
-            )))
-            .push(discover::buffer(1_000, cache_max_idle_age))
+            .push(svc::layer::mk(|endpoint| {
+                resolve::new(AllowHttpResolve, resolve.clone(), endpoint, watchdog)
+            }))
             .check_service::<HttpConcrete>()
             .push_on_response(
                 svc::layers()
@@ -314,10 +304,10 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<E, P, C, H, S, I>(
+    pub fn build_server<R, P, C, H, S, I>(
         self,
         profiles: P,
-        endpoints: E,
+        resolve: R,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -336,13 +326,13 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+        R: Resolve<SocketAddr, Endpoint = proxy::api_resolve::Metadata, Error = Error>
             + Unpin
             + Clone
             + Send
             + 'static,
-        E::Future: Unpin + Send,
-        E::Resolution: Unpin + Send,
+        R::Future: Unpin + Send,
+        R::Resolution: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
@@ -399,7 +389,7 @@ impl Config {
             .into_inner();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), endpoints))
+        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
