@@ -132,11 +132,11 @@ async fn tls_when_hinted() {
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver()
         .endpoint_exists(
-            plain_logical.clone(),
+            plain_addr,
             plain_addr,
             test_support::resolver::Metadata::default(),
         )
-        .endpoint_exists(tls_logical.clone(), tls_addr, tls_meta);
+        .endpoint_exists(tls_addr, tls_addr, tls_meta);
 
     // Configure mock IO for the "client".
     let mut client_io = test_support::io();
