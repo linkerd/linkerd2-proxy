@@ -16,13 +16,11 @@ mod test {
         proxy::{http, identity},
         svc::NewService,
         transport::tls,
-        Error, NameAddr,
+        Error, NameAddr, NameMatch, Never,
     };
     use linkerd2_app_inbound::endpoint as inbound;
-    use linkerd2_app_outbound::endpoint as outbound;
     use std::{convert::TryFrom, net::SocketAddr};
-    use tokio::sync::watch;
-    use tower::util::ServiceExt;
+    use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;
 
     #[tokio::test]
@@ -36,7 +34,7 @@ mod test {
     #[tokio::test]
     async fn bad_domain() {
         let test = Test {
-            profile: None,
+            suffix: "bad.example.com",
             ..Default::default()
         };
         let status = test
@@ -53,7 +51,6 @@ mod test {
     async fn no_authority() {
         let test = Test {
             dst_name: None,
-            profile: None,
             ..Default::default()
         };
         let status = test
@@ -102,26 +99,21 @@ mod test {
     }
 
     struct Test {
+        suffix: &'static str,
         dst_name: Option<&'static str>,
         peer_id: tls::PeerIdentity,
         orig_fwd: Option<&'static str>,
-        profile: Option<profiles::Receiver>,
     }
 
     impl Default for Test {
         fn default() -> Self {
-            let (mut tx, rx) = watch::channel(profiles::Profile {
-                name: dns::Name::try_from("dst.test.example.com".as_bytes()).ok(),
-                ..profiles::Profile::default()
-            });
-            tokio::spawn(async move { tx.closed().await });
             Self {
+                suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
                 peer_id: tls::PeerIdentity::Some(identity::Name::from(
                     dns::Name::try_from("client.id.test".as_bytes()).unwrap(),
                 )),
                 orig_fwd: None,
-                profile: Some(rx),
             }
         }
     }
@@ -129,10 +121,10 @@ mod test {
     impl Test {
         async fn run(self) -> Result<http::Response<http::boxed::Payload>, Error> {
             let Self {
+                suffix,
                 dst_name,
                 peer_id,
                 orig_fwd,
-                profile,
             } = self;
 
             let (outbound, mut handle) = mock::pair::<
@@ -140,9 +132,19 @@ mod test {
                 http::Response<http::boxed::Payload>,
             >();
             let mut make_gateway = {
-                make::MakeGateway::new(
-                    move |_: outbound::HttpLogical| outbound.clone(),
-                    ([127, 0, 0, 1], 4180).into(),
+                let profiles = service_fn(move |na: NameAddr| async move {
+                    let (mut tx, rx) = tokio::sync::watch::channel(profiles::Profile {
+                        name: Some(na.name().clone()),
+                        ..profiles::Profile::default()
+                    });
+                    tokio::spawn(async move { tx.closed().await });
+                    Ok::<_, Never>(Some(rx))
+                });
+                let allow_discovery = NameMatch::new(Some(dns::Suffix::try_from(suffix).unwrap()));
+                Config { allow_discovery }.build(
+                    move |_: _| outbound.clone(),
+                    profiles,
+                    ([127, 0, 0, 1], 4140).into(),
                     tls::PeerIdentity::Some(identity::Name::from(
                         dns::Name::try_from("gateway.id.test".as_bytes()).unwrap(),
                     )),
@@ -158,7 +160,7 @@ mod test {
                 http_version: http::Version::Http1,
                 tls_client_id: peer_id,
             };
-            let gateway = make_gateway.new_service((profile, target));
+            let gateway = make_gateway.new_service(target);
 
             let bg = tokio::spawn(async move {
                 handle.allow(1);
@@ -182,7 +184,7 @@ mod test {
                 .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
                 .body(Default::default())
                 .unwrap();
-            let rsp = gateway.oneshot(req).await?;
+            let rsp = gateway.oneshot(req).await.map_err(Into::into)?;
             bg.await?;
             Ok(rsp)
         }
