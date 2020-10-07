@@ -927,6 +927,7 @@ dependencies = [
  "futures 0.3.5",
  "http 0.2.1",
  "indexmap",
+ "ipnet 1.0.0",
  "linkerd2-app-core",
  "linkerd2-app-test",
  "linkerd2-identity",

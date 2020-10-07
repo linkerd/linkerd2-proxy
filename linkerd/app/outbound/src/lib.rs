@@ -5,7 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use self::allow_discovery::AllowProfile;
+use self::allow_discovery::*;
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
@@ -14,9 +14,7 @@ use linkerd2_app_core::{
     dns, drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::{
-        self, core::resolve::Resolve, discover, http, identity, resolve::map_endpoint, tap, tcp,
-    },
+    proxy::{api_resolve::Metadata, core::resolve::Resolve, http, identity, tap, tcp},
     reconnect, retry, router,
     spans::SpanConverter,
     svc::{self},
@@ -32,6 +30,7 @@ mod allow_discovery;
 pub mod endpoint;
 mod prevent_loop;
 mod require_identity_on_endpoint;
+mod resolve;
 #[cfg(test)]
 mod tests;
 
@@ -102,7 +101,7 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+        E: Resolve<net::SocketAddr, Endpoint = Metadata, Error = Error>
             + Unpin
             + Clone
             + Send
@@ -111,15 +110,12 @@ impl Config {
         E::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
+        let watchdog = self.proxy.cache_max_idle_age * 2;
         svc::stack(connect)
             .push_make_thunk()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
-            .push(discover::resolve(map_endpoint::Resolve::new(
-                endpoint::FromMetadata,
-                resolve,
-            )))
-            .push(discover::buffer(1_000, self.proxy.cache_max_idle_age))
+            .push(resolve::layer(AllowTcpResolve(self.allow_discovery.clone()), resolve.clone(), watchdog))
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
@@ -267,11 +263,7 @@ impl Config {
             > + Send
             + 'static,
         S::Future: Send,
-        R: Resolve<HttpConcrete, Endpoint = proxy::api_resolve::Metadata>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
+        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
         P: profiles::GetProfile<Addr> + Unpin + Clone + Send + 'static,
@@ -285,18 +277,7 @@ impl Config {
             ..
         } = self.proxy.clone();
         let allow_discovery = self.allow_discovery.clone();
-
-        // Resolves each target via the control plane on a background task, buffering results.
-        //
-        // This buffer controls how many discovery updates may be pending/unconsumed by the
-        // balancer before backpressure is applied on the resolution stream. If the buffer is
-        // full for `cache_max_idle_age`, then the resolution task fails.
-        let discover = svc::layers()
-            .push(discover::resolve(map_endpoint::Resolve::new(
-                endpoint::FromMetadata,
-                resolve,
-            )))
-            .push(discover::buffer(1_000, cache_max_idle_age));
+        let watchdog = cache_max_idle_age * 2;
 
         // Builds a balancer for each concrete destination.
         let concrete = svc::stack(endpoint)
@@ -308,7 +289,7 @@ impl Config {
                     .box_http_request(),
             )
             .check_new_service::<HttpEndpoint, http::Request<_>>()
-            .push(discover)
+            .push(resolve::layer(AllowHttpResolve, resolve, watchdog))
             .check_service::<HttpConcrete>()
             .push_on_response(
                 svc::layers()
@@ -419,7 +400,7 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        E: Resolve<endpoint::TcpLogical, Endpoint = proxy::api_resolve::Metadata>
+        E: Resolve<net::SocketAddr, Endpoint = Metadata, Error = Error>
             + Unpin
             + Clone
             + Send

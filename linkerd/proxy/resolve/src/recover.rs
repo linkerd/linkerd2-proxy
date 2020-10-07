@@ -74,7 +74,6 @@ where
     R: resolve::Resolve<T> + Clone,
     R::Resolution: Unpin,
     R::Future: Unpin,
-    R::Endpoint: Clone + PartialEq,
     E: Recover + Clone,
     E::Backoff: Unpin,
 {
@@ -113,7 +112,6 @@ where
     R: resolve::Resolve<T>,
     R::Resolution: Unpin,
     R::Future: Unpin,
-    R::Endpoint: Clone + PartialEq,
     E: Recover,
     E::Backoff: Unpin,
 {
@@ -140,7 +138,6 @@ where
     R: resolve::Resolve<T>,
     R::Future: Unpin,
     R::Resolution: Unpin,
-    R::Endpoint: Clone + PartialEq,
     E: Recover,
     E::Backoff: Unpin,
 {
@@ -202,7 +199,6 @@ where
     R: resolve::Resolve<T>,
     R::Resolution: Unpin,
     R::Future: Unpin,
-    R::Endpoint: Clone + PartialEq,
     E: Recover,
     E::Backoff: Unpin,
 {
