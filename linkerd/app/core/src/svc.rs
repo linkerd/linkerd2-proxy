@@ -261,33 +261,16 @@ impl<S> Stack<S> {
         self.push(stack::FallbackLayer::new(fallback).on_error::<E>())
     }
 
-    pub fn push_switch_ready_with_fallback<A, B>(
+    /// Push a service that either calls the inner service if it is ready, or
+    /// calls a `secondary` service if the inner service fails to become ready
+    /// for the `skip_after` duration.
+    pub fn push_when_unready<B: Clone>(
         self,
-        primary: A,
         secondary: B,
-        duration: Duration,
-    ) -> Stack<stack::NewSwitchReady<A::Service, B::Service>>
-    where
-        A: Layer<S>,
-        B: Layer<S>,
-        S: Clone,
-    {
-        self.push(layer::mk(move |s: S| {
-            stack::NewSwitchReady::new(primary.layer(s.clone()), secondary.layer(s), duration)
-        }))
-    }
-
-    pub fn push_skip_ready<A>(
-        self,
-        primary: A,
-        duration: Duration,
-    ) -> Stack<stack::NewSwitchReady<A::Service, S>>
-    where
-        A: Layer<S>,
-        S: Clone,
-    {
-        self.push(layer::mk(move |s: S| {
-            stack::NewSwitchReady::new(primary.layer(s.clone()), s, duration)
+        skip_after: Duration,
+    ) -> Stack<stack::NewSwitchReady<S, B>> {
+        self.push(layer::mk(|inner: S| {
+            stack::NewSwitchReady::new(inner, secondary.clone(), skip_after)
         }))
     }
 
