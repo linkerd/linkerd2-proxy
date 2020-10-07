@@ -1,4 +1,4 @@
-use futures::stream::TryStream;
+use futures::prelude::*;
 use linkerd2_error::Error;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -8,23 +8,23 @@ use std::task::{Context, Poll};
 pub trait Resolve<T> {
     type Endpoint;
     type Error: Into<Error>;
-    type Resolution: TryStream<Ok = Update<Self::Endpoint>, Error = Self::Error>;
+    type Resolution: Stream<Item = Result<Update<Self::Endpoint>, Self::Error>>;
     type Future: Future<Output = Result<Self::Resolution, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>>;
 
     fn resolve(&mut self, target: T) -> Self::Future;
 
-    fn into_service(self) -> Service<Self>
+    fn into_service(self) -> ResolveService<Self>
     where
         Self: Sized,
     {
-        Service(self)
+        ResolveService(self)
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<S>(S);
+pub struct ResolveService<S>(S);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Update<T> {
@@ -40,7 +40,7 @@ impl<S, T, R, E> Resolve<T> for S
 where
     S: tower::Service<T, Response = R>,
     S::Error: Into<Error>,
-    R: TryStream<Ok = Update<E>, Error = S::Error>,
+    R: Stream<Item = Result<Update<E>, S::Error>>,
 {
     type Endpoint = E;
     type Error = S::Error;
@@ -60,7 +60,7 @@ where
 
 // === impl Service ===
 
-impl<R, T> tower::Service<T> for Service<R>
+impl<R, T> tower::Service<T> for ResolveService<R>
 where
     R: Resolve<T>,
     R::Error: Into<Error>,

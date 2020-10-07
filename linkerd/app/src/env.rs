@@ -88,29 +88,6 @@ pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLI
 
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
-/// Constrains which destination names are resolved through the destination
-/// service.
-///
-/// The value is a comma-separated list of domain name suffixes that may be
-/// resolved via the destination service. A value of `.` indicates that all
-/// domains should be resolved via the service.
-///
-/// If specified and empty, the destination service is not used for resolution.
-///
-/// If unspecified, a default value is used.
-pub const ENV_DESTINATION_GET_SUFFIXES: &str = "LINKERD2_PROXY_DESTINATION_GET_SUFFIXES";
-
-/// Constrains which destination addresses are resolved through the destination
-/// service.
-///
-/// The value is a comma-separated list of networks that may be
-/// resolved via the destination service.
-///
-/// If specified and empty, the destination service is not used for resolution.
-///
-/// If unspecified, a default value is used
-pub const ENV_DESTINATION_GET_NETWORKS: &str = "LINKERD2_PROXY_DESTINATION_GET_NETWORKS";
-
 /// Constrains which destination names may be used for profile/route discovery.
 ///
 /// The value is a comma-separated list of domain name suffixes that may be
@@ -227,7 +204,6 @@ const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
 const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
 const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
 
-const DEFAULT_DESTINATION_GET_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
 //const DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT: Duration = Duration::from_millis(500);
 
@@ -330,8 +306,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
-    let dst_get_suffixes = parse(strings, ENV_DESTINATION_GET_SUFFIXES, parse_dns_suffixes);
-    let dst_get_networks = parse(strings, ENV_DESTINATION_GET_NETWORKS, parse_networks);
     // let dst_profile_initial_timeout = parse(
     //     strings,
     //     ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT,
@@ -502,13 +476,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         };
         super::dst::Config {
             context: dst_token?.unwrap_or_default(),
-            get_suffixes: dst_get_suffixes?
-                .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_GET_SUFFIXES).unwrap()),
-            get_networks: dst_get_networks?.unwrap_or_default(),
-            profile_suffixes: dst_profile_suffixes,
-            profile_networks: dst_profile_networks,
-            //initial_profile_timeout: dst_profile_initial_timeout?
-            //    .unwrap_or(DEFAULT_DESTINATION_PROFILE_INITIAL_TIMEOUT),
             control: ControlConfig {
                 addr,
                 connect,

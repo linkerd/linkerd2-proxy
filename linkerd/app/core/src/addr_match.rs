@@ -4,7 +4,10 @@ use linkerd2_dns::{Name, Suffix};
 use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug)]
-pub struct AddrMatch(NameMatch, IpMatch);
+pub struct AddrMatch {
+    names: NameMatch,
+    nets: IpMatch,
+}
 
 #[derive(Clone, Debug)]
 pub struct NameMatch(Arc<Vec<Suffix>>);
@@ -19,13 +22,24 @@ impl AddrMatch {
         suffixes: impl IntoIterator<Item = Suffix>,
         nets: impl IntoIterator<Item = IpNet>,
     ) -> Self {
-        Self(NameMatch::new(suffixes), IpMatch::new(nets))
+        Self {
+            names: NameMatch::new(suffixes),
+            nets: IpMatch::new(nets),
+        }
+    }
+
+    pub fn names(&self) -> &NameMatch {
+        &self.names
+    }
+
+    pub fn nets(&self) -> &IpMatch {
+        &self.nets
     }
 
     pub fn matches(&self, addr: &Addr) -> bool {
         match addr {
-            Addr::Name(ref name) => self.0.matches(name.name()),
-            Addr::Socket(sa) => self.1.matches(sa.ip()),
+            Addr::Name(ref name) => self.names.matches(name.name()),
+            Addr::Socket(sa) => self.nets.matches(sa.ip()),
         }
     }
 }

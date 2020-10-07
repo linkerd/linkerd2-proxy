@@ -66,7 +66,7 @@ async fn plaintext_tcp() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver().endpoint_exists(
-        logical.clone(),
+        target_addr,
         target_addr,
         test_support::resolver::Metadata::default(),
     );

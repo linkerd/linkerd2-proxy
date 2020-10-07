@@ -154,10 +154,15 @@ mod resolve {
         R: Recover + Clone,
         R::Backoff: Unpin,
     {
-        discover::resolve(map_endpoint::Resolve::new(
-            IntoTarget(()),
-            recover::Resolve::new(recover, DnsResolve::new(dns)),
-        ))
+        svc::layer::mk(move |endpoint| {
+            discover::resolve(
+                endpoint,
+                map_endpoint::Resolve::new(
+                    IntoTarget(()),
+                    recover::Resolve::new(recover.clone(), DnsResolve::new(dns.clone())),
+                ),
+            )
+        })
     }
 
     type Discover<M, R> = discover::MakeEndpoint<
