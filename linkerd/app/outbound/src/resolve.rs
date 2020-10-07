@@ -3,6 +3,7 @@
 use crate::endpoint;
 use futures::{future, prelude::*, stream};
 use linkerd2_app_core::{
+    is_discovery_rejected,
     proxy::{
         api_resolve::Metadata,
         core::{Resolve, ResolveService, Update},
@@ -35,6 +36,8 @@ where
     endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
     F: FilterRequest<T>,
     R: Resolve<F::Request, Endpoint = Metadata>,
+    R::Future: Send + 'static,
+    R::Resolution: Send + 'static,
 {
     map_endpoint::Resolve::new(
         endpoint::FromMetadata,
@@ -44,41 +47,29 @@ where
 
 type Stack<E, F, R, N> = Buffer<discover::Stack<N, ResolveStack<F, R>, E>>;
 
-pub fn new<T, E, F, R, N>(
+pub fn layer<T, E, F, R, N>(
     filter: F,
     resolve: R,
-    new_endpoint: N,
     watchdog: Duration,
-) -> Stack<E, F, R, N>
+) -> impl layer::Layer<N, Service = Stack<E, F, R, N>> + Clone
 where
     T: Clone,
     for<'t> &'t T: Into<std::net::SocketAddr>,
     F: FilterRequest<T>,
-    R: Resolve<F::Request, Error = Error, Endpoint = Metadata>,
+    R: Resolve<F::Request, Error = Error, Endpoint = Metadata> + Clone,
     R::Future: Send + 'static,
     R::Resolution: Send + 'static,
     endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
-    ResolveStack<F, R>: Resolve<T, Endpoint = E>,
+    ResolveStack<F, R>: Resolve<T, Endpoint = E> + Clone,
     N: NewService<E>,
-    //     T: Clone + Send + 'static,
-    //     U: Clone + Send + 'static,
-    //     endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = U>,
-    //     E: NewService<U> + Clone + Send + Unpin + 'static,
-    //     E::Service: Send + 'static,
-    //     F: FilterRequest<T> + Clone + Send + Unpin,
-    //     R: Resolve<F::Request, Endpoint = Metadata, Error = Error> + Clone + Send + Unpin + 'static,
-    //     R::Resolution: stream::TryStream<Ok = Update<Metadata>, Error = Error> + Send + 'static,
-    //     R::Future: Send,
-    //     RecoverDefault<RequestFilter<F, ResolveService<R>>>:
-    //         Resolve<T, Endpoint = Metadata, Error = Error> + Clone,
-    //     Stack<E, F, R>: tower::Service<T> + Unpin + Clone + Send,
 {
     const ENDPOINT_BUFFER_CAPACITY: usize = 1_000;
 
-    let resolve: ResolveStack<F, R> = new_resolve::<T, F, R>(filter, resolve);
-    let endpoints: discover::Stack<N, ResolveStack<F, R>, E> =
-        discover::resolve::<T, N, ResolveStack<F, R>>(new_endpoint, resolve);
-    Buffer::new(ENDPOINT_BUFFER_CAPACITY, watchdog, endpoints)
+    let resolve = new_resolve(filter, resolve);
+    layer::mk(move |new_endpoint| {
+        let endpoints = discover::resolve(new_endpoint, resolve.clone());
+        Buffer::new(ENDPOINT_BUFFER_CAPACITY, watchdog, endpoints)
+    })
 }
 
 /// Wraps a `Resolve` to produce a default resolution when the resolution is
@@ -113,13 +104,11 @@ where
                 .resolve(t)
                 .map_ok(future::Either::Left)
                 .or_else(move |error| {
-                    if let Some(status) = error.downcast_ref::<tonic::Status>() {
-                        if status.code() == tonic::Code::InvalidArgument {
-                            tracing::debug!(%error, %addr, "Synthesizing endpoint");
-                            let endpoint = (addr, S::Endpoint::default());
-                            let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
-                            return future::ok(future::Either::Right(res));
-                        }
+                    if is_discovery_rejected(&*error) {
+                        tracing::debug!(%error, %addr, "Synthesizing endpoint");
+                        let endpoint = (addr, S::Endpoint::default());
+                        let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
+                        return future::ok(future::Either::Right(res));
                     }
 
                     future::err(error)

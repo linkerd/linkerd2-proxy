@@ -106,14 +106,12 @@ impl Config {
         R::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
-        let allow = AllowTcpResolve(self.allow_discovery.clone());
-        let watchdog = self.proxy.cache_max_idle_age * 2;
         svc::stack(connect)
             .push_make_thunk()
             .check_make_service::<TcpEndpoint, ()>()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
-            .push(svc::layer::mk(|endpoint| resolve::new(allow.clone(), resolve.clone(), endpoint, watchdog)))
+            .push(resolve::layer(AllowTcpResolve(self.allow_discovery.clone()), resolve, self.proxy.cache_max_idle_age * 2))
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
@@ -241,9 +239,7 @@ impl Config {
                     .box_http_request(),
             )
             .check_new_service::<HttpEndpoint, http::Request<_>>()
-            .push(svc::layer::mk(|endpoint| {
-                resolve::new(AllowHttpResolve, resolve.clone(), endpoint, watchdog)
-            }))
+            .push(resolve::layer(AllowHttpResolve, resolve, watchdog))
             .check_service::<HttpConcrete>()
             .push_on_response(
                 svc::layers()
