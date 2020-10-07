@@ -253,9 +253,9 @@ impl Config {
                 AllowProfile(allow_discovery),
             ))
             .push_on_response(svc::layers().box_http_response())
+            .instrument(|_: &Target| debug_span!("profile"))
             // Skip the profile stack if it takes too long to become ready.
             .push_when_unready(target.clone(), self.profile_idle_timeout)
-            .instrument(|_: &Target| debug_span!("profile"))
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
 
         // Attempts to resolve the target as a service profile or, if that

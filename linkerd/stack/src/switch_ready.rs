@@ -1,5 +1,5 @@
 use super::NewService;
-use futures::future::Either;
+use linkerd2_error::Error;
 use std::{
     future::Future,
     pin::Pin,
@@ -7,6 +7,8 @@ use std::{
     time::Duration,
 };
 use tokio::time::{delay_for, Delay, Instant};
+use tower::util::Either;
+
 /// A service which falls back to a secondary service if the primary service
 /// takes too long to become ready.
 #[derive(Debug)]
@@ -91,18 +93,20 @@ impl<A, B> SwitchReady<A, B> {
 impl<A, B, R> tower::Service<R> for SwitchReady<A, B>
 where
     A: tower::Service<R>,
-    B: tower::Service<R, Response = A::Response, Error = A::Error>,
+    A::Error: Into<Error>,
+    B: tower::Service<R, Response = A::Response>,
+    B::Error: Into<Error>,
 {
-    type Future = Either<A::Future, B::Future>;
     type Response = A::Response;
-    type Error = A::Error;
+    type Error = Error;
+    type Future = Either<A::Future, B::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
             tracing::trace!(?self.state, "SwitchReady::poll");
             match self.state {
                 State::Primary => match self.primary.poll_ready(cx) {
-                    Poll::Ready(x) => return Poll::Ready(x),
+                    Poll::Ready(x) => return Poll::Ready(x.map_err(Into::into)),
                     Poll::Pending => {
                         tracing::trace!("primary service pending");
                         self.delay.reset(Instant::now() + self.switch_after);
@@ -116,7 +120,7 @@ where
                             self.state = State::Primary;
                             return Poll::Ready(Ok(()));
                         }
-                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
                         Poll::Pending => {}
                     };
                     if let Poll::Pending = Pin::new(&mut self.delay).poll(cx) {
@@ -129,9 +133,11 @@ where
                     return if let Poll::Ready(x) = self.primary.poll_ready(cx) {
                         tracing::trace!("primary service became ready, switching back");
                         self.state = State::Primary;
-                        Poll::Ready(x)
+                        Poll::Ready(x.map_err(Into::into))
                     } else {
-                        self.secondary.poll_ready(cx)
+                        Poll::Ready(
+                            futures::ready!(self.secondary.poll_ready(cx)).map_err(Into::into),
+                        )
                     };
                 }
             };
@@ -141,8 +147,8 @@ where
     fn call(&mut self, req: R) -> Self::Future {
         tracing::trace!(?self.state, "SwitchReady::call");
         match self.state {
-            State::Primary => Either::Left(self.primary.call(req)),
-            State::Secondary => Either::Right(self.secondary.call(req)),
+            State::Primary => Either::A(self.primary.call(req)),
+            State::Secondary => Either::B(self.secondary.call(req)),
             State::Waiting => panic!("called before ready!"),
         }
     }
