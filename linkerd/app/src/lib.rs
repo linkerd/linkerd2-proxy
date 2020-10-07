@@ -121,7 +121,6 @@ impl Config {
         let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
         let outbound_metrics = metrics.outbound;
 
-        let resolver = dns.resolver;
         let local_identity = identity.local();
         let tap_layer = tap.layer();
         let oc_span_sink = oc_collector.span_sink();
@@ -169,8 +168,8 @@ impl Config {
             drop(_enter);
 
             let http_gateway = gateway.build(
-                dst.profiles.clone(),
                 outbound_http,
+                dst.profiles.clone(),
                 outbound_addr,
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
