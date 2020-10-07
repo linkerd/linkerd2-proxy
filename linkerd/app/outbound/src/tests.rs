@@ -1,5 +1,6 @@
 use crate::{endpoint::TcpLogical, Config};
 use futures::prelude::*;
+use ipnet::IpNet;
 use linkerd2_app_core::{
     config, exp_backoff,
     proxy::http::h2,
@@ -8,14 +9,14 @@ use linkerd2_app_core::{
     AddrMatch, Error,
 };
 use linkerd2_app_test as test_support;
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tower::ServiceExt;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
 fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
-        allow_discovery: AddrMatch::new(None, None),
+        allow_discovery: AddrMatch::new(None, Some(IpNet::from_str("0.0.0.0/0").unwrap())),
         canonicalize_timeout: Duration::from_millis(100),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
