@@ -2,11 +2,11 @@ use crate::{endpoint::TcpLogical, Config};
 use futures::prelude::*;
 use ipnet::IpNet;
 use linkerd2_app_core::{
-    config, exp_backoff,
+    config, exp_backoff, profiles,
     proxy::http::h2,
     svc::NewService,
     transport::{listen, tls},
-    AddrMatch, Error,
+    Error, IpMatch,
 };
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
@@ -16,7 +16,7 @@ const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
 fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
-        allow_discovery: AddrMatch::new(None, Some(IpNet::from_str("0.0.0.0/0").unwrap())),
+        allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())),
         canonicalize_timeout: Duration::from_millis(100),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
@@ -54,7 +54,10 @@ async fn plaintext_tcp() {
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-    let logical = TcpLogical { addr: target_addr };
+    let logical = TcpLogical {
+        addr: target_addr,
+        profile: None,
+    };
 
     let cfg = default_config(target_addr);
 
@@ -94,9 +97,18 @@ async fn tls_when_hinted() {
     let _trace = test_support::trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let tls_logical = TcpLogical { addr: tls_addr };
+    let (mut tx, rx) = tokio::sync::watch::channel(profiles::Profile::default());
+    tokio::spawn(async move { tx.closed().await });
+    let tls_logical = TcpLogical {
+        addr: tls_addr,
+        profile: Some(rx),
+    };
+
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
-    let plain_logical = TcpLogical { addr: plain_addr };
+    let plain_logical = TcpLogical {
+        addr: plain_addr,
+        profile: None,
+    };
 
     let cfg = default_config(plain_addr);
     let id_name = linkerd2_identity::Name::from_hostname(
