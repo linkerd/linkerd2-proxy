@@ -57,6 +57,16 @@ pub fn discovery_rejected() -> tonic::Status {
     tonic::Status::new(tonic::Code::InvalidArgument, "Discovery rejected")
 }
 
+pub fn is_discovery_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
+    if let Some(status) = err.downcast_ref::<tonic::Status>() {
+        status.code() == tonic::Code::InvalidArgument
+    } else if let Some(err) = err.source() {
+        is_discovery_rejected(err)
+    } else {
+        false
+    }
+}
+
 pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
     proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
         .ok_or_else(|| {

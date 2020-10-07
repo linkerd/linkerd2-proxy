@@ -44,10 +44,7 @@ pub struct Resolution<T, M, R, E> {
 // === impl Resolve ===
 
 impl<M, R> Resolve<M, R> {
-    pub fn new<T>(map: M, resolve: R) -> Self
-    where
-        Self: resolve::Resolve<T>,
-    {
+    pub fn new(map: M, resolve: R) -> Self {
         Self { resolve, map }
     }
 }

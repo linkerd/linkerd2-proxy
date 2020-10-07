@@ -1,5 +1,6 @@
 use crate::{endpoint::TcpLogical, Config};
 use futures::prelude::*;
+use ipnet::IpNet;
 use linkerd2_app_core::{
     config, exp_backoff,
     proxy::http::h2,
@@ -8,14 +9,14 @@ use linkerd2_app_core::{
     AddrMatch, Error,
 };
 use linkerd2_app_test as test_support;
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tower::ServiceExt;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
 fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
-        allow_discovery: AddrMatch::new(None, None),
+        allow_discovery: AddrMatch::new(None, Some(IpNet::from_str("0.0.0.0/0").unwrap())),
         canonicalize_timeout: Duration::from_millis(100),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
@@ -70,7 +71,7 @@ async fn plaintext_tcp() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver().endpoint_exists(
-        logical.clone(),
+        target_addr,
         target_addr,
         test_support::resolver::Metadata::default(),
     );
@@ -132,11 +133,11 @@ async fn tls_when_hinted() {
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver()
         .endpoint_exists(
-            plain_logical.clone(),
+            plain_addr,
             plain_addr,
             test_support::resolver::Metadata::default(),
         )
-        .endpoint_exists(tls_logical.clone(), tls_addr, tls_meta);
+        .endpoint_exists(tls_addr, tls_addr, tls_meta);
 
     // Configure mock IO for the "client".
     let mut client_io = test_support::io();

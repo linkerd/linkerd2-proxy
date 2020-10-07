@@ -20,7 +20,6 @@ use tracing::{debug, info, trace};
 #[derive(Clone)]
 pub struct Resolve<S> {
     service: DestinationClient<S>,
-    scheme: String,
     context_token: String,
 }
 
@@ -35,25 +34,10 @@ where
     <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
-    pub fn new(svc: S) -> Self {
+    pub fn new(svc: S, context_token: String) -> Self {
         Self {
             service: DestinationClient::new(svc),
-            scheme: "".into(),
-            context_token: "".into(),
-        }
-    }
-
-    pub fn with_scheme<T: ToString>(self, scheme: T) -> Self {
-        Self {
-            scheme: scheme.to_string(),
-            ..self
-        }
-    }
-
-    pub fn with_context_token<T: ToString>(self, context_token: T) -> Self {
-        Self {
-            context_token: context_token.to_string(),
-            ..self
+            context_token,
         }
     }
 }
@@ -86,8 +70,8 @@ where
 
         let req = api::GetDestination {
             path,
-            scheme: self.scheme.clone(),
             context_token: self.context_token.clone(),
+            ..Default::default()
         };
         let mut client = self.service.clone();
         Box::pin(async move {
