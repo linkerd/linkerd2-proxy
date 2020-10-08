@@ -1,4 +1,5 @@
 use linkerd2_app_core::{
+    is_discovery_rejected,
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     profiles,
@@ -6,7 +7,7 @@ use linkerd2_app_core::{
     transport::tls,
     ControlHttpMetrics, Error, Recover,
 };
-use tonic::{body::BoxBody, Code, Status};
+use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -53,27 +54,12 @@ impl Config {
 
 // === impl BackoffUnlessInvalidArgument ===
 
-impl Recover<Status> for BackoffUnlessInvalidArgument {
-    type Backoff = ExponentialBackoffStream;
-
-    fn recover(&self, status: Status) -> Result<Self::Backoff, Status> {
-        if status.code() == Code::InvalidArgument {
-            return Err(status);
-        }
-
-        tracing::trace!(%status, "Recovering");
-        Ok(self.0.stream())
-    }
-}
-
 impl Recover<Error> for BackoffUnlessInvalidArgument {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, error: Error) -> Result<Self::Backoff, Error> {
-        if let Some(status) = error.downcast_ref::<Status>() {
-            if status.code() == Code::InvalidArgument {
-                return Err(error);
-            }
+        if is_discovery_rejected(&*error) {
+            return Err(error);
         }
 
         tracing::trace!(%error, "Recovering");
