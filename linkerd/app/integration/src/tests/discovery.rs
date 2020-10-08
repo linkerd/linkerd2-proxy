@@ -118,9 +118,8 @@ macro_rules! generate_tests {
 
             const NAME: &'static str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new();
-            let _profile = ctrl.profile_tx_default(srv.addr, NAME);
-            ctrl.destination_fail(
-                NAME,
+            let profile = ctrl.profile_tx(&srv.addr.to_string());
+            profile.send_err(
                 grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"),
             );
             ctrl.no_more_destinations();
