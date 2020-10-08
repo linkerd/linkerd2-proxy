@@ -10,11 +10,11 @@ async fn outbound_http1() {
     let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
     let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
-    ctrl.destination_tx(format!(
+    let dest = ctrl.destination_tx(format!(
         "transparency.test.svc.cluster.local:{}",
         srv.addr.port()
-    ))
-    .send_addr(srv.addr);
+    ));
+    dest.send_addr(srv.addr);
     let proxy = proxy::new()
         .controller(ctrl.run().await)
         .outbound(srv)
@@ -60,7 +60,55 @@ async fn outbound_tcp() {
         })
         .run()
         .await;
-    let proxy = proxy::new().outbound(srv).run().await;
+    let ctrl = controller::new();
+    let _profile = ctrl.profile_tx_default(srv.addr, &srv.addr.to_string());
+    let dest = ctrl.destination_tx(&srv.addr.to_string());
+    dest.send_addr(srv.addr);
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
+
+    let client = client::tcp(proxy.outbound);
+
+    let tcp_client = client.connect().await;
+
+    tcp_client.write(msg1).await;
+    assert_eq!(tcp_client.read().await, msg2.as_bytes());
+
+    // TCP client must close first
+    tcp_client.shutdown().await;
+
+    // ensure panics from the server are propagated
+    proxy.join_servers().await;
+}
+
+#[tokio::test]
+async fn outbound_tcp_external() {
+    let _trace = trace_init();
+
+    let msg1 = "custom tcp hello";
+    let msg2 = "custom tcp bye";
+
+    let srv = server::tcp()
+        .accept(move |read| {
+            assert_eq!(read, msg1.as_bytes());
+            msg2
+        })
+        .run()
+        .await;
+    let ctrl = controller::new();
+    let _profile = ctrl.profile_tx_default(srv.addr, &srv.addr.to_string());
+    let dest = ctrl.destination_tx(&srv.addr.to_string());
+    dest.send_err(grpc::Status::invalid_argument(
+        "we're pretending this is outside of the cluster",
+    ));
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
 
     let client = client::tcp(proxy.outbound);
 
