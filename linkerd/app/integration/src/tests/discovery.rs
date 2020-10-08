@@ -324,11 +324,11 @@ mod http2 {
             .route("/bye", "bye")
             .run()
             .await;
-
         let host = "disco.test.svc.cluster.local";
+        let port = srv1.addr.port();
         let ctrl = controller::new();
-        ctrl.profile_tx_default(srv1.addr, host);
-        let dst = ctrl.destination_tx(srv1.addr.to_string());
+        let _profile = ctrl.profile_tx_default(srv1.addr, host);
+        let dst = ctrl.destination_tx(&format!("{}:{}", host, port));
         // Start by "knowing" the first server...
         dst.send_addr(srv1.addr);
 
@@ -350,7 +350,10 @@ mod http2 {
         // Wait until the proxy has seen the `srv1` disconnect...
         assert_eventually_contains!(
             metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"dst\",authority=\"disco.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1"
+            &format!(
+                "tcp_close_total{{peer=\"dst\",authority=\"disco.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"}} 1",
+                port
+            )
         );
 
         // Start a new request to the destination, now that the server is dead.
