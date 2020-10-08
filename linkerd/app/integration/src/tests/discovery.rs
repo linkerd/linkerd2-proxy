@@ -94,13 +94,21 @@ macro_rules! generate_tests {
             let _trace = trace_init();
 
             let srv = $make_server().route("/", "hello from my great website").run().await;
-
+            let mut env = TestEnv::new();
+            // The test server will be on localhost, and we default to
+            // configuring the profile search networks to include localhost so
+            // that...every other test can work, so just put some random network
+            // in there so it doesn't.
+            env.put(
+                app::env::ENV_DESTINATION_PROFILE_NETWORKS,
+                "69.4.20.0/24".to_owned(),
+            );
             let ctrl = controller::new();
             ctrl.no_more_destinations();
             let proxy = proxy::new()
                 .controller(ctrl.run().await)
                 .outbound(srv)
-                .run().await;
+                .run_with_test_env(env).await;
 
             let client = $make_client(proxy.outbound, "my-great-websute.net");
 

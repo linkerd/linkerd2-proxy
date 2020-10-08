@@ -298,10 +298,17 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             ports,
         );
     }
-    env.put(
-        app::env::ENV_DESTINATION_PROFILE_NETWORKS,
-        "127.0.0.0/24".to_owned(),
-    );
+    if !env.contains_key(app::env::ENV_DESTINATION_PROFILE_NETWORKS) {
+        // If the test has not already overridden the destination search
+        // networks, make sure that localhost works.
+        //
+        // If there's already a value, we can assume that the test cares about
+        // this and may not want to do profile lookups on localhost.
+        env.put(
+            app::env::ENV_DESTINATION_PROFILE_NETWORKS,
+            "127.0.0.0/24".to_owned(),
+        );
+    }
 
     let config = app::env::parse_config(&env).unwrap();
     let (trace, trace_handle) = super::trace_subscriber();
