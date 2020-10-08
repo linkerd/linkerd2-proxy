@@ -7,14 +7,28 @@ pub trait MapTarget<T> {
 }
 
 #[derive(Clone, Debug)]
+pub struct MapTargetLayer<M>(M);
+
+#[derive(Clone, Debug)]
 pub struct MapTargetService<S, M> {
     inner: S,
     map_target: M,
 }
 
-impl<S, M> MapTargetService<S, M> {
-    pub fn new(map_target: M, inner: S) -> Self {
-        Self { inner, map_target }
+impl<M> MapTargetLayer<M> {
+    pub fn new(map_target: M) -> Self {
+        MapTargetLayer(map_target)
+    }
+}
+
+impl<S, M: Clone> tower::layer::Layer<S> for MapTargetLayer<M> {
+    type Service = MapTargetService<S, M>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        Self::Service {
+            inner,
+            map_target: self.0.clone(),
+        }
     }
 }
 

@@ -40,21 +40,6 @@ where
     }
 }
 
-impl<A, B, T> NewService<T> for tower::util::Either<A, B>
-where
-    A: NewService<T>,
-    B: NewService<T>,
-{
-    type Service = tower::util::Either<A::Service, B::Service>;
-
-    fn new_service(&mut self, target: T) -> Self::Service {
-        match self {
-            tower::util::Either::A(ref mut a) => tower::util::Either::A(a.new_service(target)),
-            tower::util::Either::B(ref mut b) => tower::util::Either::B(b.new_service(target)),
-        }
-    }
-}
-
 // === impl FromMakeServiceLayer ===
 
 impl<S> tower::layer::Layer<S> for FromMakeServiceLayer {

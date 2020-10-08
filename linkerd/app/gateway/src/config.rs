@@ -61,19 +61,16 @@ impl svc::stack::FilterRequest<inbound::Target> for Allow {
 
     fn filter(&self, target: inbound::Target) -> Result<NameAddr, Error> {
         // Skip discovery when the client does not have an identity.
-        if target.tls_client_id.is_none() {
-            return Err(discovery_rejected().into());
+        if target.tls_client_id.is_some() {
+            // Discovery needs to have resolved a service name.
+            if let Some(addr) = target.dst.into_name_addr() {
+                // The service name needs to exist in the configured set of suffixes.
+                if self.0.matches(addr.name()) {
+                    return Ok(addr);
+                }
+            }
         }
 
-        let addr = target
-            .dst
-            .into_name_addr()
-            .ok_or_else(|| discovery_rejected())?;
-
-        if self.0.matches(addr.name()) {
-            Ok(addr)
-        } else {
-            Err(discovery_rejected().into())
-        }
+        Err(discovery_rejected().into())
     }
 }

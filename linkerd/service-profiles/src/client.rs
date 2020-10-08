@@ -37,7 +37,7 @@ pub struct Client<S, R> {
 pub struct ProfileFuture<S, R>
 where
     S: GrpcService<BoxBody>,
-    R: Recover<grpc::Status>,
+    R: Recover,
 {
     #[pin]
     inner: Option<Inner<S, R>>,
@@ -47,7 +47,7 @@ where
 struct Inner<S, R>
 where
     S: GrpcService<BoxBody>,
-    R: Recover<grpc::Status>,
+    R: Recover,
 {
     service: DestinationClient<S>,
     recover: R,
@@ -113,11 +113,11 @@ where
     <S::ResponseBody as HttpBody>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
-    R: Recover<grpc::Status> + Send + Clone + 'static,
+    R: Recover + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
     type Response = Option<Receiver>;
-    type Error = tonic::Status;
+    type Error = Error;
     type Future = ProfileFuture<S, R>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -149,11 +149,11 @@ where
     <S::ResponseBody as Body>::Data: Send,
     <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
-    R: Recover<grpc::Status> + Send + 'static,
+    R: Recover + Send + 'static,
     R::Backoff: Unpin,
     R::Backoff: Send,
 {
-    type Output = Result<Option<Receiver>, grpc::Status>;
+    type Output = Result<Option<Receiver>, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut this = self.project();
@@ -165,7 +165,10 @@ where
             .poll_profile(cx)
         {
             Poll::Pending => return Poll::Pending,
-            Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+            Poll::Ready(Err(error)) => {
+                trace!(%error, "failed to fetch profile");
+                return Poll::Ready(Err(error));
+            }
             Poll::Ready(Ok(profile)) => profile,
         };
 
@@ -185,7 +188,7 @@ where
                         ).fuse() => {
                         match profile {
                             Err(error) => {
-                                error!(%error, "profile client failed");
+                                error!(%error, "profile client died");
                                 return;
                             }
                             Ok(profile) => {
@@ -215,7 +218,7 @@ where
     <S::ResponseBody as Body>::Data: Send + 'static,
     <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
-    R: Recover<grpc::Status>,
+    R: Recover,
     R::Backoff: Unpin,
 {
     fn poll_rx(
@@ -251,7 +254,7 @@ where
     fn poll_profile(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<Profile, grpc::Status>> {
+    ) -> Poll<Result<Profile, Error>> {
         let span = info_span!("poll_profile");
         let _enter = span.enter();
 
@@ -271,9 +274,10 @@ where
                     trace!("waiting");
                     match ready!(Pin::new(future).poll(cx)) {
                         Ok(rsp) => this.state.set(State::Streaming(rsp.into_inner())),
-                        Err(status) => {
-                            warn!(%status, "Could not fetch profile");
-                            let new_backoff = this.recover.recover(status)?;
+                        Err(e) => {
+                            let error = e.into();
+                            warn!(%error, "Could not fetch profile");
+                            let new_backoff = this.recover.recover(error)?;
                             let backoff = Some(backoff.take().unwrap_or(new_backoff));
                             this.state.set(State::Disconnected { backoff });
                         }
@@ -287,7 +291,7 @@ where
                         Some(Err(status)) => status,
                     };
                     trace!(?status);
-                    let backoff = this.recover.recover(status)?;
+                    let backoff = this.recover.recover(status.into())?;
                     this.state.set(State::Backoff(Some(backoff)));
                 }
                 StateProj::Backoff(ref mut backoff) => {

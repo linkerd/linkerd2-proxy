@@ -53,6 +53,12 @@ pub struct TcpLogical {
     pub profile: Option<profiles::Receiver>,
 }
 
+#[derive(Clone, Debug)]
+pub struct TcpConcrete {
+    pub resolve: Option<Addr>,
+    pub logical: TcpLogical,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TcpEndpoint {
     pub dst: Addr,
@@ -85,17 +91,39 @@ impl From<(Option<profiles::Receiver>, TcpAccept)> for TcpLogical {
     }
 }
 
-/// Used as a default destination when resolution is rejected.
+/// Used for default traffic split
+impl Into<Addr> for &'_ TcpLogical {
+    fn into(self) -> Addr {
+        self.addr.into()
+    }
+}
+
+/// Used for traffic split
+impl Into<Option<profiles::Receiver>> for &'_ TcpLogical {
+    fn into(self) -> Option<profiles::Receiver> {
+        self.profile.clone()
+    }
+}
+
+/// Used to determine whether detection should be skipped.
 impl Into<SocketAddr> for &'_ TcpLogical {
     fn into(self) -> SocketAddr {
         self.addr
     }
 }
 
-/// Used to resolve endpoints.
-impl Into<Option<Addr>> for &'_ TcpLogical {
-    fn into(self) -> Option<Addr> {
-        Some(self.addr.into())
+// === impl TcpConcrete ===
+
+impl From<(Option<Addr>, TcpLogical)> for TcpConcrete {
+    fn from((resolve, logical): (Option<Addr>, TcpLogical)) -> Self {
+        Self { resolve, logical }
+    }
+}
+
+/// Used as a default destination when resolution is rejected.
+impl Into<SocketAddr> for &'_ TcpConcrete {
+    fn into(self) -> SocketAddr {
+        self.logical.addr
     }
 }
 
@@ -349,16 +377,16 @@ impl Into<EndpointLabels> for TcpEndpoint {
     }
 }
 
-impl MapEndpoint<TcpLogical, Metadata> for FromMetadata {
+impl MapEndpoint<TcpConcrete, Metadata> for FromMetadata {
     type Out = TcpEndpoint;
 
     fn map_endpoint(
         &self,
-        logical: &TcpLogical,
+        concrete: &TcpConcrete,
         addr: SocketAddr,
         metadata: Metadata,
     ) -> Self::Out {
-        tracing::debug!(?logical, %addr, ?metadata, "Resolved endpoint");
+        tracing::debug!(?concrete, %addr, ?metadata, "Resolved endpoint");
         let identity = metadata
             .identity()
             .cloned()
@@ -370,7 +398,7 @@ impl MapEndpoint<TcpLogical, Metadata> for FromMetadata {
         TcpEndpoint {
             addr,
             identity,
-            dst: logical.addr.into(),
+            dst: concrete.logical.addr.into(),
             labels: prefix_labels("dst", metadata.labels().into_iter()),
         }
     }
