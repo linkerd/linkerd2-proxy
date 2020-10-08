@@ -30,10 +30,10 @@ pub type DstReceiver = mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>
 #[derive(Clone, Debug)]
 pub struct DstSender(mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
 
-pub type ProfileReceiver = mpsc::UnboundedReceiver<pb::DestinationProfile>;
+pub type ProfileReceiver = mpsc::UnboundedReceiver<Result<pb::DestinationProfile, grpc::Status>>;
 
 #[derive(Clone, Debug)]
-pub struct ProfileSender(mpsc::UnboundedSender<pb::DestinationProfile>);
+pub struct ProfileSender(mpsc::UnboundedSender<Result<pb::DestinationProfile, grpc::Status>>);
 
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
@@ -209,7 +209,11 @@ impl DstSender {
 
 impl ProfileSender {
     pub fn send(&self, up: pb::DestinationProfile) {
-        self.0.send(up).expect("send profile update")
+        self.0.send(Ok(up)).expect("send profile update")
+    }
+
+    pub fn send_err(&self, err: grpc::Status) {
+        self.0.send(Err(err)).expect("send profile update")
     }
 }
 
@@ -294,7 +298,7 @@ impl pb::destination_server::Destination for Controller {
                 tracing::debug!(?dst, "checking next call");
                 if &dst == req.get_ref() {
                     tracing::info!(?dst, ?profile, "found request");
-                    return Ok(grpc::Response::new(Box::pin(profile.map(Ok))));
+                    return Ok(grpc::Response::new(Box::pin(profile)));
                 }
 
                 tracing::warn!(?dst, ?profile, "request does not match");

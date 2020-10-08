@@ -99,9 +99,8 @@ async fn outbound_tcp_external() {
         .run()
         .await;
     let ctrl = controller::new();
-    let _profile = ctrl.profile_tx_default(srv.addr, &srv.addr.to_string());
-    let dest = ctrl.destination_tx(&srv.addr.to_string());
-    dest.send_err(grpc::Status::invalid_argument(
+    let profile = ctrl.profile_tx(&srv.addr.to_string());
+    profile.send_err(grpc::Status::invalid_argument(
         "we're pretending this is outside of the cluster",
     ));
     let proxy = proxy::new()
