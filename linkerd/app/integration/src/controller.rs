@@ -71,12 +71,11 @@ impl Controller {
         ctrl
     }
 
-    pub fn destination_tx(&self, dest: &str) -> DstSender {
+    pub fn destination_tx(&self, dest: impl Into<String>) -> DstSender {
         let (tx, rx) = mpsc::unbounded_channel();
-        let path = if dest.contains(":") {
-            dest.to_owned()
-        } else {
-            format!("{}:80", dest)
+        let mut path = dest.into();
+        if !path.contains(":") {
+            path.push_str(":80");
         };
         let dst = pb::GetDestination {
             path,
@@ -89,17 +88,16 @@ impl Controller {
         DstSender(tx)
     }
 
-    pub fn destination_tx_err(&self, dest: &str, err: grpc::Code) -> DstSender {
+    pub fn destination_tx_err(&self, dest: impl Into<String>, err: grpc::Code) -> DstSender {
         let tx = self.destination_tx(dest);
         tx.send_err(grpc::Status::new(err, "unit test controller fake error"));
         tx
     }
 
-    pub fn destination_fail(&self, dest: &str, status: grpc::Status) {
-        let path = if dest.contains(":") {
-            dest.to_owned()
-        } else {
-            format!("{}:80", dest)
+    pub fn destination_fail(&self, dest: impl Into<String>, status: grpc::Status) {
+        let mut path = dest.into();
+        if !path.contains(":") {
+            path.push_str(":80");
         };
         let dst = pb::GetDestination {
             path,
