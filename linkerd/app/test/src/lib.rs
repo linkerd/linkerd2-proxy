@@ -17,7 +17,6 @@ use std::fmt;
 pub use tokio_test::io;
 
 pub mod connect;
-pub mod refine;
 pub mod resolver;
 
 pub fn resolver<T, E>() -> resolver::Resolver<T, E>
