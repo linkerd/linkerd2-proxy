@@ -1,8 +1,7 @@
 use linkerd2_app_core::{
-    is_discovery_rejected,
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    profiles,
+    is_discovery_rejected, profiles,
     proxy::{api_resolve as api, identity, resolve::recover},
     transport::tls,
     ControlHttpMetrics, Error, Recover,
