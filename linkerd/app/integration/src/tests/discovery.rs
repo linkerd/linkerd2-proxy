@@ -10,8 +10,9 @@ macro_rules! generate_tests {
             let srv = $make_server().route("/", "hello").route("/bye", "bye").run().await;
 
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
-            ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            let dest = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+            dest.send_addr(srv.addr);
 
             let proxy = proxy::new().controller(ctrl.run().await).outbound(srv).run().await;
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
@@ -30,9 +31,10 @@ macro_rules! generate_tests {
             let srv = $make_server().route("/recon", "nect").run().await;
 
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
-            drop(ctrl.destination_tx("disco.test.svc.cluster.local"));
-            ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            drop(ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port())));
+            let dest = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+            dest.send_addr(srv.addr);
 
             let proxy = proxy::new().controller(ctrl.run().await).outbound(srv).run().await;
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
@@ -63,8 +65,9 @@ macro_rules! generate_tests {
             }).run().await;
 
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
-            ctrl.destination_tx("disco.test.svc.cluster.local").send(up);
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            let dest = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+            dest.send(up);
 
             let proxy = proxy::new()
                 .controller(ctrl.run().await)
@@ -115,7 +118,7 @@ macro_rules! generate_tests {
 
             const NAME: &'static str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, NAME);
+            let _profile = ctrl.profile_tx_default(srv.addr, NAME);
             ctrl.destination_fail(
                 NAME,
                 grpc::Status::new(grpc::Code::InvalidArgument, "unresolvable"),
@@ -154,12 +157,12 @@ macro_rules! generate_tests {
             let env = TestEnv::new();
             let srv = $make_server().route("/", "hello").run().await;
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, "initially-exists.ns.svc.cluster.local");
+            let _profile = ctrl.profile_tx_default(srv.addr, "initially-exists.ns.svc.cluster.local");
 
-            let dst_tx0 = ctrl.destination_tx("initially-exists.ns.svc.cluster.local");
+            let dst_tx0 = ctrl.destination_tx(format!("initially-exists.ns.svc.cluster.local:{}", srv.addr.port()));
             dst_tx0.send_addr(srv.addr);
 
-            let dst_tx1 = ctrl.destination_tx("initially-exists.ns.svc.cluster.local");
+            let dst_tx1 = ctrl.destination_tx(format!("initially-exists.ns.svc.cluster.local:{}", srv.addr.port()));
 
             let proxy = proxy::new()
                 .controller(ctrl.run().await)
@@ -190,11 +193,11 @@ macro_rules! generate_tests {
             let srv = $make_server().route("/hi", "hello").run().await;
             let ctrl = controller::new();
 
-            ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
 
             // when the proxy requests the destination, don't respond.
             let _dst_tx = ctrl
-                .destination_tx("disco.test.svc.cluster.local");
+                .destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
 
             let proxy = proxy::new()
                 .controller(ctrl.run().await)
@@ -224,8 +227,9 @@ macro_rules! generate_tests {
                 .await;
 
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
-            ctrl.destination_tx("disco.test.svc.cluster.local").send_addr(srv.addr);
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            let dest = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+            dest.send_addr(srv.addr);
 
             let proxy = proxy::new()
                 .controller(ctrl.run().await)
@@ -253,9 +257,9 @@ macro_rules! generate_tests {
             let (tx, rx) = oneshot::channel::<()>();
 
             let ctrl = controller::new();
-            ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
 
-            let dst_tx = ctrl.destination_tx("disco.test.svc.cluster.local");
+            let dst_tx = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
             dst_tx.send_addr(srv.addr);
             // but don't drop, to not trigger stream closing reconnects
 
@@ -346,9 +350,9 @@ macro_rules! generate_tests {
                             .label("hello", "bar"),
                     ], None, vec![]));
 
-                    let foo_eps = ctrl.destination_tx(FOO);
+                    let foo_eps = ctrl.destination_tx(format!("{}:{}", FOO, foo.addr.port()));
                     foo_eps.send_addr(foo.addr);
-                    let bar_eps = ctrl.destination_tx(BAR);
+                    let bar_eps = ctrl.destination_tx(format!("{}:{}", BAR, bar.addr.port()));
                     bar_eps.send_addr(bar.addr);
 
                     Fixture {
