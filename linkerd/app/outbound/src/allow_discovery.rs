@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 pub struct AllowProfile(pub IpMatch);
 
 #[derive(Clone, Debug)]
-pub struct AllowTcpResolve(pub IpMatch);
+pub struct AllowTcpResolve;
 
 #[derive(Copy, Clone, Debug)]
 pub struct AllowHttpResolve;
@@ -35,7 +35,7 @@ impl FilterRequest<TcpLogical> for AllowTcpResolve {
     type Request = SocketAddr;
 
     fn filter(&self, target: TcpLogical) -> Result<SocketAddr, Error> {
-        if self.0.matches(target.addr.ip()) {
+        if target.profile.is_some() {
             Ok(target.addr)
         } else {
             Err(discovery_rejected().into())

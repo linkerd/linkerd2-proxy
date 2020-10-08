@@ -111,7 +111,7 @@ impl Config {
             .check_make_service::<TcpEndpoint, ()>()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
-            .push(resolve::layer(AllowTcpResolve(self.allow_discovery.clone()), resolve, self.proxy.cache_max_idle_age * 2))
+            .push(resolve::layer(AllowTcpResolve, resolve, self.proxy.cache_max_idle_age * 2))
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
