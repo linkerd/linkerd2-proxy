@@ -23,7 +23,7 @@ pub use self::future_service::FutureService;
 pub use self::make_ready::{MakeReady, MakeReadyLayer};
 pub use self::make_thunk::MakeThunk;
 pub use self::map_response::{MapResponse, MapResponseLayer};
-pub use self::map_target::{MapTarget, MapTargetService};
+pub use self::map_target::{MapTarget, MapTargetLayer, MapTargetService};
 pub use self::new_service::NewService;
 pub use self::on_response::{OnResponse, OnResponseLayer};
 pub use self::oneshot::{Oneshot, OneshotLayer};
