@@ -59,10 +59,10 @@ impl FmtMetrics for Report {
 
 impl FmtLabels for BuildInfoLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "git_branch=\"{}\",", self.git_branch)?;
-        write!(f, "git_version=\"{}\",", self.git_version)?;
-        write!(f, "profile=\"{}\",", self.profile)?;
-        write!(f, "rust_version=\"{}\",", self.rust_version)?;
+        write!(f, "git_branch=\"{}\"", self.git_branch)?;
+        write!(f, ",git_version=\"{}\"", self.git_version)?;
+        write!(f, ",profile=\"{}\"", self.profile)?;
+        write!(f, ",rust_version=\"{}\"", self.rust_version)?;
         Ok(())
     }
 }
