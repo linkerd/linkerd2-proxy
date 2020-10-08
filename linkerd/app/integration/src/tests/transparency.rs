@@ -9,7 +9,7 @@ async fn outbound_http1() {
 
     let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
-    let _profile = ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+    let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
     ctrl.destination_tx("transparency.test.svc.cluster.local")
         .send_addr(srv.addr);
     let proxy = proxy::new()
@@ -30,7 +30,7 @@ async fn inbound_http1() {
 
     let srv = server::http1().route("/", "hello h1").run().await;
     let ctrl = controller::new();
-    let _profile = ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+    let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
     let proxy = proxy::new()
         .controller(ctrl.run().await)
         .inbound_fuzz_addr(srv)
@@ -1066,9 +1066,9 @@ macro_rules! http1_tests {
 mod one_proxy {
     use crate::*;
 
-    http1_tests! { proxy: |srv| async move {
+    http1_tests! { proxy: |srv: server::Listening| async move {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
         proxy::new().inbound(srv).controller(ctrl.run().await).run().await
     }}
 }
@@ -1094,13 +1094,14 @@ mod proxy_to_proxy {
         }
     }
 
-    http1_tests! { proxy: |srv| async move {
+    http1_tests! { proxy: |srv: server::Listening| async move {
         let ctrl = controller::new();
-        let _profile_in = ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        let srv_addr = srv.addr;
+        let _profile_in = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
         let inbound = proxy::new().controller(ctrl.run().await).inbound(srv).run().await;
 
         let ctrl = controller::new();
-        let _profile_out = ctrl.profile_tx_default("transparency.test.svc.cluster.local");
+        let _profile_out = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
         let dst = ctrl.destination_tx("transparency.test.svc.cluster.local");
         dst.send_h2_hinted(inbound.inbound);
 
@@ -1400,7 +1401,7 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
         .await;
     let ctrl = controller::new();
     let host = "transparency.test.svc.cluster.local";
-    let _profile = ctrl.profile_tx_default(host);
+    let _profile = ctrl.profile_tx_default(srv.addr, host);
     let dst = ctrl.destination_tx(host);
     dst.send_h2_hinted(srv.addr);
     let proxy = proxy::new().controller(ctrl.run().await).run().await;

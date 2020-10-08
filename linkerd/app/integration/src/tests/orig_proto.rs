@@ -17,7 +17,7 @@ async fn outbound_http1() {
         .await;
 
     let ctrl = controller::new();
-    ctrl.profile_tx_default("disco.test.svc.cluster.local");
+    ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
     let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
     dst.send_h2_hinted(srv.addr);
 
@@ -54,7 +54,7 @@ async fn inbound_http1() {
         .await;
 
     let ctrl = controller::new();
-    ctrl.profile_tx_default("disco.test.svc.cluster.local");
+    ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
 
     let proxy = proxy::new()
         .controller(ctrl.run().await)

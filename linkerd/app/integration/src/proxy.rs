@@ -298,6 +298,10 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
             ports,
         );
     }
+    env.put(
+        app::env::ENV_DESTINATION_PROFILE_NETWORKS,
+        "127.0.0.0/24".to_owned(),
+    );
 
     let config = app::env::parse_config(&env).unwrap();
     let (trace, trace_handle) = super::trace_subscriber();

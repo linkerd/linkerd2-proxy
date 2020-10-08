@@ -31,7 +31,7 @@ impl Fixture {
 
     async fn inbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .inbound(srv)
@@ -50,7 +50,7 @@ impl Fixture {
 
     async fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
         ctrl.destination_tx("tele.test.svc.cluster.local")
             .send_addr(srv.addr);
         let proxy = proxy::new()
@@ -478,7 +478,7 @@ mod outbound_dst_labels {
         let addr = srv.addr;
 
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(dest);
+        let _profile = ctrl.profile_tx_default(addr, dest);
         let dst_tx = ctrl.destination_tx(dest);
 
         let proxy = proxy::new()
@@ -734,8 +734,8 @@ async fn metrics_have_no_double_commas() {
     let outbound_srv = server::new().route("/hey", "hello").run().await;
 
     let ctrl = controller::new();
-    let _profile_in = ctrl.profile_tx_default("tele.test.svc.cluster.local");
-    let _profile_out = ctrl.profile_tx_default("tele.test.svc.cluster.local");
+    let _profile_in = ctrl.profile_tx_default(inbound_srv.addr, "tele.test.svc.cluster.local");
+    let _profile_out = ctrl.profile_tx_default(outbound_srv.addr, "tele.test.svc.cluster.local");
     ctrl.destination_tx("tele.test.svc.cluster.local")
         .send_addr(outbound_srv.addr);
     let proxy = proxy::new()

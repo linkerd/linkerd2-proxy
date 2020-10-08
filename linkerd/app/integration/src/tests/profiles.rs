@@ -86,10 +86,10 @@ macro_rules! profile_test {
             .run().await;
         let ctrl = controller::new();
 
-        let dst_tx = ctrl.destination_tx(host);
+        let dst_tx = ctrl.destination_tx(&format!("{}", srv.addr));
         dst_tx.send_addr(srv.addr);
 
-        let profile_tx = ctrl.profile_tx(host);
+        let profile_tx = ctrl.profile_tx(&format!("{}", srv.addr));
         let routes = vec![
             // This route is used to get the proxy to start fetching the
             // ServiceProfile. We'll keep GETting this route and checking

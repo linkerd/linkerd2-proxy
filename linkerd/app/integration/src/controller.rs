@@ -127,9 +127,12 @@ impl Controller {
         .await
     }
 
-    pub fn profile_tx_default(&self, dest: &str) -> ProfileSender {
-        let tx = self.profile_tx(dest);
-        tx.send(pb::DestinationProfile::default());
+    pub fn profile_tx_default(&self, target: SocketAddr, dest: &str) -> ProfileSender {
+        let tx = self.profile_tx(&target.to_string());
+        tx.send(pb::DestinationProfile {
+            fully_qualified_name: dest.to_owned(),
+            ..Default::default()
+        });
         tx
     }
 
@@ -220,6 +223,7 @@ impl pb::destination_server::Destination for Controller {
         &self,
         req: grpc::Request<pb::GetDestination>,
     ) -> Result<grpc::Response<Self::GetStream>, grpc::Status> {
+        tracing::info!(?req, "destination::get");
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
             if self.unordered {
                 let mut calls_next: VecDeque<Dst> = VecDeque::new();
@@ -275,6 +279,7 @@ impl pb::destination_server::Destination for Controller {
         &self,
         req: grpc::Request<pb::GetDestination>,
     ) -> Result<grpc::Response<Self::GetProfileStream>, grpc::Status> {
+        tracing::info!(?req, "destination::get_profile");
         if let Ok(mut calls) = self.expect_profile_calls.lock() {
             if let Some((dst, profile)) = calls.pop_front() {
                 if &dst == req.get_ref() {
