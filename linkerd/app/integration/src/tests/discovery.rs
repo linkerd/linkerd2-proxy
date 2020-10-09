@@ -32,6 +32,40 @@ macro_rules! generate_tests {
         }
 
         #[tokio::test]
+        async fn dst_resolutions_are_cached() {
+            // This test asserts that once a destination and profile have been
+            // discovered for an original destination address, the same
+            // discovery is reused by all connections with that original destination.
+            let _trace = trace_init();
+            let srv = $make_server().route("/", "hello").run().await;
+
+            let ctrl = controller::new();
+            let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+            let dest =
+                ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+            dest.send_addr(srv.addr);
+            ctrl.no_more_destinations();
+
+            let proxy = proxy::new()
+                .controller(ctrl.run().await)
+                .outbound(srv)
+                .run()
+                .await;
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+
+            assert_eq!(client.get("/").await, "hello");
+            drop(client);
+
+            let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
+            assert_eq!(client.get("/").await, "hello");
+            drop(client);
+
+            // Ensure panics are propagated.
+            proxy.join_servers().await;
+        }
+
+        #[tokio::test]
         async fn outbound_reconnects_if_controller_stream_ends() {
             let _trace = trace_init();
 
