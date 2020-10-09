@@ -319,6 +319,7 @@ impl Config {
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
+            buffer_capacity,
             ..
         } = self.proxy.clone();
 
@@ -373,9 +374,11 @@ impl Config {
                 .into_inner(),
             drain.clone(),
         ))
-        .push_on_response(transport::Prefix::layer(
-            http::Version::DETECT_BUFFER_CAPACITY,
-            detect_protocol_timeout,
+        .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
+            transport::Prefix::layer(
+                http::Version::DETECT_BUFFER_CAPACITY,
+                detect_protocol_timeout,
+            ),
         ))
         .into_inner()
     }
