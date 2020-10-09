@@ -7,7 +7,7 @@ macro_rules! profile_test {
             routes: [$($route),+],
             budget: $budget,
             with_client: $with_client,
-            with_metrics: |_m| async {}
+            with_metrics: |_m, _| async {}
         }
     };
     (routes: [$($route:expr),+], budget: $budget:expr, with_client: $with_client:expr, with_metrics: $with_metrics:expr) => {
@@ -84,14 +84,15 @@ macro_rules! profile_test {
                 }
             })
             .run().await;
+        let port = srv.addr.port();
         let ctrl = controller::new();
 
-        let dst_tx = ctrl.destination_tx(host);
+        let dst_tx = ctrl.destination_tx(&format!("{}:{}", host, port));
         dst_tx.send_addr(srv.addr);
 
-        let profile_tx = ctrl.profile_tx(host);
+        let profile_tx = ctrl.profile_tx(srv.addr.to_string());
         let routes = vec![
-            // This route is used to get the proxy to start fetching the
+            // This route is used to get the proxy to start fetching the`
             // ServiceProfile. We'll keep GETting this route and checking
             // the metrics for the labels, to know that the other route
             // rules are now in place and the test can proceed.
@@ -100,7 +101,7 @@ macro_rules! profile_test {
                 .label("load_profile", "test"),
             $($route,),+
         ];
-        profile_tx.send(controller::profile(routes, $budget, vec![]));
+        profile_tx.send(controller::profile(routes, $budget, vec![], host));
 
         let ctrl = ctrl.run().await;
         let proxy = proxy::new()
@@ -126,7 +127,7 @@ macro_rules! profile_test {
 
         $with_client(client).await;
 
-        $with_metrics(metrics).await;
+        $with_metrics(metrics, port).await;
     }
 }
 
@@ -161,11 +162,12 @@ async fn retry_uses_budget() {
             let res = client.request(client.request_builder("/0.5")).await.unwrap();
             assert_eq!(res.status(), 533);
         },
-        with_metrics: |metrics: client::Client| async move {
-            assert_eventually_contains!(
-                metrics.get("/metrics").await,
-                "route_retryable_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",skipped=\"no_budget\"} 1"
+        with_metrics: |metrics: client::Client, port| async move {
+            let expected = format!(
+                "route_retryable_total{{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:{}\",skipped=\"no_budget\"}} 1",
+                port
             );
+            assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
         }
     }
 }
@@ -312,7 +314,7 @@ async fn http2_failures_dont_leak_connection_window() {
             // capacity, preventing the successful response from being read.
             assert_eq!(client.get("/0.5/100KB").await, "retried");
         },
-        with_metrics: |_m| async {}
+        with_metrics: |_m, _| async {}
     }
 }
 
@@ -329,11 +331,12 @@ async fn timeout() {
             let res = client.request(client.request_builder("/1.0/sleep")).await.unwrap();
             assert_eq!(res.status(), 504);
         },
-        with_metrics: |metrics: client::Client| async move {
-            assert_eventually_contains!(
-                metrics.get("/metrics").await,
-                "route_response_total{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:80\",classification=\"failure\",error=\"timeout\"} 1"
+        with_metrics: |metrics: client::Client, port| async move {
+            let expected = format!(
+                "route_response_total{{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:{}\",classification=\"failure\",error=\"timeout\"}} 1",
+                port
             );
+            assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
         }
     }
 }
