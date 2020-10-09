@@ -505,6 +505,7 @@ pub fn profile<I>(
     routes: I,
     retry_budget: Option<pb::RetryBudget>,
     dst_overrides: Vec<pb::WeightedDst>,
+    fqn: impl Into<String>,
 ) -> pb::DestinationProfile
 where
     I: IntoIterator,
@@ -515,6 +516,7 @@ where
         routes,
         retry_budget,
         dst_overrides,
+        fully_qualified_name: fqn.into(),
         ..Default::default()
     }
 }

@@ -44,6 +44,7 @@ fn profile(stage: &str, overrides: Vec<pb::WeightedDst>) -> pb::DestinationProfi
         ],
         None,
         overrides,
+        "apex.svc.cluster.local",
     )
 }
 
