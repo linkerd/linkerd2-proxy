@@ -403,10 +403,11 @@ impl Config {
             endpoint::TcpLogical,
             transport::io::PrefixedIo<transport::metrics::SensorIo<I>>,
         >()
-        .push_on_response(transport::Prefix::layer(
+        .push_on_response(
+            svc::layers().push_spawn_buffer(buffer_capacity).push(transport::Prefix::layer(
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
-        ))
+        )))
         .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
