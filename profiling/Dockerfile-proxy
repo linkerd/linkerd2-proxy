@@ -1,4 +1,4 @@
-ARG RUST_IMAGE=rust:1.44.1-buster
+ARG RUST_IMAGE=rust:1.47.0-buster
 ARG RUNTIME_IMAGE=debian:bullseye-slim
 ARG RUSTFLAGS="-C debuginfo=2 -C lto=off"
 ## Builds the proxy as incrementally as possible.
