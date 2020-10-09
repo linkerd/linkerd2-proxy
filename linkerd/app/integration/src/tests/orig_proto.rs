@@ -21,7 +21,11 @@ async fn outbound_http1() {
     let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
     dst.send_h2_hinted(srv.addr);
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
 
     let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
