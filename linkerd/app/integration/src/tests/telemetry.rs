@@ -168,20 +168,22 @@ async fn metrics_endpoint_outbound_request_count() {
     let Fixture {
         client,
         metrics,
-        proxy: _proxy,
+        proxy,
         _profile,
         dst_tx: _dst_tx,
     } = Fixture::outbound().await;
 
+    let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
+    let expected = format!("request_total{{authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}}", srv_port);
     // prior to seeing any requests, request count should be empty.
-    assert!(!metrics.get("/metrics").await
-        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}"));
+    assert!(!metrics.get("/metrics").await.contains(&expected[..]));
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics").await, "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+    let expected = format!("request_total{{authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1", srv_port);
+    assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 }
 
 mod response_classification {
@@ -206,9 +208,16 @@ mod response_classification {
         direction: &str,
         tls: &str,
         no_tls_reason: Option<&str>,
+        port: Option<u16>,
     ) -> String {
+        let port = if let Some(port) = port {
+            format!(":{}", port)
+        } else {
+            String::new()
+        };
         format!(
-            "response_total{{authority=\"tele.test.svc.cluster.local\",direction=\"{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
+            "response_total{{authority=\"tele.test.svc.cluster.local{}\",direction=\"{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
+            port,
             direction,
             tls,
             if let Some(reason) = no_tls_reason {
@@ -278,7 +287,7 @@ mod response_classification {
                 // all previous requests are *not* incremented.
                 assert_eventually_contains!(
                     metrics.get("/metrics").await,
-                    &expected_metric(status, "inbound", "disabled", None)
+                    &expected_metric(status, "inbound", "disabled", None, None)
                 )
             }
         }
@@ -290,11 +299,11 @@ mod response_classification {
         let Fixture {
             client,
             metrics,
-            proxy: _proxy,
+            proxy,
             _profile,
             dst_tx: _dst_tx,
         } = Fixture::outbound_with_server(make_test_server().await).await;
-
+        let port = proxy.outbound_server.as_ref().unwrap().addr.port();
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client
                 .request(
@@ -316,7 +325,8 @@ mod response_classification {
                         status,
                         "outbound",
                         "no_identity",
-                        Some("not_provided_by_service_discovery")
+                        Some("not_provided_by_service_discovery"),
+                        Some(port)
                     )
                 )
             }
@@ -596,13 +606,17 @@ mod outbound_dst_labels {
             Fixture {
                 client,
                 metrics,
-                proxy: _proxy,
+                proxy,
                 _profile,
                 dst_tx,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
         let dst_tx = dst_tx.unwrap();
+        let auth = format!(
+            "labeled.test.svc.cluster.local:{}",
+            proxy.outbound_server.as_ref().unwrap().addr.port()
+        );
 
         {
             let mut alabels = HashMap::new();
@@ -614,12 +628,23 @@ mod outbound_dst_labels {
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        let expected = format!(
+            "response_latency_ms_count{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"}} 1",
+            auth
+        );
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+
+        let expected =             format!(
+            "request_total{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            auth
+        );
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+
+        let expected = format!(
+            "response_total{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"}} 1",
+            auth
+        );
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -760,7 +785,8 @@ async fn metrics_have_no_double_commas() {
     let outbound_srv = server::new().route("/hey", "hello").run().await;
 
     let ctrl = controller::new();
-    let _profile_in = ctrl.profile_tx_default(inbound_srv.addr, "tele.test.svc.cluster.local");
+    let _profile_in =
+        ctrl.profile_tx_default("tele.test.svc.cluster.local", "tele.test.svc.cluster.local");
     let _profile_out = ctrl.profile_tx_default(outbound_srv.addr, "tele.test.svc.cluster.local");
     let out_dest = ctrl.destination_tx(format!(
         "tele.test.svc.cluster.local:{}",
@@ -937,11 +963,13 @@ mod transport {
             _profile,
             dst_tx: _dst_tx,
         } = Fixture::outbound().await;
-
+        let expected = format!(
+            "tcp_open_total{{peer=\"dst\",authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            proxy.outbound_server.as_ref().unwrap().addr.port(),
+        );
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 
         // create a new client to force a new connection
         let client2 = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -949,8 +977,7 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client2.get("/").await, "hello");
         // server connection should be pooled
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
     }
 
     #[tokio::test]
