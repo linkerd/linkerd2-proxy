@@ -1465,7 +1465,11 @@ async fn http1_orig_proto_does_not_propagate_rst_stream() {
     let _profile = ctrl.profile_tx_default(srv.addr, host);
     let dst = ctrl.destination_tx(format!("{}:{}", host, srv.addr.port()));
     dst.send_h2_hinted(srv.addr);
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
     let addr = proxy.outbound;
 
     let client = client::http1(addr, host);
