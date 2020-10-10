@@ -29,7 +29,5 @@ features = ["discover"]
 
 [dev-dependencies]
 async-stream = "0.2"
-tower-test = "0.3"
-tokio-test = "0.2"
-tokio = { version = "0.2", features = ["macros"] }
+tokio = { version = "0.2", features = ["macros", "rt-core"] }
 tower = { version = "0.3", default-features = false, features = ["discover", "util"]}

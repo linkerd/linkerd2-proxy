@@ -771,13 +771,11 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-opencensus",
  "linkerd2-proxy-api",
- "quickcheck",
  "regex 1.3.9",
  "ring",
  "rustls",
  "tokio",
  "tokio-connect",
- "tokio-current-thread",
  "tokio-io",
  "tokio-rustls",
  "tonic",
@@ -840,7 +838,6 @@ dependencies = [
  "pin-project",
  "procinfo",
  "prost-types",
- "quickcheck",
  "rand 0.7.2",
  "regex 1.3.9",
  "serde_json",
@@ -882,7 +879,6 @@ dependencies = [
  "http 0.2.1",
  "indexmap",
  "linkerd2-app-core",
- "quickcheck",
  "tokio",
  "tower",
  "tracing",
@@ -932,7 +928,6 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-retry",
  "pin-project",
- "quickcheck",
  "tokio",
  "tower",
  "tracing",
@@ -1161,7 +1156,6 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-rustls",
- "tokio-test",
 ]
 
 [[package]]
@@ -1248,7 +1242,6 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-error",
  "pin-project",
- "tokio",
  "tower",
 ]
 
@@ -1264,9 +1257,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project",
  "tokio",
- "tokio-test",
  "tower",
- "tower-test",
  "tracing",
  "tracing-futures",
 ]
@@ -1281,7 +1272,6 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-core",
  "tokio",
- "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1338,11 +1328,9 @@ name = "linkerd2-proxy-resolve"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
- "indexmap",
  "linkerd2-error",
  "linkerd2-proxy-core",
  "pin-project",
- "tokio",
  "tower",
  "tracing",
 ]
@@ -1366,7 +1354,6 @@ dependencies = [
  "linkerd2-stack",
  "pin-project",
  "prost-types",
- "quickcheck",
  "rand 0.7.2",
  "tokio",
  "tonic",
@@ -2552,16 +2539,6 @@ source = "git+https://github.com/carllerche/tokio-connect#f7ad1ca437973d6e24037a
 dependencies = [
  "futures 0.1.26",
  "tokio-io",
-]
-
-[[package]]
-name = "tokio-current-thread"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16217cad7f1b840c5a97dfb3c43b0c871fef423a6e8d2118c604e843662a443"
-dependencies = [
- "futures 0.1.26",
- "tokio-executor",
 ]
 
 [[package]]

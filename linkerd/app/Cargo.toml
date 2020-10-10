@@ -39,11 +39,9 @@ http = "0.2"
 hyper = "0.13.7"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.14", features = ["arbitrary"] }
-quickcheck = { version = "0.9", default-features = false }
 ring = "0.16"
 rustls = "0.17"
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-io = "0.1.6"
-tokio-current-thread = "0.1.4"
 tokio-rustls = "0.13"
 webpki = "0.21"
