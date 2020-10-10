@@ -17,10 +17,10 @@ use linkerd2_app_core::{
 };
 use std::{net::SocketAddr, sync::Arc};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct FromMetadata;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HttpLogical {
     pub orig_dst: SocketAddr,
     pub version: http::Version,
@@ -47,7 +47,7 @@ pub struct TcpAccept {
     pub addr: SocketAddr,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TcpLogical {
     pub addr: SocketAddr,
     pub profile: Option<profiles::Receiver>,
@@ -112,6 +112,22 @@ impl Into<SocketAddr> for &'_ TcpLogical {
     }
 }
 
+impl std::fmt::Debug for TcpLogical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TcpLogical")
+            .field("addr", &self.addr)
+            .field(
+                "profile",
+                if self.profile.is_some() {
+                    &"Some(..)"
+                } else {
+                    &"None"
+                },
+            )
+            .finish()
+    }
+}
+
 // === impl TcpConcrete ===
 
 impl From<(Option<Addr>, TcpLogical)> for TcpConcrete {
@@ -173,6 +189,23 @@ impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
     fn from(target: &'t HttpLogical) -> Self {
         http::header::HeaderValue::from_str(&target.addr().to_string())
             .expect("addr must be a valid header")
+    }
+}
+
+impl std::fmt::Debug for HttpLogical {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpLogical")
+            .field("version", &self.version)
+            .field("orig_dst", &self.orig_dst)
+            .field(
+                "profile",
+                if self.profile.is_some() {
+                    &"Some(..)"
+                } else {
+                    &"None"
+                },
+            )
+            .finish()
     }
 }
 
