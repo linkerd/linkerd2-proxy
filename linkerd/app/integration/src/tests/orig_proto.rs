@@ -17,11 +17,15 @@ async fn outbound_http1() {
         .await;
 
     let ctrl = controller::new();
-    ctrl.profile_tx_default("disco.test.svc.cluster.local");
-    let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
+    ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+    let dst = ctrl.destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
     dst.send_h2_hinted(srv.addr);
 
-    let proxy = proxy::new().controller(ctrl.run().await).run().await;
+    let proxy = proxy::new()
+        .controller(ctrl.run().await)
+        .outbound(srv)
+        .run()
+        .await;
 
     let client = client::http1(proxy.outbound, "disco.test.svc.cluster.local");
 
@@ -34,7 +38,6 @@ async fn outbound_http1() {
 
     // Ensure panics are propagated.
     proxy.join_servers().await;
-    srv.join().await;
 }
 
 #[tokio::test]
@@ -54,7 +57,7 @@ async fn inbound_http1() {
         .await;
 
     let ctrl = controller::new();
-    ctrl.profile_tx_default("disco.test.svc.cluster.local");
+    ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
 
     let proxy = proxy::new()
         .controller(ctrl.run().await)

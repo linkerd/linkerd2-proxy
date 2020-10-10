@@ -15,7 +15,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::{util::ServiceExt, Service};
-use tracing::debug;
+use tracing::{debug, trace};
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
@@ -35,7 +35,7 @@ pub struct DetectHttp<F, H> {
 ///
 /// Otherwise, the `F` type forwarding service is used to handle the TCP
 /// connection.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AcceptHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
     target: T,
     new_tcp: F,
@@ -92,6 +92,7 @@ where
     H: NewService<(HttpVersion, T)>,
 {
     pub fn new(target: T, server: Server, new_http: H, new_tcp: F, drain: drain::Watch) -> Self {
+        tracing::trace!("new AcceptHttp");
         Self {
             target,
             server,
@@ -136,8 +137,10 @@ where
             Some(HttpVersion::Http1) => {
                 debug!("Handling as HTTP");
                 let http1 = if let Some(svc) = self.http1.clone() {
+                    trace!("HTTP service already exists");
                     svc
                 } else {
+                    trace!("Building new HTTP service");
                     let svc = self
                         .new_http
                         .new_service((HttpVersion::Http1, self.target.clone()));
@@ -167,8 +170,10 @@ where
             Some(HttpVersion::H2) => {
                 debug!("Handling as H2");
                 let h2 = if let Some(svc) = self.h2.clone() {
+                    trace!("H2 service already exists");
                     svc
                 } else {
+                    trace!("Building new H2 service");
                     let svc = self
                         .new_http
                         .new_service((HttpVersion::H2, self.target.clone()));
@@ -193,8 +198,10 @@ where
             None => {
                 debug!("Forwarding TCP");
                 let tcp = if let Some(svc) = self.tcp.clone() {
+                    trace!("TCP service already exists");
                     svc
                 } else {
+                    trace!("Building new TCP service");
                     let svc = self.new_tcp.new_service(self.target.clone());
                     self.tcp = Some(svc.clone());
                     svc

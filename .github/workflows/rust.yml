@@ -10,7 +10,7 @@ jobs:
   fmt:
     runs-on: ubuntu-18.04
     container:
-      image: docker://rust:1.44.1-buster
+      image: docker://rust:1.47.0-buster
     steps:
       - uses: actions/checkout@v1
       - run: rustup component add rustfmt
@@ -19,7 +19,7 @@ jobs:
   check:
     runs-on: ubuntu-18.04
     container:
-      image: docker://rust:1.44.1-buster
+      image: docker://rust:1.47.0-buster
     steps:
       - uses: actions/checkout@v1
       - run: make check

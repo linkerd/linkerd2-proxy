@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=rust:1.44.1-buster
+ARG BASE_IMAGE=rust:1.47.0-buster
 FROM $BASE_IMAGE
 WORKDIR /linkerd
 RUN apt-get update && \

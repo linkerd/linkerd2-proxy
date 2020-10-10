@@ -14,7 +14,7 @@ use linkerd2_app_core::{
     drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::{self, api_resolve::Metadata, core::resolve::Resolve, http, identity, tap, tcp},
+    proxy::{api_resolve::Metadata, core::resolve::Resolve, http, identity, tap, tcp},
     reconnect, retry,
     spans::SpanConverter,
     svc::{self},
@@ -84,7 +84,7 @@ impl Config {
         connect: C,
         resolve: R,
     ) -> impl svc::NewService<
-        endpoint::TcpLogical,
+        endpoint::TcpConcrete,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -101,7 +101,7 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        R: Resolve<SocketAddr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
+        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
@@ -117,9 +117,9 @@ impl Config {
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(svc::layer::mk(tcp::Forward::new))
             )
-            .check_make_service::<endpoint::TcpLogical, I>()
+            .check_make_service::<endpoint::TcpConcrete, I>()
             .into_new_service()
-            .check_new_service::<endpoint::TcpLogical, I>()
+            .check_new_service::<endpoint::TcpConcrete, I>()
     }
 
     pub fn build_http_endpoint<B, C>(
@@ -322,11 +322,7 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        R: Resolve<SocketAddr, Endpoint = proxy::api_resolve::Metadata, Error = Error>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
+        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
@@ -386,6 +382,8 @@ impl Config {
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
+            .push_map_target(endpoint::TcpConcrete::from)
+            .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
@@ -405,10 +403,11 @@ impl Config {
             endpoint::TcpLogical,
             transport::io::PrefixedIo<transport::metrics::SensorIo<I>>,
         >()
-        .push_on_response(transport::Prefix::layer(
+        .push_on_response(
+            svc::layers().push_spawn_buffer(buffer_capacity).push(transport::Prefix::layer(
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
-        ))
+        )))
         .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
         .into_inner();
 

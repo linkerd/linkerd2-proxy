@@ -151,65 +151,6 @@ async fn http2_rejects_tls_before_identity_is_certified() {
     generate_tls_reject_test! {client: client::http2_tls}
 }
 
-macro_rules! generate_outbound_tls_accept_not_cert_identity_test {
-    (server: $make_server:path, client: $make_client:path) => {
-        let _trace = trace_init();
-        let proxy_id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-        let app_id = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
-
-        let proxy_identity = identity::Identity::new("foo-ns1", proxy_id.to_string());
-
-        let (_tx, rx) = oneshot::channel();
-        let id_svc = controller::identity()
-            .certify_async(move |_| rx)
-            .run()
-            .await;
-
-        let app_identity = identity::Identity::new("bar-ns1", app_id.to_string());
-        let srv = $make_server(app_identity.server_config)
-            .route("/", "hello")
-            .run()
-            .await;
-
-        let proxy = proxy::new()
-            .outbound(srv)
-            .identity(id_svc)
-            .run_with_test_env(proxy_identity.env)
-            .await;
-
-        let client = $make_client(
-            proxy.outbound,
-            app_id,
-            client::TlsConfig::new(app_identity.client_config, app_id),
-        );
-
-        assert_eventually!(
-            client
-                .request(client.request_builder("/").method("GET"))
-                .await
-                .unwrap()
-                .status()
-                == http::StatusCode::OK
-        );
-    };
-}
-
-#[tokio::test]
-async fn http1_outbound_tls_works_before_identity_is_certified() {
-    generate_outbound_tls_accept_not_cert_identity_test! {
-        server: server::http1_tls,
-        client: client::http1_tls
-    }
-}
-
-#[tokio::test]
-async fn http2_outbound_tls_works_before_identity_is_certified() {
-    generate_outbound_tls_accept_not_cert_identity_test! {
-        server: server::http2_tls,
-        client: client::http2_tls
-    }
-}
-
 #[tokio::test]
 async fn ready() {
     let _trace = trace_init();
@@ -320,10 +261,15 @@ mod require_id_header {
                     .route("/", "hello")
                     .run()
                     .await;
-
+                let ctrl = controller::new();
+                let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+                let dst = ctrl
+                    .destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+                dst.send_addr(srv.addr);
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
                     .outbound(srv)
+                    .controller(ctrl.run().await)
                     .identity(proxy_identity.service().run().await)
                     .run_with_test_env(proxy_identity.env)
                     .await;
@@ -386,7 +332,9 @@ mod require_id_header {
 
                 // Add `srv` to discovery service
                 let ctrl = controller::new();
-                let dst = ctrl.destination_tx("disco.test.svc.cluster.local");
+                let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+                let dst = ctrl
+                    .destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
                 dst.send(controller::destination_add_tls(srv.addr, app_name));
 
                 // Make a proxy that has `proxy_identity` identity and no
@@ -453,10 +401,15 @@ mod require_id_header {
 
                 // Make a non-TLS server
                 let srv = $make_server().route("/", "hello").run().await;
-
+                let ctrl = controller::new();
+                let _profile = ctrl.profile_tx_default(srv.addr, "disco.test.svc.cluster.local");
+                let dst = ctrl
+                    .destination_tx(format!("disco.test.svc.cluster.local:{}", srv.addr.port()));
+                dst.send_addr(srv.addr);
                 // Make a proxy that has `proxy_identity` identity
                 let proxy = proxy::new()
                     .outbound(srv)
+                    .controller(ctrl.run().await)
                     .identity(proxy_identity.service().run().await)
                     .run_with_test_env(proxy_identity.env)
                     .await;

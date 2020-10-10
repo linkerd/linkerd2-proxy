@@ -30,10 +30,10 @@ pub type DstReceiver = mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>
 #[derive(Clone, Debug)]
 pub struct DstSender(mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
 
-pub type ProfileReceiver = mpsc::UnboundedReceiver<pb::DestinationProfile>;
+pub type ProfileReceiver = mpsc::UnboundedReceiver<Result<pb::DestinationProfile, grpc::Status>>;
 
 #[derive(Clone, Debug)]
-pub struct ProfileSender(mpsc::UnboundedSender<pb::DestinationProfile>);
+pub struct ProfileSender(mpsc::UnboundedSender<Result<pb::DestinationProfile, grpc::Status>>);
 
 #[derive(Clone, Debug, Default)]
 pub struct Controller {
@@ -71,12 +71,11 @@ impl Controller {
         ctrl
     }
 
-    pub fn destination_tx(&self, dest: &str) -> DstSender {
+    pub fn destination_tx(&self, dest: impl Into<String>) -> DstSender {
         let (tx, rx) = mpsc::unbounded_channel();
-        let path = if dest.contains(":") {
-            dest.to_owned()
-        } else {
-            format!("{}:80", dest)
+        let mut path = dest.into();
+        if !path.contains(":") {
+            path.push_str(":80");
         };
         let dst = pb::GetDestination {
             path,
@@ -89,17 +88,16 @@ impl Controller {
         DstSender(tx)
     }
 
-    pub fn destination_tx_err(&self, dest: &str, err: grpc::Code) -> DstSender {
+    pub fn destination_tx_err(&self, dest: impl Into<String>, err: grpc::Code) -> DstSender {
         let tx = self.destination_tx(dest);
         tx.send_err(grpc::Status::new(err, "unit test controller fake error"));
         tx
     }
 
-    pub fn destination_fail(&self, dest: &str, status: grpc::Status) {
-        let path = if dest.contains(":") {
-            dest.to_owned()
-        } else {
-            format!("{}:80", dest)
+    pub fn destination_fail(&self, dest: impl Into<String>, status: grpc::Status) {
+        let mut path = dest.into();
+        if !path.contains(":") {
+            path.push_str(":80");
         };
         let dst = pb::GetDestination {
             path,
@@ -127,18 +125,20 @@ impl Controller {
         .await
     }
 
-    pub fn profile_tx_default(&self, dest: &str) -> ProfileSender {
-        let tx = self.profile_tx(dest);
-        tx.send(pb::DestinationProfile::default());
+    pub fn profile_tx_default(&self, target: impl ToString, dest: &str) -> ProfileSender {
+        let tx = self.profile_tx(&target.to_string());
+        tx.send(pb::DestinationProfile {
+            fully_qualified_name: dest.to_owned(),
+            ..Default::default()
+        });
         tx
     }
 
-    pub fn profile_tx(&self, dest: &str) -> ProfileSender {
+    pub fn profile_tx(&self, dest: impl Into<String>) -> ProfileSender {
         let (tx, rx) = mpsc::unbounded_channel();
-        let path = if dest.contains(":") {
-            dest.to_owned()
-        } else {
-            format!("{}:80", dest)
+        let mut path = dest.into();
+        if !path.contains(":") {
+            path.push_str(":80");
         };
         let dst = pb::GetDestination {
             path,
@@ -208,7 +208,11 @@ impl DstSender {
 
 impl ProfileSender {
     pub fn send(&self, up: pb::DestinationProfile) {
-        self.0.send(up).expect("send profile update")
+        self.0.send(Ok(up)).expect("send profile update")
+    }
+
+    pub fn send_err(&self, err: grpc::Status) {
+        self.0.send(Err(err)).expect("send profile update")
     }
 }
 
@@ -220,16 +224,21 @@ impl pb::destination_server::Destination for Controller {
         &self,
         req: grpc::Request<pb::GetDestination>,
     ) -> Result<grpc::Response<Self::GetStream>, grpc::Status> {
+        let span = tracing::info_span!("Destination::get", req.path = &req.get_ref().path[..]);
+        let _e = span.enter();
+        tracing::debug!(request = ?req.get_ref(), "received");
+
         if let Ok(mut calls) = self.expect_dst_calls.lock() {
             if self.unordered {
                 let mut calls_next: VecDeque<Dst> = VecDeque::new();
                 if calls.is_empty() {
-                    tracing::warn!("exhausted request={:?}", req.get_ref());
+                    tracing::warn!("calls exhausted");
                 }
                 while let Some(call) = calls.pop_front() {
                     if let Dst::Call(dst, updates) = call {
+                        tracing::debug!(?dst, "checking");
                         if &dst == req.get_ref() {
-                            tracing::info!("found request={:?}", dst);
+                            tracing::info!(?dst, ?updates, "found request");
                             calls_next.extend(calls.drain(..));
                             *calls = calls_next;
                             return updates.map(grpc::Response::new);
@@ -239,18 +248,20 @@ impl pb::destination_server::Destination for Controller {
                     }
                 }
 
-                tracing::warn!("missed request={:?} remaining={:?}", req, calls_next.len());
+                tracing::warn!(remaining = calls_next.len(), "missed");
                 *calls = calls_next;
                 return Err(grpc_unexpected_request());
             }
 
             match calls.pop_front() {
                 Some(Dst::Call(dst, updates)) => {
+                    tracing::debug!(?dst, "checking next call");
                     if &dst == req.get_ref() {
-                        tracing::debug!(?dst, ?updates, "found request");
+                        tracing::info!(?dst, ?updates, "found request");
                         return updates.map(grpc::Response::new);
                     }
 
+                    tracing::warn!(?dst, ?updates, "request does not match");
                     let msg = format!(
                         "expected get call for {:?} but got get call for {:?}",
                         dst, req
@@ -275,12 +286,21 @@ impl pb::destination_server::Destination for Controller {
         &self,
         req: grpc::Request<pb::GetDestination>,
     ) -> Result<grpc::Response<Self::GetProfileStream>, grpc::Status> {
+        let span = tracing::info_span!(
+            "Destination::get_profile",
+            req.path = &req.get_ref().path[..]
+        );
+        let _e = span.enter();
+        tracing::debug!(request = ?req.get_ref(), "received");
         if let Ok(mut calls) = self.expect_profile_calls.lock() {
             if let Some((dst, profile)) = calls.pop_front() {
+                tracing::debug!(?dst, "checking next call");
                 if &dst == req.get_ref() {
-                    return Ok(grpc::Response::new(Box::pin(profile.map(Ok))));
+                    tracing::info!(?dst, ?profile, "found request");
+                    return Ok(grpc::Response::new(Box::pin(profile)));
                 }
 
+                tracing::warn!(?dst, ?profile, "request does not match");
                 calls.push_front((dst, profile));
                 return Err(grpc_unexpected_request());
             }
@@ -485,6 +505,7 @@ pub fn profile<I>(
     routes: I,
     retry_budget: Option<pb::RetryBudget>,
     dst_overrides: Vec<pb::WeightedDst>,
+    fqn: impl Into<String>,
 ) -> pb::DestinationProfile
 where
     I: IntoIterator,
@@ -495,6 +516,7 @@ where
         routes,
         retry_budget,
         dst_overrides,
+        fully_qualified_name: fqn.into(),
         ..Default::default()
     }
 }

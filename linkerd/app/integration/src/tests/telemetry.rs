@@ -10,12 +10,15 @@ struct Fixture {
     metrics: client::Client,
     proxy: proxy::Listening,
     _profile: controller::ProfileSender,
+    dst_tx: Option<controller::DstSender>,
 }
 
 struct TcpFixture {
     client: tcp::TcpClient,
     metrics: client::Client,
     proxy: proxy::Listening,
+    profile: controller::ProfileSender,
+    dst: controller::DstSender,
 }
 
 impl Fixture {
@@ -31,7 +34,7 @@ impl Fixture {
 
     async fn inbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default("tele.test.svc.cluster.local");
+        let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .inbound(srv)
@@ -45,14 +48,15 @@ impl Fixture {
             metrics,
             proxy,
             _profile,
+            dst_tx: None,
         }
     }
 
     async fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default("tele.test.svc.cluster.local");
-        ctrl.destination_tx("tele.test.svc.cluster.local")
-            .send_addr(srv.addr);
+        let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
+        let dest = ctrl.destination_tx(format!("tele.test.svc.cluster.local:{}", srv.addr.port()));
+        dest.send_addr(srv.addr);
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .outbound(srv)
@@ -66,6 +70,7 @@ impl Fixture {
             metrics,
             proxy,
             _profile,
+            dst_tx: Some(dest),
         }
     }
 }
@@ -89,10 +94,14 @@ impl TcpFixture {
     }
 
     async fn inbound() -> Self {
+        let srv = TcpFixture::server().await;
         let ctrl = controller::new();
+        let profile = ctrl.profile_tx_default(srv.addr, &srv.addr.to_string());
+        let dst = ctrl.destination_tx(srv.addr.to_string());
+        dst.send_addr(srv.addr);
         let proxy = proxy::new()
             .controller(ctrl.run().await)
-            .inbound(TcpFixture::server().await)
+            .inbound(srv)
             .run()
             .await;
 
@@ -102,14 +111,20 @@ impl TcpFixture {
             client,
             metrics,
             proxy,
+            profile,
+            dst,
         }
     }
 
     async fn outbound() -> Self {
+        let srv = TcpFixture::server().await;
         let ctrl = controller::new();
+        let profile = ctrl.profile_tx_default(srv.addr, &srv.addr.to_string());
+        let dst = ctrl.destination_tx(srv.addr.to_string());
+        dst.send_addr(srv.addr);
         let proxy = proxy::new()
             .controller(ctrl.run().await)
-            .outbound(TcpFixture::server().await)
+            .outbound(srv)
             .run()
             .await;
 
@@ -119,6 +134,8 @@ impl TcpFixture {
             client,
             metrics,
             proxy,
+            profile,
+            dst,
         }
     }
 }
@@ -131,6 +148,7 @@ async fn metrics_endpoint_inbound_request_count() {
         metrics,
         proxy: _proxy,
         _profile,
+        dst_tx: _dst_tx,
     } = Fixture::inbound().await;
 
     // prior to seeing any requests, request count should be empty.
@@ -150,19 +168,22 @@ async fn metrics_endpoint_outbound_request_count() {
     let Fixture {
         client,
         metrics,
-        proxy: _proxy,
+        proxy,
         _profile,
+        dst_tx: _dst_tx,
     } = Fixture::outbound().await;
 
+    let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
+    let expected = format!("request_total{{authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}}", srv_port);
     // prior to seeing any requests, request count should be empty.
-    assert!(!metrics.get("/metrics").await
-        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}"));
+    assert!(!metrics.get("/metrics").await.contains(&expected[..]));
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics").await, "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+    let expected = format!("request_total{{authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1", srv_port);
+    assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 }
 
 mod response_classification {
@@ -187,9 +208,16 @@ mod response_classification {
         direction: &str,
         tls: &str,
         no_tls_reason: Option<&str>,
+        port: Option<u16>,
     ) -> String {
+        let port = if let Some(port) = port {
+            format!(":{}", port)
+        } else {
+            String::new()
+        };
         format!(
-            "response_total{{authority=\"tele.test.svc.cluster.local\",direction=\"{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
+            "response_total{{authority=\"tele.test.svc.cluster.local{}\",direction=\"{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
+            port,
             direction,
             tls,
             if let Some(reason) = no_tls_reason {
@@ -239,6 +267,7 @@ mod response_classification {
             metrics,
             proxy: _proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::inbound_with_server(make_test_server().await).await;
 
         for (i, status) in STATUSES.iter().enumerate() {
@@ -258,7 +287,7 @@ mod response_classification {
                 // all previous requests are *not* incremented.
                 assert_eventually_contains!(
                     metrics.get("/metrics").await,
-                    &expected_metric(status, "inbound", "disabled", None)
+                    &expected_metric(status, "inbound", "disabled", None, None)
                 )
             }
         }
@@ -270,10 +299,11 @@ mod response_classification {
         let Fixture {
             client,
             metrics,
-            proxy: _proxy,
+            proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::outbound_with_server(make_test_server().await).await;
-
+        let port = proxy.outbound_server.as_ref().unwrap().addr.port();
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client
                 .request(
@@ -295,7 +325,8 @@ mod response_classification {
                         status,
                         "outbound",
                         "no_identity",
-                        Some("not_provided_by_service_discovery")
+                        Some("not_provided_by_service_discovery"),
+                        Some(port)
                     )
                 )
             }
@@ -324,6 +355,7 @@ async fn metrics_endpoint_inbound_response_latency() {
         metrics,
         proxy: _proxy,
         _profile,
+        dst_tx: _dst_tx,
     } = Fixture::inbound_with_server(srv).await;
 
     info!("client.get(/hey)");
@@ -405,6 +437,7 @@ async fn metrics_endpoint_outbound_response_latency() {
         metrics,
         proxy: _proxy,
         _profile,
+        dst_tx: _dst_tx,
     } = Fixture::outbound_with_server(srv).await;
 
     info!("client.get(/hey)");
@@ -471,15 +504,15 @@ mod outbound_dst_labels {
     use crate::*;
     use controller::DstSender;
 
-    async fn fixture(dest: &str) -> (Fixture, SocketAddr, DstSender) {
+    async fn fixture(dest: &str) -> (Fixture, SocketAddr) {
         info!("running test server");
         let srv = server::new().route("/", "hello").run().await;
 
         let addr = srv.addr;
 
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(dest);
-        let dst_tx = ctrl.destination_tx(dest);
+        let _profile = ctrl.profile_tx_default(addr, dest);
+        let dst_tx = ctrl.destination_tx(format!("{}:{}", dest, addr.port()));
 
         let proxy = proxy::new()
             .controller(ctrl.run().await)
@@ -495,9 +528,10 @@ mod outbound_dst_labels {
             metrics,
             proxy,
             _profile,
+            dst_tx: Some(dst_tx),
         };
 
-        (f, addr, dst_tx)
+        (f, addr)
     }
 
     #[tokio::test]
@@ -509,11 +543,11 @@ mod outbound_dst_labels {
                 metrics,
                 proxy: _proxy,
                 _profile,
+                dst_tx,
             },
             addr,
-            dst_tx,
         ) = fixture("labeled.test.svc.cluster.local").await;
-
+        let dst_tx = dst_tx.unwrap();
         {
             let mut labels = HashMap::new();
             labels.insert("addr_label1".to_owned(), "foo".to_owned());
@@ -541,10 +575,11 @@ mod outbound_dst_labels {
                 metrics,
                 proxy: _proxy,
                 _profile,
+                dst_tx,
             },
             addr,
-            dst_tx,
         ) = fixture("labeled.test.svc.cluster.local").await;
+        let dst_tx = dst_tx.unwrap();
 
         {
             let mut labels = HashMap::new();
@@ -571,12 +606,17 @@ mod outbound_dst_labels {
             Fixture {
                 client,
                 metrics,
-                proxy: _proxy,
+                proxy,
                 _profile,
+                dst_tx,
             },
             addr,
-            dst_tx,
         ) = fixture("labeled.test.svc.cluster.local").await;
+        let dst_tx = dst_tx.unwrap();
+        let auth = format!(
+            "labeled.test.svc.cluster.local:{}",
+            proxy.outbound_server.as_ref().unwrap().addr.port()
+        );
 
         {
             let mut alabels = HashMap::new();
@@ -588,12 +628,23 @@ mod outbound_dst_labels {
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        let expected = format!(
+            "response_latency_ms_count{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"}} 1",
+            auth
+        );
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+
+        let expected =             format!(
+            "request_total{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            auth
+        );
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+
+        let expected = format!(
+            "response_total{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"}} 1",
+            auth
+        );
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -612,11 +663,11 @@ mod outbound_dst_labels {
                 metrics,
                 proxy: _proxy,
                 _profile,
+                dst_tx,
             },
             addr,
-            dst_tx,
         ) = fixture("labeled.test.svc.cluster.local").await;
-
+        let dst_tx = dst_tx.unwrap();
         {
             let mut alabels = HashMap::new();
             alabels.insert("addr_label".to_owned(), "foo".to_owned());
@@ -676,11 +727,11 @@ mod outbound_dst_labels {
                 metrics,
                 proxy: _proxy,
                 _profile,
+                dst_tx,
             },
             addr,
-            dst_tx,
         ) = fixture("labeled.test.svc.cluster.local").await;
-
+        let dst_tx = dst_tx.unwrap();
         {
             let alabels = HashMap::new();
             let mut slabels = HashMap::new();
@@ -734,10 +785,19 @@ async fn metrics_have_no_double_commas() {
     let outbound_srv = server::new().route("/hey", "hello").run().await;
 
     let ctrl = controller::new();
-    let _profile_in = ctrl.profile_tx_default("tele.test.svc.cluster.local");
-    let _profile_out = ctrl.profile_tx_default("tele.test.svc.cluster.local");
-    ctrl.destination_tx("tele.test.svc.cluster.local")
-        .send_addr(outbound_srv.addr);
+    let _profile_in =
+        ctrl.profile_tx_default("tele.test.svc.cluster.local", "tele.test.svc.cluster.local");
+    let _profile_out = ctrl.profile_tx_default(outbound_srv.addr, "tele.test.svc.cluster.local");
+    let out_dest = ctrl.destination_tx(format!(
+        "tele.test.svc.cluster.local:{}",
+        outbound_srv.addr.port()
+    ));
+    out_dest.send_addr(outbound_srv.addr);
+    let in_dest = ctrl.destination_tx(format!(
+        "tele.test.svc.cluster.local:{}",
+        inbound_srv.addr.port()
+    ));
+    in_dest.send_addr(inbound_srv.addr);
     let proxy = proxy::new()
         .controller(ctrl.run().await)
         .inbound(inbound_srv)
@@ -771,6 +831,7 @@ async fn metrics_has_start_time() {
         metrics,
         proxy: _proxy,
         _profile,
+        dst_tx: _dst_tx,
         ..
     } = Fixture::inbound().await;
     let uptime_regex = regex::Regex::new(r"process_start_time_seconds \d+")
@@ -790,6 +851,7 @@ mod transport {
             metrics,
             proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::inbound().await;
 
         info!("client.get(/)");
@@ -830,6 +892,7 @@ mod transport {
             metrics,
             proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::inbound().await;
 
         info!("client.get(/)");
@@ -859,6 +922,7 @@ mod transport {
             metrics,
             proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::outbound().await;
 
         info!("client.get(/)");
@@ -897,12 +961,15 @@ mod transport {
             metrics,
             proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::outbound().await;
-
+        let expected = format!(
+            "tcp_open_total{{peer=\"dst\",authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            proxy.outbound_server.as_ref().unwrap().addr.port(),
+        );
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 
         // create a new client to force a new connection
         let client2 = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -910,8 +977,7 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client2.get("/").await, "hello");
         // server connection should be pooled
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
     }
 
     #[tokio::test]
@@ -921,6 +987,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::inbound().await;
 
         let tcp_client = client.connect().await;
@@ -998,6 +1066,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::inbound().await;
 
         let tcp_client = client.connect().await;
@@ -1041,6 +1111,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::inbound().await;
 
         let tcp_client = client.connect().await;
@@ -1080,6 +1152,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::inbound().await;
         let src_expected = format!(
             "tcp_write_bytes_total{{peer=\"src\",direction=\"inbound\",tls=\"disabled\"}} {}",
@@ -1108,6 +1182,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::inbound().await;
         let src_expected = format!(
             "tcp_read_bytes_total{{peer=\"src\",direction=\"inbound\",tls=\"disabled\"}} {}",
@@ -1136,6 +1212,8 @@ mod transport {
             client,
             metrics,
             proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::outbound().await;
 
         let tcp_client = client.connect().await;
@@ -1156,6 +1234,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::outbound().await;
 
         let tcp_client = client.connect().await;
@@ -1194,6 +1274,8 @@ mod transport {
             client,
             metrics,
             proxy: _proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::outbound().await;
 
         let tcp_client = client.connect().await;
@@ -1233,6 +1315,8 @@ mod transport {
             client,
             metrics,
             proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::outbound().await;
         let src_expected = format!(
             "tcp_write_bytes_total{{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
@@ -1262,7 +1346,10 @@ mod transport {
             client,
             metrics,
             proxy,
+            dst: _dst,
+            profile: _profile,
         } = TcpFixture::outbound().await;
+
         let src_expected = format!(
             "tcp_read_bytes_total{{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
             TcpFixture::HELLO_MSG.len()
@@ -1287,11 +1374,9 @@ mod transport {
     #[tokio::test]
     async fn outbound_tcp_open_connections() {
         let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-        } = TcpFixture::outbound().await;
+        let fixture = TcpFixture::outbound().await;
+        let client = fixture.client;
+        let metrics = fixture.metrics;
 
         let tcp_client = client.connect().await;
 
@@ -1330,6 +1415,7 @@ mod transport {
             metrics,
             proxy,
             _profile,
+            dst_tx: _dst_tx,
         } = Fixture::outbound().await;
 
         info!("client.get(/)");
@@ -1374,6 +1460,7 @@ async fn metrics_compression() {
         metrics,
         proxy: _proxy,
         _profile,
+        dst_tx: _dst_tx,
     } = Fixture::inbound().await;
 
     let do_scrape = |encoding: &str| {
