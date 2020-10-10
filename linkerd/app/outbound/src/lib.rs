@@ -43,7 +43,6 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
-    pub canonicalize_timeout: Duration,
     pub allow_discovery: IpMatch,
 }
 

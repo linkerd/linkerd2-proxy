@@ -26,7 +26,6 @@ fn profile() -> profiles::Receiver {
 fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())),
-        canonicalize_timeout: Duration::from_millis(100),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
                 bind: listen::Bind::new(SocketAddr::new(LOCALHOST.into(), 0), None)
