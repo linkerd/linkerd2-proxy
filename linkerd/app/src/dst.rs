@@ -1,12 +1,12 @@
 use linkerd2_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    profiles,
+    is_discovery_rejected, profiles,
     proxy::{api_resolve as api, identity, resolve::recover},
     transport::tls,
     ControlHttpMetrics, Error, Recover,
 };
-use tonic::{body::BoxBody, Code, Status};
+use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -20,15 +20,14 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::Client<control::Client<BoxBody>, BackoffUnlessInvalidArgument>,
+    pub profiles: profiles::Client<control::Client<BoxBody>, BackoffUnlessRejected>,
 
     /// Resolves endpoints.
-    pub resolve:
-        recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<control::Client<BoxBody>>>,
+    pub resolve: recover::Resolve<BackoffUnlessRejected, api::Resolve<control::Client<BoxBody>>>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct BackoffUnlessInvalidArgument(ExponentialBackoff);
+pub struct BackoffUnlessRejected(ExponentialBackoff);
 
 // === impl Config ===
 
@@ -40,7 +39,7 @@ impl Config {
         identity: tls::Conditional<identity::Local>,
     ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();
-        let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
+        let backoff = BackoffUnlessRejected(self.control.connect.backoff);
         let svc = self.control.build(dns, metrics, identity);
 
         Ok(Dst {
@@ -51,29 +50,14 @@ impl Config {
     }
 }
 
-// === impl BackoffUnlessInvalidArgument ===
+// === impl BackoffUnlessRejected ===
 
-impl Recover<Status> for BackoffUnlessInvalidArgument {
-    type Backoff = ExponentialBackoffStream;
-
-    fn recover(&self, status: Status) -> Result<Self::Backoff, Status> {
-        if status.code() == Code::InvalidArgument {
-            return Err(status);
-        }
-
-        tracing::trace!(%status, "Recovering");
-        Ok(self.0.stream())
-    }
-}
-
-impl Recover<Error> for BackoffUnlessInvalidArgument {
+impl Recover<Error> for BackoffUnlessRejected {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, error: Error) -> Result<Self::Backoff, Error> {
-        if let Some(status) = error.downcast_ref::<Status>() {
-            if status.code() == Code::InvalidArgument {
-                return Err(error);
-            }
+        if is_discovery_rejected(&*error) {
+            return Err(error);
         }
 
         tracing::trace!(%error, "Recovering");
