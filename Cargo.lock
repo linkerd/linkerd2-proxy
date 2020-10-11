@@ -2727,13 +2727,13 @@ dependencies = [
 [[package]]
 name = "tower-layer"
 version = "0.3.0"
-source = "git+https://github.com/tower-rs/tower?rev=ad348d8#ad348d8ee5106f21b87155d2a0e8e18b90bd6b73"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
 
 [[package]]
 name = "tower-layer"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
+source = "git+https://github.com/tower-rs/tower?rev=ad348d8#ad348d8ee5106f21b87155d2a0e8e18b90bd6b73"
 
 [[package]]
 name = "tower-make"
