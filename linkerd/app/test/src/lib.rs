@@ -19,7 +19,14 @@ pub use tokio_test::io;
 pub mod connect;
 pub mod resolver;
 
-pub fn resolver<T, E>() -> resolver::Resolver<T, E>
+pub fn resolver<T, E>() -> resolver::DstResolver<T, E>
+where
+    T: std::hash::Hash + Eq + fmt::Debug,
+{
+    resolver::Resolver::new()
+}
+
+pub fn profiles<T>() -> resolver::ProfileResolver<T>
 where
     T: std::hash::Hash + Eq + fmt::Debug,
 {

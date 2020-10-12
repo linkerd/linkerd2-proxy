@@ -1,5 +1,8 @@
 use futures::future;
-use linkerd2_app_core::Error;
+use linkerd2_app_core::{
+    profiles::{self, Profile},
+    Error,
+};
 pub use linkerd2_proxy_api_resolve::{Metadata, ProtocolHint};
 pub use linkerd2_proxy_core::resolve::{Resolve, Update};
 use std::collections::HashMap;
@@ -10,26 +13,31 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Resolver<T, E> {
     state: Arc<State<T, E>>,
 }
 
+pub type DstResolver<T, E> = Resolver<T, DstReceiver<E>>;
+pub type ProfileResolver<T> = Resolver<T, Option<profiles::Receiver>>;
+
 #[derive(Debug, Clone)]
-pub struct Sender<T>(mpsc::UnboundedSender<Result<Update<T>, Error>>);
+pub struct DstSender<T>(mpsc::UnboundedSender<Result<Update<T>, Error>>);
+
+pub struct ProfileSender(watch::Sender<Profile>);
 
 #[derive(Debug, Clone)]
 pub struct Handle<T, E>(Arc<State<T, E>>);
 
 #[derive(Debug)]
 struct State<T, E> {
-    endpoints: Mutex<HashMap<T, Rx<E>>>,
+    endpoints: Mutex<HashMap<T, E>>,
     only: AtomicBool,
 }
 
-type Rx<E> = mpsc::UnboundedReceiver<Result<Update<E>, Error>>;
+pub type DstReceiver<E> = mpsc::UnboundedReceiver<Result<Update<E>, Error>>;
 
 impl<T, E> Resolver<T, E>
 where
@@ -53,11 +61,25 @@ where
     pub fn handle(&self) -> Handle<T, E> {
         Handle(self.state.clone())
     }
+}
 
-    pub fn endpoint_tx(&self, endpoint: T) -> Sender<E> {
+impl<T, E> Clone for Resolver<T, E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+}
+// === destination resolver ===
+
+impl<T, E> DstResolver<T, E>
+where
+    T: Hash + Eq,
+{
+    pub fn endpoint_tx(&self, endpoint: T) -> DstSender<E> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.state.endpoints.lock().unwrap().insert(endpoint, rx);
-        Sender(tx)
+        DstSender(tx)
     }
 
     pub fn endpoint_exists(self, endpoint: T, addr: SocketAddr, meta: E) -> Self {
@@ -67,11 +89,11 @@ where
     }
 }
 
-impl<T, E> tower::Service<T> for Resolver<T, E>
+impl<T, E> tower::Service<T> for DstResolver<T, E>
 where
     T: Hash + Eq + std::fmt::Debug,
 {
-    type Response = Rx<E>;
+    type Response = DstReceiver<E>;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
     type Error = Error;
 
@@ -108,9 +130,64 @@ where
     }
 }
 
+// === profile resolver ===
+
+impl<T> ProfileResolver<T>
+where
+    T: Hash + Eq,
+{
+    pub fn profile_tx(&self, addr: T) -> ProfileSender {
+        let (tx, rx) = watch::channel(Profile::default());
+        self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
+        ProfileSender(tx)
+    }
+
+    pub fn no_profile(&self, addr: T) {
+        self.state.endpoints.lock().unwrap().insert(addr, None);
+    }
+}
+
+impl<T> tower::Service<T> for ProfileResolver<T>
+where
+    T: Hash + Eq + std::fmt::Debug,
+{
+    type Error = Error;
+    type Response = Option<profiles::Receiver>;
+    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, addr: T) -> Self::Future {
+        let span = tracing::trace_span!("mock_profile", ?addr);
+        let _e = span.enter();
+
+        let res = self
+            .state
+            .endpoints
+            .lock()
+            .unwrap()
+            .remove(&addr)
+            .map(|x| {
+                tracing::trace!("found endpoint for addr");
+                x
+            })
+            .unwrap_or_else(|| {
+                tracing::debug!(?addr, "no endpoint configured for");
+                // An unknown endpoint was resolved!
+                self.state
+                    .only
+                    .compare_and_swap(true, false, Ordering::Release);
+                None
+            });
+
+        future::ok(res)
+    }
+}
 // === impl Sender ===
 
-impl<E> Sender<E> {
+impl<E> DstSender<E> {
     pub fn update(&mut self, up: Update<E>) -> Result<(), ()> {
         self.0.send(Ok(up)).map_err(|_| ())
     }
