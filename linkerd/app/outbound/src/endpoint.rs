@@ -118,11 +118,14 @@ impl std::fmt::Debug for TcpLogical {
             .field("addr", &self.addr)
             .field(
                 "profile",
-                if self.profile.is_some() {
-                    &"Some(..)"
-                } else {
-                    &"None"
-                },
+                &format_args!(
+                    "{}",
+                    if self.profile.is_some() {
+                        "Some(..)"
+                    } else {
+                        "None"
+                    }
+                ),
             )
             .finish()
     }
@@ -199,11 +202,14 @@ impl std::fmt::Debug for HttpLogical {
             .field("orig_dst", &self.orig_dst)
             .field(
                 "profile",
-                if self.profile.is_some() {
-                    &"Some(..)"
-                } else {
-                    &"None"
-                },
+                &format_args!(
+                    "{}",
+                    if self.profile.is_some() {
+                        "Some(..)"
+                    } else {
+                        "None"
+                    }
+                ),
             )
             .finish()
     }
