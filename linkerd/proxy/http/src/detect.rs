@@ -92,7 +92,6 @@ where
     H: NewService<(HttpVersion, T)>,
 {
     pub fn new(target: T, server: Server, new_http: H, new_tcp: F, drain: drain::Watch) -> Self {
-        tracing::trace!("new AcceptHttp");
         Self {
             target,
             server,
