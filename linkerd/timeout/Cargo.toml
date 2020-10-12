@@ -27,3 +27,4 @@ features = [
 [dev-dependencies]
 tower-test = "0.3"
 tokio-test = "0.2"
+tokio = { version = "0.2", features = ["macros"] }

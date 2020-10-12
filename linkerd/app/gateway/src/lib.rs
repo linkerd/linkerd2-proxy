@@ -9,21 +9,26 @@ pub use self::config::Config;
 #[cfg(test)]
 mod test {
     use super::*;
-    use linkerd2_app_core::proxy::{http, identity};
-    use linkerd2_app_core::{dns, errors::HttpError, transport::tls, Error, NameAddr, Never};
-    use linkerd2_app_inbound::endpoint as inbound;
-    //use linkerd2_app_outbound::endpoint as outbound;
-    use std::{
-        convert::TryFrom,
-        net::{IpAddr, SocketAddr},
+    use linkerd2_app_core::{
+        dns,
+        errors::HttpError,
+        profiles,
+        proxy::{http, identity},
+        svc::NewService,
+        transport::tls,
+        Error, NameAddr, NameMatch, Never,
     };
-    use tokio_test::assert_ready_ok;
+    use linkerd2_app_inbound::endpoint as inbound;
+    use std::{convert::TryFrom, net::SocketAddr};
     use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;
 
     #[tokio::test]
     async fn gateway() {
-        assert!(Test::default().run().await.is_ok());
+        assert_eq!(
+            Test::default().run().await.unwrap().status(),
+            http::StatusCode::NO_CONTENT
+        );
     }
 
     #[tokio::test]
@@ -104,7 +109,7 @@ mod test {
         fn default() -> Self {
             Self {
                 suffix: "test.example.com",
-                dst_name: Some("dst:4321"),
+                dst_name: Some("dst.test.example.com:4321"),
                 peer_id: tls::PeerIdentity::Some(identity::Name::from(
                     dns::Name::try_from("client.id.test".as_bytes()).unwrap(),
                 )),
@@ -127,24 +132,23 @@ mod test {
                 http::Response<http::boxed::Payload>,
             >();
             let mut make_gateway = {
-                let resolve = service_fn(move |short: dns::Name| async move {
-                    let long = format!("{}.{}", short.without_trailing_dot(), suffix);
-                    Ok::<_, Never>((
-                        dns::Name::try_from(long.as_bytes()).unwrap(),
-                        IpAddr::from([127, 0, 0, 1]),
-                    ))
+                let profiles = service_fn(move |na: NameAddr| async move {
+                    let (mut tx, rx) = tokio::sync::watch::channel(profiles::Profile {
+                        name: Some(na.name().clone()),
+                        ..profiles::Profile::default()
+                    });
+                    tokio::spawn(async move { tx.closed().await });
+                    Ok::<_, Never>(Some(rx))
                 });
-                mock::Spawn::new(make::MakeGateway::new(
-                    resolve,
-                    service_fn(move |_: _| {
-                        let out = outbound.clone();
-                        async move { Ok::<_, Never>(out) }
-                    }),
+                let allow_discovery = NameMatch::new(Some(dns::Suffix::try_from(suffix).unwrap()));
+                Config { allow_discovery }.build(
+                    move |_: _| outbound.clone(),
+                    profiles,
+                    ([127, 0, 0, 1], 4140).into(),
                     tls::PeerIdentity::Some(identity::Name::from(
                         dns::Name::try_from("gateway.id.test".as_bytes()).unwrap(),
                     )),
-                    Some(dns::Suffix::try_from("test.example.com.").unwrap()),
-                ))
+                )
             };
 
             let socket_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
@@ -156,8 +160,7 @@ mod test {
                 http_version: http::Version::Http1,
                 tls_client_id: peer_id,
             };
-            assert_ready_ok!(make_gateway.poll_ready());
-            let gateway = make_gateway.call(target).await.unwrap();
+            let gateway = make_gateway.new_service(target);
 
             let bg = tokio::spawn(async move {
                 handle.allow(1);
@@ -181,7 +184,7 @@ mod test {
                 .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
                 .body(Default::default())
                 .unwrap();
-            let rsp = gateway.oneshot(req).await?;
+            let rsp = gateway.oneshot(req).await.map_err(Into::into)?;
             bg.await?;
             Ok(rsp)
         }

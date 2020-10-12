@@ -1,8 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 
-mod refine;
-
-pub use self::refine::{MakeRefine, Refine};
 pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use linkerd2_error::Error;
 use std::{fmt, net};
@@ -57,11 +54,6 @@ impl Resolver {
         opts.cache_size = 0;
         let dns = AsyncResolver::tokio(config, opts).expect("Resolver must be valid");
         Resolver { dns }
-    }
-
-    /// Creates a refining service.
-    pub fn into_make_refine(self) -> MakeRefine {
-        MakeRefine(self)
     }
 
     /// Resolves a name to a set of addresses, preferring SRV records to normal A

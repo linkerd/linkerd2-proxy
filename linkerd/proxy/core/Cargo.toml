@@ -11,7 +11,5 @@ Core interfaces needed to implement proxy components
 [dependencies]
 futures = "0.3"
 linkerd2-error = { path = "../../error" }
-tokio = { version = "0.2", features = ["rt-core"] }
 tower = { version = "0.3", default-features = false }
-tracing-futures = "0.2"
 pin-project = "0.4"

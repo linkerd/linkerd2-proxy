@@ -5,24 +5,24 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use self::allow_discovery::*;
-pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, LogicalPerRequest, TcpEndpoint};
+use self::allow_discovery::{AllowHttpResolve, AllowProfile, AllowTcpResolve};
+pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    dns, drain, errors, metric_labels,
+    drain, errors, metric_labels,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve, http, identity, tap, tcp},
-    reconnect, retry, router,
+    reconnect, retry,
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, AddrMatch, Conditional, Error, ProxyMetrics, StackMetrics, TraceContextLayer,
-    CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Conditional, Error, IpMatch, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
-use std::{collections::HashMap, net, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
@@ -43,8 +43,7 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub struct Config {
     pub proxy: ProxyConfig,
-    pub canonicalize_timeout: Duration,
-    pub allow_discovery: AddrMatch,
+    pub allow_discovery: IpMatch,
 }
 
 impl Config {
@@ -79,12 +78,12 @@ impl Config {
     }
 
     /// Constructs a TCP load balancer.
-    pub fn build_tcp_balance<C, E, I>(
+    pub fn build_tcp_balance<C, R, I>(
         &self,
         connect: C,
-        resolve: E,
+        resolve: R,
     ) -> impl svc::NewService<
-        endpoint::TcpLogical,
+        endpoint::TcpConcrete,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -101,67 +100,25 @@ impl Config {
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        E: Resolve<net::SocketAddr, Endpoint = Metadata, Error = Error>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
-        E::Future: Unpin + Send,
-        E::Resolution: Unpin + Send,
+        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
+        R::Future: Unpin + Send,
+        R::Resolution: Unpin + Send,
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
-        let watchdog = self.proxy.cache_max_idle_age * 2;
         svc::stack(connect)
             .push_make_thunk()
+            .check_make_service::<TcpEndpoint, ()>()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
-            .push(resolve::layer(AllowTcpResolve(self.allow_discovery.clone()), resolve.clone(), watchdog))
+            .push(resolve::layer(AllowTcpResolve, resolve, self.proxy.cache_max_idle_age * 2))
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
                     .push(svc::layer::mk(tcp::Forward::new))
             )
+            .check_make_service::<endpoint::TcpConcrete, I>()
             .into_new_service()
-            .check_new_service::<endpoint::TcpLogical, I>()
-    }
-
-    pub fn build_dns_refine(
-        &self,
-        dns_resolver: dns::Resolver,
-        metrics: &StackMetrics,
-    ) -> impl tower::Service<
-        dns::Name,
-        Response = (dns::Name, net::IpAddr),
-        Error = Error,
-        Future = impl Unpin + Send,
-    > + Unpin
-           + Clone
-           + Send {
-        // Caches DNS refinements from relative names to canonical names.
-        //
-        // For example, a client may send requests to `foo` or `foo.ns`; and the canonical form
-        // of these names is `foo.ns.svc.cluster.local
-        svc::stack(dns_resolver.into_make_refine())
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        // If the service has been unavailable for an extended time, eagerly
-                        // fail requests.
-                        .push_failfast(self.proxy.dispatch_timeout)
-                        // Shares the service, ensuring discovery errors are propagated.
-                        .push_spawn_buffer_with_idle_timeout(
-                            self.proxy.buffer_capacity,
-                            self.proxy.cache_max_idle_age,
-                        )
-                        .push(metrics.layer(stack_labels("refine"))),
-                ),
-            )
-            .into_make_service()
-            .spawn_buffer(self.proxy.buffer_capacity)
-            .instrument(|name: &dns::Name| info_span!("refine", %name))
-            // Obtains the service, advances the state of the resolution
-            .push(svc::make_response::Layer)
-            .into_inner()
+            .check_new_service::<endpoint::TcpConcrete, I>()
     }
 
     pub fn build_http_endpoint<B, C>(
@@ -233,17 +190,14 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<B, E, S, R, P>(
+    pub fn build_http_router<B, E, S, R>(
         &self,
         endpoint: E,
         resolve: R,
-        profiles_client: P,
         metrics: ProxyMetrics,
-    ) -> impl tower::Service<
+    ) -> impl svc::NewService<
         HttpLogical,
-        Error = Error,
-        Future = impl Unpin + Send,
-        Response = impl tower::Service<
+        Service = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
             Error = Error,
@@ -255,7 +209,7 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: svc::NewService<HttpEndpoint, Service = S> + Clone + Send + Sync + 'static,
+        E: svc::NewService<HttpEndpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -266,9 +220,6 @@ impl Config {
         R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        P: profiles::GetProfile<Addr> + Unpin + Clone + Send + 'static,
-        P::Future: Unpin + Send,
-        P::Error: Send,
     {
         let ProxyConfig {
             buffer_capacity,
@@ -276,11 +227,9 @@ impl Config {
             dispatch_timeout,
             ..
         } = self.proxy.clone();
-        let allow_discovery = self.allow_discovery.clone();
         let watchdog = cache_max_idle_age * 2;
 
-        // Builds a balancer for each concrete destination.
-        let concrete = svc::stack(endpoint)
+        svc::stack(endpoint)
             .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
@@ -294,39 +243,26 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
+                    .push(svc::layer::mk(svc::SpawnReady::new))
                     // If the balancer has been empty/unavailable for 10s, eagerly fail
                     // requests.
                     .push_failfast(dispatch_timeout)
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
+            .into_new_service()
+            .check_new_service::<HttpConcrete, http::Request<_>>()
             .instrument(|c: &HttpConcrete| match c.resolve.as_ref() {
                 None => info_span!("concrete"),
                 Some(addr) => info_span!("concrete", %addr),
             })
-            .into_new_service()
-            .check_new_service::<HttpConcrete, http::Request<_>>();
-
-        // For each logical target, performs service profile resolution and
-        // builds concrete services, over which requests are dispatched
-        // (according to a split).
-        //
-        // Each service is cached, holding the profile and endpoint resolutions
-        // and the load balancer with all of its endpoint connections.
-        //
-        // When no new requests have been dispatched for `cache_max_idle_age`,
-        // the cached service is dropped. In-flight streams will continue to be
-        // processed.
-        concrete
-            // Uses the split-provided target `Addr` to build a concrete target.
             .check_new_service::<HttpConcrete, http::Request<_>>()
-            .push_map_target(HttpConcrete::from)
-            .push_on_response(svc::layers().push(svc::layer::mk(svc::SpawnReady::new)))
             // The concrete address is only set when the profile could be
             // resolved. Endpoint resolution is skipped when there is no
             // concrete address.
-            .check_new_service::<(Option<Addr>, endpoint::Profile), http::Request<_>>()
+            .push_map_target(HttpConcrete::from)
+            .check_new_service::<(Option<Addr>, HttpLogical), http::Request<_>>()
             .push(profiles::split::layer())
-            .check_new_service::<endpoint::Profile, http::Request<_>>()
+            .check_new_service::<HttpLogical, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
             .push_on_response(
@@ -334,6 +270,7 @@ impl Config {
                     .push_failfast(dispatch_timeout)
                     .push_spawn_buffer(buffer_capacity),
             )
+            .check_new_service::<HttpLogical, http::Request<_>>()
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -349,39 +286,23 @@ impl Config {
                     .push_map_target(endpoint::route)
                     .into_inner(),
             ))
-            .check_new_service::<endpoint::Profile, http::Request<_>>()
-            .push_map_target(endpoint::Profile::from)
-            // Discovers the service profile from the control plane and passes
-            // it to inner stack to build the router and traffic split.
-            .push(profiles::discover::layer(
-                profiles_client,
-                AllowProfile(allow_discovery),
-            ))
             .check_new_service::<HttpLogical, http::Request<_>>()
-            .push_on_response(svc::layers().box_http_response())
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("logical"))),
-                ),
-            )
-            .instrument(|logical: &HttpLogical| info_span!("logical", dst = %logical.dst))
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .check_make_service::<HttpLogical, http::Request<_>>()
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
-            // Strips headers that may be set by this proxy.
-            .push_on_response(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-            .check_make_service_clone::<HttpLogical, http::Request<B>>()
+            .push_on_response(
+                svc::layers()
+                    // Strips headers that may be set by this proxy.
+                    .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
+                    .push(svc::layers().box_http_response()),
+            )
+            .instrument(|l: &HttpLogical| info_span!("logical", dst = %l.addr()))
+            .check_new_service::<HttpLogical, http::Request<_>>()
             .into_inner()
     }
 
-    pub fn build_server<E, R, C, H, S, I>(
+    pub fn build_server<R, P, C, H, S, I>(
         self,
-        refine: R,
-        resolve: E,
+        profiles: P,
+        resolve: R,
         tcp_connect: C,
         http_router: H,
         metrics: ProxyMetrics,
@@ -400,28 +321,13 @@ impl Config {
            + 'static
     where
         I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-        E: Resolve<net::SocketAddr, Endpoint = Metadata, Error = Error>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
-        E::Future: Unpin + Send,
-        E::Resolution: Unpin + Send,
-        R: tower::Service<dns::Name, Error = Error, Response = dns::Name>
-            + Unpin
-            + Clone
-            + Send
-            + 'static,
+        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
+        R::Resolution: Unpin + Send,
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        H: tower::Service<HttpLogical, Error = Error, Response = S>
-            + Unpin
-            + Send
-            + Clone
-            + 'static,
-        H::Future: Unpin + Send,
+        H: svc::NewService<HttpLogical, Service = S> + Unpin + Send + Clone + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -429,6 +335,9 @@ impl Config {
             > + Send
             + 'static,
         S::Future: Send,
+        P: profiles::GetProfile<SocketAddr> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
+        P::Error: Send,
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
@@ -440,52 +349,47 @@ impl Config {
             buffer_capacity,
             ..
         } = self.proxy;
-        let canonicalize_timeout = self.canonicalize_timeout;
-
-        let http_admit_request = svc::layers()
-            // Limits the number of in-flight requests.
-            .push_concurrency_limit(max_in_flight_requests)
-            // Eagerly fail requests when the proxy is out of capacity for a
-            // dispatch_timeout.
-            .push_failfast(dispatch_timeout)
-            .push(metrics.http_errors.clone())
-            // Synthesizes responses for proxy errors.
-            .push(errors::layer())
-            // Initiates OpenCensus tracing.
-            .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
-                SpanConverter::server(span_sink, trace_labels())
-            })));
 
         let http_server = svc::stack(http_router)
-            // Resolve the application-emitted destination via DNS to determine
-            // its canonical FQDN to use for routing.
-            .push(http::canonicalize::Layer::new(refine, canonicalize_timeout))
-            .check_make_service::<HttpLogical, http::Request<_>>()
-            .push_timeout(dispatch_timeout)
-            .push(router::Layer::new(LogicalPerRequest::from))
-            .check_new_service::<endpoint::HttpAccept, http::Request<_>>()
+            .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
             .push_on_response(
                 svc::layers()
-                    .push(http_admit_request)
-                    .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
+                    // Limits the number of in-flight requests.
+                    .push_concurrency_limit(max_in_flight_requests)
+                    // Eagerly fail requests when the proxy is out of capacity for a
+                    // dispatch_timeout.
+                    .push_failfast(dispatch_timeout)
+                    .push(metrics.http_errors.clone())
+                    // Synthesizes responses for proxy errors.
+                    .push(errors::layer())
+                    // Initiates OpenCensus tracing.
+                    .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
+                    .push(metrics.stack.layer(stack_labels("source")))
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity)
                     .box_http_response(),
             )
+            .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|a: &endpoint::HttpAccept| info_span!("http", v = %a.version))
-            .push_map_target(endpoint::HttpAccept::from)
+            .instrument(|l: &endpoint::HttpLogical| info_span!("http", v = %l.version))
+            .push_map_target(endpoint::HttpLogical::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
         let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
+            .push_map_target(endpoint::TcpConcrete::from)
+            .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()
                     .push_failfast(dispatch_timeout)
                     .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             )
-            .check_new::<endpoint::TcpLogical>()
             .instrument(|_: &_| info_span!("tcp"))
+            .check_new_service::<endpoint::TcpLogical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
             .into_inner();
 
         let http = svc::stack(http::DetectHttp::new(
@@ -494,22 +398,34 @@ impl Config {
             tcp_balance,
             drain.clone(),
         ))
-        .check_new::<endpoint::TcpLogical>()
-        .push_on_response(transport::Prefix::layer(
+        .check_new_service::<
+            endpoint::TcpLogical,
+            transport::io::PrefixedIo<transport::metrics::SensorIo<I>>,
+        >()
+        .push_on_response(
+            svc::layers().push_spawn_buffer(buffer_capacity).push(transport::Prefix::layer(
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
-        ))
+        )))
+        .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
         let tcp = svc::stack(tcp_connect)
             .push_make_thunk()
             .push_on_response(svc::layer::mk(tcp::Forward::new))
             .instrument(|_: &TcpEndpoint| debug_span!("tcp.forward"))
-            .check_new::<TcpEndpoint>()
+            .check_new_service::<TcpEndpoint, transport::metrics::SensorIo<I>>()
             .push_map_target(TcpEndpoint::from)
             .into_inner();
 
         svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
+            .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
+            .push_map_target(endpoint::TcpLogical::from)
+            .push(profiles::discover::layer(
+                profiles,
+                AllowProfile(self.allow_discovery),
+            ))
+            .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -517,8 +433,10 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
                 ),
             )
-            .push_map_target(endpoint::TcpLogical::from)
+            .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
+            .push_map_target(endpoint::TcpAccept::from)
             .push(metrics.transport.layer_accept(TransportLabels))
+            .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }
 }

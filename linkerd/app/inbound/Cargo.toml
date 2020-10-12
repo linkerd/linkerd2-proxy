@@ -25,6 +25,3 @@ default-features = false
 features = [
     "util",
 ]
-
-[dev-dependencies]
-quickcheck = { version = "0.9", default-features = false }

@@ -6,7 +6,6 @@ use linkerd2_identity as identity;
 
 pub mod add_header;
 pub mod balance;
-pub mod canonicalize;
 pub mod client;
 pub mod detect;
 mod glue;

@@ -1,12 +1,15 @@
-use crate::{endpoint::TcpLogical, Config};
+use crate::{
+    endpoint::{TcpConcrete, TcpLogical},
+    Config,
+};
 use futures::prelude::*;
 use ipnet::IpNet;
 use linkerd2_app_core::{
-    config, exp_backoff,
+    config, exp_backoff, profiles,
     proxy::http::h2,
     svc::NewService,
     transport::{listen, tls},
-    AddrMatch, Error,
+    Error, IpMatch,
 };
 use linkerd2_app_test as test_support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
@@ -14,10 +17,15 @@ use tower::ServiceExt;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
+fn profile() -> profiles::Receiver {
+    let (mut tx, rx) = tokio::sync::watch::channel(profiles::Profile::default());
+    tokio::spawn(async move { tx.closed().await });
+    rx
+}
+
 fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
-        allow_discovery: AddrMatch::new(None, Some(IpNet::from_str("0.0.0.0/0").unwrap())),
-        canonicalize_timeout: Duration::from_millis(100),
+        allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
                 bind: listen::Bind::new(SocketAddr::new(LOCALHOST.into(), 0), None)
@@ -54,7 +62,13 @@ async fn plaintext_tcp() {
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-    let logical = TcpLogical { addr: target_addr };
+    let concrete = TcpConcrete {
+        logical: TcpLogical {
+            addr: target_addr,
+            profile: Some(profile()),
+        },
+        resolve: Some(target_addr.into()),
+    };
 
     let cfg = default_config(target_addr);
 
@@ -71,7 +85,7 @@ async fn plaintext_tcp() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver().endpoint_exists(
-        target_addr,
+        concrete.resolve.clone().unwrap(),
         target_addr,
         test_support::resolver::Metadata::default(),
     );
@@ -79,7 +93,7 @@ async fn plaintext_tcp() {
     // Build the outbound TCP balancer stack.
     let forward = cfg
         .build_tcp_balance(connect, resolver)
-        .new_service(logical);
+        .new_service(concrete);
 
     forward
         .oneshot(client_io)
@@ -94,9 +108,22 @@ async fn tls_when_hinted() {
     let _trace = test_support::trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let tls_logical = TcpLogical { addr: tls_addr };
+    let tls_concrete = TcpConcrete {
+        logical: TcpLogical {
+            addr: tls_addr,
+            profile: Some(profile()),
+        },
+        resolve: Some(tls_addr.into()),
+    };
+
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
-    let plain_logical = TcpLogical { addr: plain_addr };
+    let plain_concrete = TcpConcrete {
+        logical: TcpLogical {
+            addr: plain_addr,
+            profile: Some(profile()),
+        },
+        resolve: Some(plain_addr.into()),
+    };
 
     let cfg = default_config(plain_addr);
     let id_name = linkerd2_identity::Name::from_hostname(
@@ -133,11 +160,11 @@ async fn tls_when_hinted() {
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver()
         .endpoint_exists(
-            plain_addr,
+            plain_concrete.resolve.clone().unwrap(),
             plain_addr,
             test_support::resolver::Metadata::default(),
         )
-        .endpoint_exists(tls_addr, tls_addr, tls_meta);
+        .endpoint_exists(tls_concrete.resolve.clone().unwrap(), tls_addr, tls_meta);
 
     // Configure mock IO for the "client".
     let mut client_io = test_support::io();
@@ -147,11 +174,11 @@ async fn tls_when_hinted() {
     let mut balance = cfg.build_tcp_balance(connect, resolver);
 
     let plain = balance
-        .new_service(plain_logical)
+        .new_service(plain_concrete)
         .oneshot(client_io.build())
         .err_into::<Error>();
     let tls = balance
-        .new_service(tls_logical)
+        .new_service(tls_concrete)
         .oneshot(client_io.build())
         .err_into::<Error>();
 

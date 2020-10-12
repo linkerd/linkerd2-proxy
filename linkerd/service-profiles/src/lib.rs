@@ -10,7 +10,7 @@ use std::{
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
-pub mod default;
+mod default;
 pub mod discover;
 pub mod http;
 pub mod split;

@@ -121,7 +121,6 @@ impl Config {
         let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
         let outbound_metrics = metrics.outbound;
 
-        let resolver = dns.resolver;
         let local_identity = identity.local();
         let tap_layer = tap.layer();
         let oc_span_sink = oc_collector.span_sink();
@@ -133,8 +132,6 @@ impl Config {
                 &outbound_metrics,
             );
 
-            let refine = outbound.build_dns_refine(resolver, &outbound_metrics.stack);
-
             let outbound_http_endpoint = outbound.build_http_endpoint(
                 outbound_connect.clone(),
                 tap_layer.clone(),
@@ -145,7 +142,6 @@ impl Config {
             let outbound_http = outbound.build_http_router(
                 outbound_http_endpoint,
                 dst.resolve.clone(),
-                dst.profiles.clone(),
                 outbound_metrics.clone(),
             );
 
@@ -156,9 +152,7 @@ impl Config {
                 serve::serve(
                     outbound_listen,
                     outbound.build_server(
-                        svc::stack(refine.clone())
-                            .push_map_response(|(n, _)| n)
-                            .into_inner(),
+                        dst.profiles.clone(),
                         dst.resolve,
                         outbound_connect,
                         outbound_http.clone(),
@@ -174,8 +168,9 @@ impl Config {
             drop(_enter);
 
             let http_gateway = gateway.build(
-                refine,
                 outbound_http,
+                dst.profiles.clone(),
+                outbound_addr,
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 

@@ -129,6 +129,12 @@ impl From<NameAddr> for Addr {
     }
 }
 
+impl From<(Name, u16)> for Addr {
+    fn from((n, p): (Name, u16)) -> Self {
+        Addr::Name((n, p).into())
+    }
+}
+
 impl AsRef<Self> for Addr {
     fn as_ref(&self) -> &Self {
         self
@@ -137,11 +143,13 @@ impl AsRef<Self> for Addr {
 
 // === impl NameAddr ===
 
-impl NameAddr {
-    pub fn new(name: Name, port: u16) -> Self {
+impl From<(Name, u16)> for NameAddr {
+    fn from((name, port): (Name, u16)) -> Self {
         NameAddr { name, port }
     }
+}
 
+impl NameAddr {
     pub fn from_str(hostport: &str) -> Result<Self, Error> {
         let mut parts = hostport.rsplitn(2, ':');
         let port = parts

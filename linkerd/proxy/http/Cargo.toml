@@ -20,15 +20,12 @@ httparse = "1.2"
 hyper = "0.13.7"
 hyper-balance = { path  = "../../../hyper-balance" }
 indexmap = "1.0"
-linkerd2-addr = { path  = "../../addr" }
-linkerd2-dns = { path  = "../../dns" }
 linkerd2-drain = { path  = "../../drain" }
 linkerd2-duplex = { path  = "../../duplex" }
 linkerd2-error = { path  = "../../error" }
 linkerd2-http-box = { path  = "../../http-box" }
 linkerd2-identity = { path  = "../../identity" }
 linkerd2-io = { path  = "../../io" }
-linkerd2-proxy-transport = { path  = "../transport" }
 linkerd2-stack = { path  = "../../stack" }
 linkerd2-timeout = { path  = "../../timeout" }
 rand = "0.7"

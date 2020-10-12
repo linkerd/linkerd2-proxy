@@ -14,7 +14,6 @@ This should probably be decomposed into smaller, decoupled crates.
 mock-orig-dst  = []
 
 [dependencies]
-async-trait = "0.1"
 async-stream = "0.2.1"
 bytes = "0.5"
 futures = "0.3"
@@ -26,7 +25,6 @@ linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-io = { path = "../../io" }
 linkerd2-metrics = { path = "../../metrics" }
-linkerd2-proxy-core = { path = "../core" }
 linkerd2-stack = { path = "../../stack" }
 ring = "0.16"
 rustls = "0.17"
