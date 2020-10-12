@@ -296,8 +296,14 @@ async fn multiple_orig_dsts() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver();
-    let mut dst = resolver.endpoint_tx(Addr::from_str("foo.ns1.svc.cluster.local:5550").unwrap());
-    dst.add(addrs.iter().map(|addr| (*addr, meta.clone())))
+    let mut dst1 = resolver.endpoint_tx(addrs[0].into());
+    dst1.add(addrs.iter().map(|addr| (*addr, meta.clone())))
+        .expect("still listening");
+    let mut dst2 = resolver.endpoint_tx(addrs[1].into());
+    dst2.add(addrs.iter().map(|addr| (*addr, meta.clone())))
+        .expect("still listening");
+    let mut dst3 = resolver.endpoint_tx(addrs[2].into());
+    dst3.add(addrs.iter().map(|addr| (*addr, meta.clone())))
         .expect("still listening");
     let resolve_state = resolver.handle();
 
