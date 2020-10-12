@@ -1,6 +1,6 @@
 use super::*;
 use crate::TcpEndpoint;
-use linkerd2_app_core::{drain, metrics, proxy::http, svc, transport::listen};
+use linkerd2_app_core::{drain, metrics, transport::listen};
 use std::time::Duration;
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
@@ -199,7 +199,7 @@ async fn resolutions_are_reused() {
         profiles,
         resolver,
         connect,
-        NoHttp,
+        test_support::service::no_http(),
         metrics.outbound,
         None,
         drained,
@@ -248,30 +248,4 @@ async fn resolutions_are_reused() {
         profile_state.only_configured(),
         "profiles were resolved multiple times for the same address!"
     );
-}
-
-#[derive(Clone)]
-pub struct NoHttp;
-
-impl svc::NewService<crate::HttpLogical> for NoHttp {
-    type Service = Self;
-    fn new_service(&mut self, logical: crate::HttpLogical) -> Self::Service {
-        panic!("the HTTP router should not be used in this test, but we tried to build a service for {:?}", logical)
-    }
-}
-
-impl svc::Service<http::Request<http::boxed::Payload>> for NoHttp {
-    type Response = http::Response<http::boxed::Payload>;
-    type Error = Error;
-    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
-    fn poll_ready(
-        &mut self,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        panic!("http services should not be used in this test!")
-    }
-
-    fn call(&mut self, _: http::Request<http::boxed::Payload>) -> Self::Future {
-        panic!("http services should not be used in this test!")
-    }
 }

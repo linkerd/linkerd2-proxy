@@ -18,6 +18,7 @@ pub use tokio_test::io;
 
 pub mod connect;
 pub mod resolver;
+pub mod service;
 
 pub fn resolver<T, E>() -> resolver::DstResolver<T, E>
 where
