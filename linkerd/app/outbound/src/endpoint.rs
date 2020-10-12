@@ -12,7 +12,7 @@ use linkerd2_app_core::{
         resolve::map_endpoint::MapEndpoint,
         tap,
     },
-    transport::{listen, tls},
+    transport::{self, listen, tls},
     Addr, Conditional,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -80,6 +80,14 @@ impl From<listen::Addrs> for TcpAccept {
 impl Into<Addr> for &'_ TcpAccept {
     fn into(self) -> Addr {
         self.addr.into()
+    }
+}
+
+impl Into<transport::labels::Key> for &'_ TcpAccept {
+    fn into(self) -> transport::labels::Key {
+        const NO_TLS: tls::Conditional<identity::Name> =
+            Conditional::None(tls::ReasonForNoPeerName::Loopback);
+        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS.into())
     }
 }
 
@@ -355,14 +363,20 @@ impl CanOverrideAuthority for HttpEndpoint {
     }
 }
 
-impl Into<EndpointLabels> for HttpEndpoint {
+impl Into<transport::labels::Key> for &'_ HttpEndpoint {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::Connect(self.into())
+    }
+}
+
+impl Into<EndpointLabels> for &'_ HttpEndpoint {
     fn into(self) -> EndpointLabels {
         use linkerd2_app_core::metric_labels::Direction;
         EndpointLabels {
-            authority: Some(self.concrete.logical.addr().to_http_authority()),
             direction: Direction::Out,
+            authority: Some(self.concrete.logical.addr().to_http_authority()),
             tls_id: TlsStatus::server(self.identity.clone()),
-            labels: prefix_labels("dst", self.metadata.labels().into_iter()),
+            labels: prefix_labels("dst", self.metadata.labels().iter()),
         }
     }
 }
@@ -401,6 +415,12 @@ impl Into<SocketAddr> for &'_ TcpEndpoint {
 impl tls::HasPeerIdentity for TcpEndpoint {
     fn peer_identity(&self) -> tls::PeerIdentity {
         self.identity.clone()
+    }
+}
+
+impl Into<transport::labels::Key> for &'_ TcpEndpoint {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::Connect(self.clone().into())
     }
 }
 

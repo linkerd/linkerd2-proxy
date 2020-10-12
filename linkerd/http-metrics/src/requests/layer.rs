@@ -162,7 +162,7 @@ where
 
 impl<T, M, K, C> NewService<T> for MakeSvc<M, K, C>
 where
-    T: Clone + Debug + Into<K>,
+    for<'t> &'t T: Into<K>,
     K: Hash + Eq,
     M: NewService<T>,
     C: ClassifyResponse + Default + Send + Sync + 'static,
@@ -174,7 +174,7 @@ where
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
                 r.by_target
-                    .entry(target.clone().into())
+                    .entry((&target).into())
                     .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
                     .clone(),
             ),
@@ -193,7 +193,7 @@ where
 
 impl<T, M, K, C> tower::Service<T> for MakeSvc<M, K, C>
 where
-    T: Clone + Debug + Into<K>,
+    for<'t> &'t T: Into<K>,
     K: Hash + Eq,
     M: tower::Service<T>,
     C: ClassifyResponse + Default + Send + Sync + 'static,
@@ -211,7 +211,7 @@ where
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
                 r.by_target
-                    .entry(target.clone().into())
+                    .entry((&target).into())
                     .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
                     .clone(),
             ),

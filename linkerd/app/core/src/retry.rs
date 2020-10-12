@@ -56,7 +56,7 @@ impl<C> linkerd2_retry::NewPolicy<Route> for NewRetry<C> {
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
         let retries = route.route.retries().cloned()?;
 
-        let metrics = self.metrics.get_handle(route.clone());
+        let metrics = self.metrics.get_handle(route);
         Some(Retry {
             metrics,
             budget: retries.budget().clone(),

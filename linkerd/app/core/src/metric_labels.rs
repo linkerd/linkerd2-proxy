@@ -50,11 +50,11 @@ struct Authority<'a>(&'a http::uri::Authority);
 
 // === impl CtlLabels ===
 
-impl From<control::ControlAddr> for ControlLabels {
-    fn from(c: control::ControlAddr) -> Self {
+impl From<&'_ control::ControlAddr> for ControlLabels {
+    fn from(c: &'_ control::ControlAddr) -> Self {
         ControlLabels {
             addr: c.addr.clone(),
-            tls_status: c.identity.map(|id| TlsId::ServerId(id)).into(),
+            tls_status: c.identity.clone().map(|id| TlsId::ServerId(id)).into(),
         }
     }
 }
@@ -70,12 +70,12 @@ impl FmtLabels for ControlLabels {
 
 // === impl RouteLabels ===
 
-impl From<dst::Route> for RouteLabels {
-    fn from(r: dst::Route) -> Self {
+impl From<&'_ dst::Route> for RouteLabels {
+    fn from(r: &'_ dst::Route) -> Self {
         Self {
-            target: r.target,
+            target: r.target.clone(),
             direction: r.direction,
-            labels: prefix_labels("rt", r.route.labels().as_ref().into_iter()),
+            labels: prefix_labels("rt", r.route.labels().iter()),
         }
     }
 }

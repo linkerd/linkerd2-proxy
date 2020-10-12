@@ -4,11 +4,17 @@ use linkerd2_app_core::{
     http_request_l5d_override_dst_addr, metric_labels, profiles,
     proxy::{http, identity, tap},
     router, stack_tracing,
-    transport::{listen, tls},
+    transport::{self, listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::{convert::TryInto, net::SocketAddr, sync::Arc};
 use tracing::debug;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TcpAccept {
+    pub target_addr: SocketAddr,
+    pub peer_id: tls::PeerIdentity,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
@@ -37,11 +43,43 @@ pub struct TcpEndpoint {
 
 #[derive(Clone, Debug)]
 pub struct RequestTarget {
-    accept: tls::accept::Meta,
+    accept: TcpAccept,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct ProfileTarget;
+
+// === impl TcpAccept ===
+
+impl From<listen::Addrs> for TcpAccept {
+    fn from(tcp: listen::Addrs) -> Self {
+        Self {
+            target_addr: tcp.target_addr(),
+            peer_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped.into()),
+        }
+    }
+}
+
+impl From<tls::accept::Meta> for TcpAccept {
+    fn from(tls: tls::accept::Meta) -> Self {
+        Self {
+            target_addr: tls.addrs.target_addr(),
+            peer_id: tls.peer_identity,
+        }
+    }
+}
+
+impl Into<SocketAddr> for &'_ TcpAccept {
+    fn into(self) -> SocketAddr {
+        self.target_addr
+    }
+}
+
+impl Into<transport::labels::Key> for &'_ TcpAccept {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::accept(transport::labels::Direction::In, self.peer_id.clone())
+    }
+}
 
 // === impl HttpEndpoint ===
 
@@ -78,20 +116,23 @@ impl tls::HasPeerIdentity for HttpEndpoint {
     }
 }
 
-// === TcpEndpoint ===
-
-impl From<listen::Addrs> for TcpEndpoint {
-    fn from(addrs: listen::Addrs) -> Self {
-        Self {
-            port: addrs.target_addr().port(),
-        }
+impl Into<transport::labels::Key> for &'_ HttpEndpoint {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::Connect(transport::labels::EndpointLabels {
+            direction: transport::labels::Direction::In,
+            authority: None,
+            labels: None,
+            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
+        })
     }
 }
 
-impl From<tls::accept::Meta> for TcpEndpoint {
-    fn from(meta: tls::accept::Meta) -> Self {
+// === TcpEndpoint ===
+
+impl From<TcpAccept> for TcpEndpoint {
+    fn from(tcp: TcpAccept) -> Self {
         Self {
-            port: meta.addrs.target_addr().port(),
+            port: tcp.target_addr.port(),
         }
     }
 }
@@ -111,6 +152,17 @@ impl Into<SocketAddr> for &'_ TcpEndpoint {
 impl tls::HasPeerIdentity for TcpEndpoint {
     fn peer_identity(&self) -> tls::PeerIdentity {
         Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+    }
+}
+
+impl Into<transport::labels::Key> for &'_ TcpEndpoint {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::Connect(transport::labels::EndpointLabels {
+            direction: transport::labels::Direction::In,
+            authority: None,
+            labels: None,
+            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
+        })
     }
 }
 
@@ -146,13 +198,20 @@ impl tls::HasPeerIdentity for Target {
     }
 }
 
-impl Into<metric_labels::EndpointLabels> for Target {
+impl Into<transport::labels::Key> for &'_ Target {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::Connect(self.into())
+    }
+}
+
+impl Into<metric_labels::EndpointLabels> for &'_ Target {
     fn into(self) -> metric_labels::EndpointLabels {
         metric_labels::EndpointLabels {
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
             direction: metric_labels::Direction::In,
             tls_id: self
                 .tls_client_id
+                .clone()
                 .map(metric_labels::TlsId::ClientId)
                 .into(),
             labels: None,
@@ -230,8 +289,8 @@ impl stack_tracing::GetSpan<()> for Target {
 
 // === impl RequestTarget ===
 
-impl From<tls::accept::Meta> for RequestTarget {
-    fn from(accept: tls::accept::Meta) -> Self {
+impl From<TcpAccept> for RequestTarget {
+    fn from(accept: TcpAccept) -> Self {
         Self { accept }
     }
 }
@@ -261,12 +320,12 @@ impl<A> router::Recognize<http::Request<A>> for RequestTarget {
             })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
-            .unwrap_or_else(|| self.accept.addrs.target_addr().into());
+            .unwrap_or_else(|| self.accept.target_addr.into());
 
         Target {
             dst,
-            socket_addr: self.accept.addrs.target_addr(),
-            tls_client_id: self.accept.peer_identity.clone(),
+            socket_addr: self.accept.target_addr,
+            tls_client_id: self.accept.peer_id.clone(),
             http_version: req
                 .version()
                 .try_into()

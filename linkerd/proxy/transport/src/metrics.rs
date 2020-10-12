@@ -32,12 +32,6 @@ pub fn new<K: Eq + Hash + FmtLabels>() -> (Registry<K>, Report<K>) {
     (Registry(inner.clone()), Report(inner))
 }
 
-pub trait TransportLabels<T> {
-    type Labels: Hash + Eq + FmtLabels;
-
-    fn transport_labels(&self, transport: &T) -> Self::Labels;
-}
-
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
 #[derive(Clone, Debug, Default)]
 pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
@@ -46,14 +40,12 @@ pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
 #[derive(Debug)]
-pub struct ConnectLayer<L, K: Eq + Hash + FmtLabels> {
-    label: L,
+pub struct ConnectLayer<K: Eq + Hash + FmtLabels> {
     registry: Arc<Mutex<Inner<K>>>,
 }
 
 #[derive(Debug)]
-pub struct MakeAccept<L, K: Eq + Hash + FmtLabels, M> {
-    label: L,
+pub struct MakeAccept<K: Eq + Hash + FmtLabels, M> {
     inner: M,
     registry: Arc<Mutex<Inner<K>>>,
 }
@@ -65,8 +57,7 @@ pub struct Accept<A> {
 }
 
 #[derive(Debug)]
-pub struct Connect<L, K: Eq + Hash + FmtLabels, M> {
-    label: L,
+pub struct Connect<K: Eq + Hash + FmtLabels, M> {
     inner: M,
     registry: Arc<Mutex<Inner<K>>>,
 }
@@ -188,42 +179,37 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
 // ===== impl Registry =====
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
-    pub fn layer_connect<L>(&self, label: L) -> ConnectLayer<L, K> {
-        ConnectLayer::new(label, self.0.clone())
+    pub fn layer_connect(&self) -> ConnectLayer<K> {
+        ConnectLayer::new(self.0.clone())
     }
 
-    pub fn layer_accept<L: Clone, M>(
-        &self,
-        label: L,
-    ) -> impl layer::Layer<M, Service = MakeAccept<L, K, M>> + Clone {
+    pub fn layer_accept<M>(&self) -> impl layer::Layer<M, Service = MakeAccept<K, M>> + Clone {
         let registry = self.0.clone();
         layer::mk(move |inner| MakeAccept {
             inner,
-            label: label.clone(),
             registry: registry.clone(),
         })
     }
 }
 
-impl<L, K: Eq + Hash + FmtLabels> ConnectLayer<L, K> {
-    fn new(label: L, registry: Arc<Mutex<Inner<K>>>) -> Self {
-        Self { label, registry }
+impl<K: Eq + Hash + FmtLabels> ConnectLayer<K> {
+    fn new(registry: Arc<Mutex<Inner<K>>>) -> Self {
+        Self { registry }
     }
 }
 
-impl<L: Clone, K: Eq + Hash + FmtLabels> Clone for ConnectLayer<L, K> {
+impl<K: Eq + Hash + FmtLabels> Clone for ConnectLayer<K> {
     fn clone(&self) -> Self {
-        Self::new(self.label.clone(), self.registry.clone())
+        Self::new(self.registry.clone())
     }
 }
 
-impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<L, K> {
-    type Service = Connect<L, K, M>;
+impl<K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<K> {
+    type Service = Connect<K, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         Connect {
             inner,
-            label: self.label.clone(),
             registry: self.registry.clone(),
         }
     }
@@ -231,30 +217,29 @@ impl<L: Clone, K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLa
 
 // === impl Accept ===
 
-impl<L, K, M> Clone for MakeAccept<L, K, M>
+impl<K, M> Clone for MakeAccept<K, M>
 where
-    L: Clone,
     K: Eq + Hash + FmtLabels,
     M: Clone,
 {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            label: self.label.clone(),
             registry: self.registry.clone(),
         }
     }
 }
 
-impl<L, T, M> NewService<T> for MakeAccept<L, L::Labels, M>
+impl<T, K, M> NewService<T> for MakeAccept<K, M>
 where
-    L: TransportLabels<T>,
+    for<'t> &'t T: Into<K>,
+    K: Eq + Hash + FmtLabels,
     M: NewService<T>,
 {
     type Service = Accept<M::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let labels = self.label.transport_labels(&target);
+        let labels = (&target).into();
         let metrics = self
             .registry
             .lock()
@@ -287,24 +272,23 @@ where
 
 // === impl Connect ===
 
-impl<L, K, M> Clone for Connect<L, K, M>
+impl<K, M> Clone for Connect<K, M>
 where
-    L: Clone,
     K: Eq + Hash + FmtLabels,
     M: Clone,
 {
     fn clone(&self) -> Self {
         Connect {
             inner: self.inner.clone(),
-            label: self.label.clone(),
             registry: self.registry.clone(),
         }
     }
 }
 
-impl<L, T, M> tower::Service<T> for Connect<L, L::Labels, M>
+impl<K, T, M> tower::Service<T> for Connect<K, M>
 where
-    L: TransportLabels<T>,
+    for<'t> &'t T: Into<K>,
+    K: Eq + Hash + FmtLabels,
     M: tower::make::MakeConnection<T>,
 {
     type Response = SensorIo<M::Connection>;
@@ -316,7 +300,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let labels = self.label.transport_labels(&target);
+        let labels = (&target).into();
         let metrics = self
             .registry
             .lock()
