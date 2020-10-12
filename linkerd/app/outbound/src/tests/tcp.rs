@@ -1,6 +1,6 @@
 use super::*;
 use crate::TcpEndpoint;
-use linkerd2_app_core::{drain, metrics, transport::listen};
+use linkerd2_app_core::{drain, metrics, transport::listen, Addr};
 use std::time::Duration;
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
@@ -141,14 +141,6 @@ async fn resolutions_are_reused() {
     let _trace = test_support::trace_init();
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let concrete = TcpConcrete {
-        logical: TcpLogical {
-            addr,
-            profile: Some(profile()),
-        },
-        resolve: Some(addr.into()),
-    };
-
     let cfg = default_config(addr);
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
@@ -180,8 +172,7 @@ async fn resolutions_are_reused() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver =
-        test_support::resolver().endpoint_exists(concrete.resolve.clone().unwrap(), addr, meta);
+    let resolver = test_support::resolver().endpoint_exists(Addr::from(addr), addr, meta);
     let resolve_state = resolver.handle();
 
     let profiles = test_support::profiles();
@@ -238,6 +229,129 @@ async fn resolutions_are_reused() {
             panic!("task {} panicked: {:?}", i, e);
         }
     }
+    assert!(resolve_state.is_empty());
+    assert!(
+        resolve_state.only_configured(),
+        "destinations were resolved multiple times for the same address!"
+    );
+    assert!(profile_state.is_empty());
+    assert!(
+        profile_state.only_configured(),
+        "profiles were resolved multiple times for the same address!"
+    );
+}
+
+#[tokio::test]
+async fn multiple_orig_dsts() {
+    let _trace = test_support::trace_init();
+
+    let addrs = &[
+        SocketAddr::new([10, 0, 170, 42].into(), 5550),
+        SocketAddr::new([10, 0, 170, 68].into(), 5550),
+        SocketAddr::new([10, 0, 106, 66].into(), 5550),
+    ];
+
+    let cfg = default_config(addrs[0]);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+
+    // Build a mock "connector" that returns the upstream "server" IO
+    let mut connect = test_support::connect();
+    for &addr in addrs {
+        let id_name = id_name.clone();
+        connect = connect.endpoint_fn(addr, move |endpoint: TcpEndpoint| {
+            tracing::info!(?addr, ?endpoint, "connecting");
+            assert_eq!(
+                endpoint.peer_identity(),
+                tls::Conditional::Some(id_name.clone())
+            );
+            let io = test_support::io()
+                .write(b"hello")
+                .read(b"world")
+                .read_error(std::io::ErrorKind::ConnectionReset.into())
+                .build();
+            Ok(io)
+        });
+    }
+    let profiles = test_support::profile::resolver();
+    for &addr in addrs {
+        profiles.profile(
+            addr,
+            test_support::profile::with_name("foo.ns1.svc.cluster.local"),
+        );
+    }
+
+    let profile_state = profiles.handle();
+
+    let meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    // Configure the mock destination resolver to just give us a single endpoint
+    // for the target, which always exists and has no metadata.
+    let resolver = test_support::resolver();
+    let mut dst = resolver.endpoint_tx(Addr::from_str("foo.ns1.svc.cluster.local:5550").unwrap());
+    dst.add(addrs.iter().map(|addr| (*addr, meta.clone())))
+        .expect("still listening");
+    let resolve_state = resolver.handle();
+
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (_drain, drained) = drain::channel();
+
+    // Configure mock IO for the "client".
+    let mut client_io = test_support::io();
+    client_io.read(b"hello\r\n").write(b"world");
+
+    // Build the outbound server
+    let mut server = cfg.build_server(
+        profiles,
+        resolver,
+        connect,
+        test_support::service::no_http(),
+        metrics.outbound,
+        None,
+        drained,
+    );
+
+    let conns = addrs
+        .iter()
+        .map(|&addr| {
+            let addrs = listen::Addrs::new(
+                ([127, 0, 0, 1], 4140).into(),
+                ([127, 0, 0, 1], 666).into(),
+                Some(addr),
+            );
+            let svc = server.new_service(addrs);
+            let io = client_io.build();
+            tokio::spawn(
+                async move {
+                    let res = svc.oneshot(io).err_into::<Error>().await;
+                    if let Err(err) = res {
+                        if let Some(err) = err.downcast_ref::<std::io::Error>() {
+                            // did the pretend server hang up, or did something
+                            // actually unexpected happen?
+                            assert_eq!(err.kind(), std::io::ErrorKind::ConnectionReset);
+                        } else {
+                            panic!("connection failed unexpectedly: {}", err)
+                        }
+                    }
+                }
+                .instrument(tracing::trace_span!("conn", %addr)),
+            )
+            .err_into::<Error>()
+        })
+        .collect::<Vec<_>>();
+
+    if let Err(e) = futures::future::try_join_all(conns).await {
+        panic!("connection panicked: {:?}", e);
+    }
+
     assert!(resolve_state.is_empty());
     assert!(
         resolve_state.only_configured(),

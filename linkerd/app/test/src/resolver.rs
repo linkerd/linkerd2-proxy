@@ -34,6 +34,8 @@ pub struct Handle<T, E>(Arc<State<T, E>>);
 #[derive(Debug)]
 struct State<T, E> {
     endpoints: Mutex<HashMap<T, E>>,
+    // Keep unused_senders open if they're not going to be used.
+    unused_senders: Mutex<Vec<Box<dyn std::any::Any + Send + Sync + 'static>>>,
     only: AtomicBool,
 }
 
@@ -47,6 +49,7 @@ where
         Self {
             state: Arc::new(State {
                 endpoints: Mutex::new(HashMap::new()),
+                unused_senders: Mutex::new(Vec::new()),
                 only: AtomicBool::new(true),
             }),
         }
@@ -142,8 +145,16 @@ where
         ProfileSender(tx)
     }
 
-    pub fn no_profile(&self, addr: T) {
+    pub fn profile(&self, addr: T, profile: Profile) -> &Self {
+        let (tx, rx) = watch::channel(profile);
+        self.state.unused_senders.lock().unwrap().push(Box::new(tx));
+        self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
+        self
+    }
+
+    pub fn no_profile(&self, addr: T) -> &Self {
         self.state.endpoints.lock().unwrap().insert(addr, None);
+        self
     }
 }
 

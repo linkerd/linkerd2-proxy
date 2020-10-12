@@ -17,6 +17,7 @@ use std::fmt;
 pub use tokio_test::io;
 
 pub mod connect;
+pub mod profile;
 pub mod resolver;
 pub mod service;
 
@@ -31,7 +32,7 @@ pub fn profiles<T>() -> resolver::ProfileResolver<T>
 where
     T: std::hash::Hash + Eq + fmt::Debug,
 {
-    resolver::Resolver::new()
+    profile::resolver()
 }
 
 pub fn connect<E: fmt::Debug>() -> connect::Connect<E> {
