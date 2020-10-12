@@ -19,7 +19,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Conditional, Error, IpMatch, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
+    Addr, Error, IpMatch, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
     DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
@@ -72,7 +72,7 @@ impl Config {
             .push(tls::client::ConnectLayer::new(local_identity))
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
-            .push(metrics.transport.layer_connect(TransportLabels))
+            .push(metrics.transport.layer_connect())
             .push_request_filter(prevent_loop.into())
             .into_inner()
     }
@@ -434,8 +434,8 @@ impl Config {
                 ),
             )
             .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
+            .push(metrics.transport.layer_accept())
             .push_map_target(endpoint::TcpAccept::from)
-            .push(metrics.transport.layer_accept(TransportLabels))
             .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }
@@ -443,35 +443,6 @@ impl Config {
 
 fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
     metric_labels::StackLabels::outbound(name)
-}
-
-#[derive(Copy, Clone, Debug)]
-struct TransportLabels;
-
-impl transport::metrics::TransportLabels<HttpEndpoint> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, endpoint: &HttpEndpoint) -> Self::Labels {
-        transport::labels::Key::Connect(endpoint.clone().into())
-    }
-}
-
-impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, endpoint: &TcpEndpoint) -> Self::Labels {
-        transport::labels::Key::Connect(endpoint.clone().into())
-    }
-}
-
-impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
-        const NO_TLS: tls::Conditional<identity::Name> =
-            Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS.into())
-    }
 }
 
 pub fn trace_labels() -> HashMap<String, String> {

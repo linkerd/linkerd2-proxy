@@ -1,5 +1,6 @@
+use crate::endpoint::TcpAccept;
 use indexmap::IndexSet;
-use linkerd2_app_core::{svc::stack::FilterRequest, transport::tls, Error};
+use linkerd2_app_core::{svc::stack::FilterRequest, Error};
 use std::sync::Arc;
 
 /// A connection policy that drops
@@ -19,15 +20,15 @@ impl<T: IntoIterator<Item = u16>> From<T> for RequireIdentityForPorts {
     }
 }
 
-impl FilterRequest<tls::accept::Meta> for RequireIdentityForPorts {
-    type Request = tls::accept::Meta;
+impl FilterRequest<TcpAccept> for RequireIdentityForPorts {
+    type Request = TcpAccept;
 
-    fn filter(&self, meta: tls::accept::Meta) -> Result<tls::accept::Meta, Error> {
-        let port = meta.addrs.target_addr().port();
+    fn filter(&self, meta: TcpAccept) -> Result<TcpAccept, Error> {
+        let port = meta.target_addr.port();
         let id_required = self.ports.contains(&port);
 
-        tracing::debug!(%port, peer.id = ?meta.peer_identity, %id_required);
-        if id_required && meta.peer_identity.is_none() {
+        tracing::debug!(%port, peer.id = ?meta.peer_id, %id_required);
+        if id_required && meta.peer_id.is_none() {
             return Err(IdentityRequired(()).into());
         }
 

@@ -6,7 +6,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use self::allow_discovery::AllowProfile;
-pub use self::endpoint::{HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpEndpoint};
+pub use self::endpoint::{
+    HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpAccept, TcpEndpoint,
+};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use futures::future;
@@ -134,7 +136,7 @@ impl Config {
             .push_map_response(io::BoxedIo::new) // Ensures the transport propagates shutdown properly.
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
-            .push(metrics.transport.layer_connect(TransportLabels))
+            .push(metrics.transport.layer_connect())
             .push_request_filter(prevent_loop)
             .into_inner()
     }
@@ -288,7 +290,7 @@ impl Config {
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> impl svc::NewService<
-        tls::accept::Meta,
+        TcpAccept,
         Service = impl tower::Service<
             I,
             Response = (),
@@ -351,7 +353,7 @@ impl Config {
             .push(router::Layer::new(RequestTarget::from))
             // Used by tap.
             .push_http_insert_target()
-            .check_new_service::<tls::accept::Meta, http::Request<_>>()
+            .check_new_service::<TcpAccept, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .push_on_response(
                 svc::layers()
@@ -361,9 +363,9 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .push_map_target(|(_, accept): (http::Version, tls::accept::Meta)| accept)
-            .instrument(|(v, _): &(http::Version, tls::accept::Meta)| info_span!("http", %v))
-            .check_new_service::<(http::Version, tls::accept::Meta), http::Request<_>>()
+            .push_map_target(|(_, accept): (http::Version, TcpAccept)| accept)
+            .instrument(|(v, _): &(http::Version, TcpAccept)| info_span!("http", %v))
+            .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
         svc::stack(http::DetectHttp::new(
@@ -401,7 +403,7 @@ impl Config {
     > + Send
            + 'static
     where
-        D: svc::NewService<tls::accept::Meta, Service = A> + Unpin + Clone + Send + Sync + 'static,
+        D: svc::NewService<TcpAccept, Service = A> + Unpin + Clone + Send + Sync + 'static,
         A: tower::Service<SensorIo<io::BoxedIo>, Response = ()> + Unpin + Send + 'static,
         A::Error: Into<Error>,
         A::Future: Send,
@@ -421,7 +423,8 @@ impl Config {
             skip_detect,
             svc::stack(detect)
                 .push_request_filter(require_identity)
-                .push(metrics.transport.layer_accept(TransportLabels))
+                .push(metrics.transport.layer_accept())
+                .push_map_target(TcpAccept::from)
                 .push(tls::DetectTls::layer(
                     identity.clone(),
                     detect_protocol_timeout,
@@ -429,59 +432,9 @@ impl Config {
                 .into_inner(),
             svc::stack(tcp_forward)
                 .push_map_target(TcpEndpoint::from)
-                .push(metrics.transport.layer_accept(TransportLabels))
+                .push(metrics.transport.layer_accept())
+                .push_map_target(TcpAccept::from)
                 .into_inner(),
-        )
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct TransportLabels;
-
-impl transport::metrics::TransportLabels<HttpEndpoint> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, _: &HttpEndpoint) -> Self::Labels {
-        transport::labels::Key::Connect(transport::labels::EndpointLabels {
-            direction: transport::labels::Direction::In,
-            authority: None,
-            labels: None,
-            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
-        })
-    }
-}
-
-impl transport::metrics::TransportLabels<TcpEndpoint> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, _: &TcpEndpoint) -> Self::Labels {
-        transport::labels::Key::Connect(transport::labels::EndpointLabels {
-            direction: transport::labels::Direction::In,
-            authority: None,
-            labels: None,
-            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
-        })
-    }
-}
-
-impl transport::metrics::TransportLabels<listen::Addrs> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, _: &listen::Addrs) -> Self::Labels {
-        transport::labels::Key::accept(
-            transport::labels::Direction::In,
-            tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
-        )
-    }
-}
-
-impl transport::metrics::TransportLabels<tls::accept::Meta> for TransportLabels {
-    type Labels = transport::labels::Key;
-
-    fn transport_labels(&self, target: &tls::accept::Meta) -> Self::Labels {
-        transport::labels::Key::accept(
-            transport::labels::Direction::In,
-            target.peer_identity.clone(),
         )
     }
 }
