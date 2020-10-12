@@ -5,7 +5,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use self::allow_discovery::{AllowHttpResolve, AllowProfile, AllowTcpResolve};
+use self::allow_discovery::{AllowProfile, AllowResolve};
 pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
 use futures::future;
 use linkerd2_app_core::{
@@ -110,7 +110,7 @@ impl Config {
             .check_make_service::<TcpEndpoint, ()>()
             .instrument(|t: &TcpEndpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
             .check_make_service::<TcpEndpoint, ()>()
-            .push(resolve::layer(AllowTcpResolve, resolve, self.proxy.cache_max_idle_age * 2))
+            .push(resolve::layer(AllowResolve, resolve, self.proxy.cache_max_idle_age * 2))
             .push_on_response(
                 svc::layers()
                     .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
@@ -144,17 +144,6 @@ impl Config {
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
     {
-        // Registers the stack with Tap, Metrics, and OpenCensus tracing
-        // export.
-        let observability = svc::layers()
-            .push(tap_layer.clone())
-            .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            .push_on_response(TraceContextLayer::new(
-                span_sink
-                    .clone()
-                    .map(|sink| SpanConverter::client(sink, trace_labels())),
-            ));
-
         // Checks the headers to validate that a client-specified required
         // identity matches the configured identity.
         let identity_headers = svc::layers()
@@ -178,7 +167,13 @@ impl Config {
                 }
             }))
             .check_new::<HttpEndpoint>()
-            .push(observability.clone())
+            .push(tap_layer.clone())
+            .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            .push_on_response(TraceContextLayer::new(
+                span_sink
+                    .clone()
+                    .map(|sink| SpanConverter::client(sink, trace_labels())),
+            ))
             .push(identity_headers.clone())
             .push(http::override_authority::Layer::new(vec![
                 ::http::header::HOST.as_str(),
@@ -238,7 +233,7 @@ impl Config {
                     .box_http_request(),
             )
             .check_new_service::<HttpEndpoint, http::Request<_>>()
-            .push(resolve::layer(AllowHttpResolve, resolve, watchdog))
+            .push(resolve::layer(AllowResolve, resolve, watchdog))
             .check_service::<HttpConcrete>()
             .push_on_response(
                 svc::layers()
@@ -374,7 +369,7 @@ impl Config {
             )
             .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|l: &endpoint::HttpLogical| info_span!("http", v = %l.version))
+            .instrument(|l: &endpoint::HttpLogical| info_span!("http", v = %l.protocol))
             .push_map_target(endpoint::HttpLogical::from)
             .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
             .into_inner();
@@ -416,6 +411,7 @@ impl Config {
             .instrument(|_: &TcpEndpoint| debug_span!("tcp.forward"))
             .check_new_service::<TcpEndpoint, transport::metrics::SensorIo<I>>()
             .push_map_target(TcpEndpoint::from)
+            .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
             .into_inner();
 
         svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
@@ -425,7 +421,7 @@ impl Config {
                 profiles,
                 AllowProfile(self.allow_discovery),
             ))
-            .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
+            .check_new_service::<endpoint::Accept, transport::metrics::SensorIo<I>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -433,9 +429,9 @@ impl Config {
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
                 ),
             )
-            .check_new_service::<endpoint::TcpAccept, transport::metrics::SensorIo<I>>()
+            .check_new_service::<endpoint::Accept, transport::metrics::SensorIo<I>>()
             .push(metrics.transport.layer_accept())
-            .push_map_target(endpoint::TcpAccept::from)
+            .push_map_target(endpoint::Accept::from)
             .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }
