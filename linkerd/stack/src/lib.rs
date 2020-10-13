@@ -32,3 +32,4 @@ pub use self::request_filter::{FilterRequest, RequestFilter};
 pub use self::result::ResultService;
 pub use self::switch::{MakeSwitch, Switch};
 pub use self::switch_ready::{NewSwitchReady, SwitchReady};
+pub use tower::util::Either;

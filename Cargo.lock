@@ -1539,6 +1539,7 @@ dependencies = [
  "hex",
  "http 0.2.1",
  "linkerd2-error",
+ "linkerd2-stack",
  "pin-project",
  "rand 0.7.2",
  "tokio",

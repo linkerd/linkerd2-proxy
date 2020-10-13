@@ -19,8 +19,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Error, IpMatch, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Error, IpMatch, ProxyMetrics, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
@@ -169,7 +169,7 @@ impl Config {
             .check_new::<HttpEndpoint>()
             .push(tap_layer.clone())
             .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            .push_on_response(TraceContextLayer::new(
+            .push_on_response(TraceContext::layer(
                 span_sink
                     .clone()
                     .map(|sink| SpanConverter::client(sink, trace_labels())),
@@ -359,7 +359,7 @@ impl Config {
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
                     // Initiates OpenCensus tracing.
-                    .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                    .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
                     .push(metrics.stack.layer(stack_labels("source")))

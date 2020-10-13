@@ -23,7 +23,7 @@ pub use linkerd2_router as router;
 pub use linkerd2_service_profiles as profiles;
 pub use linkerd2_stack_metrics as stack_metrics;
 pub use linkerd2_stack_tracing as stack_tracing;
-pub use linkerd2_trace_context::TraceContextLayer;
+pub use linkerd2_trace_context::TraceContext;
 
 mod addr_match;
 pub mod admin;
