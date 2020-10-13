@@ -1,6 +1,6 @@
 use super::*;
 use crate::TcpEndpoint;
-use linkerd2_app_core::{drain, metrics, transport::listen, Addr};
+use linkerd2_app_core::{drain, metrics, svc, transport::listen, Addr};
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -8,6 +8,7 @@ use std::{
     },
     time::Duration,
 };
+use test_support::{connect::Connect, resolver};
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
 
@@ -181,50 +182,17 @@ async fn resolutions_are_reused() {
     let resolver = test_support::resolver().endpoint_exists(Addr::from(addr), addr, meta);
     let resolve_state = resolver.handle();
 
-    let profiles = test_support::profiles();
-    let _profile = profiles.profile_tx(addr);
+    let profiles = test_support::profiles().profile(addr, Default::default());
     let profile_state = profiles.handle();
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (_drain, drained) = drain::channel();
-
-    // Configure mock IO for the "client".
-    let mut client_io = test_support::io();
-    client_io.read(b"hello\r\n").write(b"world");
 
     // Build the outbound server
-    let mut server = cfg.build_server(
-        profiles,
-        resolver,
-        connect,
-        test_support::service::no_http(),
-        metrics.outbound,
-        None,
-        drained,
-    );
+    let mut server = build_server(cfg, profiles, resolver, connect);
 
     let conns = (0..10)
-        .map(|i| {
-            let endpoints = listen::Addrs::new(
-                ([127, 0, 0, 1], 4140).into(),
-                ([127, 0, 0, 1], 666 + i).into(),
-                Some(addr),
-            );
-            let svc = server.new_service(endpoints);
-            let io = client_io.build();
+        .map(|number| {
             tokio::spawn(
-                async move {
-                    let res = svc.oneshot(io).err_into::<Error>().await;
-                    if let Err(err) = res {
-                        if let Some(err) = err.downcast_ref::<std::io::Error>() {
-                            // did the pretend server hang up, or did something
-                            // actually unexpected happen?
-                            assert_eq!(err.kind(), std::io::ErrorKind::ConnectionReset);
-                        } else {
-                            panic!("connection failed unexpectedly: {}", err)
-                        }
-                    }
-                }
-                .instrument(tracing::trace_span!("conn", number = i)),
+                hello_world_client(addr, &mut server)
+                    .instrument(tracing::trace_span!("conn", number)),
             )
             .err_into::<Error>()
         })
@@ -293,9 +261,8 @@ async fn load_balances() {
             Ok(io)
         });
     }
-    let profiles = test_support::profile::resolver();
-    profiles.profile(svc_addr, Default::default());
 
+    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
     let profile_state = profiles.handle();
 
     let meta = test_support::resolver::Metadata::new(
@@ -312,47 +279,14 @@ async fn load_balances() {
         .expect("still listening");
     let resolve_state = resolver.handle();
 
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (_drain, drained) = drain::channel();
-
-    // Configure mock IO for the "client".
-    let mut client_io = test_support::io();
-    client_io.read(b"hello\r\n").write(b"world");
-
     // Build the outbound server
-    let mut server = cfg.build_server(
-        profiles,
-        resolver,
-        connect,
-        test_support::service::no_http(),
-        metrics.outbound,
-        None,
-        drained,
-    );
+    let mut server = build_server(cfg, profiles, resolver, connect);
 
     let conns = (0..10)
         .map(|i| {
-            let endpoints = listen::Addrs::new(
-                ([127, 0, 0, 1], 4140).into(),
-                ([127, 0, 0, 1], 666).into(),
-                Some(svc_addr),
-            );
-            let svc = server.new_service(endpoints);
-            let io = client_io.build();
             tokio::spawn(
-                async move {
-                    let res = svc.oneshot(io).err_into::<Error>().await;
-                    if let Err(err) = res {
-                        if let Some(err) = err.downcast_ref::<std::io::Error>() {
-                            // did the pretend server hang up, or did something
-                            // actually unexpected happen?
-                            assert_eq!(err.kind(), std::io::ErrorKind::ConnectionReset);
-                        } else {
-                            panic!("connection failed unexpectedly: {}", err)
-                        }
-                    }
-                }
-                .instrument(tracing::info_span!("conn", i)),
+                hello_world_client(svc_addr, &mut server)
+                    .instrument(tracing::info_span!("conn", i)),
             )
             .err_into::<Error>()
         })
@@ -378,4 +312,78 @@ async fn load_balances() {
         profile_state.only_configured(),
         "profiles were resolved multiple times for the same address!"
     );
+}
+
+fn build_server<I>(
+    cfg: Config,
+    profiles: resolver::Profiles<SocketAddr>,
+    resolver: resolver::Dst<Addr, resolver::Metadata>,
+    connect: Connect<TcpEndpoint>,
+) -> impl svc::NewService<
+    listen::Addrs,
+    Service = impl tower::Service<
+        I,
+        Response = (),
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+    > + Send
+                  + 'static,
+> + Send
+       + 'static
+where
+    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+{
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (_, drain) = drain::channel();
+    cfg.build_server(
+        profiles,
+        resolver,
+        connect,
+        test_support::service::no_http(),
+        metrics.outbound,
+        None,
+        drain,
+    )
+}
+
+fn hello_world_client<N, S>(
+    orig_dst: SocketAddr,
+    new_svc: &mut N,
+) -> impl Future<Output = ()> + Send
+where
+    N: svc::NewService<listen::Addrs, Service = S> + Send + 'static,
+    S: svc::Service<test_support::io::Mock, Response = ()> + Send + 'static,
+    S::Error: Into<Error>,
+    S::Future: Send + 'static,
+{
+    let span = tracing::info_span!("hello_world_client", %orig_dst);
+    let svc = {
+        let _e = span.enter();
+        let addrs = listen::Addrs::new(
+            ([127, 0, 0, 1], 4140).into(),
+            ([127, 0, 0, 1], 666).into(),
+            Some(orig_dst),
+        );
+        let svc = new_svc.new_service(addrs);
+        tracing::debug!("new service");
+        svc
+    };
+    async move {
+        let io = test_support::io()
+            .read(b"hello\r\n")
+            .write(b"world")
+            .build();
+        let res = svc.oneshot(io).err_into::<Error>().await;
+        tracing::debug!(?res);
+        if let Err(err) = res {
+            if let Some(err) = err.downcast_ref::<std::io::Error>() {
+                // did the pretend server hang up, or did something
+                // actually unexpected happen?
+                assert_eq!(err.kind(), std::io::ErrorKind::ConnectionReset);
+            } else {
+                panic!("connection failed unexpectedly: {}", err)
+            }
+        }
+    }
+    .instrument(span)
 }

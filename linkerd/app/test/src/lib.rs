@@ -21,14 +21,14 @@ pub mod profile;
 pub mod resolver;
 pub mod service;
 
-pub fn resolver<T, E>() -> resolver::DstResolver<T, E>
+pub fn resolver<T, E>() -> resolver::Dst<T, E>
 where
     T: std::hash::Hash + Eq + fmt::Debug,
 {
     resolver::Resolver::new()
 }
 
-pub fn profiles<T>() -> resolver::ProfileResolver<T>
+pub fn profiles<T>() -> resolver::Profiles<T>
 where
     T: std::hash::Hash + Eq + fmt::Debug,
 {

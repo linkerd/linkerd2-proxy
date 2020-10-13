@@ -1,6 +1,6 @@
 pub use linkerd2_app_core::{dns, profiles::*};
 
-pub fn resolver<T>() -> crate::resolver::ProfileResolver<T>
+pub fn resolver<T>() -> crate::resolver::Profiles<T>
 where
     T: std::hash::Hash + Eq + std::fmt::Debug,
 {

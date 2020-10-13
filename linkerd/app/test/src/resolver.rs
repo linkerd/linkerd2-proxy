@@ -20,8 +20,8 @@ pub struct Resolver<T, E> {
     state: Arc<State<T, E>>,
 }
 
-pub type DstResolver<T, E> = Resolver<T, DstReceiver<E>>;
-pub type ProfileResolver<T> = Resolver<T, Option<profiles::Receiver>>;
+pub type Dst<T, E> = Resolver<T, DstReceiver<E>>;
+pub type Profiles<T> = Resolver<T, Option<profiles::Receiver>>;
 
 #[derive(Debug, Clone)]
 pub struct DstSender<T>(mpsc::UnboundedSender<Result<Update<T>, Error>>);
@@ -75,7 +75,7 @@ impl<T, E> Clone for Resolver<T, E> {
 }
 // === destination resolver ===
 
-impl<T, E> DstResolver<T, E>
+impl<T, E> Dst<T, E>
 where
     T: Hash + Eq,
 {
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<T, E> tower::Service<T> for DstResolver<T, E>
+impl<T, E> tower::Service<T> for Dst<T, E>
 where
     T: Hash + Eq + std::fmt::Debug,
 {
@@ -135,7 +135,7 @@ where
 
 // === profile resolver ===
 
-impl<T> ProfileResolver<T>
+impl<T> Profiles<T>
 where
     T: Hash + Eq,
 {
@@ -145,20 +145,20 @@ where
         ProfileSender(tx)
     }
 
-    pub fn profile(&self, addr: T, profile: Profile) -> &Self {
+    pub fn profile(self, addr: T, profile: Profile) -> Self {
         let (tx, rx) = watch::channel(profile);
         self.state.unused_senders.lock().unwrap().push(Box::new(tx));
         self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
         self
     }
 
-    pub fn no_profile(&self, addr: T) -> &Self {
+    pub fn no_profile(self, addr: T) -> Self {
         self.state.endpoints.lock().unwrap().insert(addr, None);
         self
     }
 }
 
-impl<T> tower::Service<T> for ProfileResolver<T>
+impl<T> tower::Service<T> for Profiles<T>
 where
     T: Hash + Eq + std::fmt::Debug,
 {
