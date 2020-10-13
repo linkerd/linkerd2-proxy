@@ -26,7 +26,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Error, NameAddr, NameMatch, ProxyMetrics, TraceContextLayer, DST_OVERRIDE_HEADER,
+    Error, NameAddr, NameMatch, ProxyMetrics, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -210,7 +210,7 @@ impl Config {
             .push(tap_layer)
             // Records metrics for each `Target`.
             .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            .push_on_response(TraceContextLayer::new(
+            .push_on_response(TraceContext::layer(
                 span_sink
                     .clone()
                     .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
@@ -338,10 +338,6 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        let http_server_observability = svc::layers().push(TraceContextLayer::new(
-            span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
-        ));
-
         let http_server = svc::stack(http_router)
             // Removes the override header after it has been used to
             // determine a reuquest target.
@@ -358,7 +354,9 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
-                    .push(http_server_observability)
+                    .push(TraceContext::layer(span_sink.map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
                     .box_http_response(),
