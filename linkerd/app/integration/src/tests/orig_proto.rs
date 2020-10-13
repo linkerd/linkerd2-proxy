@@ -48,6 +48,10 @@ async fn inbound_http1() {
         .route_fn("/h1", |req| {
             assert_eq!(req.version(), http::Version::HTTP_11);
             assert!(
+                req.uri().scheme().is_none(),
+                "request must not be in absolute form"
+            );
+            assert!(
                 !req.headers().contains_key("l5d-orig-proto"),
                 "h1 server shouldn't receive l5d-orig-proto header"
             );
