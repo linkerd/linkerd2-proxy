@@ -245,6 +245,7 @@ where
                     name,
                     http_routes,
                     targets,
+                    opaque_protocol: proto.opaque_protocol,
                 }
             })
         });

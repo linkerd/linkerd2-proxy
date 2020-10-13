@@ -1,6 +1,7 @@
-use super::{Error, Flags, Id, InsufficientBytes};
+use crate::{Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 use http::header::HeaderValue;
+use linkerd2_error::Error;
 use rand::{rngs::SmallRng, SeedableRng};
 use std::convert::TryInto;
 use std::fmt;

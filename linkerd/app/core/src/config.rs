@@ -23,7 +23,6 @@ pub struct ProxyConfig {
     pub connect: ConnectConfig,
     pub buffer_capacity: usize,
     pub cache_max_idle_age: Duration,
-    pub disable_protocol_detection_for_ports: crate::SkipByPort,
     pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
     pub detect_protocol_timeout: Duration,

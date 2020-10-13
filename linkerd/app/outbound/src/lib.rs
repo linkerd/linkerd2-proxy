@@ -6,7 +6,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use self::allow_discovery::{AllowProfile, AllowResolve};
-pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
+pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint, TcpLogical};
 use futures::future;
 use linkerd2_app_core::{
     classify,
@@ -19,8 +19,8 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, listen, tls},
-    Addr, Error, IpMatch, ProxyMetrics, TraceContextLayer, CANONICAL_DST_HEADER,
-    DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Error, IpMatch, ProxyMetrics, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
@@ -45,6 +45,11 @@ pub struct Config {
     pub proxy: ProxyConfig,
     pub allow_discovery: IpMatch,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct SkipByProfile;
+
+// === impl Config ===
 
 impl Config {
     pub fn build_tcp_connect(
@@ -169,7 +174,7 @@ impl Config {
             .check_new::<HttpEndpoint>()
             .push(tap_layer.clone())
             .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            .push_on_response(TraceContextLayer::new(
+            .push_on_response(TraceContext::layer(
                 span_sink
                     .clone()
                     .map(|sink| SpanConverter::client(sink, trace_labels())),
@@ -336,7 +341,6 @@ impl Config {
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
-            disable_protocol_detection_for_ports: ref skip_detect,
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
@@ -359,7 +363,7 @@ impl Config {
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
                     // Initiates OpenCensus tracing.
-                    .push(TraceContextLayer::new(span_sink.clone().map(|span_sink| {
+                    .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
                     .push(metrics.stack.layer(stack_labels("source")))
@@ -414,7 +418,7 @@ impl Config {
             .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
             .into_inner();
 
-        svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
+        svc::stack(svc::stack::MakeSwitch::new(SkipByProfile, http, tcp))
             .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
             .push_map_target(endpoint::TcpLogical::from)
             .push(profiles::discover::layer(
@@ -449,4 +453,15 @@ pub fn trace_labels() -> HashMap<String, String> {
 
 fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
     err.is::<prevent_loop::LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
+}
+
+// === impl SkipByProfile ===
+
+impl svc::stack::Switch<TcpLogical> for SkipByProfile {
+    fn use_primary(&self, l: &TcpLogical) -> bool {
+        l.profile
+            .as_ref()
+            .map(|p| !p.borrow().opaque_protocol)
+            .unwrap_or(true)
+    }
 }
