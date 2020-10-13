@@ -33,12 +33,7 @@ tokio-test = "0.2.1"
 tower = { version = "0.3", default-features = false} 
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
-
-[dependencies.tracing-subscriber]
-version = "0.2.11"
-# we don't need `chrono` time formatting or ANSI colored output
-default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
+tracing-subscriber = "0.2.11"
 
 [dev-dependencies.tracing-subscriber]
 version = "0.2.8"

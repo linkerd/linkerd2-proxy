@@ -931,6 +931,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "tracing-futures",
 ]
 
 [[package]]
