@@ -338,10 +338,6 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        let http_server_observability = svc::layers().push(TraceContext::layer(
-            span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
-        ));
-
         let http_server = svc::stack(http_router)
             // Removes the override header after it has been used to
             // determine a reuquest target.
@@ -358,7 +354,9 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
-                    .push(http_server_observability)
+                    .push(TraceContext::layer(span_sink.map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
                     .box_http_response(),
