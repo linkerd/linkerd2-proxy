@@ -101,7 +101,7 @@ where
                         .map(|pq| pq.as_str().to_owned())
                         .unwrap_or_default();
                     return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
-                        // Emit the completed span with the response metadtata.
+                        // Emit the completed span with the response metadata.
                         let span = Span {
                             span_id,
                             trace_id: context.trace_id,
