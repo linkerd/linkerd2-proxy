@@ -37,7 +37,10 @@ async fn plaintext_tcp() {
     let mut srv_io = test_support::io();
     srv_io.read(b"hello").write(b"world");
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect().endpoint_builder(target_addr, srv_io);
+    let connect = test_support::connect().endpoint_fn(target_addr, move |endpoint: TcpEndpoint| {
+        assert!(endpoint.peer_identity().is_none());
+        Ok(srv_io.build())
+    });
 
     // Configure mock IO for the "client".
     let client_io = test_support::io().write(b"hello").read(b"world").build();
@@ -94,11 +97,16 @@ async fn tls_when_hinted() {
     let mut srv_io = test_support::io();
     srv_io.write(b"hello").read(b"world");
     let id_name2 = id_name.clone();
+    let mut tls_srv_io = srv_io.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = test_support::connect()
         // The plaintext endpoint should use plaintext...
-        .endpoint_builder(plain_addr, srv_io.clone())
+        .endpoint_fn(plain_addr, move |endpoint: TcpEndpoint| {
+            assert!(endpoint.peer_identity().is_none());
+            let io = tls_srv_io.build();
+            Ok(io)
+        })
         .endpoint_fn(tls_addr, move |endpoint: TcpEndpoint| {
             assert_eq!(
                 endpoint.peer_identity(),
