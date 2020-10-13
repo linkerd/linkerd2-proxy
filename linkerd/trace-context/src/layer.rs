@@ -35,34 +35,31 @@ impl<K: Clone, S> TraceContext<K, S> {
         })
     }
 
-    fn request_labels<B>(req: &http::Request<B>) -> HashMap<String, String> {
-        let mut labels = HashMap::new();
-        labels.insert("http.method".to_string(), format!("{}", req.method()));
+    fn request_labels<B>(req: &http::Request<B>) -> HashMap<&'static str, String> {
+        let mut labels = HashMap::with_capacity(5);
+        labels.insert("http.method", format!("{}", req.method()));
         let path = req
             .uri()
             .path_and_query()
             .map(|pq| pq.as_str().to_owned())
             .unwrap_or_default();
-        labels.insert("http.path".to_string(), path);
+        labels.insert("http.path", path);
         if let Some(authority) = req.uri().authority() {
-            labels.insert("http.authority".to_string(), authority.as_str().to_string());
+            labels.insert("http.authority", authority.as_str().to_string());
         }
         if let Some(host) = req.headers().get("host") {
             if let Ok(host) = host.to_str() {
-                labels.insert("http.host".to_string(), host.to_string());
+                labels.insert("http.host", host.to_string());
             }
         }
         labels
     }
 
     fn add_response_labels<B>(
-        mut labels: HashMap<String, String>,
+        mut labels: HashMap<&'static str, String>,
         rsp: &http::Response<B>,
-    ) -> HashMap<String, String> {
-        labels.insert(
-            "http.status_code".to_string(),
-            rsp.status().as_str().to_string(),
-        );
+    ) -> HashMap<&'static str, String> {
+        labels.insert("http.status_code", rsp.status().as_str().to_string());
         labels
     }
 }

@@ -32,7 +32,7 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
-    pub labels: HashMap<String, String>,
+    pub labels: HashMap<&'static str, String>,
 }
 
 pub trait SpanSink {
