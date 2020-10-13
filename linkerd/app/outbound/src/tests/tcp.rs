@@ -1,7 +1,13 @@
 use super::*;
 use crate::TcpEndpoint;
 use linkerd2_app_core::{drain, metrics, transport::listen, Addr};
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
 
@@ -198,12 +204,12 @@ async fn resolutions_are_reused() {
 
     let conns = (0..10)
         .map(|i| {
-            let addrs = listen::Addrs::new(
+            let endpoints = listen::Addrs::new(
                 ([127, 0, 0, 1], 4140).into(),
                 ([127, 0, 0, 1], 666 + i).into(),
                 Some(addr),
             );
-            let svc = server.new_service(addrs);
+            let svc = server.new_service(endpoints);
             let io = client_io.build();
             tokio::spawn(
                 async move {
@@ -242,16 +248,26 @@ async fn resolutions_are_reused() {
 }
 
 #[tokio::test]
-async fn multiple_orig_dsts() {
+async fn load_balances() {
     let _trace = test_support::trace_init();
 
-    let addrs = &[
-        SocketAddr::new([10, 0, 170, 42].into(), 5550),
-        SocketAddr::new([10, 0, 170, 68].into(), 5550),
-        SocketAddr::new([10, 0, 106, 66].into(), 5550),
+    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let endpoints = &[
+        (
+            SocketAddr::new([10, 0, 170, 42].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        (
+            SocketAddr::new([10, 0, 170, 68].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        (
+            SocketAddr::new([10, 0, 106, 66].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
     ];
 
-    let cfg = default_config(addrs[0]);
+    let cfg = default_config(svc_addr);
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
@@ -259,10 +275,12 @@ async fn multiple_orig_dsts() {
 
     // Build a mock "connector" that returns the upstream "server" IO
     let mut connect = test_support::connect();
-    for &addr in addrs {
+    for &(addr, ref conns) in endpoints {
         let id_name = id_name.clone();
+        let conns = conns.clone();
         connect = connect.endpoint_fn(addr, move |endpoint: TcpEndpoint| {
-            tracing::info!(?addr, ?endpoint, "connecting");
+            let num = conns.fetch_add(1, Ordering::Release) + 1;
+            tracing::info!(?addr, ?endpoint, num, "connecting");
             assert_eq!(
                 endpoint.peer_identity(),
                 tls::Conditional::Some(id_name.clone())
@@ -276,12 +294,7 @@ async fn multiple_orig_dsts() {
         });
     }
     let profiles = test_support::profile::resolver();
-    for &addr in addrs {
-        profiles.profile(
-            addr,
-            test_support::profile::with_name("foo.ns1.svc.cluster.local"),
-        );
-    }
+    profiles.profile(svc_addr, Default::default());
 
     let profile_state = profiles.handle();
 
@@ -293,17 +306,9 @@ async fn multiple_orig_dsts() {
         None,
     );
 
-    // Configure the mock destination resolver to just give us a single endpoint
-    // for the target, which always exists and has no metadata.
     let resolver = test_support::resolver();
-    let mut dst1 = resolver.endpoint_tx(addrs[0].into());
-    dst1.add(addrs.iter().map(|addr| (*addr, meta.clone())))
-        .expect("still listening");
-    let mut dst2 = resolver.endpoint_tx(addrs[1].into());
-    dst2.add(addrs.iter().map(|addr| (*addr, meta.clone())))
-        .expect("still listening");
-    let mut dst3 = resolver.endpoint_tx(addrs[2].into());
-    dst3.add(addrs.iter().map(|addr| (*addr, meta.clone())))
+    let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
+    dst.add(endpoints.iter().map(|&(addr, _)| (addr, meta.clone())))
         .expect("still listening");
     let resolve_state = resolver.handle();
 
@@ -325,15 +330,14 @@ async fn multiple_orig_dsts() {
         drained,
     );
 
-    let conns = addrs
-        .iter()
-        .map(|&addr| {
-            let addrs = listen::Addrs::new(
+    let conns = (0..10)
+        .map(|i| {
+            let endpoints = listen::Addrs::new(
                 ([127, 0, 0, 1], 4140).into(),
                 ([127, 0, 0, 1], 666).into(),
-                Some(addr),
+                Some(svc_addr),
             );
-            let svc = server.new_service(addrs);
+            let svc = server.new_service(endpoints);
             let io = client_io.build();
             tokio::spawn(
                 async move {
@@ -348,7 +352,7 @@ async fn multiple_orig_dsts() {
                         }
                     }
                 }
-                .instrument(tracing::trace_span!("conn", %addr)),
+                .instrument(tracing::info_span!("conn", i)),
             )
             .err_into::<Error>()
         })
@@ -356,6 +360,12 @@ async fn multiple_orig_dsts() {
 
     if let Err(e) = futures::future::try_join_all(conns).await {
         panic!("connection panicked: {:?}", e);
+    }
+
+    for (addr, conns) in endpoints {
+        let conns = conns.load(Ordering::Acquire);
+        tracing::info!("endpoint {} was connected to {} times", addr, conns);
+        assert!(conns >= 1, "endpoint {} was never connected to!", addr);
     }
 
     assert!(resolve_state.is_empty());
