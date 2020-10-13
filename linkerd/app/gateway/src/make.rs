@@ -2,22 +2,17 @@ use super::gateway::Gateway;
 use linkerd2_app_core::{profiles, svc, transport::tls, NameAddr};
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
-use std::net::SocketAddr;
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub(crate) struct MakeGateway<O> {
     outbound: O,
-    default_addr: SocketAddr,
     local_id: tls::PeerIdentity,
 }
 
 impl<O> MakeGateway<O> {
-    pub fn new(outbound: O, default_addr: SocketAddr, local_id: tls::PeerIdentity) -> Self {
-        Self {
-            outbound,
-            default_addr,
-            local_id,
-        }
+    pub fn new(outbound: O, local_id: tls::PeerIdentity) -> Self {
+        Self { outbound, local_id }
     }
 }
 
@@ -50,12 +45,16 @@ where
             },
         };
 
-        // Create an outbound target using the resolved IP & name.
-        let svc = self.outbound.new_service(outbound::HttpLogical {
+        // Create an outbound target using the resolved name and an address
+        // including the original port. We don't know the IP of the target, so
+        // we use an unroutable one.
+        let target = outbound::HttpLogical {
             profile,
-            orig_dst: self.default_addr,
             protocol: http_version,
-        });
+            orig_dst: ([0, 0, 0, 0], dst.port()).into(),
+        };
+        debug!(?target, "Creating outbound service");
+        let svc = self.outbound.new_service(target);
 
         Gateway::new(svc, dst, source_id, local_id)
     }

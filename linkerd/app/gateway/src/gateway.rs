@@ -12,8 +12,9 @@ pub(crate) enum Gateway<O> {
     BadDomain(dns::Name),
     Outbound {
         outbound: O,
-        forwarded_header: http::header::HeaderValue,
         local_identity: identity::Name,
+        host_header: http::header::HeaderValue,
+        forwarded_header: http::header::HeaderValue,
     },
 }
 
@@ -24,13 +25,16 @@ impl<O> Gateway<O> {
         source_identity: identity::Name,
         local_identity: identity::Name,
     ) -> Self {
+        let host = dst.as_http_authority().to_string();
         let fwd = format!(
             "by={};for={};host={};proto=https",
-            local_identity, source_identity, dst
+            local_identity, source_identity, host
         );
         Gateway::Outbound {
             outbound,
             local_identity,
+            host_header: http::header::HeaderValue::from_str(&host)
+                .expect("Host header value must be valid"),
             forwarded_header: http::header::HeaderValue::from_str(&fwd)
                 .expect("Forwarded header value must be valid"),
         }
@@ -63,6 +67,7 @@ where
             Self::Outbound {
                 ref mut outbound,
                 ref local_identity,
+                ref host_header,
                 ref forwarded_header,
             } => {
                 // Check forwarded headers to see if this request has already
@@ -85,6 +90,16 @@ where
                 request
                     .headers_mut()
                     .append(http::header::FORWARDED, forwarded_header.clone());
+
+                // If we're forwarding HTTP/1 requests, the old `Host` header
+                // was stripped on the peer's outbound proxy. But the request
+                // should have an updated `Host` header now that it's being
+                // routed in the cluster.
+                if let ::http::Version::HTTP_11 | ::http::Version::HTTP_10 = request.version() {
+                    request
+                        .headers_mut()
+                        .insert(::http::header::HOST, host_header.clone());
+                }
 
                 tracing::debug!(
                     headers = ?request.headers(),
