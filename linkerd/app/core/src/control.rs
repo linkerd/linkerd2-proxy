@@ -1,10 +1,10 @@
 use crate::{
-    classify, config, control, dns,
+    classify, config, control, dns, metrics,
     proxy::http,
     reconnect,
     svc::{self, NewService},
     transport::tls,
-    Addr, ControlHttpMetrics, Error,
+    Addr, Error,
 };
 use std::fmt;
 
@@ -44,7 +44,7 @@ impl Config {
     pub fn build<B, I>(
         self,
         dns: dns::Resolver,
-        metrics: ControlHttpMetrics,
+        metrics: metrics::ControlHttp,
         identity: tls::Conditional<I>,
     ) -> Client<B>
     where

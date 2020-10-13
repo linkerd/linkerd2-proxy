@@ -1,5 +1,5 @@
 use super::tls;
-pub use crate::metric_labels::{Direction, EndpointLabels, TlsId};
+pub use crate::metrics::{Direction, EndpointLabels, TlsId};
 use linkerd2_conditional::Conditional;
 use linkerd2_metrics::FmtLabels;
 use std::fmt;

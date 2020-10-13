@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, metric_labels, profiles,
+    http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, identity, tap},
     router, stack_tracing,
     transport::{self, listen, tls},
@@ -172,7 +172,7 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
     dst::Route {
         route,
         target: logical.target.dst,
-        direction: metric_labels::Direction::In,
+        direction: metrics::Direction::In,
     }
 }
 
@@ -204,15 +204,15 @@ impl Into<transport::labels::Key> for &'_ Target {
     }
 }
 
-impl Into<metric_labels::EndpointLabels> for &'_ Target {
-    fn into(self) -> metric_labels::EndpointLabels {
-        metric_labels::EndpointLabels {
+impl Into<metrics::EndpointLabels> for &'_ Target {
+    fn into(self) -> metrics::EndpointLabels {
+        metrics::EndpointLabels {
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
-            direction: metric_labels::Direction::In,
+            direction: metrics::Direction::In,
             tls_id: self
                 .tls_client_id
                 .clone()
-                .map(metric_labels::TlsId::ClientId)
+                .map(metrics::TlsId::ClientId)
                 .into(),
             labels: None,
         }

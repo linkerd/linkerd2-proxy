@@ -4,8 +4,9 @@ pub use linkerd2_app_core::proxy::identity::{
 use linkerd2_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
+    metrics::ControlHttp as Metrics,
     transport::tls,
-    ControlHttpMetrics as Metrics, Error,
+    Error,
 };
 use std::future::Future;
 use std::pin::Pin;

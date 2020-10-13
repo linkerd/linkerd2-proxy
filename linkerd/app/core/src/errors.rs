@@ -24,9 +24,9 @@ pub type MetricsLayer = metrics::RecordErrorLayer<LabelError, Label>;
 
 /// Error metric labels.
 #[derive(Copy, Clone, Debug)]
-pub struct LabelError(super::metric_labels::Direction);
+pub struct LabelError(super::metrics::Direction);
 
-pub type Label = (super::metric_labels::Direction, Reason);
+pub type Label = (super::metrics::Direction, Reason);
 
 #[derive(Copy, Clone, Debug)]
 pub struct HttpError {
@@ -387,13 +387,11 @@ impl metrics::FmtLabels for Reason {
 
 impl Metrics {
     pub fn inbound(&self) -> MetricsLayer {
-        self.0
-            .layer(LabelError(super::metric_labels::Direction::In))
+        self.0.layer(LabelError(super::metrics::Direction::In))
     }
 
     pub fn outbound(&self) -> MetricsLayer {
-        self.0
-            .layer(LabelError(super::metric_labels::Direction::Out))
+        self.0.layer(LabelError(super::metrics::Direction::Out))
     }
 
     pub fn report(&self) -> metrics::Registry<Label> {

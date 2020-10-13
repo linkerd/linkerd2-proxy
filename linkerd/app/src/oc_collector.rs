@@ -1,5 +1,5 @@
 use crate::{dns, identity::LocalIdentity};
-use linkerd2_app_core::{control, ControlHttpMetrics, Error};
+use linkerd2_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
 use linkerd2_opencensus::{metrics, proto, SpanExporter};
 use std::future::Future;
 use std::pin::Pin;
@@ -39,7 +39,7 @@ impl Config {
         identity: LocalIdentity,
         dns: dns::Resolver,
         metrics: metrics::Registry,
-        client_metrics: ControlHttpMetrics,
+        client_metrics: HttpMetrics,
     ) -> Result<OcCollector, Error> {
         match self {
             Config::Disabled => Ok(OcCollector::Disabled),
