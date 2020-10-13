@@ -1,7 +1,6 @@
 use crate::{propagation, Span, SpanSink};
-use futures::{prelude::*, ready};
-use linkerd2_error::Error;
-use linkerd2_stack::{layer, Either};
+use futures::{future::Either, prelude::*};
+use linkerd2_stack::layer;
 use std::{
     collections::HashMap,
     future::Future,
@@ -71,19 +70,19 @@ impl<K: Clone, S> TraceContext<K, S> {
 impl<K, S, ReqB, RspB> tower::Service<http::Request<ReqB>> for TraceContext<K, S>
 where
     S: tower::Service<http::Request<ReqB>, Response = http::Response<RspB>>,
-    S::Error: Into<Error> + Send,
+    S::Error: Send,
     S::Future: Send + 'static,
     K: SpanSink + Clone + Send + 'static,
 {
     type Response = S::Response;
-    type Error = Error;
+    type Error = S::Error;
     type Future = Either<
         S::Future,
         Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send + 'static>>,
     >;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        Poll::Ready(ready!(self.inner.poll_ready(cx)).map_err(Into::into))
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
@@ -104,7 +103,7 @@ where
                         .path_and_query()
                         .map(|pq| pq.as_str().to_owned())
                         .unwrap_or_default();
-                    return Either::B(Box::pin(self.inner.call(req).map_ok(move |rsp| {
+                    return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
                         // Emit the completed span with the response metadtata.
                         let span = Span {
                             span_id,
@@ -126,6 +125,6 @@ where
         }
 
         // If there's no tracing to be done, just pass on the request to the inner service.
-        Either::A(self.inner.call(req))
+        Either::Left(self.inner.call(req))
     }
 }
