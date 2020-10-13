@@ -53,8 +53,8 @@ where
         // Create an outbound target using the resolved IP & name.
         let svc = self.outbound.new_service(outbound::HttpLogical {
             profile,
-            version: http_version,
             orig_dst: self.default_addr,
+            protocol: http_version,
         });
 
         Gateway::new(svc, dst, source_id, local_id)

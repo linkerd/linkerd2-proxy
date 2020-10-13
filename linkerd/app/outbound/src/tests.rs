@@ -64,8 +64,9 @@ async fn plaintext_tcp() {
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
     let concrete = TcpConcrete {
         logical: TcpLogical {
-            addr: target_addr,
+            orig_dst: target_addr,
             profile: Some(profile()),
+            protocol: (),
         },
         resolve: Some(target_addr.into()),
     };
@@ -110,8 +111,9 @@ async fn tls_when_hinted() {
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls_concrete = TcpConcrete {
         logical: TcpLogical {
-            addr: tls_addr,
+            orig_dst: tls_addr,
             profile: Some(profile()),
+            protocol: (),
         },
         resolve: Some(tls_addr.into()),
     };
@@ -119,8 +121,9 @@ async fn tls_when_hinted() {
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
     let plain_concrete = TcpConcrete {
         logical: TcpLogical {
-            addr: plain_addr,
+            orig_dst: plain_addr,
             profile: Some(profile()),
+            protocol: (),
         },
         resolve: Some(plain_addr.into()),
     };

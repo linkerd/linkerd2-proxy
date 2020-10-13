@@ -20,70 +20,57 @@ use std::{net::SocketAddr, sync::Arc};
 #[derive(Copy, Clone)]
 pub struct FromMetadata;
 
-#[derive(Clone)]
-pub struct HttpLogical {
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Accept {
     pub orig_dst: SocketAddr,
-    pub version: http::Version,
+}
+
+#[derive(Clone)]
+pub struct Logical<P> {
+    pub orig_dst: SocketAddr,
     pub profile: Option<profiles::Receiver>,
+    pub protocol: P,
 }
 
 #[derive(Clone, Debug)]
-pub struct HttpConcrete {
+pub struct Concrete<P> {
     pub resolve: Option<Addr>,
-    pub logical: HttpLogical,
+    pub logical: Logical<P>,
 }
 
 #[derive(Clone, Debug)]
-pub struct HttpEndpoint {
+pub struct Endpoint<P> {
     pub addr: SocketAddr,
-    pub settings: http::client::Settings,
     pub identity: tls::PeerIdentity,
     pub metadata: Metadata,
-    pub concrete: HttpConcrete,
+    pub concrete: Concrete<P>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TcpAccept {
-    pub addr: SocketAddr,
-}
+pub type HttpLogical = Logical<http::Version>;
+pub type HttpConcrete = Concrete<http::Version>;
+pub type HttpEndpoint = Endpoint<http::Version>;
 
-#[derive(Clone)]
-pub struct TcpLogical {
-    pub addr: SocketAddr,
-    pub profile: Option<profiles::Receiver>,
-}
+pub type TcpLogical = Logical<()>;
+pub type TcpConcrete = Concrete<()>;
+pub type TcpEndpoint = Endpoint<()>;
 
-#[derive(Clone, Debug)]
-pub struct TcpConcrete {
-    pub resolve: Option<Addr>,
-    pub logical: TcpLogical,
-}
+// === impl Accept ===
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TcpEndpoint {
-    pub dst: Addr,
-    pub addr: SocketAddr,
-    pub identity: tls::PeerIdentity,
-    pub labels: Option<String>,
-}
-
-// === impl TcpAccept ===
-
-impl From<listen::Addrs> for TcpAccept {
+impl From<listen::Addrs> for Accept {
     fn from(addrs: listen::Addrs) -> Self {
         Self {
-            addr: addrs.target_addr(),
+            orig_dst: addrs.target_addr(),
         }
     }
 }
 
-impl Into<Addr> for &'_ TcpAccept {
+impl Into<Addr> for &'_ Accept {
     fn into(self) -> Addr {
-        self.addr.into()
+        self.orig_dst.into()
     }
 }
 
-impl Into<transport::labels::Key> for &'_ TcpAccept {
+impl Into<transport::labels::Key> for &'_ Accept {
     fn into(self) -> transport::labels::Key {
         const NO_TLS: tls::Conditional<identity::Name> =
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
@@ -91,72 +78,50 @@ impl Into<transport::labels::Key> for &'_ TcpAccept {
     }
 }
 
-// === impl TcpLogical ===
+// === impl Logical ===
 
-impl From<(Option<profiles::Receiver>, TcpAccept)> for TcpLogical {
-    fn from((profile, TcpAccept { addr }): (Option<profiles::Receiver>, TcpAccept)) -> Self {
-        Self { addr, profile }
+impl From<(Option<profiles::Receiver>, Accept)> for TcpLogical {
+    fn from((profile, Accept { orig_dst }): (Option<profiles::Receiver>, Accept)) -> Self {
+        Self {
+            orig_dst,
+            profile,
+            protocol: (),
+        }
     }
 }
 
-/// Used for default traffic split
-impl Into<Addr> for &'_ TcpLogical {
-    fn into(self) -> Addr {
-        self.addr.into()
+impl From<(http::Version, TcpLogical)> for HttpLogical {
+    fn from((protocol, l): (http::Version, TcpLogical)) -> Self {
+        Self {
+            orig_dst: l.orig_dst,
+            profile: l.profile,
+            protocol,
+        }
     }
 }
 
 /// Used for traffic split
-impl Into<Option<profiles::Receiver>> for &'_ TcpLogical {
+impl<P> Into<Option<profiles::Receiver>> for &'_ Logical<P> {
     fn into(self) -> Option<profiles::Receiver> {
         self.profile.clone()
     }
 }
 
 /// Used to determine whether detection should be skipped.
-impl Into<SocketAddr> for &'_ TcpLogical {
+impl<P> Into<SocketAddr> for &'_ Logical<P> {
     fn into(self) -> SocketAddr {
-        self.addr
+        self.orig_dst
     }
 }
 
-impl std::fmt::Debug for TcpLogical {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TcpLogical")
-            .field("addr", &self.addr)
-            .field(
-                "profile",
-                &format_args!(
-                    "{}",
-                    if self.profile.is_some() {
-                        "Some(..)"
-                    } else {
-                        "None"
-                    }
-                ),
-            )
-            .finish()
+/// Used for default traffic split
+impl<P> Into<Addr> for &'_ Logical<P> {
+    fn into(self) -> Addr {
+        self.addr()
     }
 }
 
-// === impl TcpConcrete ===
-
-impl From<(Option<Addr>, TcpLogical)> for TcpConcrete {
-    fn from((resolve, logical): (Option<Addr>, TcpLogical)) -> Self {
-        Self { resolve, logical }
-    }
-}
-
-/// Used as a default destination when resolution is rejected.
-impl Into<SocketAddr> for &'_ TcpConcrete {
-    fn into(self) -> SocketAddr {
-        self.logical.addr
-    }
-}
-
-// === impl HttpLogical ===
-
-impl HttpLogical {
+impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         self.profile
             .as_ref()
@@ -166,48 +131,19 @@ impl HttpLogical {
     }
 }
 
-impl From<(http::Version, TcpLogical)> for HttpLogical {
-    fn from((version, TcpLogical { addr, profile }): (http::Version, TcpLogical)) -> Self {
-        Self {
-            version,
-            orig_dst: addr,
-            profile,
-        }
-    }
-}
-
-/// For normalization when no host is present.
-impl Into<SocketAddr> for &'_ HttpLogical {
-    fn into(self) -> SocketAddr {
-        self.orig_dst
-    }
-}
-
-impl Into<Addr> for &'_ HttpLogical {
-    fn into(self) -> Addr {
-        self.addr()
-    }
-}
-
-impl Into<Option<profiles::Receiver>> for &'_ HttpLogical {
-    fn into(self) -> Option<profiles::Receiver> {
-        self.profile.clone()
-    }
-}
-
 // Used to set the l5d-canonical-dst header.
-impl<'t> From<&'t HttpLogical> for http::header::HeaderValue {
-    fn from(target: &'t HttpLogical) -> Self {
+impl<P> From<&'_ Logical<P>> for http::header::HeaderValue {
+    fn from(target: &'_ Logical<P>) -> Self {
         http::header::HeaderValue::from_str(&target.addr().to_string())
             .expect("addr must be a valid header")
     }
 }
 
-impl std::fmt::Debug for HttpLogical {
+impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HttpLogical")
-            .field("version", &self.version)
+        f.debug_struct("Logical")
             .field("orig_dst", &self.orig_dst)
+            .field("protocol", &self.protocol)
             .field(
                 "profile",
                 &format_args!(
@@ -223,24 +159,16 @@ impl std::fmt::Debug for HttpLogical {
     }
 }
 
-// === impl HttpConrete ===
+// === impl Concrete ===
 
-impl From<(Option<Addr>, HttpLogical)> for HttpConcrete {
-    fn from((resolve, logical): (Option<Addr>, HttpLogical)) -> Self {
+impl<P> From<(Option<Addr>, Logical<P>)> for Concrete<P> {
+    fn from((resolve, logical): (Option<Addr>, Logical<P>)) -> Self {
         Self { resolve, logical }
     }
 }
 
-/// Produces an address to resolve to individual endpoints. This address is only
-/// present if the initial profile resolution was not rejected.
-impl Into<Option<Addr>> for &'_ HttpConcrete {
-    fn into(self) -> Option<Addr> {
-        self.resolve.clone()
-    }
-}
-
 /// Produces an address to be used if resolution is rejected.
-impl Into<SocketAddr> for &'_ HttpConcrete {
+impl<P> Into<SocketAddr> for &'_ Concrete<P> {
     fn into(self) -> SocketAddr {
         self.resolve
             .as_ref()
@@ -249,37 +177,83 @@ impl Into<SocketAddr> for &'_ HttpConcrete {
     }
 }
 
-// === impl HttpEndpoint ===
+// === impl Endpoint ===
 
-impl std::hash::Hash for HttpEndpoint {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.addr.hash(state);
-        self.identity.hash(state);
-        self.settings.hash(state);
+impl<P> From<Logical<P>> for Endpoint<P> {
+    fn from(logical: Logical<P>) -> Self {
+        Self {
+            addr: (&logical).into(),
+            metadata: Metadata::default(),
+            identity: tls::PeerIdentity::None(tls::ReasonForNoPeerName::PortSkipped.into()),
+            concrete: Concrete {
+                logical,
+                resolve: None,
+            },
+        }
     }
 }
 
-impl tls::HasPeerIdentity for HttpEndpoint {
-    fn peer_identity(&self) -> tls::PeerIdentity {
-        self.identity.clone()
-    }
-}
-
-impl Into<SocketAddr> for HttpEndpoint {
-    fn into(self) -> SocketAddr {
-        (&self).into()
-    }
-}
-
-impl Into<SocketAddr> for &'_ HttpEndpoint {
+impl<P> Into<SocketAddr> for Endpoint<P> {
     fn into(self) -> SocketAddr {
         self.addr
     }
 }
 
+impl<P> Into<SocketAddr> for &'_ Endpoint<P> {
+    fn into(self) -> SocketAddr {
+        self.addr
+    }
+}
+
+impl<P> tls::HasPeerIdentity for Endpoint<P> {
+    fn peer_identity(&self) -> tls::PeerIdentity {
+        self.identity.clone()
+    }
+}
+
+impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
+    fn into(self) -> transport::labels::Key {
+        transport::labels::Key::Connect(self.clone().into())
+    }
+}
+
+impl<P> Into<EndpointLabels> for &'_ Endpoint<P> {
+    fn into(self) -> EndpointLabels {
+        use linkerd2_app_core::metric_labels::Direction;
+        EndpointLabels {
+            authority: Some(self.concrete.logical.addr().to_http_authority()),
+            direction: Direction::Out,
+            labels: prefix_labels("dst", self.metadata.labels().iter()),
+            tls_id: TlsStatus::server(self.identity.clone()),
+        }
+    }
+}
+
+impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.addr.hash(state);
+        self.identity.hash(state);
+        self.concrete.resolve.hash(state);
+        self.concrete.logical.orig_dst.hash(state);
+        self.concrete.logical.protocol.hash(state);
+    }
+}
+
 impl Into<http::client::Settings> for &'_ HttpEndpoint {
     fn into(self) -> http::client::Settings {
-        self.settings
+        match self.concrete.logical.protocol {
+            http::Version::H2 => http::client::Settings::H2,
+            http::Version::Http1 => match self.metadata.protocol_hint() {
+                ProtocolHint::Unknown => http::client::Settings::Http1,
+                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
+            },
+        }
+    }
+}
+
+impl<P> CanOverrideAuthority for Endpoint<P> {
+    fn override_authority(&self) -> Option<Authority> {
+        self.metadata.authority_override().cloned()
     }
 }
 
@@ -321,12 +295,12 @@ impl tap::Inspect for HttpEndpoint {
     }
 }
 
-impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
-    type Out = HttpEndpoint;
+impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetadata {
+    type Out = Endpoint<P>;
 
     fn map_endpoint(
         &self,
-        concrete: &HttpConcrete,
+        concrete: &Concrete<P>,
         addr: SocketAddr,
         metadata: Metadata,
     ) -> Self::Out {
@@ -339,126 +313,11 @@ impl MapEndpoint<HttpConcrete, Metadata> for FromMetadata {
                 Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
             });
 
-        let settings = match concrete.logical.version {
-            http::Version::H2 => http::client::Settings::H2,
-            http::Version::Http1 => match metadata.protocol_hint() {
-                ProtocolHint::Unknown => http::client::Settings::Http1,
-                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
-            },
-        };
-
-        HttpEndpoint {
+        Endpoint {
             addr,
             identity,
             metadata,
-            settings,
             concrete: concrete.clone(),
-        }
-    }
-}
-
-impl CanOverrideAuthority for HttpEndpoint {
-    fn override_authority(&self) -> Option<Authority> {
-        self.metadata.authority_override().cloned()
-    }
-}
-
-impl Into<transport::labels::Key> for &'_ HttpEndpoint {
-    fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(self.into())
-    }
-}
-
-impl Into<EndpointLabels> for &'_ HttpEndpoint {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::Direction;
-        EndpointLabels {
-            direction: Direction::Out,
-            authority: Some(self.concrete.logical.addr().to_http_authority()),
-            tls_id: TlsStatus::server(self.identity.clone()),
-            labels: prefix_labels("dst", self.metadata.labels().iter()),
-        }
-    }
-}
-
-// === impl TcpEndpoint ===
-
-impl From<SocketAddr> for TcpEndpoint {
-    fn from(addr: SocketAddr) -> Self {
-        Self {
-            addr,
-            dst: addr.into(),
-            identity: Conditional::None(tls::ReasonForNoPeerName::PortSkipped.into()),
-            labels: None,
-        }
-    }
-}
-
-impl From<TcpLogical> for TcpEndpoint {
-    fn from(l: TcpLogical) -> Self {
-        l.addr.into()
-    }
-}
-
-impl Into<SocketAddr> for TcpEndpoint {
-    fn into(self) -> SocketAddr {
-        (&self).into()
-    }
-}
-
-impl Into<SocketAddr> for &'_ TcpEndpoint {
-    fn into(self) -> SocketAddr {
-        self.addr
-    }
-}
-
-impl tls::HasPeerIdentity for TcpEndpoint {
-    fn peer_identity(&self) -> tls::PeerIdentity {
-        self.identity.clone()
-    }
-}
-
-impl Into<transport::labels::Key> for &'_ TcpEndpoint {
-    fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(self.clone().into())
-    }
-}
-
-impl Into<EndpointLabels> for TcpEndpoint {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::Direction;
-        EndpointLabels {
-            authority: Some(self.dst.to_http_authority()),
-            direction: Direction::Out,
-            labels: self.labels,
-            tls_id: TlsStatus::server(self.identity),
-        }
-    }
-}
-
-impl MapEndpoint<TcpConcrete, Metadata> for FromMetadata {
-    type Out = TcpEndpoint;
-
-    fn map_endpoint(
-        &self,
-        concrete: &TcpConcrete,
-        addr: SocketAddr,
-        metadata: Metadata,
-    ) -> Self::Out {
-        tracing::debug!(?concrete, %addr, ?metadata, "Resolved endpoint");
-        let identity = metadata
-            .identity()
-            .cloned()
-            .map(Conditional::Some)
-            .unwrap_or_else(|| {
-                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
-            });
-
-        TcpEndpoint {
-            addr,
-            identity,
-            dst: concrete.logical.addr.into(),
-            labels: prefix_labels("dst", metadata.labels().into_iter()),
         }
     }
 }
