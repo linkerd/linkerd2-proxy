@@ -6,7 +6,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use self::allow_discovery::{AllowProfile, AllowResolve};
-pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint};
+pub use self::endpoint::{HttpConcrete, HttpEndpoint, HttpLogical, TcpEndpoint, TcpLogical};
 use futures::future;
 use linkerd2_app_core::{
     classify,
@@ -45,6 +45,11 @@ pub struct Config {
     pub proxy: ProxyConfig,
     pub allow_discovery: IpMatch,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct SkipByProfile;
+
+// === impl Config ===
 
 impl Config {
     pub fn build_tcp_connect(
@@ -336,7 +341,6 @@ impl Config {
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
-            disable_protocol_detection_for_ports: ref skip_detect,
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
@@ -414,7 +418,7 @@ impl Config {
             .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
             .into_inner();
 
-        svc::stack(svc::stack::MakeSwitch::new(skip_detect.clone(), http, tcp))
+        svc::stack(svc::stack::MakeSwitch::new(SkipByProfile, http, tcp))
             .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
             .push_map_target(endpoint::TcpLogical::from)
             .push(profiles::discover::layer(
@@ -449,4 +453,15 @@ pub fn trace_labels() -> HashMap<String, String> {
 
 fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
     err.is::<prevent_loop::LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
+}
+
+// === impl SkipByProfile ===
+
+impl svc::stack::Switch<TcpLogical> for SkipByProfile {
+    fn use_primary(&self, l: &TcpLogical) -> bool {
+        l.profile
+            .as_ref()
+            .map(|p| !p.borrow().opaque_protocol)
+            .unwrap_or(true)
+    }
 }

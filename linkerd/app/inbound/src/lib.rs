@@ -37,15 +37,21 @@ pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
 
-type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
-
 #[derive(Clone, Debug)]
 pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
+    pub disable_protocol_detection_for_ports: SkipByPort,
     pub profile_idle_timeout: Duration,
 }
+
+#[derive(Clone, Debug)]
+pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
+
+type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
+
+// === impl Config ===
 
 impl Config {
     pub fn build<L, S, P>(
@@ -413,11 +419,11 @@ impl Config {
         B::Future: Send,
     {
         let ProxyConfig {
-            disable_protocol_detection_for_ports: skip_detect,
             detect_protocol_timeout,
             ..
         } = self.proxy;
         let require_identity = self.require_identity_for_inbound_ports;
+        let skip_detect = self.disable_protocol_detection_for_ports;
 
         svc::stack::MakeSwitch::new(
             skip_detect,
@@ -447,4 +453,18 @@ pub fn trace_labels() -> HashMap<String, String> {
 
 fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
     metric_labels::StackLabels::inbound(name)
+}
+
+// === impl SkipByPort ===
+
+impl From<indexmap::IndexSet<u16>> for SkipByPort {
+    fn from(ports: indexmap::IndexSet<u16>) -> Self {
+        SkipByPort(ports.into())
+    }
+}
+
+impl svc::stack::Switch<listen::Addrs> for SkipByPort {
+    fn use_primary(&self, t: &listen::Addrs) -> bool {
+        !self.0.contains(&t.target_addr().port())
+    }
 }

@@ -24,7 +24,6 @@ pub struct Proxy {
     outbound_server: Option<server::Listening>,
 
     inbound_disable_ports_protocol_detection: Option<Vec<u16>>,
-    outbound_disable_ports_protocol_detection: Option<Vec<u16>>,
 
     shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
@@ -60,7 +59,6 @@ impl Proxy {
             outbound_server: None,
 
             inbound_disable_ports_protocol_detection: None,
-            outbound_disable_ports_protocol_detection: None,
             shutdown_signal: None,
         }
     }
@@ -122,11 +120,6 @@ impl Proxy {
 
     pub fn disable_inbound_ports_protocol_detection(mut self, ports: Vec<u16>) -> Self {
         self.inbound_disable_ports_protocol_detection = Some(ports);
-        self
-    }
-
-    pub fn disable_outbound_ports_protocol_detection(mut self, ports: Vec<u16>) -> Self {
-        self.outbound_disable_ports_protocol_detection = Some(ports);
         self
     }
 
@@ -287,17 +280,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         );
     }
 
-    if let Some(ports) = proxy.outbound_disable_ports_protocol_detection {
-        let ports = ports
-            .into_iter()
-            .map(|p| p.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        env.put(
-            app::env::ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-            ports,
-        );
-    }
     if !env.contains_key(app::env::ENV_DESTINATION_PROFILE_NETWORKS) {
         // If the test has not already overridden the destination search
         // networks, make sure that localhost works.

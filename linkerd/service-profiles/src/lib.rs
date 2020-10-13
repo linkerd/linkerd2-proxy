@@ -24,6 +24,7 @@ pub struct Profile {
     pub name: Option<Name>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
     pub targets: Vec<Target>,
+    pub opaque_protocol: bool,
 }
 
 #[derive(Clone, Debug)]
