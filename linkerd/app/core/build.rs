@@ -20,6 +20,10 @@ fn main() {
         Command::new("git").args(&["rev-parse", "--abbrev-ref", "HEAD"]),
     );
     set_env(
+        "GIT_SHA",
+        Command::new("git").args(&["rev-parse", "--short", "HEAD"]),
+    );
+    set_env(
         "GIT_VERSION",
         Command::new("git").args(&["describe", "--always", "HEAD"]),
     );

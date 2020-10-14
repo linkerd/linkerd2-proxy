@@ -5,6 +5,7 @@ use std::string::String;
 use std::sync::Arc;
 
 const GIT_BRANCH: &'static str = env!("GIT_BRANCH");
+const GIT_SHA: &'static str = env!("GIT_SHA");
 const GIT_VERSION: &'static str = env!("GIT_VERSION");
 const PROFILE: &'static str = env!("PROFILE");
 const RUST_VERSION: &'static str = env!("RUST_VERSION");
@@ -27,6 +28,7 @@ pub struct Report {
 #[derive(Clone, Debug, Default)]
 struct BuildInfoLabels {
     git_branch: String,
+    git_sha: String,
     git_version: String,
     profile: String,
     rust_version: String,
@@ -36,6 +38,7 @@ impl Report {
     pub fn new() -> Self {
         let labels = Arc::new(BuildInfoLabels {
             git_branch: GIT_BRANCH.to_string(),
+            git_sha: GIT_SHA.to_string(),
             git_version: GIT_VERSION.to_string(),
             profile: PROFILE.to_string(),
             rust_version: RUST_VERSION.to_string(),
@@ -60,6 +63,7 @@ impl FmtMetrics for Report {
 impl FmtLabels for BuildInfoLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "git_branch=\"{}\"", self.git_branch)?;
+        write!(f, ",git_sha=\"{}\"", self.git_sha)?;
         write!(f, ",git_version=\"{}\"", self.git_version)?;
         write!(f, ",profile=\"{}\"", self.profile)?;
         write!(f, ",rust_version=\"{}\"", self.rust_version)?;
