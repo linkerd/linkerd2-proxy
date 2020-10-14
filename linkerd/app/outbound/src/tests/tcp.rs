@@ -326,6 +326,124 @@ async fn load_balances() {
 }
 
 #[tokio::test]
+async fn load_balancer_add_endpoints() {
+    let _trace = test_support::trace_init();
+
+    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let endpoints = &[
+        (
+            SocketAddr::new([10, 0, 170, 42].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        (
+            SocketAddr::new([10, 0, 170, 68].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        (
+            SocketAddr::new([10, 0, 106, 66].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+    ];
+
+    let cfg = default_config(svc_addr);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+
+    let mut connect = test_support::connect();
+    for &(addr, ref conns) in endpoints {
+        let id_name = id_name.clone();
+        let conns = conns.clone();
+        connect = connect.endpoint_fn(addr, move |endpoint: TcpEndpoint| {
+            let num = conns.fetch_add(1, Ordering::Release) + 1;
+            tracing::info!(?addr, ?endpoint, num, "connecting");
+            assert_eq!(
+                endpoint.peer_identity(),
+                tls::Conditional::Some(id_name.clone())
+            );
+            let io = test_support::io()
+                .write(b"hello")
+                .read(b"world")
+                .read_error(std::io::ErrorKind::ConnectionReset.into())
+                .build();
+            Ok(io)
+        });
+    }
+
+    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
+
+    let meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    let resolver = test_support::resolver();
+    let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
+    dst.add(Some((endpoints[0].0, meta.clone())))
+        .expect("still listening");
+
+    // Build the outbound server
+    let mut server = build_server(cfg, profiles, resolver, connect);
+
+    let mut conns = || {
+        let conns = (0..10)
+            .map(|i| {
+                tokio::spawn(
+                    hello_world_client(svc_addr, &mut server)
+                        .instrument(tracing::info_span!("conn", i)),
+                )
+                .err_into::<Error>()
+            })
+            .collect::<Vec<_>>();
+
+        async move {
+            if let Err(e) = futures::future::try_join_all(conns).await {
+                panic!("connection panicked: {:?}", e);
+            }
+        }
+    };
+
+    // Only endpoint 0 is in the load balancer.
+    conns().await;
+    assert_eq!(endpoints[0].1.load(Ordering::Acquire), 10);
+    assert_eq!(endpoints[1].1.load(Ordering::Acquire), 0);
+    assert_eq!(endpoints[2].1.load(Ordering::Acquire), 0);
+
+    // Add endpoint 1.
+    dst.add(Some((endpoints[1].0, meta.clone())))
+        .expect("still listening");
+
+    conns().await;
+    assert!(endpoints[0].1.load(Ordering::Acquire) >= 10);
+    assert_ne!(
+        endpoints[1].1.load(Ordering::Acquire),
+        0,
+        "no connections to endpoint 1 after it was added"
+    );
+    assert_eq!(endpoints[2].1.load(Ordering::Acquire), 0);
+    // Add endpoint 2.
+    dst.add(Some((endpoints[2].0, meta.clone())))
+        .expect("still listening");
+
+    conns().await;
+    assert!(endpoints[0].1.load(Ordering::Acquire) >= 10);
+    assert_ne!(
+        endpoints[1].1.load(Ordering::Acquire),
+        0,
+        "no connections to endpoint 1"
+    );
+    assert_ne!(
+        endpoints[2].1.load(Ordering::Acquire),
+        0,
+        "no connections to endpoint 2 after it was added"
+    );
+}
+
+#[tokio::test]
 async fn no_profiles_when_outside_search_nets() {
     let _trace = test_support::trace_init();
 
