@@ -338,7 +338,7 @@ async fn no_profiles_when_outside_search_nets() {
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
-    .expect("hostname is valid");
+    .expect("hostname is invalid");
     let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
