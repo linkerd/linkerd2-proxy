@@ -95,10 +95,10 @@ where
                 // was stripped on the peer's outbound proxy. But the request
                 // should have an updated `Host` header now that it's being
                 // routed in the cluster.
-                if let ::http::Version::HTTP_11 | ::http::Version::HTTP_10 = request.version() {
+                if let http::Version::HTTP_11 | http::Version::HTTP_10 = request.version() {
                     request
                         .headers_mut()
-                        .insert(::http::header::HOST, host_header.clone());
+                        .insert(http::header::HOST, host_header.clone());
                 }
 
                 tracing::debug!(
