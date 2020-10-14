@@ -98,7 +98,7 @@ where
                 if let ::http::Version::HTTP_11 | ::http::Version::HTTP_10 = request.version() {
                     request
                         .headers_mut()
-                        .insert(::http::header::HOST, host_header.clone());
+                        .insert(http::header::HOST, host_header.clone());
                 }
 
                 tracing::debug!(
