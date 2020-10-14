@@ -1,14 +1,12 @@
 use std::process::Command;
 use std::string::String;
 
-const UNAVAILABLE: &str = "unavailable";
-
 fn set_env(name: &str, cmd: &mut Command) {
     let value = match cmd.output() {
         Ok(output) => String::from_utf8(output.stdout).unwrap(),
         Err(err) => {
             println!("cargo:warning={}", err);
-            UNAVAILABLE.to_string()
+            "".to_string()
         }
     };
     println!("cargo:rustc-env={}={}", name, value);
