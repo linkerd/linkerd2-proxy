@@ -105,6 +105,12 @@ mod tests {
     #[derive(Debug)]
     struct WriteBufDetector;
 
+    impl PeerAddr for WriteBufDetector {
+        fn peer_addr(&self) -> std::net::SocketAddr {
+            ([0, 0, 0, 0], 0).into()
+        }
+    }
+
     impl AsyncRead for WriteBufDetector {
         fn poll_read(self: Pin<&mut Self>, _: &mut Context<'_>, _: &mut [u8]) -> Poll<usize> {
             unreachable!("not called in test")
