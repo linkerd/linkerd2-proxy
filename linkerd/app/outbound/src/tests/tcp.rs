@@ -7,12 +7,15 @@ use linkerd2_app_core::{
 };
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
 };
-use test_support::{connect::Connect, resolver};
+use test_support::{
+    connect::{Connect, ConnectFuture},
+    resolver,
+};
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
 
@@ -168,21 +171,15 @@ async fn resolutions_are_reused() {
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
     .expect("hostname is valid");
-    let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect().endpoint_fn(addr, move |endpoint: TcpEndpoint| {
-        assert_eq!(
-            endpoint.peer_identity(),
-            tls::Conditional::Some(id_name2.clone())
-        );
-        let io = test_support::io()
-            .write(b"hello")
-            .read(b"world")
-            .read_error(std::io::ErrorKind::ConnectionReset.into())
-            .build();
-        Ok(io)
-    });
+    let connect = test_support::connect().endpoint(
+        addr,
+        Connection {
+            identity: tls::Conditional::Some(id_name.clone()),
+            ..Connection::default()
+        },
+    );
 
     let meta = test_support::resolver::Metadata::new(
         Default::default(),
@@ -259,22 +256,14 @@ async fn load_balances() {
     // Build a mock "connector" that returns the upstream "server" IO
     let mut connect = test_support::connect();
     for &(addr, ref conns) in endpoints {
-        let id_name = id_name.clone();
-        let conns = conns.clone();
-        connect = connect.endpoint_fn(addr, move |endpoint: TcpEndpoint| {
-            let num = conns.fetch_add(1, Ordering::Release) + 1;
-            tracing::info!(?addr, ?endpoint, num, "connecting");
-            assert_eq!(
-                endpoint.peer_identity(),
-                tls::Conditional::Some(id_name.clone())
-            );
-            let io = test_support::io()
-                .write(b"hello")
-                .read(b"world")
-                .read_error(std::io::ErrorKind::ConnectionReset.into())
-                .build();
-            Ok(io)
-        });
+        connect = connect.endpoint(
+            addr,
+            Connection {
+                identity: tls::Conditional::Some(id_name.clone()),
+                count: conns.clone(),
+                ..Connection::default()
+            },
+        );
     }
 
     let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
@@ -327,6 +316,216 @@ async fn load_balances() {
         profile_state.only_configured(),
         "profiles were resolved multiple times for the same address!"
     );
+}
+
+#[tokio::test(core_threads = 1)]
+async fn load_balancer_add_endpoints() {
+    let _trace = test_support::trace_init();
+
+    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let endpoints = &[
+        (
+            SocketAddr::new([10, 0, 170, 42].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        (
+            SocketAddr::new([10, 0, 170, 68].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+        (
+            SocketAddr::new([10, 0, 106, 66].into(), 5550),
+            Arc::new(AtomicUsize::new(0)),
+        ),
+    ];
+
+    let cfg = default_config(svc_addr);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+
+    let mut connect = test_support::connect();
+    for &(addr, ref conns) in endpoints {
+        connect = connect.endpoint(
+            addr,
+            Connection {
+                identity: tls::Conditional::Some(id_name.clone()),
+                count: conns.clone(),
+                ..Connection::default()
+            },
+        );
+    }
+
+    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
+
+    let meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    let resolver = test_support::resolver();
+    let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
+    dst.add(Some((endpoints[0].0, meta.clone())))
+        .expect("still listening");
+
+    // Build the outbound server
+    let mut server = build_server(cfg, profiles, resolver, connect);
+
+    let mut conns = || {
+        let conns = (0..10)
+            .map(|i| {
+                tokio::spawn(
+                    hello_world_client(svc_addr, &mut server)
+                        .instrument(tracing::info_span!("conn", i)),
+                )
+                .err_into::<Error>()
+            })
+            .collect::<Vec<_>>();
+
+        async move {
+            if let Err(e) = futures::future::try_join_all(conns).await {
+                panic!("connection panicked: {:?}", e);
+            }
+        }
+    };
+
+    // Only endpoint 0 is in the load balancer.
+    conns().await;
+    assert_eq!(endpoints[0].1.load(Ordering::Acquire), 10);
+    assert_eq!(endpoints[1].1.load(Ordering::Acquire), 0);
+    assert_eq!(endpoints[2].1.load(Ordering::Acquire), 0);
+
+    // Add endpoint 1.
+    dst.add(Some((endpoints[1].0, meta.clone())))
+        .expect("still listening");
+
+    conns().await;
+    assert!(endpoints[0].1.load(Ordering::Acquire) >= 10);
+    assert_ne!(
+        endpoints[1].1.load(Ordering::Acquire),
+        0,
+        "no connections to endpoint 1 after it was added"
+    );
+    assert_eq!(endpoints[2].1.load(Ordering::Acquire), 0);
+    // Add endpoint 2.
+    dst.add(Some((endpoints[2].0, meta.clone())))
+        .expect("still listening");
+
+    conns().await;
+    assert_ne!(
+        endpoints[1].1.load(Ordering::Acquire),
+        0,
+        "no connections to endpoint 1"
+    );
+    assert_ne!(
+        endpoints[2].1.load(Ordering::Acquire),
+        0,
+        "no connections to endpoint 2 after it was added"
+    );
+}
+
+#[tokio::test]
+async fn load_balancer_remove_endpoints() {
+    let _trace = test_support::trace_init();
+
+    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let endpoints = &[
+        (
+            SocketAddr::new([10, 0, 170, 42].into(), 5550),
+            Arc::new(AtomicBool::new(true)),
+        ),
+        (
+            SocketAddr::new([10, 0, 170, 68].into(), 5550),
+            Arc::new(AtomicBool::new(true)),
+        ),
+        (
+            SocketAddr::new([10, 0, 106, 66].into(), 5550),
+            Arc::new(AtomicBool::new(true)),
+        ),
+    ];
+
+    let cfg = default_config(svc_addr);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is valid");
+
+    let mut connect = test_support::connect();
+    for &(addr, ref enabled) in endpoints {
+        connect = connect.endpoint(
+            addr,
+            Connection {
+                identity: tls::Conditional::Some(id_name.clone()),
+                enabled: enabled.clone(),
+                ..Default::default()
+            },
+        );
+    }
+
+    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
+
+    let meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    let resolver = test_support::resolver();
+    let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
+    dst.add(Some((endpoints[0].0, meta.clone())))
+        .expect("still listening");
+
+    // Build the outbound server
+    let mut server = build_server(cfg, profiles, resolver, connect);
+
+    let mut conns = || {
+        let conns = (0..10)
+            .map(|i| {
+                tokio::spawn(
+                    hello_world_client(svc_addr, &mut server)
+                        .instrument(tracing::info_span!("conn", i)),
+                )
+                .err_into::<Error>()
+            })
+            .collect::<Vec<_>>();
+
+        async move {
+            if let Err(e) = futures::future::try_join_all(conns).await {
+                panic!("connection panicked: {:?}", e);
+            }
+        }
+    };
+
+    // All endpoints are enabled
+    conns().await;
+
+    let mut remove = |i: usize| {
+        dst.remove(Some(endpoints[i].0)).expect("still listening");
+        endpoints[i].1.store(false, Ordering::Release);
+        tracing::info!(removed = i, addr = %endpoints[i].0);
+    };
+
+    // Remove endpoint 2.
+    remove(2);
+    conns().await;
+
+    // Remove endpoint 1.
+    remove(1);
+    conns().await;
+
+    // Remove endpoint 0, and add endpoint 2.
+    remove(0);
+    drop(remove);
+    dst.add(Some((endpoints[2].0, meta.clone())))
+        .expect("still listening");
+    endpoints[2].1.store(true, Ordering::Release);
+    tracing::info!(added = 2);
+    conns().await;
 }
 
 #[tokio::test]
@@ -404,6 +603,44 @@ async fn no_profiles_when_outside_search_nets() {
         profile_state.only_configured(),
         "profiles outside the search networks were resolved"
     );
+}
+
+struct Connection {
+    identity: tls::Conditional<linkerd2_identity::Name>,
+    count: Arc<AtomicUsize>,
+    enabled: Arc<AtomicBool>,
+}
+
+impl Default for Connection {
+    fn default() -> Self {
+        Self {
+            identity: tls::Conditional::None(
+                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+            ),
+            count: Arc::new(AtomicUsize::new(0)),
+            enabled: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
+
+impl Into<Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static>> for Connection {
+    fn into(self) -> Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static> {
+        Box::new(move |endpoint| {
+            assert!(
+                self.enabled.load(Ordering::Acquire),
+                "tried to connect to an endpoint that should not be connected to!"
+            );
+            let num = self.count.fetch_add(1, Ordering::Release) + 1;
+            tracing::info!(?endpoint, num, "connecting");
+            assert_eq!(endpoint.peer_identity(), self.identity);
+            let io = test_support::io()
+                .write(b"hello")
+                .read(b"world")
+                .read_error(std::io::ErrorKind::ConnectionReset.into())
+                .build();
+            Box::pin(async move { Ok(io) })
+        })
+    }
 }
 
 fn build_server<I>(
