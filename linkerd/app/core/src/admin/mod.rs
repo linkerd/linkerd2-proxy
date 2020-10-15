@@ -4,6 +4,7 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{
+    proxy::http::{ClientAddr, SetClientAddr},
     svc, trace,
     transport::{io, tls},
 };
@@ -17,7 +18,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tower::{service_fn, util::ServiceExt, Service};
+use tower::Service;
 
 mod readiness;
 mod tasks;
@@ -39,9 +40,6 @@ pub struct Accept<M: FmtMetrics>(Admin<M>, hyper::server::conn::Http);
 
 #[derive(Debug, Clone)]
 pub struct Serve<M: FmtMetrics>(tls::accept::Meta, Accept<M>);
-
-#[derive(Clone, Debug)]
-pub struct ClientAddr(std::net::SocketAddr);
 
 pub type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Response<Body>, io::Error>> + Send + 'static>>;
@@ -134,19 +132,9 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve
         // client's IP address, we wrap the service with a new service
         // that adds the remote IP as a request extension.
         let peer = meta.addrs.peer();
-        let svc = svc.clone();
-        let svc = service_fn(move |mut req: Request<Body>| {
-            req.extensions_mut().insert(ClientAddr(peer));
-            svc.clone().oneshot(req)
-        });
+        let svc = SetClientAddr::new(peer, svc.clone());
 
         Box::pin(server.serve_connection(io, svc).map_err(Into::into))
-    }
-}
-
-impl ClientAddr {
-    pub fn addr(&self) -> std::net::SocketAddr {
-        self.0
     }
 }
 
@@ -159,7 +147,7 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
 
 fn check_loopback<B>(req: &Request<B>) -> Result<(), Response<Body>> {
     if let Some(addr) = req.extensions().get::<ClientAddr>() {
-        let addr = addr.addr();
+        let addr = addr.as_ref();
         if addr.ip().is_loopback() {
             return Ok(());
         }

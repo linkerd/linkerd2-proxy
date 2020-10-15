@@ -1,6 +1,10 @@
 use super::*;
 use crate::TcpEndpoint;
-use linkerd2_app_core::{drain, metrics, svc, transport::listen, Addr};
+use linkerd2_app_core::{
+    drain, metrics, svc,
+    transport::{io, listen},
+    Addr,
+};
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -334,7 +338,7 @@ fn build_server<I>(
 > + Send
        + 'static
 where
-    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (_, drain) = drain::channel();

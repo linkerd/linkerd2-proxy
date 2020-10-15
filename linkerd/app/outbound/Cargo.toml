@@ -31,6 +31,7 @@ features = [
 
 [dev-dependencies]
 ipnet = "1.0"
+linkerd2-io = { path = "../../io", features = ["tokio-test"] }
 linkerd2-app-test = { path = "../test" }
 tokio = { version = "0.2", features = ["full", "macros"]}
 tracing-futures = "0.2"

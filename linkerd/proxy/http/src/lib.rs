@@ -7,6 +7,7 @@ use linkerd2_identity as identity;
 pub mod add_header;
 pub mod balance;
 pub mod client;
+mod client_addr;
 pub mod detect;
 mod glue;
 pub mod h1;
@@ -23,6 +24,7 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
+    client_addr::{ClientAddr, SetClientAddr},
     detect::DetectHttp,
     glue::{Body as Payload, HyperServerSvc},
     timeout::MakeTimeoutLayer,
