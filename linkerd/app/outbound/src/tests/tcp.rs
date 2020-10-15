@@ -168,9 +168,9 @@ async fn resolutions_are_reused() {
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = test_support::connect().endpoint(
         addr,
-        Endpoint {
+        Connection {
             identity: tls::Conditional::Some(id_name.clone()),
-            ..Endpoint::default()
+            ..Connection::default()
         },
     );
 
@@ -251,10 +251,10 @@ async fn load_balances() {
     for &(addr, ref conns) in endpoints {
         connect = connect.endpoint(
             addr,
-            Endpoint {
+            Connection {
                 identity: tls::Conditional::Some(id_name.clone()),
                 count: conns.clone(),
-                ..Endpoint::default()
+                ..Connection::default()
             },
         );
     }
@@ -341,10 +341,10 @@ async fn load_balancer_add_endpoints() {
     for &(addr, ref conns) in endpoints {
         connect = connect.endpoint(
             addr,
-            Endpoint {
+            Connection {
                 identity: tls::Conditional::Some(id_name.clone()),
                 count: conns.clone(),
-                ..Endpoint::default()
+                ..Connection::default()
             },
         );
     }
@@ -451,10 +451,10 @@ async fn load_balancer_remove_endpoints() {
     for &(addr, ref enabled) in endpoints {
         connect = connect.endpoint(
             addr,
-            Endpoint {
+            Connection {
                 identity: tls::Conditional::Some(id_name.clone()),
                 enabled: enabled.clone(),
-                ..Endpoint::default()
+                ..Default::default()
             },
         );
     }
@@ -599,13 +599,13 @@ async fn no_profiles_when_outside_search_nets() {
     );
 }
 
-struct Endpoint {
+struct Connection {
     identity: tls::Conditional<linkerd2_identity::Name>,
     count: Arc<AtomicUsize>,
     enabled: Arc<AtomicBool>,
 }
 
-impl Default for Endpoint {
+impl Default for Connection {
     fn default() -> Self {
         Self {
             identity: tls::Conditional::None(
@@ -618,7 +618,7 @@ impl Default for Endpoint {
 }
 
 impl Into<Box<dyn FnMut(TcpEndpoint) -> test_support::connect::ConnectFuture + Send + 'static>>
-    for Endpoint
+    for Connection
 {
     fn into(
         self,
