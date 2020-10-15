@@ -1,4 +1,4 @@
-use super::{internal::Io, AsyncRead, AsyncWrite, Poll};
+use super::{internal::Io, AsyncRead, AsyncWrite, PeerAddr, Poll};
 use bytes::{Buf, BufMut};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
 
@@ -11,6 +11,12 @@ pub struct BoxedIo(Pin<Box<dyn Io + Unpin>>);
 impl BoxedIo {
     pub fn new<T: Io + Unpin + 'static>(io: T) -> Self {
         BoxedIo(Box::pin(io))
+    }
+}
+
+impl PeerAddr for BoxedIo {
+    fn peer_addr(&self) -> std::net::SocketAddr {
+        self.0.peer_addr()
     }
 }
 

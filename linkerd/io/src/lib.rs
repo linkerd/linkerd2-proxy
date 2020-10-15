@@ -10,12 +10,35 @@ pub use self::{
     sensor::{Sensor, SensorIo},
 };
 pub use std::io::{Error, Read, Result, Write};
+use std::net::SocketAddr;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub type Poll<T> = std::task::Poll<Result<T>>;
 
+pub trait PeerAddr {
+    fn peer_addr(&self) -> SocketAddr;
+}
+
+impl PeerAddr for tokio::net::TcpStream {
+    fn peer_addr(&self) -> SocketAddr {
+        tokio::net::TcpStream::peer_addr(self).expect("TcpStream must have a peer address")
+    }
+}
+
+impl<T: PeerAddr> PeerAddr for tokio_rustls::client::TlsStream<T> {
+    fn peer_addr(&self) -> SocketAddr {
+        self.get_ref().0.peer_addr()
+    }
+}
+
+impl<T: PeerAddr> PeerAddr for tokio_rustls::server::TlsStream<T> {
+    fn peer_addr(&self) -> SocketAddr {
+        self.get_ref().0.peer_addr()
+    }
+}
+
 mod internal {
-    use super::{AsyncRead, AsyncWrite, Poll};
+    use super::{AsyncRead, AsyncWrite, PeerAddr, Poll};
     use bytes::{Buf, BufMut};
     use std::pin::Pin;
     use std::task::Context;
@@ -25,7 +48,7 @@ mod internal {
     /// writes.
     ///
     /// Instead, use the concrete `BoxedIo` type.
-    pub trait Io: AsyncRead + AsyncWrite + Send {
+    pub trait Io: AsyncRead + AsyncWrite + PeerAddr + Send {
         /// This method is to allow using `Async::polL_read_buf` even through a
         /// trait object.
         fn poll_read_buf_erased(
