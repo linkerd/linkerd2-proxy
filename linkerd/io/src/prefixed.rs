@@ -1,4 +1,4 @@
-use crate::{internal::Io, Poll};
+use crate::{internal::Io, PeerAddr, Poll};
 use bytes::{Buf, BufMut, Bytes};
 use std::{cmp, io};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
@@ -24,6 +24,12 @@ impl<S: AsyncRead + AsyncWrite> PrefixedIo<S> {
 
     pub fn prefix(&self) -> &Bytes {
         &self.prefix
+    }
+}
+
+impl<S: PeerAddr> PeerAddr for PrefixedIo<S> {
+    fn peer_addr(&self) -> std::net::SocketAddr {
+        self.io.peer_addr()
     }
 }
 

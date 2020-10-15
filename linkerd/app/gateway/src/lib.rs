@@ -144,7 +144,6 @@ mod test {
                 Config { allow_discovery }.build(
                     move |_: _| outbound.clone(),
                     profiles,
-                    ([127, 0, 0, 1], 4140).into(),
                     tls::PeerIdentity::Some(identity::Name::from(
                         dns::Name::try_from("gateway.id.test".as_bytes()).unwrap(),
                     )),

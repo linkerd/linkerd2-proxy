@@ -926,6 +926,7 @@ dependencies = [
  "linkerd2-app-core",
  "linkerd2-app-test",
  "linkerd2-identity",
+ "linkerd2-io",
  "linkerd2-retry",
  "pin-project",
  "tokio",
@@ -1157,6 +1158,7 @@ dependencies = [
  "pin-project",
  "tokio",
  "tokio-rustls",
+ "tokio-test",
 ]
 
 [[package]]

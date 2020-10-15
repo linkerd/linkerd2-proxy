@@ -1,4 +1,4 @@
-use crate::{internal::Io, Poll};
+use crate::{internal::Io, PeerAddr, Poll};
 use bytes::{Buf, BufMut};
 use futures::ready;
 use linkerd2_errno::Errno;
@@ -102,5 +102,11 @@ impl<T: Io, S: Sensor + Send> Io for SensorIo<T, S> {
         mut buf: &mut dyn BufMut,
     ) -> Poll<usize> {
         self.poll_read_buf(cx, &mut buf)
+    }
+}
+
+impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
+    fn peer_addr(&self) -> std::net::SocketAddr {
+        self.io.peer_addr()
     }
 }

@@ -308,7 +308,7 @@ impl Config {
            + Send
            + 'static
     where
-        I: io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Unpin + Send + 'static,
         F: svc::NewService<TcpEndpoint, Service = A> + Unpin + Clone + Send + 'static,
         A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
         A::Error: Into<Error>,

@@ -1,6 +1,10 @@
 use super::*;
 use crate::TcpEndpoint;
-use linkerd2_app_core::{drain, metrics, svc, transport::listen, Addr};
+use linkerd2_app_core::{
+    drain, metrics, svc,
+    transport::{io, listen},
+    Addr,
+};
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -314,7 +318,6 @@ async fn load_balances() {
     );
 }
 
-#[tokio::test]
 async fn load_balancer_add_endpoints() {
     let _trace = test_support::trace_init();
 
@@ -537,7 +540,7 @@ async fn no_profiles_when_outside_search_nets() {
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
-    .expect("hostname is valid");
+    .expect("hostname is invalid");
     let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -656,7 +659,7 @@ fn build_server<I>(
 > + Send
        + 'static
 where
-    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (_, drain) = drain::channel();

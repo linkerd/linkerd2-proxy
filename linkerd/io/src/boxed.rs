@@ -1,4 +1,4 @@
-use super::{internal::Io, AsyncRead, AsyncWrite, Poll};
+use super::{internal::Io, AsyncRead, AsyncWrite, PeerAddr, Poll};
 use bytes::{Buf, BufMut};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
 
@@ -11,6 +11,12 @@ pub struct BoxedIo(Pin<Box<dyn Io + Unpin>>);
 impl BoxedIo {
     pub fn new<T: Io + Unpin + 'static>(io: T) -> Self {
         BoxedIo(Box::pin(io))
+    }
+}
+
+impl PeerAddr for BoxedIo {
+    fn peer_addr(&self) -> std::net::SocketAddr {
+        self.0.peer_addr()
     }
 }
 
@@ -98,6 +104,12 @@ mod tests {
 
     #[derive(Debug)]
     struct WriteBufDetector;
+
+    impl PeerAddr for WriteBufDetector {
+        fn peer_addr(&self) -> std::net::SocketAddr {
+            ([0, 0, 0, 0], 0).into()
+        }
+    }
 
     impl AsyncRead for WriteBufDetector {
         fn poll_read(self: Pin<&mut Self>, _: &mut Context<'_>, _: &mut [u8]) -> Poll<usize> {
