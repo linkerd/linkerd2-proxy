@@ -54,24 +54,24 @@ impl<E: fmt::Debug> Connect<E> {
     pub fn endpoint(
         self,
         endpoint: impl Into<SocketAddr>,
-        f: impl Into<Box<dyn FnMut(E) -> ConnectFuture + Send + 'static>>,
+        on_connect: impl Into<Box<dyn FnMut(E) -> ConnectFuture + Send + 'static>>,
     ) -> Self {
         self.endpoints
             .lock()
             .unwrap()
-            .insert(endpoint.into(), f.into());
+            .insert(endpoint.into(), on_connect.into());
         self
     }
 
     pub fn endpoint_fn(
         self,
         endpoint: impl Into<SocketAddr>,
-        mut f: impl (FnMut(E) -> Result<io::Mock, Error>) + Send + 'static,
+        mut on_connect: impl (FnMut(E) -> Result<io::Mock, Error>) + Send + 'static,
     ) -> Self {
         self.endpoints.lock().unwrap().insert(
             endpoint.into(),
             Box::new(move |endpoint| {
-                let conn = f(endpoint);
+                let conn = on_connect(endpoint);
                 Box::pin(async move { conn })
             }),
         );

@@ -8,7 +8,10 @@ use std::{
     },
     time::Duration,
 };
-use test_support::{connect::Connect, resolver};
+use test_support::{
+    connect::{Connect, ConnectFuture},
+    resolver,
+};
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
 
@@ -617,12 +620,8 @@ impl Default for Connection {
     }
 }
 
-impl Into<Box<dyn FnMut(TcpEndpoint) -> test_support::connect::ConnectFuture + Send + 'static>>
-    for Connection
-{
-    fn into(
-        self,
-    ) -> Box<dyn FnMut(TcpEndpoint) -> test_support::connect::ConnectFuture + Send + 'static> {
+impl Into<Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static>> for Connection {
+    fn into(self) -> Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static> {
         Box::new(move |endpoint| {
             assert!(
                 self.enabled.load(Ordering::Acquire),
