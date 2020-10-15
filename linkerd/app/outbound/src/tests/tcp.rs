@@ -1,6 +1,10 @@
 use super::*;
 use crate::TcpEndpoint;
-use linkerd2_app_core::{drain, metrics, svc, transport::listen, Addr};
+use linkerd2_app_core::{
+    drain, metrics, svc,
+    transport::{io, listen},
+    Addr,
+};
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -37,7 +41,10 @@ async fn plaintext_tcp() {
     let mut srv_io = test_support::io();
     srv_io.read(b"hello").write(b"world");
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect().endpoint_builder(target_addr, srv_io);
+    let connect = test_support::connect().endpoint_fn(target_addr, move |endpoint: TcpEndpoint| {
+        assert!(endpoint.peer_identity().is_none());
+        Ok(srv_io.build())
+    });
 
     // Configure mock IO for the "client".
     let client_io = test_support::io().write(b"hello").read(b"world").build();
@@ -94,11 +101,16 @@ async fn tls_when_hinted() {
     let mut srv_io = test_support::io();
     srv_io.write(b"hello").read(b"world");
     let id_name2 = id_name.clone();
+    let mut tls_srv_io = srv_io.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = test_support::connect()
         // The plaintext endpoint should use plaintext...
-        .endpoint_builder(plain_addr, srv_io.clone())
+        .endpoint_fn(plain_addr, move |endpoint: TcpEndpoint| {
+            assert!(endpoint.peer_identity().is_none());
+            let io = tls_srv_io.build();
+            Ok(io)
+        })
         .endpoint_fn(tls_addr, move |endpoint: TcpEndpoint| {
             assert_eq!(
                 endpoint.peer_identity(),
@@ -317,6 +329,83 @@ async fn load_balances() {
     );
 }
 
+#[tokio::test]
+async fn no_profiles_when_outside_search_nets() {
+    let _trace = test_support::trace_init();
+
+    let profile_addr = SocketAddr::new([10, 0, 0, 42].into(), 5550);
+    let no_profile_addr = SocketAddr::new([126, 32, 5, 18].into(), 5550);
+    let cfg = Config {
+        allow_discovery: IpMatch::new(Some(IpNet::from_str("10.0.0.0/8").unwrap())),
+        ..default_config(profile_addr)
+    };
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is invalid");
+    let id_name2 = id_name.clone();
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = test_support::connect()
+        .endpoint_fn(profile_addr, move |endpoint: TcpEndpoint| {
+            assert_eq!(
+                endpoint.peer_identity(),
+                tls::Conditional::Some(id_name2.clone())
+            );
+            let io = test_support::io()
+                .write(b"hello")
+                .read(b"world")
+                .read_error(std::io::ErrorKind::ConnectionReset.into())
+                .build();
+            Ok(io)
+        })
+        .endpoint_fn(no_profile_addr, move |endpoint: TcpEndpoint| {
+            assert!(endpoint.peer_identity().is_none());
+            let io = test_support::io()
+                .write(b"hello")
+                .read(b"world")
+                .read_error(std::io::ErrorKind::ConnectionReset.into())
+                .build();
+            Ok(io)
+        });
+
+    let meta = test_support::resolver::Metadata::new(
+        Default::default(),
+        test_support::resolver::ProtocolHint::Unknown,
+        Some(id_name),
+        10_000,
+        None,
+    );
+
+    // Configure the mock destination resolver to just give us a single endpoint
+    // for the target, which always exists and has no metadata.
+    let resolver =
+        test_support::resolver().endpoint_exists(Addr::from(profile_addr), profile_addr, meta);
+    let resolve_state = resolver.handle();
+
+    let profiles = test_support::profiles().profile(profile_addr, Default::default());
+    let profile_state = profiles.handle();
+
+    // Build the outbound server
+    let mut server = build_server(cfg, profiles, resolver, connect);
+
+    tokio::join! {
+        hello_world_client(profile_addr, &mut server),
+        hello_world_client(no_profile_addr, &mut server)
+    };
+
+    assert!(resolve_state.is_empty());
+    assert!(
+        resolve_state.only_configured(),
+        "destinations outside the search networks were resolved"
+    );
+    assert!(profile_state.is_empty());
+    assert!(
+        profile_state.only_configured(),
+        "profiles outside the search networks were resolved"
+    );
+}
+
 fn build_server<I>(
     cfg: Config,
     profiles: resolver::Profiles<SocketAddr>,
@@ -334,7 +423,7 @@ fn build_server<I>(
 > + Send
        + 'static
 where
-    I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (_, drain) = drain::channel();

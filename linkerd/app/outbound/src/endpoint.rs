@@ -6,8 +6,7 @@ use linkerd2_app_core::{
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
-        http::override_authority::CanOverrideAuthority,
-        http::{self},
+        http::{self, override_authority::CanOverrideAuthority, ClientAddr},
         identity,
         resolve::map_endpoint::MapEndpoint,
         tap,
@@ -258,8 +257,10 @@ impl<P> CanOverrideAuthority for Endpoint<P> {
 }
 
 impl tap::Inspect for HttpEndpoint {
-    fn src_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        None
+    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+        req.extensions()
+            .get::<ClientAddr>()
+            .map(|c| c.as_ref().clone())
     }
 
     fn src_tls<'a, B>(

@@ -18,7 +18,7 @@ use linkerd2_app_core::{
     reconnect, retry,
     spans::SpanConverter,
     svc::{self},
-    transport::{self, listen, tls},
+    transport::{self, io, listen, tls},
     Addr, Error, IpMatch, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
@@ -65,7 +65,7 @@ impl Config {
         HttpEndpoint,
         Error = Error,
         Future = impl future::Future + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        Response = impl io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
     > + Unpin
            + Clone
            + Send {
@@ -102,12 +102,12 @@ impl Config {
            + 'static
     where
         C: tower::Service<TcpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
         R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
-        I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
     {
         svc::stack(connect)
             .push_make_thunk()
@@ -319,7 +319,7 @@ impl Config {
     > + Send
            + 'static
     where
-        I: tokio::io::AsyncRead + tokio::io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
         R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
         R::Future: Unpin + Send,
         R::Resolution: Unpin + Send,
