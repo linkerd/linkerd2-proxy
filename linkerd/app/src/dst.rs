@@ -1,10 +1,10 @@
 use linkerd2_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    is_discovery_rejected, profiles,
+    is_discovery_rejected, metrics, profiles,
     proxy::{api_resolve as api, identity, resolve::recover},
     transport::tls,
-    ControlHttpMetrics, Error, Recover,
+    Error, Recover,
 };
 use tonic::body::BoxBody;
 
@@ -36,7 +36,7 @@ impl Config {
     pub fn build(
         self,
         dns: dns::Resolver,
-        metrics: ControlHttpMetrics,
+        metrics: metrics::ControlHttp,
         identity: tls::Conditional<identity::Local>,
     ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();

@@ -2,8 +2,8 @@ use super::classify;
 use super::dst::Route;
 // use super::handle_time;
 use super::http_metrics::retries::Handle;
+use super::metrics::HttpRouteRetry;
 use super::transport::tls;
-use super::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
 use hyper::body::HttpBody;
@@ -35,7 +35,7 @@ pub struct Retry<C = ()> {
 }
 
 impl NewRetry {
-    pub fn new(metrics: super::HttpRouteRetry) -> Self {
+    pub fn new(metrics: HttpRouteRetry) -> Self {
         Self {
             metrics,
             _clone_request: PhantomData,

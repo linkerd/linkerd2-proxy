@@ -15,7 +15,7 @@ use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    drain, dst, errors, metric_labels,
+    drain, dst, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -26,7 +26,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Error, NameAddr, NameMatch, ProxyMetrics, TraceContext, DST_OVERRIDE_HEADER,
+    Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -61,7 +61,7 @@ impl Config {
         http_loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> impl svc::NewService<
@@ -122,7 +122,7 @@ impl Config {
     pub fn build_tcp_connect(
         &self,
         prevent_loop: PreventLoop,
-        metrics: &ProxyMetrics,
+        metrics: &metrics::Proxy,
     ) -> impl tower::Service<
         TcpEndpoint,
         Error = impl Into<Error>,
@@ -154,7 +154,7 @@ impl Config {
         loopback: L,
         profiles_client: P,
         tap_layer: tap::Layer,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl svc::NewService<
         Target,
@@ -292,7 +292,7 @@ impl Config {
         &self,
         tcp_forward: F,
         http_router: H,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> impl svc::NewService<
@@ -394,7 +394,7 @@ impl Config {
         detect: D,
         tcp_forward: F,
         identity: tls::Conditional<identity::Local>,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,
         Service = impl tower::Service<
@@ -449,8 +449,8 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
-fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-    metric_labels::StackLabels::inbound(name)
+fn stack_labels(name: &'static str) -> metrics::StackLabels {
+    metrics::StackLabels::inbound(name)
 }
 
 // === impl SkipByPort ===

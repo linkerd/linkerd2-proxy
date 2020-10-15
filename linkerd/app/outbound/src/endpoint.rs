@@ -1,8 +1,8 @@
 use crate::http::uri::Authority;
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    dst, metric_labels,
-    metric_labels::{prefix_labels, EndpointLabels, TlsStatus},
+    dst, metrics,
+    metrics::{prefix_labels, EndpointLabels, TlsStatus},
     profiles,
     proxy::{
         api_resolve::{Metadata, ProtocolHint},
@@ -218,7 +218,7 @@ impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
 
 impl<P> Into<EndpointLabels> for &'_ Endpoint<P> {
     fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metric_labels::Direction;
+        use linkerd2_app_core::metrics::Direction;
         EndpointLabels {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
             direction: Direction::Out,
@@ -327,6 +327,6 @@ pub fn route((route, logical): (profiles::http::Route, HttpLogical)) -> dst::Rou
     dst::Route {
         route,
         target: logical.addr(),
-        direction: metric_labels::Direction::Out,
+        direction: metrics::Direction::Out,
     }
 }

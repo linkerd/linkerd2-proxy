@@ -1,4 +1,4 @@
-use super::metric_labels::Direction;
+use super::metrics::Direction;
 use linkerd2_metrics::{latency, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 use linkerd2_proxy_http::insert;
 use std::fmt;

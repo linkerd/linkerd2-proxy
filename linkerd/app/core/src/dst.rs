@@ -10,7 +10,7 @@ use std::time::Duration;
 pub struct Route {
     pub target: Addr,
     pub route: profiles::http::Route,
-    pub direction: super::metric_labels::Direction,
+    pub direction: super::metrics::Direction,
 }
 
 // === impl Route ===

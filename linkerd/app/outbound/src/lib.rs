@@ -11,7 +11,7 @@ use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    drain, errors, metric_labels,
+    drain, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve, http, identity, tap, tcp},
@@ -19,8 +19,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Addr, Error, IpMatch, ProxyMetrics, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
-    L5D_REQUIRE_ID,
+    Addr, Error, IpMatch, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
@@ -56,7 +55,7 @@ impl Config {
         &self,
         prevent_loop: impl Into<PreventLoop>,
         local_identity: tls::Conditional<identity::Local>,
-        metrics: &ProxyMetrics,
+        metrics: &metrics::Proxy,
     ) -> impl tower::Service<
         TcpEndpoint,
         Error = Error,
@@ -130,7 +129,7 @@ impl Config {
         &self,
         tcp_connect: C,
         tap_layer: tap::Layer,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl svc::NewService<
         HttpEndpoint,
@@ -194,7 +193,7 @@ impl Config {
         &self,
         endpoint: E,
         resolve: R,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         HttpLogical,
         Service = impl tower::Service<
@@ -305,7 +304,7 @@ impl Config {
         resolve: R,
         tcp_connect: C,
         http_router: H,
-        metrics: ProxyMetrics,
+        metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> impl svc::NewService<
@@ -441,8 +440,8 @@ impl Config {
     }
 }
 
-fn stack_labels(name: &'static str) -> metric_labels::StackLabels {
-    metric_labels::StackLabels::outbound(name)
+fn stack_labels(name: &'static str) -> metrics::StackLabels {
+    metrics::StackLabels::outbound(name)
 }
 
 pub fn trace_labels() -> HashMap<String, String> {
