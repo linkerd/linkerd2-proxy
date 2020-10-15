@@ -1,5 +1,6 @@
 use crate::{
     self as http,
+    client_addr::SetClientAddr,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
     trace, upgrade, Version as HttpVersion,
@@ -7,7 +8,7 @@ use crate::{
 use futures::prelude::*;
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
-use linkerd2_io::{self as io, PrefixedIo};
+use linkerd2_io::{self as io, PeerAddr, PrefixedIo};
 use linkerd2_stack::NewService;
 use std::{
     future::Future,
@@ -108,7 +109,7 @@ where
 impl<T, I, F, FSvc, H, HSvc> Service<PrefixedIo<I>> for AcceptHttp<T, F, H>
 where
     T: Clone,
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
     F: NewService<T, Service = FSvc> + Clone,
     FSvc: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
     FSvc::Error: Into<Error>,
@@ -147,6 +148,8 @@ where
                     svc
                 };
 
+                let client_addr = io.peer_addr();
+
                 let conn = self
                     .server
                     .clone()
@@ -154,7 +157,10 @@ where
                     .serve_connection(
                         io,
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        HyperServerSvc::new(upgrade::Service::new(http1, self.drain.clone())),
+                        HyperServerSvc::new(upgrade::Service::new(
+                            SetClientAddr::new(client_addr, http1),
+                            self.drain.clone(),
+                        )),
                     )
                     .with_upgrades();
 
@@ -180,11 +186,13 @@ where
                     svc
                 };
 
+                let client_addr = io.peer_addr();
+
                 let conn = self
                     .server
                     .clone()
                     .http2_only(true)
-                    .serve_connection(io, HyperServerSvc::new(h2));
+                    .serve_connection(io, HyperServerSvc::new(SetClientAddr::new(client_addr, h2)));
 
                 Box::pin(
                     self.drain
