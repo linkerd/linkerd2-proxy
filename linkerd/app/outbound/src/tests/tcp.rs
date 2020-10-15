@@ -318,6 +318,7 @@ async fn load_balances() {
     );
 }
 
+#[tokio::test(core_threads = 1)]
 async fn load_balancer_add_endpoints() {
     let _trace = test_support::trace_init();
 
