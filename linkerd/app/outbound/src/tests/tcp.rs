@@ -411,7 +411,6 @@ async fn load_balancer_add_endpoints() {
         .expect("still listening");
 
     conns().await;
-    assert!(endpoints[0].1.load(Ordering::Acquire) >= 10);
     assert_ne!(
         endpoints[1].1.load(Ordering::Acquire),
         0,
