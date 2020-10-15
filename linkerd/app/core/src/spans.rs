@@ -70,7 +70,7 @@ impl SpanConverter {
         }
         for (k, v) in span.labels.drain() {
             attributes.insert(
-                k,
+                k.to_string(),
                 oc::AttributeValue {
                     value: Some(oc::attribute_value::Value::StringValue(truncatable(v))),
                 },

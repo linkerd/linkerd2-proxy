@@ -931,6 +931,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -1539,7 +1540,7 @@ dependencies = [
  "hex",
  "http 0.2.1",
  "linkerd2-error",
- "pin-project",
+ "linkerd2-stack",
  "rand 0.7.2",
  "tokio",
  "tower",

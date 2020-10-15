@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
+pub use self::layer::TraceContext;
 use bytes::Bytes;
 use linkerd2_error::Error;
 use rand::Rng;
@@ -11,8 +12,6 @@ use tokio::sync::mpsc;
 
 pub mod layer;
 mod propagation;
-
-pub use layer::{TraceContext, TraceContextLayer};
 
 const SPAN_ID_LEN: usize = 8;
 
@@ -33,7 +32,7 @@ pub struct Span {
     pub span_name: String,
     pub start: SystemTime,
     pub end: SystemTime,
-    pub labels: HashMap<String, String>,
+    pub labels: HashMap<&'static str, String>,
 }
 
 pub trait SpanSink {

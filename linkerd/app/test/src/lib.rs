@@ -17,13 +17,22 @@ use std::fmt;
 pub use tokio_test::io;
 
 pub mod connect;
+pub mod profile;
 pub mod resolver;
+pub mod service;
 
-pub fn resolver<T, E>() -> resolver::Resolver<T, E>
+pub fn resolver<T, E>() -> resolver::Dst<T, E>
 where
     T: std::hash::Hash + Eq + fmt::Debug,
 {
     resolver::Resolver::new()
+}
+
+pub fn profiles<T>() -> resolver::Profiles<T>
+where
+    T: std::hash::Hash + Eq + fmt::Debug,
+{
+    profile::resolver()
 }
 
 pub fn connect<E: fmt::Debug>() -> connect::Connect<E> {

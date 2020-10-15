@@ -26,7 +26,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Error, NameAddr, NameMatch, TraceContextLayer, DST_OVERRIDE_HEADER,
+    Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -37,15 +37,21 @@ pub mod endpoint;
 mod prevent_loop;
 mod require_identity_for_ports;
 
-type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
-
 #[derive(Clone, Debug)]
 pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
+    pub disable_protocol_detection_for_ports: SkipByPort,
     pub profile_idle_timeout: Duration,
 }
+
+#[derive(Clone, Debug)]
+pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
+
+type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
+
+// === impl Config ===
 
 impl Config {
     pub fn build<L, S, P>(
@@ -210,7 +216,7 @@ impl Config {
             .push(tap_layer)
             // Records metrics for each `Target`.
             .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            .push_on_response(TraceContextLayer::new(
+            .push_on_response(TraceContext::layer(
                 span_sink
                     .clone()
                     .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
@@ -338,10 +344,6 @@ impl Config {
             // Synthesizes responses for proxy errors.
             .push(errors::layer());
 
-        let http_server_observability = svc::layers().push(TraceContextLayer::new(
-            span_sink.map(|span_sink| SpanConverter::server(span_sink, trace_labels())),
-        ));
-
         let http_server = svc::stack(http_router)
             // Removes the override header after it has been used to
             // determine a reuquest target.
@@ -354,17 +356,19 @@ impl Config {
             // Used by tap.
             .push_http_insert_target()
             .check_new_service::<TcpAccept, http::Request<_>>()
-            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
-                    .push(http_server_observability)
+                    .push(TraceContext::layer(span_sink.map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
                     .push(metrics.stack.layer(stack_labels("source")))
                     .box_http_request()
                     .box_http_response(),
             )
-            .push_map_target(|(_, accept): (http::Version, TcpAccept)| accept)
-            .instrument(|(v, _): &(http::Version, TcpAccept)| info_span!("http", %v))
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+            .push_map_target(|(_, accept): (_, TcpAccept)| accept)
+            .instrument(|(v, _): &(http::Version, _)| info_span!("http", %v))
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
@@ -413,11 +417,11 @@ impl Config {
         B::Future: Send,
     {
         let ProxyConfig {
-            disable_protocol_detection_for_ports: skip_detect,
             detect_protocol_timeout,
             ..
         } = self.proxy;
         let require_identity = self.require_identity_for_inbound_ports;
+        let skip_detect = self.disable_protocol_detection_for_ports;
 
         svc::stack::MakeSwitch::new(
             skip_detect,
@@ -447,4 +451,18 @@ pub fn trace_labels() -> HashMap<String, String> {
 
 fn stack_labels(name: &'static str) -> metrics::StackLabels {
     metrics::StackLabels::inbound(name)
+}
+
+// === impl SkipByPort ===
+
+impl From<indexmap::IndexSet<u16>> for SkipByPort {
+    fn from(ports: indexmap::IndexSet<u16>) -> Self {
+        SkipByPort(ports.into())
+    }
+}
+
+impl svc::stack::Switch<listen::Addrs> for SkipByPort {
+    fn use_primary(&self, t: &listen::Addrs) -> bool {
+        !self.0.contains(&t.target_addr().port())
+    }
 }

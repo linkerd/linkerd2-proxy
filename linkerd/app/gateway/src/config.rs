@@ -4,7 +4,7 @@ use linkerd2_app_core::{
 };
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound::endpoint as outbound;
-use std::net::SocketAddr;
+use tracing::info_span;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
@@ -19,7 +19,6 @@ impl Config {
         self,
         outbound: O,
         profiles: P,
-        default_addr: SocketAddr,
         local_id: tls::PeerIdentity,
     ) -> impl svc::NewService<
         inbound::Target,
@@ -45,13 +44,14 @@ impl Config {
         S::Error: Into<Error>,
         S::Future: Send + 'static,
     {
-        svc::stack(MakeGateway::new(outbound, default_addr, local_id))
+        svc::stack(MakeGateway::new(outbound, local_id))
             .check_new_service::<super::make::Target, http::Request<http::boxed::Payload>>()
             .push(profiles::discover::layer(
                 profiles,
                 Allow(self.allow_discovery),
             ))
             .check_new_service::<inbound::Target, http::Request<http::boxed::Payload>>()
+            .instrument(|_: &inbound::Target| info_span!("gateway"))
             .into_inner()
     }
 }

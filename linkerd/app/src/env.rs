@@ -118,8 +118,6 @@ pub const ENV_INBOUND_GATEWAY_SUFFIXES: &str = "LINKERD2_PROXY_INBOUND_GATEWAY_S
 // has a port in the provided list.
 pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
-pub const ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
-    "LINKERD2_PROXY_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION";
 
 pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
@@ -246,11 +244,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_disable_ports = parse(
         strings,
         ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-        parse_port_set,
-    );
-    let outbound_disable_ports = parse(
-        strings,
-        ENV_OUTBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
         parse_port_set,
     );
 
@@ -381,9 +374,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                disable_protocol_detection_for_ports: outbound_disable_ports?
-                    .unwrap_or_else(|| default_disable_ports_protocol_detection())
-                    .into(),
                 cache_max_idle_age: outbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
                 buffer_capacity,
@@ -440,9 +430,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                disable_protocol_detection_for_ports: inbound_disable_ports?
-                    .unwrap_or_else(|| default_disable_ports_protocol_detection())
-                    .into(),
                 cache_max_idle_age: inbound_cache_max_idle_age?
                     .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
                 buffer_capacity,
@@ -454,6 +441,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
+            disable_protocol_detection_for_ports: inbound_disable_ports?
+                .unwrap_or_else(|| default_disable_ports_protocol_detection())
+                .into(),
         }
     };
 

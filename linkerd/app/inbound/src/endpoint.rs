@@ -13,6 +13,7 @@ use tracing::debug;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
+    pub peer_addr: SocketAddr,
     pub peer_id: tls::PeerIdentity,
 }
 
@@ -55,6 +56,7 @@ impl From<listen::Addrs> for TcpAccept {
     fn from(tcp: listen::Addrs) -> Self {
         Self {
             target_addr: tcp.target_addr(),
+            peer_addr: tcp.peer(),
             peer_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped.into()),
         }
     }
@@ -64,6 +66,7 @@ impl From<tls::accept::Meta> for TcpAccept {
     fn from(tls: tls::accept::Meta) -> Self {
         Self {
             target_addr: tls.addrs.target_addr(),
+            peer_addr: tls.addrs.peer(),
             peer_id: tls.peer_identity,
         }
     }
@@ -229,9 +232,7 @@ impl classify::CanClassify for Target {
 
 impl tap::Inspect for Target {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions()
-            .get::<tls::accept::Meta>()
-            .map(|s| s.addrs.peer())
+        req.extensions().get::<TcpAccept>().map(|s| s.peer_addr)
     }
 
     fn src_tls<'a, B>(
@@ -239,8 +240,8 @@ impl tap::Inspect for Target {
         req: &'a http::Request<B>,
     ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
         req.extensions()
-            .get::<tls::accept::Meta>()
-            .map(|s| s.peer_identity.as_ref())
+            .get::<TcpAccept>()
+            .map(|s| s.peer_id.as_ref())
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled))
     }
 
