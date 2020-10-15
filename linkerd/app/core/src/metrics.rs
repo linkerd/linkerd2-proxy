@@ -1,6 +1,6 @@
 pub use crate::{
     classify::{Class, SuccessOrFailure},
-    control, dst, errors, handle_time, http_metrics, http_metrics as metrics, opencensus, proxy,
+    control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
     proxy::identity,
     stack_metrics, telemetry,
     transport::{self, labels::TlsStatus},
@@ -23,7 +23,6 @@ pub type Stack = stack_metrics::Registry<StackLabels>;
 
 #[derive(Clone)]
 pub struct Proxy {
-    pub http_handle_time: handle_time::Scope,
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
     pub http_route_retry: HttpRouteRetry,
@@ -138,10 +137,6 @@ impl Metrics {
 
         let http_errors = errors::Metrics::default();
 
-        let handle_time_report = handle_time::Metrics::new();
-        let inbound_handle_time = handle_time_report.inbound();
-        let outbound_handle_time = handle_time_report.outbound();
-
         let stack = stack_metrics::Registry::default();
 
         let (transport, transport_report) = transport::metrics::new();
@@ -150,7 +145,6 @@ impl Metrics {
 
         let metrics = Metrics {
             inbound: Proxy {
-                http_handle_time: inbound_handle_time,
                 http_endpoint: http_endpoint.clone(),
                 http_route: http_route.clone(),
                 http_route_actual: http_route_actual.clone(),
@@ -160,7 +154,6 @@ impl Metrics {
                 transport: transport.clone(),
             },
             outbound: Proxy {
-                http_handle_time: outbound_handle_time,
                 http_endpoint,
                 http_route,
                 http_route_retry,
@@ -179,7 +172,6 @@ impl Metrics {
             .and_then(retry_report)
             .and_then(actual_report)
             .and_then(control_report)
-            .and_then(handle_time_report)
             .and_then(transport_report)
             .and_then(opencensus_report)
             .and_then(stack)
