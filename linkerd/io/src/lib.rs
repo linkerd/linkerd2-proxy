@@ -37,6 +37,13 @@ impl<T: PeerAddr> PeerAddr for tokio_rustls::server::TlsStream<T> {
     }
 }
 
+#[cfg(feature = "tokio-test")]
+impl PeerAddr for tokio_test::io::Mock {
+    fn peer_addr(&self) -> SocketAddr {
+        ([0, 0, 0, 0], 0).into()
+    }
+}
+
 mod internal {
     use super::{AsyncRead, AsyncWrite, PeerAddr, Poll};
     use bytes::{Buf, BufMut};
