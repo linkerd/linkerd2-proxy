@@ -8,14 +8,15 @@ use crate::core::{
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::time::Duration;
-use std::{fmt, fs};
+use std::{
+    collections::HashMap,
+    convert::TryFrom,
+    net::SocketAddr,
+    path::PathBuf,
+    str::FromStr,
+    time::Duration,
+    {fmt, fs},
+};
 use tracing::{error, warn};
 
 /// The strings used to build a configuration.
@@ -202,15 +203,6 @@ const DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT: Duration = Duration::from_millis
 
 const DEFAULT_IDENTITY_MIN_REFRESH: Duration = Duration::from_secs(10);
 const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24);
-
-// By default, we keep a list of known assigned ports of server-first protocols.
-//
-// https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt
-const DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION: &[u16] = &[
-    25,   // SMTP
-    587,  // SMTP
-    3306, // MySQL
-];
 
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
@@ -441,9 +433,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
-            disable_protocol_detection_for_ports: inbound_disable_ports?
-                .unwrap_or_else(|| default_disable_ports_protocol_detection())
-                .into(),
+            disable_protocol_detection_for_ports: inbound_disable_ports?.unwrap_or_default().into(),
         }
     };
 
@@ -579,10 +569,6 @@ fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, Strin
             })
         })
         .collect()
-}
-
-fn default_disable_ports_protocol_detection() -> IndexSet<u16> {
-    IndexSet::from_iter(DEFAULT_PORTS_DISABLE_PROTOCOL_DETECTION.iter().cloned())
 }
 
 // ===== impl Env =====
