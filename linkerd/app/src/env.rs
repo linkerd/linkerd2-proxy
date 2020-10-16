@@ -9,13 +9,8 @@ use crate::core::{
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
 use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    net::SocketAddr,
-    path::PathBuf,
-    str::FromStr,
+    collections::HashMap, convert::TryFrom, fmt, fs, net::SocketAddr, path::PathBuf, str::FromStr,
     time::Duration,
-    {fmt, fs},
 };
 use tracing::{error, warn};
 
