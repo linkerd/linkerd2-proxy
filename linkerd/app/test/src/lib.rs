@@ -59,8 +59,8 @@ pub fn trace_subscriber() -> (Dispatch, app_core::trace::Handle) {
     env::set_var("LINKERD2_PROXY_LOG_FORMAT", &log_format);
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
-    let _ = app_core::trace::init_log_compat();
-    app_core::trace::with_filter_and_format(&log_level, &log_format)
+    let _ = linkerd2_tracing::init_log_compat();
+    linkerd2_tracing::with_filter_and_format(&log_level, &log_format)
 }
 
 pub fn trace_init() -> tracing::dispatcher::DefaultGuard {

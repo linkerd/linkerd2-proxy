@@ -1,13 +1,17 @@
+#![deny(warnings, rust_2018_idioms)]
+
+mod level;
+mod tasks;
+
 use linkerd2_error::Error;
 use std::{env, fmt, str, time::Instant};
 use tokio_timer::clock;
-use tokio_trace::tasks::{TaskList, TasksLayer};
+use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
 use tracing_subscriber::{
     fmt::{format, Layer as FmtLayer},
     layer::Layered,
     prelude::*,
-    reload, EnvFilter,
 };
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
@@ -23,18 +27,6 @@ type Formatter<F, E> = Layered<
     Layered<TasksLayer<F>, tracing_subscriber::Registry>,
 >;
 
-#[derive(Clone)]
-pub struct Handle {
-    pub level: LevelHandle,
-    pub tasks: TaskList,
-}
-
-#[derive(Clone)]
-pub enum LevelHandle {
-    Json(reload::Handle<EnvFilter, JsonFormatter>),
-    Plain(reload::Handle<EnvFilter, PlainFormatter>),
-}
-
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<Handle, Error> {
@@ -47,6 +39,7 @@ pub fn init() -> Result<Handle, Error> {
     init_log_compat()?;
     // Set the default subscriber.
     tracing::dispatcher::set_global_default(dispatch)?;
+
     Ok(handle)
 }
 
@@ -66,6 +59,7 @@ pub fn with_filter_and_format(
     let formatter = tracing_subscriber::fmt::format()
         .with_timer(Uptime { start_time })
         .with_thread_ids(true);
+
     let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
         "JSON" => {
             let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
@@ -80,10 +74,10 @@ pub fn with_filter_and_format(
                 )
                 .with(filter)
                 .into();
-            let handle = LevelHandle::Json(level);
+            let handle = level::Handle::Json(level);
             (dispatch, handle, tasks)
         }
-        "PLAIN" | _ => {
+        _ => {
             let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
             let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
             let dispatch = tracing_subscriber::registry()
@@ -91,85 +85,56 @@ pub fn with_filter_and_format(
                 .with(tracing_subscriber::fmt::layer().event_format(formatter))
                 .with(filter)
                 .into();
-            let handle = LevelHandle::Plain(level);
+            let handle = level::Handle::Plain(level);
             (dispatch, handle, tasks)
         }
     };
 
-    (dispatch, Handle { level, tasks })
+    (
+        dispatch,
+        Handle {
+            level,
+            tasks: tasks::Handle { tasks },
+        },
+    )
+}
+
+#[derive(Clone)]
+pub struct Handle {
+    level: level::Handle,
+    tasks: tasks::Handle,
 }
 
 pub struct Uptime {
     start_time: Instant,
 }
 
+// === impl Handle ===
+
+impl Handle {
+    /// Serve requests that controls the log level. The request is expected to be either a GET or PUT
+    /// request. PUT requests must have a body that describes the new log level.
+    pub async fn serve_level(
+        &self,
+        req: http::Request<hyper::Body>,
+    ) -> Result<http::Response<hyper::Body>, Error> {
+        self.level.serve(req).await
+    }
+
+    /// Serve requests for task dumps.
+    pub async fn serve_tasks(
+        &self,
+        req: http::Request<hyper::Body>,
+    ) -> Result<http::Response<hyper::Body>, Error> {
+        self.tasks.serve(req)
+    }
+}
+
+// === impl Uptime ===
+
 impl tracing_subscriber::fmt::time::FormatTime for Uptime {
     fn format_time(&self, w: &mut dyn fmt::Write) -> fmt::Result {
         let uptime = clock::now() - self.start_time;
         write!(w, "[{:>6}.{:06}s]", uptime.as_secs(), uptime.subsec_nanos())
-    }
-}
-
-impl Handle {
-    /// Returns a new `LevelHandle` without a corresponding filter.
-    ///
-    /// This will do nothing, but is required for admin endpoint tests which
-    /// do not exercise the `proxy-log-level` endpoint.
-    pub fn dangling() -> Self {
-        let (_, handle) = with_filter_and_format("", "");
-        handle
-    }
-}
-
-impl LevelHandle {
-    pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
-        let level = level.as_ref();
-        let filter = level.parse::<EnvFilter>()?;
-        match self {
-            Self::Json(level) => level.reload(filter)?,
-            Self::Plain(level) => level.reload(filter)?,
-        }
-        tracing::info!(%level, "set new log level");
-        Ok(())
-    }
-
-    pub fn current(&self) -> Result<String, Error> {
-        match self {
-            Self::Json(handle) => handle
-                .with_current(|f| format!("{}", f))
-                .map_err(Into::into),
-            Self::Plain(handle) => handle
-                .with_current(|f| format!("{}", f))
-                .map_err(Into::into),
-        }
-    }
-}
-
-impl fmt::Debug for LevelHandle {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Json(handle) => handle
-                .with_current(|c| {
-                    f.debug_struct("LevelHandle")
-                        .field("current", &format_args!("{}", c))
-                        .finish()
-                })
-                .unwrap_or_else(|e| {
-                    f.debug_struct("LevelHandle")
-                        .field("current", &format_args!("{}", e))
-                        .finish()
-                }),
-            Self::Plain(handle) => handle
-                .with_current(|c| {
-                    f.debug_struct("LevelHandle")
-                        .field("current", &format_args!("{}", c))
-                        .finish()
-                })
-                .unwrap_or_else(|e| {
-                    f.debug_struct("LevelHandle")
-                        .field("current", &format_args!("{}", e))
-                        .finish()
-                }),
-        }
     }
 }
