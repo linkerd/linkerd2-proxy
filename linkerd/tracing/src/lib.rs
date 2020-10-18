@@ -2,10 +2,11 @@
 
 mod level;
 mod tasks;
+mod uptime;
 
+use self::uptime::Uptime;
 use linkerd2_error::Error;
-use std::{env, fmt, str, time::Instant};
-use tokio_timer::clock;
+use std::{env, str};
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
 use tracing_subscriber::{
@@ -54,10 +55,9 @@ pub fn with_filter_and_format(
     let filter = filter.as_ref();
 
     // Set up the subscriber
-    let start_time = clock::now();
     let filter = tracing_subscriber::EnvFilter::new(filter);
     let formatter = tracing_subscriber::fmt::format()
-        .with_timer(Uptime { start_time })
+        .with_timer(Uptime::starting_now())
         .with_thread_ids(true);
 
     let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
@@ -105,10 +105,6 @@ pub struct Handle {
     tasks: tasks::Handle,
 }
 
-pub struct Uptime {
-    start_time: Instant,
-}
-
 // === impl Handle ===
 
 impl Handle {
@@ -127,14 +123,5 @@ impl Handle {
         req: http::Request<hyper::Body>,
     ) -> Result<http::Response<hyper::Body>, Error> {
         self.tasks.serve(req)
-    }
-}
-
-// === impl Uptime ===
-
-impl tracing_subscriber::fmt::time::FormatTime for Uptime {
-    fn format_time(&self, w: &mut dyn fmt::Write) -> fmt::Result {
-        let uptime = clock::now() - self.start_time;
-        write!(w, "[{:>6}.{:06}s]", uptime.as_secs(), uptime.subsec_nanos())
     }
 }
