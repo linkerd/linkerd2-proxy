@@ -32,8 +32,11 @@ type Formatter<F, E> = Layered<
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<Handle, Error> {
     let log_level = env::var(ENV_LOG_LEVEL).unwrap_or(DEFAULT_LOG_LEVEL.to_string());
-    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
+    if let "OFF" = log_level.to_uppercase().trim() {
+        return Ok(Handle(Inner::Disabled));
+    }
 
+    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
     let (dispatch, handle) = with_filter_and_format(log_level, log_format);
 
     // Set up log compatibility.
@@ -92,17 +95,23 @@ pub fn with_filter_and_format(
 
     (
         dispatch,
-        Handle {
+        Handle(Inner::Enabled {
             level,
             tasks: tasks::Handle { tasks },
-        },
+        }),
     )
 }
 
 #[derive(Clone)]
-pub struct Handle {
-    level: level::Handle,
-    tasks: tasks::Handle,
+pub struct Handle(Inner);
+
+#[derive(Clone)]
+enum Inner {
+    Disabled,
+    Enabled {
+        level: level::Handle,
+        tasks: tasks::Handle,
+    },
 }
 
 // === impl Handle ===
@@ -114,7 +123,10 @@ impl Handle {
         &self,
         req: http::Request<hyper::Body>,
     ) -> Result<http::Response<hyper::Body>, Error> {
-        self.level.serve(req).await
+        match self.0 {
+            Inner::Enabled { ref level, .. } => level.serve(req).await,
+            Inner::Disabled => Ok(Self::not_found()),
+        }
     }
 
     /// Serve requests for task dumps.
@@ -122,6 +134,16 @@ impl Handle {
         &self,
         req: http::Request<hyper::Body>,
     ) -> Result<http::Response<hyper::Body>, Error> {
-        self.tasks.serve(req)
+        match self.0 {
+            Inner::Enabled { ref tasks, .. } => tasks.serve(req),
+            Inner::Disabled => Ok(Self::not_found()),
+        }
+    }
+
+    fn not_found() -> http::Response<hyper::Body> {
+        http::Response::builder()
+            .status(http::StatusCode::NOT_FOUND)
+            .body(hyper::Body::empty())
+            .expect("Response must be valid")
     }
 }
