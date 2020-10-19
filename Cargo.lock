@@ -949,7 +949,6 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd2-app-core",
- "linkerd2-tracing",
  "regex 0.1.80",
  "tokio",
  "tokio-test",

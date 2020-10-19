@@ -24,7 +24,6 @@ http = "0.2"
 http-body = "0.3"
 hyper = "0.13.7"
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
-linkerd2-tracing = { path = "../../tracing" }
 regex = "0.1"
 tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
 tokio-test = "0.2.1"
