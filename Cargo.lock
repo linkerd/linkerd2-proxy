@@ -791,7 +791,6 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.5.4",
  "futures 0.3.5",
- "html-escape",
  "http 0.2.1",
  "http-body",
  "hyper",
@@ -835,22 +834,19 @@ dependencies = [
  "linkerd2-stack-tracing",
  "linkerd2-timeout",
  "linkerd2-trace-context",
+ "linkerd2-tracing",
  "pin-project",
  "procinfo",
  "prost-types",
  "rand 0.7.2",
  "regex 1.3.9",
- "serde_json",
  "tokio",
  "tokio-timer",
- "tokio-trace",
  "tonic",
  "tower",
  "tower-request-modifier",
  "tracing",
  "tracing-futures",
- "tracing-log",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -953,9 +949,6 @@ dependencies = [
  "http-body",
  "hyper",
  "linkerd2-app-core",
- "linkerd2-proxy-api-resolve",
- "linkerd2-proxy-core",
- "linkerd2-proxy-transport",
  "regex 0.1.80",
  "tokio",
  "tokio-test",
@@ -1547,6 +1540,24 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "linkerd2-tracing"
+version = "0.1.0"
+dependencies = [
+ "bytes 0.5.4",
+ "html-escape",
+ "http 0.2.1",
+ "hyper",
+ "linkerd2-error",
+ "serde_json",
+ "tokio-timer",
+ "tokio-trace",
+ "tracing",
+ "tracing-futures",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]

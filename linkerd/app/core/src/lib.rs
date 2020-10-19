@@ -24,6 +24,7 @@ pub use linkerd2_service_profiles as profiles;
 pub use linkerd2_stack_metrics as stack_metrics;
 pub use linkerd2_stack_tracing as stack_tracing;
 pub use linkerd2_trace_context::TraceContext;
+pub use linkerd2_tracing as trace;
 
 mod addr_match;
 pub mod admin;
@@ -41,7 +42,6 @@ pub mod serve;
 pub mod spans;
 pub mod svc;
 pub mod telemetry;
-pub mod trace;
 pub mod transport;
 
 pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};

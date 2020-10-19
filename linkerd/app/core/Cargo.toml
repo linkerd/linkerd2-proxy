@@ -54,6 +54,7 @@ linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-retry = { path = "../../retry" }
 linkerd2-router = { path = "../../router" }
 linkerd2-timeout = { path = "../../timeout" }
+linkerd2-tracing = { path = "../../tracing" }
 linkerd2-service-profiles = { path = "../../service-profiles" }
 linkerd2-stack = { path = "../../stack" }
 linkerd2-stack-metrics = { path = "../../stack/metrics" }
@@ -66,20 +67,8 @@ tokio-timer = "0.2"
 tower-request-modifier = { git = "https://github.com/tower-rs/tower-http" }
 tonic = { version = "0.3", default-features = false, features = ["prost"] }
 tracing = "0.1.19"
-tracing-futures = { version = "0.2", features = ["std-future"] }
-tracing-log = "0.1"
+tracing-futures = { version = "0.2" }
 pin-project = "0.4"
-
-# task tracking
-html-escape = "0.2.5"
-tokio-trace = { git = "https://github.com/hawkw/tokio-trace", rev = "a8240c5cbb4ff981def84920d4087ef23b5edb93", features = ["serde"] }
-serde_json = "1"
-
-[dependencies.tracing-subscriber]
-version = "0.2.11"
-# we don't need `chrono` time formatting or ANSI colored output
-default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
 
 [dependencies.tower]
 version = "0.3"

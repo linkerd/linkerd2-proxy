@@ -1,10 +1,12 @@
 use futures::future;
+pub use linkerd2_app_core::proxy::{
+    api_resolve::{Metadata, ProtocolHint},
+    core::resolve::{Resolve, Update},
+};
 use linkerd2_app_core::{
     profiles::{self, Profile},
     Error,
 };
-pub use linkerd2_proxy_api_resolve::{Metadata, ProtocolHint};
-pub use linkerd2_proxy_core::resolve::{Resolve, Update};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::SocketAddr;

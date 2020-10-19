@@ -11,52 +11,39 @@ use crate::{
 use futures::{future, TryFutureExt};
 use http::StatusCode;
 use hyper::{Body, Request, Response};
-use linkerd2_error::Error;
+use linkerd2_error::{Error, Never};
 use linkerd2_metrics::{self as metrics, FmtMetrics};
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
-use tower::Service;
 
 mod readiness;
-mod tasks;
-mod trace_level;
 
 pub use self::readiness::{Latch, Readiness};
-use self::{tasks::Tasks, trace_level::TraceLevel};
 
-#[derive(Debug, Clone)]
-pub struct Admin<M: FmtMetrics> {
+#[derive(Clone)]
+pub struct Admin<M> {
     metrics: metrics::Serve<M>,
-    trace_level: TraceLevel,
-    tasks: Tasks,
+    tracing: trace::Handle,
     ready: Readiness,
 }
 
-#[derive(Debug, Clone)]
-pub struct Accept<M: FmtMetrics>(Admin<M>, hyper::server::conn::Http);
+#[derive(Clone)]
+pub struct Accept<M>(Admin<M>, hyper::server::conn::Http);
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Serve<M: FmtMetrics>(tls::accept::Meta, Accept<M>);
 
 pub type ResponseFuture =
-    Pin<Box<dyn Future<Output = Result<Response<Body>, io::Error>> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Result<Response<Body>, Never>> + Send + 'static>>;
 
-impl<M: FmtMetrics> Admin<M> {
-    pub fn new(
-        m: M,
-        ready: Readiness,
-        trace::Handle {
-            level: trace_level,
-            tasks,
-        }: trace::Handle,
-    ) -> Self {
+impl<M> Admin<M> {
+    pub fn new(m: M, ready: Readiness, tracing: trace::Handle) -> Self {
         Self {
             metrics: metrics::Serve::new(m),
-            trace_level,
-            tasks: tasks.into(),
+            tracing,
             ready,
         }
     }
@@ -86,17 +73,40 @@ impl<M: FmtMetrics> Admin<M> {
             .expect("builder with known status code must not fail")
     }
 
-    fn internal_error_rsp() -> http::Response<Body> {
+    fn internal_error_rsp(error: impl ToString) -> http::Response<Body> {
         http::Response::builder()
             .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::empty())
+            .header(http::header::CONTENT_TYPE, "text/plain")
+            .body(error.to_string().into())
             .expect("builder with known status code should not fail")
+    }
+
+    fn not_found() -> Response<Body> {
+        Response::builder()
+            .status(http::StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .expect("builder with known status code must not fail")
+    }
+
+    fn forbidden_not_localhost() -> Response<Body> {
+        Response::builder()
+            .status(http::StatusCode::FORBIDDEN)
+            .header(http::header::CONTENT_TYPE, "text/plain")
+            .body("Requests are only permitted from localhost.".into())
+            .expect("builder with known status code must not fail")
+    }
+
+    fn client_is_localhost<B>(req: &Request<B>) -> bool {
+        req.extensions()
+            .get::<ClientAddr>()
+            .map(|a| a.as_ref().ip().is_loopback())
+            .unwrap_or(false)
     }
 }
 
-impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
-    type Response = Response<Body>;
-    type Error = io::Error;
+impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
+    type Response = http::Response<Body>;
+    type Error = Never;
     type Future = ResponseFuture;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -110,13 +120,37 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
             "/metrics" => {
                 let rsp = self.metrics.serve(req).unwrap_or_else(|error| {
                     tracing::error!(%error, "Failed to format metrics");
-                    Self::internal_error_rsp()
+                    Self::internal_error_rsp(error)
                 });
                 Box::pin(future::ok(rsp))
             }
-            "/proxy-log-level" => self.trace_level.call(req),
-            path if path.starts_with("/tasks") => Box::pin(self.tasks.call(req)),
-            _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
+            "/proxy-log-level" => {
+                if Self::client_is_localhost(&req) {
+                    let handle = self.tracing.clone();
+                    Box::pin(async move {
+                        handle.serve_level(req).await.or_else(|error| {
+                            tracing::error!(%error, "Failed to get/set tracing level");
+                            Ok(Self::internal_error_rsp(error))
+                        })
+                    })
+                } else {
+                    Box::pin(future::ok(Self::forbidden_not_localhost()))
+                }
+            }
+            path if path.starts_with("/tasks") => {
+                if Self::client_is_localhost(&req) {
+                    let handle = self.tracing.clone();
+                    Box::pin(async move {
+                        handle.serve_tasks(req).await.or_else(|error| {
+                            tracing::error!(%error, "Failed to fetch tasks");
+                            Ok(Self::internal_error_rsp(error))
+                        })
+                    })
+                } else {
+                    Box::pin(future::ok(Self::forbidden_not_localhost()))
+                }
+            }
+            _ => Box::pin(future::ok(Self::not_found())),
         }
     }
 }
@@ -144,36 +178,9 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve
         // Since the `/proxy-log-level` controls access based on the
         // client's IP address, we wrap the service with a new service
         // that adds the remote IP as a request extension.
-        let peer = meta.addrs.peer();
-        let svc = SetClientAddr::new(peer, svc.clone());
+        let svc = SetClientAddr::new(meta.addrs.peer(), svc.clone());
 
         Box::pin(server.serve_connection(io, svc).map_err(Into::into))
-    }
-}
-
-fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(body.into())
-        .expect("builder with known status code must not fail")
-}
-
-fn check_loopback<B>(req: &Request<B>) -> Result<(), Response<Body>> {
-    if let Some(addr) = req.extensions().get::<ClientAddr>() {
-        let addr = addr.as_ref();
-        if addr.ip().is_loopback() {
-            return Ok(());
-        }
-        tracing::warn!(%addr, "denying request from non-loopback IP");
-        Err(rsp(
-            StatusCode::FORBIDDEN,
-            "access to /proxy-log-level and /trace only allowed from loopback interface",
-        ))
-    } else {
-        // TODO: should we panic if this was unset? It's a bug, but should
-        // it crash the proxy?
-        tracing::error!("ClientAddr extension should always be set");
-        Err(rsp(StatusCode::INTERNAL_SERVER_ERROR, Body::empty()))
     }
 }
 
@@ -183,6 +190,7 @@ mod tests {
     use http::method::Method;
     use std::time::Duration;
     use tokio::time::timeout;
+    use tower::util::ServiceExt;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -191,15 +199,16 @@ mod tests {
         let (r, l0) = Readiness::new();
         let l1 = l0.clone();
 
-        let mut srv = Admin::new((), r, trace::Handle::dangling());
+        let (_, t) = trace::with_filter_and_format("", "");
+        let admin = Admin::new((), r, t);
         macro_rules! call {
             () => {{
                 let r = Request::builder()
                     .method(Method::GET)
-                    .uri("http://4.3.2.1:5678/ready")
+                    .uri("http://0.0.0.0/ready")
                     .body(Body::empty())
                     .unwrap();
-                let f = srv.call(r);
+                let f = admin.clone().oneshot(r);
                 timeout(TIMEOUT, f).await.expect("timeout").expect("call")
             };};
         }

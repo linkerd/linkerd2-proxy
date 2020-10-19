@@ -1,0 +1,26 @@
+[package]
+name = "linkerd2-tracing"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+bytes = "0.5"
+html-escape = "0.2.5"
+http = "0.2"
+hyper = "0.13"
+linkerd2-error = { path = "../error" }
+serde_json = "1"
+tokio-timer = "0.2"
+tokio-trace = { git = "https://github.com/hawkw/tokio-trace", rev = "a8240c5cbb4ff981def84920d4087ef23b5edb93", features = ["serde"] }
+tracing = "0.1.19"
+tracing-futures = { version = "0.2" }
+tracing-log = "0.1"
+
+[dependencies.tracing-subscriber]
+version = "0.2.11"
+# we don't need `chrono` time formatting or ANSI colored output
+default-features = false
+features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
+
