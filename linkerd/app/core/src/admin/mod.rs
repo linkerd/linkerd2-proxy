@@ -92,43 +92,47 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/live" => return Box::pin(future::ok(Self::live_rsp())),
-            "/ready" => return Box::pin(future::ok(self.ready_rsp())),
+            "/live" => Box::pin(future::ok(Self::live_rsp())),
+            "/ready" => Box::pin(future::ok(self.ready_rsp())),
             "/metrics" => {
                 let rsp = self.metrics.serve(req).unwrap_or_else(|error| {
                     tracing::error!(%error, "Failed to format metrics");
                     Self::internal_error_rsp()
                 });
-                return Box::pin(future::ok(rsp));
+                Box::pin(future::ok(rsp))
             }
-            _ => {}
-        }
-
-        if client_is_localhost(&req) {
-            match req.uri().path() {
-                "/proxy-log-level" => {
+            "/proxy-log-level" => {
+                if client_is_localhost(&req) {
                     let handle = self.tracing.clone();
-                    return Box::pin(async move {
+                    Box::pin(async move {
                         handle.serve_level(req).await.or_else(|error| {
                             tracing::error!(%error, "Failed to get/set tracing level");
                             Ok(Self::internal_error_rsp())
                         })
-                    });
+                    })
+                } else {
+                    Box::pin(future::ok(forbidden(
+                        "Requests are only permitted from localhost.",
+                    )))
                 }
-                path if path.starts_with("/tasks") => {
+            }
+            path if path.starts_with("/tasks") => {
+                if client_is_localhost(&req) {
                     let handle = self.tracing.clone();
-                    return Box::pin(async move {
+                    Box::pin(async move {
                         handle.serve_tasks(req).await.or_else(|error| {
                             tracing::error!(%error, "Failed to fetch tasks");
                             Ok(Self::internal_error_rsp())
                         })
-                    });
+                    })
+                } else {
+                    Box::pin(future::ok(forbidden(
+                        "Requests are only permitted from localhost.",
+                    )))
                 }
-                _ => {}
             }
+            _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
-
-        Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty())))
     }
 }
 
@@ -165,6 +169,14 @@ fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
     Response::builder()
         .status(status)
         .body(body.into())
+        .expect("builder with known status code must not fail")
+}
+
+fn forbidden(msg: &'static str) -> Response<Body> {
+    Response::builder()
+        .status(http::StatusCode::FORBIDDEN)
+        .header(http::header::CONTENT_TYPE, "text/plain")
+        .body(msg.into())
         .expect("builder with known status code must not fail")
 }
 
