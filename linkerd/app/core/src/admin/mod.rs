@@ -73,11 +73,34 @@ impl<M> Admin<M> {
             .expect("builder with known status code must not fail")
     }
 
-    fn internal_error_rsp() -> http::Response<Body> {
+    fn internal_error_rsp(error: impl ToString) -> http::Response<Body> {
         http::Response::builder()
             .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::empty())
+            .header(http::header::CONTENT_TYPE, "text/plain")
+            .body(error.to_string().into())
             .expect("builder with known status code should not fail")
+    }
+
+    fn not_found() -> Response<Body> {
+        Response::builder()
+            .status(http::StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .expect("builder with known status code must not fail")
+    }
+
+    fn forbidden_not_localhost() -> Response<Body> {
+        Response::builder()
+            .status(http::StatusCode::FORBIDDEN)
+            .header(http::header::CONTENT_TYPE, "text/plain")
+            .body("Requests are only permitted from localhost.".into())
+            .expect("builder with known status code must not fail")
+    }
+
+    fn client_is_localhost<B>(req: &Request<B>) -> bool {
+        req.extensions()
+            .get::<ClientAddr>()
+            .map(|a| a.as_ref().ip().is_loopback())
+            .unwrap_or(false)
     }
 }
 
@@ -97,41 +120,37 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
             "/metrics" => {
                 let rsp = self.metrics.serve(req).unwrap_or_else(|error| {
                     tracing::error!(%error, "Failed to format metrics");
-                    Self::internal_error_rsp()
+                    Self::internal_error_rsp(error)
                 });
                 Box::pin(future::ok(rsp))
             }
             "/proxy-log-level" => {
-                if client_is_localhost(&req) {
+                if Self::client_is_localhost(&req) {
                     let handle = self.tracing.clone();
                     Box::pin(async move {
                         handle.serve_level(req).await.or_else(|error| {
                             tracing::error!(%error, "Failed to get/set tracing level");
-                            Ok(Self::internal_error_rsp())
+                            Ok(Self::internal_error_rsp(error))
                         })
                     })
                 } else {
-                    Box::pin(future::ok(forbidden(
-                        "Requests are only permitted from localhost.",
-                    )))
+                    Box::pin(future::ok(Self::forbidden_not_localhost()))
                 }
             }
             path if path.starts_with("/tasks") => {
-                if client_is_localhost(&req) {
+                if Self::client_is_localhost(&req) {
                     let handle = self.tracing.clone();
                     Box::pin(async move {
                         handle.serve_tasks(req).await.or_else(|error| {
                             tracing::error!(%error, "Failed to fetch tasks");
-                            Ok(Self::internal_error_rsp())
+                            Ok(Self::internal_error_rsp(error))
                         })
                     })
                 } else {
-                    Box::pin(future::ok(forbidden(
-                        "Requests are only permitted from localhost.",
-                    )))
+                    Box::pin(future::ok(Self::forbidden_not_localhost()))
                 }
             }
-            _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
+            _ => Box::pin(future::ok(Self::not_found())),
         }
     }
 }
@@ -163,28 +182,6 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve
 
         Box::pin(server.serve_connection(io, svc).map_err(Into::into))
     }
-}
-
-fn rsp(status: StatusCode, body: impl Into<Body>) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(body.into())
-        .expect("builder with known status code must not fail")
-}
-
-fn forbidden(msg: &'static str) -> Response<Body> {
-    Response::builder()
-        .status(http::StatusCode::FORBIDDEN)
-        .header(http::header::CONTENT_TYPE, "text/plain")
-        .body(msg.into())
-        .expect("builder with known status code must not fail")
-}
-
-fn client_is_localhost<B>(req: &Request<B>) -> bool {
-    req.extensions()
-        .get::<ClientAddr>()
-        .map(|a| a.as_ref().ip().is_loopback())
-        .unwrap_or(false)
 }
 
 #[cfg(test)]
