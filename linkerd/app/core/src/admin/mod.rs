@@ -79,11 +79,18 @@ impl<M: FmtMetrics> Admin<M> {
         }
     }
 
-    fn live_rsp(&self) -> Response<Body> {
+    fn live_rsp() -> Response<Body> {
         Response::builder()
             .status(StatusCode::OK)
             .body("live\n".into())
             .expect("builder with known status code must not fail")
+    }
+
+    fn internal_error_rsp() -> http::Response<Body> {
+        http::Response::builder()
+            .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .expect("builder with known status code should not fail")
     }
 }
 
@@ -98,10 +105,16 @@ impl<M: FmtMetrics> Service<Request<Body>> for Admin<M> {
 
     fn call(&mut self, req: Request<Body>) -> Self::Future {
         match req.uri().path() {
-            "/metrics" => Box::pin(self.metrics.call(req)),
-            "/proxy-log-level" => self.trace_level.call(req),
+            "/live" => Box::pin(future::ok(Self::live_rsp())),
             "/ready" => Box::pin(future::ok(self.ready_rsp())),
-            "/live" => Box::pin(future::ok(self.live_rsp())),
+            "/metrics" => {
+                let rsp = self.metrics.serve(req).unwrap_or_else(|error| {
+                    tracing::error!(%error, "Failed to format metrics");
+                    Self::internal_error_rsp()
+                });
+                Box::pin(future::ok(rsp))
+            }
+            "/proxy-log-level" => self.trace_level.call(req),
             path if path.starts_with("/tasks") => Box::pin(self.tasks.call(req)),
             _ => Box::pin(future::ok(rsp(StatusCode::NOT_FOUND, Body::empty()))),
         }
