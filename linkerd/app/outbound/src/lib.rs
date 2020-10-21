@@ -298,12 +298,124 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_server<R, P, C, H, S, I>(
+    pub fn build_server<P, H, S, I>(
+        self,
+        profiles: P,
+        http_router: H,
+        metrics: metrics::Proxy,
+        span_sink: Option<mpsc::Sender<oc::Span>>,
+        drain: drain::Watch,
+    ) -> impl svc::NewService<
+        listen::Addrs,
+        Service = impl tower::Service<
+            I,
+            Response = (),
+            Error = impl Into<Error>,
+            Future = impl Send + 'static,
+        > + Send
+                      + 'static,
+    > + Send
+           + 'static
+    where
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+        H: svc::NewService<HttpLogical, Service = S> + Unpin + Send + Clone + 'static,
+        S: tower::Service<
+                http::Request<http::boxed::Payload>,
+                Response = http::Response<http::boxed::Payload>,
+                Error = Error,
+            > + Send
+            + 'static,
+        S::Future: Send,
+        P: profiles::GetProfile<Addr> + Unpin + Clone + Send + 'static,
+        P::Future: Unpin + Send,
+        P::Error: Send,
+    {
+        let ProxyConfig {
+            server: ServerConfig { h2_settings, .. },
+            dispatch_timeout,
+            max_in_flight_requests,
+            detect_protocol_timeout,
+            cache_max_idle_age,
+            buffer_capacity,
+            ..
+        } = self.proxy;
+
+        let http_server = svc::stack(http_router)
+            .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
+            .push_on_response(
+                svc::layers()
+                    .box_http_request()
+                    // Limits the number of in-flight requests.
+                    .push_concurrency_limit(max_in_flight_requests)
+                    // Eagerly fail requests when the proxy is out of capacity for a
+                    // dispatch_timeout.
+                    .push_failfast(dispatch_timeout)
+                    .push(metrics.http_errors.clone())
+                    // Synthesizes responses for proxy errors.
+                    .push(errors::layer())
+                    // Initiates OpenCensus tracing.
+                    .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
+                    .push(metrics.stack.layer(stack_labels("source")))
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity)
+                    .box_http_response(),
+            )
+            .check_new_service::<endpoint::HttpLogical, http::Request<_>>()
+            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+            .instrument(|l: &endpoint::HttpLogical| info_span!("http", v = %l.protocol))
+            .push_map_target(endpoint::HttpLogical::from)
+            .check_new_service::<(http::Version, endpoint::TcpLogical), http::Request<_>>()
+            .into_inner();
+
+        let http = svc::stack(http::DetectHttp::new(
+            h2_settings,
+            http_server,
+            tcp_balance,
+            drain.clone(),
+        ))
+        .check_new_service::<
+            endpoint::TcpLogical,
+            transport::io::PrefixedIo<transport::metrics::SensorIo<I>>,
+        >()
+        .push_on_response(
+            svc::layers().push_spawn_buffer(buffer_capacity).push(transport::Prefix::layer(
+            http::Version::DETECT_BUFFER_CAPACITY,
+            detect_protocol_timeout,
+        )))
+        .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
+        .into_inner();
+
+        svc::stack(svc::stack::MakeSwitch::new(SkipByProfile, http, tcp))
+            .check_new_service::<endpoint::TcpLogical, transport::metrics::SensorIo<I>>()
+            .push_map_target(endpoint::TcpLogical::from)
+            .push(profiles::discover::layer(
+                profiles,
+                AllowProfile(self.allow_discovery),
+            ))
+            .check_new_service::<endpoint::Accept, transport::metrics::SensorIo<I>>()
+            .cache(
+                svc::layers().push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+                ),
+            )
+            .check_new_service::<endpoint::Accept, transport::metrics::SensorIo<I>>()
+            .push(metrics.transport.layer_accept())
+            .push_map_target(endpoint::Accept::from)
+            .check_new_service::<listen::Addrs, I>()
+            .into_inner()
+    }
+
+    pub fn build_ingress_server<R, P, C, H, S, I>(
         self,
         profiles: P,
         resolve: R,
         tcp_connect: C,
         http_router: H,
+        domains: Vec<dns::Name>,
         metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
