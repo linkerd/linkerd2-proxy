@@ -103,18 +103,11 @@ impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
 }
 
 impl<P> From<(http::Version, Logical<P>)> for HttpLogical {
-    fn from(
-        (
-            protocol,
-            Logical {
-                orig_dst, profile, ..
-            },
-        ): (http::Version, Logical<P>),
-    ) -> Self {
+    fn from((protocol, logical): (http::Version, Logical<P>)) -> Self {
         Self {
             protocol,
-            orig_dst,
-            profile,
+            orig_dst: logical.orig_dst,
+            profile: logical.profile,
         }
     }
 }
