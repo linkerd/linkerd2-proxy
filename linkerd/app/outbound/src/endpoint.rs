@@ -19,9 +19,10 @@ use std::{net::SocketAddr, sync::Arc};
 #[derive(Copy, Clone)]
 pub struct FromMetadata;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Accept {
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Accept<P> {
     pub orig_dst: SocketAddr,
+    pub protocol: P,
 }
 
 #[derive(Clone)]
@@ -45,31 +46,46 @@ pub struct Endpoint<P> {
     pub concrete: Concrete<P>,
 }
 
+pub type HttpAccept = Accept<http::Version>;
 pub type HttpLogical = Logical<http::Version>;
 pub type HttpConcrete = Concrete<http::Version>;
 pub type HttpEndpoint = Endpoint<http::Version>;
 
+pub type TcpAccept = Accept<()>;
 pub type TcpLogical = Logical<()>;
 pub type TcpConcrete = Concrete<()>;
 pub type TcpEndpoint = Endpoint<()>;
 
 // === impl Accept ===
 
-impl From<listen::Addrs> for Accept {
+impl From<listen::Addrs> for Accept<()> {
     fn from(addrs: listen::Addrs) -> Self {
         Self {
             orig_dst: addrs.target_addr(),
+            protocol: (),
         }
     }
 }
 
-impl Into<Addr> for &'_ Accept {
+impl<P> From<(P, TcpAccept)> for Accept<P> {
+    fn from((protocol, Accept { orig_dst, .. }): (P, TcpAccept)) -> Self {
+        Self { orig_dst, protocol }
+    }
+}
+
+impl<P> Into<SocketAddr> for &'_ Accept<P> {
+    fn into(self) -> SocketAddr {
+        self.orig_dst
+    }
+}
+
+impl<P> Into<Addr> for &'_ Accept<P> {
     fn into(self) -> Addr {
         self.orig_dst.into()
     }
 }
 
-impl Into<transport::labels::Key> for &'_ Accept {
+impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
         const NO_TLS: tls::Conditional<identity::Name> =
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
@@ -79,12 +95,14 @@ impl Into<transport::labels::Key> for &'_ Accept {
 
 // === impl Logical ===
 
-impl From<(Option<profiles::Receiver>, Accept)> for TcpLogical {
-    fn from((profile, Accept { orig_dst }): (Option<profiles::Receiver>, Accept)) -> Self {
+impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
+    fn from(
+        (profile, Accept { orig_dst, protocol }): (Option<profiles::Receiver>, Accept<P>),
+    ) -> Self {
         Self {
-            orig_dst,
             profile,
-            protocol: (),
+            orig_dst,
+            protocol,
         }
     }
 }
@@ -189,6 +207,12 @@ impl<P> From<Logical<P>> for Endpoint<P> {
                 resolve: None,
             },
         }
+    }
+}
+
+impl<P> From<Accept<P>> for Endpoint<P> {
+    fn from(accept: Accept<P>) -> Self {
+        Logical::from((None, accept)).into()
     }
 }
 
