@@ -1,9 +1,9 @@
 #![allow(warnings)]
 
-use crate::endpoint;
+use crate::target::{Concrete, EndpointFromMetadata};
 use futures::{future, prelude::*, stream};
 use linkerd2_app_core::{
-    is_discovery_rejected,
+    discovery_rejected, is_discovery_rejected,
     proxy::{
         api_resolve::Metadata,
         core::{Resolve, ResolveService, Update},
@@ -15,7 +15,7 @@ use linkerd2_app_core::{
         stack::{FilterRequest, RequestFilter},
         NewService,
     },
-    Error,
+    Addr, Error,
 };
 use std::{
     future::Future,
@@ -24,58 +24,68 @@ use std::{
     time::Duration,
 };
 
-type ResolveStack<F, R> = map_endpoint::Resolve<
-    endpoint::FromMetadata,
-    RecoverDefault<RequestFilter<F, ResolveService<R>>>,
+type ResolveStack<R> = map_endpoint::Resolve<
+    EndpointFromMetadata,
+    RecoverDefault<RequestFilter<AllowResolve, ResolveService<R>>>,
 >;
 
-fn new_resolve<T, F, R>(filter: F, resolve: R) -> ResolveStack<F, R>
+fn new_resolve<T, R>(resolve: R) -> ResolveStack<R>
 where
     T: Clone,
     for<'t> &'t T: Into<std::net::SocketAddr>,
-    endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
-    F: FilterRequest<T>,
-    R: Resolve<F::Request, Endpoint = Metadata>,
+    EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
+    R: Resolve<Addr, Endpoint = Metadata>,
     R::Future: Send + 'static,
     R::Resolution: Send + 'static,
 {
     map_endpoint::Resolve::new(
-        endpoint::FromMetadata,
-        RecoverDefault(RequestFilter::new(filter, resolve.into_service())),
+        EndpointFromMetadata,
+        RecoverDefault(RequestFilter::new(AllowResolve, resolve.into_service())),
     )
 }
 
-type Stack<E, F, R, N> = Buffer<discover::Stack<N, ResolveStack<F, R>, E>>;
+type Stack<E, R, N> = Buffer<discover::Stack<N, ResolveStack<R>, E>>;
 
-pub fn layer<T, E, F, R, N>(
-    filter: F,
+pub fn layer<T, E, R, N>(
     resolve: R,
     watchdog: Duration,
-) -> impl layer::Layer<N, Service = Stack<E, F, R, N>> + Clone
+) -> impl layer::Layer<N, Service = Stack<E, R, N>> + Clone
 where
     T: Clone,
     for<'t> &'t T: Into<std::net::SocketAddr>,
-    F: FilterRequest<T>,
-    R: Resolve<F::Request, Error = Error, Endpoint = Metadata> + Clone,
+    R: Resolve<Addr, Error = Error, Endpoint = Metadata> + Clone,
     R::Future: Send + 'static,
     R::Resolution: Send + 'static,
-    endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
-    ResolveStack<F, R>: Resolve<T, Endpoint = E> + Clone,
+    EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
+    ResolveStack<R>: Resolve<T, Endpoint = E> + Clone,
     N: NewService<E>,
 {
     const ENDPOINT_BUFFER_CAPACITY: usize = 1_000;
 
-    let resolve = new_resolve(filter, resolve);
+    let resolve = new_resolve(resolve);
     layer::mk(move |new_endpoint| {
         let endpoints = discover::resolve(new_endpoint, resolve.clone());
         Buffer::new(ENDPOINT_BUFFER_CAPACITY, watchdog, endpoints)
     })
 }
 
+#[derive(Clone, Debug)]
+pub struct AllowResolve;
+
 /// Wraps a `Resolve` to produce a default resolution when the resolution is
 /// rejected.
 #[derive(Clone, Debug)]
 pub struct RecoverDefault<S>(S);
+
+// === impl AllowResolve ===
+
+impl<P> FilterRequest<Concrete<P>> for AllowResolve {
+    type Request = Addr;
+
+    fn filter(&self, target: Concrete<P>) -> Result<Addr, Error> {
+        target.resolve.ok_or_else(|| discovery_rejected().into())
+    }
+}
 
 // === impl RecoverDefault ===
 

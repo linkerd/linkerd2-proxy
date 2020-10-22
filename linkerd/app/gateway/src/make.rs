@@ -1,7 +1,7 @@
 use super::gateway::Gateway;
 use linkerd2_app_core::{profiles, svc, transport::tls, NameAddr};
 use linkerd2_app_inbound::endpoint as inbound;
-use linkerd2_app_outbound::endpoint as outbound;
+use linkerd2_app_outbound::target as outbound;
 use tracing::debug;
 
 #[derive(Clone, Debug)]
