@@ -1,14 +1,8 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use futures::{ready, TryFuture};
-use linkerd2_error::Error;
 use linkerd2_stack::NewService;
-use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
-use tracing::trace;
 
 pub trait Recognize<T> {
     type Key: Clone;
@@ -26,15 +20,15 @@ pub struct Layer<T> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewRouter<T, M> {
+pub struct NewRouter<T, N> {
     new_recgonize: T,
-    make_route: M,
+    new_route: N,
 }
 
 #[derive(Clone, Debug)]
-pub struct Router<T, M> {
+pub struct Router<T, N> {
     recognize: T,
-    make: M,
+    new_route: N,
 }
 
 #[derive(Clone, Debug)]
@@ -46,108 +40,49 @@ impl<K: Clone> Layer<K> {
     }
 }
 
-impl<K: Clone, M> tower::layer::Layer<M> for Layer<K> {
-    type Service = NewRouter<K, M>;
+impl<K: Clone, N> tower::layer::Layer<N> for Layer<K> {
+    type Service = NewRouter<K, N>;
 
-    fn layer(&self, make_route: M) -> Self::Service {
+    fn layer(&self, new_route: N) -> Self::Service {
         NewRouter {
-            make_route,
+            new_route,
             new_recgonize: self.new_recgonize.clone(),
         }
     }
 }
 
-impl<T, K, M> NewService<T> for NewRouter<K, M>
+impl<T, K, N> NewService<T> for NewRouter<K, N>
 where
     K: NewService<T>,
-    M: Clone,
+    N: Clone,
 {
-    type Service = Router<K::Service, M>;
+    type Service = Router<K::Service, N>;
 
     fn new_service(&mut self, t: T) -> Self::Service {
         Router {
             recognize: self.new_recgonize.new_service(t),
-            make: self.make_route.clone(),
+            new_route: self.new_route.clone(),
         }
     }
 }
 
-impl<U, S, K, M> tower::Service<U> for Router<K, M>
+impl<K, N, S, Req> tower::Service<Req> for Router<K, N>
 where
-    U: std::fmt::Debug,
-    K: Recognize<U>,
-    K::Key: std::fmt::Debug,
-    M: tower::Service<K::Key, Response = S>,
-    M::Error: Into<Error>,
-    S: tower::Service<U>,
-    S::Error: Into<Error>,
+    K: Recognize<Req>,
+    N: NewService<K::Key, Service = S>,
+    S: tower::Service<Req>,
 {
     type Response = S::Response;
-    type Error = Error;
-    type Future = ResponseFuture<U, M::Future, S>;
+    type Error = S::Error;
+    type Future = Oneshot<S, Req>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.make.poll_ready(cx).map_err(Into::into)
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, request: U) -> Self::Future {
-        let key = self.recognize.recognize(&request);
-        trace!(?key, ?request, "Routing");
-        ResponseFuture {
-            state: State::Make(self.make.call(key), Some(request)),
-        }
-    }
-}
-
-#[pin_project]
-pub struct ResponseFuture<Req, M, S>
-where
-    M: TryFuture<Ok = S>,
-    M::Error: Into<Error>,
-    S: tower::Service<Req>,
-    S::Error: Into<Error>,
-{
-    #[pin]
-    state: State<Req, M, S>,
-}
-
-#[pin_project(project = StateProj)]
-enum State<Req, M, S>
-where
-    M: TryFuture<Ok = S>,
-    M::Error: Into<Error>,
-    S: tower::Service<Req>,
-    S::Error: Into<Error>,
-{
-    Make(#[pin] M, Option<Req>),
-    Respond(#[pin] Oneshot<S, Req>),
-}
-
-impl<Req, M, S> Future for ResponseFuture<Req, M, S>
-where
-    M: TryFuture<Ok = S>,
-    M::Error: Into<Error>,
-    S: tower::Service<Req>,
-    S::Error: Into<Error>,
-{
-    type Output = Result<S::Response, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        loop {
-            match this.state.as_mut().project() {
-                StateProj::Make(fut, req) => {
-                    trace!("Making");
-                    let service = ready!(fut.try_poll(cx)).map_err(Into::into)?;
-                    let req = req.take().expect("polled after ready");
-                    this.state.set(State::Respond(service.oneshot(req)))
-                }
-                StateProj::Respond(future) => {
-                    trace!("Responding");
-                    return future.poll(cx).map_err(Into::into);
-                }
-            }
-        }
+    fn call(&mut self, req: Req) -> Self::Future {
+        let key = self.recognize.recognize(&req);
+        self.new_route.new_service(key).oneshot(req)
     }
 }
 

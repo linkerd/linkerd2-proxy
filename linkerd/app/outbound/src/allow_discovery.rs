@@ -1,4 +1,4 @@
-use crate::endpoint::{Accept, Concrete};
+use crate::endpoint::{Concrete, TcpAccept};
 use linkerd2_app_core::{discovery_rejected, svc::stack::FilterRequest, Addr, Error, IpMatch};
 use std::net::SocketAddr;
 
@@ -8,10 +8,10 @@ pub struct AllowProfile(pub IpMatch);
 #[derive(Clone, Debug)]
 pub struct AllowResolve;
 
-impl FilterRequest<Accept> for AllowProfile {
+impl FilterRequest<TcpAccept> for AllowProfile {
     type Request = SocketAddr;
 
-    fn filter(&self, Accept { orig_dst }: Accept) -> Result<SocketAddr, Error> {
+    fn filter(&self, TcpAccept { orig_dst, .. }: TcpAccept) -> Result<SocketAddr, Error> {
         if self.0.matches(orig_dst.ip()) {
             Ok(orig_dst)
         } else {
