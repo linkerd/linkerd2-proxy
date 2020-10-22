@@ -49,6 +49,6 @@ libc = "0.2"
 
 [dev-dependencies]
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
-tracing-subscriber = "0.2.11"
+tracing-subscriber = "0.2.14"
 tower = { version = "0.3", default-features = false, features = ["util"] }
 tracing-futures = { version = "0.2", features = ["std-future"] }
