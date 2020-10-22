@@ -119,20 +119,6 @@ impl<P> From<(http::Version, Logical<P>)> for HttpLogical {
     }
 }
 
-impl From<HttpLogical> for Logical<()> {
-    fn from(
-        HttpLogical {
-            profile, orig_dst, ..
-        }: HttpLogical,
-    ) -> Self {
-        Self {
-            profile,
-            orig_dst,
-            protocol: (),
-        }
-    }
-}
-
 /// Used for traffic split
 impl<P> Into<Option<profiles::Receiver>> for &'_ Logical<P> {
     fn into(self) -> Option<profiles::Receiver> {
@@ -200,15 +186,6 @@ impl<P> From<(Option<Addr>, Logical<P>)> for Concrete<P> {
     }
 }
 
-impl From<HttpConcrete> for Concrete<()> {
-    fn from(c: HttpConcrete) -> Self {
-        Self {
-            resolve: c.resolve,
-            logical: c.logical.into(),
-        }
-    }
-}
-
 /// Produces an address to be used if resolution is rejected.
 impl<P> Into<SocketAddr> for &'_ Concrete<P> {
     fn into(self) -> SocketAddr {
@@ -238,17 +215,6 @@ impl<P> From<Logical<P>> for Endpoint<P> {
 impl<P> From<Accept<P>> for Endpoint<P> {
     fn from(accept: Accept<P>) -> Self {
         Logical::from((None, accept)).into()
-    }
-}
-
-impl From<HttpEndpoint> for Endpoint<()> {
-    fn from(ep: HttpEndpoint) -> Self {
-        Endpoint {
-            addr: ep.addr,
-            metadata: ep.metadata,
-            identity: ep.identity,
-            concrete: ep.concrete.into(),
-        }
     }
 }
 

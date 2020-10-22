@@ -1,17 +1,17 @@
-use super::Endpoint;
+use crate::target::Endpoint;
 use linkerd2_app_core::{
     config::ConnectConfig, metrics, proxy::identity, svc, transport::tls, Error,
 };
 
 // Establishes connections to remote peers (for both TCP forwarding and HTTP
 // proxying).
-pub fn stack(
+pub fn stack<P>(
     config: &ConnectConfig,
     server_port: u16,
     local_identity: tls::Conditional<identity::Local>,
     metrics: &metrics::Proxy,
 ) -> impl tower::Service<
-    Endpoint,
+    Endpoint<P>,
     Error = Error,
     Future = impl Send,
     Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
@@ -41,10 +41,10 @@ pub struct LoopPrevented {
 
 // === impl PreventLoop ===
 
-impl svc::stack::FilterRequest<Endpoint> for PreventLoop {
-    type Request = Endpoint;
+impl<P> svc::stack::FilterRequest<Endpoint<P>> for PreventLoop {
+    type Request = Endpoint<P>;
 
-    fn filter(&self, ep: Endpoint) -> Result<Endpoint, Error> {
+    fn filter(&self, ep: Endpoint<P>) -> Result<Endpoint<P>, Error> {
         let addr = ep.addr;
 
         tracing::trace!(%addr, self.port, "PreventLoop");

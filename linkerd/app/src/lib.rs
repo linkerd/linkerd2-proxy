@@ -126,22 +126,18 @@ impl Config {
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
-            let outbound_connect = outbound::tcp::connect::stack(
-                &outbound.proxy.connect,
-                outbound_addr.port(),
-                local_identity.clone(),
-                &outbound_metrics,
-            );
-
-            let outbound_http_endpoint = outbound.build_http_endpoint(
-                outbound_connect.clone(),
-                tap_layer.clone(),
-                outbound_metrics.clone(),
-                oc_span_sink.clone(),
-            );
-
             let outbound_http = outbound.build_http_router(
-                outbound_http_endpoint,
+                outbound.build_http_endpoint(
+                    outbound::tcp::connect::stack(
+                        &outbound.proxy.connect,
+                        outbound_addr.port(),
+                        local_identity.clone(),
+                        &outbound_metrics,
+                    ),
+                    tap_layer.clone(),
+                    outbound_metrics.clone(),
+                    oc_span_sink.clone(),
+                ),
                 dst.resolve.clone(),
                 outbound_metrics.clone(),
             );
@@ -152,10 +148,15 @@ impl Config {
             tokio::spawn(
                 serve::serve(
                     outbound_listen,
-                    outbound.build_server(
+                    outbound.clone().build_server(
                         dst.profiles.clone(),
                         dst.resolve,
-                        outbound_connect,
+                        outbound::tcp::connect::stack(
+                            &outbound.proxy.connect,
+                            outbound_addr.port(),
+                            local_identity.clone(),
+                            &outbound_metrics,
+                        ),
                         outbound_http.clone(),
                         outbound_metrics,
                         oc_span_sink.clone(),
