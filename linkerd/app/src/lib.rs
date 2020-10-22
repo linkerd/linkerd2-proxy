@@ -126,7 +126,8 @@ impl Config {
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
-            let outbound_connect = outbound.build_tcp_connect(
+            let outbound_connect = outbound::tcp::connect::stack(
+                &outbound.proxy.connect,
                 outbound_addr.port(),
                 local_identity.clone(),
                 &outbound_metrics,

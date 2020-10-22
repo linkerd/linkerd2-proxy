@@ -1,3 +1,4 @@
+pub mod connect;
 #[cfg(test)]
 mod tests;
 
@@ -13,7 +14,7 @@ pub type Endpoint = target::Endpoint<()>;
 #[derive(Clone, Debug)]
 pub struct AllowProfile(pub IpMatch);
 
-// === impl AllowProfile
+// === impl AllowProfile ===
 
 impl FilterRequest<Accept> for AllowProfile {
     type Request = std::net::SocketAddr;

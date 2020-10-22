@@ -7,18 +7,17 @@
 
 use self::allow_discovery::AllowResolve;
 pub use self::target::{HttpConcrete, HttpEndpoint, HttpLogical};
-use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
     drain, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::{api_resolve::Metadata, core::resolve::Resolve, http, identity, tap},
+    proxy::{api_resolve::Metadata, core::resolve::Resolve, http, tap},
     reconnect, retry,
     spans::SpanConverter,
     svc::{self},
-    transport::{self, io, listen, tls},
+    transport::{self, io, listen},
     Addr, Error, IpMatch, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
@@ -26,7 +25,6 @@ use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
 mod allow_discovery;
-mod prevent_loop;
 mod require_identity_on_endpoint;
 mod resolve;
 pub mod target;
@@ -34,7 +32,6 @@ pub mod tcp;
 #[cfg(test)]
 mod test_util;
 
-use self::prevent_loop::PreventLoop;
 use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -52,36 +49,6 @@ pub struct SkipByProfile;
 // === impl Config ===
 
 impl Config {
-    pub fn build_tcp_connect(
-        &self,
-        prevent_loop: impl Into<PreventLoop>,
-        local_identity: tls::Conditional<identity::Local>,
-        metrics: &metrics::Proxy,
-    ) -> impl tower::Service<
-        tcp::Endpoint,
-        Error = Error,
-        Future = impl future::Future + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    > + tower::Service<
-        HttpEndpoint,
-        Error = Error,
-        Future = impl future::Future + Send,
-        Response = impl io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
-    > + Unpin
-           + Clone
-           + Send {
-        // Establishes connections to remote peers (for both TCP
-        // forwarding and HTTP proxying).
-        svc::connect(self.proxy.connect.keepalive)
-            // Initiates mTLS if the target is configured with identity.
-            .push(tls::client::ConnectLayer::new(local_identity))
-            // Limits the time we wait for a connection to be established.
-            .push_timeout(self.proxy.connect.timeout)
-            .push(metrics.transport.layer_connect())
-            .push_request_filter(prevent_loop.into())
-            .into_inner()
-    }
-
     /// Constructs a TCP load balancer.
     pub fn build_tcp_balance<C, R, I>(
         &self,
@@ -145,7 +112,7 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        C: tower::Service<HttpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
+        C: tower::Service<tcp::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
     {
@@ -156,6 +123,7 @@ impl Config {
             .push(MakeRequireIdentityLayer::new());
 
         svc::stack(tcp_connect)
+            .push_map_target(tcp::Endpoint::from)
             // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
             // is typically used (i.e. when communicating with other proxies); though
             // HTTP/1.x fallback is supported as needed.
@@ -452,7 +420,7 @@ pub fn trace_labels() -> HashMap<String, String> {
 }
 
 fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
-    err.is::<prevent_loop::LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
+    err.is::<tcp::connect::LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
 }
 
 // === impl SkipByProfile ===
