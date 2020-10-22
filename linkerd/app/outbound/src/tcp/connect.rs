@@ -28,7 +28,7 @@ pub fn stack<P>(
         .into_inner()
 }
 
-/// A connection policy that drops
+/// A connection policy that fails connections that target the outbound listener.
 #[derive(Clone)]
 struct PreventLoop {
     port: u16,
