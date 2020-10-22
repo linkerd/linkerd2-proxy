@@ -15,6 +15,7 @@ mod oneshot;
 mod proxy;
 mod request_filter;
 mod result;
+pub mod router;
 mod switch;
 mod switch_ready;
 
@@ -30,6 +31,7 @@ pub use self::oneshot::{Oneshot, OneshotLayer};
 pub use self::proxy::{Proxy, ProxyService};
 pub use self::request_filter::{FilterRequest, RequestFilter};
 pub use self::result::ResultService;
+pub use self::router::{NewRouter, RecognizeRoute};
 pub use self::switch::{MakeSwitch, Switch};
 pub use self::switch_ready::{NewSwitchReady, SwitchReady};
 pub use tower::util::Either;

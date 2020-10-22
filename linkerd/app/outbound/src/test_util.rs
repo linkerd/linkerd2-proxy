@@ -1,31 +1,21 @@
-use crate::{
-    endpoint::{TcpConcrete, TcpLogical},
-    Config,
-};
-use futures::prelude::*;
-use ipnet::IpNet;
+use crate::Config;
+pub use futures::prelude::*;
+pub use ipnet::IpNet;
 use linkerd2_app_core::{
-    config, exp_backoff, profiles,
-    proxy::http::h2,
-    svc::NewService,
-    transport::{listen, tls},
-    Error, IpMatch,
+    config, exp_backoff, profiles, proxy::http::h2, transport::listen, IpMatch,
 };
-use linkerd2_app_test as test_support;
+pub use linkerd2_app_test as support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
-use tower::ServiceExt;
-
-mod tcp;
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
-fn profile() -> profiles::Receiver {
+pub fn default_profile() -> profiles::Receiver {
     let (mut tx, rx) = tokio::sync::watch::channel(profiles::Profile::default());
     tokio::spawn(async move { tx.closed().await });
     rx
 }
 
-fn default_config(orig_dst: SocketAddr) -> Config {
+pub fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())),
         proxy: config::ProxyConfig {

@@ -3,7 +3,7 @@ use linkerd2_app_core::{
     discovery_rejected, profiles, proxy::http, svc, transport::tls, Error, NameAddr, NameMatch,
 };
 use linkerd2_app_inbound::endpoint as inbound;
-use linkerd2_app_outbound::endpoint as outbound;
+use linkerd2_app_outbound::target as outbound;
 use tracing::info_span;
 
 #[derive(Clone, Debug, Default)]

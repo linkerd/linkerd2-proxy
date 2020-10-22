@@ -1,11 +1,14 @@
-use crate::{endpoint::*, stack_labels, trace_labels};
+use crate::{
+    stack_labels,
+    target::{HttpAccept, HttpLogical},
+    tcp, trace_labels,
+};
 use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
     discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::http,
-    router,
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen},
@@ -47,7 +50,7 @@ pub fn server<P, T, TSvc, H, HSvc, I>(
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
-    T: svc::NewService<TcpEndpoint, Service = TSvc> + Unpin + Clone + Send + Sync + 'static,
+    T: svc::NewService<tcp::Endpoint, Service = TSvc> + Unpin + Clone + Send + Sync + 'static,
     TSvc: tower::Service<
             io::PrefixedIo<transport::metrics::SensorIo<I>>,
             Response = (),
@@ -87,7 +90,9 @@ where
         .spawn_buffer(buffer_capacity)
         .into_new_service()
         .check_new_service::<HttpTarget, http::Request<_>>()
-        .push(router::Layer::new(HttpTargetPerRequest::from))
+        .push(svc::layer::mk(|inner| {
+            svc::stack::NewRouter::new(HttpTargetPerRequest::from, inner)
+        }))
         .check_new_service::<HttpAccept, http::Request<_>>()
         .push_on_response(
             svc::layers()
@@ -114,24 +119,24 @@ where
         .check_new_service::<HttpAccept, http::Request<_>>()
         .instrument(|a: &HttpAccept| info_span!("http", v = %a.protocol))
         .push_map_target(HttpAccept::from)
-        .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
+        .check_new_service::<(http::Version, tcp::Accept), http::Request<_>>()
         .into_inner();
 
     let tcp = svc::stack(tcp)
-        .push_map_target(TcpEndpoint::from)
+        .push_map_target(tcp::Endpoint::from)
         .into_inner();
 
     svc::stack(http::DetectHttp::new(h2_settings, http, tcp, drain))
-        .check_new_service::<TcpAccept, io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .check_new_service::<tcp::Accept, io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
             transport::Prefix::layer(
                 http::Version::DETECT_BUFFER_CAPACITY,
                 detect_protocol_timeout,
             ),
         ))
-        .check_new_service::<TcpAccept, transport::metrics::SensorIo<I>>()
+        .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
-        .push_map_target(TcpAccept::from)
+        .push_map_target(tcp::Accept::from)
         .check_new_service::<listen::Addrs, I>()
         .into_inner()
 }
@@ -144,9 +149,6 @@ pub struct Config {
 
 #[derive(Clone)]
 struct AllowHttpProfile(AddrMatch);
-
-#[derive(Clone)]
-struct AllowTcpProfile(AddrMatch);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct HttpTarget {
@@ -165,20 +167,6 @@ impl svc::stack::FilterRequest<HttpTarget> for AllowHttpProfile {
     fn filter(&self, HttpTarget { dst, .. }: HttpTarget) -> Result<Addr, Error> {
         if self.0.matches(&dst) {
             Ok(dst)
-        } else {
-            Err(discovery_rejected().into())
-        }
-    }
-}
-
-// === AllowTcpProfile ===
-
-impl svc::stack::FilterRequest<TcpAccept> for AllowTcpProfile {
-    type Request = Addr;
-
-    fn filter(&self, TcpAccept { orig_dst, .. }: TcpAccept) -> Result<Addr, Error> {
-        if self.0.matches_ip(orig_dst.ip()) {
-            Ok(orig_dst.into())
         } else {
             Err(discovery_rejected().into())
         }
@@ -205,7 +193,7 @@ impl From<HttpAccept> for HttpTargetPerRequest {
     }
 }
 
-impl<B> router::Recognize<http::Request<B>> for HttpTargetPerRequest {
+impl<B> svc::stack::RecognizeRoute<http::Request<B>> for HttpTargetPerRequest {
     type Key = HttpTarget;
 
     fn recognize(&self, req: &http::Request<B>) -> Self::Key {
