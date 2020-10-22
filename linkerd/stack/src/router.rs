@@ -1,22 +1,11 @@
-#![deny(warnings, rust_2018_idioms)]
-
-use linkerd2_stack::NewService;
+use crate::NewService;
 use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 
-pub trait Recognize<T> {
+pub trait RecognizeRoute<T> {
     type Key: Clone;
 
     fn recognize(&self, t: &T) -> Self::Key;
-}
-
-pub fn recognize<F>(f: F) -> RecognizeFn<F> {
-    RecognizeFn(f)
-}
-
-#[derive(Clone, Debug)]
-pub struct Layer<T> {
-    new_recgonize: T,
 }
 
 #[derive(Clone, Debug)]
@@ -31,22 +20,11 @@ pub struct Router<T, N> {
     inner: N,
 }
 
-#[derive(Clone, Debug)]
-pub struct RecognizeFn<F>(F);
-
-impl<K: Clone> Layer<K> {
-    pub fn new(new_recgonize: K) -> Self {
-        Self { new_recgonize }
-    }
-}
-
-impl<K: Clone, N> tower::layer::Layer<N> for Layer<K> {
-    type Service = NewRouter<K, N>;
-
-    fn layer(&self, inner: N) -> Self::Service {
-        NewRouter {
+impl<K, N> NewRouter<K, N> {
+    pub fn new(new_recgonize: K, inner: N) -> Self {
+        Self {
+            new_recgonize,
             inner,
-            new_recgonize: self.new_recgonize.clone(),
         }
     }
 }
@@ -68,7 +46,7 @@ where
 
 impl<K, N, S, Req> tower::Service<Req> for Router<K, N>
 where
-    K: Recognize<Req>,
+    K: RecognizeRoute<Req>,
     N: NewService<K::Key, Service = S>,
     S: tower::Service<Req>,
 {
@@ -86,7 +64,7 @@ where
     }
 }
 
-impl<T, K, F> Recognize<T> for RecognizeFn<F>
+impl<T, K, F> RecognizeRoute<T> for F
 where
     K: Clone,
     F: Fn(&T) -> K,
@@ -94,6 +72,6 @@ where
     type Key = K;
 
     fn recognize(&self, t: &T) -> Self::Key {
-        (self.0)(t)
+        (self)(t)
     }
 }

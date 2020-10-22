@@ -42,7 +42,6 @@ members = [
     "linkerd/proxy/transport",
     "linkerd/reconnect",
     "linkerd/retry",
-    "linkerd/router",
     "linkerd/service-profiles",
     "linkerd/signal",
     "linkerd/stack",
