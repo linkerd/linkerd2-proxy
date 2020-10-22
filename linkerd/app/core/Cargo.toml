@@ -52,7 +52,6 @@ linkerd2-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd2-proxy-transport = { path = "../../proxy/transport" }
 linkerd2-reconnect = { path = "../../reconnect" }
 linkerd2-retry = { path = "../../retry" }
-linkerd2-router = { path = "../../router" }
 linkerd2-timeout = { path = "../../timeout" }
 linkerd2-tracing = { path = "../../tracing" }
 linkerd2-service-profiles = { path = "../../service-profiles" }

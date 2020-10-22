@@ -827,7 +827,6 @@ dependencies = [
  "linkerd2-proxy-transport",
  "linkerd2-reconnect",
  "linkerd2-retry",
- "linkerd2-router",
  "linkerd2-service-profiles",
  "linkerd2-stack",
  "linkerd2-stack-metrics",
@@ -1419,18 +1418,6 @@ dependencies = [
 name = "linkerd2-retry"
 version = "0.1.0"
 dependencies = [
- "linkerd2-error",
- "linkerd2-stack",
- "pin-project",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-router"
-version = "0.1.0"
-dependencies = [
- "futures 0.3.5",
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project",

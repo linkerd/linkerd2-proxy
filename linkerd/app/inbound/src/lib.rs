@@ -22,7 +22,7 @@ use linkerd2_app_core::{
         http::{self, orig_proto, strip_header},
         identity, tap, tcp,
     },
-    reconnect, router,
+    reconnect,
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
@@ -351,8 +351,9 @@ impl Config {
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
-            .into_make_service()
-            .push(router::Layer::new(RequestTarget::from))
+            .push(svc::layer::mk(|inner| {
+                svc::stack::NewRouter::new(RequestTarget::from, inner)
+            }))
             // Used by tap.
             .push_http_insert_target()
             .check_new_service::<TcpAccept, http::Request<_>>()

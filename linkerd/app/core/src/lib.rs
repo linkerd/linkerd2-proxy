@@ -19,7 +19,6 @@ pub use linkerd2_exp_backoff as exp_backoff;
 pub use linkerd2_http_metrics as http_metrics;
 pub use linkerd2_opencensus as opencensus;
 pub use linkerd2_reconnect as reconnect;
-pub use linkerd2_router as router;
 pub use linkerd2_service_profiles as profiles;
 pub use linkerd2_stack_metrics as stack_metrics;
 pub use linkerd2_stack_tracing as stack_tracing;

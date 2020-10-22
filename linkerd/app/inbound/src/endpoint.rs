@@ -3,7 +3,7 @@ use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, identity, tap},
-    router, stack_tracing,
+    stack_tracing, svc,
     transport::{self, listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
@@ -296,7 +296,7 @@ impl From<TcpAccept> for RequestTarget {
     }
 }
 
-impl<A> router::Recognize<http::Request<A>> for RequestTarget {
+impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
     type Key = Target;
 
     fn recognize(&self, req: &http::Request<A>) -> Self::Key {
