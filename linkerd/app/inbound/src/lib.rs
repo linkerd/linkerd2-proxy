@@ -351,7 +351,6 @@ impl Config {
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
-            .into_make_service()
             .push(router::Layer::new(RequestTarget::from))
             // Used by tap.
             .push_http_insert_target()
