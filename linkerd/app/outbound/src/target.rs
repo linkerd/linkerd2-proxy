@@ -17,7 +17,7 @@ use linkerd2_app_core::{
 use std::{net::SocketAddr, sync::Arc};
 
 #[derive(Copy, Clone)]
-pub struct FromMetadata;
+pub struct EndpointFromMetadata;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept<P> {
@@ -51,11 +51,6 @@ pub type HttpLogical = Logical<http::Version>;
 pub type HttpConcrete = Concrete<http::Version>;
 pub type HttpEndpoint = Endpoint<http::Version>;
 
-pub type TcpAccept = Accept<()>;
-pub type TcpLogical = Logical<()>;
-pub type TcpConcrete = Concrete<()>;
-pub type TcpEndpoint = Endpoint<()>;
-
 // === impl Accept ===
 
 impl From<listen::Addrs> for Accept<()> {
@@ -67,8 +62,8 @@ impl From<listen::Addrs> for Accept<()> {
     }
 }
 
-impl<P> From<(P, TcpAccept)> for Accept<P> {
-    fn from((protocol, Accept { orig_dst, .. }): (P, TcpAccept)) -> Self {
+impl<P> From<(P, Accept<()>)> for Accept<P> {
+    fn from((protocol, Accept { orig_dst, .. }): (P, Accept<()>)) -> Self {
         Self { orig_dst, protocol }
     }
 }
@@ -107,12 +102,19 @@ impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
     }
 }
 
-impl From<(http::Version, TcpLogical)> for HttpLogical {
-    fn from((protocol, l): (http::Version, TcpLogical)) -> Self {
-        Self {
-            orig_dst: l.orig_dst,
-            profile: l.profile,
+impl<P> From<(http::Version, Logical<P>)> for HttpLogical {
+    fn from(
+        (
             protocol,
+            Logical {
+                orig_dst, profile, ..
+            },
+        ): (http::Version, Logical<P>),
+    ) -> Self {
+        Self {
+            protocol,
+            orig_dst,
+            profile,
         }
     }
 }
@@ -320,7 +322,7 @@ impl tap::Inspect for HttpEndpoint {
     }
 }
 
-impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetadata {
+impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for EndpointFromMetadata {
     type Out = Endpoint<P>;
 
     fn map_endpoint(

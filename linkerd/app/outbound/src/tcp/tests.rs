@@ -1,37 +1,44 @@
-use super::*;
-use crate::TcpEndpoint;
+use super::{Concrete, Endpoint, Logical};
+use crate::Config;
+use crate::test_util::{
+    *,
+    support::{
+        connect::{Connect, ConnectFuture},
+        resolver,
+    }
+};
 use linkerd2_app_core::{
     drain, metrics, svc,
-    transport::{io, listen},
-    Addr,
+    transport::{io, listen, tls},
+    Addr, Error,  IpMatch, svc::NewService,
 };
 use std::{
+    str::FromStr,
+    future::Future,
+    net::SocketAddr,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
 };
-use test_support::{
-    connect::{Connect, ConnectFuture},
-    resolver,
-};
 use tls::HasPeerIdentity;
 use tracing_futures::Instrument;
+use tower::ServiceExt;
 
 #[tokio::test(core_threads = 1)]
 async fn plaintext_tcp() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     // Since all of the actual IO in this test is mocked out, we won't actually
     // bind any of these addresses. Therefore, we don't need to use ephemeral
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-    let concrete = TcpConcrete {
-        logical: TcpLogical {
+    let concrete = Concrete {
+        logical: Logical {
             orig_dst: target_addr,
-            profile: Some(profile()),
+            profile: Some(default_profile()),
             protocol: (),
         },
         resolve: Some(target_addr.into()),
@@ -41,23 +48,23 @@ async fn plaintext_tcp() {
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
-    let mut srv_io = test_support::io();
+    let mut srv_io = support::io();
     srv_io.read(b"hello").write(b"world");
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect().endpoint_fn(target_addr, move |endpoint: TcpEndpoint| {
+    let connect = support::connect().endpoint_fn(target_addr, move |endpoint: Endpoint| {
         assert!(endpoint.peer_identity().is_none());
         Ok(srv_io.build())
     });
 
     // Configure mock IO for the "client".
-    let client_io = test_support::io().write(b"hello").read(b"world").build();
+    let client_io = support::io().write(b"hello").read(b"world").build();
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = test_support::resolver().endpoint_exists(
+    let resolver = support::resolver().endpoint_exists(
         concrete.resolve.clone().unwrap(),
         target_addr,
-        test_support::resolver::Metadata::default(),
+        support::resolver::Metadata::default(),
     );
 
     // Build the outbound TCP balancer stack.
@@ -74,23 +81,23 @@ async fn plaintext_tcp() {
 
 #[tokio::test(core_threads = 1)]
 async fn tls_when_hinted() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let tls_concrete = TcpConcrete {
-        logical: TcpLogical {
+    let tls_concrete = Concrete {
+        logical: Logical {
             orig_dst: tls_addr,
-            profile: Some(profile()),
+            profile: Some(default_profile()),
             protocol: (),
         },
         resolve: Some(tls_addr.into()),
     };
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
-    let plain_concrete = TcpConcrete {
-        logical: TcpLogical {
+    let plain_concrete = Concrete {
+        logical: Logical {
             orig_dst: tls_addr,
-            profile: Some(profile()),
+            profile: Some(default_profile()),
             protocol: (),
         },
         resolve: Some(plain_addr.into()),
@@ -101,20 +108,20 @@ async fn tls_when_hinted() {
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
     .expect("hostname is valid");
-    let mut srv_io = test_support::io();
+    let mut srv_io = support::io();
     srv_io.write(b"hello").read(b"world");
     let id_name2 = id_name.clone();
     let mut tls_srv_io = srv_io.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect()
+    let connect = support::connect()
         // The plaintext endpoint should use plaintext...
-        .endpoint_fn(plain_addr, move |endpoint: TcpEndpoint| {
+        .endpoint_fn(plain_addr, move |endpoint: Endpoint| {
             assert!(endpoint.peer_identity().is_none());
             let io = tls_srv_io.build();
             Ok(io)
         })
-        .endpoint_fn(tls_addr, move |endpoint: TcpEndpoint| {
+        .endpoint_fn(tls_addr, move |endpoint: Endpoint| {
             assert_eq!(
                 endpoint.peer_identity(),
                 tls::Conditional::Some(id_name2.clone())
@@ -123,9 +130,9 @@ async fn tls_when_hinted() {
             Ok(io)
         });
 
-    let tls_meta = test_support::resolver::Metadata::new(
+    let tls_meta = support::resolver::Metadata::new(
         Default::default(),
-        test_support::resolver::ProtocolHint::Unknown,
+        support::resolver::ProtocolHint::Unknown,
         Some(id_name),
         10_000,
         None,
@@ -133,16 +140,16 @@ async fn tls_when_hinted() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = test_support::resolver()
+    let resolver = support::resolver()
         .endpoint_exists(
             plain_concrete.resolve.clone().unwrap(),
             plain_addr,
-            test_support::resolver::Metadata::default(),
+            support::resolver::Metadata::default(),
         )
         .endpoint_exists(tls_concrete.resolve.clone().unwrap(), tls_addr, tls_meta);
 
     // Configure mock IO for the "client".
-    let mut client_io = test_support::io();
+    let mut client_io = support::io();
     client_io.read(b"hello").write(b"world");
 
     // Build the outbound TCP balancer stack.
@@ -163,7 +170,7 @@ async fn tls_when_hinted() {
 
 #[tokio::test]
 async fn resolutions_are_reused() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let cfg = default_config(addr);
@@ -173,7 +180,7 @@ async fn resolutions_are_reused() {
     .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect().endpoint(
+    let connect = support::connect().endpoint(
         addr,
         Connection {
             identity: tls::Conditional::Some(id_name.clone()),
@@ -181,9 +188,9 @@ async fn resolutions_are_reused() {
         },
     );
 
-    let meta = test_support::resolver::Metadata::new(
+    let meta = support::resolver::Metadata::new(
         Default::default(),
-        test_support::resolver::ProtocolHint::Unknown,
+        support::resolver::ProtocolHint::Unknown,
         Some(id_name),
         10_000,
         None,
@@ -191,10 +198,10 @@ async fn resolutions_are_reused() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = test_support::resolver().endpoint_exists(Addr::from(addr), addr, meta);
+    let resolver = support::resolver().endpoint_exists(Addr::from(addr), addr, meta);
     let resolve_state = resolver.handle();
 
-    let profiles = test_support::profiles().profile(addr, Default::default());
+    let profiles = support::profiles().profile(addr, Default::default());
     let profile_state = profiles.handle();
 
     // Build the outbound server
@@ -229,7 +236,7 @@ async fn resolutions_are_reused() {
 
 #[tokio::test]
 async fn load_balances() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
@@ -254,7 +261,7 @@ async fn load_balances() {
     .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO
-    let mut connect = test_support::connect();
+    let mut connect = support::connect();
     for &(addr, ref conns) in endpoints {
         connect = connect.endpoint(
             addr,
@@ -266,18 +273,18 @@ async fn load_balances() {
         );
     }
 
-    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
+    let profiles = support::profile::resolver().profile(svc_addr, Default::default());
     let profile_state = profiles.handle();
 
-    let meta = test_support::resolver::Metadata::new(
+    let meta = support::resolver::Metadata::new(
         Default::default(),
-        test_support::resolver::ProtocolHint::Unknown,
+        support::resolver::ProtocolHint::Unknown,
         Some(id_name),
         10_000,
         None,
     );
 
-    let resolver = test_support::resolver();
+    let resolver = support::resolver();
     let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
     dst.add(endpoints.iter().map(|&(addr, _)| (addr, meta.clone())))
         .expect("still listening");
@@ -320,7 +327,7 @@ async fn load_balances() {
 
 #[tokio::test(core_threads = 1)]
 async fn load_balancer_add_endpoints() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
@@ -344,7 +351,7 @@ async fn load_balancer_add_endpoints() {
     )
     .expect("hostname is valid");
 
-    let mut connect = test_support::connect();
+    let mut connect = support::connect();
     for &(addr, ref conns) in endpoints {
         connect = connect.endpoint(
             addr,
@@ -356,17 +363,17 @@ async fn load_balancer_add_endpoints() {
         );
     }
 
-    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
+    let profiles = support::profile::resolver().profile(svc_addr, Default::default());
 
-    let meta = test_support::resolver::Metadata::new(
+    let meta = support::resolver::Metadata::new(
         Default::default(),
-        test_support::resolver::ProtocolHint::Unknown,
+        support::resolver::ProtocolHint::Unknown,
         Some(id_name),
         10_000,
         None,
     );
 
-    let resolver = test_support::resolver();
+    let resolver = support::resolver();
     let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
     dst.add(Some((endpoints[0].0, meta.clone())))
         .expect("still listening");
@@ -429,7 +436,7 @@ async fn load_balancer_add_endpoints() {
 
 #[tokio::test]
 async fn load_balancer_remove_endpoints() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
@@ -453,7 +460,7 @@ async fn load_balancer_remove_endpoints() {
     )
     .expect("hostname is valid");
 
-    let mut connect = test_support::connect();
+    let mut connect = support::connect();
     for &(addr, ref enabled) in endpoints {
         connect = connect.endpoint(
             addr,
@@ -465,17 +472,17 @@ async fn load_balancer_remove_endpoints() {
         );
     }
 
-    let profiles = test_support::profile::resolver().profile(svc_addr, Default::default());
+    let profiles = support::profile::resolver().profile(svc_addr, Default::default());
 
-    let meta = test_support::resolver::Metadata::new(
+    let meta = support::resolver::Metadata::new(
         Default::default(),
-        test_support::resolver::ProtocolHint::Unknown,
+        support::resolver::ProtocolHint::Unknown,
         Some(id_name),
         10_000,
         None,
     );
 
-    let resolver = test_support::resolver();
+    let resolver = support::resolver();
     let mut dst = resolver.endpoint_tx(Addr::Socket(svc_addr));
     dst.add(Some((endpoints[0].0, meta.clone())))
         .expect("still listening");
@@ -530,7 +537,7 @@ async fn load_balancer_remove_endpoints() {
 
 #[tokio::test]
 async fn no_profiles_when_outside_search_nets() {
-    let _trace = test_support::trace_init();
+    let _trace = support::trace_init();
 
     let profile_addr = SocketAddr::new([10, 0, 0, 42].into(), 5550);
     let no_profile_addr = SocketAddr::new([126, 32, 5, 18].into(), 5550);
@@ -545,22 +552,22 @@ async fn no_profiles_when_outside_search_nets() {
     let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = test_support::connect()
-        .endpoint_fn(profile_addr, move |endpoint: TcpEndpoint| {
+    let connect = support::connect()
+        .endpoint_fn(profile_addr, move |endpoint: Endpoint| {
             assert_eq!(
                 endpoint.peer_identity(),
                 tls::Conditional::Some(id_name2.clone())
             );
-            let io = test_support::io()
+            let io = support::io()
                 .write(b"hello")
                 .read(b"world")
                 .read_error(std::io::ErrorKind::ConnectionReset.into())
                 .build();
             Ok(io)
         })
-        .endpoint_fn(no_profile_addr, move |endpoint: TcpEndpoint| {
+        .endpoint_fn(no_profile_addr, move |endpoint: Endpoint| {
             assert!(endpoint.peer_identity().is_none());
-            let io = test_support::io()
+            let io = support::io()
                 .write(b"hello")
                 .read(b"world")
                 .read_error(std::io::ErrorKind::ConnectionReset.into())
@@ -568,9 +575,9 @@ async fn no_profiles_when_outside_search_nets() {
             Ok(io)
         });
 
-    let meta = test_support::resolver::Metadata::new(
+    let meta = support::resolver::Metadata::new(
         Default::default(),
-        test_support::resolver::ProtocolHint::Unknown,
+        support::resolver::ProtocolHint::Unknown,
         Some(id_name),
         10_000,
         None,
@@ -579,10 +586,10 @@ async fn no_profiles_when_outside_search_nets() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver =
-        test_support::resolver().endpoint_exists(Addr::from(profile_addr), profile_addr, meta);
+        support::resolver().endpoint_exists(Addr::from(profile_addr), profile_addr, meta);
     let resolve_state = resolver.handle();
 
-    let profiles = test_support::profiles().profile(profile_addr, Default::default());
+    let profiles = support::profiles().profile(profile_addr, Default::default());
     let profile_state = profiles.handle();
 
     // Build the outbound server
@@ -623,8 +630,8 @@ impl Default for Connection {
     }
 }
 
-impl Into<Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static>> for Connection {
-    fn into(self) -> Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static> {
+impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connection {
+    fn into(self) -> Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static> {
         Box::new(move |endpoint| {
             assert!(
                 self.enabled.load(Ordering::Acquire),
@@ -633,7 +640,7 @@ impl Into<Box<dyn FnMut(TcpEndpoint) -> ConnectFuture + Send + 'static>> for Con
             let num = self.count.fetch_add(1, Ordering::Release) + 1;
             tracing::info!(?endpoint, num, "connecting");
             assert_eq!(endpoint.peer_identity(), self.identity);
-            let io = test_support::io()
+            let io = support::io()
                 .write(b"hello")
                 .read(b"world")
                 .read_error(std::io::ErrorKind::ConnectionReset.into())
@@ -647,7 +654,7 @@ fn build_server<I>(
     cfg: Config,
     profiles: resolver::Profiles<SocketAddr>,
     resolver: resolver::Dst<Addr, resolver::Metadata>,
-    connect: Connect<TcpEndpoint>,
+    connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
     listen::Addrs,
     Service = impl tower::Service<
@@ -668,7 +675,7 @@ where
         profiles,
         resolver,
         connect,
-        test_support::service::no_http(),
+        support::service::no_http(),
         metrics.outbound,
         None,
         drain,
@@ -681,7 +688,7 @@ fn hello_world_client<N, S>(
 ) -> impl Future<Output = ()> + Send
 where
     N: svc::NewService<listen::Addrs, Service = S> + Send + 'static,
-    S: svc::Service<test_support::io::Mock, Response = ()> + Send + 'static,
+    S: svc::Service<support::io::Mock, Response = ()> + Send + 'static,
     S::Error: Into<Error>,
     S::Future: Send + 'static,
 {
@@ -698,7 +705,7 @@ where
         svc
     };
     async move {
-        let io = test_support::io()
+        let io = support::io()
             .read(b"hello\r\n")
             .write(b"world")
             .build();

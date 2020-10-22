@@ -1,6 +1,6 @@
 #![allow(warnings)]
 
-use crate::endpoint;
+use crate::target::EndpointFromMetadata;
 use futures::{future, prelude::*, stream};
 use linkerd2_app_core::{
     is_discovery_rejected,
@@ -25,7 +25,7 @@ use std::{
 };
 
 type ResolveStack<F, R> = map_endpoint::Resolve<
-    endpoint::FromMetadata,
+    EndpointFromMetadata,
     RecoverDefault<RequestFilter<F, ResolveService<R>>>,
 >;
 
@@ -33,14 +33,14 @@ fn new_resolve<T, F, R>(filter: F, resolve: R) -> ResolveStack<F, R>
 where
     T: Clone,
     for<'t> &'t T: Into<std::net::SocketAddr>,
-    endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
+    EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
     F: FilterRequest<T>,
     R: Resolve<F::Request, Endpoint = Metadata>,
     R::Future: Send + 'static,
     R::Resolution: Send + 'static,
 {
     map_endpoint::Resolve::new(
-        endpoint::FromMetadata,
+        EndpointFromMetadata,
         RecoverDefault(RequestFilter::new(filter, resolve.into_service())),
     )
 }
@@ -59,7 +59,7 @@ where
     R: Resolve<F::Request, Error = Error, Endpoint = Metadata> + Clone,
     R::Future: Send + 'static,
     R::Resolution: Send + 'static,
-    endpoint::FromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
+    EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
     ResolveStack<F, R>: Resolve<T, Endpoint = E> + Clone,
     N: NewService<E>,
 {
