@@ -1,4 +1,4 @@
-use super::HttpEndpoint;
+use crate::http::Endpoint;
 use futures::{
     future::{self, Either},
     ready, TryFuture, TryFutureExt,
@@ -55,13 +55,13 @@ impl<M> svc::Layer<M> for MakeRequireIdentityLayer {
 
 // === impl MakeRequireIdentity ===
 
-impl<M> svc::NewService<HttpEndpoint> for MakeRequireIdentity<M>
+impl<M> svc::NewService<Endpoint> for MakeRequireIdentity<M>
 where
-    M: svc::NewService<HttpEndpoint>,
+    M: svc::NewService<Endpoint>,
 {
     type Service = RequireIdentity<M::Service>;
 
-    fn new_service(&mut self, target: HttpEndpoint) -> Self::Service {
+    fn new_service(&mut self, target: Endpoint) -> Self::Service {
         let peer_identity = target.peer_identity().clone();
         let inner = self.inner.new_service(target);
         RequireIdentity {

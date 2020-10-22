@@ -1,20 +1,10 @@
-use crate::http::uri::Authority;
-use indexmap::IndexMap;
 use linkerd2_app_core::{
-    dst, metrics,
-    metrics::{prefix_labels, EndpointLabels, TlsStatus},
-    profiles,
-    proxy::{
-        api_resolve::{Metadata, ProtocolHint},
-        http::{self, override_authority::CanOverrideAuthority, ClientAddr},
-        identity,
-        resolve::map_endpoint::MapEndpoint,
-        tap,
-    },
+    metrics, profiles,
+    proxy::{api_resolve::Metadata, identity, resolve::map_endpoint::MapEndpoint},
     transport::{self, listen, tls},
     Addr, Conditional,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 
 #[derive(Copy, Clone)]
 pub struct EndpointFromMetadata;
@@ -45,11 +35,6 @@ pub struct Endpoint<P> {
     pub metadata: Metadata,
     pub concrete: Concrete<P>,
 }
-
-pub type HttpAccept = Accept<http::Version>;
-pub type HttpLogical = Logical<http::Version>;
-pub type HttpConcrete = Concrete<http::Version>;
-pub type HttpEndpoint = Endpoint<http::Version>;
 
 // === impl Accept ===
 
@@ -102,16 +87,6 @@ impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
     }
 }
 
-impl<P> From<(http::Version, Logical<P>)> for HttpLogical {
-    fn from((protocol, logical): (http::Version, Logical<P>)) -> Self {
-        Self {
-            protocol,
-            orig_dst: logical.orig_dst,
-            profile: logical.profile,
-        }
-    }
-}
-
 /// Used for traffic split
 impl<P> Into<Option<profiles::Receiver>> for &'_ Logical<P> {
     fn into(self) -> Option<profiles::Receiver> {
@@ -140,14 +115,6 @@ impl<P> Logical<P> {
             .and_then(|p| p.borrow().name.clone())
             .map(|n| Addr::from((n, self.orig_dst.port())))
             .unwrap_or_else(|| self.orig_dst.into())
-    }
-}
-
-// Used to set the l5d-canonical-dst header.
-impl<P> From<&'_ Logical<P>> for http::header::HeaderValue {
-    fn from(target: &'_ Logical<P>) -> Self {
-        http::header::HeaderValue::from_str(&target.addr().to_string())
-            .expect("addr must be a valid header")
     }
 }
 
@@ -235,14 +202,13 @@ impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
     }
 }
 
-impl<P> Into<EndpointLabels> for &'_ Endpoint<P> {
-    fn into(self) -> EndpointLabels {
-        use linkerd2_app_core::metrics::Direction;
-        EndpointLabels {
+impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
+    fn into(self) -> metrics::EndpointLabels {
+        metrics::EndpointLabels {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
-            direction: Direction::Out,
-            labels: prefix_labels("dst", self.metadata.labels().iter()),
-            tls_id: TlsStatus::server(self.identity.clone()),
+            direction: metrics::Direction::Out,
+            labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
+            tls_id: metrics::TlsStatus::server(self.identity.clone()),
         }
     }
 }
@@ -254,64 +220,6 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
         self.concrete.resolve.hash(state);
         self.concrete.logical.orig_dst.hash(state);
         self.concrete.logical.protocol.hash(state);
-    }
-}
-
-impl Into<http::client::Settings> for &'_ HttpEndpoint {
-    fn into(self) -> http::client::Settings {
-        match self.concrete.logical.protocol {
-            http::Version::H2 => http::client::Settings::H2,
-            http::Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Unknown => http::client::Settings::Http1,
-                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
-            },
-        }
-    }
-}
-
-impl<P> CanOverrideAuthority for Endpoint<P> {
-    fn override_authority(&self) -> Option<Authority> {
-        self.metadata.authority_override().cloned()
-    }
-}
-
-impl tap::Inspect for HttpEndpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions()
-            .get::<ClientAddr>()
-            .map(|c| c.as_ref().clone())
-    }
-
-    fn src_tls<'a, B>(
-        &self,
-        _: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
-    }
-
-    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        Some(self.addr)
-    }
-
-    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
-        Some(self.metadata.labels())
-    }
-
-    fn dst_tls<B>(
-        &self,
-        _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
-        self.identity.as_ref()
-    }
-
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
-        req.extensions()
-            .get::<dst::Route>()
-            .map(|r| r.route.labels().clone())
-    }
-
-    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
-        true
     }
 }
 
@@ -339,13 +247,5 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             metadata,
             concrete: concrete.clone(),
         }
-    }
-}
-
-pub fn route((route, logical): (profiles::http::Route, HttpLogical)) -> dst::Route {
-    dst::Route {
-        route,
-        target: logical.addr(),
-        direction: metrics::Direction::Out,
     }
 }

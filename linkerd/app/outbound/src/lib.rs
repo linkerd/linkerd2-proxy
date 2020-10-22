@@ -5,14 +5,13 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::target::{HttpConcrete, HttpEndpoint, HttpLogical};
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
     drain, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::{api_resolve::Metadata, core::resolve::Resolve, http, tap},
+    proxy::{api_resolve::Metadata, core::resolve::Resolve, tap},
     reconnect, retry,
     spans::SpanConverter,
     svc::{self},
@@ -23,6 +22,7 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
+pub mod http;
 mod require_identity_on_endpoint;
 mod resolve;
 pub mod target;
@@ -54,7 +54,7 @@ impl Config {
         metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl svc::NewService<
-        HttpEndpoint,
+        http::Endpoint,
         Service = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
@@ -66,7 +66,7 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        C: tower::Service<HttpEndpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
+        C: tower::Service<http::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
     {
@@ -92,7 +92,7 @@ impl Config {
                     }
                 }
             }))
-            .check_new::<HttpEndpoint>()
+            .check_new::<http::Endpoint>()
             .push(tap_layer.clone())
             .push(metrics.http_endpoint.into_layer::<classify::Response>())
             .push_on_response(TraceContext::layer(
@@ -106,8 +106,8 @@ impl Config {
                 CANONICAL_DST_HEADER,
             ]))
             .push_on_response(svc::layers().box_http_response())
-            .check_new::<HttpEndpoint>()
-            .instrument(|e: &HttpEndpoint| info_span!("endpoint", peer.addr = %e.addr))
+            .check_new::<http::Endpoint>()
+            .instrument(|e: &http::Endpoint| info_span!("endpoint", peer.addr = %e.addr))
             .into_inner()
     }
 
@@ -117,7 +117,7 @@ impl Config {
         resolve: R,
         metrics: metrics::Proxy,
     ) -> impl svc::NewService<
-        HttpLogical,
+        http::Logical,
         Service = impl tower::Service<
             http::Request<B>,
             Response = http::Response<http::boxed::Payload>,
@@ -130,7 +130,7 @@ impl Config {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: svc::NewService<HttpEndpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
+        E: svc::NewService<http::Endpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -151,16 +151,16 @@ impl Config {
         let watchdog = cache_max_idle_age * 2;
 
         svc::stack(endpoint)
-            .check_new_service::<HttpEndpoint, http::Request<http::boxed::Payload>>()
+            .check_new_service::<http::Endpoint, http::Request<http::boxed::Payload>>()
             .push_on_response(
                 svc::layers()
                     .push(svc::layer::mk(svc::SpawnReady::new))
                     .push(metrics.stack.layer(stack_labels("balance.endpoint")))
                     .box_http_request(),
             )
-            .check_new_service::<HttpEndpoint, http::Request<_>>()
+            .check_new_service::<http::Endpoint, http::Request<_>>()
             .push(resolve::layer(resolve, watchdog))
-            .check_service::<HttpConcrete>()
+            .check_service::<http::Concrete>()
             .push_on_response(
                 svc::layers()
                     .push(http::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
@@ -171,19 +171,19 @@ impl Config {
                     .push(metrics.stack.layer(stack_labels("concrete"))),
             )
             .into_new_service()
-            .check_new_service::<HttpConcrete, http::Request<_>>()
-            .instrument(|c: &HttpConcrete| match c.resolve.as_ref() {
+            .check_new_service::<http::Concrete, http::Request<_>>()
+            .instrument(|c: &http::Concrete| match c.resolve.as_ref() {
                 None => info_span!("concrete"),
                 Some(addr) => info_span!("concrete", %addr),
             })
-            .check_new_service::<HttpConcrete, http::Request<_>>()
+            .check_new_service::<http::Concrete, http::Request<_>>()
             // The concrete address is only set when the profile could be
             // resolved. Endpoint resolution is skipped when there is no
             // concrete address.
-            .push_map_target(HttpConcrete::from)
-            .check_new_service::<(Option<Addr>, HttpLogical), http::Request<_>>()
+            .push_map_target(http::Concrete::from)
+            .check_new_service::<(Option<Addr>, http::Logical), http::Request<_>>()
             .push(profiles::split::layer())
-            .check_new_service::<HttpLogical, http::Request<_>>()
+            .check_new_service::<http::Logical, http::Request<_>>()
             // Drives concrete stacks to readiness and makes the split
             // cloneable, as required by the retry middleware.
             .push_on_response(
@@ -191,7 +191,7 @@ impl Config {
                     .push_failfast(dispatch_timeout)
                     .push_spawn_buffer(buffer_capacity),
             )
-            .check_new_service::<HttpLogical, http::Request<_>>()
+            .check_new_service::<http::Logical, http::Request<_>>()
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     .push(metrics.http_route_actual.into_layer::<classify::Response>())
@@ -204,10 +204,10 @@ impl Config {
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())
-                    .push_map_target(target::route)
+                    .push_map_target(http::route)
                     .into_inner(),
             ))
-            .check_new_service::<HttpLogical, http::Request<_>>()
+            .check_new_service::<http::Logical, http::Request<_>>()
             .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
             .push_on_response(
                 svc::layers()
@@ -215,8 +215,8 @@ impl Config {
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                     .push(svc::layers().box_http_response()),
             )
-            .instrument(|l: &HttpLogical| info_span!("logical", dst = %l.addr()))
-            .check_new_service::<HttpLogical, http::Request<_>>()
+            .instrument(|l: &http::Logical| info_span!("logical", dst = %l.addr()))
+            .check_new_service::<http::Logical, http::Request<_>>()
             .into_inner()
     }
 
@@ -248,7 +248,7 @@ impl Config {
         C: tower::Service<tcp::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        H: svc::NewService<HttpLogical, Service = S> + Unpin + Send + Clone + 'static,
+        H: svc::NewService<http::Logical, Service = S> + Unpin + Send + Clone + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -271,7 +271,7 @@ impl Config {
         } = self.proxy.clone();
 
         let http_server = svc::stack(http_router)
-            .check_new_service::<HttpLogical, http::Request<_>>()
+            .check_new_service::<http::Logical, http::Request<_>>()
             .push_on_response(
                 svc::layers()
                     .box_http_request()
@@ -292,10 +292,10 @@ impl Config {
                     .push_spawn_buffer(buffer_capacity)
                     .box_http_response(),
             )
-            .check_new_service::<HttpLogical, http::Request<_>>()
+            .check_new_service::<http::Logical, http::Request<_>>()
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .instrument(|l: &HttpLogical| info_span!("http", v = %l.protocol))
-            .push_map_target(HttpLogical::from)
+            .instrument(|l: &http::Logical| info_span!("http", v = %l.protocol))
+            .push_map_target(http::Logical::from)
             .check_new_service::<(http::Version, tcp::Logical), http::Request<_>>()
             .into_inner();
 
