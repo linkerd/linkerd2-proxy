@@ -11,12 +11,12 @@ use linkerd2_app_core::{
     drain, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::{api_resolve::Metadata, core::resolve::Resolve, tap},
-    reconnect, retry,
+    proxy::{api_resolve::Metadata, core::resolve::Resolve},
+    retry,
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen},
-    Addr, Error, IpMatch, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER, L5D_REQUIRE_ID,
+    Addr, Error, IpMatch, TraceContext, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
@@ -29,8 +29,6 @@ pub mod target;
 pub mod tcp;
 #[cfg(test)]
 mod test_util;
-
-use self::require_identity_on_endpoint::MakeRequireIdentityLayer;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -47,70 +45,6 @@ pub struct SkipByProfile;
 // === impl Config ===
 
 impl Config {
-    pub fn build_http_endpoint<B, C>(
-        &self,
-        tcp_connect: C,
-        tap_layer: tap::Layer,
-        metrics: metrics::Proxy,
-        span_sink: Option<mpsc::Sender<oc::Span>>,
-    ) -> impl svc::NewService<
-        http::Endpoint,
-        Service = impl tower::Service<
-            http::Request<B>,
-            Response = http::Response<http::boxed::Payload>,
-            Error = Error,
-            Future = impl Send,
-        > + Send,
-    > + Clone
-           + Send
-    where
-        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
-        B::Data: Send + 'static,
-        C: tower::Service<http::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-        C::Future: Unpin + Send,
-    {
-        // Checks the headers to validate that a client-specified required
-        // identity matches the configured identity.
-        let identity_headers = svc::layers()
-            .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
-            .push(MakeRequireIdentityLayer::new());
-
-        svc::stack(tcp_connect)
-            // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
-            // is typically used (i.e. when communicating with other proxies); though
-            // HTTP/1.x fallback is supported as needed.
-            .push(http::client::layer(self.proxy.connect.h2_settings))
-            // Re-establishes a connection when the client fails.
-            .push(reconnect::layer({
-                let backoff = self.proxy.connect.backoff.clone();
-                move |e: Error| {
-                    if is_loop(&*e) {
-                        Err(e)
-                    } else {
-                        Ok(backoff.stream())
-                    }
-                }
-            }))
-            .check_new::<http::Endpoint>()
-            .push(tap_layer.clone())
-            .push(metrics.http_endpoint.into_layer::<classify::Response>())
-            .push_on_response(TraceContext::layer(
-                span_sink
-                    .clone()
-                    .map(|sink| SpanConverter::client(sink, trace_labels())),
-            ))
-            .push(identity_headers.clone())
-            .push(http::override_authority::Layer::new(vec![
-                ::http::header::HOST.as_str(),
-                CANONICAL_DST_HEADER,
-            ]))
-            .push_on_response(svc::layers().box_http_response())
-            .check_new::<http::Endpoint>()
-            .instrument(|e: &http::Endpoint| info_span!("endpoint", peer.addr = %e.addr))
-            .into_inner()
-    }
-
     pub fn build_http_router<B, E, S, R>(
         &self,
         endpoint: E,
@@ -204,7 +138,7 @@ impl Config {
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())
-                    .push_map_target(http::route)
+                    .push_map_target(http::Logical::into_route)
                     .into_inner(),
             ))
             .check_new_service::<http::Logical, http::Request<_>>()
@@ -370,10 +304,6 @@ pub fn trace_labels() -> HashMap<String, String> {
     let mut l = HashMap::new();
     l.insert("direction".to_string(), "outbound".to_string());
     l
-}
-
-fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
-    err.is::<tcp::connect::LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
 }
 
 // === impl SkipByProfile ===

@@ -1,3 +1,5 @@
+pub mod endpoint;
+
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd2_app_core::proxy::http::*;
@@ -28,12 +30,14 @@ impl From<(http::Version, tcp::Logical)> for Logical {
     }
 }
 
-pub fn route((route, logical): (profiles::http::Route, Logical)) -> dst::Route {
-    use linkerd2_app_core::metrics::Direction;
-    dst::Route {
-        route,
-        target: logical.addr(),
-        direction: Direction::Out,
+impl Logical {
+    pub fn into_route((route, logical): (profiles::http::Route, Self)) -> dst::Route {
+        use linkerd2_app_core::metrics::Direction;
+        dst::Route {
+            route,
+            target: logical.addr(),
+            direction: Direction::Out,
+        }
     }
 }
 

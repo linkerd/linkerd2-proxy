@@ -35,7 +35,7 @@ struct PreventLoop {
 }
 
 #[derive(Clone, Debug)]
-pub struct LoopPrevented {
+struct LoopPrevented {
     port: u16,
 }
 
@@ -57,6 +57,10 @@ impl<P> svc::stack::FilterRequest<Endpoint<P>> for PreventLoop {
 }
 
 // === impl LoopPrevented ===
+
+pub fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
+    err.is::<LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
+}
 
 impl std::fmt::Display for LoopPrevented {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
