@@ -5,7 +5,6 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use self::allow_discovery::AllowResolve;
 pub use self::target::{HttpConcrete, HttpEndpoint, HttpLogical};
 use linkerd2_app_core::{
     classify,
@@ -24,7 +23,6 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
-mod allow_discovery;
 mod require_identity_on_endpoint;
 mod resolve;
 pub mod target;
@@ -49,50 +47,6 @@ pub struct SkipByProfile;
 // === impl Config ===
 
 impl Config {
-    /// Constructs a TCP load balancer.
-    pub fn build_tcp_balance<C, R, I>(
-        &self,
-        connect: C,
-        resolve: R,
-    ) -> impl svc::NewService<
-        tcp::Concrete,
-        Service = impl tower::Service<
-            I,
-            Response = (),
-            Future = impl Unpin + Send + 'static,
-            Error = impl Into<Error>,
-        > + Unpin
-                      + Send
-                      + 'static,
-    > + Clone
-           + Unpin
-           + Send
-           + 'static
-    where
-        C: tower::Service<tcp::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
-        C::Response: io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
-        C::Future: Unpin + Send,
-        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
-        R::Future: Unpin + Send,
-        R::Resolution: Unpin + Send,
-        I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
-    {
-        svc::stack(connect)
-            .push_make_thunk()
-            .check_make_service::<tcp::Endpoint, ()>()
-            .instrument(|t: &tcp::Endpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity))
-            .check_make_service::<tcp::Endpoint, ()>()
-            .push(resolve::layer(AllowResolve, resolve, self.proxy.cache_max_idle_age * 2))
-            .push_on_response(
-                svc::layers()
-                    .push(tcp::balance::layer(EWMA_DEFAULT_RTT, EWMA_DECAY))
-                    .push(svc::layer::mk(tcp::Forward::new))
-            )
-            .check_make_service::<tcp::Concrete, I>()
-            .into_new_service()
-            .check_new_service::<tcp::Concrete, I>()
-    }
-
     pub fn build_http_endpoint<B, C>(
         &self,
         tcp_connect: C,
@@ -206,7 +160,7 @@ impl Config {
                     .box_http_request(),
             )
             .check_new_service::<HttpEndpoint, http::Request<_>>()
-            .push(resolve::layer(AllowResolve, resolve, watchdog))
+            .push(resolve::layer(resolve, watchdog))
             .check_service::<HttpConcrete>()
             .push_on_response(
                 svc::layers()
@@ -315,7 +269,7 @@ impl Config {
             cache_max_idle_age,
             buffer_capacity,
             ..
-        } = self.proxy;
+        } = self.proxy.clone();
 
         let http_server = svc::stack(http_router)
             .check_new_service::<HttpLogical, http::Request<_>>()
@@ -347,7 +301,7 @@ impl Config {
             .into_inner();
 
         // Load balances TCP streams that cannot be decoded as HTTP.
-        let tcp_balance = svc::stack(self.build_tcp_balance(tcp_connect.clone(), resolve))
+        let tcp_balance = svc::stack(tcp::balance::stack(&self.proxy, tcp_connect.clone(), resolve))
             .push_map_target(tcp::Concrete::from)
             .push(profiles::split::layer())
             .push_on_response(

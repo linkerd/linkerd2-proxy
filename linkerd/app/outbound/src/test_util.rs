@@ -2,10 +2,7 @@ use crate::Config;
 pub use futures::prelude::*;
 pub use ipnet::IpNet;
 use linkerd2_app_core::{
-    config, exp_backoff, profiles,
-    proxy::http::h2,
-    transport::{listen},
-    IpMatch,
+    config, exp_backoff, profiles, proxy::http::h2, transport::listen, IpMatch,
 };
 pub use linkerd2_app_test as support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};

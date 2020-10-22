@@ -1,21 +1,22 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::Config;
 use crate::test_util::{
-    *,
     support::{
         connect::{Connect, ConnectFuture},
         resolver,
-    }
+    },
+    *,
 };
+use crate::Config;
 use linkerd2_app_core::{
     drain, metrics, svc,
+    svc::NewService,
     transport::{io, listen, tls},
-    Addr, Error,  IpMatch, svc::NewService,
+    Addr, Error, IpMatch,
 };
 use std::{
-    str::FromStr,
     future::Future,
     net::SocketAddr,
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
@@ -23,8 +24,8 @@ use std::{
     time::Duration,
 };
 use tls::HasPeerIdentity;
-use tracing_futures::Instrument;
 use tower::ServiceExt;
+use tracing_futures::Instrument;
 
 #[tokio::test(core_threads = 1)]
 async fn plaintext_tcp() {
@@ -68,9 +69,7 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    let forward = cfg
-        .build_tcp_balance(connect, resolver)
-        .new_service(concrete);
+    let forward = super::balance::stack(&cfg.proxy, connect, resolver).new_service(concrete);
 
     forward
         .oneshot(client_io)
@@ -153,7 +152,7 @@ async fn tls_when_hinted() {
     client_io.read(b"hello").write(b"world");
 
     // Build the outbound TCP balancer stack.
-    let mut balance = cfg.build_tcp_balance(connect, resolver);
+    let mut balance = super::balance::stack(&cfg.proxy, connect, resolver);
 
     let plain = balance
         .new_service(plain_concrete)
@@ -705,10 +704,7 @@ where
         svc
     };
     async move {
-        let io = support::io()
-            .read(b"hello\r\n")
-            .write(b"world")
-            .build();
+        let io = support::io().read(b"hello\r\n").write(b"world").build();
         let res = svc.oneshot(io).err_into::<Error>().await;
         tracing::debug!(?res);
         if let Err(err) = res {

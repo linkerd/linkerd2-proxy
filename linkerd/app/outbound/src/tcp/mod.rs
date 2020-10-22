@@ -1,9 +1,10 @@
+pub mod balance;
 pub mod connect;
 #[cfg(test)]
 mod tests;
 
 use crate::target;
-pub use linkerd2_app_core::proxy::tcp::*;
+pub use linkerd2_app_core::proxy::tcp::Forward;
 use linkerd2_app_core::{discovery_rejected, svc::stack::FilterRequest, Error, IpMatch};
 
 pub type Accept = target::Accept<()>;
