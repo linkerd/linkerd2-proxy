@@ -1,7 +1,13 @@
 use crate::target::Endpoint;
 use linkerd2_app_core::{
-    config::ConnectConfig, metrics, proxy::identity, svc, transport::tls, Error,
+    config::ConnectConfig,
+    metrics,
+    proxy::identity,
+    svc,
+    transport::{io, tls},
+    Error,
 };
+use tracing::debug_span;
 
 // Establishes connections to remote peers (for both TCP forwarding and HTTP
 // proxying).
@@ -25,6 +31,35 @@ pub fn stack<P>(
         .push_timeout(config.timeout)
         .push(metrics.transport.layer_connect())
         .push_request_filter(PreventLoop { port: server_port })
+        .into_inner()
+}
+
+pub fn forward<P, I, C>(
+    connect: C,
+) -> impl svc::NewService<
+    Endpoint<P>,
+    Service = impl tower::Service<
+        I,
+        Response = (),
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+    > + Send
+                  + 'static,
+> + Clone
+       + Send
+       + 'static
+where
+    P: Clone + Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    C: tower::Service<Endpoint<P>, Error = Error> + Unpin + Clone + Send + Sync + 'static,
+    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    C::Future: Unpin + Send,
+{
+    svc::stack(connect)
+        .push_make_thunk()
+        .push_on_response(svc::layer::mk(super::Forward::new))
+        .instrument(|_: &Endpoint<P>| debug_span!("tcp.forward"))
+        .check_new_service::<Endpoint<P>, I>()
         .into_inner()
 }
 

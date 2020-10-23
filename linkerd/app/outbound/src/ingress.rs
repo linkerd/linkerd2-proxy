@@ -6,13 +6,13 @@ use linkerd2_app_core::{
     profiles,
     spans::SpanConverter,
     svc::{self},
-    transport::{self, io, listen},
+    transport::{self, io, listen, tls},
     Addr, AddrMatch, Error, TraceContext,
 };
 use tokio::sync::mpsc;
 use tracing::info_span;
 
-pub fn server<P, T, TSvc, H, HSvc, I>(
+pub fn stack<P, T, TSvc, H, HSvc, I>(
     Config {
         allow_discovery,
         proxy:
@@ -118,7 +118,9 @@ where
         .into_inner();
 
     let tcp = svc::stack(tcp)
-        .push_map_target(tcp::Endpoint::from)
+        .push_map_target(tcp::Endpoint::from_accept(
+            tls::ReasonForNoPeerName::IngressNonHttp,
+        ))
         .into_inner();
 
     svc::stack(http::DetectHttp::new(h2_settings, http, tcp, drain))
