@@ -50,6 +50,24 @@ impl AddrMatch {
     }
 }
 
+impl From<IpMatch> for AddrMatch {
+    fn from(nets: IpMatch) -> Self {
+        Self {
+            nets,
+            names: NameMatch::new(None),
+        }
+    }
+}
+
+impl From<NameMatch> for AddrMatch {
+    fn from(names: NameMatch) -> Self {
+        Self {
+            names,
+            nets: IpMatch::new(None),
+        }
+    }
+}
+
 impl Into<IpMatch> for AddrMatch {
     fn into(self) -> IpMatch {
         self.nets
