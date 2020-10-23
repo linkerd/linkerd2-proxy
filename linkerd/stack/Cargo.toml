@@ -27,5 +27,5 @@ features = [
 [dev-dependencies]
 tower-test = "0.3"
 tokio-test = "0.2"
-tracing-subscriber = "0.2"
+tracing-subscriber = "0.2.14"
 tokio = { version = "0.2", features = ["time", "macros"] }

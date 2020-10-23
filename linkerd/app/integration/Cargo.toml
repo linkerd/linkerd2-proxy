@@ -42,7 +42,7 @@ tracing-futures = { version = "0.2", features = ["std-future"] }
 webpki = "0.21.0"
 
 [dependencies.tracing-subscriber]
-version = "0.2.11"
+version = "0.2.14"
 # we don't need `chrono` time formatting or ANSI colored output
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
@@ -51,7 +51,7 @@ features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies.tracing-subscriber]
-version = "0.2.8"
+version = "0.2.14"
 # turn on ANSI colors for tests :)
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "ansi", "tracing-log", "json", "parking_lot"]
