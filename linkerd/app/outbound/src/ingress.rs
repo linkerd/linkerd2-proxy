@@ -12,6 +12,12 @@ use linkerd2_app_core::{
 use tokio::sync::mpsc;
 use tracing::info_span;
 
+/// Routes HTTP requests according to the l5d-dst-override header.
+///
+/// Forwards TCP connections without discovery/routing (or mTLS).
+///
+/// This is only intended for Ingress configurations, where we assume all
+/// outbound traffic is either
 pub fn stack<P, T, TSvc, H, HSvc, I>(
     Config {
         allow_discovery,
@@ -86,7 +92,7 @@ where
         .into_new_service()
         .check_new_service::<Target, http::Request<_>>()
         .push(svc::layer::mk(|inner| {
-            svc::stack::NewRouter::new(TargetPerRequest::from, inner)
+            svc::stack::NewRouter::new(TargetPerRequest::accept, inner)
         }))
         .check_new_service::<http::Accept, http::Request<_>>()
         .push_on_response(
@@ -184,8 +190,8 @@ impl From<(Option<profiles::Receiver>, Target)> for http::Logical {
 
 // === TargetPerRequest ===
 
-impl From<http::Accept> for TargetPerRequest {
-    fn from(a: http::Accept) -> Self {
+impl TargetPerRequest {
+    fn accept(a: http::Accept) -> Self {
         Self(a)
     }
 }
