@@ -1,4 +1,6 @@
 pub mod endpoint;
+pub mod logical;
+mod require_identity_on_endpoint;
 
 use crate::tcp;
 use indexmap::IndexMap;

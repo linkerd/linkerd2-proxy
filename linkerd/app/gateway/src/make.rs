@@ -1,7 +1,7 @@
 use super::gateway::Gateway;
 use linkerd2_app_core::{profiles, svc, transport::tls, NameAddr};
 use linkerd2_app_inbound::endpoint as inbound;
-use linkerd2_app_outbound::target as outbound;
+use linkerd2_app_outbound as outbound;
 use tracing::debug;
 
 #[derive(Clone, Debug)]
@@ -20,7 +20,7 @@ pub(crate) type Target = (Option<profiles::Receiver>, inbound::Target);
 
 impl<O> svc::NewService<Target> for MakeGateway<O>
 where
-    O: svc::NewService<outbound::HttpLogical> + Send + Clone + 'static,
+    O: svc::NewService<outbound::http::Logical> + Send + Clone + 'static,
 {
     type Service = Gateway<O::Service>;
 
@@ -48,7 +48,7 @@ where
         // Create an outbound target using the resolved name and an address
         // including the original port. We don't know the IP of the target, so
         // we use an unroutable one.
-        let target = outbound::HttpLogical {
+        let target = outbound::http::Logical {
             profile,
             protocol: http_version,
             orig_dst: ([0, 0, 0, 0], dst.port()).into(),

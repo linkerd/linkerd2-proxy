@@ -1,5 +1,5 @@
+use super::require_identity_on_endpoint::NewRequireIdentity;
 use super::Endpoint;
-use crate::require_identity_on_endpoint::MakeRequireIdentityLayer;
 use crate::tcp;
 use linkerd2_app_core::{
     classify,
@@ -62,7 +62,7 @@ where
                 .map(|sink| SpanConverter::client(sink, crate::trace_labels())),
         ))
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
-        .push(MakeRequireIdentityLayer::new())
+        .push(svc::layer::mk(NewRequireIdentity::new))
         .push(http::override_authority::Layer::new(vec![
             ::http::header::HOST.as_str(),
             CANONICAL_DST_HEADER,

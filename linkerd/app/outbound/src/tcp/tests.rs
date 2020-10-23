@@ -670,7 +670,8 @@ where
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (_, drain) = drain::channel();
-    cfg.build_server(
+    crate::server::stack(
+        &cfg,
         profiles,
         resolver,
         connect,
