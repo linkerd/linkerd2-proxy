@@ -19,7 +19,7 @@ tracing-futures = { version = "0.2" }
 tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]
-version = "0.2.11"
+version = "0.2.14"
 # we don't need `chrono` time formatting or ANSI colored output
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]

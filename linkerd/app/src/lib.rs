@@ -126,8 +126,10 @@ impl Config {
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
-            let outbound_http = outbound.build_http_router(
-                outbound.build_http_endpoint(
+            let outbound_http = outbound::http::logical::stack(
+                &outbound.proxy,
+                outbound::http::endpoint::stack(
+                    &outbound.proxy.connect,
                     outbound::tcp::connect::stack(
                         &outbound.proxy.connect,
                         outbound_addr.port(),
@@ -148,7 +150,8 @@ impl Config {
             tokio::spawn(
                 serve::serve(
                     outbound_listen,
-                    outbound.clone().build_server(
+                    outbound::server::stack(
+                        &outbound,
                         dst.profiles.clone(),
                         dst.resolve,
                         outbound::tcp::connect::stack(

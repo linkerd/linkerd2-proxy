@@ -1,14 +1,9 @@
-use crate::{
-    stack_labels,
-    target::{HttpAccept, HttpLogical},
-    tcp, trace_labels,
-};
+use crate::{http, stack_labels, tcp, trace_labels};
 use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
     discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
-    proxy::http,
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen},
@@ -59,7 +54,7 @@ where
         + Send
         + 'static,
     TSvc::Future: Send,
-    H: svc::NewService<HttpLogical, Service = HSvc> + Unpin + Send + Clone + 'static,
+    H: svc::NewService<http::Logical, Service = HSvc> + Unpin + Send + Clone + 'static,
     HSvc: tower::Service<
             http::Request<http::boxed::Payload>,
             Response = http::Response<http::boxed::Payload>,
@@ -72,13 +67,13 @@ where
     P::Error: Send,
 {
     let http = svc::stack(http)
-        .check_new_service::<HttpLogical, http::Request<_>>()
-        .push_map_target(HttpLogical::from)
+        .check_new_service::<http::Logical, http::Request<_>>()
+        .push_map_target(http::Logical::from)
         .push(profiles::discover::layer(
             profiles,
             AllowHttpProfile(allow_discovery),
         ))
-        .check_new_service::<HttpTarget, http::Request<_>>()
+        .check_new_service::<Target, http::Request<_>>()
         .cache(
             svc::layers().push_on_response(
                 svc::layers()
@@ -89,11 +84,11 @@ where
         .into_make_service()
         .spawn_buffer(buffer_capacity)
         .into_new_service()
-        .check_new_service::<HttpTarget, http::Request<_>>()
+        .check_new_service::<Target, http::Request<_>>()
         .push(svc::layer::mk(|inner| {
-            svc::stack::NewRouter::new(HttpTargetPerRequest::from, inner)
+            svc::stack::NewRouter::new(TargetPerRequest::from, inner)
         }))
-        .check_new_service::<HttpAccept, http::Request<_>>()
+        .check_new_service::<http::Accept, http::Request<_>>()
         .push_on_response(
             svc::layers()
                 .box_http_request()
@@ -114,11 +109,11 @@ where
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
         )
-        .check_new_service::<HttpAccept, http::Request<_>>()
+        .check_new_service::<http::Accept, http::Request<_>>()
         .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-        .check_new_service::<HttpAccept, http::Request<_>>()
-        .instrument(|a: &HttpAccept| info_span!("http", v = %a.protocol))
-        .push_map_target(HttpAccept::from)
+        .check_new_service::<http::Accept, http::Request<_>>()
+        .instrument(|a: &http::Accept| info_span!("http", v = %a.protocol))
+        .push_map_target(http::Accept::from)
         .check_new_service::<(http::Version, tcp::Accept), http::Request<_>>()
         .into_inner();
 
@@ -151,20 +146,20 @@ pub struct Config {
 struct AllowHttpProfile(AddrMatch);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct HttpTarget {
+struct Target {
     dst: Addr,
-    accept: HttpAccept,
+    accept: http::Accept,
 }
 
 #[derive(Clone)]
-struct HttpTargetPerRequest(HttpAccept);
+struct TargetPerRequest(http::Accept);
 
 // === AllowHttpProfile ===
 
-impl svc::stack::FilterRequest<HttpTarget> for AllowHttpProfile {
+impl svc::stack::FilterRequest<Target> for AllowHttpProfile {
     type Request = Addr;
 
-    fn filter(&self, HttpTarget { dst, .. }: HttpTarget) -> Result<Addr, Error> {
+    fn filter(&self, Target { dst, .. }: Target) -> Result<Addr, Error> {
         if self.0.matches(&dst) {
             Ok(dst)
         } else {
@@ -173,10 +168,10 @@ impl svc::stack::FilterRequest<HttpTarget> for AllowHttpProfile {
     }
 }
 
-// === impl HttpTarget ===
+// === impl Target ===
 
-impl From<(Option<profiles::Receiver>, HttpTarget)> for HttpLogical {
-    fn from((p, HttpTarget { accept, .. }): (Option<profiles::Receiver>, HttpTarget)) -> Self {
+impl From<(Option<profiles::Receiver>, Target)> for http::Logical {
+    fn from((p, Target { accept, .. }): (Option<profiles::Receiver>, Target)) -> Self {
         Self {
             profile: p,
             orig_dst: accept.orig_dst,
@@ -185,19 +180,19 @@ impl From<(Option<profiles::Receiver>, HttpTarget)> for HttpLogical {
     }
 }
 
-// === HttpTargetPerRequest ===
+// === TargetPerRequest ===
 
-impl From<HttpAccept> for HttpTargetPerRequest {
-    fn from(a: HttpAccept) -> Self {
+impl From<http::Accept> for TargetPerRequest {
+    fn from(a: http::Accept) -> Self {
         Self(a)
     }
 }
 
-impl<B> svc::stack::RecognizeRoute<http::Request<B>> for HttpTargetPerRequest {
-    type Key = HttpTarget;
+impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
+    type Key = Target;
 
     fn recognize(&self, req: &http::Request<B>) -> Self::Key {
-        HttpTarget {
+        Target {
             accept: self.0,
             dst: http_request_l5d_override_dst_addr(req).unwrap_or_else(|_| self.0.orig_dst.into()),
         }

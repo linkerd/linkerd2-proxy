@@ -3,7 +3,7 @@ use linkerd2_app_core::{
     discovery_rejected, profiles, proxy::http, svc, transport::tls, Error, NameAddr, NameMatch,
 };
 use linkerd2_app_inbound::endpoint as inbound;
-use linkerd2_app_outbound::target as outbound;
+use linkerd2_app_outbound as outbound;
 use tracing::info_span;
 
 #[derive(Clone, Debug, Default)]
@@ -35,7 +35,7 @@ impl Config {
         P: profiles::GetProfile<NameAddr> + Clone + Send + 'static,
         P::Future: Send + 'static,
         P::Error: Send,
-        O: svc::NewService<outbound::HttpLogical, Service = S> + Clone + Send + 'static,
+        O: svc::NewService<outbound::http::Logical, Service = S> + Clone + Send + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
