@@ -152,7 +152,7 @@ impl Config {
 
             let span = info_span!("outbound");
             let _enter = span.enter();
-            info!(listen.addr = %outbound_addr);
+            info!(listen.addr = %outbound_addr, ingress_mode);
             if ingress_mode {
                 tokio::spawn(
                     serve::serve(

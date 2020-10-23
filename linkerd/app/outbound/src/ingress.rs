@@ -17,7 +17,7 @@ use tracing::info_span;
 /// Forwards TCP connections without discovery/routing (or mTLS).
 ///
 /// This is only intended for Ingress configurations, where we assume all
-/// outbound traffic is either
+/// outbound traffic is either HTTP or TLS'd by the ingress proxy.
 pub fn stack<P, T, TSvc, H, HSvc, I>(
     config: &Config,
     profiles: P,
