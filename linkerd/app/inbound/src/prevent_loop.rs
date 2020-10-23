@@ -1,5 +1,5 @@
 //use futures::future;
-use linkerd2_app_core::{svc::stack::FilterRequest, Error};
+use linkerd2_app_core::{svc::stack::FilterRequest, svc::stack::Switch, Error};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -32,6 +32,17 @@ where
         }
 
         Ok(t)
+    }
+}
+
+impl<T> Switch<T> for PreventLoop
+where
+    for<'t> &'t T: Into<std::net::SocketAddr>,
+{
+    fn use_primary(&self, target: &T) -> bool {
+        let addr = target.into();
+        tracing::debug!(%addr, self.port);
+        addr.port() == self.port
     }
 }
 
