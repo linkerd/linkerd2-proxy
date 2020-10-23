@@ -27,6 +27,7 @@ pub use self::{
     client_addr::{ClientAddr, SetClientAddr},
     detect::DetectHttp,
     glue::{Body as Payload, HyperServerSvc},
+    override_authority::CanOverrideAuthority,
     timeout::MakeTimeoutLayer,
     version::Version,
 };
