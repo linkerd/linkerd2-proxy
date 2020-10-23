@@ -138,7 +138,7 @@ where
         .push_map_target(tcp::Logical::from)
         .push(profiles::discover::layer(
             profiles,
-            AllowProfile(config.allow_discovery.clone()),
+            AllowProfile(config.allow_discovery.clone().into()),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .cache(

@@ -1,4 +1,4 @@
-use crate::{http, stack_labels, tcp, trace_labels};
+use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
     discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, metrics,
@@ -19,19 +19,7 @@ use tracing::info_span;
 /// This is only intended for Ingress configurations, where we assume all
 /// outbound traffic is either
 pub fn stack<P, T, TSvc, H, HSvc, I>(
-    Config {
-        allow_discovery,
-        proxy:
-            ProxyConfig {
-                server: ServerConfig { h2_settings, .. },
-                dispatch_timeout,
-                max_in_flight_requests,
-                detect_protocol_timeout,
-                buffer_capacity,
-                cache_max_idle_age,
-                ..
-            },
-    }: Config,
+    config: &Config,
     profiles: P,
     tcp: T,
     http: H,
@@ -72,6 +60,20 @@ where
     P::Future: Unpin + Send,
     P::Error: Send,
 {
+    let Config {
+        allow_discovery,
+        proxy:
+            ProxyConfig {
+                server: ServerConfig { h2_settings, .. },
+                dispatch_timeout,
+                max_in_flight_requests,
+                detect_protocol_timeout,
+                buffer_capacity,
+                cache_max_idle_age,
+                ..
+            },
+    } = config.clone();
+
     let http = svc::stack(http)
         .check_new_service::<http::Logical, http::Request<_>>()
         .push_map_target(http::Logical::from)
@@ -142,12 +144,6 @@ where
         .push_map_target(tcp::Accept::from)
         .check_new_service::<listen::Addrs, I>()
         .into_inner()
-}
-
-#[derive(Clone, Debug)]
-pub struct Config {
-    allow_discovery: AddrMatch,
-    proxy: ProxyConfig,
 }
 
 #[derive(Clone)]

@@ -38,12 +38,9 @@ pub fn forward<P, I, C>(
     connect: C,
 ) -> impl svc::NewService<
     Endpoint<P>,
-    Service = impl tower::Service<
-        I,
-        Response = (),
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-    > + Send
+    Service = impl tower::Service<I, Response = (), Error = Error, Future = impl Send + 'static>
+                  + Clone
+                  + Send
                   + 'static,
 > + Clone
        + Send

@@ -40,6 +40,11 @@ pub struct Config {
     pub inbound: inbound::Config,
     pub gateway: gateway::Config,
 
+    // In "ingress mode", we assume we are always routing HTTP requests and do
+    // not perform per-target-address discovery. Non-HTTP connections are
+    // forwarded without discovery/routing/mTLS.
+    pub ingress_mode: bool,
+
     pub dns: dns::Config,
     pub identity: identity::Config,
     pub dst: dst::Config,
@@ -80,6 +85,7 @@ impl Config {
             outbound,
             gateway,
             tap,
+            ingress_mode,
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
@@ -147,29 +153,54 @@ impl Config {
             let span = info_span!("outbound");
             let _enter = span.enter();
             info!(listen.addr = %outbound_addr);
-            tokio::spawn(
-                serve::serve(
-                    outbound_listen,
-                    outbound::server::stack(
-                        &outbound,
-                        dst.profiles.clone(),
-                        dst.resolve,
-                        outbound::tcp::connect::stack(
-                            &outbound.proxy.connect,
-                            outbound_addr.port(),
-                            local_identity.clone(),
+            if ingress_mode {
+                tokio::spawn(
+                    serve::serve(
+                        outbound_listen,
+                        outbound::ingress::stack(
+                            &outbound,
+                            dst.profiles.clone(),
+                            outbound::tcp::connect::forward(outbound::tcp::connect::stack(
+                                &outbound.proxy.connect,
+                                outbound_addr.port(),
+                                local_identity.clone(),
+                                &outbound_metrics,
+                            )),
+                            outbound_http.clone(),
                             &outbound_metrics,
+                            oc_span_sink.clone(),
+                            drain_rx.clone(),
                         ),
-                        outbound_http.clone(),
-                        outbound_metrics,
-                        oc_span_sink.clone(),
-                        drain_rx.clone(),
-                    ),
-                    drain_rx.clone().signal(),
-                )
-                .map_err(|e| panic!("outbound failed: {}", e))
-                .instrument(span.clone()),
-            );
+                        drain_rx.clone().signal(),
+                    )
+                    .map_err(|e| panic!("outbound failed: {}", e))
+                    .instrument(span.clone()),
+                );
+            } else {
+                tokio::spawn(
+                    serve::serve(
+                        outbound_listen,
+                        outbound::server::stack(
+                            &outbound,
+                            dst.profiles.clone(),
+                            dst.resolve,
+                            outbound::tcp::connect::stack(
+                                &outbound.proxy.connect,
+                                outbound_addr.port(),
+                                local_identity.clone(),
+                                &outbound_metrics,
+                            ),
+                            outbound_http.clone(),
+                            outbound_metrics,
+                            oc_span_sink.clone(),
+                            drain_rx.clone(),
+                        ),
+                        drain_rx.clone().signal(),
+                    )
+                    .map_err(|e| panic!("outbound failed: {}", e))
+                    .instrument(span.clone()),
+                );
+            }
             drop(_enter);
 
             let http_gateway = gateway.build(

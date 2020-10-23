@@ -50,6 +50,18 @@ impl AddrMatch {
     }
 }
 
+impl Into<IpMatch> for AddrMatch {
+    fn into(self) -> IpMatch {
+        self.nets
+    }
+}
+
+impl Into<NameMatch> for AddrMatch {
+    fn into(self) -> NameMatch {
+        self.names
+    }
+}
+
 // === impl NameMatch ===
 
 impl NameMatch {
