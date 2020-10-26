@@ -19,7 +19,7 @@ use linkerd2_app_outbound as outbound;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use tokio::time::Duration;
-use tracing::{debug, debug_span, error, info};
+use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
 /// Spawns a sidecar proxy.
@@ -92,16 +92,16 @@ impl Config {
 
         let dns = dns.build();
 
-        let identity = debug_span!("identity")
+        let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let tap = debug_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            debug_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
         }?;
 
         let oc_collector = {
@@ -109,15 +109,14 @@ impl Config {
             let dns = dns.resolver.clone();
             let client_metrics = metrics.control;
             let metrics = metrics.opencensus;
-            debug_span!("opencensus")
+            info_span!("opencensus")
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
-            debug_span!("admin")
-                .in_scope(move || admin.build(identity, report, log_level, drain))?
+            info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
         };
 
         let dst_addr = dst.addr.clone();
@@ -151,7 +150,7 @@ impl Config {
                 outbound_metrics.clone(),
             );
 
-            let span = debug_span!("outbound");
+            let span = info_span!("outbound");
             let _enter = span.enter();
             info!(listen.addr = %outbound_addr, ingress_mode);
             let connect = outbound::tcp::connect::stack(
@@ -206,7 +205,7 @@ impl Config {
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 
-            let span = debug_span!("inbound");
+            let span = info_span!("inbound");
             let _enter = span.enter();
             info!(listen.addr = %inbound_addr);
             tokio::spawn(
@@ -326,12 +325,12 @@ impl App {
                             admin
                                 .serve
                                 .map_err(|e| panic!("admin server died: {}", e))
-                                .instrument(debug_span!("admin", listen.addr = %admin.listen_addr)),
+                                .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
                         );
 
                         // Kick off the identity so that the process can become ready.
                         if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio::spawn(task.instrument(debug_span!("identity")));
+                            tokio::spawn(task.instrument(info_span!("identity")));
 
                             let latch = admin.latch;
                             tokio::spawn(
@@ -345,7 +344,7 @@ impl App {
                                         // The daemon task was lost?!
                                         panic!("Failed to certify identity!");
                                     })
-                                    .instrument(debug_span!("identity")),
+                                    .instrument(info_span!("identity")),
                             );
                         } else {
                             admin.latch.release()
@@ -358,24 +357,24 @@ impl App {
                             tokio::spawn(
                                 registry
                                     .clean(tokio::time::interval(Duration::from_secs(60)))
-                                    .instrument(debug_span!("tap_clean")),
+                                    .instrument(info_span!("tap_clean")),
                             );
                             tokio::spawn(
                                 serve
                                     .map_err(|error| error!(%error, "server died"))
-                                    .instrument(debug_span!("tap")),
+                                    .instrument(info_span!("tap")),
                             );
                         }
 
                         if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                            tokio::spawn(task.instrument(debug_span!("opencensus")));
+                            tokio::spawn(task.instrument(info_span!("opencensus")));
                         }
 
                         // we don't care if the admin shutdown channel is
                         // dropped or actually triggered.
                         let _ = admin_shutdown_rx.await;
                     }
-                    .instrument(debug_span!("daemon")),
+                    .instrument(info_span!("daemon")),
                 )
             })
             .expect("admin");
