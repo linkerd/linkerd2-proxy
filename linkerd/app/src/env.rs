@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::h2,
     transport::{listen, tls},
-    Addr, IpMatch, NameMatch,
+    Addr, AddrMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
@@ -36,6 +36,7 @@ pub enum EnvError {
 pub enum ParseError {
     NotADuration,
     NotADomainSuffix,
+    NotABool,
     NotANumber,
     NotANetwork,
     HostIsNotAnIpAddress,
@@ -61,6 +62,8 @@ pub const ENV_INBOUND_ORIG_DST_ADDR: &str = "LINKERD2_PROXY_INBOUND_ORIG_DST_ADD
 pub const ENV_OUTBOUND_ORIG_DST_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_ORIG_DST_ADDR";
 
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
+
+const ENV_INGRESS_MODE: &str = "LINKERD2_PROXY_INGRESS_MODE";
 
 const ENV_INBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_INBOUND_DISPATCH_TIMEOUT";
 const ENV_OUTBOUND_DISPATCH_TIMEOUT: &str = "LINKERD2_PROXY_OUTBOUND_DISPATCH_TIMEOUT";
@@ -332,6 +335,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
 
+    let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
+
     let outbound = {
         let bind = listen::Bind::new(
             outbound_listener_addr?
@@ -357,7 +362,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
         outbound::Config {
-            allow_discovery: IpMatch::new(dst_profile_networks.clone()),
+            allow_discovery: AddrMatch::new(
+                dst_profile_suffixes.clone(),
+                dst_profile_networks.clone(),
+            ),
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -536,6 +544,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         gateway,
         inbound,
+        ingress_mode,
     })
 }
 
@@ -637,6 +646,10 @@ fn parse_tap_config(
             }
         }
     }
+}
+
+fn parse_bool(s: &str) -> Result<bool, ParseError> {
+    s.parse().map_err(|_| ParseError::NotABool)
 }
 
 fn parse_number<T>(s: &str) -> Result<T, ParseError>

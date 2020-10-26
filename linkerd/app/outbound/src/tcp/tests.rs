@@ -541,7 +541,7 @@ async fn no_profiles_when_outside_search_nets() {
     let profile_addr = SocketAddr::new([10, 0, 0, 42].into(), 5550);
     let no_profile_addr = SocketAddr::new([126, 32, 5, 18].into(), 5550);
     let cfg = Config {
-        allow_discovery: IpMatch::new(Some(IpNet::from_str("10.0.0.0/8").unwrap())),
+        allow_discovery: IpMatch::new(Some(IpNet::from_str("10.0.0.0/8").unwrap())).into(),
         ..default_config(profile_addr)
     };
     let id_name = linkerd2_identity::Name::from_hostname(

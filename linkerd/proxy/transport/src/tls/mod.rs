@@ -38,6 +38,9 @@ pub enum ReasonForNoPeerName {
     // TLS termination was not attempted on this port.
     PortSkipped,
 
+    // Discovery is not performed for non-HTTP connections when in "ingress mode".
+    IngressNonHttp,
+
     /// Identity is administratively disabled.
     LocalIdentityDisabled,
 }
@@ -53,6 +56,7 @@ impl fmt::Display for ReasonForNoPeerName {
             ReasonForNoPeerName::NotProvidedByServiceDiscovery => {
                 write!(f, "not_provided_by_service_discovery")
             }
+            ReasonForNoPeerName::IngressNonHttp => write!(f, "ingress_non_http"),
         }
     }
 }

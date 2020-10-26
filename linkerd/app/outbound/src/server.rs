@@ -7,12 +7,12 @@ use linkerd2_app_core::{
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     spans::SpanConverter,
     svc,
-    transport::{self, io, listen},
+    transport::{self, io, listen, tls},
     Addr, Error, IpMatch, TraceContext,
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
-use tracing::{debug_span, info_span};
+use tracing::info_span;
 
 pub fn stack<R, P, C, H, S, I>(
     config: &Config,
@@ -126,12 +126,10 @@ where
     .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
     .into_inner();
 
-    let tcp = svc::stack(tcp_connect)
-        .push_make_thunk()
-        .push_on_response(svc::layer::mk(tcp::Forward::new))
-        .instrument(|_: &tcp::Endpoint| debug_span!("tcp.forward"))
-        .check_new_service::<tcp::Endpoint, transport::metrics::SensorIo<I>>()
-        .push_map_target(tcp::Endpoint::from)
+    let tcp = svc::stack(tcp::connect::forward(tcp_connect))
+        .push_map_target(tcp::Endpoint::from_logical(
+            tls::ReasonForNoPeerName::PortSkipped,
+        ))
         .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
@@ -140,7 +138,7 @@ where
         .push_map_target(tcp::Logical::from)
         .push(profiles::discover::layer(
             profiles,
-            AllowProfile(config.allow_discovery.clone()),
+            AllowProfile(config.allow_discovery.clone().into()),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .cache(
