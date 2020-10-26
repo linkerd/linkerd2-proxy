@@ -4,7 +4,7 @@ use linkerd2_app_core::{
 };
 use linkerd2_app_inbound::endpoint as inbound;
 use linkerd2_app_outbound as outbound;
-use tracing::info_span;
+use tracing::debug_span;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
@@ -51,7 +51,7 @@ impl Config {
                 Allow(self.allow_discovery),
             ))
             .check_new_service::<inbound::Target, http::Request<http::boxed::Payload>>()
-            .instrument(|_: &inbound::Target| info_span!("gateway"))
+            .instrument(|_: &inbound::Target| debug_span!("gateway"))
             .into_inner()
     }
 }

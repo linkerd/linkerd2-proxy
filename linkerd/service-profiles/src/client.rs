@@ -23,7 +23,7 @@ use tonic::{
     client::GrpcService,
 };
 use tower::retry::budget::Budget;
-use tracing::{debug, error, info_span, trace, warn};
+use tracing::{debug, debug_span, error, trace, warn};
 use tracing_futures::Instrument;
 
 #[derive(Clone, Debug)]
@@ -256,7 +256,7 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Profile, Error>> {
-        let span = info_span!("poll_profile");
+        let span = debug_span!("poll_profile");
         let _enter = span.enter();
 
         loop {

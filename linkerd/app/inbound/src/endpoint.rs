@@ -273,16 +273,16 @@ impl tap::Inspect for Target {
 
 impl stack_tracing::GetSpan<()> for Target {
     fn get_span(&self, _: &()) -> tracing::Span {
-        use tracing::info_span;
+        use tracing::debug_span;
 
         match self.http_version {
             http::Version::H2 => match self.dst.name_addr() {
-                None => info_span!("http2"),
-                Some(name) => info_span!("http2", %name),
+                None => debug_span!("http2"),
+                Some(name) => debug_span!("http2", %name),
             },
             http::Version::Http1 => match self.dst.name_addr() {
-                None => info_span!("http1"),
-                Some(name) => info_span!("http1", %name),
+                None => debug_span!("http1"),
+                Some(name) => debug_span!("http1", %name),
             },
         }
     }
