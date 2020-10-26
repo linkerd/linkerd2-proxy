@@ -10,7 +10,7 @@ use linkerd2_app_core::{
     Addr, AddrMatch, Error, TraceContext,
 };
 use tokio::sync::mpsc;
-use tracing::info_span;
+use tracing::{debug_span, info_span};
 
 /// Routes HTTP requests according to the l5d-dst-override header.
 ///
@@ -93,7 +93,7 @@ where
         .spawn_buffer(buffer_capacity)
         .into_new_service()
         .check_new_service::<Target, http::Request<_>>()
-        .instrument(|t: &Target| info_span!(dst = %t.dst, "target"))
+        .instrument(|t: &Target| info_span!("target", dst = %t.dst))
         .push(svc::layer::mk(|inner| {
             svc::stack::NewRouter::new(TargetPerRequest::accept, inner)
         }))
