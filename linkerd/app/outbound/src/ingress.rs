@@ -93,6 +93,7 @@ where
         .spawn_buffer(buffer_capacity)
         .into_new_service()
         .check_new_service::<Target, http::Request<_>>()
+        .instrument(|t: &Target| info_span!(dst = %t.dst, "target"))
         .push(svc::layer::mk(|inner| {
             svc::stack::NewRouter::new(TargetPerRequest::accept, inner)
         }))
@@ -120,7 +121,7 @@ where
         .check_new_service::<http::Accept, http::Request<_>>()
         .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
         .check_new_service::<http::Accept, http::Request<_>>()
-        .instrument(|a: &http::Accept| info_span!("http", v = %a.protocol))
+        .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
         .push_map_target(http::Accept::from)
         .check_new_service::<(http::Version, tcp::Accept), http::Request<_>>()
         .into_inner();
