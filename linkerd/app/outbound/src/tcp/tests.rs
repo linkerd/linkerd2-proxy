@@ -296,7 +296,7 @@ async fn load_balances() {
         .map(|i| {
             tokio::spawn(
                 hello_world_client(svc_addr, &mut server)
-                    .instrument(tracing::debug_span!("conn", i)),
+                    .instrument(tracing::info_span!("conn", i)),
             )
             .err_into::<Error>()
         })
@@ -385,7 +385,7 @@ async fn load_balancer_add_endpoints() {
             .map(|i| {
                 tokio::spawn(
                     hello_world_client(svc_addr, &mut server)
-                        .instrument(tracing::debug_span!("conn", i)),
+                        .instrument(tracing::info_span!("conn", i)),
                 )
                 .err_into::<Error>()
             })
@@ -494,7 +494,7 @@ async fn load_balancer_remove_endpoints() {
             .map(|i| {
                 tokio::spawn(
                     hello_world_client(svc_addr, &mut server)
-                        .instrument(tracing::debug_span!("conn", i)),
+                        .instrument(tracing::info_span!("conn", i)),
                 )
                 .err_into::<Error>()
             })
@@ -692,7 +692,7 @@ where
     S::Error: Into<Error>,
     S::Future: Send + 'static,
 {
-    let span = tracing::debug_span!("hello_world_client", %orig_dst);
+    let span = tracing::info_span!("hello_world_client", %orig_dst);
     let svc = {
         let _e = span.enter();
         let addrs = listen::Addrs::new(

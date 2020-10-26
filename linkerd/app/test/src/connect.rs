@@ -32,7 +32,7 @@ where
 
     fn call(&mut self, endpoint: E) -> Self::Future {
         let addr = endpoint.clone().into();
-        let span = tracing::debug_span!("connect", %addr);
+        let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");
             match self.endpoints.lock().unwrap().get_mut(&addr) {
