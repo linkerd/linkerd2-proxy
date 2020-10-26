@@ -158,23 +158,21 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 
 // === impl Endpoint ===
 
-impl<P> From<Logical<P>> for Endpoint<P> {
-    fn from(logical: Logical<P>) -> Self {
-        Self {
+impl<P> Endpoint<P> {
+    pub fn from_logical(reason: tls::ReasonForNoPeerName) -> impl (Fn(Logical<P>) -> Self) + Clone {
+        move |logical| Self {
             addr: (&logical).into(),
             metadata: Metadata::default(),
-            identity: tls::PeerIdentity::None(tls::ReasonForNoPeerName::PortSkipped.into()),
+            identity: tls::PeerIdentity::None(reason),
             concrete: Concrete {
                 logical,
                 resolve: None,
             },
         }
     }
-}
 
-impl<P> From<Accept<P>> for Endpoint<P> {
-    fn from(accept: Accept<P>) -> Self {
-        Logical::from((None, accept)).into()
+    pub fn from_accept(reason: tls::ReasonForNoPeerName) -> impl (Fn(Accept<P>) -> Self) + Clone {
+        move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
     }
 }
 

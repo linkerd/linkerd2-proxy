@@ -36,11 +36,47 @@ impl AddrMatch {
         &self.nets
     }
 
+    #[inline]
     pub fn matches(&self, addr: &Addr) -> bool {
         match addr {
-            Addr::Name(ref name) => self.names.matches(name.name()),
-            Addr::Socket(sa) => self.nets.matches(sa.ip()),
+            Addr::Name(name) => self.names.matches(name.name()),
+            Addr::Socket(sa) => self.matches_ip(sa.ip()),
         }
+    }
+
+    #[inline]
+    pub fn matches_ip(&self, ip: IpAddr) -> bool {
+        self.nets.matches(ip)
+    }
+}
+
+impl From<IpMatch> for AddrMatch {
+    fn from(nets: IpMatch) -> Self {
+        Self {
+            nets,
+            names: NameMatch::new(None),
+        }
+    }
+}
+
+impl From<NameMatch> for AddrMatch {
+    fn from(names: NameMatch) -> Self {
+        Self {
+            names,
+            nets: IpMatch::new(None),
+        }
+    }
+}
+
+impl Into<IpMatch> for AddrMatch {
+    fn into(self) -> IpMatch {
+        self.nets
+    }
+}
+
+impl Into<NameMatch> for AddrMatch {
+    fn into(self) -> NameMatch {
+        self.names
     }
 }
 
@@ -51,6 +87,7 @@ impl NameMatch {
         Self(Arc::new(suffixes.into_iter().collect()))
     }
 
+    #[inline]
     pub fn matches(&self, name: &Name) -> bool {
         self.0.iter().any(|sfx| sfx.contains(name))
     }
@@ -63,6 +100,7 @@ impl IpMatch {
         Self(Arc::new(nets.into_iter().collect()))
     }
 
+    #[inline]
     pub fn matches(&self, addr: IpAddr) -> bool {
         self.0.iter().any(|net| match (net, addr) {
             (IpNet::V4(net), IpAddr::V4(ip)) => net.contains(&ip),

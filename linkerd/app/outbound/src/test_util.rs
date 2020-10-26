@@ -17,7 +17,7 @@ pub fn default_profile() -> profiles::Receiver {
 
 pub fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
-        allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())),
+        allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
                 bind: listen::Bind::new(SocketAddr::new(LOCALHOST.into(), 0), None)
