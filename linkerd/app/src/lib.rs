@@ -153,6 +153,12 @@ impl Config {
             let span = info_span!("outbound");
             let _enter = span.enter();
             info!(listen.addr = %outbound_addr, ingress_mode);
+            let connect = outbound::tcp::connect::stack(
+                &outbound.proxy.connect,
+                outbound_addr.port(),
+                local_identity.clone(),
+                &outbound_metrics,
+            );
             if ingress_mode {
                 tokio::spawn(
                     serve::serve(
@@ -160,12 +166,7 @@ impl Config {
                         outbound::ingress::stack(
                             &outbound,
                             dst.profiles.clone(),
-                            outbound::tcp::connect::forward(outbound::tcp::connect::stack(
-                                &outbound.proxy.connect,
-                                outbound_addr.port(),
-                                local_identity.clone(),
-                                &outbound_metrics,
-                            )),
+                            outbound::tcp::connect::forward(connect),
                             outbound_http.clone(),
                             &outbound_metrics,
                             oc_span_sink.clone(),
@@ -184,12 +185,7 @@ impl Config {
                             &outbound,
                             dst.profiles.clone(),
                             dst.resolve,
-                            outbound::tcp::connect::stack(
-                                &outbound.proxy.connect,
-                                outbound_addr.port(),
-                                local_identity.clone(),
-                                &outbound_metrics,
-                            ),
+                            connect,
                             outbound_http.clone(),
                             outbound_metrics,
                             oc_span_sink.clone(),
