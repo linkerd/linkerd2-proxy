@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     proxy::{api_resolve::Metadata, core::Resolve, http},
     retry, svc, Addr, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use tracing::info_span;
+use tracing::debug_span;
 
 pub fn stack<B, E, S, R>(
     config: &ProxyConfig,
@@ -74,8 +74,8 @@ where
         .into_new_service()
         .check_new_service::<Concrete, http::Request<_>>()
         .instrument(|c: &Concrete| match c.resolve.as_ref() {
-            None => info_span!("concrete"),
-            Some(addr) => info_span!("concrete", %addr),
+            None => debug_span!("concrete"),
+            Some(addr) => debug_span!("concrete", %addr),
         })
         .check_new_service::<Concrete, http::Request<_>>()
         // The concrete address is only set when the profile could be
@@ -116,7 +116,7 @@ where
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push(svc::layers().box_http_response()),
         )
-        .instrument(|l: &Logical| info_span!("logical", dst = %l.addr()))
+        .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
         .check_new_service::<Logical, http::Request<_>>()
         .into_inner()
 }

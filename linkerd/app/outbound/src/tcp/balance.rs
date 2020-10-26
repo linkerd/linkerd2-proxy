@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     transport::io,
     Addr, Error,
 };
-use tracing::info_span;
+use tracing::debug_span;
 
 /// Constructs a TCP load balancer.
 pub fn stack<C, R, I>(
@@ -41,7 +41,7 @@ where
         .push_make_thunk()
         .check_make_service::<Endpoint, ()>()
         .instrument(
-            |t: &Endpoint| info_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity),
+            |t: &Endpoint| debug_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity),
         )
         .check_make_service::<Endpoint, ()>()
         .push(resolve::layer(resolve, config.cache_max_idle_age * 2))

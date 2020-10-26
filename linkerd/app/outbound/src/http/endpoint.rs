@@ -12,7 +12,7 @@ use linkerd2_app_core::{
     svc, Error, TraceContext, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
 use tokio::{io, sync::mpsc};
-use tracing::info_span;
+use tracing::debug_span;
 
 pub fn stack<B, C>(
     config: &ConnectConfig,
@@ -69,6 +69,6 @@ where
         ]))
         .push_on_response(svc::layers().box_http_response())
         .check_new::<Endpoint>()
-        .instrument(|e: &Endpoint| info_span!("endpoint", peer.addr = %e.addr))
+        .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
         .into_inner()
 }

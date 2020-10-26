@@ -171,7 +171,7 @@ where
                                 .expect("send result");
                             Ok::<(), Never>(())
                         }
-                        .instrument(tracing::info_span!("test_svc")),
+                        .instrument(tracing::debug_span!("test_svc")),
                     )
                 })
             },
@@ -190,7 +190,7 @@ where
             accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
-        .instrument(tracing::info_span!("run_server", %listen_addr));
+        .instrument(tracing::debug_span!("run_server", %listen_addr));
 
         (server, listen_addr, receiver)
     };
@@ -219,7 +219,9 @@ where
                         .expect("send result");
                 }
                 Ok(conn) => {
-                    let result = client(conn).instrument(tracing::info_span!("client")).await;
+                    let result = client(conn)
+                        .instrument(tracing::debug_span!("client"))
+                        .await;
                     sender
                         .send(Transported {
                             peer_identity,

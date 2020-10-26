@@ -13,7 +13,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{debug, info_span, trace_span};
+use tracing::{debug, debug_span, trace_span};
 use tracing_futures::Instrument;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -107,7 +107,7 @@ where
 
                 Ok(Connection { tx })
             }
-            .instrument(info_span!("h2")),
+            .instrument(debug_span!("h2")),
         )
     }
 }

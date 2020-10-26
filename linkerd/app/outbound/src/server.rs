@@ -12,7 +12,7 @@ use linkerd2_app_core::{
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
-use tracing::{debug_span, info_span};
+use tracing::debug_span;
 
 pub fn stack<R, P, C, H, S, I>(
     config: &Config,
@@ -88,7 +88,7 @@ where
         )
         .check_new_service::<http::Logical, http::Request<_>>()
         .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-        .instrument(|l: &http::Logical| info_span!("http", v = %l.protocol))
+        .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .check_new_service::<(http::Version, tcp::Logical), http::Request<_>>()
         .into_inner();
@@ -106,7 +106,7 @@ where
             .push_failfast(dispatch_timeout)
             .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
     )
-    .instrument(|_: &_| info_span!("tcp"))
+    .instrument(|_: &_| debug_span!("tcp"))
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
     .into_inner();
 
