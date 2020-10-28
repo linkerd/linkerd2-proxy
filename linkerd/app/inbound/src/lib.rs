@@ -262,15 +262,13 @@ impl Config {
             .push_when_unready(target.clone(), self.profile_idle_timeout)
             .check_new_service::<Target, http::Request<http::boxed::Payload>>();
 
+        // If the traffic is targeted at the inbound port, send it through
+        // the loopback service (i.e. as a gateway).
+        let switch_loopback = svc::stack::MakeSwitch::new(prevent_loop, loopback, profile);
+
         // Attempts to resolve the target as a service profile or, if that
         // fails, skips that stack to forward to the local endpoint.
-        profile
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
-            // If the traffic is targeted at the inbound port, send it through
-            // the loopback service (i.e. as a gateway).
-            .push_request_filter(prevent_loop)
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
-            .push_fallback_on_error::<prevent_loop::LoopPrevented, _>(loopback)
+        svc::stack(switch_loopback)
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .cache(
                 svc::layers().push_on_response(
