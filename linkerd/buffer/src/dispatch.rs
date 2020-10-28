@@ -47,7 +47,6 @@ pub(crate) async fn run<S, Req, I>(
                                 return;
                             }
                         };
-
                     }
                 }
             }
