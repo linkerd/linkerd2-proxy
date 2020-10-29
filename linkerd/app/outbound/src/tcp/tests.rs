@@ -2,7 +2,7 @@ use super::{Concrete, Endpoint, Logical};
 use crate::test_util::{
     support::{
         connect::{Connect, ConnectFuture},
-        resolver,
+        profile, resolver,
     },
     *,
 };
@@ -39,7 +39,7 @@ async fn plaintext_tcp() {
     let concrete = Concrete {
         logical: Logical {
             orig_dst: target_addr,
-            profile: Some(default_profile()),
+            profile: Some(profile::only_default()),
             protocol: (),
         },
         resolve: Some(target_addr.into()),
@@ -86,7 +86,7 @@ async fn tls_when_hinted() {
     let tls_concrete = Concrete {
         logical: Logical {
             orig_dst: tls_addr,
-            profile: Some(default_profile()),
+            profile: Some(profile::only_default()),
             protocol: (),
         },
         resolve: Some(tls_addr.into()),
@@ -96,7 +96,7 @@ async fn tls_when_hinted() {
     let plain_concrete = Concrete {
         logical: Logical {
             orig_dst: tls_addr,
-            profile: Some(default_profile()),
+            profile: Some(profile::only_default()),
             protocol: (),
         },
         resolve: Some(plain_addr.into()),

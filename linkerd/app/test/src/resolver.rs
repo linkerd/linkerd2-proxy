@@ -15,7 +15,8 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::task::{Context, Poll};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+use tokio03::sync::watch;
 
 #[derive(Debug)]
 pub struct Resolver<T, E> {

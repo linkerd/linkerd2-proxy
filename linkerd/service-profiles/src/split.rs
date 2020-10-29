@@ -7,6 +7,7 @@ use linkerd2_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::{rngs::SmallRng, SeedableRng};
 use std::{
+    fmt,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
@@ -37,12 +38,11 @@ pub struct Split<T, N, S, Req> {
     inner: Inner<T, N, S, Req>,
 }
 
-#[derive(Debug)]
 enum Inner<T, N, S, Req> {
     Default(S),
     Split {
         rng: SmallRng,
-        rx: Receiver,
+        rx: Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>,
         target: T,
         new_service: N,
         distribution: WeightedIndex<u32>,
@@ -109,7 +109,7 @@ where
                 }
 
                 Inner::Split {
-                    rx,
+                    rx: crate::stream_profile(rx),
                     target,
                     new_service,
                     services,
@@ -154,7 +154,7 @@ where
                 ..
             } => {
                 let mut update = None;
-                while let Poll::Ready(Some(up)) = rx.poll_recv_ref(cx) {
+                while let Poll::Ready(Some(up)) = rx.as_mut().poll_next(cx) {
                     update = Some(up.clone());
                 }
 
@@ -226,6 +226,38 @@ where
                 trace!(?addr, "Dispatching");
                 Box::pin(services.call_ready(addr, req).err_into::<Error>())
             }
+        }
+    }
+}
+
+impl<T, N, S, Req> fmt::Debug for Inner<T, N, S, Req>
+where
+    T: fmt::Debug,
+    N: fmt::Debug,
+    S: fmt::Debug,
+    Req: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Inner::Default(ref s) => f.debug_tuple("Inner::Default").field(s).finish(),
+            Inner::Split {
+                rng,
+                rx: _,
+                target,
+                new_service,
+                distribution,
+                addrs,
+                services,
+            } => f
+                .debug_struct("Inner")
+                .field("rng", rng)
+                .field("rx", &format_args!("<dyn Stream>"))
+                .field("target", target)
+                .field("new_service", new_service)
+                .field("distribution", distribution)
+                .field("addrs", addrs)
+                .field("services", services)
+                .finish(),
         }
     }
 }

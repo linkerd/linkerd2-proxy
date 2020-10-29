@@ -20,3 +20,4 @@ tokio = { version = "0.2", features = ["rt-core", "macros"] }
 tokio-test = "0.2"
 tower = { version = "0.3", default-features = false, features = ["util"] }
 tower-test = "0.3"
+linkerd2-app-test = { path = "../test" }

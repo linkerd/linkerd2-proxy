@@ -26,6 +26,7 @@ hyper = "0.13.7"
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 regex = "0.1"
 tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
+tokio03 = { package = "tokio", version = "0.3", features = ["sync"]}
 tokio-test = "0.2.1"
 tower = { version = "0.3", default-features = false} 
 tracing = "0.1.19"

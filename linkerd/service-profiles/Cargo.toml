@@ -22,6 +22,8 @@ linkerd2-stack = { path  = "../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
 regex = "1.0.0"
 tokio = { version = "0.2", features = ["macros", "rt-core", "sync", "time"] }
+tokio03 = { package = "tokio", version = "0.3", features = ["sync"] }
+async-stream = "0.3"
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
