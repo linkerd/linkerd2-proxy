@@ -27,7 +27,7 @@ use tls::HasPeerIdentity;
 use tower::ServiceExt;
 use tracing_futures::Instrument;
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test]
 async fn plaintext_tcp() {
     let _trace = support::trace_init();
 
@@ -78,7 +78,7 @@ async fn plaintext_tcp() {
         .expect("conn should succeed");
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test]
 async fn tls_when_hinted() {
     let _trace = support::trace_init();
 
@@ -324,7 +324,7 @@ async fn load_balances() {
     );
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test]
 async fn load_balancer_add_endpoints() {
     let _trace = support::trace_init();
 

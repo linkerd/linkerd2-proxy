@@ -651,7 +651,7 @@ dependencies = [
  "hyper",
  "pin-project 0.4.27",
  "tokio 0.3.2",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
 ]
 
@@ -897,7 +897,7 @@ dependencies = [
  "linkerd2-app-outbound",
  "linkerd2-app-test",
  "tokio 0.3.2",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -988,7 +988,7 @@ dependencies = [
  "linkerd2-app-core",
  "regex 0.1.80",
  "tokio 0.3.2",
- "tokio-test",
+ "tokio-test 0.3.0",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1004,7 +1004,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.27",
  "tokio 0.3.2",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -1075,7 +1075,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.27",
  "tokio 0.2.22",
- "tokio-test",
+ "tokio-test 0.2.1",
 ]
 
 [[package]]
@@ -1199,7 +1199,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-rustls",
- "tokio-test",
+ "tokio-test 0.2.1",
 ]
 
 [[package]]
@@ -1517,7 +1517,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.27",
  "tokio 0.3.2",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -1556,7 +1556,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-connect",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -2543,6 +2543,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-test"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7edc5a2b13a713b9134debc9aa1265b0a1ccf6a81fa05af2ba26e4aee56cdf1a"
+dependencies = [
+ "bytes 0.5.6",
+ "futures-core",
+ "tokio 0.3.2",
+]
+
+[[package]]
 name = "tokio-timer"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2707,7 +2718,7 @@ dependencies = [
  "futures-util",
  "pin-project 0.4.27",
  "tokio 0.2.22",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service",
 ]
