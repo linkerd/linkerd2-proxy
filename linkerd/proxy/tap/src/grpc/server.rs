@@ -1,8 +1,7 @@
 use super::match_::Match;
 use crate::{iface, Inspect, Registry};
-use bytes::Buf;
 use futures::ready;
-use hyper::body::HttpBody;
+use hyper::body::{Buf, HttpBody};
 use linkerd2_conditional::Conditional;
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use linkerd2_proxy_http::HasH2Reason;

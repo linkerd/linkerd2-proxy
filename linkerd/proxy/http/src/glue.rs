@@ -1,9 +1,11 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
-use bytes::Bytes;
 use futures::TryFuture;
 use http;
 use hyper::client::connect as hyper_connect;
-use hyper::{self, body::HttpBody};
+use hyper::{
+    self,
+    body::{Buf, HttpBody},
+};
 use linkerd2_error::Error;
 use linkerd2_io::{self as io, AsyncRead, AsyncWrite};
 use pin_project::{pin_project, pinned_drop};
@@ -51,11 +53,13 @@ pub struct HyperConnectFuture<F> {
     inner: F,
     absolute_form: bool,
 }
+#[derive(Clone, Debug)]
+pub struct CompatBytes(hyper::body::Bytes);
 
 // ===== impl UpgradeBody =====
 
 impl HttpBody for Body {
-    type Data = Bytes;
+    type Data = CompatBytes;
     type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
@@ -77,6 +81,7 @@ impl HttpBody for Body {
                 debug!("http body error: {}", e);
                 e
             })
+            .map(CompatBytes)
         }))
     }
 
@@ -259,5 +264,41 @@ where
 impl<C> hyper_connect::Connection for Connection<C> {
     fn connected(&self) -> hyper_connect::Connected {
         hyper_connect::Connected::new().proxy(self.absolute_form)
+    }
+}
+
+// === impl CompatBytes ===
+
+impl Buf for CompatBytes {
+    #[inline]
+    fn remaining(&self) -> usize {
+        self.0.remaining()
+    }
+
+    #[inline]
+    fn bytes(&self) -> &[u8] {
+        self.0.bytes()
+    }
+
+    #[inline]
+    fn advance(&mut self, cnt: usize) {
+        self.0.advance(cnt)
+    }
+}
+
+impl bytes::Buf for CompatBytes {
+    #[inline]
+    fn remaining(&self) -> usize {
+        self.0.remaining()
+    }
+
+    #[inline]
+    fn bytes(&self) -> &[u8] {
+        self.0.bytes()
+    }
+
+    #[inline]
+    fn advance(&mut self, cnt: usize) {
+        self.0.advance(cnt)
     }
 }

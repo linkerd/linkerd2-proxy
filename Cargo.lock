@@ -1393,7 +1393,6 @@ dependencies = [
 name = "linkerd2-proxy-tap"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "hyper",
@@ -1411,7 +1410,7 @@ dependencies = [
  "rand",
  "tokio 0.3.2",
  "tonic",
- "tower 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tower 0.4.0",
  "tracing",
  "tracing-futures",
 ]
@@ -2692,24 +2691,6 @@ dependencies = [
 [[package]]
 name = "tower"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd3169017c090b7a28fce80abaad0ab4f5566423677c9331bb320af7e49cfe62"
-dependencies = [
- "futures-core",
- "tower-buffer",
- "tower-discover",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-limit",
- "tower-load-shed",
- "tower-retry",
- "tower-service",
- "tower-timeout",
- "tower-util",
-]
-
-[[package]]
-name = "tower"
-version = "0.3.1"
 source = "git+https://github.com/hlb8122/tower?branch=service-combinators#f58f90f92564845d28e874734a9525b04f2a0ea1"
 dependencies = [
  "futures-core",
@@ -2738,31 +2719,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tower-buffer"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4887dc2a65d464c8b9b66e0e4d51c2fd6cf5b3373afc72805b0a60bce00446a"
-dependencies = [
- "futures-core",
- "pin-project 0.4.27",
- "tokio 0.2.22",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tower-discover"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f6b5000c3c54d269cc695dff28136bb33d08cbf1df2c48129e143ab65bf3c2a"
-dependencies = [
- "futures-core",
- "pin-project 0.4.27",
- "tower-service",
-]
-
-[[package]]
 name = "tower-layer"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2777,46 +2733,6 @@ source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d6
 name = "tower-layer"
 version = "0.3.0"
 source = "git+https://github.com/hlb8122/tower?branch=service-combinators#f58f90f92564845d28e874734a9525b04f2a0ea1"
-
-[[package]]
-name = "tower-limit"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92c3040c5dbed68abffaa0d4517ac1a454cd741044f33ab0eefab6b8d1361404"
-dependencies = [
- "futures-core",
- "pin-project 0.4.27",
- "tokio 0.2.22",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-load",
- "tower-service",
-]
-
-[[package]]
-name = "tower-load"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cc79fc3afd07492b7966d7efa7c6c50f8ed58d768a6075dd7ae6591c5d2017b"
-dependencies = [
- "futures-core",
- "log",
- "pin-project 0.4.27",
- "tokio 0.2.22",
- "tower-discover",
- "tower-service",
-]
-
-[[package]]
-name = "tower-load-shed"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f021e23900173dc315feb4b6922510dae3e79c689b74c089112066c11f0ae4e"
-dependencies = [
- "futures-core",
- "pin-project 0.4.27",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-service",
-]
 
 [[package]]
 name = "tower-make"
@@ -2834,20 +2750,7 @@ version = "0.1.0"
 source = "git+https://github.com/tower-rs/tower-http#926a64f262919a559624b6b99c2f38498ec3ba38"
 dependencies = [
  "http 0.2.1",
- "tower 0.3.1 (git+https://github.com/hlb8122/tower?branch=service-combinators)",
-]
-
-[[package]]
-name = "tower-retry"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6727956aaa2f8957d4d9232b308fe8e4e65d99db30f42b225646e86c9b6a952"
-dependencies = [
- "futures-core",
- "pin-project 0.4.27",
- "tokio 0.2.22",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-service",
+ "tower 0.3.1",
 ]
 
 [[package]]
@@ -2867,30 +2770,6 @@ dependencies = [
  "tokio 0.2.22",
  "tokio-test",
  "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-service",
-]
-
-[[package]]
-name = "tower-timeout"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "127b8924b357be938823eaaec0608c482d40add25609481027b96198b2e4b31e"
-dependencies = [
- "pin-project 0.4.27",
- "tokio 0.2.22",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "tower-service",
-]
-
-[[package]]
-name = "tower-util"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1093c19826d33807c72511e68f73b4a0469a3f22c2bd5f7d5212178b4b89674"
-dependencies = [
- "futures-core",
- "futures-util",
- "pin-project 0.4.27",
  "tower-service",
 ]
 

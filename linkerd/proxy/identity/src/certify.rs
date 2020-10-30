@@ -95,7 +95,7 @@ where
                                     }
                                     Ok(crt_key) => {
                                         debug!("daemon certified until {:?}", expiry);
-                                        if crt_key_watch.broadcast(Some(crt_key)).is_err() {
+                                        if crt_key_watch.send(Some(crt_key)).is_err() {
                                             // If we can't store a value, than all observations
                                             // have been dropped and we can stop refreshing.
                                             return;
@@ -158,7 +158,7 @@ impl Local {
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
         while self.crt_key.borrow().is_none() {
             // If the sender is dropped, the daemon task has ended.
-            if let None = self.crt_key.recv().await {
+            if self.crt_key.changed().await.is_err() {
                 return Err(LostDaemon);
             }
         }
