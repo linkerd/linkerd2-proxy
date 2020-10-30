@@ -1305,6 +1305,7 @@ dependencies = [
  "async-stream 0.2.1",
  "futures 0.3.7",
  "indexmap",
+ "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-proxy-core",
  "linkerd2-stack",
