@@ -16,7 +16,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 #[derive(Debug)]
 pub struct Resolver<T, E> {
@@ -143,7 +143,7 @@ where
     pub fn profile_tx(&self, addr: T) -> ProfileSender {
         let (tx, rx) = watch::channel(Profile::default());
         self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
-        ProfileSender(tx)
+        tx
     }
 
     pub fn profile(self, addr: T, profile: Profile) -> Self {
