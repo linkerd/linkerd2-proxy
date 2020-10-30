@@ -1009,6 +1009,7 @@ name = "linkerd2-buffer"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
+ "linkerd2-channel",
  "linkerd2-error",
  "pin-project 0.4.27",
  "tokio 0.3.2",
@@ -1029,6 +1030,14 @@ dependencies = [
  "tokio 0.2.22",
  "tower 0.4.0",
  "tracing",
+]
+
+[[package]]
+name = "linkerd2-channel"
+version = "0.1.0"
+dependencies = [
+ "futures 0.3.7",
+ "tokio 0.3.2",
 ]
 
 [[package]]
