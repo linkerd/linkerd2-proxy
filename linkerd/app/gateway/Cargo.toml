@@ -12,12 +12,12 @@ indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
 linkerd2-app-inbound = { path = "../inbound" }
 linkerd2-app-outbound = { path = "../outbound" }
-tower = { version = "0.3", default-features = false }
+tower = { version = "0.4", default-features = false }
 tracing = "0.1.19"
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["rt-core", "macros"] }
 tokio-test = "0.2"
-tower = { version = "0.3", default-features = false, features = ["util"] }
+tower = { version = "0.4", default-features = false, features = ["util"] }
 tower-test = "0.3"
 linkerd2-app-test = { path = "../test" }

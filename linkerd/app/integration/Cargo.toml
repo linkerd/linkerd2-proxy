@@ -35,7 +35,7 @@ ring = "0.16"
 rustls = "0.17"
 tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
 tokio-rustls = "0.13"
-tower = { version = "0.3", default-features = false} 
+tower = { version = "0.4", default-features = false} 
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }

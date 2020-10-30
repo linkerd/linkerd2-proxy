@@ -16,4 +16,4 @@ tracing = "0.1.19"
 pin-project = "0.4"
 http = "0.2"
 http-body = "0.3"
-tower = { version = "0.3", default-features = false }
+tower = { version = "0.4", default-features = false }

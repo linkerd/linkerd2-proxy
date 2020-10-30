@@ -8,4 +8,4 @@ publish = false
 [dependencies]
 indexmap = "1.0"
 linkerd2-metrics = { path  = "../../metrics" }
-tower = { version = "0.3", default-features = false }
+tower = { version = "0.4", default-features = false }

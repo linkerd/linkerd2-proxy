@@ -37,7 +37,7 @@ pin-project = "0.4"
 tokio-util = { version = "0.3", features = ["compat"]}
 
 [dependencies.tower]
-version = "0.3"
+version = "0.4"
 # disable tower's tracing `log` integration for performance reasons, since we
 # will consume tower's traces as traces.
 default-features = false
@@ -50,5 +50,5 @@ libc = "0.2"
 [dev-dependencies]
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
 tracing-subscriber = "0.2.14"
-tower = { version = "0.3", default-features = false, features = ["util"] }
+tower = { version = "0.4", default-features = false, features = ["util"] }
 tracing-futures = { version = "0.2", features = ["std-future"] }
