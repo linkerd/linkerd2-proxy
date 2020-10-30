@@ -249,18 +249,6 @@ impl<S> Stack<S> {
         self.push(cache::CacheLayer::new(track))
     }
 
-    pub fn push_fallback<F: Clone>(self, fallback: F) -> Stack<stack::Fallback<S, F>> {
-        self.push(stack::FallbackLayer::new(fallback))
-    }
-
-    pub fn push_fallback_on_error<E, F>(self, fallback: F) -> Stack<stack::Fallback<S, F>>
-    where
-        F: Clone,
-        E: std::error::Error + 'static,
-    {
-        self.push(stack::FallbackLayer::new(fallback).on_error::<E>())
-    }
-
     /// Push a service that either calls the inner service if it is ready, or
     /// calls a `secondary` service if the inner service fails to become ready
     /// for the `skip_after` duration.
@@ -272,18 +260,6 @@ impl<S> Stack<S> {
         self.push(layer::mk(|inner: S| {
             stack::NewSwitchReady::new(inner, secondary.clone(), skip_after)
         }))
-    }
-
-    pub fn push_fallback_with_predicate<F, P>(
-        self,
-        fallback: F,
-        predicate: P,
-    ) -> Stack<stack::Fallback<S, F, P>>
-    where
-        F: Clone,
-        P: Fn(&Error) -> bool + Clone,
-    {
-        self.push(stack::FallbackLayer::new(fallback).with_predicate(predicate))
     }
 
     // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>

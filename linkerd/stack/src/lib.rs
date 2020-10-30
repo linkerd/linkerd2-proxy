@@ -2,7 +2,6 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub mod fallback;
 mod future_service;
 pub mod layer;
 pub mod make_ready;
@@ -19,7 +18,6 @@ pub mod router;
 mod switch;
 mod switch_ready;
 
-pub use self::fallback::{Fallback, FallbackLayer};
 pub use self::future_service::FutureService;
 pub use self::make_ready::{MakeReady, MakeReadyLayer};
 pub use self::make_thunk::MakeThunk;
