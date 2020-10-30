@@ -1,6 +1,5 @@
 use crate::{JsonFormatter, PlainFormatter};
-use bytes::buf::Buf;
-use hyper::Body;
+use hyper::{body::Buf, Body};
 use linkerd2_error::Error;
 use std::{io, str};
 use tracing::{trace, warn};
@@ -52,7 +51,7 @@ impl Handle {
             .expect("builder with known status code must not fail"))
     }
 
-    fn set_from(&self, bytes: bytes::Bytes) -> Result<(), String> {
+    fn set_from(&self, bytes: impl AsRef<[u8]>) -> Result<(), String> {
         let body = str::from_utf8(&bytes.as_ref()).map_err(|e| format!("{}", e))?;
         trace!(request.body = ?body);
         self.set_level(body).map_err(|e| format!("{}", e))

@@ -11,7 +11,7 @@ This should probably be decomposed into smaller, decoupled crates.
 """
 
 [dependencies]
-bytes = "0.5"
+bytes = "0.6"
 futures = { package = "futures", version = "0.3" }
 h2 = "0.2.6"
 http = "0.2"

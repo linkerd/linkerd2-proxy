@@ -144,12 +144,6 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
-
-[[package]]
-name = "base64"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
@@ -806,7 +800,7 @@ dependencies = [
 name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "h2 0.2.7",
  "html-escape",
@@ -841,7 +835,7 @@ dependencies = [
 name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "http-body",
@@ -922,7 +916,7 @@ dependencies = [
 name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "indexmap",
@@ -936,7 +930,7 @@ dependencies = [
 name = "linkerd2-app-integration"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "flate2",
  "futures 0.3.7",
  "h2 0.2.7",
@@ -966,7 +960,7 @@ dependencies = [
 name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "indexmap",
@@ -1088,8 +1082,9 @@ dependencies = [
 name = "linkerd2-duplex"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
+ "linkerd2-io",
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tracing",
@@ -1143,6 +1138,7 @@ name = "linkerd2-http-box"
 version = "0.1.0"
 dependencies = [
  "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "http-body",
@@ -1165,7 +1161,7 @@ dependencies = [
 name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "h2 0.1.26",
  "http 0.2.1",
@@ -1197,7 +1193,7 @@ dependencies = [
 name = "linkerd2-io"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "linkerd2-errno",
  "pin-project 0.4.27",
@@ -1329,7 +1325,7 @@ dependencies = [
 name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "h2 0.2.7",
  "http 0.2.1",
@@ -1387,7 +1383,7 @@ dependencies = [
 name = "linkerd2-proxy-tap"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "hyper",
@@ -1429,7 +1425,7 @@ name = "linkerd2-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "async-stream 0.2.1",
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "indexmap",
  "libc",
@@ -1446,7 +1442,7 @@ dependencies = [
  "rustls",
  "tokio 0.3.2",
  "tokio-rustls",
- "tokio-util 0.3.1",
+ "tokio-util 0.5.0",
  "tower 0.4.0",
  "tracing",
  "tracing-futures",
@@ -1483,7 +1479,7 @@ name = "linkerd2-service-profiles"
 version = "0.1.0"
 dependencies = [
  "async-stream 0.3.0",
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "http 0.2.1",
  "http-body",
@@ -1571,7 +1567,7 @@ name = "linkerd2-trace-context"
 version = "0.1.0"
 dependencies = [
  "base64 0.10.1",
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "futures 0.3.7",
  "hex",
  "http 0.2.1",
@@ -1587,7 +1583,7 @@ dependencies = [
 name = "linkerd2-tracing"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "html-escape",
  "http 0.2.1",
  "hyper",
@@ -1836,7 +1832,7 @@ checksum = "260e51e7efe62b592207e9e13a68e43692a7a279171d6ba57abd208bf23645ad"
 name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "prost",
  "prost-types",
  "tonic",
@@ -2231,11 +2227,11 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.17.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0d4a31f5d68413404705d6982529b0e11a9aacd4839d1d6222ee3b8cb4015e1"
+checksum = "5d1126dcf58e93cee7d098dbda643b5f92ed724f1f6a63007c1116eed6700c81"
 dependencies = [
- "base64 0.11.0",
+ "base64 0.12.3",
  "log",
  "ring",
  "sct",
@@ -2561,13 +2557,11 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15cb62a0d2770787abc96e99c1cd98fcf17f94959f3af63ca85bdfb203f051b4"
+version = "0.20.0"
+source = "git+https://github.com/tokio-rs/tls?rev=e6ef54641b911cfcf23b77a8c4826ae0f8e9870e#e6ef54641b911cfcf23b77a8c4826ae0f8e9870e"
 dependencies = [
- "futures-core",
  "rustls",
- "tokio 0.2.22",
+ "tokio 0.3.2",
  "webpki",
 ]
 
@@ -2614,7 +2608,6 @@ checksum = "be8242891f2b6cbef26a2d7e8605133c2c554cd35b3e4948ea892d6d68436499"
 dependencies = [
  "bytes 0.5.6",
  "futures-core",
- "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",
@@ -2629,6 +2622,21 @@ checksum = "24793699f4665ba0416ed287dc794fe6b11a4aa5e4e95b58624f45f6c46b97d4"
 dependencies = [
  "bytes 0.5.6",
  "futures-core",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "tokio 0.3.2",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73af76301319bcacf00d26d3c75534ef248dcad7ceaf36d93ec902453c3b1706"
+dependencies = [
+ "bytes 0.6.0",
+ "futures-core",
+ "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",
@@ -3230,8 +3238,3 @@ dependencies = [
  "winapi 0.2.8",
  "winapi-build",
 ]
-
-[[patch.unused]]
-name = "tokio-rustls"
-version = "0.20.0"
-source = "git+https://github.com/tokio-rs/tls?rev=e6ef54641b911cfcf23b77a8c4826ae0f8e9870e#e6ef54641b911cfcf23b77a8c4826ae0f8e9870e"

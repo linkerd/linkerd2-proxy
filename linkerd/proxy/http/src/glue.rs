@@ -1,20 +1,15 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
-use bytes::{
-    buf::{Buf, BufMut},
-    Bytes,
-};
+use bytes::Bytes;
 use futures::TryFuture;
 use http;
 use hyper::client::connect as hyper_connect;
 use hyper::{self, body::HttpBody};
 use linkerd2_error::Error;
+use linkerd2_io::{self as io, AsyncRead, AsyncWrite};
 use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
-use std::io;
-use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
@@ -231,27 +226,12 @@ impl<C> AsyncRead for Connection<C>
 where
     C: AsyncRead,
 {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
-        self.transport.prepare_uninitialized_buffer(buf)
-    }
-
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        buf: &mut io::ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         self.project().transport.poll_read(cx, buf)
-    }
-
-    fn poll_read_buf<B: BufMut>(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<io::Result<usize>>
-    where
-        Self: Sized,
-    {
-        self.project().transport.poll_read_buf(cx, buf)
     }
 }
 
@@ -273,17 +253,6 @@ where
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         self.project().transport.poll_shutdown(cx)
-    }
-
-    fn poll_write_buf<B: Buf>(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<Result<usize, io::Error>>
-    where
-        Self: Sized,
-    {
-        self.project().transport.poll_write_buf(cx, buf)
     }
 }
 

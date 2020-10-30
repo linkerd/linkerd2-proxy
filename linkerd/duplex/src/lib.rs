@@ -2,11 +2,11 @@
 
 use bytes::{Buf, BufMut};
 use futures::ready;
+use io::{AsyncRead, AsyncWrite};
+use linkerd2_io as io;
 use pin_project::pin_project;
-use std::io;
 use std::task::{Context, Poll};
-use std::{future::Future, mem::MaybeUninit, pin::Pin};
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::{future::Future, pin::Pin};
 use tracing::trace;
 
 /// A future piping data bi-directionally to In and Out.
@@ -124,7 +124,7 @@ where
                 buf.reset();
 
                 trace!("reading");
-                let n = ready!(Pin::new(&mut self.io).poll_read_buf(cx, buf))?;
+                let n = ready!(io::poll_read_buf(cx, Pin::new(&mut self.io), buf))?;
                 trace!("read {}B", n);
 
                 is_eof = n == 0;
@@ -149,7 +149,7 @@ where
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
                 trace!("writing {}B", buf.remaining());
-                let n = ready!(Pin::new(&mut dst.io).poll_write_buf(cx, buf))?;
+                let n = ready!(io::poll_write_buf(cx, Pin::new(&mut dst.io), buf))?;
                 trace!("wrote {}B", n);
                 if n == 0 {
                     return Poll::Ready(Err(write_zero()));
@@ -200,18 +200,21 @@ impl Buf for CopyBuf {
     }
 }
 
-impl BufMut for CopyBuf {
+unsafe impl BufMut for CopyBuf {
     fn remaining_mut(&self) -> usize {
         self.buf.len() - self.write_pos
     }
 
-    fn bytes_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+    fn bytes_mut(&mut self) -> &mut bytes::buf::UninitSlice {
         unsafe {
             // this is, in fact, _totally fine and safe_: all the memory is
             // initialized.
             // there's just no way to turn a `&[T]` into a `&[MaybeUninit<T>]`
             // without ptr casting.
-            &mut *(&mut self.buf[self.write_pos..] as *mut _ as *mut [MaybeUninit<u8>])
+            bytes::buf::UninitSlice::from_raw_parts_mut(
+                &mut self.buf[self.write_pos] as *mut _,
+                self.buf.len() - self.write_pos,
+            )
         }
     }
 

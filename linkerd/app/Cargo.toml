@@ -33,15 +33,15 @@ tracing-futures = { version = "0.2", features = ["std-future"]}
 html-escape = "0.2.5"
 
 [dev-dependencies]
-bytes = "0.5"
+bytes = "0.6"
 h2 = "0.2.6"
 http = "0.2"
 hyper = "0.13.7"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.14", features = ["arbitrary"] }
 ring = "0.16"
-rustls = "0.17"
+rustls = "0.18"
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tokio-io = "0.1.6"
-tokio-rustls = "0.13"
+tokio-rustls = "0.20"
 webpki = "0.21"

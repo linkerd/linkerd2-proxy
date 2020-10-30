@@ -15,7 +15,7 @@ mock-orig-dst  = []
 
 [dependencies]
 async-stream = "0.2.1"
-bytes = "0.5"
+bytes = "0.6"
 futures = "0.3"
 indexmap = "1.0.0"
 linkerd2-conditional = { path = "../../conditional" }
@@ -27,14 +27,14 @@ linkerd2-io = { path = "../../io" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-stack = { path = "../../stack" }
 ring = "0.16"
-rustls = "0.17"
+rustls = "0.18"
 tokio = { version = "0.3", features = ["net", "io-util"]}
-tokio-rustls = "0.13"
+tokio-rustls = "0.20"
 tracing = "0.1.19"
 webpki = "0.21"
 untrusted = "0.7"
 pin-project = "0.4"
-tokio-util = { version = "0.3", features = ["compat"]}
+tokio-util = { version = "0.5", features = ["compat"]}
 
 [dependencies.tower]
 version = "0.4"

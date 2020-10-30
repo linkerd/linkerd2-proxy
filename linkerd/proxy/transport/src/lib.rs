@@ -27,7 +27,10 @@ fn set_nodelay_or_warn(socket: &TcpStream) {
 }
 
 fn set_keepalive_or_warn(tcp: &TcpStream, ka: Option<Duration>) {
-    if let Err(e) = tcp.set_keepalive(ka) {
-        tracing::warn!("failed to set keepalive: {}", e);
-    }
+    // TODO(eliza): we now have to do "socket2 nonsense" here because tokio
+    // doesn't have `set_keepalive` any more...
+    let _ = (tcp, ka);
+    // if let Err(e) = tcp.set_keepalive(ka) {
+    //     tracing::warn!("failed to set keepalive: {}", e);
+    // }
 }
