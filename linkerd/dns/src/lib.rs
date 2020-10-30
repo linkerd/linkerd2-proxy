@@ -62,7 +62,7 @@ impl Resolver {
         &self,
         name: &Name,
         default_port: u16,
-    ) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         match self.resolve_srv(name).await {
             Ok(res) => Ok(res),
             Err(e) if e.is::<InvalidSrv>() => {
@@ -80,19 +80,19 @@ impl Resolver {
     async fn resolve_a(
         &self,
         name: &Name,
-    ) -> Result<(Vec<net::IpAddr>, time::Delay), ResolveError> {
+    ) -> Result<(Vec<net::IpAddr>, time::Sleep), ResolveError> {
         debug!(%name, "resolve_a");
         match self.dns.lookup_ip(name.as_ref()).await {
             Ok(lookup) => {
                 let valid_until = Instant::from_std(lookup.valid_until());
                 let ips = lookup.iter().collect::<Vec<_>>();
-                Ok((ips, time::delay_until(valid_until)))
+                Ok((ips, time::sleep_until(valid_until)))
             }
             Err(e) => Self::handle_error(e),
         }
     }
 
-    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Delay), Error> {
+    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         debug!(%name, "resolve_srv");
         match self.dns.srv_lookup(name.as_ref()).await {
             Ok(srv) => {
@@ -102,21 +102,21 @@ impl Resolver {
                     .map(Self::srv_to_socket_addr)
                     .collect::<Result<_, InvalidSrv>>()?;
                 debug!(?addrs);
-                Ok((addrs, time::delay_until(valid_until)))
+                Ok((addrs, time::sleep_until(valid_until)))
             }
             Err(e) => Self::handle_error(e).map_err(Into::into),
         }
     }
 
-    fn handle_error<T>(e: ResolveError) -> Result<(Vec<T>, time::Delay), ResolveError> {
+    fn handle_error<T>(e: ResolveError) -> Result<(Vec<T>, time::Sleep), ResolveError> {
         match e.kind() {
             ResolveErrorKind::NoRecordsFound { valid_until, .. } => {
                 let expiry =
                     valid_until.unwrap_or_else(|| std::time::Instant::now() + Self::DEFAULT_TTL);
-                Ok((vec![], time::delay_until(Instant::from_std(expiry))))
+                Ok((vec![], time::sleep_until(Instant::from_std(expiry))))
             }
             ResolveErrorKind::Proto(pe) if Self::is_nx_domain(&pe) => {
-                Ok((vec![], time::delay_for(Self::DEFAULT_TTL)))
+                Ok((vec![], time::sleep(Self::DEFAULT_TTL)))
             }
             _ => Err(e),
         }

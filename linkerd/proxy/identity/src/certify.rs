@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
-use tokio::time::{self, Delay};
+use tokio::time::{self, Sleep};
 use tonic::{
     self as grpc,
     body::{Body, BoxBody},
@@ -122,7 +122,7 @@ impl Config {
     ///
     /// A refresh is scheduled at 70% of the current certificate's lifetime;
     /// though it is never less than min_refresh or larger than max_refresh.
-    fn refresh(&self, expiry: SystemTime) -> Delay {
+    fn refresh(&self, expiry: SystemTime) -> Sleep {
         let refresh = match expiry
             .duration_since(SystemTime::now())
             .ok()
@@ -134,7 +134,7 @@ impl Config {
             Some(lifetime) => lifetime,
         };
         trace!("will refresh in {:?}", refresh);
-        time::delay_for(refresh)
+        time::sleep(refresh)
     }
 }
 

@@ -169,7 +169,7 @@ impl Server {
         self.route_async(path, move |_| {
             let resp = resp.clone();
             async move {
-                tokio::time::delay_for(latency).await;
+                tokio::time::sleep(latency).await;
                 Ok::<_, BoxError>(
                     http::Response::builder()
                         .status(200)

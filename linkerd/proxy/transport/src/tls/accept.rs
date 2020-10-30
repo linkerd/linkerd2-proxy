@@ -127,7 +127,7 @@ where
             Conditional::Some(local) => {
                 let config = local.tls_server_config();
                 let name = local.tls_server_name();
-                let timeout = tokio::time::delay_for(self.timeout);
+                let timeout = tokio::time::sleep(self.timeout);
 
                 Box::pin(async move {
                     let (peer_identity, io) = tokio::select! {

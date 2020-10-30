@@ -232,7 +232,7 @@ async fn refresh() {
     let expiry = expiry_rx.await.expect("wait for expiry");
     let how_long = expiry.duration_since(SystemTime::now()).unwrap();
 
-    tokio::time::delay_for(how_long).await;
+    tokio::time::sleep(how_long).await;
 
     assert_eventually!(refreshed.load(Ordering::SeqCst) == true);
 }

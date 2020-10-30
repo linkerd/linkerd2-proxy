@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{self, Delay};
+use tokio::time::{self, Sleep};
 use tower::discover;
 use tracing::warn;
 use tracing_futures::Instrument;
@@ -43,7 +43,7 @@ pub struct Daemon<D: discover::Discover> {
     disconnect_rx: oneshot::Receiver<Never>,
     tx: mpsc::Sender<discover::Change<D::Key, D::Service>>,
     #[pin]
-    watchdog: Option<Delay>,
+    watchdog: Option<Sleep>,
     watchdog_timeout: Duration,
 }
 
@@ -158,7 +158,7 @@ where
                     if this.watchdog.as_mut().as_pin_mut().is_none() {
                         this.watchdog
                             .as_mut()
-                            .set(Some(time::delay_for(*this.watchdog_timeout)));
+                            .set(Some(time::sleep(*this.watchdog_timeout)));
                     }
 
                     if this
