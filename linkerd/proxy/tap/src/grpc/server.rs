@@ -265,7 +265,7 @@ impl iface::Tap for Tap {
                 return None;
             }
         };
-        let mut events_tx = shared.events_tx.clone();
+        let events_tx = shared.events_tx.clone();
 
         let request_init_at = Instant::now();
 
@@ -352,7 +352,7 @@ impl iface::Tap for Tap {
 impl iface::TapResponse for TapResponse {
     type TapPayload = TapResponsePayload;
 
-    fn tap<B: HttpBody>(mut self, rsp: &http::Response<B>) -> TapResponsePayload {
+    fn tap<B: HttpBody>(self, rsp: &http::Response<B>) -> TapResponsePayload {
         let response_init_at = Instant::now();
 
         let headers = if self.extract_headers {
@@ -400,7 +400,7 @@ impl iface::TapResponse for TapResponse {
         }
     }
 
-    fn fail<E: HasH2Reason>(mut self, err: &E) {
+    fn fail<E: HasH2Reason>(self, err: &E) {
         let response_end_at = Instant::now();
         let reason = err.h2_reason();
         let end = api::tap_event::http::Event::ResponseEnd(api::tap_event::http::ResponseEnd {
@@ -462,7 +462,7 @@ impl iface::TapPayload for TapResponsePayload {
 }
 
 impl TapResponsePayload {
-    fn send(mut self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
+    fn send(self, end: Option<api::eos::End>, trls: Option<&http::HeaderMap>) {
         let response_end_at = Instant::now();
         let trailers = if self.extract_headers {
             trls.map(|trls| headers_to_pb(iter::empty(), trls))
