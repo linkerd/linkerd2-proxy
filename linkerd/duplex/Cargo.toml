@@ -8,6 +8,6 @@ publish = false
 [dependencies]
 bytes = "0.5"
 futures = "0.3"
-tokio = { version = "0.2", features = ["io-util"] }
+tokio = { version = "0.3", features = ["io-util"] }
 pin-project = "0.4"
 tracing = "0.1.19"

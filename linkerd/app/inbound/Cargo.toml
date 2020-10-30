@@ -14,7 +14,7 @@ http = "0.2"
 futures = { version = "0.3" }
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
-tokio = { version = "0.2", features = ["sync"] }
+tokio = { version = "0.3", features = ["sync"] }
 tracing = "0.1.19"
 
 [dependencies.tower]

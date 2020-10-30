@@ -33,7 +33,7 @@ regex = "0.1"
 socket2 = "0.3.12"
 ring = "0.16"
 rustls = "0.17"
-tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
+tokio = { version = "0.3", features = ["io-util", "net", "rt"]}
 tokio-rustls = "0.13"
 tower = { version = "0.4", default-features = false} 
 tonic = { version = "0.3", default-features = false }

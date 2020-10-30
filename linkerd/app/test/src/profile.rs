@@ -1,5 +1,5 @@
 pub use linkerd2_app_core::{dns, profiles::*};
-use tokio03::sync::watch;
+use tokio::sync::watch;
 pub use watch::channel;
 
 pub type Sender = watch::Sender<Profile>;

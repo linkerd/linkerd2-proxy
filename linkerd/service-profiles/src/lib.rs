@@ -19,7 +19,7 @@ pub mod split;
 
 pub use self::client::Client;
 
-pub type Receiver = tokio03::sync::watch::Receiver<Profile>;
+pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Profile {

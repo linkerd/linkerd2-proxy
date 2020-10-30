@@ -29,7 +29,7 @@ linkerd2-io = { path  = "../../io" }
 linkerd2-stack = { path  = "../../stack" }
 linkerd2-timeout = { path  = "../../timeout" }
 rand = "0.7"
-tokio = { version = "0.2", features = ["time", "rt-core"] }
+tokio = { version = "0.3", features = ["time", "rt"] }
 tower = { version = "0.4", default-features = false, features = ["balance", "load", "discover"] }
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
