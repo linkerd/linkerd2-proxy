@@ -661,7 +661,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-test",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -825,7 +825,7 @@ dependencies = [
  "tokio-io",
  "tokio-rustls",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
  "webpki",
@@ -888,7 +888,7 @@ dependencies = [
  "tokio 0.2.22",
  "tokio-timer",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tower-request-modifier",
  "tracing",
  "tracing-futures",
@@ -907,7 +907,7 @@ dependencies = [
  "linkerd2-app-test",
  "tokio 0.3.2",
  "tokio-test",
- "tower 0.4.0",
+ "tower",
  "tower-test",
  "tracing",
 ]
@@ -922,7 +922,7 @@ dependencies = [
  "indexmap",
  "linkerd2-app-core",
  "tokio 0.3.2",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -949,7 +949,7 @@ dependencies = [
  "tokio 0.3.2",
  "tokio-rustls",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",
@@ -972,7 +972,7 @@ dependencies = [
  "linkerd2-retry",
  "pin-project 0.4.27",
  "tokio 0.3.2",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
 ]
@@ -998,7 +998,7 @@ dependencies = [
  "regex 0.1.80",
  "tokio 0.3.2",
  "tokio-test",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",
@@ -1014,7 +1014,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-test",
- "tower 0.4.0",
+ "tower",
  "tower-test",
  "tracing",
  "tracing-futures",
@@ -1028,7 +1028,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "tokio 0.2.22",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1047,7 +1047,7 @@ dependencies = [
  "futures 0.3.7",
  "pin-project 0.4.27",
  "tokio 0.2.22",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1118,7 +1118,7 @@ dependencies = [
  "indexmap",
  "linkerd2-metrics",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1128,7 +1128,7 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1153,7 +1153,7 @@ dependencies = [
  "http-body",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1163,7 +1163,7 @@ dependencies = [
  "http 0.2.1",
  "linkerd2-error",
  "linkerd2-stack",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1182,7 +1182,7 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1237,7 +1237,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.2.22",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1284,7 +1284,7 @@ dependencies = [
  "pin-project 0.4.27",
  "prost",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1295,7 +1295,7 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1311,7 +1311,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.27",
  "tokio 0.3.2",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
 ]
@@ -1326,7 +1326,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-core",
  "tokio 0.3.2",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
 ]
@@ -1355,7 +1355,7 @@ dependencies = [
  "pin-project 0.4.27",
  "rand",
  "tokio 0.3.2",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
  "try-lock",
@@ -1385,7 +1385,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-core",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1410,7 +1410,7 @@ dependencies = [
  "rand",
  "tokio 0.3.2",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
 ]
@@ -1426,7 +1426,7 @@ dependencies = [
  "pin-project 0.4.27",
  "rand",
  "tokio 0.3.2",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1452,7 +1452,7 @@ dependencies = [
  "tokio 0.3.2",
  "tokio-rustls",
  "tokio-util 0.5.0",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",
@@ -1468,7 +1468,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1479,7 +1479,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -1505,7 +1505,7 @@ dependencies = [
  "regex 1.4.1",
  "tokio 0.3.2",
  "tonic",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
 ]
@@ -1527,7 +1527,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-test",
- "tower 0.4.0",
+ "tower",
  "tower-test",
  "tracing",
  "tracing-subscriber",
@@ -1539,7 +1539,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "linkerd2-metrics",
- "tower 0.4.0",
+ "tower",
 ]
 
 [[package]]
@@ -1550,7 +1550,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "tower 0.4.0",
+ "tower",
  "tracing",
  "tracing-futures",
 ]
@@ -1566,7 +1566,7 @@ dependencies = [
  "tokio 0.3.2",
  "tokio-connect",
  "tokio-test",
- "tower 0.4.0",
+ "tower",
  "tower-test",
  "tracing",
 ]
@@ -1584,7 +1584,7 @@ dependencies = [
  "linkerd2-stack",
  "rand",
  "tokio 0.2.22",
- "tower 0.4.0",
+ "tower",
  "tracing",
 ]
 
@@ -2690,19 +2690,6 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.3.1"
-source = "git+https://github.com/hlb8122/tower?branch=service-combinators#f58f90f92564845d28e874734a9525b04f2a0ea1"
-dependencies = [
- "futures-core",
- "futures-util",
- "pin-project 0.4.27",
- "tower-layer 0.3.0 (git+https://github.com/hlb8122/tower?branch=service-combinators)",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tower"
 version = "0.4.0"
 source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
 dependencies = [
@@ -2730,11 +2717,6 @@ version = "0.3.0"
 source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
 
 [[package]]
-name = "tower-layer"
-version = "0.3.0"
-source = "git+https://github.com/hlb8122/tower?branch=service-combinators#f58f90f92564845d28e874734a9525b04f2a0ea1"
-
-[[package]]
 name = "tower-make"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2747,10 +2729,10 @@ dependencies = [
 [[package]]
 name = "tower-request-modifier"
 version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-http#926a64f262919a559624b6b99c2f38498ec3ba38"
+source = "git+https://github.com/tower-rs/tower-http?rev=bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea#bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea"
 dependencies = [
  "http 0.2.1",
- "tower 0.3.1",
+ "tower-service",
 ]
 
 [[package]]
