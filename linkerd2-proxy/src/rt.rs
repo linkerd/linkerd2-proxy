@@ -1,4 +1,5 @@
 use tokio::runtime::{Builder, Runtime};
+use tracing::{debug, warn};
 
 #[cfg(feature = "multicore")]
 pub(crate) fn build() -> Runtime {
@@ -9,11 +10,30 @@ pub(crate) fn build() -> Runtime {
     //
     // The basic scheduler is used when the threaded scheduler would provide no
     // benefit.
-    let cpus = std::env::var("LINKERD2_PROXY_CORES")
+    let mut cores = std::env::var("LINKERD2_PROXY_CORES")
         .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or_else(|| num_cpus::get());
-    match cpus {
+        .and_then(|v| {
+            let opt = v.parse::<usize>().ok().filter(|n| *n > 0);
+            if opt.is_none() {
+                warn!(LINKERD2_PROXY_CORES = %v, "Ignoring invalid configuration");
+            }
+            opt
+        })
+        .unwrap_or(0);
+
+    let cpus = num_cpus::get();
+    debug_assert!(cpus > 0, "At least one CPU must be available");
+    if cores > cpus {
+        warn!(
+            cpus,
+            LINKERD2_PROXY_CORES = cores,
+            "Ignoring configuration due to insufficient resources"
+        );
+        cores = cpus;
+    }
+
+    debug!(cores, "Initializing runtime");
+    match cores {
         // `0` is unexpected, but it's a wild world out there.
         0 | 1 => Builder::new()
             .enable_all()
