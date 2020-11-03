@@ -921,7 +921,7 @@ dependencies = [
 name = "linkerd2-app-integration"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 0.5.6",
  "flate2",
  "futures 0.3.7",
  "h2 0.2.7",
@@ -1199,7 +1199,7 @@ dependencies = [
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-rustls",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
 ]
 
 [[package]]

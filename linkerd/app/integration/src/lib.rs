@@ -30,7 +30,7 @@ use std::pin::Pin;
 pub use std::sync::Arc;
 use std::task::{Context, Poll};
 pub use std::time::Duration;
-pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpListener;
 pub use tokio::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
@@ -69,7 +69,7 @@ macro_rules! assert_eventually {
             use std::{env, u64};
             use std::time::{Instant, Duration};
             use std::str::FromStr;
-            use tracing_futures::Instrument as _;
+            use tracing::Instrument as _;
             // TODO: don't do this *every* time eventually is called (lazy_static?)
             let patience = env::var($crate::ENV_TEST_PATIENCE_MS).ok()
                 .map(|s| {
@@ -165,13 +165,9 @@ impl AsyncRead for RunningIo {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
         self.as_mut().io.as_mut().poll_read(cx, buf)
-    }
-
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [std::mem::MaybeUninit<u8>]) -> bool {
-        self.io.prepare_uninitialized_buffer(buf)
     }
 }
 

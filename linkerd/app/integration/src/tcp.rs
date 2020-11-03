@@ -212,7 +212,7 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
     let task = tokio::spawn(
         cancelable(drain.clone(), async move {
             let mut accepts = tcp.accepts;
-            let mut listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
+            let listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
             let _ = started_tx.send(());
             loop {

@@ -223,7 +223,7 @@ impl Server {
                 }
 
                 // After the delay, start listening on the socket.
-                let mut listener = crate::listen(sock);
+                let listener = crate::listen(sock);
 
                 if let Some(listening_tx) = listening_tx {
                     let _ = listening_tx.send(());

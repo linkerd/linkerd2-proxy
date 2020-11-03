@@ -203,7 +203,7 @@ async fn test_server_speaks_first(env: TestEnv) {
     let msg1 = "custom tcp server starts";
     let msg2 = "custom tcp client second";
 
-    let (mut tx, mut rx) = mpsc::channel(1);
+    let (tx, mut rx) = mpsc::channel(1);
     let srv = server::tcp()
         .accept_fut(move |mut sock| {
             async move {

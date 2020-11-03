@@ -17,5 +17,5 @@ bytes = "0.6"
 linkerd2-errno = { path = "../errno" }
 tokio = { version = "0.3", features = ["io-util", "net", "macros"] }
 tokio-rustls = "0.20"
-tokio-test = { version = "0.2", optional = true }
+tokio-test = { version = "0.3", optional = true }
 pin-project = "0.4"
