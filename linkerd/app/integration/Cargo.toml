@@ -23,7 +23,7 @@ futures = "0.3"
 h2 = "0.2.6"
 http = "0.2"
 http-body = "0.3"
-hyper = "0.13.7"
+hyper = "0.14.0-dev"
 linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
@@ -33,9 +33,9 @@ regex = "0.1"
 socket2 = "0.3.12"
 ring = "0.16"
 rustls = "0.18"
-tokio = { version = "0.3", features = ["io-util", "net", "rt"]}
+tokio = { version = "0.3", features = ["io-util", "net", "rt", "macros"]}
 tokio-rustls = "0.20"
-tower = { version = "0.4", default-features = false} 
+tower = { version = "0.4", default-features = false}
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }

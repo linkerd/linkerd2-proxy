@@ -213,12 +213,13 @@ macro_rules! generate_tests {
             .await
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "current_thread")]
         async fn outbound_destinations_reset_on_reconnect_followed_by_dne() {
             outbound_destinations_reset_on_reconnect(controller::destination_does_not_exist()).await
         }
 
         async fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
+            let _trace = trace_init();
             let env = TestEnv::new();
             let srv = $make_server().route("/", "hello").run().await;
             let ctrl = controller::new();

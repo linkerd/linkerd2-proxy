@@ -22,7 +22,7 @@ futures = "0.3"
 h2 = "0.2.6"
 http = "0.2"
 http-body = "0.3"
-hyper = "0.13.7"
+hyper = "0.14.0-dev"
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 regex = "0.1"
 tokio = { version = "0.3", features = ["io-util", "net", "rt", "sync"]}

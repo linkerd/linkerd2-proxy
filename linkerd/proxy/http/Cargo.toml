@@ -17,7 +17,7 @@ h2 = "0.2.6"
 http = "0.2"
 http-body = "0.3"
 httparse = "1.2"
-hyper = "0.13.7"
+hyper = "0.14.0-dev"
 hyper-balance = { path  = "../../../hyper-balance" }
 indexmap = "1.0"
 linkerd2-drain = { path  = "../../drain" }
