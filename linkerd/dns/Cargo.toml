@@ -12,6 +12,12 @@ linkerd2-error = { path = "../error" }
 tracing = "0.1.19"
 tokio = { version = "0.3", features = ["rt", "sync"] }
 pin-project = "0.4"
+# trust-dns depends on Tokio 0.2
+# TODO(eliza): when `trust-dns-resolver` supports Tokio 0.3, remove this.
+# Note that this is blocked on:
+# - https://github.com/bluejekyll/trust-dns/pull/1262
+# - https://github.com/tokio-rs/tokio/issues/3084
+tokio-compat-02 = "0.1.2"
 
 [dependencies.trust-dns-resolver]
 version = "0.20"

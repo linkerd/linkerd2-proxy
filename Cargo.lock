@@ -1055,6 +1055,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.27",
  "tokio 0.3.2",
+ "tokio-compat-02",
  "tracing",
  "trust-dns-resolver",
 ]
@@ -2441,6 +2442,7 @@ dependencies = [
  "lazy_static",
  "memchr 2.3.4",
  "mio 0.6.22",
+ "num_cpus",
  "pin-project-lite",
  "slab",
  "tokio-macros 0.2.5",
@@ -2467,6 +2469,19 @@ dependencies = [
  "slab",
  "tokio-macros 0.3.1",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "tokio-compat-02"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb4cec419b8b6f06c32e74aae6d8c5e79646d038a38e5ea2b36045f2c3296e22"
+dependencies = [
+ "bytes 0.5.6",
+ "once_cell",
+ "pin-project-lite",
+ "tokio 0.2.22",
+ "tokio 0.3.2",
 ]
 
 [[package]]

@@ -4,6 +4,7 @@ pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
 use linkerd2_error::Error;
 use std::{fmt, net};
 use tokio::time::{self, Instant};
+use tokio_compat_02::FutureExt;
 use tracing::{debug, trace};
 use trust_dns_resolver::{
     config::ResolverConfig, proto::error, proto::rr::rdata, system_conf, AsyncResolver,
@@ -41,18 +42,30 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(c: &C) -> Result<Self, ResolveError> {
+    pub async fn from_system_config_with<C: ConfigureResolver>(
+        c: &C,
+    ) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new(config, opts))
+        Ok(Self::new(config, opts).await)
     }
 
-    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
+    pub async fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
-        let dns = AsyncResolver::tokio(config, opts).expect("Resolver must be valid");
+        // This function is synchronous, but needs to be called within the Tokio
+        // 0.2 runtime context, since it gets a handle. The `tokio_compat_02`
+        // crate only provides compatibility for futures, *not* synchronous
+        // functions. So, wrap it in a future that we expect will be ready
+        // immediately.
+        // XXX(eliza): lol, this is terrible. when `trust-dns` works with tokio
+        // 0.3, we can get rid of this.
+        let dns =
+            async move { AsyncResolver::tokio(config, opts).expect("Resolver must be valid") }
+                .compat()
+                .await;
         Resolver { dns }
     }
 
@@ -82,7 +95,7 @@ impl Resolver {
         name: &Name,
     ) -> Result<(Vec<net::IpAddr>, time::Sleep), ResolveError> {
         debug!(%name, "resolve_a");
-        match self.dns.lookup_ip(name.as_ref()).await {
+        match self.dns.lookup_ip(name.as_ref()).compat().await {
             Ok(lookup) => {
                 let valid_until = Instant::from_std(lookup.valid_until());
                 let ips = lookup.iter().collect::<Vec<_>>();
@@ -94,7 +107,7 @@ impl Resolver {
 
     async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         debug!(%name, "resolve_srv");
-        match self.dns.srv_lookup(name.as_ref()).await {
+        match self.dns.srv_lookup(name.as_ref()).compat().await {
             Ok(srv) => {
                 let valid_until = Instant::from_std(srv.as_lookup().valid_until());
                 let addrs = srv

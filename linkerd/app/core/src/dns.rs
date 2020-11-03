@@ -16,9 +16,10 @@ pub struct Dns {
 // === impl Config ===
 
 impl Config {
-    pub fn build(self) -> Dns {
-        let resolver =
-            Resolver::from_system_config_with(&self).expect("system DNS config must be valid");
+    pub async fn build(self) -> Dns {
+        let resolver = Resolver::from_system_config_with(&self)
+            .await
+            .expect("system DNS config must be valid");
         Dns { resolver }
     }
 }
