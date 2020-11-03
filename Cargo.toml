@@ -66,3 +66,4 @@ webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0
 tower = { version = "0.4", git = "https://github.com/tower-rs/tower", rev = "450fa3d2be2b43850ceb125009d636d1d8629ad7" }
 hyper = { git = "https://github.com/hawkw/hyper", branch = "eliza/bump-tokio" }
 tokio-rustls = { git = "https://github.com/tokio-rs/tls", rev = "e6ef54641b911cfcf23b77a8c4826ae0f8e9870e"}
+tonic = {  git = "https://github.com/hawkw/tonic", branch = "eliza/tokio-0.3" }

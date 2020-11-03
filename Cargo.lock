@@ -2623,8 +2623,7 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74a5d6e7439ecf910463667080de772a9c7ddf26bc9fb4f3252ac3862e43337d"
+source = "git+https://github.com/hawkw/tonic?branch=eliza/tokio-0.3#f4fe82c8489352c1c9d82b2e259e1f05150ad79d"
 dependencies = [
  "async-stream 0.2.1",
  "async-trait",
@@ -2638,8 +2637,7 @@ dependencies = [
  "pin-project 0.4.27",
  "prost",
  "prost-derive",
- "tokio-util 0.3.1",
- "tower-make",
+ "tokio-util 0.5.0",
  "tower-service",
  "tracing",
 ]
@@ -2683,16 +2681,6 @@ checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
 name = "tower-layer"
 version = "0.3.0"
 source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
-
-[[package]]
-name = "tower-make"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
-dependencies = [
- "tokio 0.2.22",
- "tower-service",
-]
 
 [[package]]
 name = "tower-request-modifier"
