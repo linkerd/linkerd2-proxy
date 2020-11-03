@@ -1145,8 +1145,6 @@ mod proxy_to_proxy {
     }
 
     http1_tests! { proxy: |srv: server::Listening| async move {
-        use tracing_futures::Instrument;
-
         let ctrl = controller::new();
         let srv_addr = srv.addr;
         let _profile_in = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
