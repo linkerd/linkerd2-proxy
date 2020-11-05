@@ -620,8 +620,8 @@ checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
 
 [[package]]
 name = "hyper"
-version = "0.13.8"
-source = "git+https://github.com/hawkw/hyper?branch=eliza/bump-tokio#527c4b590e79896c83e52f476bfa9a224fa2fd5f"
+version = "0.14.0-dev"
+source = "git+https://github.com/hawkw/hyper?branch=eliza/bump-tokio#28e3ecdb44a085b0f4adb088800f78649dae2be6"
 dependencies = [
  "bytes 0.5.6",
  "futures-channel",
@@ -635,7 +635,6 @@ dependencies = [
  "itoa",
  "pin-project 1.0.1",
  "socket2",
- "tokio 0.2.22",
  "tokio 0.3.2",
  "tower-service",
  "tracing",
@@ -1029,6 +1028,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
  "tokio 0.3.2",
+ "tracing",
 ]
 
 [[package]]
@@ -2660,8 +2660,7 @@ dependencies = [
 [[package]]
 name = "tonic-build"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19970cf58f3acc820962be74c4021b8bbc8e8a1c4e3a02095d0aa60cde5f3633"
+source = "git+https://github.com/hawkw/tonic?branch=eliza/tokio-0.3#f4fe82c8489352c1c9d82b2e259e1f05150ad79d"
 dependencies = [
  "proc-macro2",
  "prost-build",

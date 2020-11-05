@@ -66,6 +66,8 @@ impl<A: OrigDstAddr> Bind<A> {
 
     pub fn bind(&self) -> io::Result<(SocketAddr, impl Stream<Item = io::Result<Connection>>)> {
         let listen = std::net::TcpListener::bind(self.bind_addr)?;
+        // Ensure that O_NONBLOCK is set on the socket before using it with Tokio.
+        listen.set_nonblocking(true)?;
         let addr = listen.local_addr()?;
         let keepalive = self.keepalive;
         let get_orig = self.orig_dst_addr.clone();
