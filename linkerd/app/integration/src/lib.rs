@@ -293,6 +293,8 @@ pub(crate) fn bind_ephemeral() -> (Socket, SocketAddr) {
 pub(crate) fn listen(sock: Socket) -> TcpListener {
     sock.listen(1024)
         .expect("socket should be able to start listening");
-    TcpListener::from_std(sock.into_tcp_listener())
-        .expect("socket should be able to set nonblocking")
+    let sock = sock.into_tcp_listener();
+    sock.set_nonblocking(true)
+        .expect("socket should be able to set nonblocking");
+    TcpListener::from_std(sock).expect("socket should seem okay to tokio")
 }

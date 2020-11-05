@@ -212,6 +212,9 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
     let task = tokio::spawn(
         cancelable(drain.clone(), async move {
             let mut accepts = tcp.accepts;
+            std_listener
+                .set_nonblocking(true)
+                .expect("socket must be able to set nonblocking");
             let listener = TcpListener::from_std(std_listener).expect("TcpListener::from_std");
 
             let _ = started_tx.send(());
