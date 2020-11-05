@@ -15,6 +15,7 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     let rx = Receiver {
         rx,
         semaphore: Arc::downgrade(&semaphore),
+        buffer,
     };
     let tx = Sender {
         tx,
@@ -35,6 +36,7 @@ pub struct Sender<T> {
 pub struct Receiver<T> {
     rx: mpsc::UnboundedReceiver<(T, Permit)>,
     semaphore: Weak<Semaphore>,
+    buffer: usize,
 }
 
 pub enum SendError<T> {
@@ -133,7 +135,7 @@ impl<T> Drop for Receiver<T> {
             // If more than `usize::MAX >> 3` permits are added to the semaphore, it
             // will panic.
             const MAX: usize = std::usize::MAX >> 4;
-            semaphore.add_permits(MAX - semaphore.available_permits());
+            semaphore.add_permits(MAX - self.buffer - semaphore.available_permits());
         }
     }
 }
