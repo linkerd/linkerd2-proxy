@@ -2,7 +2,7 @@ use crate::core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
-    proxy::http::h2,
+    proxy::http::{h1, h2},
     transport::{listen, tls},
     Addr, AddrMatch, NameMatch,
 };
@@ -347,6 +347,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             bind: bind.with_orig_dst_addr(outbound_orig_dst),
             h2_settings,
         };
+        let cache_max_idle_age =
+            outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
         let connect = ConnectConfig {
             keepalive: outbound_connect_keepalive?,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
@@ -356,6 +358,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings,
+            h1_settings: h1::PoolSettings {
+                max_idle: 2,
+                idle_timeout: cache_max_idle_age,
+            },
         };
 
         let dispatch_timeout =
@@ -369,8 +375,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                cache_max_idle_age: outbound_cache_max_idle_age?
-                    .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
+                cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
                 max_in_flight_requests: outbound_max_in_flight?
@@ -394,6 +399,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             bind: bind.with_orig_dst_addr(inbound_orig_dst),
             h2_settings,
         };
+        let cache_max_idle_age =
+            inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
         let connect = ConnectConfig {
             keepalive: inbound_connect_keepalive?,
             timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
@@ -403,6 +410,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings,
+            h1_settings: h1::PoolSettings {
+                max_idle: 2,
+                idle_timeout: cache_max_idle_age,
+            },
         };
 
         let dispatch_timeout =
@@ -425,8 +436,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                cache_max_idle_age: inbound_cache_max_idle_age?
-                    .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
+                cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
                 max_in_flight_requests: inbound_max_in_flight?

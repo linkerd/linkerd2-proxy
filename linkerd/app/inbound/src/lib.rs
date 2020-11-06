@@ -204,7 +204,10 @@ impl Config {
 
         // Creates HTTP clients for each inbound port & HTTP settings.
         let endpoint = svc::stack(tcp_connect)
-            .push(http::client::layer(connect.h2_settings))
+            .push(http::client::layer(
+                connect.h1_settings,
+                connect.h2_settings,
+            ))
             .push(reconnect::layer({
                 let backoff = connect.backoff.clone();
                 move |_| Ok(backoff.stream())
