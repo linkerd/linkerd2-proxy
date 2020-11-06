@@ -469,24 +469,6 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.1.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b34c246847f938a410a03c5458c7fee2274436675e76d8b903c08efc29c462"
-dependencies = [
- "byteorder",
- "bytes 0.4.12",
- "fnv",
- "futures 0.1.30",
- "http 0.1.21",
- "indexmap",
- "log",
- "slab",
- "string",
- "tokio-io",
-]
-
-[[package]]
-name = "h2"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e4728fd124914ad25e99e3d15a9361a879f6620f63cb56bbb08f95abb97a535"
@@ -496,7 +478,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 0.2.1",
+ "http",
  "indexmap",
  "slab",
  "tokio 0.2.22",
@@ -515,7 +497,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 0.2.1",
+ "http",
  "indexmap",
  "slab",
  "tokio 0.3.2",
@@ -576,17 +558,6 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.1.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6ccf5ede3a895d8856620237b2f02972c1bbc78d2965ad7fe8838d4a0ed41f0"
-dependencies = [
- "bytes 0.4.12",
- "fnv",
- "itoa",
-]
-
-[[package]]
-name = "http"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d569972648b2c512421b5f2a405ad6ac9666547189d0c5477a3f200f3e02f9"
@@ -603,7 +574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13d5ff830006f7646652e057693569bfe0d51760c0085a071769d142a205111b"
 dependencies = [
  "bytes 0.5.6",
- "http 0.2.1",
+ "http",
 ]
 
 [[package]]
@@ -628,7 +599,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2 0.3.0",
- "http 0.2.1",
+ "http",
  "http-body",
  "httparse",
  "httpdate",
@@ -646,7 +617,7 @@ name = "hyper-balance"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "hyper",
  "pin-project 0.4.27",
  "tokio 0.3.2",
@@ -782,7 +753,7 @@ checksum = "8dd5a6d5999d9907cda8ed67bbd137d3af8085216c2ac62de5be860bd41f304a"
 name = "linkerd2-addr"
 version = "0.1.0"
 dependencies = [
- "http 0.2.1",
+ "http",
  "linkerd2-dns-name",
 ]
 
@@ -792,9 +763,9 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
- "h2 0.2.7",
+ "h2 0.3.0",
  "html-escape",
- "http 0.2.1",
+ "http",
  "http-body",
  "hyper",
  "indexmap",
@@ -827,7 +798,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "http-body",
  "hyper",
  "indexmap",
@@ -889,7 +860,7 @@ name = "linkerd2-app-gateway"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "indexmap",
  "linkerd2-app-core",
  "linkerd2-app-inbound",
@@ -908,7 +879,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "indexmap",
  "linkerd2-app-core",
  "tokio 0.3.2",
@@ -923,8 +894,8 @@ dependencies = [
  "bytes 0.5.6",
  "flate2",
  "futures 0.3.7",
- "h2 0.2.7",
- "http 0.2.1",
+ "h2 0.3.0",
+ "http",
  "http-body",
  "hyper",
  "linkerd2-app",
@@ -952,7 +923,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "indexmap",
  "ipnet 1.2.1",
  "linkerd2-app-core",
@@ -980,8 +951,8 @@ name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
- "h2 0.2.7",
- "http 0.2.1",
+ "h2 0.3.0",
+ "http",
  "http-body",
  "hyper",
  "linkerd2-app-core",
@@ -1140,7 +1111,7 @@ dependencies = [
  "bytes 0.5.6",
  "bytes 0.6.0",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "http-body",
  "linkerd2-error",
  "pin-project 0.4.27",
@@ -1151,7 +1122,7 @@ dependencies = [
 name = "linkerd2-http-classify"
 version = "0.1.0"
 dependencies = [
- "http 0.2.1",
+ "http",
  "linkerd2-error",
  "linkerd2-stack",
  "tower",
@@ -1163,8 +1134,8 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
- "h2 0.1.26",
- "http 0.2.1",
+ "h2 0.3.0",
+ "http",
  "http-body",
  "hyper",
  "indexmap",
@@ -1208,7 +1179,7 @@ version = "0.1.0"
 dependencies = [
  "deflate",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "hyper",
  "indexmap",
  "quickcheck",
@@ -1220,7 +1191,7 @@ name = "linkerd2-opencensus"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "http-body",
  "linkerd2-error",
  "linkerd2-metrics",
@@ -1251,7 +1222,7 @@ version = "0.1.14"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.14#76470482fb53c359e6f823d0279d1c7b26030a6a"
 dependencies = [
  "h2 0.2.7",
- "http 0.2.1",
+ "http",
  "prost",
  "prost-types",
  "quickcheck",
@@ -1266,7 +1237,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream 0.2.1",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "http-body",
  "indexmap",
  "linkerd2-identity",
@@ -1329,7 +1300,7 @@ dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
  "h2 0.3.0",
- "http 0.2.1",
+ "http",
  "http-body",
  "httparse",
  "hyper",
@@ -1385,7 +1356,7 @@ name = "linkerd2-proxy-tap"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "hyper",
  "indexmap",
  "ipnet 2.3.0",
@@ -1482,7 +1453,7 @@ dependencies = [
  "async-stream 0.3.0",
  "bytes 0.6.0",
  "futures 0.3.7",
- "http 0.2.1",
+ "http",
  "http-body",
  "indexmap",
  "linkerd2-addr",
@@ -1571,7 +1542,7 @@ dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
  "hex",
- "http 0.2.1",
+ "http",
  "linkerd2-error",
  "linkerd2-stack",
  "rand",
@@ -1586,7 +1557,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "html-escape",
- "http 0.2.1",
+ "http",
  "hyper",
  "linkerd2-error",
  "serde_json",
@@ -2331,15 +2302,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
-name = "string"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d24114bfcceb867ca7f71a0d3fe45d45619ec47a6fbfa98cb14e14250bfa5d6d"
-dependencies = [
- "bytes 0.4.12",
-]
-
-[[package]]
 name = "syn"
 version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2646,7 +2608,7 @@ dependencies = [
  "bytes 0.5.6",
  "futures-core",
  "futures-util",
- "http 0.2.1",
+ "http",
  "http-body",
  "percent-encoding",
  "pin-project 0.4.27",
@@ -2701,7 +2663,7 @@ name = "tower-request-modifier"
 version = "0.1.0"
 source = "git+https://github.com/tower-rs/tower-http?rev=bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea#bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea"
 dependencies = [
- "http 0.2.1",
+ "http",
  "tower-service",
 ]
 

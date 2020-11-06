@@ -34,7 +34,7 @@ html-escape = "0.2.5"
 
 [dev-dependencies]
 bytes = "0.6"
-h2 = "0.2.6"
+h2 = { git = "https://github.com/hyperium/h2" }
 http = "0.2"
 hyper = "0.14.0-dev"
 linkerd2-metrics = { path = "../metrics", features = ["test_util"] }

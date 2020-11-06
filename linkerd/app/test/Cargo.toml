@@ -19,7 +19,7 @@ nyi = []
 
 [dependencies]
 futures = "0.3"
-h2 = "0.2.6"
+h2 = { git = "https://github.com/hyperium/h2" }
 http = "0.2"
 http-body = "0.3"
 hyper = "0.14.0-dev"
