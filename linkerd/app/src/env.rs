@@ -192,8 +192,8 @@ const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams
 // 10_000 is arbitrarily chosen for now...
 const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
 
-const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
-const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
+const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(10);
+const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(3);
 
 const DEFAULT_INBOUND_MAX_IDLE_PER_ENDPOINT: usize = std::usize::MAX;
 const DEFAULT_OUTBOUND_MAX_IDLE_PER_ENDPOINT: usize = std::usize::MAX;
