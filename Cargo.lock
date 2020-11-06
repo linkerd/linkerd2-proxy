@@ -621,7 +621,7 @@ checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
 [[package]]
 name = "hyper"
 version = "0.14.0-dev"
-source = "git+https://github.com/hawkw/hyper?branch=eliza/bump-tokio#28e3ecdb44a085b0f4adb088800f78649dae2be6"
+source = "git+https://github.com/hawkw/hyper?branch=eliza/put-back-missing-eofs#b78721480498cc838f5472794f012ae3d5bc3651"
 dependencies = [
  "bytes 0.5.6",
  "futures-channel",
@@ -1328,7 +1328,7 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
- "h2 0.2.7",
+ "h2 0.3.0",
  "http 0.2.1",
  "http-body",
  "httparse",
