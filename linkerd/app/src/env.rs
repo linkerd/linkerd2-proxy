@@ -2,7 +2,7 @@ use crate::core::{
     addr,
     config::*,
     control::{Config as ControlConfig, ControlAddr},
-    proxy::http::h2,
+    proxy::http::{h1, h2},
     transport::{listen, tls},
     Addr, AddrMatch, NameMatch,
 };
@@ -81,6 +81,10 @@ pub const ENV_BUFFER_CAPACITY: &str = "LINKERD2_PROXY_BUFFER_CAPACITY";
 
 pub const ENV_INBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_INBOUND_ROUTER_MAX_IDLE_AGE";
 pub const ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE: &str = "LINKERD2_PROXY_OUTBOUND_ROUTER_MAX_IDLE_AGE";
+
+const ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str = "LINKERD2_PROXY_MAX_IDLE_CONNS_PER_ENDPOINT";
+const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
+    "LINKERD2_PROXY_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT";
 
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
@@ -189,8 +193,26 @@ const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams
 // 10_000 is arbitrarily chosen for now...
 const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
 
-const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
-const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(60);
+// This configuration limits the amount of time Linkerd retains cached clients &
+// connections.
+//
+// After this timeout expires, the proxy will need to re-resolve destination
+// metadata. The outbound default of 5s matches Kubernetes' default DNS TTL. On
+// the outbound side, especially, we want to use a limited idle timeout since
+// stale clients/connections can have a severe memory impact, especially when
+// the application communicates with many endpoints or at high concurrency.
+//
+// On the inbound side, we want to be a bit more permissive so that periodic, as
+// the number of endpoints should generally be pretty constrained.
+const DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(20);
+const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(5);
+
+// By default, we don't limit the number of connections a connection pol may
+// use, as doing so can severely impact CPU utilization for applications with
+// many concurrent requests. It's generally preferable to use the MAX_IDLE_AGE
+// limitations to quickly drop idle connections.
+const DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = std::usize::MAX;
+const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = std::usize::MAX;
 
 // By default, don't accept more requests than we can buffer.
 const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
@@ -243,6 +265,17 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         parse(strings, ENV_INBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
     let outbound_cache_max_idle_age =
         parse(strings, ENV_OUTBOUND_ROUTER_MAX_IDLE_AGE, parse_duration);
+
+    let inbound_max_idle_per_endpoint = parse(
+        strings,
+        ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT,
+        parse_number,
+    );
+    let outbound_max_idle_per_endoint = parse(
+        strings,
+        ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT,
+        parse_number,
+    );
 
     let inbound_max_in_flight = parse(strings, ENV_INBOUND_MAX_IN_FLIGHT, parse_number);
     let outbound_max_in_flight = parse(strings, ENV_OUTBOUND_MAX_IN_FLIGHT, parse_number);
@@ -347,6 +380,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             bind: bind.with_orig_dst_addr(outbound_orig_dst),
             h2_settings,
         };
+        let cache_max_idle_age =
+            outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
+        let max_idle =
+            outbound_max_idle_per_endoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let connect = ConnectConfig {
             keepalive: outbound_connect_keepalive?,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
@@ -356,6 +393,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings,
+            h1_settings: h1::PoolSettings {
+                max_idle,
+                idle_timeout: cache_max_idle_age,
+            },
         };
 
         let dispatch_timeout =
@@ -369,8 +410,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                cache_max_idle_age: outbound_cache_max_idle_age?
-                    .unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE),
+                cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
                 max_in_flight_requests: outbound_max_in_flight?
@@ -394,6 +434,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             bind: bind.with_orig_dst_addr(inbound_orig_dst),
             h2_settings,
         };
+        let cache_max_idle_age =
+            inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
+        let max_idle =
+            inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let connect = ConnectConfig {
             keepalive: inbound_connect_keepalive?,
             timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
@@ -403,6 +447,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings,
+            h1_settings: h1::PoolSettings {
+                max_idle,
+                idle_timeout: cache_max_idle_age,
+            },
         };
 
         let dispatch_timeout =
@@ -425,8 +473,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             proxy: ProxyConfig {
                 server,
                 connect,
-                cache_max_idle_age: inbound_cache_max_idle_age?
-                    .unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE),
+                cache_max_idle_age,
                 buffer_capacity,
                 dispatch_timeout,
                 max_in_flight_requests: inbound_max_in_flight?

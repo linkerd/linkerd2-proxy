@@ -2,7 +2,10 @@ use crate::Config;
 pub use futures::prelude::*;
 pub use ipnet::IpNet;
 use linkerd2_app_core::{
-    config, exp_backoff, profiles, proxy::http::h2, transport::listen, IpMatch,
+    config, exp_backoff, profiles,
+    proxy::http::{h1, h2},
+    transport::listen,
+    IpMatch,
 };
 pub use linkerd2_app_test as support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
@@ -33,6 +36,10 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
                     0.1,
                 )
                 .unwrap(),
+                h1_settings: h1::PoolSettings {
+                    max_idle: 1,
+                    idle_timeout: Duration::from_secs(1),
+                },
                 h2_settings: h2::Settings::default(),
             },
             buffer_capacity: 10_000,
