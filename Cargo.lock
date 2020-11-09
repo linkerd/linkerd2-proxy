@@ -739,13 +739,7 @@ dependencies = [
 name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.4",
  "futures 0.3.5",
- "h2 0.2.6",
- "html-escape",
- "http 0.2.1",
- "http-body",
- "hyper",
  "indexmap",
  "ipnet 1.0.0",
  "linkerd2-app-core",
@@ -753,21 +747,13 @@ dependencies = [
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "linkerd2-error",
- "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api",
  "regex 1.3.9",
- "ring",
- "rustls",
  "tokio",
- "tokio-connect",
- "tokio-io",
- "tokio-rustls",
  "tonic",
  "tower",
  "tracing",
  "tracing-futures",
- "webpki",
 ]
 
 [[package]]
@@ -1527,7 +1513,6 @@ dependencies = [
  "tokio-timer",
  "tokio-trace",
  "tracing",
- "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
 ]
