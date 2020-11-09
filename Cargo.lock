@@ -190,9 +190,9 @@ checksum = "e0dcbc35f504eb6fc275a6d20e4ebcda18cf50d40ba6fabff8c711fa16cb3b16"
 
 [[package]]
 name = "cc"
-version = "1.0.61"
+version = "1.0.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed67cbde08356238e75fc4656be4749481eeffb09e19f320a25237d5221c985d"
+checksum = "f1770ced377336a88a67c473594ccc14eca6f4559217c34f64aac8f83d641b40"
 
 [[package]]
 name = "cfg-if"
@@ -761,13 +761,7 @@ dependencies = [
 name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
  "futures 0.3.7",
- "h2 0.3.0",
- "html-escape",
- "http",
- "http-body",
- "hyper",
  "indexmap",
  "ipnet 1.2.1",
  "linkerd2-app-core",
@@ -775,21 +769,13 @@ dependencies = [
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "linkerd2-error",
- "linkerd2-metrics",
  "linkerd2-opencensus",
- "linkerd2-proxy-api",
  "regex 1.4.1",
- "ring",
- "rustls",
  "tokio 0.3.2",
- "tokio-connect",
- "tokio-io",
- "tokio-rustls",
  "tonic",
  "tower",
  "tracing",
  "tracing-futures",
- "webpki",
 ]
 
 [[package]]
@@ -904,7 +890,6 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-proxy-api",
  "regex 0.1.80",
- "ring",
  "rustls",
  "socket2",
  "tokio 0.3.2",
@@ -1409,7 +1394,6 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "ring",
  "rustls",
  "socket2",
  "tokio 0.3.2",
@@ -1564,7 +1548,6 @@ dependencies = [
  "tokio-timer",
  "tokio-trace",
  "tracing",
- "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
 ]

@@ -31,7 +31,6 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", ta
 linkerd2-app-test = { path = "../test" }
 regex = "0.1"
 socket2 = "0.3.12"
-ring = "0.16"
 rustls = "0.18"
 tokio = { version = "0.3", features = ["io-util", "net", "rt", "macros"]}
 tokio-rustls = "0.20"

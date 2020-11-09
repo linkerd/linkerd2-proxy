@@ -8,11 +8,17 @@ use http::{
     uri::{Authority, Parts, Scheme, Uri},
 };
 use linkerd2_error::Error;
-use std::{future::Future, mem, pin::Pin};
+use std::{future::Future, mem, pin::Pin, time::Duration};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug)]
 pub struct WasAbsoluteForm(pub(crate) ());
+
+#[derive(Copy, Clone, Debug)]
+pub struct PoolSettings {
+    pub max_idle: usize,
+    pub idle_timeout: Duration,
+}
 
 /// Communicates with HTTP/1.x servers.
 ///
@@ -26,15 +32,17 @@ pub struct Client<C, T, B> {
     target: T,
     absolute_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
     origin_form: Option<hyper::Client<HyperConnect<C, T>, B>>,
+    pool: PoolSettings,
 }
 
 impl<C, T, B> Client<C, T, B> {
-    pub fn new(connect: C, target: T) -> Self {
+    pub fn new(connect: C, target: T, pool: PoolSettings) -> Self {
         Self {
             connect,
             target,
             absolute_form: None,
             origin_form: None,
+            pool,
         }
     }
 }
@@ -46,6 +54,7 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
             target: self.target.clone(),
             absolute_form: self.absolute_form.clone(),
             origin_form: self.origin_form.clone(),
+            pool: self.pool,
         }
     }
 }
@@ -108,9 +117,17 @@ where
 
             if client.is_none() {
                 debug!(use_absolute_form, "Caching new client");
-                *client = Some(hyper::Client::builder().set_host(use_absolute_form).build(
-                    HyperConnect::new(self.connect.clone(), self.target.clone(), use_absolute_form),
-                ));
+                *client = Some(
+                    hyper::Client::builder()
+                        .pool_max_idle_per_host(self.pool.max_idle)
+                        .pool_idle_timeout(self.pool.idle_timeout)
+                        .set_host(use_absolute_form)
+                        .build(HyperConnect::new(
+                            self.connect.clone(),
+                            self.target.clone(),
+                            use_absolute_form,
+                        )),
+                );
             }
 
             client.as_ref().unwrap().request(req)

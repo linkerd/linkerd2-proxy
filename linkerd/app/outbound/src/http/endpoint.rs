@@ -41,7 +41,7 @@ where
         // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
         // is typically used (i.e. when communicating with other proxies); though
         // HTTP/1.x fallback is supported as needed.
-        .push(http::client::layer(config.h2_settings))
+        .push(http::client::layer(config.h1_settings, config.h2_settings))
         // Re-establishes a connection when the client fails.
         .push(reconnect::layer({
             let backoff = config.backoff.clone();

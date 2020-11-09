@@ -14,8 +14,7 @@ This is used by tests and the executable.
 mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
 
 [dependencies]
-futures = { version = "0.3" }
-http-body = "0.3"
+futures = "0.3"
 indexmap = "1.0"
 ipnet = "1.0"
 linkerd2-app-core = { path = "./core" }
@@ -30,18 +29,3 @@ tonic = { version = "0.3", default-features = false, features = ["prost"] }
 tower = "0.4"
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"]}
-html-escape = "0.2.5"
-
-[dev-dependencies]
-bytes = "0.6"
-h2 = { git = "https://github.com/hyperium/h2" }
-http = "0.2"
-hyper = "0.14.0-dev"
-linkerd2-metrics = { path = "../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.14", features = ["arbitrary"] }
-ring = "0.16"
-rustls = "0.18"
-tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
-tokio-io = "0.1.6"
-tokio-rustls = "0.20"
-webpki = "0.21"

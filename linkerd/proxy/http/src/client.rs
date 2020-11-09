@@ -27,6 +27,7 @@ pub enum Settings {
 
 pub struct MakeClient<C, B> {
     connect: C,
+    h1_pool: h1::PoolSettings,
     h2_settings: h2::Settings,
     _marker: PhantomData<fn(B)>,
 }
@@ -38,10 +39,12 @@ pub enum Client<C, T, B> {
 }
 
 pub fn layer<C, B>(
+    h1_pool: h1::PoolSettings,
     h2_settings: h2::Settings,
 ) -> impl layer::Layer<C, Service = MakeClient<C, B>> + Copy {
     layer::mk(move |connect: C| MakeClient {
         connect,
+        h1_pool,
         h2_settings,
         _marker: PhantomData,
     })
@@ -80,6 +83,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let connect = self.connect.clone();
+        let h1_pool = self.h1_pool;
         let h2_settings = self.h2_settings;
 
         Box::pin(async move {
@@ -93,12 +97,12 @@ where
                         .await?;
                     Client::H2(h2)
                 }
-                Settings::Http1 => Client::Http1(h1::Client::new(connect, target)),
+                Settings::Http1 => Client::Http1(h1::Client::new(connect, target, h1_pool)),
                 Settings::OrigProtoUpgrade => {
                     let h2 = h2::Connect::new(connect.clone(), h2_settings)
                         .oneshot(target.clone())
                         .await?;
-                    let http1 = h1::Client::new(connect, target);
+                    let http1 = h1::Client::new(connect, target, h1_pool);
                     Client::OrigProtoUpgrade(orig_proto::Upgrade::new(http1, h2))
                 }
             };
@@ -112,6 +116,7 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
     fn clone(&self) -> Self {
         Self {
             connect: self.connect.clone(),
+            h1_pool: self.h1_pool,
             h2_settings: self.h2_settings,
             _marker: self._marker,
         }
