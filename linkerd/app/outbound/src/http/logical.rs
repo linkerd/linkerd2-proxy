@@ -48,7 +48,7 @@ where
     } = config.clone();
     let watchdog = cache_max_idle_age * 2;
 
-    let service = svc::stack(endpoint.clone())
+    svc::stack(endpoint.clone())
         .check_new_service::<Endpoint, http::Request<http::boxed::Payload>>()
         .push_on_response(
             svc::layers()
@@ -117,13 +117,19 @@ where
                 .push(svc::layers().box_http_response()),
         )
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
-        .check_new_service::<Logical, http::Request<_>>();
-
-    svc::stack(service).push_switch(
-        Logical::should_resolve,
-        svc::stack(endpoint)
-            .push_on_response(svc::layers().box_http_request())
-            .push_map_target(Endpoint::from)
-            .into_inner(),
-    )
+        .check_new_service::<Logical, http::Request<_>>()
+        .push_switch(
+            Logical::should_resolve,
+            svc::stack(endpoint)
+                .push_on_response(
+                    svc::layers()
+                        .push(svc::layer::mk(
+                            svc::stack::FailOnError::<std::io::Error, S>::new,
+                        ))
+                        .box_http_request(),
+                )
+                .push_map_target(Endpoint::from)
+                .into_inner(),
+        )
+        .into_inner()
 }
