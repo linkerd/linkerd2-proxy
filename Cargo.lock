@@ -1407,6 +1407,7 @@ dependencies = [
  "linkerd2-dns-name",
  "linkerd2-error",
  "linkerd2-proxy-api",
+ "linkerd2-proxy-api-resolve",
  "linkerd2-stack",
  "pin-project",
  "prost-types",
