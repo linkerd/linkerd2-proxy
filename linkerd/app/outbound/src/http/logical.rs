@@ -120,10 +120,10 @@ where
         .check_new_service::<Logical, http::Request<_>>();
 
     svc::stack(service).push_switch(
-        |_: &Logical| true,
+        Logical::should_resolve,
         svc::stack(endpoint)
             .push_on_response(svc::layers().box_http_request())
-            .push_map_target(|l: Logical| Endpoint::from(l))
+            .push_map_target(Endpoint::from)
             .into_inner(),
     )
 }

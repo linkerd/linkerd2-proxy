@@ -116,6 +116,15 @@ impl<P> Logical<P> {
             .map(|n| Addr::from((n, self.orig_dst.port())))
             .unwrap_or_else(|| self.orig_dst.into())
     }
+
+    pub fn should_resolve(&self) -> bool {
+        if let Some(p) = self.profile.as_ref() {
+            let p = p.borrow();
+            p.endpoint.is_none() && (p.name.is_some() || p.targets.len() > 0)
+        } else {
+            false
+        }
+    }
 }
 
 impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
@@ -178,8 +187,30 @@ impl<P> Endpoint<P> {
 
 impl<P> From<Logical<P>> for Endpoint<P> {
     fn from(logical: Logical<P>) -> Self {
-        //logical.profile.map(|p| p.borrow().endpoint.clone())
-        Self::from_logical(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)(logical)
+        match logical
+            .profile
+            .as_ref()
+            .and_then(|p| p.borrow().endpoint.clone())
+        {
+            None => {
+                Self::from_logical(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)(logical)
+            }
+            Some((addr, metadata)) => Self {
+                addr: addr.into(),
+                identity: metadata
+                    .identity()
+                    .cloned()
+                    .map(tls::Conditional::Some)
+                    .unwrap_or(tls::Conditional::None(
+                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+                    )),
+                metadata,
+                concrete: Concrete {
+                    logical,
+                    resolve: None,
+                },
+            },
+        }
     }
 }
 
