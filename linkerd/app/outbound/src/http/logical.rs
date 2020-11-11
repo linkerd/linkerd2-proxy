@@ -119,5 +119,11 @@ where
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
         .check_new_service::<Logical, http::Request<_>>();
 
-    service.into_inner()
+    svc::stack(service).push_switch(
+        |_: &Logical| true,
+        svc::stack(endpoint)
+            .push_on_response(svc::layers().box_http_request())
+            .push_map_target(|l: Logical| Endpoint::from(l))
+            .into_inner(),
+    )
 }
