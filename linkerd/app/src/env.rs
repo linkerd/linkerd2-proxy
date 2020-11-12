@@ -399,7 +399,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings: h2::Settings {
-                keepalive_timeout: Keepalive,
+                keepalive_timeout: keepalive,
                 ..h2_settings
             },
             h1_settings: h1::PoolSettings {
