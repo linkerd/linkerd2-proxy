@@ -110,7 +110,7 @@ where
                         .http2_keep_alive_while_idle(true);
                 }
 
-                let (tx, conn) = conn::Builder::new()
+                let (tx, conn) = builder
                     .handshake(io)
                     .instrument(trace_span!("handshake"))
                     .await?;
