@@ -6,6 +6,7 @@ use hyper::{
     client::conn::{self, SendRequest},
 };
 use linkerd2_error::Error;
+use std::time::Duration;
 use std::{
     future::Future,
     marker::PhantomData,
@@ -20,6 +21,7 @@ use tracing_futures::Instrument;
 pub struct Settings {
     pub initial_stream_window_size: Option<u32>,
     pub initial_connection_window_size: Option<u32>,
+    pub keepalive_timeout: Option<Duration>,
 }
 
 #[derive(Debug)]
@@ -79,6 +81,7 @@ where
         let Settings {
             initial_connection_window_size,
             initial_stream_window_size,
+            keepalive_timeout,
         } = self.h2_settings;
 
         let connect = self
@@ -89,12 +92,25 @@ where
         Box::pin(
             async move {
                 let io = connect.err_into::<Error>().await?;
-
-                let (tx, conn) = conn::Builder::new()
+                let mut builder = conn::Builder::new();
+                builder
                     .http2_only(true)
                     .http2_initial_stream_window_size(initial_stream_window_size)
                     .http2_initial_connection_window_size(initial_connection_window_size)
-                    .executor(trace::Executor::new())
+                    .executor(trace::Executor::new());
+
+                // Configure HTTP/2 PING frames
+                if let Some(timeout) = keepalive_timeout {
+                    // XXX(eliza): is this a reasonable interval between
+                    // PING frames?
+                    let interval = timeout / 4;
+                    builder
+                        .http2_keep_alive_timeout(timeout)
+                        .http2_keep_alive_interval(interval)
+                        .http2_keep_alive_while_idle(true);
+                }
+
+                let (tx, conn) = conn::Builder::new()
                     .handshake(io)
                     .instrument(trace_span!("handshake"))
                     .await?;
