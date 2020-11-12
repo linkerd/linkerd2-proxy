@@ -340,6 +340,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         initial_connection_window_size: Some(
             initial_connection_window_size?.unwrap_or(DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE),
         ),
+        ..Default::default()
     };
 
     let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
@@ -399,7 +400,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             )?,
             h2_settings: h2::Settings {
                 keepalive_timeout: Keepalive,
-                ..h2_settings,
+                ..h2_settings
             },
             h1_settings: h1::PoolSettings {
                 max_idle,
