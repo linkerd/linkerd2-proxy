@@ -1,27 +1,21 @@
 #![deny(warnings, rust_2018_idioms)]
-
-use futures::{future::Shared, FutureExt};
 use linkerd2_error::Never;
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    stream::Stream,
+    sync::{mpsc, watch},
+};
 
 /// Creates a drain channel.
 ///
 /// The `Signal` is used to start a drain, and the `Watch` will be notified
 /// when a drain is signaled.
 pub fn channel() -> (Signal, Watch) {
-    let (tx, rx) = oneshot::channel();
+    let (tx, rx) = watch::channel(());
     let (drained_tx, drained_rx) = mpsc::channel(1);
-
-    // Since `FutureExt::shared` requires the future's `Output` type to
-    // implement `Clone`, and `oneshot::RecvError` does not, just map the
-    // `Output` to `()`. The behavior is the same regardless of whether the
-    // drain is explicitly signalled or the `Signal` type is thrown away, so
-    // we don't care whether this is an error or not.
-    let rx = rx.map((|_| ()) as fn(_) -> _).shared();
 
     (Signal { drained_rx, tx }, Watch { drained_tx, rx })
 }
@@ -33,7 +27,7 @@ pub fn channel() -> (Signal, Watch) {
 #[derive(Debug)]
 pub struct Signal {
     drained_rx: mpsc::Receiver<Never>,
-    tx: oneshot::Sender<()>,
+    tx: watch::Sender<()>,
 }
 
 /// Watch for a drain command.
@@ -44,12 +38,7 @@ pub struct Signal {
 pub struct Watch {
     #[pin]
     drained_tx: mpsc::Sender<Never>,
-    rx: Shared<
-        futures::future::Map<
-            oneshot::Receiver<()>,
-            fn(Result<(), tokio::sync::oneshot::error::RecvError>) -> (),
-        >,
-    >,
+    rx: watch::Receiver<()>,
 }
 
 /// A future that resolves when all `Watch`ers have been dropped (drained).
@@ -85,8 +74,8 @@ impl Watch {
     /// Returns a `ReleaseShutdown` handle after the drain has been signaled. The
     /// handle must be dropped when a shutdown action has been completed to
     /// unblock graceful shutdown.
-    pub async fn signal(self) -> ReleaseShutdown {
-        self.rx.await;
+    pub async fn signal(mut self) -> ReleaseShutdown {
+        let _ = self.rx.changed().await;
         ReleaseShutdown(self.drained_tx)
     }
 
@@ -130,7 +119,7 @@ impl Future for Drained {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match futures::ready!(self.project().drained_rx.poll_recv(cx)) {
+        match futures::ready!(self.project().drained_rx.poll_next(cx)) {
             Some(never) => match never {},
             None => Poll::Ready(()),
         }
