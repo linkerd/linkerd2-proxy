@@ -2430,6 +2430,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5ca08accbcb46f11fd8d2d1c6158c348b7888009a1f39260bcad66f6a454250"
+dependencies = [
+ "autocfg 1.0.0",
+ "futures-core",
+ "pin-project-lite",
+ "slab",
+ "tokio-macros 0.3.1",
+]
+
+[[package]]
 name = "tokio-connect"
 version = "0.1.0"
 source = "git+https://github.com/carllerche/tokio-connect#f7ad1ca437973d6e24037ac6f7d5ef1013833c0b"
