@@ -662,7 +662,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 }
 
 #[tokio::test(core_threads = 1)]
-async fn re_resolves_failed_endpoint() {
+async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
     // connecting to that endpoint fails, the proxy will resolve a new endpoint
     // for subsequent connections to the same original destination.
@@ -688,8 +688,8 @@ async fn re_resolves_failed_endpoint() {
     let connect = support::connect()
         .endpoint_fn(ep1, |_| {
             Err(Box::new(io::Error::new(
-                io::ErrorKind::NotConnected,
-                "transport endpoint was weird and i didnt like it lol",
+                io::ErrorKind::ConnectionReset,
+                "i dont like you, go away",
             )))
         })
         .endpoint(
@@ -711,7 +711,6 @@ async fn re_resolves_failed_endpoint() {
         .expect("still listening to profiles");
 
     let resolver = support::resolver::<Addr, support::resolver::Metadata>();
-    let resolve_state = resolver.handle();
 
     // Build the outbound server
     let mut server = build_server(cfg, profiles, resolver, connect);
@@ -721,27 +720,17 @@ async fn re_resolves_failed_endpoint() {
         ([127, 0, 0, 1], 666).into(),
         Some(ep1),
     ));
-    let res1 = svc
+
+    let res = svc
         .oneshot(support::io().read(b"hello\r\n").write(b"world").build())
         .await
         .map_err(Into::into);
-    tracing::debug!(?res1);
-    assert!(res1.is_err());
-
-    // Second connection should resolve the new endpoint and succeed.
-    profile_tx
-        .broadcast(profile::Profile {
-            opaque_protocol: true,
-            endpoint: Some((ep2, meta.clone())),
-            ..Default::default()
-        })
-        .expect("still listening to profiles");
-
-    hello_world_client(ep1, &mut server).await;
-
-    assert!(
-        resolve_state.is_empty(),
-        "proxy tried to resolve endpoints provided by profile discovery!"
+    tracing::info!(?res);
+    assert_eq!(
+        res.unwrap_err()
+            .downcast_ref::<io::Error>()
+            .map(io::Error::kind),
+        Some(io::ErrorKind::ConnectionReset)
     );
 }
 
