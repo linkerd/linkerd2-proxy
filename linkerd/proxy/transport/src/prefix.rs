@@ -15,6 +15,7 @@ use tracing::{debug, trace};
 #[derive(Copy, Clone)]
 pub struct Prefix<S> {
     inner: S,
+    minimum: usize,
     capacity: usize,
     timeout: Duration,
 }
@@ -23,19 +24,21 @@ pub struct Prefix<S> {
 pub struct ReadTimeout(());
 
 impl<S> Prefix<S> {
-    pub fn new(inner: S, capacity: usize, timeout: Duration) -> Self {
+    pub fn new(inner: S, minimum: usize, capacity: usize, timeout: Duration) -> Self {
         Self {
             inner,
             capacity,
+            minimum,
             timeout,
         }
     }
 
     pub fn layer(
+        minimum: usize,
         capacity: usize,
         timeout: Duration,
     ) -> impl layer::Layer<S, Service = Prefix<S>> + Clone {
-        layer::mk(move |inner| Self::new(inner, capacity, timeout))
+        layer::mk(move |inner| Self::new(inner, minimum, capacity, timeout))
     }
 }
 
@@ -57,7 +60,8 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         debug!(capacity = self.capacity, "Buffering prefix");
         let accept = self.inner.clone();
-        let peek = time::timeout(self.timeout, io.peek(self.capacity)).map_err(|_| ReadTimeout(()));
+        let peek = time::timeout(self.timeout, io.peek(self.minimum, self.capacity))
+            .map_err(|_| ReadTimeout(()));
         Box::pin(async move {
             let io = peek.await??;
             trace!(read = %io.prefix().len());

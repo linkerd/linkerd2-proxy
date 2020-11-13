@@ -21,8 +21,9 @@ impl std::convert::TryFrom<http::Version> for Version {
 }
 
 impl Version {
-    pub const DETECT_BUFFER_CAPACITY: usize = 8192;
     const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    pub const DETECT_BUFFER_MINIMUM: usize = Self::H2_PREFACE.len();
+    pub const DETECT_BUFFER_CAPACITY: usize = 8192;
 
     /// Tries to detect a known protocol in the peeked bytes.
     ///
