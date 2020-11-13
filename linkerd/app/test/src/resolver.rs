@@ -28,7 +28,7 @@ pub type Profiles<T> = Resolver<T, Option<profiles::Receiver>>;
 #[derive(Debug, Clone)]
 pub struct DstSender<T>(mpsc::UnboundedSender<Result<Update<T>, Error>>);
 
-pub struct ProfileSender(watch::Sender<Profile>);
+pub type ProfileSender = watch::Sender<Profile>;
 
 #[derive(Debug, Clone)]
 pub struct Handle<T, E>(Arc<State<T, E>>);
@@ -144,7 +144,7 @@ where
     pub fn profile_tx(&self, addr: T) -> ProfileSender {
         let (tx, rx) = watch::channel(Profile::default());
         self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
-        ProfileSender(tx)
+        tx
     }
 
     pub fn profile(self, addr: T, profile: Profile) -> Self {

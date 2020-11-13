@@ -169,32 +169,20 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 
 impl<P> Endpoint<P> {
     pub fn from_logical(reason: tls::ReasonForNoPeerName) -> impl (Fn(Logical<P>) -> Self) + Clone {
-        move |logical| Self {
-            addr: (&logical).into(),
-            metadata: Metadata::default(),
-            identity: tls::PeerIdentity::None(reason),
-            concrete: Concrete {
-                logical,
-                resolve: None,
-            },
-        }
-    }
-
-    pub fn from_accept(reason: tls::ReasonForNoPeerName) -> impl (Fn(Accept<P>) -> Self) + Clone {
-        move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
-    }
-}
-
-impl<P> From<Logical<P>> for Endpoint<P> {
-    fn from(logical: Logical<P>) -> Self {
-        match logical
+        move |logical| match logical
             .profile
             .as_ref()
             .and_then(|p| p.borrow().endpoint.clone())
         {
-            None => {
-                Self::from_logical(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)(logical)
-            }
+            None => Self {
+                addr: (&logical).into(),
+                metadata: Metadata::default(),
+                identity: tls::PeerIdentity::None(reason),
+                concrete: Concrete {
+                    logical,
+                    resolve: None,
+                },
+            },
             Some((addr, metadata)) => Self {
                 addr: addr.into(),
                 identity: metadata
@@ -211,6 +199,16 @@ impl<P> From<Logical<P>> for Endpoint<P> {
                 },
             },
         }
+    }
+
+    pub fn from_accept(reason: tls::ReasonForNoPeerName) -> impl (Fn(Accept<P>) -> Self) + Clone {
+        move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
+    }
+}
+
+impl<P> From<Logical<P>> for Endpoint<P> {
+    fn from(logical: Logical<P>) -> Self {
+        Self::from_logical(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)(logical)
     }
 }
 
