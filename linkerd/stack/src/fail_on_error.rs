@@ -2,15 +2,14 @@ use linkerd2_error::Error;
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, RwLock},
     task::{Context, Poll},
 };
-use tokio::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct FailOnError<E, S> {
     inner: S,
-    error: Arc<Mutex<Option<SharedError>>>,
+    error: Arc<RwLock<Option<SharedError>>>,
     _marker: std::marker::PhantomData<E>,
 }
 
@@ -21,7 +20,7 @@ impl<E, S> FailOnError<E, S> {
     pub fn new(inner: S) -> Self {
         Self {
             inner,
-            error: Arc::new(Mutex::new(None)),
+            error: Arc::new(RwLock::new(None)),
             _marker: std::marker::PhantomData,
         }
     }
@@ -41,7 +40,7 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
         futures::ready!(self.inner.poll_ready(cx).map_err(Into::into))?;
-        if let Ok(e) = self.error.try_lock() {
+        if let Ok(e) = self.error.read() {
             if let Some(e) = &*e {
                 return Poll::Ready(Err(e.clone().into()));
             }
@@ -59,8 +58,9 @@ where
                     let e = e.into();
                     if is_error::<E>(&*e) {
                         let e = SharedError(Arc::new(e));
-                        let mut error = error.lock().await;
-                        *error = Some(e.clone());
+                        if let Ok(mut error) = error.write() {
+                            *error = Some(e.clone());
+                        }
                         Err(e.into())
                     } else {
                         Err(e)
