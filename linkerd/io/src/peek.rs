@@ -5,6 +5,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tracing::trace;
 
 /// A future of when some `Peek` fulfills with some bytes.
 #[derive(Debug)]
@@ -69,9 +70,11 @@ impl<T: AsyncRead + Unpin> Inner<T> {
                     // has completed, the buffer is full, or the minimum buffer
                     // size has been met.
                     if sz == 0 || self.buf.len() >= self.minimum {
+                        trace!(buf=%self.buf.len(), "Complete");
                         return Poll::Ready(Ok(self.buf.len()));
                     }
                     // Otherwise, continue reading.
+                    trace!(sz, "Read");
                 }
                 Err(e) => return Poll::Ready(Err(e)),
             }

@@ -119,7 +119,7 @@ where
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
     .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
         transport::Prefix::layer(
-            http::Version::DETECT_BUFFER_MINIMUM,
+            0,
             http::Version::DETECT_BUFFER_CAPACITY,
             detect_protocol_timeout,
         ),
