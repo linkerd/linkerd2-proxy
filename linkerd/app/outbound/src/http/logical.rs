@@ -5,7 +5,9 @@ use linkerd2_app_core::{
     config::ProxyConfig,
     metrics, profiles,
     proxy::{api_resolve::Metadata, core::Resolve, http},
-    retry, svc, Addr, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    retry, svc,
+    transport::tls::ReasonForNoPeerName,
+    Addr, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -128,7 +130,9 @@ where
                         ))
                         .box_http_request(),
                 )
-                .push_map_target(Endpoint::from)
+                .push_map_target(Endpoint::from_logical(
+                    ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+                ))
                 .into_inner(),
         )
         .into_inner()

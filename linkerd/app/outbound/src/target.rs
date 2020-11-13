@@ -206,12 +206,6 @@ impl<P> Endpoint<P> {
     }
 }
 
-impl<P> From<Logical<P>> for Endpoint<P> {
-    fn from(logical: Logical<P>) -> Self {
-        Self::from_logical(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)(logical)
-    }
-}
-
 impl<P> Into<SocketAddr> for Endpoint<P> {
     fn into(self) -> SocketAddr {
         self.addr
