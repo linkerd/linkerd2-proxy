@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     spans::SpanConverter,
     svc,
-    transport::{self, io, listen, tls},
+    transport::{self, io, listen},
     Addr, Error, IpMatch, TraceContext,
 };
 use std::net::SocketAddr;
@@ -127,9 +127,7 @@ where
     .into_inner();
 
     let tcp = svc::stack(tcp::connect::forward(tcp_connect))
-        .push_map_target(tcp::Endpoint::from_logical(
-            tls::ReasonForNoPeerName::PortSkipped,
-        ))
+        .push_map_target(tcp::Endpoint::from)
         .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
