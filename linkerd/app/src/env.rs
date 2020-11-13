@@ -340,6 +340,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         initial_connection_window_size: Some(
             initial_connection_window_size?.unwrap_or(DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE),
         ),
+        ..Default::default()
     };
 
     let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
@@ -371,28 +372,36 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
     let outbound = {
+        let keepalive = outbound_accept_keepalive?;
         let bind = listen::Bind::new(
             outbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
-            outbound_accept_keepalive?,
+            keepalive,
         );
         let server = ServerConfig {
             bind: bind.with_orig_dst_addr(outbound_orig_dst),
-            h2_settings,
+            h2_settings: h2::Settings {
+                keepalive_timeout: keepalive,
+                ..h2_settings
+            },
         };
         let cache_max_idle_age =
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             outbound_max_idle_per_endoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
+        let keepalive = outbound_connect_keepalive?;
         let connect = ConnectConfig {
-            keepalive: outbound_connect_keepalive?,
+            keepalive,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
             backoff: parse_backoff(
                 strings,
                 OUTBOUND_CONNECT_BASE,
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
-            h2_settings,
+            h2_settings: h2::Settings {
+                keepalive_timeout: keepalive,
+                ..h2_settings
+            },
             h1_settings: h1::PoolSettings {
                 max_idle,
                 idle_timeout: cache_max_idle_age,
@@ -425,28 +434,36 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let inbound = {
+        let keepalive = inbound_accept_keepalive?;
         let bind = listen::Bind::new(
             inbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
-            inbound_accept_keepalive?,
+            keepalive,
         );
         let server = ServerConfig {
             bind: bind.with_orig_dst_addr(inbound_orig_dst),
-            h2_settings,
+            h2_settings: h2::Settings {
+                keepalive_timeout: keepalive,
+                ..h2_settings
+            },
         };
         let cache_max_idle_age =
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
+        let keepalive = inbound_connect_keepalive?;
         let connect = ConnectConfig {
-            keepalive: inbound_connect_keepalive?,
+            keepalive,
             timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
             backoff: parse_backoff(
                 strings,
                 INBOUND_CONNECT_BASE,
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
-            h2_settings,
+            h2_settings: h2::Settings {
+                keepalive_timeout: keepalive,
+                ..h2_settings
+            },
             h1_settings: h1::PoolSettings {
                 max_idle,
                 idle_timeout: cache_max_idle_age,

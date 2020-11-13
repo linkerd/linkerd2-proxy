@@ -58,6 +58,16 @@ impl<F, H> DetectHttp<F, H> {
             .http2_initial_stream_window_size(h2.initial_stream_window_size)
             .http2_initial_connection_window_size(h2.initial_connection_window_size);
 
+        // Configure HTTP/2 PING frames
+        if let Some(timeout) = h2.keepalive_timeout {
+            // XXX(eliza): is this a reasonable interval between
+            // PING frames?
+            let interval = timeout / 4;
+            server
+                .http2_keep_alive_timeout(timeout)
+                .http2_keep_alive_interval(interval);
+        }
+
         Self {
             server,
             tcp,
