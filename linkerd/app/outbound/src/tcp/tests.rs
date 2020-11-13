@@ -2,7 +2,7 @@ use super::{Concrete, Endpoint, Logical};
 use crate::test_util::{
     support::{
         connect::{Connect, ConnectFuture},
-        resolver,
+        profile, resolver,
     },
     *,
 };
@@ -609,6 +609,103 @@ async fn no_profiles_when_outside_search_nets() {
         profile_state.only_configured(),
         "profiles outside the search networks were resolved"
     );
+}
+
+#[tokio::test(core_threads = 1)]
+async fn no_discovery_when_profile_has_an_endpoint() {
+    let _trace = support::trace_init();
+
+    let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let cfg = default_config(ep);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is invalid");
+    let meta = support::resolver::Metadata::new(
+        Default::default(),
+        support::resolver::ProtocolHint::Unknown,
+        Some(id_name.clone()),
+        10_000,
+        None,
+    );
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = support::connect().endpoint(
+        ep,
+        Connection {
+            identity: tls::Conditional::Some(id_name.clone()),
+            ..Connection::default()
+        },
+    );
+
+    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolve_state = resolver.handle();
+
+    let profiles = profile::resolver().profile(
+        ep,
+        profile::Profile {
+            opaque_protocol: true,
+            endpoint: Some((ep, meta.clone())),
+            ..Default::default()
+        },
+    );
+
+    // Build the outbound server
+    let mut server = build_server(cfg, profiles, resolver, connect);
+
+    hello_world_client(ep, &mut server).await;
+
+    assert!(
+        resolve_state.is_empty(),
+        "proxy tried to resolve endpoints provided by profile discovery!"
+    );
+}
+
+#[tokio::test(core_threads = 1)]
+async fn re_resolves_failed_endpoint() {
+    // This test asserts that when profile resolution returns an endpoint, and
+    // connecting to that endpoint fails, the proxy will resolve a new endpoint
+    // for subsequent connections to the same original destination.
+    let _trace = support::trace_init();
+
+    let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let ep2 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
+    let id_name = linkerd2_identity::Name::from_hostname(
+        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
+    )
+    .expect("hostname is invalid");
+    let meta = support::resolver::Metadata::new(
+        Default::default(),
+        support::resolver::ProtocolHint::Unknown,
+        Some(id_name.clone()),
+        10_000,
+        None,
+    );
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = support::connect()
+        .endpoint_fn(ep1, |_| {
+            Err(Box::new(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "transport endpoint was weird and i didnt like it lol",
+            )))
+        })
+        .endpoint(
+            ep2,
+            Connection {
+                identity: tls::Conditional::Some(id_name.clone()),
+                ..Connection::default()
+            },
+        );
+
+    let profiles = profile::resolver();
+    let profile_tx = profiles.profile_tx(ep1);
+    profile_tx.broadcast(profile::Profile {
+        opaque_protocol: true,
+        endpoint: Some((ep1, meta.clone())),
+        ..Default::default()
+    });
+    todo!("eliza finish this one");
 }
 
 struct Connection {
