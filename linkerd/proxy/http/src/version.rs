@@ -1,4 +1,3 @@
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Version {
     Http1,
