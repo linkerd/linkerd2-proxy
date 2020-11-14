@@ -101,6 +101,21 @@ where
     ))
     .push_map_target(tcp::Concrete::from)
     .push(profiles::split::layer())
+    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+    .push_switch(
+        tcp::Logical::should_resolve,
+        svc::stack(tcp_connect.clone())
+            .push_make_thunk()
+            .check_make_service::<tcp::Endpoint, ()>()
+            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .into_new_service()
+            .check_new_service::<tcp::Endpoint, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+            .push_map_target(tcp::Endpoint::from_logical(
+                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+            ))
+            .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+            .into_inner(),
+    )
     .push_on_response(
         svc::layers()
             .push_failfast(dispatch_timeout)
