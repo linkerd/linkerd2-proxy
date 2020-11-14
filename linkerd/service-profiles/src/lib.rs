@@ -3,8 +3,10 @@
 use linkerd2_addr::Addr;
 use linkerd2_dns_name::Name;
 use linkerd2_error::Error;
+use linkerd2_proxy_api_resolve::Metadata;
 use std::{
     future::Future,
+    net::SocketAddr,
     task::{Context, Poll},
 };
 use tower::util::{Oneshot, ServiceExt};
@@ -25,6 +27,7 @@ pub struct Profile {
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
     pub targets: Vec<Target>,
     pub opaque_protocol: bool,
+    pub endpoint: Option<(SocketAddr, Metadata)>,
 }
 
 #[derive(Clone, Debug)]

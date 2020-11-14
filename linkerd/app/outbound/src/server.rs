@@ -133,7 +133,8 @@ where
         .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
-    svc::stack(svc::stack::MakeSwitch::new(SkipByProfile, http, tcp))
+    svc::stack(http)
+        .push_switch(SkipByProfile, tcp)
         .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
         .push_map_target(tcp::Logical::from)
         .push(profiles::discover::layer(

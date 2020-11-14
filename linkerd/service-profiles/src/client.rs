@@ -6,6 +6,7 @@ use linkerd2_addr::Addr;
 use linkerd2_dns_name::Name;
 use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
+use linkerd2_proxy_api_resolve::pb as resolve;
 use pin_project::pin_project;
 use regex::Regex;
 use std::{
@@ -241,11 +242,16 @@ where
                     .into_iter()
                     .filter_map(convert_dst_override)
                     .collect();
+                let endpoint = proto.endpoint.and_then(|e| {
+                    let labels = std::collections::HashMap::new();
+                    resolve::to_addr_meta(e, &labels)
+                });
                 Profile {
                     name,
                     http_routes,
                     targets,
                     opaque_protocol: proto.opaque_protocol,
+                    endpoint,
                 }
             })
         });

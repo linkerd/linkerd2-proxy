@@ -9,7 +9,7 @@ pub use self::{
     prefixed::PrefixedIo,
     sensor::{Sensor, SensorIo},
 };
-pub use std::io::{Error, Read, Result, Write};
+pub use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::net::SocketAddr;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 

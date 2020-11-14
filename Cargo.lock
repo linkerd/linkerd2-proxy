@@ -1168,8 +1168,8 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.14"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.14#76470482fb53c359e6f823d0279d1c7b26030a6a"
+version = "0.1.15"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.15#d260ea21a0e490d863a9ed02bcc051035be9d238"
 dependencies = [
  "h2 0.2.6",
  "http 0.2.1",
@@ -1407,6 +1407,7 @@ dependencies = [
  "linkerd2-dns-name",
  "linkerd2-error",
  "linkerd2-proxy-api",
+ "linkerd2-proxy-api-resolve",
  "linkerd2-stack",
  "pin-project",
  "prost-types",
