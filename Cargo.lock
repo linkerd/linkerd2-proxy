@@ -1246,6 +1246,7 @@ dependencies = [
 name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
  "h2 0.2.6",
@@ -1261,11 +1262,13 @@ dependencies = [
  "linkerd2-http-box",
  "linkerd2-identity",
  "linkerd2-io",
+ "linkerd2-proxy-transport",
  "linkerd2-stack",
  "linkerd2-timeout",
  "pin-project",
  "rand 0.7.2",
  "tokio",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1346,6 +1349,7 @@ name = "linkerd2-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "async-stream",
+ "async-trait",
  "bytes 0.5.4",
  "futures 0.3.5",
  "indexmap",

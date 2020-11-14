@@ -1,236 +1,167 @@
-use crate::{
-    self as http,
-    client_addr::SetClientAddr,
-    glue::{Body, HyperServerSvc},
-    h2::Settings as H2Settings,
-    trace, upgrade, Version as HttpVersion,
-};
+use crate::Version;
+use bytes::BytesMut;
 use futures::prelude::*;
-use linkerd2_drain as drain;
 use linkerd2_error::Error;
-use linkerd2_io::{self as io, PeerAddr, PrefixedIo};
-use linkerd2_stack::NewService;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use tower::{util::ServiceExt, Service};
-use tracing::{debug, trace};
+use linkerd2_io::{self as io, AsyncReadExt};
+use linkerd2_proxy_transport::Detect;
+use tokio::time;
 
-type Server = hyper::server::conn::Http<trace::Executor>;
+const BUFFER_CAPACITY: usize = 8192;
+const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+const H2_FIRST_LINE_LEN: usize = 16;
 
 #[derive(Clone, Debug)]
-pub struct DetectHttp<F, H> {
-    tcp: F,
-    http: H,
-    server: Server,
-    drain: drain::Watch,
+pub struct DetectHttp {
+    capacity: usize,
+    timeout: time::Duration,
 }
 
-/// Accepts HTTP connections.
-///
-/// The server accepts TCP connections with their detected protocol. If the
-/// protocol is known to be HTTP, a server is built with a new HTTP service
-/// (built using the `H`-typed NewService).
-///
-/// Otherwise, the `F` type forwarding service is used to handle the TCP
-/// connection.
-#[derive(Debug)]
-pub struct AcceptHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
-    target: T,
-    new_tcp: F,
-    tcp: Option<F::Service>,
-    new_http: H,
-    http1: Option<H::Service>,
-    h2: Option<H::Service>,
-    server: hyper::server::conn::Http<trace::Executor>,
-    drain: drain::Watch,
-}
-
-// === impl DetectHttp ===
-
-impl<F, H> DetectHttp<F, H> {
-    /// Creates a new `AcceptHttp`.
-    pub fn new(h2: H2Settings, http: H, tcp: F, drain: drain::Watch) -> Self {
-        let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
-        server
-            .http2_initial_stream_window_size(h2.initial_stream_window_size)
-            .http2_initial_connection_window_size(h2.initial_connection_window_size);
-
-        // Configure HTTP/2 PING frames
-        if let Some(timeout) = h2.keepalive_timeout {
-            // XXX(eliza): is this a reasonable interval between
-            // PING frames?
-            let interval = timeout / 4;
-            server
-                .http2_keep_alive_timeout(timeout)
-                .http2_keep_alive_interval(interval);
-        }
-
+impl DetectHttp {
+    pub fn new(timeout: time::Duration) -> Self {
         Self {
-            server,
-            tcp,
-            http,
-            drain,
+            timeout,
+            capacity: BUFFER_CAPACITY,
         }
     }
 }
 
-impl<T, F, H> NewService<T> for DetectHttp<F, H>
+#[async_trait::async_trait]
+impl<I> Detect<I> for DetectHttp
 where
-    F: NewService<T> + Clone,
-    H: NewService<(HttpVersion, T)> + Clone,
+    I: io::AsyncRead + Send + Unpin + 'static,
 {
-    type Service = AcceptHttp<T, F, H>;
+    type Kind = Option<Version>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
-        AcceptHttp::new(
-            target,
-            self.server.clone(),
-            self.http.clone(),
-            self.tcp.clone(),
-            self.drain.clone(),
-        )
+    async fn detect(&self, mut io: I) -> Result<(Option<Version>, io::PrefixedIo<I>), Error> {
+        let mut buf = BytesMut::with_capacity(self.capacity);
+        let mut i = 0;
+
+        let mut timeout = time::delay_for(self.timeout).fuse();
+        loop {
+            let sz = futures::select_biased! {
+                res = io.read_buf(&mut buf).fuse() => res?,
+                _ = (&mut timeout) => 0,
+            };
+
+            if sz == 0 {
+                return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
+            }
+
+            if buf.len() >= H2_PREFACE.len() {
+                if &buf[..] == H2_PREFACE {
+                    return Ok((Some(Version::H2), io::PrefixedIo::new(buf.freeze(), io)));
+                }
+            }
+
+            for j in i..(buf.len() - 1) {
+                // If we've reached the end of a line, we have enough information to know whether
+                // the protocol is HTTP/1.1 or not.
+                if &buf[j..j + 2] == b"\r\n" {
+                    if !is_h2_first_line(&buf[..j + 2]) {
+                        let mut p = httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0]);
+                        // Check whether the first line looks like HTTP/1.1.
+                        let kind = match p.parse(&buf[..]) {
+                            Ok(_) | Err(httparse::Error::TooManyHeaders) => Some(Version::Http1),
+                            Err(_) => None,
+                        };
+                        return Ok((kind, io::PrefixedIo::new(buf.freeze(), io)));
+                    }
+                }
+            }
+
+            i += sz - 1;
+            if buf[i] == b'\r' {
+                i -= 1;
+            }
+        }
     }
 }
 
-// === impl AcceptHttp ===
-
-impl<T, F, H> AcceptHttp<T, F, H>
-where
-    F: NewService<T>,
-    H: NewService<(HttpVersion, T)>,
-{
-    pub fn new(target: T, server: Server, new_http: H, new_tcp: F, drain: drain::Watch) -> Self {
-        Self {
-            target,
-            server,
-            new_tcp,
-            tcp: None,
-            new_http,
-            http1: None,
-            h2: None,
-            drain,
-        }
-    }
+fn is_h2_first_line(line: &[u8]) -> bool {
+    line.len() == H2_FIRST_LINE_LEN && line == &H2_PREFACE[..H2_FIRST_LINE_LEN]
 }
 
-impl<T, I, F, FSvc, H, HSvc> Service<PrefixedIo<I>> for AcceptHttp<T, F, H>
-where
-    T: Clone,
-    I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
-    F: NewService<T, Service = FSvc> + Clone,
-    FSvc: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
-    FSvc::Error: Into<Error>,
-    FSvc::Future: Send + 'static,
-    H: NewService<(HttpVersion, T), Service = HSvc> + Clone,
-    HSvc: Service<http::Request<Body>, Response = http::Response<http::boxed::Payload>, Error = Error>
-        + Clone
-        + Unpin
-        + Send
-        + 'static,
-    HSvc::Future: Send + 'static,
-{
-    type Response = ();
-    type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_test::io;
 
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(().into()))
+    const HTTP11_LINE: &'static [u8] = b"GET / HTTP/1.1\r\n";
+    const TIMEOUT: time::Duration = time::Duration::from_secs(10);
+
+    #[tokio::test]
+    async fn h2() {
+        let (kind, _) = DetectHttp::new(TIMEOUT)
+            .detect(io::Builder::new().read(H2_PREFACE).build())
+            .await
+            .unwrap();
+        assert_eq!(kind, Some(Version::H2));
+
+        let (kind, _) = DetectHttp::new(TIMEOUT)
+            .detect(
+                io::Builder::new()
+                    .read(&H2_PREFACE[0..H2_FIRST_LINE_LEN])
+                    .read(&H2_PREFACE[H2_FIRST_LINE_LEN..])
+                    .build(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(kind, Some(Version::H2));
     }
 
-    fn call(&mut self, io: PrefixedIo<I>) -> Self::Future {
-        let version = HttpVersion::from_prefix(io.prefix());
-        match version {
-            Some(HttpVersion::Http1) => {
-                debug!("Handling as HTTP");
-                let http1 = if let Some(svc) = self.http1.clone() {
-                    trace!("HTTP service already exists");
-                    svc
-                } else {
-                    trace!("Building new HTTP service");
-                    let svc = self
-                        .new_http
-                        .new_service((HttpVersion::Http1, self.target.clone()));
-                    self.http1 = Some(svc.clone());
-                    svc
-                };
+    #[tokio::test]
+    async fn http1() {
+        let (kind, io) = DetectHttp::new(TIMEOUT)
+            .detect(io::Builder::new().read(HTTP11_LINE).build())
+            .await
+            .unwrap();
+        assert_eq!(kind, Some(Version::Http1));
+        assert_eq!(io.prefix(), HTTP11_LINE);
 
-                let client_addr = io.peer_addr();
+        let (kind, io) = DetectHttp::new(TIMEOUT)
+            .detect(
+                io::Builder::new()
+                    .read(&HTTP11_LINE[..16])
+                    .read(&HTTP11_LINE[16..])
+                    .build(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(kind, Some(Version::Http1));
+        assert_eq!(io.prefix(), HTTP11_LINE);
+    }
 
-                let conn = self
-                    .server
-                    .clone()
-                    .http1_only(true)
-                    .serve_connection(
-                        io,
-                        // Enable support for HTTP upgrades (CONNECT and websockets).
-                        HyperServerSvc::new(upgrade::Service::new(
-                            SetClientAddr::new(client_addr, http1),
-                            self.drain.clone(),
-                        )),
-                    )
-                    .with_upgrades();
+    #[tokio::test]
+    async fn unknown() {
+        let (kind, io) = DetectHttp::new(TIMEOUT)
+            .detect(io::Builder::new().read(b"foo.bar.blah\n").build())
+            .await
+            .unwrap();
+        assert_eq!(kind, None);
+        assert_eq!(&io.prefix()[..], b"foo.bar.blah\n");
 
-                Box::pin(
-                    self.drain
-                        .clone()
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .err_into::<Error>(),
-                )
-            }
+        let (kind, io) = DetectHttp::new(TIMEOUT)
+            .detect(
+                io::Builder::new()
+                    .read(&HTTP11_LINE[..14])
+                    .read(b"\n")
+                    .build(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(kind, None);
+        assert_eq!(&io.prefix()[..14], &HTTP11_LINE[..14]);
+        assert_eq!(&io.prefix()[14..], b"\n");
+    }
 
-            Some(HttpVersion::H2) => {
-                debug!("Handling as H2");
-                let h2 = if let Some(svc) = self.h2.clone() {
-                    trace!("H2 service already exists");
-                    svc
-                } else {
-                    trace!("Building new H2 service");
-                    let svc = self
-                        .new_http
-                        .new_service((HttpVersion::H2, self.target.clone()));
-                    self.h2 = Some(svc.clone());
-                    svc
-                };
-
-                let client_addr = io.peer_addr();
-
-                let conn = self
-                    .server
-                    .clone()
-                    .http2_only(true)
-                    .serve_connection(io, HyperServerSvc::new(SetClientAddr::new(client_addr, h2)));
-
-                Box::pin(
-                    self.drain
-                        .clone()
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .err_into::<Error>(),
-                )
-            }
-
-            None => {
-                debug!("Forwarding TCP");
-                let tcp = if let Some(svc) = self.tcp.clone() {
-                    trace!("TCP service already exists");
-                    svc
-                } else {
-                    trace!("Building new TCP service");
-                    let svc = self.new_tcp.new_service(self.target.clone());
-                    self.tcp = Some(svc.clone());
-                    svc
-                };
-
-                Box::pin(
-                    self.drain
-                        .clone()
-                        .ignore_signal()
-                        .release_after(tcp.oneshot(io).err_into::<Error>()),
-                )
-            }
-        }
+    #[tokio::test]
+    async fn timeout() {
+        let (io, _handle) = io::Builder::new().read(b"GET").build_with_handle();
+        let (kind, io) = DetectHttp::new(time::Duration::from_millis(1))
+            .detect(io)
+            .await
+            .unwrap();
+        assert_eq!(kind, None);
+        assert_eq!(&io.prefix()[..], b"GET");
     }
 }
