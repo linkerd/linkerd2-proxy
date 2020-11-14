@@ -15,7 +15,7 @@ ipnet = "2.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/profile-endpoint" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.15" }
 linkerd2-proxy-http = { path = "../http" }
 linkerd2-proxy-transport = { path = "../transport" }
 linkerd2-stack = { path = "../../stack" }
@@ -28,5 +28,5 @@ tracing-futures = "0.2"
 pin-project = "0.4"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/profile-endpoint", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.15", features = ["arbitrary"] }
 prost-types = "0.6.0"
