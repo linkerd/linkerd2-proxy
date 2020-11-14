@@ -36,21 +36,3 @@ impl std::fmt::Display for Unsupported {
 }
 
 impl std::error::Error for Unsupported {}
-
-#[cfg(test)]
-#[test]
-fn from_prefix() {
-    assert_eq!(Version::from_prefix(Version::H2_PREFACE), Some(Version::H2));
-    assert_eq!(
-        Version::from_prefix("GET /foo/bar/bah/baz HTTP/1.1".as_ref()),
-        Some(Version::Http1)
-    );
-    assert_eq!(
-        Version::from_prefix("GET /foo".as_ref()),
-        Some(Version::Http1)
-    );
-    assert_eq!(
-        Version::from_prefix("GET /foo/barbasdklfja\n".as_ref()),
-        None
-    );
-}
