@@ -17,26 +17,46 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
 }
 
 #[derive(Copy, Clone)]
-pub struct DetectService<N, D> {
+pub struct NewDetectService<N, D> {
     new_accept: N,
     detect: D,
 }
 
-impl<N, D: Clone> DetectService<N, D> {
+#[derive(Copy, Clone)]
+pub struct DetectService<N, D, T> {
+    target: T,
+    new_accept: N,
+    detect: D,
+}
+
+impl<N, D: Clone> NewDetectService<N, D> {
     pub fn new(new_accept: N, detect: D) -> Self {
         Self { new_accept, detect }
     }
 
-    pub fn layer(detect: D) -> impl layer::Layer<N, Service = DetectService<N, D>> + Clone {
+    pub fn layer(detect: D) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |new| Self::new(new, detect.clone()))
     }
 }
 
-impl<N, S, D, I> tower::Service<I> for DetectService<N, D>
+impl<N: Clone, D: Clone, T> NewService<T> for NewDetectService<N, D> {
+    type Service = DetectService<N, D, T>;
+
+    fn new_service(&mut self, target: T) -> DetectService<N, D, T> {
+        DetectService {
+            target,
+            new_accept: self.new_accept.clone(),
+            detect: self.detect.clone(),
+        }
+    }
+}
+
+impl<N, S, D, T, I> tower::Service<I> for DetectService<N, D, T>
 where
+    T: Clone + Send + 'static,
     I: Send + 'static,
     D: Detect<I>,
-    N: NewService<D::Kind, Service = S> + Clone + Send + 'static,
+    N: NewService<(D::Kind, T), Service = S> + Clone + Send + 'static,
     S: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     S::Error: Into<Error>,
     S::Future: Send,
@@ -52,10 +72,11 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let mut new_accept = self.new_accept.clone();
         let detect = self.detect.clone();
+        let target = self.target.clone();
         Box::pin(async move {
             let (kind, io) = detect.detect(io).await?;
             new_accept
-                .new_service(kind)
+                .new_service((kind, target))
                 .oneshot(io)
                 .err_into::<Error>()
                 .await?;
