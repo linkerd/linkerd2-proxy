@@ -128,13 +128,11 @@ where
                 let service = SetClientAddr::new(client_addr, service);
                 match version {
                     Version::Http1 => {
+                        // Enable support for HTTP upgrades (CONNECT and websockets).
+                        let service = upgrade::Service::new(service, drain.clone());
                         let conn = server
                             .http1_only(true)
-                            .serve_connection(
-                                io,
-                                // Enable support for HTTP upgrades (CONNECT and websockets).
-                                HyperServerSvc::new(upgrade::Service::new(service, drain.clone())),
-                            )
+                            .serve_connection(io, HyperServerSvc::new(service))
                             .with_upgrades();
                         Box::pin(
                             drain
