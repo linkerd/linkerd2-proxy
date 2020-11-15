@@ -173,6 +173,15 @@ mod tests {
             .unwrap();
         assert_eq!(kind, Some(Version::Http1));
         assert_eq!(io.prefix(), HTTP11_LINE);
+
+        const REQ: &'static [u8] =
+            b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
+        let (kind, io) = DetectHttp::new(TIMEOUT)
+            .detect(io::Builder::new().read(&REQ).build())
+            .await
+            .unwrap();
+        assert_eq!(kind, Some(Version::Http1));
+        assert_eq!(io.prefix(), REQ);
     }
 
     #[tokio::test]
