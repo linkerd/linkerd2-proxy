@@ -248,6 +248,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dyn-clone"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55796afa1b20c2945ca8eabfc421839f2b766619209f1ede813cf2484f31804"
+
+[[package]]
 name = "either"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1437,6 +1443,7 @@ dependencies = [
 name = "linkerd2-stack"
 version = "0.1.0"
 dependencies = [
+ "dyn-clone",
  "futures 0.3.5",
  "linkerd2-error",
  "pin-project",
