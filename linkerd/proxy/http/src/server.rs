@@ -78,6 +78,7 @@ where
     fn new_service(&mut self, (v, target): (Option<Version>, T)) -> Self::Service {
         match v {
             Some(version) => {
+                debug!(?version, "Creating HTTP service");
                 let service = self.http.new_service((version, target));
                 ServeHttp::Http {
                     version,
@@ -86,7 +87,11 @@ where
                     drain: self.drain.clone(),
                 }
             }
-            None => ServeHttp::Opaque(self.tcp.new_service(target), self.drain.clone()),
+            None => {
+                debug!("Creating TCP service");
+                let svc = self.tcp.new_service(target);
+                ServeHttp::Opaque(svc, self.drain.clone())
+            }
         }
     }
 }
