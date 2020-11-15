@@ -127,6 +127,21 @@ impl<P> Logical<P> {
     }
 }
 
+impl<P: PartialEq> PartialEq<Logical<P>> for Logical<P> {
+    fn eq(&self, other: &Logical<P>) -> bool {
+        self.orig_dst == other.orig_dst && self.protocol == other.protocol
+    }
+}
+
+impl<P: Eq> Eq for Logical<P> {}
+
+impl<P: std::hash::Hash> std::hash::Hash for Logical<P> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.orig_dst.hash(state);
+        self.protocol.hash(state);
+    }
+}
+
 impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Logical")

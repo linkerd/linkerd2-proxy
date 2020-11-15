@@ -3,7 +3,8 @@ use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_io::{self as io, AsyncReadExt};
-use linkerd2_proxy_transport::Detect;
+use linkerd2_proxy_transport::{Detect, NewDetectService};
+use linkerd2_stack::layer;
 use tokio::time;
 
 const BUFFER_CAPACITY: usize = 8192;
@@ -22,6 +23,12 @@ impl DetectHttp {
             timeout,
             capacity: BUFFER_CAPACITY,
         }
+    }
+
+    pub fn layer<N>(
+        timeout: time::Duration,
+    ) -> impl layer::Layer<N, Service = NewDetectService<N, Self>> + Clone {
+        NewDetectService::layer(Self::new(timeout))
     }
 }
 

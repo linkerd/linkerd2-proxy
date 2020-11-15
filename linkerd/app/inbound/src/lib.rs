@@ -329,6 +329,7 @@ impl Config {
             dispatch_timeout,
             max_in_flight_requests,
             detect_protocol_timeout,
+            cache_max_idle_age,
             buffer_capacity,
             ..
         } = self.proxy.clone();
@@ -375,7 +376,7 @@ impl Config {
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
-        svc::stack(http::DetectHttp::new(
+        svc::stack(http::NewServeHttp::new(
             h2_settings,
             http_server,
             svc::stack(tcp_forward)
@@ -383,12 +384,14 @@ impl Config {
                 .into_inner(),
             drain.clone(),
         ))
-        .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
-            transport::Prefix::layer(
-                http::Version::DETECT_BUFFER_CAPACITY,
-                detect_protocol_timeout,
+        .cache(
+            svc::layers().push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
             ),
-        ))
+        )
+        .push(http::DetectHttp::layer(detect_protocol_timeout))
         .into_inner()
     }
 

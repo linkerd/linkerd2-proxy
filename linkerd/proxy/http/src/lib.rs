@@ -8,7 +8,7 @@ pub mod add_header;
 pub mod balance;
 pub mod client;
 mod client_addr;
-pub mod detect;
+mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -26,9 +26,10 @@ mod version;
 
 pub use self::{
     client_addr::{ClientAddr, SetClientAddr},
+    detect::DetectHttp,
     glue::{Body as Payload, HyperServerSvc},
     override_authority::CanOverrideAuthority,
-    server::ServeHttp,
+    server::NewServeHttp,
     timeout::MakeTimeoutLayer,
     version::Version,
 };

@@ -129,14 +129,14 @@ where
         ))
         .into_inner();
 
-    svc::stack(http::DetectHttp::new(h2_settings, http, tcp, drain))
-        .check_new_service::<tcp::Accept, io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-        .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
-            transport::Prefix::layer(
-                http::Version::DETECT_BUFFER_CAPACITY,
-                detect_protocol_timeout,
-            ),
+    svc::stack(http::NewServeHttp::new(h2_settings, http, tcp, drain))
+        .check_new_service::<(Option<http::Version>, tcp::Accept), io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .cache(svc::layers().push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
         ))
+        .push(http::DetectHttp::layer(detect_protocol_timeout))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)

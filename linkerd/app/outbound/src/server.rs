@@ -110,19 +110,19 @@ where
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
     .into_inner();
 
-    let http = svc::stack(http::DetectHttp::new(
+    let http = svc::stack(http::NewServeHttp::new(
         h2_settings,
         http_server,
         tcp_balance,
         drain.clone(),
     ))
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
-        transport::Prefix::layer(
-            http::Version::DETECT_BUFFER_CAPACITY,
-            detect_protocol_timeout,
-        ),
+    .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+    .cache(svc::layers().push_on_response(
+        svc::layers()
+            .push_failfast(dispatch_timeout)
+            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
     ))
+    .push(http::DetectHttp::layer(detect_protocol_timeout))
     .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
     .into_inner();
 
