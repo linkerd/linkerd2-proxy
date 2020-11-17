@@ -2,6 +2,9 @@ pub mod endpoint;
 pub mod logical;
 mod require_identity_on_endpoint;
 
+#[cfg(test)]
+mod tests;
+
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd2_app_core::proxy::http::*;
