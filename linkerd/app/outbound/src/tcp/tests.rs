@@ -14,7 +14,6 @@ use linkerd2_app_core::{
     Addr, Error, IpMatch,
 };
 use std::{
-    convert::TryFrom,
     future::Future,
     net::SocketAddr,
     str::FromStr,
@@ -104,10 +103,9 @@ async fn tls_when_hinted() {
     };
 
     let cfg = default_config(plain_addr);
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is valid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is valid");
     let mut srv_io = support::io();
     srv_io.write(b"hello").read(b"world");
     let id_name2 = id_name.clone();
@@ -175,10 +173,9 @@ async fn resolutions_are_reused() {
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let cfg = default_config(addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is valid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint(
@@ -267,10 +264,9 @@ async fn load_balances() {
 
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is valid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO
     let mut connect = support::connect();
@@ -365,10 +361,9 @@ async fn load_balancer_add_endpoints() {
 
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is valid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is valid");
 
     let mut connect = support::connect();
     for &(addr, ref conns) in endpoints {
@@ -481,10 +476,9 @@ async fn load_balancer_remove_endpoints() {
 
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is valid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is valid");
 
     let mut connect = support::connect();
     for &(addr, ref enabled) in endpoints {
@@ -578,10 +572,9 @@ async fn no_profiles_when_outside_search_nets() {
         ..default_config(profile_addr)
     };
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is invalid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is invalid");
     let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -660,10 +653,9 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let cfg = default_config(ep);
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is invalid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
@@ -715,10 +707,9 @@ async fn profile_endpoint_propagates_conn_errors() {
     let ep2 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
 
     let cfg = default_config(ep1);
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is invalid");
+    let id_name =
+        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,

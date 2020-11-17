@@ -1,4 +1,5 @@
 use linkerd2_identity as identity;
+use std::convert::TryFrom;
 use tracing::trace;
 use untrusted;
 
@@ -31,7 +32,7 @@ pub fn match_client_hello(input: &[u8], identity: &identity::Name) -> Match {
     });
     match r {
         Ok(Some(sni)) => {
-            let m = identity::Name::from_hostname(sni.as_slice_less_safe())
+            let m = identity::Name::try_from(sni.as_slice_less_safe())
                 .map(|sni| {
                     if sni == *identity {
                         Match::Matched
@@ -199,6 +200,7 @@ fn read_u16(input: &mut untrusted::Reader<'_>) -> Result<u16, untrusted::EndOfIn
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     /// From `cargo run --example tlsclient -- --http example.com`
     static VALID_EXAMPLE_COM: &[u8] = include_bytes!("testdata/example-com-client-hello.bin");
@@ -240,7 +242,7 @@ mod tests {
     fn check_all_prefixes(expected_match: Match, identity: &str, input: &[u8]) {
         assert!(expected_match == Match::Matched || expected_match == Match::NotMatched);
 
-        let identity = identity::Name::from_hostname(identity.as_bytes()).unwrap();
+        let identity = identity::Name::from_str(identity).unwrap();
 
         let mut i = 0;
 
