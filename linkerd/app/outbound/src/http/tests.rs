@@ -6,13 +6,12 @@ use crate::test_util::{
 use crate::Config;
 use linkerd2_app_core::{
     drain, metrics,
-    proxy::tap,
-    svc,
-    svc::NewService,
+    proxy::{identity::Name, tap},
+    svc::{self, NewService},
     transport::{io, listen},
     Addr, Error,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tower::ServiceExt;
 
 fn build_server<I>(
@@ -71,10 +70,8 @@ async fn profile_endpoint_propagates_conn_errors() {
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
 
     let cfg = default_config(ep1);
-    let id_name = linkerd2_identity::Name::from_hostname(
-        b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
-    )
-    .expect("hostname is invalid");
+    let id_name = Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
