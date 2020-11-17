@@ -173,7 +173,7 @@ impl std::error::Error for InvalidSrv {}
 #[cfg(test)]
 mod tests {
     use super::{Name, Suffix};
-    use std::convert::TryFrom;
+    use std::str::FromStr;
 
     #[test]
     fn test_dns_name_parsing() {
@@ -225,7 +225,7 @@ mod tests {
         ];
 
         for case in VALID {
-            let name = Name::try_from(case.input.as_bytes());
+            let name = Name::from_str(&case.input);
             assert_eq!(name.as_ref().map(|x| x.as_ref()), Ok(case.output));
         }
 
@@ -237,7 +237,7 @@ mod tests {
         ];
 
         for case in INVALID {
-            assert!(Name::try_from(case.as_bytes()).is_err());
+            assert!(Name::from_str(case).is_err());
         }
     }
 
@@ -255,8 +255,8 @@ mod tests {
             ("a.b.c.", "b.c"),
             ("hacker.example.com", "example.com"),
         ] {
-            let n = Name::try_from((*name).as_bytes()).unwrap();
-            let s = Suffix::try_from(*suffix).unwrap();
+            let n = Name::from_str(name).unwrap();
+            let s = Suffix::from_str(suffix).unwrap();
             assert!(
                 s.contains(&n),
                 format!("{} should contain {}", suffix, name)
@@ -272,14 +272,14 @@ mod tests {
             ("b.a", "b"),
             ("hackerexample.com", "example.com"),
         ] {
-            let n = Name::try_from((*name).as_bytes()).unwrap();
-            let s = Suffix::try_from(*suffix).unwrap();
+            let n = Name::from_str(name).unwrap();
+            let s = Suffix::from_str(suffix).unwrap();
             assert!(
                 !s.contains(&n),
                 format!("{} should not contain {}", suffix, name)
             );
         }
 
-        assert!(Suffix::try_from("").is_err(), "suffix must not be empty");
+        assert!(Suffix::from_str("").is_err(), "suffix must not be empty");
     }
 }
