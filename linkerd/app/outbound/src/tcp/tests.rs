@@ -196,11 +196,7 @@ async fn resolutions_are_reused() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = support::resolver().endpoint_exists(
-        Addr::Name((svc_name.clone(), addr.port()).into()),
-        addr,
-        meta,
-    );
+    let resolver = support::resolver().endpoint_exists((svc_name.clone(), addr.port()), addr, meta);
     let resolve_state = resolver.handle();
 
     let profiles = support::profiles().profile(
@@ -299,7 +295,7 @@ async fn load_balances() {
     );
 
     let resolver = support::resolver();
-    let mut dst = resolver.endpoint_tx(Addr::Name((svc_name, svc_addr.port()).into()));
+    let mut dst = resolver.endpoint_tx((svc_name, svc_addr.port()));
     dst.add(endpoints.iter().map(|&(addr, _)| (addr, meta.clone())))
         .expect("still listening");
     let resolve_state = resolver.handle();
@@ -394,7 +390,7 @@ async fn load_balancer_add_endpoints() {
     );
 
     let resolver = support::resolver();
-    let mut dst = resolver.endpoint_tx(Addr::Name((svc_name, svc_addr.port()).into()));
+    let mut dst = resolver.endpoint_tx((svc_name, svc_addr.port()));
     dst.add(Some((endpoints[0].0, meta.clone())))
         .expect("still listening");
 
@@ -509,7 +505,7 @@ async fn load_balancer_remove_endpoints() {
     );
 
     let resolver = support::resolver();
-    let mut dst = resolver.endpoint_tx(Addr::Name((svc_name, svc_addr.port()).into()));
+    let mut dst = resolver.endpoint_tx((svc_name, svc_addr.port()));
     dst.add(Some((endpoints[0].0, meta.clone())))
         .expect("still listening");
 
@@ -612,7 +608,7 @@ async fn no_profiles_when_outside_search_nets() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = support::resolver().endpoint_exists(
-        Addr::Name((svc_name.clone(), profile_addr.port()).into()),
+        (svc_name.clone(), profile_addr.port()),
         profile_addr,
         meta,
     );
