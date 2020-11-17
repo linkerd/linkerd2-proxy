@@ -53,6 +53,13 @@ impl<'a> TryFrom<&'a [u8]> for Name {
     }
 }
 
+impl<'a> std::str::FromStr for Name {
+    type Err = InvalidName;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.as_bytes())
+    }
+}
+
 impl Into<webpki::DNSName> for Name {
     fn into(self) -> webpki::DNSName {
         self.0
