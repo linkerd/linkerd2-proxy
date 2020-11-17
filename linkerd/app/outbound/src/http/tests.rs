@@ -121,10 +121,11 @@ async fn profile_endpoint_propagates_conn_errors() {
         .await
         .map_err(Into::into);
     tracing::info!(?res);
+    let err = res.unwrap_err();
     assert_eq!(
-        res.unwrap_err()
-            .downcast_ref::<io::Error>()
-            .map(io::Error::kind),
-        Some(io::ErrorKind::ConnectionReset)
+        err.downcast_ref::<io::Error>().map(io::Error::kind),
+        Some(io::ErrorKind::ConnectionReset),
+        "\n error: {:?}",
+        err
     );
 }
