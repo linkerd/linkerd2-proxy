@@ -1,9 +1,12 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_stack::NewService;
-use std::collections::{hash_map::Entry, HashMap};
-use std::hash::Hash;
-use std::sync::{Arc, RwLock, Weak};
+use parking_lot::RwLock;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    hash::Hash,
+    sync::{Arc, Weak},
+};
 use tracing::{debug, trace};
 
 pub mod layer;
@@ -59,7 +62,7 @@ where
 
     fn new_service(&mut self, target: T) -> N::Service {
         // We expect the item to be available in most cases, so initially obtain only a read lock.
-        if let Some((service, weak)) = self.services.read().expect("lock poisoned").get(&target) {
+        if let Some((service, weak)) = self.services.read().get(&target) {
             if weak.upgrade().is_some() {
                 trace!("Using cached service");
                 return service.clone();
@@ -67,7 +70,7 @@ where
         }
 
         // Otherwise, obtain a write lock to insert a new service.
-        let mut services = self.services.write().expect("lock poisoned");
+        let mut services = self.services.write();
 
         let service = match services.entry(target.clone()) {
             Entry::Occupied(mut entry) => {
