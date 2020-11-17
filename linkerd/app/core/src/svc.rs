@@ -284,7 +284,7 @@ impl<S> Stack<S> {
         self.push(http::boxed::response::Layer::new())
     }
 
-    pub fn box_new<T>(self) -> Stack<stack::BoxNewService<T, S::Service>>
+    pub fn box_new_service<T>(self) -> Stack<stack::BoxNewService<T, S::Service>>
     where
         S: NewService<T> + Clone + Send + Sync + 'static,
         S::Service: Send + 'static,
