@@ -174,7 +174,7 @@ async fn resolutions_are_reused() {
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let cfg = default_config(addr);
-    let svc_name = profile::Name::try_from("foo.ns1.svc.example.com".as_bytes()).unwrap();
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
@@ -266,7 +266,7 @@ async fn load_balances() {
     ];
 
     let cfg = default_config(svc_addr);
-    let svc_name = profile::Name::try_from("foo.ns1.svc.example.com".as_bytes()).unwrap();
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
@@ -364,7 +364,7 @@ async fn load_balancer_add_endpoints() {
     ];
 
     let cfg = default_config(svc_addr);
-    let svc_name = profile::Name::try_from("foo.ns1.svc.example.com".as_bytes()).unwrap();
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
@@ -480,7 +480,7 @@ async fn load_balancer_remove_endpoints() {
     ];
 
     let cfg = default_config(svc_addr);
-    let svc_name = profile::Name::try_from("foo.ns1.svc.example.com".as_bytes()).unwrap();
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
@@ -577,7 +577,7 @@ async fn no_profiles_when_outside_search_nets() {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("10.0.0.0/8").unwrap())).into(),
         ..default_config(profile_addr)
     };
-    let svc_name = profile::Name::try_from("foo.ns1.svc.example.com".as_bytes()).unwrap();
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name = linkerd2_identity::Name::from_hostname(
         b"foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     )
