@@ -10,9 +10,9 @@ use linkerd2_app_core::{
     svc,
     svc::NewService,
     transport::{io, listen},
-    Addr, Error,
+    Addr,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{error::Error, net::SocketAddr, time::Duration};
 use tower::ServiceExt;
 
 fn build_server<I>(
@@ -25,7 +25,7 @@ fn build_server<I>(
     Service = impl tower::Service<
         I,
         Response = (),
-        Error = impl Into<Error>,
+        Error = impl Into<linkerd2_app_core::Error>,
         Future = impl Send + 'static,
     > + Send
                   + 'static,
@@ -112,18 +112,30 @@ async fn profile_endpoint_propagates_conn_errors() {
         Some(ep1),
     ));
 
-    let res = svc
-        .oneshot(
-            support::io()
-                .read(b"GET / HTTP/1.1\r\nHost: foo.ns1.service.cluster.local\r\n\r\n")
-                .build(),
+    let (client_io, proxy_io) = support::io::duplex(4096);
+    let client = tokio::spawn(async move {
+        let (mut req, conn) = hyper::client::conn::Builder::new()
+            .handshake(client_io)
+            .await?;
+        tokio::spawn(conn);
+        req.send_request(
+            hyper::Request::builder()
+                .header("Host", "foo.ns1.service.cluster.local")
+                .body(hyper::Body::default())
+                .unwrap(),
         )
         .await
-        .map_err(Into::into);
+    });
+
+    let res = svc.oneshot(proxy_io).await.map_err(Into::into);
     tracing::info!(?res);
-    let err = res.unwrap_err();
+    let rsp = client.await.expect("client mustn't panic!");
+    tracing::trace!(?rsp);
+    let err = rsp.unwrap_err();
     assert_eq!(
-        err.downcast_ref::<io::Error>().map(io::Error::kind),
+        err.source()
+            .and_then(Error::downcast_ref::<io::Error>)
+            .map(io::Error::kind),
         Some(io::ErrorKind::ConnectionReset),
         "\n error: {:?}",
         err
