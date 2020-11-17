@@ -284,6 +284,14 @@ impl<S> Stack<S> {
         self.push(http::boxed::response::Layer::new())
     }
 
+    pub fn box_new_service<T>(self) -> Stack<stack::BoxNewService<T, S::Service>>
+    where
+        S: NewService<T> + Clone + Send + Sync + 'static,
+        S::Service: Send + 'static,
+    {
+        self.push(layer::mk(stack::BoxNewService::new))
+    }
+
     /// Validates that this stack serves T-typed targets.
     pub fn check_new<T>(self) -> Self
     where

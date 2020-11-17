@@ -9,6 +9,7 @@ Utilities for composing Tower services.
 """
 
 [dependencies]
+dyn-clone = "1.0.3"
 futures = "0.3"
 linkerd2-error = { path = "../error" }
 pin-project = "0.4"

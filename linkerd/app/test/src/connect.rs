@@ -38,9 +38,14 @@ where
         let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");
-            match self.endpoints.lock().unwrap().get_mut(&addr) {
+            let mut endpoints = self.endpoints.lock().unwrap();
+            match endpoints.get_mut(&addr) {
                 Some(f) => (f)(endpoint),
-                None => panic!("did not expect to connect to the endpoint {:?}", endpoint),
+                None => panic!(
+                    "did not expect to connect to the endpoint {} not in {:?}",
+                    addr,
+                    endpoints.keys().collect::<Vec<_>>()
+                ),
             }
         });
         f.instrument(span)

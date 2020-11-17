@@ -73,7 +73,8 @@ impl Config {
             Future = impl Send + 'static,
         > + Send
                       + 'static,
-    > + Send
+    > + Clone
+           + Send
            + 'static
     where
         L: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
@@ -85,7 +86,7 @@ impl Config {
             + 'static,
         S::Error: Into<Error>,
         S::Future: Unpin + Send,
-        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + Sync + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
     {
@@ -173,11 +174,11 @@ impl Config {
         C::Error: Into<Error>,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         C::Future: Unpin + Send,
-        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + 'static,
+        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + Sync + 'static,
         P::Future: Unpin + Send,
         P::Error: Send,
         // The loopback router processes requests sent to the inbound port.
-        L: svc::NewService<Target, Service = S> + Unpin + Send + Clone + 'static,
+        L: svc::NewService<Target, Service = S> + Unpin + Send + Clone + Sync + 'static,
         S: tower::Service<
                 http::Request<http::boxed::Payload>,
                 Response = http::Response<http::boxed::Payload>,
@@ -283,9 +284,9 @@ impl Config {
                         .box_http_response(),
                 ),
             )
-            .into_make_service()
-            .spawn_buffer(buffer_capacity)
-            .into_new_service()
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .box_new_service()
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .into_inner()
     }
@@ -407,7 +408,8 @@ impl Config {
             Future = impl Send + 'static,
         > + Send
                       + 'static,
-    > + Send
+    > + Clone
+           + Send
            + 'static
     where
         D: svc::NewService<TcpAccept, Service = A> + Unpin + Clone + Send + Sync + 'static,
