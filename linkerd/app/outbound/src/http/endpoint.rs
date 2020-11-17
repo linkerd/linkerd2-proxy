@@ -42,6 +42,11 @@ where
         // is typically used (i.e. when communicating with other proxies); though
         // HTTP/1.x fallback is supported as needed.
         .push(http::client::layer(config.h1_settings, config.h2_settings))
+        // When a request hits an exception, we want to have an opportunity to
+        // determine whether the client should be rebuilt, or whether the whole
+        // service should fail. FailOnError causes any request-level failure to
+        // fail to become ready.
+        .push_on_response(svc::layer::mk(svc::stack::FailOnError::new))
         .push_make_thunk()
         // Re-establishes a connection when the client fails.
         .push(reconnect::layer({
