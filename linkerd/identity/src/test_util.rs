@@ -35,7 +35,7 @@ impl Identity {
     pub fn crt(&self) -> Crt {
         const HOUR: Duration = Duration::from_secs(60 * 60);
 
-        let n = Name::from_hostname(self.name.as_bytes()).expect("name must be valid");
+        let n = Name::from_str(&self.name).expect("name must be valid");
         let der = self.crt.iter().map(|b| *b).collect();
         Crt::new(n, der, vec![], SystemTime::now() + HOUR)
     }

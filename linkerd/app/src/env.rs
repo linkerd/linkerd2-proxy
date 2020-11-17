@@ -9,8 +9,7 @@ use crate::core::{
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
 use std::{
-    collections::HashMap, convert::TryFrom, fmt, fs, net::SocketAddr, path::PathBuf, str::FromStr,
-    time::Duration,
+    collections::HashMap, fmt, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration,
 };
 use tracing::{error, warn};
 
@@ -768,7 +767,7 @@ fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
 }
 
 pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
-    identity::Name::from_hostname(s.as_bytes()).map_err(|identity::InvalidName| {
+    identity::Name::from_str(s).map_err(|identity::InvalidName| {
         error!("Not a valid identity name: {}", s);
         ParseError::NameError
     })
@@ -835,9 +834,7 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
         return Ok(dns::Suffix::Root);
     }
 
-    dns::Name::try_from(s.as_bytes())
-        .map(dns::Suffix::Name)
-        .map_err(|_| ParseError::NotADomainSuffix)
+    dns::Suffix::from_str(s).map_err(|_| ParseError::NotADomainSuffix)
 }
 
 fn parse_networks(list: &str) -> Result<IndexSet<ipnet::IpNet>, ParseError> {

@@ -2,10 +2,11 @@
 
 use http;
 use linkerd2_dns_name::Name;
-use std::convert::TryFrom;
-use std::fmt;
-use std::net::{IpAddr, SocketAddr};
-use std::str::FromStr;
+use std::{
+    fmt,
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Addr {
@@ -165,7 +166,7 @@ impl NameAddr {
             return Err(Error::InvalidHost);
         }
 
-        Name::try_from(host.as_bytes())
+        Name::from_str(host)
             .map(|name| NameAddr { name, port })
             .map_err(|_| Error::InvalidHost)
     }

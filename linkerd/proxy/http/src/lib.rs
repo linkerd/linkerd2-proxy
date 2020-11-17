@@ -34,6 +34,7 @@ pub use self::{
 pub use http::{header, uri, Request, Response, StatusCode};
 pub use hyper::body::HttpBody;
 pub use linkerd2_http_box as boxed;
+use std::str::FromStr;
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
@@ -73,9 +74,7 @@ pub fn identity_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<i
 where
     K: AsHeaderName,
 {
-    header_value_from_request(req, header, |s: &str| {
-        identity::Name::from_hostname(s.as_bytes()).ok()
-    })
+    header_value_from_request(req, header, |s: &str| identity::Name::from_str(s).ok())
 }
 
 fn header_value_from_request<B, K, F, T>(
