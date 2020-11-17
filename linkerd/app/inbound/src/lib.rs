@@ -208,9 +208,10 @@ impl Config {
                 connect.h1_settings,
                 connect.h2_settings,
             ))
+            .push_make_thunk()
             .push(reconnect::layer({
                 let backoff = connect.backoff.clone();
-                move |_| Ok(backoff.stream())
+                move |_| move |_| Ok(backoff.stream())
             }))
             .check_new_service::<HttpEndpoint, http::Request<_>>();
 

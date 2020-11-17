@@ -1,4 +1,5 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
+
 #![deny(warnings, rust_2018_idioms)]
 
 use linkerd2_error::Recover;
@@ -7,28 +8,33 @@ use linkerd2_stack::{layer, NewService};
 mod service;
 
 pub fn layer<C, R: Clone>(
-    recover: R,
+    new_recover: R,
 ) -> impl layer::Layer<C, Service = NewReconnect<C, R>> + Clone {
-    layer::mk(move |connect| NewReconnect {
-        connect,
-        recover: recover.clone(),
+    layer::mk(move |new_connect| NewReconnect {
+        new_connect,
+        new_recover: new_recover.clone(),
     })
 }
 
 #[derive(Clone, Debug)]
 pub struct NewReconnect<C, R> {
-    connect: C,
-    recover: R,
+    new_connect: C,
+    new_recover: R,
 }
 
 impl<C, R, T> NewService<T> for NewReconnect<C, R>
 where
-    R: Recover + Clone,
-    C: tower::Service<T> + Clone,
+    T: Clone,
+    R: NewService<T>,
+    R::Service: Recover,
+    C: NewService<T>,
+    C::Service: tower::Service<()>,
 {
-    type Service = service::Service<T, R, C>;
+    type Service = service::Service<R::Service, C::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        service::Service::new(target, self.connect.clone(), self.recover.clone())
+        let recover = self.new_recover.new_service(target.clone());
+        let connect = self.new_connect.new_service(target);
+        service::Service::new(recover, connect)
     }
 }

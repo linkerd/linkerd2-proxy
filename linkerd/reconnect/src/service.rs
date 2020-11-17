@@ -3,12 +3,11 @@ use linkerd2_error::{Error, Recover};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct Service<T, R, M>
+pub struct Service<R, M>
 where
     R: Recover,
-    M: tower::Service<T>,
+    M: tower::Service<()>,
 {
-    target: T,
     recover: R,
     make_service: M,
     state: State<M::Future, R::Backoff>,
@@ -32,14 +31,13 @@ enum State<F: TryFuture, B> {
 
 // === impl Service ===
 
-impl<T, R, M> Service<T, R, M>
+impl<R, M> Service<R, M>
 where
     R: Recover,
-    M: tower::Service<T>,
+    M: tower::Service<()>,
 {
-    pub(crate) fn new(target: T, make_service: M, recover: R) -> Self {
+    pub(crate) fn new(recover: R, make_service: M) -> Self {
         Self {
-            target,
             recover,
             make_service,
             state: State::Disconnected { backoff: None },
@@ -47,12 +45,11 @@ where
     }
 }
 
-impl<Req, T, R, M, S> tower::Service<Req> for Service<T, R, M>
+impl<Req, R, M, S> tower::Service<Req> for Service<R, M>
 where
-    T: Clone,
     R: Recover,
     R::Backoff: Unpin,
-    M: tower::Service<T, Response = S>,
+    M: tower::Service<(), Response = S>,
     M::Error: Into<Error>,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -70,7 +67,7 @@ where
                     // `make_service` is now unusable.
                     ready!(self.make_service.poll_ready(cx)).map_err(Into::into)?;
                     State::Pending {
-                        future: Box::pin(self.make_service.call(self.target.clone())),
+                        future: Box::pin(self.make_service.call(())),
                         backoff: backoff.take(),
                     }
                 }

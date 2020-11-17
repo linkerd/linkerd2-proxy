@@ -42,14 +42,17 @@ where
         // is typically used (i.e. when communicating with other proxies); though
         // HTTP/1.x fallback is supported as needed.
         .push(http::client::layer(config.h1_settings, config.h2_settings))
+        .push_make_thunk()
         // Re-establishes a connection when the client fails.
         .push(reconnect::layer({
             let backoff = config.backoff.clone();
-            move |e: Error| {
-                if tcp::connect::is_loop(&*e) {
-                    Err(e)
-                } else {
-                    Ok(backoff.stream())
+            move |_| {
+                move |e: Error| {
+                    if tcp::connect::is_loop(&*e) {
+                        Err(e)
+                    } else {
+                        Ok(backoff.stream())
+                    }
                 }
             }
         }))
