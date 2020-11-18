@@ -12,6 +12,7 @@ pub struct InvalidName;
 
 impl Name {
     pub fn is_localhost(&self) -> bool {
+        use std::str::FromStr;
         *self == Name::from_str("localhost.").unwrap()
     }
 
