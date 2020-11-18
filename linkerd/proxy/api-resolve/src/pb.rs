@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use std::{collections::HashMap, net::SocketAddr};
 
 /// Construct a new labeled `SocketAddr `from a protobuf `WeightedAddr`.
-pub(in crate) fn to_addr_meta(
+pub fn to_addr_meta(
     pb: WeightedAddr,
     set_labels: &HashMap<String, String>,
 ) -> Option<(SocketAddr, Metadata)> {

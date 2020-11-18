@@ -116,6 +116,15 @@ impl<P> Logical<P> {
             .map(|n| Addr::from((n, self.orig_dst.port())))
             .unwrap_or_else(|| self.orig_dst.into())
     }
+
+    pub fn should_resolve(&self) -> bool {
+        if let Some(p) = self.profile.as_ref() {
+            let p = p.borrow();
+            p.endpoint.is_none() && (p.name.is_some() || p.targets.len() > 0)
+        } else {
+            false
+        }
+    }
 }
 
 impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
@@ -160,13 +169,34 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 
 impl<P> Endpoint<P> {
     pub fn from_logical(reason: tls::ReasonForNoPeerName) -> impl (Fn(Logical<P>) -> Self) + Clone {
-        move |logical| Self {
-            addr: (&logical).into(),
-            metadata: Metadata::default(),
-            identity: tls::PeerIdentity::None(reason),
-            concrete: Concrete {
-                logical,
-                resolve: None,
+        move |logical| match logical
+            .profile
+            .as_ref()
+            .and_then(|p| p.borrow().endpoint.clone())
+        {
+            None => Self {
+                addr: (&logical).into(),
+                metadata: Metadata::default(),
+                identity: tls::PeerIdentity::None(reason),
+                concrete: Concrete {
+                    logical,
+                    resolve: None,
+                },
+            },
+            Some((addr, metadata)) => Self {
+                addr: addr.into(),
+                identity: metadata
+                    .identity()
+                    .cloned()
+                    .map(tls::Conditional::Some)
+                    .unwrap_or(tls::Conditional::None(
+                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+                    )),
+                metadata,
+                concrete: Concrete {
+                    logical,
+                    resolve: None,
+                },
             },
         }
     }

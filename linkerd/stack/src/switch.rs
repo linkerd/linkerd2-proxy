@@ -20,6 +20,12 @@ pub struct MakeSwitch<S, P, F> {
     fallback: F,
 }
 
+impl<T, F: Fn(&T) -> bool> Switch<T> for F {
+    fn use_primary(&self, target: &T) -> bool {
+        (self)(target)
+    }
+}
+
 impl<S, P, F> MakeSwitch<S, P, F> {
     pub fn new(switch: S, primary: P, fallback: F) -> Self {
         MakeSwitch {

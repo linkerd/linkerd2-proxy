@@ -267,7 +267,7 @@ impl Config {
 
         // If the traffic is targeted at the inbound port, send it through
         // the loopback service (i.e. as a gateway).
-        let switch_loopback = svc::stack::MakeSwitch::new(prevent_loop, loopback, profile);
+        let switch_loopback = svc::stack(loopback).push_switch(prevent_loop, profile);
 
         // Attempts to resolve the target as a service profile or, if that
         // fails, skips that stack to forward to the local endpoint.
@@ -423,25 +423,24 @@ impl Config {
             ..
         } = self.proxy;
         let require_identity = self.require_identity_for_inbound_ports;
-        let skip_detect = self.disable_protocol_detection_for_ports;
 
-        svc::stack::MakeSwitch::new(
-            skip_detect,
-            svc::stack(detect)
-                .push_request_filter(require_identity)
-                .push(metrics.transport.layer_accept())
-                .push_map_target(TcpAccept::from)
-                .push(tls::DetectTls::layer(
-                    identity.clone(),
-                    detect_protocol_timeout,
-                ))
-                .into_inner(),
-            svc::stack(tcp_forward)
-                .push_map_target(TcpEndpoint::from)
-                .push(metrics.transport.layer_accept())
-                .push_map_target(TcpAccept::from)
-                .into_inner(),
-        )
+        svc::stack(detect)
+            .push_request_filter(require_identity)
+            .push(metrics.transport.layer_accept())
+            .push_map_target(TcpAccept::from)
+            .push(tls::DetectTls::layer(
+                identity.clone(),
+                detect_protocol_timeout,
+            ))
+            .push_switch(
+                self.disable_protocol_detection_for_ports,
+                svc::stack(tcp_forward)
+                    .push_map_target(TcpEndpoint::from)
+                    .push(metrics.transport.layer_accept())
+                    .push_map_target(TcpAccept::from)
+                    .into_inner(),
+            )
+            .into_inner()
     }
 }
 

@@ -6,7 +6,7 @@ use linkerd2_proxy_api as api;
 use linkerd2_proxy_core as core;
 
 mod metadata;
-mod pb;
+pub mod pb;
 mod resolve;
 
 pub use self::metadata::{Metadata, ProtocolHint};
