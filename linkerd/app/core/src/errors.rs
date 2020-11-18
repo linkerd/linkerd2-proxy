@@ -188,10 +188,10 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     }
                 }
 
-                // Gracefully teardown the serverside connection.
+                // Gracefully teardown the server-side connection.
                 if should_teardown_connection(&*error) {
                     if let Some(c) = self.close.as_ref() {
-                        debug!("Closing serverside connection");
+                        debug!("Closing server-side connection");
                         c.close();
                     }
                 }
