@@ -9,32 +9,36 @@ use linkerd2_app_core::{
     proxy::{identity::Name, tap},
     svc::{self, NewService},
     transport::{io, listen},
-    Addr,
+    Addr, Error,
 };
-use std::{error::Error, net::SocketAddr, str::FromStr, time::Duration};
-use tower::ServiceExt;
+use std::{net::SocketAddr, str::FromStr, time::Duration};
+use tokio::time;
+use tower::{Service, ServiceExt};
 
 fn build_server<I>(
     cfg: Config,
     profiles: resolver::Profiles<SocketAddr>,
     resolver: resolver::Dst<Addr, resolver::Metadata>,
     connect: Connect<Endpoint>,
-) -> impl svc::NewService<
-    listen::Addrs,
-    Service = impl tower::Service<
-        I,
-        Response = (),
-        Error = impl Into<linkerd2_app_core::Error>,
-        Future = impl Send + 'static,
-    > + Send
-                  + 'static,
-> + Send
-       + 'static
+) -> (
+    impl svc::NewService<
+            listen::Addrs,
+            Service = impl tower::Service<
+                I,
+                Response = (),
+                Error = impl Into<linkerd2_app_core::Error>,
+                Future = impl Send + 'static,
+            > + Send
+                          + 'static,
+        > + Send
+        + 'static,
+    drain::Signal,
+)
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (_, drain) = drain::channel();
+    let (drain_tx, drain) = drain::channel();
 
     let (_, tap, _) = tap::new();
     let router = super::logical::stack(
@@ -49,7 +53,7 @@ where
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    crate::server::stack(
+    let svc = crate::server::stack(
         &cfg,
         profiles,
         resolver,
@@ -58,7 +62,8 @@ where
         metrics.outbound,
         None,
         drain,
-    )
+    );
+    (svc, drain_tx)
 }
 
 #[tokio::test(core_threads = 1)]
@@ -68,6 +73,11 @@ async fn profile_endpoint_propagates_conn_errors() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let addrs = listen::Addrs::new(
+        ([127, 0, 0, 1], 4140).into(),
+        ([127, 0, 0, 1], 666).into(),
+        Some(ep1),
+    );
 
     let cfg = default_config(ep1);
     let id_name = Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -101,40 +111,51 @@ async fn profile_endpoint_propagates_conn_errors() {
     let resolver = support::resolver::<Addr, support::resolver::Metadata>();
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let (mut s, shutdown) = build_server(cfg, profiles, resolver, connect);
+    let server = s.new_service(addrs);
 
-    let svc = server.new_service(listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
-    ));
+    let (client_io, server_io) = support::io::duplex(4096);
+    tokio::spawn(async move {
+        let res = server.oneshot(server_io).err_into::<Error>().await;
+        tracing::info!(?res, "Server complete");
+        res
+    });
+    let (mut client, conn) = hyper::client::conn::Builder::new()
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+    let mut client_task = tokio::spawn(async move {
+        let res = conn.await;
+        tracing::info!(?res, "Client connection complete");
+        res
+    });
 
-    let (client_io, proxy_io) = support::io::duplex(4096);
-    let client = tokio::spawn(async move {
-        let (mut req, conn) = hyper::client::conn::Builder::new()
-            .handshake(client_io)
-            .await?;
-        tokio::spawn(conn);
-        req.send_request(
+    let rsp = client
+        .ready_and()
+        .await
+        .expect("Client must not fail")
+        .call(
             hyper::Request::builder()
                 .header("Host", "foo.ns1.service.cluster.local")
                 .body(hyper::Body::default())
                 .unwrap(),
         )
         .await
-    });
+        .expect("Request must succeed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
 
-    let res = svc.oneshot(proxy_io).await.map_err(Into::into);
-    tracing::info!(?res);
-    let rsp = client.await.expect("client mustn't panic!");
-    tracing::trace!(?rsp);
-    let err = rsp.unwrap_err();
-    assert_eq!(
-        err.source()
-            .and_then(Error::downcast_ref::<io::Error>)
-            .map(io::Error::kind),
-        Some(io::ErrorKind::ConnectionReset),
-        "\n error: {:?}",
-        err
-    );
+    tokio::select! {
+        _ = time::delay_for(time::Duration::from_secs(10)) => {
+            panic!("timeout");
+        }
+        res = &mut client_task => {
+            tracing::info!(?res, "Client task completed");
+            res.expect("Client task must not fail").expect("Client must close gracefully");
+        }
+    }
+
+    drop(client_task);
+    drop(client);
+    drop(shutdown);
 }

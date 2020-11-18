@@ -174,12 +174,17 @@ where
                 let drain = self.drain.clone();
                 Box::pin(async move {
                     tokio::select! {
-                        res = &mut conn => res?,
+                        res = &mut conn => {
+                            debug!("The client is shutting down the connection");
+                            res?
+                        }
                         shutdown = drain.signal() => {
+                            debug!("The process is shutting down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             shutdown.release_after(conn).await?;
                         }
                         () = closed.closed() => {
+                            debug!("The stack is tearing down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             conn.await?;
                         }
@@ -214,12 +219,17 @@ where
                 let drain = self.drain.clone();
                 Box::pin(async move {
                     tokio::select! {
-                        res = &mut conn => res?,
+                        res = &mut conn => {
+                            debug!("The client is shutting down the connection");
+                            res?
+                        }
                         shutdown = drain.signal() => {
+                            debug!("The process is shutting down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             shutdown.release_after(conn).await?;
                         }
                         () = closed.closed() => {
+                            debug!("The stack is tearing down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             conn.await?;
                         }
