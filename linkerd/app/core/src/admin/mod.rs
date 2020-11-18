@@ -184,7 +184,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve
         Box::pin(async move {
             tokio::select! {
                 res = &mut conn => res?,
-                () = closed.closed() => {
+                () = closed => {
                     Pin::new(&mut conn).graceful_shutdown();
                     conn.await?;
                 }

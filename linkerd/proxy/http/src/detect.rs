@@ -175,7 +175,7 @@ where
                 Box::pin(async move {
                     tokio::select! {
                         res = &mut conn => {
-                            debug!("The client is shutting down the connection");
+                            debug!(?res, "The client is shutting down the connection");
                             res?
                         }
                         shutdown = drain.signal() => {
@@ -183,7 +183,7 @@ where
                             Pin::new(&mut conn).graceful_shutdown();
                             shutdown.release_after(conn).await?;
                         }
-                        () = closed.closed() => {
+                        () = closed => {
                             debug!("The stack is tearing down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             conn.await?;
@@ -220,7 +220,7 @@ where
                 Box::pin(async move {
                     tokio::select! {
                         res = &mut conn => {
-                            debug!("The client is shutting down the connection");
+                            debug!(?res, "The client is shutting down the connection");
                             res?
                         }
                         shutdown = drain.signal() => {
@@ -228,7 +228,7 @@ where
                             Pin::new(&mut conn).graceful_shutdown();
                             shutdown.release_after(conn).await?;
                         }
-                        () = closed.closed() => {
+                        () = closed => {
                             debug!("The stack is tearing down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             conn.await?;

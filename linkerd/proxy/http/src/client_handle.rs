@@ -1,5 +1,7 @@
 use std::{
+    future::Future,
     net::SocketAddr,
+    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -19,10 +21,7 @@ pub struct ClientHandle {
 #[derive(Clone, Debug)]
 pub struct Close(Arc<Notify>);
 
-/// A handle to be notified when the client connection is complete.
-#[must_use = "Closed handle must be used"]
-#[derive(Debug)]
-pub struct Closed(Arc<Notify>);
+pub type Closed = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 /// A middleware that adds a clone of the `ClientHandle` as an extension to each
 /// request.
@@ -30,20 +29,6 @@ pub struct Closed(Arc<Notify>);
 pub struct SetClientHandle<S> {
     inner: S,
     handle: ClientHandle,
-}
-
-// === ClientHandle ===
-
-impl AsRef<SocketAddr> for ClientHandle {
-    fn as_ref(&self) -> &SocketAddr {
-        &self.addr
-    }
-}
-
-impl Into<SocketAddr> for ClientHandle {
-    fn into(self) -> SocketAddr {
-        self.addr
-    }
 }
 
 // === Close ===
@@ -54,26 +39,18 @@ impl Close {
     }
 }
 
-// === Closed ===
-
-impl Closed {
-    pub async fn closed(self) {
-        self.0.notified().await
-    }
-
-    pub fn ignore(self) {}
-}
-
 // === SetClientHandle ===
 
 impl<S> SetClientHandle<S> {
     pub fn new(addr: SocketAddr, inner: S) -> (Self, Closed) {
         let notify = Arc::new(Notify::new());
-        let closed = Closed(notify.clone());
         let handle = ClientHandle {
             addr,
-            close: Close(notify),
+            close: Close(notify.clone()),
         };
+        let closed = Box::pin(async move {
+            notify.notified().await;
+        });
         (Self { inner, handle }, closed)
     }
 }
