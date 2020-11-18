@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use http;
 use linkerd2_dns_name::Name;
 use std::{
     fmt,

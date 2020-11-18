@@ -44,7 +44,7 @@ where
         .push(http::client::layer(config.h1_settings, config.h2_settings))
         // Re-establishes a connection when the client fails.
         .push(reconnect::layer({
-            let backoff = config.backoff.clone();
+            let backoff = config.backoff;
             move |e: Error| {
                 if tcp::connect::is_loop(&*e) {
                     Err(e)

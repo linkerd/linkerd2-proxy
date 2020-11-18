@@ -12,7 +12,8 @@ pub struct InvalidName;
 
 impl Name {
     pub fn is_localhost(&self) -> bool {
-        *self == Name::try_from("localhost.".as_bytes()).unwrap()
+        use std::str::FromStr;
+        *self == Name::from_str("localhost.").unwrap()
     }
 
     pub fn without_trailing_dot(&self) -> &str {

@@ -210,7 +210,7 @@ impl Config {
                 connect.h2_settings,
             ))
             .push(reconnect::layer({
-                let backoff = connect.backoff.clone();
+                let backoff = connect.backoff;
                 move |_| Ok(backoff.stream())
             }))
             .check_new_service::<HttpEndpoint, http::Request<_>>();
