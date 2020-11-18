@@ -2,6 +2,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+mod box_new_service;
 mod fail_on_error;
 mod future_service;
 pub mod layer;
@@ -19,6 +20,7 @@ pub mod router;
 mod switch;
 mod switch_ready;
 
+pub use self::box_new_service::BoxNewService;
 pub use self::fail_on_error::FailOnError;
 pub use self::future_service::FutureService;
 pub use self::make_ready::{MakeReady, MakeReadyLayer};

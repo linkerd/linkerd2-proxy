@@ -2,6 +2,9 @@ pub mod endpoint;
 pub mod logical;
 mod require_identity_on_endpoint;
 
+#[cfg(test)]
+mod tests;
+
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd2_app_core::proxy::http::*;
@@ -9,7 +12,7 @@ use linkerd2_app_core::{
     dst, profiles,
     proxy::{
         api_resolve::ProtocolHint,
-        http::{self, CanOverrideAuthority, ClientAddr},
+        http::{self, CanOverrideAuthority, ClientHandle},
         identity, tap,
     },
     transport::tls,
@@ -71,7 +74,7 @@ impl CanOverrideAuthority for Endpoint {
 
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<ClientAddr>().map(|c| *c.as_ref())
+        req.extensions().get::<ClientHandle>().map(|c| c.addr)
     }
 
     fn src_tls<'a, B>(
