@@ -4,11 +4,11 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{
-    proxy::http::{ClientAddr, SetClientAddr},
+    proxy::http::{ClientHandle, SetClientHandle},
     svc, trace,
     transport::{io, tls},
 };
-use futures::{future, TryFutureExt};
+use futures::future;
 use http::StatusCode;
 use hyper::{Body, Request, Response};
 use linkerd2_error::{Error, Never};
@@ -98,8 +98,8 @@ impl<M> Admin<M> {
 
     fn client_is_localhost<B>(req: &Request<B>) -> bool {
         req.extensions()
-            .get::<ClientAddr>()
-            .map(|a| a.as_ref().ip().is_loopback())
+            .get::<ClientHandle>()
+            .map(|a| a.addr.ip().is_loopback())
             .unwrap_or(false)
     }
 }
@@ -178,9 +178,20 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve
         // Since the `/proxy-log-level` controls access based on the
         // client's IP address, we wrap the service with a new service
         // that adds the remote IP as a request extension.
-        let svc = SetClientAddr::new(meta.addrs.peer(), svc.clone());
+        let (svc, closed) = SetClientHandle::new(meta.addrs.peer(), svc.clone());
+        let mut conn = server.serve_connection(io, svc);
 
-        Box::pin(server.serve_connection(io, svc).map_err(Into::into))
+        Box::pin(async move {
+            tokio::select! {
+                res = &mut conn => res?,
+                () = closed.closed() => {
+                    Pin::new(&mut conn).graceful_shutdown();
+                    conn.await?;
+                }
+            }
+
+            Ok(())
+        })
     }
 }
 
