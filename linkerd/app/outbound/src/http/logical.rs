@@ -123,13 +123,7 @@ where
         .push_switch(
             Logical::should_resolve,
             svc::stack(endpoint)
-                .push_on_response(
-                    svc::layers()
-                        .push(svc::layer::mk(
-                            svc::stack::FailOnError::<std::io::Error, S>::new,
-                        ))
-                        .box_http_request(),
-                )
+                .push_on_response(svc::layers().box_http_request())
                 .push_map_target(Endpoint::from_logical(
                     ReasonForNoPeerName::NotProvidedByServiceDiscovery,
                 ))

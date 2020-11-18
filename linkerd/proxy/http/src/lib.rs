@@ -7,7 +7,7 @@ use linkerd2_identity as identity;
 pub mod add_header;
 pub mod balance;
 pub mod client;
-mod client_addr;
+pub mod client_handle;
 pub mod detect;
 mod glue;
 pub mod h1;
@@ -24,7 +24,7 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    client_addr::{ClientAddr, SetClientAddr},
+    client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{Body as Payload, HyperServerSvc},
     override_authority::CanOverrideAuthority,

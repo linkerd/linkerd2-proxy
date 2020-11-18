@@ -1,6 +1,6 @@
 use crate::{
     self as http,
-    client_addr::SetClientAddr,
+    client_handle::SetClientHandle,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
     trace, upgrade, Version as HttpVersion,
@@ -158,28 +158,40 @@ where
                     svc
                 };
 
-                let client_addr = io.peer_addr();
+                let (svc, closed) = SetClientHandle::new(io.peer_addr(), http1);
 
-                let conn = self
+                let mut conn = self
                     .server
                     .clone()
                     .http1_only(true)
                     .serve_connection(
                         io,
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        HyperServerSvc::new(upgrade::Service::new(
-                            SetClientAddr::new(client_addr, http1),
-                            self.drain.clone(),
-                        )),
+                        HyperServerSvc::new(upgrade::Service::new(svc, self.drain.clone())),
                     )
                     .with_upgrades();
 
-                Box::pin(
-                    self.drain
-                        .clone()
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .err_into::<Error>(),
-                )
+                let drain = self.drain.clone();
+                Box::pin(async move {
+                    tokio::select! {
+                        res = &mut conn => {
+                            debug!(?res, "The client is shutting down the connection");
+                            res?
+                        }
+                        shutdown = drain.signal() => {
+                            debug!("The process is shutting down the connection");
+                            Pin::new(&mut conn).graceful_shutdown();
+                            shutdown.release_after(conn).await?;
+                        }
+                        () = closed => {
+                            debug!("The stack is tearing down the connection");
+                            Pin::new(&mut conn).graceful_shutdown();
+                            conn.await?;
+                        }
+                    }
+
+                    Ok(())
+                })
             }
 
             Some(HttpVersion::H2) => {
@@ -196,20 +208,35 @@ where
                     svc
                 };
 
-                let client_addr = io.peer_addr();
+                let (svc, closed) = SetClientHandle::new(io.peer_addr(), h2);
 
-                let conn = self
+                let mut conn = self
                     .server
                     .clone()
                     .http2_only(true)
-                    .serve_connection(io, HyperServerSvc::new(SetClientAddr::new(client_addr, h2)));
+                    .serve_connection(io, HyperServerSvc::new(svc));
 
-                Box::pin(
-                    self.drain
-                        .clone()
-                        .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                        .err_into::<Error>(),
-                )
+                let drain = self.drain.clone();
+                Box::pin(async move {
+                    tokio::select! {
+                        res = &mut conn => {
+                            debug!(?res, "The client is shutting down the connection");
+                            res?
+                        }
+                        shutdown = drain.signal() => {
+                            debug!("The process is shutting down the connection");
+                            Pin::new(&mut conn).graceful_shutdown();
+                            shutdown.release_after(conn).await?;
+                        }
+                        () = closed => {
+                            debug!("The stack is tearing down the connection");
+                            Pin::new(&mut conn).graceful_shutdown();
+                            conn.await?;
+                        }
+                    }
+
+                    Ok(())
+                })
             }
 
             None => {

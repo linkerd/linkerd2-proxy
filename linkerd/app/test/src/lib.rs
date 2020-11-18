@@ -14,7 +14,10 @@ pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
 use std::fmt;
-pub use tokio_test::io;
+pub mod io {
+    pub use tokio::io::*;
+    pub use tokio_test::io::*;
+}
 
 pub mod connect;
 pub mod profile;
