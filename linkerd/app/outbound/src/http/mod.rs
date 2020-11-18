@@ -71,9 +71,7 @@ impl CanOverrideAuthority for Endpoint {
 
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions()
-            .get::<ClientAddr>()
-            .map(|c| c.as_ref().clone())
+        req.extensions().get::<ClientAddr>().map(|c| *c.as_ref())
     }
 
     fn src_tls<'a, B>(

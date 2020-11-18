@@ -278,7 +278,7 @@ impl tower::Service<hyper::Uri> for Conn {
 
     fn call(&mut self, _: hyper::Uri) -> Self::Future {
         let tls = self.tls.clone();
-        let conn = TcpStream::connect(self.addr.clone());
+        let conn = TcpStream::connect(self.addr);
         let abs_form = self.absolute_uris;
         let running = self
             .running

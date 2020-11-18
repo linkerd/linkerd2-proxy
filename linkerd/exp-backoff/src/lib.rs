@@ -43,7 +43,7 @@ pub struct InvalidBackoff(&'static str);
 impl ExponentialBackoff {
     pub fn stream(&self) -> ExponentialBackoffStream {
         ExponentialBackoffStream {
-            backoff: self.clone(),
+            backoff: *self,
             rng: SmallRng::from_entropy(),
             iterations: 0,
             delay: None,

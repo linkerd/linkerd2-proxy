@@ -190,7 +190,7 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                 }
 
                 let version = match self {
-                    Respond::Http1(ref version) => version.clone(),
+                    Respond::Http1(version) => *version,
                     Respond::Http2 { .. } => http::Version::HTTP_2,
                 };
 
