@@ -127,7 +127,7 @@ where
                 service,
                 drain,
                 mut server,
-            } => {
+            } => Box::pin(async move {
                 debug!(?version, "Handling as HTTP");
                 let (svc, closed) = SetClientHandle::new(io.peer_addr(), service);
                 match version {
@@ -139,55 +139,49 @@ where
                             .serve_connection(io, HyperServerSvc::new(svc))
                             .with_upgrades();
 
-                        Box::pin(async move {
-                            tokio::select! {
-                                res = &mut conn => {
-                                    debug!(?res, "The client is shutting down the connection");
-                                    res?
-                                }
-                                shutdown = drain.signal() => {
-                                    debug!("The process is shutting down the connection");
-                                    Pin::new(&mut conn).graceful_shutdown();
-                                    shutdown.release_after(conn).await?;
-                                }
-                                () = closed => {
-                                    debug!("The stack is tearing down the connection");
-                                    Pin::new(&mut conn).graceful_shutdown();
-                                    conn.await?;
-                                }
+                        tokio::select! {
+                            res = &mut conn => {
+                                debug!(?res, "The client is shutting down the connection");
+                                res?
                             }
-
-                            Ok(())
-                        })
+                            shutdown = drain.signal() => {
+                                debug!("The process is shutting down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            () = closed => {
+                                debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
+                        }
                     }
                     Version::H2 => {
                         let mut conn = server
                             .http2_only(true)
                             .serve_connection(io, HyperServerSvc::new(svc));
 
-                        Box::pin(async move {
-                            tokio::select! {
-                                res = &mut conn => {
-                                    debug!(?res, "The client is shutting down the connection");
-                                    res?
-                                }
-                                shutdown = drain.signal() => {
-                                    debug!("The process is shutting down the connection");
-                                    Pin::new(&mut conn).graceful_shutdown();
-                                    shutdown.release_after(conn).await?;
-                                }
-                                () = closed => {
-                                    debug!("The stack is tearing down the connection");
-                                    Pin::new(&mut conn).graceful_shutdown();
-                                    conn.await?;
-                                }
+                        tokio::select! {
+                            res = &mut conn => {
+                                debug!(?res, "The client is shutting down the connection");
+                                res?
                             }
-
-                            Ok(())
-                        })
+                            shutdown = drain.signal() => {
+                                debug!("The process is shutting down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            () = closed => {
+                                debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
+                        }
                     }
                 }
-            }
+
+                Ok(())
+            }),
             Self::Opaque(tcp, drain) => {
                 debug!("Forwarding TCP");
                 Box::pin(
