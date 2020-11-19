@@ -42,6 +42,12 @@ impl PeerAddr for tokio_test::io::Mock {
     }
 }
 
+#[cfg(feature = "tokio-test")]
+impl PeerAddr for tokio::io::DuplexStream {
+    fn peer_addr(&self) -> SocketAddr {
+        ([0, 0, 0, 0], 0).into()
+    }
+}
 mod internal {
     use super::{AsyncRead, AsyncWrite, PeerAddr, Poll};
     use bytes::{Buf, BufMut};

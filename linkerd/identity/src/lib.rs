@@ -4,11 +4,7 @@ use linkerd2_dns_name;
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
-use std::convert::TryFrom;
-use std::error::Error;
-use std::sync::Arc;
-use std::time::SystemTime;
-use std::{fmt, fs, io};
+use std::{convert::TryFrom, error::Error, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
 use tracing::{debug, warn};
 
 #[cfg(any(test, feature = "test-util"))]
@@ -132,16 +128,32 @@ impl From<linkerd2_dns_name::Name> for Name {
 }
 
 impl Name {
-    pub fn from_hostname(hostname: &[u8]) -> Result<Self, InvalidName> {
-        if hostname.last() == Some(&b'.') {
+    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
+        self.0.as_dns_name_ref()
+    }
+}
+
+impl FromStr for Name {
+    type Err = InvalidName;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.as_bytes().last() == Some(&b'.') {
             return Err(InvalidName); // SNI hostnames are implicitly absolute.
         }
 
-        linkerd2_dns_name::Name::try_from(hostname).map(|n| Name(Arc::new(n)))
+        linkerd2_dns_name::Name::from_str(s).map(|n| Name(Arc::new(n)))
     }
+}
 
-    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
-        self.0.as_dns_name_ref()
+impl TryFrom<&[u8]> for Name {
+    type Error = InvalidName;
+
+    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
+        if s.last() == Some(&b'.') {
+            return Err(InvalidName); // SNI hostnames are implicitly absolute.
+        }
+
+        linkerd2_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
     }
 }
 

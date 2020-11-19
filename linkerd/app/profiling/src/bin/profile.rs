@@ -24,8 +24,8 @@ async fn main() {
         .next()
         .expect("PROFILING_SUPPORT_SERVER resolved to no addrs!");
 
-    let srv = server::mock_listening(addr.clone());
-    let srv2 = server::mock_listening(addr.clone());
+    let srv = server::mock_listening(addr);
+    let srv2 = server::mock_listening(addr);
 
     let ctrl = controller::new();
     let transparency_tx = ctrl.destination_tx("transparency.test.svc.cluster.local");

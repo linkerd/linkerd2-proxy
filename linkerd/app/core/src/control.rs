@@ -61,7 +61,7 @@ impl Config {
             .push(tls::ConnectLayer::new(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push(reconnect::layer(backoff.clone()))
+            .push(reconnect::layer(backoff))
             .push(self::resolve::layer(dns, backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()

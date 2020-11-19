@@ -210,7 +210,7 @@ impl Config {
                 connect.h2_settings,
             ))
             .push(reconnect::layer({
-                let backoff = connect.backoff.clone();
+                let backoff = connect.backoff;
                 move |_| Ok(backoff.stream())
             }))
             .check_new_service::<HttpEndpoint, http::Request<_>>();
@@ -285,7 +285,7 @@ impl Config {
             )
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
-            .box_new()
+            .box_new_service()
             .check_new_service::<Target, http::Request<http::boxed::Payload>>()
             .into_inner()
     }

@@ -1,6 +1,6 @@
 use crate::{
     self as http,
-    client_addr::SetClientAddr,
+    client_handle::SetClientHandle,
     glue::{Body, HyperServerSvc},
     h2::Settings as H2Settings,
     trace, upgrade, Version,
@@ -128,32 +128,63 @@ where
                 drain,
                 mut server,
             } => {
-                let client_addr = io.peer_addr();
-                debug!(?version, ?client_addr, "Handling as HTTP");
-                let service = SetClientAddr::new(client_addr, service);
+                debug!(?version, "Handling as HTTP");
+                let (svc, closed) = SetClientHandle::new(io.peer_addr(), service);
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let service = upgrade::Service::new(service, drain.clone());
-                        let conn = server
+                        let svc = upgrade::Service::new(svc, drain.clone());
+                        let mut conn = server
                             .http1_only(true)
-                            .serve_connection(io, HyperServerSvc::new(service))
+                            .serve_connection(io, HyperServerSvc::new(svc))
                             .with_upgrades();
-                        Box::pin(
-                            drain
-                                .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                                .err_into::<Error>(),
-                        )
+
+                        Box::pin(async move {
+                            tokio::select! {
+                                res = &mut conn => {
+                                    debug!(?res, "The client is shutting down the connection");
+                                    res?
+                                }
+                                shutdown = drain.signal() => {
+                                    debug!("The process is shutting down the connection");
+                                    Pin::new(&mut conn).graceful_shutdown();
+                                    shutdown.release_after(conn).await?;
+                                }
+                                () = closed => {
+                                    debug!("The stack is tearing down the connection");
+                                    Pin::new(&mut conn).graceful_shutdown();
+                                    conn.await?;
+                                }
+                            }
+
+                            Ok(())
+                        })
                     }
                     Version::H2 => {
-                        let conn = server
+                        let mut conn = server
                             .http2_only(true)
-                            .serve_connection(io, HyperServerSvc::new(service));
-                        Box::pin(
-                            drain
-                                .watch(conn, |conn| Pin::new(conn).graceful_shutdown())
-                                .err_into::<Error>(),
-                        )
+                            .serve_connection(io, HyperServerSvc::new(svc));
+
+                        Box::pin(async move {
+                            tokio::select! {
+                                res = &mut conn => {
+                                    debug!(?res, "The client is shutting down the connection");
+                                    res?
+                                }
+                                shutdown = drain.signal() => {
+                                    debug!("The process is shutting down the connection");
+                                    Pin::new(&mut conn).graceful_shutdown();
+                                    shutdown.release_after(conn).await?;
+                                }
+                                () = closed => {
+                                    debug!("The stack is tearing down the connection");
+                                    Pin::new(&mut conn).graceful_shutdown();
+                                    conn.await?;
+                                }
+                            }
+
+                            Ok(())
+                        })
                     }
                 }
             }

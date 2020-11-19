@@ -93,6 +93,18 @@ where
         .check_new_service::<(http::Version, tcp::Logical), http::Request<_>>()
         .into_inner();
 
+    let tcp_forward = svc::stack(tcp_connect.clone())
+        .push_make_thunk()
+        .check_make_service::<tcp::Endpoint, ()>()
+        .push_on_response(svc::layer::mk(tcp::Forward::new))
+        .into_new_service()
+        .check_new_service::<tcp::Endpoint, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .push_map_target(tcp::Endpoint::from_logical(
+            tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+        ))
+        .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .into_inner();
+
     // Load balances TCP streams that cannot be decoded as HTTP.
     let tcp_balance = svc::stack(tcp::balance::stack(
         &config.proxy,
@@ -101,6 +113,8 @@ where
     ))
     .push_map_target(tcp::Concrete::from)
     .push(profiles::split::layer())
+    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+    .push_switch(tcp::Logical::should_resolve, tcp_forward)
     .push_on_response(
         svc::layers()
             .push_failfast(dispatch_timeout)

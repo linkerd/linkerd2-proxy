@@ -5,7 +5,7 @@ use linkerd2_error::Error;
 use linkerd2_error_metrics as metrics;
 use linkerd2_error_respond as respond;
 pub use linkerd2_error_respond::RespondLayer;
-use linkerd2_proxy_http::HasH2Reason;
+use linkerd2_proxy_http::{client_handle::Close, ClientHandle, HasH2Reason};
 use linkerd2_timeout::{error::ResponseTimeout, FailFastError};
 use pin_project::pin_project;
 use std::pin::Pin;
@@ -51,10 +51,11 @@ pub enum Reason {
 #[derive(Copy, Clone, Debug)]
 pub struct NewRespond(());
 
-#[derive(Copy, Clone, Debug)]
-pub enum Respond {
-    Http1(http::Version),
-    Http2 { is_grpc: bool },
+#[derive(Clone, Debug)]
+pub struct Respond {
+    version: http::Version,
+    is_grpc: bool,
+    close: Option<Close>,
 }
 
 #[pin_project(project = ResponseBodyProj)]
@@ -139,6 +140,10 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
     type Respond = Respond;
 
     fn new_respond(&self, req: &http::Request<ReqB>) -> Self::Respond {
+        let close = req
+            .extensions()
+            .get::<ClientHandle>()
+            .map(|h| h.close.clone());
         match req.version() {
             http::Version::HTTP_2 => {
                 let is_grpc = req
@@ -146,9 +151,17 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
                     .get(http::header::CONTENT_TYPE)
                     .and_then(|v| v.to_str().ok().map(|s| s.starts_with("application/grpc")))
                     .unwrap_or(false);
-                Respond::Http2 { is_grpc }
+                Respond {
+                    is_grpc,
+                    close,
+                    version: http::Version::HTTP_2,
+                }
             }
-            version => Respond::Http1(version),
+            version => Respond {
+                version,
+                close,
+                is_grpc: false,
+            },
         }
     }
 }
@@ -156,13 +169,10 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
 impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB>> for Respond {
     type Response = http::Response<ResponseBody<RspB>>;
 
-    fn respond(
-        &self,
-        reseponse: Result<http::Response<RspB>, Error>,
-    ) -> Result<Self::Response, Error> {
-        match reseponse {
+    fn respond(&self, res: Result<http::Response<RspB>, Error>) -> Result<Self::Response, Error> {
+        match res {
             Ok(response) => Ok(response.map(|b| match *self {
-                Respond::Http2 { is_grpc } if is_grpc == true => ResponseBody::Grpc {
+                Respond { is_grpc: true, .. } => ResponseBody::Grpc {
                     inner: b,
                     trailers: None,
                 },
@@ -171,39 +181,54 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
             Err(error) => {
                 warn!("Failed to proxy request: {}", error);
 
-                if let Respond::Http2 { is_grpc } = self {
+                if self.version == http::Version::HTTP_2 {
                     if let Some(reset) = error.h2_reason() {
                         debug!(%reset, "Propagating HTTP2 reset");
                         return Err(error);
                     }
+                }
 
-                    if *is_grpc {
-                        let mut rsp = http::Response::builder()
-                            .version(http::Version::HTTP_2)
-                            .header(http::header::CONTENT_LENGTH, "0")
-                            .body(ResponseBody::default())
-                            .expect("app::errors response is valid");
-                        let code = set_grpc_status(&*error, rsp.headers_mut());
-                        debug!(?code, "Handling error with gRPC status");
-                        return Ok(rsp);
+                // Gracefully teardown the server-side connection.
+                if should_teardown_connection(&*error) {
+                    if let Some(c) = self.close.as_ref() {
+                        debug!("Closing server-side connection");
+                        c.close();
                     }
                 }
 
-                let version = match self {
-                    Respond::Http1(ref version) => version.clone(),
-                    Respond::Http2 { .. } => http::Version::HTTP_2,
-                };
+                if self.is_grpc {
+                    let mut rsp = http::Response::builder()
+                        .version(http::Version::HTTP_2)
+                        .header(http::header::CONTENT_LENGTH, "0")
+                        .body(ResponseBody::default())
+                        .expect("app::errors response is valid");
+                    let code = set_grpc_status(&*error, rsp.headers_mut());
+                    debug!(?code, "Handling error with gRPC status");
+                    return Ok(rsp);
+                }
 
                 let status = http_status(&*error);
-                debug!(%status, ?version, "Handling error with HTTP response");
+                debug!(%status, version = ?self.version, "Handling error with HTTP response");
                 Ok(http::Response::builder()
-                    .version(version)
+                    .version(self.version)
                     .status(status)
                     .header(http::header::CONTENT_LENGTH, "0")
                     .body(ResponseBody::default())
                     .expect("error response must be valid"))
             }
         }
+    }
+}
+
+fn should_teardown_connection(error: &(dyn std::error::Error + 'static)) -> bool {
+    if error.is::<ResponseTimeout>() {
+        false
+    } else if error.is::<tower::timeout::error::Elapsed>() {
+        false
+    } else if let Some(e) = error.source() {
+        should_teardown_connection(e)
+    } else {
+        true
     }
 }
 

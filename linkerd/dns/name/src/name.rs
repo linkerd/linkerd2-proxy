@@ -12,7 +12,8 @@ pub struct InvalidName;
 
 impl Name {
     pub fn is_localhost(&self) -> bool {
-        *self == Name::try_from("localhost.".as_bytes()).unwrap()
+        use std::str::FromStr;
+        *self == Name::from_str("localhost.").unwrap()
     }
 
     pub fn without_trailing_dot(&self) -> &str {
@@ -50,6 +51,13 @@ impl<'a> TryFrom<&'a [u8]> for Name {
         webpki::DNSNameRef::try_from_ascii(s)
             .map_err(|_invalid| InvalidName)
             .map(|r| r.to_owned().into())
+    }
+}
+
+impl<'a> std::str::FromStr for Name {
+    type Err = InvalidName;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.as_bytes())
     }
 }
 

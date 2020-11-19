@@ -18,6 +18,9 @@ pub struct Connect<E> {
     endpoints: Arc<Mutex<HashMap<SocketAddr, ConnectFn<E>>>>,
 }
 
+#[derive(Clone)]
+pub struct NoRawTcp;
+
 impl<E> tower::Service<E> for Connect<E>
 where
     E: Clone + fmt::Debug + Into<SocketAddr>,
@@ -35,12 +38,34 @@ where
         let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");
-            match self.endpoints.lock().unwrap().get_mut(&addr) {
+            let mut endpoints = self.endpoints.lock().unwrap();
+            match endpoints.get_mut(&addr) {
                 Some(f) => (f)(endpoint),
-                None => panic!("did not expect to connect to the endpoint {:?}", endpoint),
+                None => panic!(
+                    "did not expect to connect to the endpoint {} not in {:?}",
+                    addr,
+                    endpoints.keys().collect::<Vec<_>>()
+                ),
             }
         });
         f.instrument(span)
+    }
+}
+
+impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
+    type Response = io::Mock;
+    type Future = Instrumented<ConnectFuture>;
+    type Error = Error;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        panic!("no raw TCP connections expected in this test");
+    }
+
+    fn call(&mut self, endpoint: E) -> Self::Future {
+        panic!(
+            "no raw TCP connections expected in this test, but tried to connect to {:?}",
+            endpoint
+        );
     }
 }
 
