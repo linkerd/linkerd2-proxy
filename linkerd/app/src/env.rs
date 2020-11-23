@@ -189,8 +189,8 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
 
-// 10_000 is arbitrarily chosen for now...
-const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
+// 100_000 is arbitrarily chosen for now...
+const DEFAULT_BUFFER_CAPACITY: usize = 100_000;
 
 // This configuration limits the amount of time Linkerd retains cached clients &
 // connections.
