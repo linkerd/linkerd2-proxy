@@ -151,7 +151,7 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
                 let is_grpc = req
                     .headers()
                     .get(http::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with("GRPC_CONTENT_TYPE")))
+                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with(GRPC_CONTENT_TYPE)))
                     .unwrap_or(false);
                 Respond {
                     is_grpc,
