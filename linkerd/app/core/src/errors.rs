@@ -200,6 +200,7 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     let mut rsp = http::Response::builder()
                         .version(http::Version::HTTP_2)
                         .header(http::header::CONTENT_LENGTH, "0")
+                        .header(http::header::CONTENT_TYPE, "application/grpc")
                         .body(ResponseBody::default())
                         .expect("app::errors response is valid");
                     let code = set_grpc_status(&*error, rsp.headers_mut());
