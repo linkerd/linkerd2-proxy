@@ -68,6 +68,8 @@ pub enum ResponseBody<B> {
     },
 }
 
+const GRPC_CONTENT_TYPE: &'static str = "application/grpc";
+
 impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
 where
     B::Error: Into<Error>,
@@ -149,7 +151,7 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
                 let is_grpc = req
                     .headers()
                     .get(http::header::CONTENT_TYPE)
-                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with("application/grpc")))
+                    .and_then(|v| v.to_str().ok().map(|s| s.starts_with(GRPC_CONTENT_TYPE)))
                     .unwrap_or(false);
                 Respond {
                     is_grpc,
@@ -200,6 +202,7 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     let mut rsp = http::Response::builder()
                         .version(http::Version::HTTP_2)
                         .header(http::header::CONTENT_LENGTH, "0")
+                        .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
                         .body(ResponseBody::default())
                         .expect("app::errors response is valid");
                     let code = set_grpc_status(&*error, rsp.headers_mut());
