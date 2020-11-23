@@ -7,11 +7,14 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::{fmt, mem};
+use std::{
+    fmt,
+    future::Future,
+    mem,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tower::Service;
 use tracing::trace;
@@ -41,8 +44,8 @@ enum State {
 pub struct ResponseFuture<T> {
     #[pin]
     inner: T,
-    // We only keep this around so that it is dropped when the future completes.
-    _permit: OwnedSemaphorePermit,
+    // The permit is held until the future becomes ready.
+    permit: Option<OwnedSemaphorePermit>,
 }
 
 impl From<Arc<Semaphore>> for Layer {
@@ -74,21 +77,6 @@ impl<T> ConcurrencyLimit<T> {
             state: State::Empty,
         }
     }
-
-    /// Get a reference to the inner service
-    pub fn get_ref(&self) -> &T {
-        &self.inner
-    }
-
-    /// Get a mutable reference to the inner service
-    pub fn get_mut(&mut self) -> &mut T {
-        &mut self.inner
-    }
-
-    /// Consume `self`, returning the inner service
-    pub fn into_inner(self) -> T {
-        self.inner
-    }
 }
 
 impl<S, Request> Service<Request> for ConcurrencyLimit<S>
@@ -119,9 +107,9 @@ where
 
     fn call(&mut self, request: Request) -> Self::Future {
         // Make sure a permit has been acquired
-        let _permit = match mem::replace(&mut self.state, State::Empty) {
+        let permit = match mem::replace(&mut self.state, State::Empty) {
             // Take the permit.
-            State::Ready(permit) => permit,
+            State::Ready(permit) => Some(permit),
             // whoopsie!
             _ => panic!("max requests in-flight; poll_ready must be called first"),
         };
@@ -129,7 +117,7 @@ where
         // Call the inner service
         let inner = self.inner.call(request);
 
-        ResponseFuture { inner, _permit }
+        ResponseFuture { inner, permit }
     }
 }
 
@@ -153,7 +141,15 @@ where
     type Output = T::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().inner.poll(cx)
+        let this = self.project();
+        let res = futures::ready!(this.inner.poll(cx));
+        let released = this.permit.take().is_some();
+        debug_assert!(
+            released,
+            "Permit must be released when the future completes"
+        );
+        trace!("permit released");
+        Poll::Ready(res)
     }
 }
 
