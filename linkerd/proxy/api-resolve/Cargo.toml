@@ -16,7 +16,7 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", ta
 linkerd2-proxy-core = { path = "../core" }
 prost = "0.6"
 http = "0.2"
-http-body = "0.3"
+http-body = "0.4"
 tonic = { version = "0.3", default-features = false }
 indexmap = "1.0"
 tower = { version = "0.4", default-features = false }

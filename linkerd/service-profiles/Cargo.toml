@@ -12,7 +12,7 @@ Implements client layers for Linkerd ServiceProfiles.
 bytes = "0.6"
 futures = "0.3"
 http = "0.2"
-http-body = "0.3"
+http-body = "0.4"
 indexmap = "1.0"
 linkerd2-addr = { path  = "../addr" }
 linkerd2-dns-name = { path  = "../dns/name" }

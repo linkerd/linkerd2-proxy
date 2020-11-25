@@ -14,5 +14,5 @@ linkerd2-proxy-transport = { path = "../transport" }
 tokio = { version = "0.3", features = ["time", "sync"] }
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.19"
-http-body = "0.3"
+http-body = "0.4"
 pin-project = "0.4"

@@ -15,5 +15,5 @@ tonic = { version = "0.3", default-features = false, features = ["prost", "codeg
 tracing = "0.1.19"
 pin-project = "0.4"
 http = "0.2"
-http-body = "0.3"
+http-body = "0.4"
 tower = { version = "0.4", default-features = false }

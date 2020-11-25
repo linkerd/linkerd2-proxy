@@ -12,7 +12,7 @@ pub struct Payload {
 #[pin_project]
 pub struct Data {
     #[pin]
-    inner: Box<dyn bytes05::Buf + Send + 'static>,
+    inner: Box<dyn bytes::Buf + Send + 'static>,
 }
 
 #[pin_project]
@@ -80,19 +80,9 @@ impl bytes::Buf for Data {
     fn advance(&mut self, n: usize) {
         self.inner.advance(n)
     }
-}
 
-impl bytes05::Buf for Data {
-    fn remaining(&self) -> usize {
-        self.inner.remaining()
-    }
-
-    fn bytes(&self) -> &[u8] {
-        self.inner.bytes()
-    }
-
-    fn advance(&mut self, n: usize) {
-        self.inner.advance(n)
+    fn bytes_vectored<'a>(&'a self, dst: &mut [std::io::IoSlice<'a>]) -> usize {
+        self.inner.bytes_vectored(dst)
     }
 }
 

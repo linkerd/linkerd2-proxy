@@ -15,9 +15,9 @@ bytes = "0.6"
 futures = { package = "futures", version = "0.3" }
 h2 = { git = "https://github.com/hyperium/h2" }
 http = "0.2"
-http-body = "0.3"
+http-body = "0.4"
 httparse = "1.2"
-hyper = "0.14.0-dev"
+hyper = { version ="0.14.0-dev", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
 hyper-balance = { path  = "../../../hyper-balance" }
 indexmap = "1.0"
 linkerd2-drain = { path  = "../../drain" }
@@ -34,4 +34,4 @@ tower = { version = "0.4", default-features = false, features = ["balance", "loa
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 try-lock = "0.2"
-pin-project = "0.4"
+pin-project = "1"
