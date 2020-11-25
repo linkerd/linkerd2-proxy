@@ -643,7 +643,7 @@ async fn no_profiles_when_outside_search_nets() {
     );
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test(flavor = "current_thread")]
 async fn no_discovery_when_profile_has_an_endpoint() {
     let _trace = support::trace_init();
 
@@ -692,7 +692,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     );
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test(flavor = "current_thread")]
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
     // connecting to that endpoint fails, the proxy will resolve a new endpoint
@@ -733,7 +733,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let profiles = profile::resolver();
     let profile_tx = profiles.profile_tx(ep1);
     profile_tx
-        .broadcast(profile::Profile {
+        .send(profile::Profile {
             opaque_protocol: true,
             endpoint: Some((ep1, meta.clone())),
             ..Default::default()

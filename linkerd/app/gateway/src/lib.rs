@@ -20,7 +20,7 @@ mod test {
     };
     use linkerd2_app_inbound::endpoint as inbound;
     use linkerd2_app_test as support;
-    use std::{convert::TryFrom, net::SocketAddr, str::FromStr};
+    use std::{net::SocketAddr, str::FromStr};
     use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;
 

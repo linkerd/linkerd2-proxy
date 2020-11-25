@@ -30,7 +30,7 @@ features = [
 ]
 
 [dev-dependencies]
-hyper = "0.13"
+hyper = "0.14.0-dev"
 ipnet = "1.0"
 linkerd2-app-test = { path = "../test" }
 linkerd2-io = { path = "../../io", features = ["tokio-test"] }
