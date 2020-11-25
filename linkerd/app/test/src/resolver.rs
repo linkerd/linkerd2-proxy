@@ -80,14 +80,14 @@ impl<T, E> Dst<T, E>
 where
     T: Hash + Eq,
 {
-    pub fn endpoint_tx(&self, endpoint: T) -> DstSender<E> {
+    pub fn endpoint_tx(&self, t: impl Into<T>) -> DstSender<E> {
         let (tx, rx) = mpsc::unbounded_channel();
-        self.state.endpoints.lock().unwrap().insert(endpoint, rx);
+        self.state.endpoints.lock().unwrap().insert(t.into(), rx);
         DstSender(tx)
     }
 
-    pub fn endpoint_exists(self, endpoint: T, addr: SocketAddr, meta: E) -> Self {
-        let mut tx = self.endpoint_tx(endpoint);
+    pub fn endpoint_exists(self, t: impl Into<T>, addr: SocketAddr, meta: E) -> Self {
+        let mut tx = self.endpoint_tx(t);
         tx.add(vec![(addr, meta)]).unwrap();
         self
     }

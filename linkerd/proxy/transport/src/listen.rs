@@ -299,7 +299,7 @@ mod mock {
 
     impl OrigDstAddr for MockOrigDstAddr {
         fn orig_dst_addr(&self, _: &TcpStream) -> Option<SocketAddr> {
-            Some(self.0.clone())
+            Some(self.0)
         }
     }
 }

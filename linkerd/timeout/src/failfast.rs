@@ -71,7 +71,7 @@ where
         // triggering failfast.
         Self {
             inner: self.inner.clone(),
-            max_unavailable: self.max_unavailable.clone(),
+            max_unavailable: self.max_unavailable,
             state: State::Open,
         }
     }

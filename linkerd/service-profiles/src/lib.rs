@@ -2,7 +2,7 @@
 
 use futures::stream::Stream;
 use linkerd2_addr::Addr;
-use linkerd2_dns_name::Name;
+pub use linkerd2_dns_name::Name;
 use linkerd2_error::Error;
 use linkerd2_proxy_api_resolve::Metadata;
 use std::{

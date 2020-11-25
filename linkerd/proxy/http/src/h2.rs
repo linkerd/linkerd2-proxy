@@ -52,7 +52,7 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     fn clone(&self) -> Self {
         Connect {
             connect: self.connect.clone(),
-            h2_settings: self.h2_settings.clone(),
+            h2_settings: self.h2_settings,
             _marker: PhantomData,
         }
     }

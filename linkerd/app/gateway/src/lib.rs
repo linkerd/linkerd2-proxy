@@ -20,7 +20,7 @@ mod test {
     };
     use linkerd2_app_inbound::endpoint as inbound;
     use linkerd2_app_test as support;
-    use std::{convert::TryFrom, net::SocketAddr};
+    use std::{convert::TryFrom, net::SocketAddr, str::FromStr};
     use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;
 
@@ -112,7 +112,7 @@ mod test {
                 suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
                 peer_id: tls::PeerIdentity::Some(identity::Name::from(
-                    dns::Name::try_from("client.id.test".as_bytes()).unwrap(),
+                    dns::Name::from_str("client.id.test").unwrap(),
                 )),
                 orig_fwd: None,
             }
@@ -140,12 +140,12 @@ mod test {
                     });
                     Ok::<_, Never>(Some(rx))
                 });
-                let allow_discovery = NameMatch::new(Some(dns::Suffix::try_from(suffix).unwrap()));
+                let allow_discovery = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
                 Config { allow_discovery }.build(
                     move |_: _| outbound.clone(),
                     profiles,
                     tls::PeerIdentity::Some(identity::Name::from(
-                        dns::Name::try_from("gateway.id.test".as_bytes()).unwrap(),
+                        dns::Name::from_str("gateway.id.test").unwrap(),
                     )),
                 )
             };

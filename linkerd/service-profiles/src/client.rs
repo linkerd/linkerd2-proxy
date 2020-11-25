@@ -10,9 +10,10 @@ use linkerd2_proxy_api_resolve::pb as resolve;
 use pin_project::pin_project;
 use regex::Regex;
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::TryInto,
     future::Future,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
@@ -230,7 +231,7 @@ where
         let profile = ready!(rx.poll_next(cx)).map(|res| {
             res.map(|proto| {
                 debug!("profile received: {:?}", proto);
-                let name = Name::try_from(proto.fully_qualified_name.as_bytes()).ok();
+                let name = Name::from_str(&proto.fully_qualified_name).ok();
                 let retry_budget = proto.retry_budget.and_then(convert_retry_budget);
                 let http_routes = proto
                     .routes

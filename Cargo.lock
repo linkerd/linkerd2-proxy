@@ -269,6 +269,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dyn-clone"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55796afa1b20c2945ca8eabfc421839f2b766619209f1ede813cf2484f31804"
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -481,7 +487,7 @@ dependencies = [
  "http",
  "indexmap",
  "slab",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tokio-util 0.3.1",
  "tracing",
  "tracing-futures",
@@ -591,6 +597,30 @@ checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
 
 [[package]]
 name = "hyper"
+version = "0.13.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6ad767baac13b44d4529fcf58ba2cd0995e36e7b435bc5b039de6f47e880dbf"
+dependencies = [
+ "bytes 0.5.6",
+ "futures-channel",
+ "futures-core",
+ "futures-util",
+ "h2 0.2.7",
+ "http",
+ "http-body",
+ "httparse",
+ "httpdate",
+ "itoa",
+ "pin-project 1.0.1",
+ "socket2",
+ "tokio 0.2.23",
+ "tower-service",
+ "tracing",
+ "want",
+]
+
+[[package]]
+name = "hyper"
 version = "0.14.0-dev"
 source = "git+https://github.com/hawkw/hyper?branch=eliza/put-back-missing-eofs#b78721480498cc838f5472794f012ae3d5bc3651"
 dependencies = [
@@ -618,7 +648,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
  "http",
- "hyper",
+ "hyper 0.14.0-dev",
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-test 0.2.1",
@@ -786,7 +816,7 @@ dependencies = [
  "futures 0.3.7",
  "http",
  "http-body",
- "hyper",
+ "hyper 0.14.0-dev",
  "indexmap",
  "ipnet 1.2.1",
  "libc",
@@ -883,7 +913,7 @@ dependencies = [
  "h2 0.3.0",
  "http",
  "http-body",
- "hyper",
+ "hyper 0.14.0-dev",
  "linkerd2-app",
  "linkerd2-app-core",
  "linkerd2-app-test",
@@ -909,6 +939,7 @@ dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
  "http",
+ "hyper 0.13.9",
  "indexmap",
  "ipnet 1.2.1",
  "linkerd2-app-core",
@@ -939,7 +970,7 @@ dependencies = [
  "h2 0.3.0",
  "http",
  "http-body",
- "hyper",
+ "hyper 0.14.0-dev",
  "linkerd2-app-core",
  "regex 0.1.80",
  "tokio 0.3.2",
@@ -973,7 +1004,8 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-error",
  "linkerd2-stack",
- "tokio 0.2.22",
+ "parking_lot",
+ "tokio 0.2.23",
  "tower",
  "tracing",
 ]
@@ -992,7 +1024,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
  "pin-project 0.4.27",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tower",
  "tracing",
 ]
@@ -1122,7 +1154,7 @@ dependencies = [
  "h2 0.3.0",
  "http",
  "http-body",
- "hyper",
+ "hyper 0.14.0-dev",
  "indexmap",
  "linkerd2-error",
  "linkerd2-http-classify",
@@ -1165,7 +1197,7 @@ dependencies = [
  "deflate",
  "futures 0.3.7",
  "http",
- "hyper",
+ "hyper 0.14.0-dev",
  "indexmap",
  "quickcheck",
  "tracing",
@@ -1182,7 +1214,7 @@ dependencies = [
  "linkerd2-metrics",
  "opencensus-proto",
  "pin-project 0.4.27",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tonic",
  "tower",
  "tracing",
@@ -1288,7 +1320,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
- "hyper",
+ "hyper 0.14.0-dev",
  "hyper-balance",
  "indexmap",
  "linkerd2-drain",
@@ -1342,7 +1374,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
  "http",
- "hyper",
+ "hyper 0.14.0-dev",
  "indexmap",
  "ipnet 2.3.0",
  "linkerd2-conditional",
@@ -1470,6 +1502,7 @@ dependencies = [
 name = "linkerd2-stack"
 version = "0.1.0"
 dependencies = [
+ "dyn-clone",
  "futures 0.3.7",
  "linkerd2-error",
  "pin-project 0.4.27",
@@ -1531,7 +1564,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "rand",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tower",
  "tracing",
 ]
@@ -1543,7 +1576,7 @@ dependencies = [
  "bytes 0.6.0",
  "html-escape",
  "http",
- "hyper",
+ "hyper 0.14.0-dev",
  "linkerd2-error",
  "serde_json",
  "tokio-timer",
@@ -2263,9 +2296,9 @@ checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
 
 [[package]]
 name = "smallvec"
-version = "1.4.2"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbee7696b84bbf3d89a1c2eccff0850e3047ed46bfcd2e92c29a2d074d57e252"
+checksum = "7acad6f34eb9e8a259d3283d1e8c1d34d7415943d4895f65cc73813c7396fc85"
 
 [[package]]
 name = "socket2"
@@ -2377,9 +2410,9 @@ checksum = "238ce071d267c5710f9d31451efec16c5ee22de34df17cc05e56cbc92e967117"
 
 [[package]]
 name = "tokio"
-version = "0.2.22"
+version = "0.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d34ca54d84bf2b5b4d7d31e901a8464f7b60ac145a284fba25ceb801f2ddccd"
+checksum = "a6d7ad61edd59bfcc7e80dababf0f4aed2e6d5e0ba1659356ae889752dfc12ff"
 dependencies = [
  "bytes 0.5.6",
  "fnv",
@@ -2425,7 +2458,7 @@ dependencies = [
  "bytes 0.5.6",
  "once_cell",
  "pin-project-lite",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tokio 0.3.2",
 ]
 
@@ -2488,7 +2521,7 @@ checksum = "ed0049c119b6d505c4447f5c64873636c7af6c75ab0d45fd9f618d82acb8016d"
 dependencies = [
  "bytes 0.5.6",
  "futures-core",
- "tokio 0.2.22",
+ "tokio 0.2.23",
 ]
 
 [[package]]
@@ -2521,7 +2554,7 @@ source = "git+https://github.com/hawkw/tokio-trace?rev=a8240c5cbb4ff981def84920d
 dependencies = [
  "num_cpus",
  "serde",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tracing-core",
  "tracing-subscriber",
 ]
@@ -2537,7 +2570,7 @@ dependencies = [
  "futures-sink",
  "log",
  "pin-project-lite",
- "tokio 0.2.22",
+ "tokio 0.2.23",
 ]
 
 [[package]]
@@ -2653,7 +2686,7 @@ checksum = "9ba4bbc2c1e4a8543c30d4c13a4c8314ed72d6e07581910f665aa13fde0153c8"
 dependencies = [
  "futures-util",
  "pin-project 0.4.27",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "tokio-test 0.2.1",
  "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service",
@@ -2763,7 +2796,7 @@ dependencies = [
  "rand",
  "smallvec",
  "thiserror",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "url",
 ]
 
@@ -2782,7 +2815,7 @@ dependencies = [
  "resolv-conf",
  "smallvec",
  "thiserror",
- "tokio 0.2.22",
+ "tokio 0.2.23",
  "trust-dns-proto",
 ]
 

@@ -1,6 +1,5 @@
 use crate::Name;
-use std::convert::TryFrom;
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Suffix {
@@ -23,14 +22,14 @@ impl From<Name> for Suffix {
     }
 }
 
-impl<'s> TryFrom<&'s str> for Suffix {
-    type Error = <Name as TryFrom<&'s [u8]>>::Error;
+impl FromStr for Suffix {
+    type Err = <Name as FromStr>::Err;
 
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "." {
             Ok(Suffix::Root)
         } else {
-            Name::try_from(s.as_bytes()).map(|n| n.into())
+            Name::from_str(s).map(Suffix::Name)
         }
     }
 }

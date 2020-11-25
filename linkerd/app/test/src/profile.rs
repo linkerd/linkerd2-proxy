@@ -26,8 +26,8 @@ where
 }
 
 pub fn with_name(name: &str) -> Profile {
-    use std::convert::TryFrom;
-    let name = dns::Name::try_from(name.as_bytes()).expect("non-ascii characters in DNS name! 😢");
+    use std::str::FromStr;
+    let name = dns::Name::from_str(name).expect("non-ascii characters in DNS name! 😢");
     Profile {
         name: Some(name),
         ..Default::default()

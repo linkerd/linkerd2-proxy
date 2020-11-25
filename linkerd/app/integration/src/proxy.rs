@@ -82,8 +82,7 @@ impl Proxy {
     }
 
     pub fn inbound(mut self, s: server::Listening) -> Self {
-        let addr = s.addr.clone();
-        self.inbound = Some(addr);
+        self.inbound = Some(s.addr);
         self.inbound_server = Some(s);
         self
     }
@@ -107,8 +106,7 @@ impl Proxy {
     }
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
-        let addr = s.addr.clone();
-        self.outbound = Some(addr);
+        self.outbound = Some(s.addr);
         self.outbound_server = Some(s);
         self
     }

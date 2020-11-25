@@ -46,6 +46,13 @@ impl PeerAddr for tokio_test::io::Mock {
     }
 }
 
+#[cfg(feature = "tokio-test")]
+impl PeerAddr for tokio::io::DuplexStream {
+    fn peer_addr(&self) -> SocketAddr {
+        ([0, 0, 0, 0], 0).into()
+    }
+}
+
 /// This trait is private, since its purpose is for creating a dynamic trait
 /// object, but doing so without care can to lead not getting vectored
 /// writes.
