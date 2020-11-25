@@ -752,7 +752,14 @@ async fn profile_endpoint_propagates_conn_errors() {
     ));
 
     let res = svc
-        .oneshot(support::io().read(b"hello\r\n").write(b"world").build())
+        .oneshot(
+            support::io()
+                .read_error(io::Error::new(
+                    io::ErrorKind::ConnectionReset,
+                    "i dont like you, go away",
+                ))
+                .build(),
+        )
         .await
         .map_err(Into::into);
     tracing::info!(?res);

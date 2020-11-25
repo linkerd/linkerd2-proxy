@@ -597,30 +597,6 @@ checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
 
 [[package]]
 name = "hyper"
-version = "0.13.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ad767baac13b44d4529fcf58ba2cd0995e36e7b435bc5b039de6f47e880dbf"
-dependencies = [
- "bytes 0.5.6",
- "futures-channel",
- "futures-core",
- "futures-util",
- "h2 0.2.7",
- "http",
- "http-body",
- "httparse",
- "httpdate",
- "itoa",
- "pin-project 1.0.1",
- "socket2",
- "tokio 0.2.23",
- "tower-service",
- "tracing",
- "want",
-]
-
-[[package]]
-name = "hyper"
 version = "0.14.0-dev"
 source = "git+https://github.com/hawkw/hyper?branch=eliza/put-back-missing-eofs#b78721480498cc838f5472794f012ae3d5bc3651"
 dependencies = [
@@ -648,7 +624,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
  "http",
- "hyper 0.14.0-dev",
+ "hyper",
  "pin-project 0.4.27",
  "tokio 0.3.2",
  "tokio-test 0.2.1",
@@ -816,7 +792,7 @@ dependencies = [
  "futures 0.3.7",
  "http",
  "http-body",
- "hyper 0.14.0-dev",
+ "hyper",
  "indexmap",
  "ipnet 1.2.1",
  "libc",
@@ -913,7 +889,7 @@ dependencies = [
  "h2 0.3.0",
  "http",
  "http-body",
- "hyper 0.14.0-dev",
+ "hyper",
  "linkerd2-app",
  "linkerd2-app-core",
  "linkerd2-app-test",
@@ -939,7 +915,7 @@ dependencies = [
  "bytes 0.6.0",
  "futures 0.3.7",
  "http",
- "hyper 0.13.9",
+ "hyper",
  "indexmap",
  "ipnet 1.2.1",
  "linkerd2-app-core",
@@ -970,7 +946,7 @@ dependencies = [
  "h2 0.3.0",
  "http",
  "http-body",
- "hyper 0.14.0-dev",
+ "hyper",
  "linkerd2-app-core",
  "regex 0.1.80",
  "tokio 0.3.2",
@@ -1154,7 +1130,7 @@ dependencies = [
  "h2 0.3.0",
  "http",
  "http-body",
- "hyper 0.14.0-dev",
+ "hyper",
  "indexmap",
  "linkerd2-error",
  "linkerd2-http-classify",
@@ -1197,7 +1173,7 @@ dependencies = [
  "deflate",
  "futures 0.3.7",
  "http",
- "hyper 0.14.0-dev",
+ "hyper",
  "indexmap",
  "quickcheck",
  "tracing",
@@ -1320,7 +1296,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
- "hyper 0.14.0-dev",
+ "hyper",
  "hyper-balance",
  "indexmap",
  "linkerd2-drain",
@@ -1374,7 +1350,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
  "http",
- "hyper 0.14.0-dev",
+ "hyper",
  "indexmap",
  "ipnet 2.3.0",
  "linkerd2-conditional",
@@ -1576,7 +1552,7 @@ dependencies = [
  "bytes 0.6.0",
  "html-escape",
  "http",
- "hyper 0.14.0-dev",
+ "hyper",
  "linkerd2-error",
  "serde_json",
  "tokio-timer",
