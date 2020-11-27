@@ -1,4 +1,4 @@
-use super::prom::{FmtLabels, FmtMetric, MAX_PRECISE_VALUE};
+use super::prom::{FmtLabels, FmtMetric};
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -20,7 +20,7 @@ impl Gauge {
     pub fn value(&self) -> u64 {
         self.0
             .load(Ordering::Acquire)
-            .wrapping_rem(MAX_PRECISE_VALUE + 1)
+            .wrapping_rem(crate::MAX_PRECISE_UINT64 + 1)
     }
 }
 
