@@ -106,8 +106,8 @@ mod tests {
     struct WriteBufDetector;
 
     impl PeerAddr for WriteBufDetector {
-        fn peer_addr(&self) -> std::net::SocketAddr {
-            ([0, 0, 0, 0], 0).into()
+        fn peer_addr(&self) -> Result<std::net::SocketAddr> {
+            Ok(([0, 0, 0, 0], 0).into())
         }
     }
 
