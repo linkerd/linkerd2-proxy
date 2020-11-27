@@ -16,38 +16,38 @@ pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub type Poll<T> = std::task::Poll<Result<T>>;
 
 pub trait PeerAddr {
-    fn peer_addr(&self) -> SocketAddr;
+    fn peer_addr(&self) -> Result<SocketAddr>;
 }
 
 impl PeerAddr for tokio::net::TcpStream {
-    fn peer_addr(&self) -> SocketAddr {
-        tokio::net::TcpStream::peer_addr(self).expect("TcpStream must have a peer address")
+    fn peer_addr(&self) -> Result<SocketAddr> {
+        tokio::net::TcpStream::peer_addr(self)
     }
 }
 
 impl<T: PeerAddr> PeerAddr for tokio_rustls::client::TlsStream<T> {
-    fn peer_addr(&self) -> SocketAddr {
+    fn peer_addr(&self) -> Result<SocketAddr> {
         self.get_ref().0.peer_addr()
     }
 }
 
 impl<T: PeerAddr> PeerAddr for tokio_rustls::server::TlsStream<T> {
-    fn peer_addr(&self) -> SocketAddr {
+    fn peer_addr(&self) -> Result<SocketAddr> {
         self.get_ref().0.peer_addr()
     }
 }
 
 #[cfg(feature = "tokio-test")]
 impl PeerAddr for tokio_test::io::Mock {
-    fn peer_addr(&self) -> SocketAddr {
-        ([0, 0, 0, 0], 0).into()
+    fn peer_addr(&self) -> Result<SocketAddr> {
+        Ok(([0, 0, 0, 0], 0).into())
     }
 }
 
 #[cfg(feature = "tokio-test")]
 impl PeerAddr for tokio::io::DuplexStream {
-    fn peer_addr(&self) -> SocketAddr {
-        ([0, 0, 0, 0], 0).into()
+    fn peer_addr(&self) -> Result<SocketAddr> {
+        Ok(([0, 0, 0, 0], 0).into())
     }
 }
 mod internal {

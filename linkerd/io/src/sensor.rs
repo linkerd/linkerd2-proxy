@@ -6,7 +6,7 @@ use pin_project::pin_project;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::Context;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, Result};
 
 pub trait Sensor {
     fn record_read(&mut self, sz: usize);
@@ -106,7 +106,7 @@ impl<T: Io, S: Sensor + Send> Io for SensorIo<T, S> {
 }
 
 impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
-    fn peer_addr(&self) -> std::net::SocketAddr {
+    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
     }
 }
