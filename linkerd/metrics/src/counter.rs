@@ -28,19 +28,23 @@ impl Default for Counter {
     }
 }
 
-impl<F: Factor> Counter<F> {
+impl<F> Counter<F> {
     pub fn new() -> Self {
         Self(AtomicU64::default(), std::marker::PhantomData)
     }
 
+    #[inline]
     pub fn incr(&self) {
         self.add(1u64)
     }
 
+    #[inline]
     pub fn add(&self, n: u64) {
         self.0.fetch_add(n.into(), Ordering::Release);
     }
+}
 
+impl<F: Factor> Counter<F> {
     /// Return current counter value, wrapped to be safe for use with Prometheus.
     pub fn value(&self) -> f64 {
         let n = self.0.load(Ordering::Acquire);
