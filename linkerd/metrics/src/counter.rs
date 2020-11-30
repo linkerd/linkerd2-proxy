@@ -22,15 +22,15 @@ pub struct Counter<F = ()>(AtomicU64, std::marker::PhantomData<F>);
 
 // ===== impl Counter =====
 
-impl Default for Counter {
+impl<F> Default for Counter<F> {
     fn default() -> Self {
-        Self::new()
+        Self(AtomicU64::default(), std::marker::PhantomData)
     }
 }
 
-impl<F: Factor> Counter<F> {
+impl<F> Counter<F> {
     pub fn new() -> Self {
-        Self(AtomicU64::default(), std::marker::PhantomData)
+        Self::default()
     }
 
     pub fn incr(&self) {
@@ -40,7 +40,9 @@ impl<F: Factor> Counter<F> {
     pub fn add(&self, n: u64) {
         self.0.fetch_add(n, Ordering::Release);
     }
+}
 
+impl<F: Factor> Counter<F> {
     /// Return current counter value, wrapped to be safe for use with Prometheus.
     pub fn value(&self) -> f64 {
         let n = self.0.load(Ordering::Acquire);
@@ -96,7 +98,7 @@ mod tests {
 
     #[test]
     fn count_simple() {
-        let c = Counter::default();
+        let c = Counter::<()>::default();
         assert_eq!(c.value(), 0.0);
         c.incr();
         assert_eq!(c.value(), 1.0);
