@@ -54,14 +54,14 @@ impl FmtMetrics for Report {
 #[cfg(target_os = "linux")]
 mod system {
     use libc::{self, pid_t};
-    use linkerd2_metrics::{metrics, Counter, FmtMetrics, Gauge};
+    use linkerd2_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
     use procinfo::pid;
     use std::fmt;
     use std::{fs, io};
     use tracing::{error, warn};
 
     metrics! {
-        process_cpu_seconds_total: Counter {
+        process_cpu_seconds_total: Counter<MillisAsSeconds> {
             "Total user and system CPU time spent in seconds."
         },
         process_open_fds: Gauge { "Number of open file descriptors." },
@@ -77,16 +77,28 @@ mod system {
     #[derive(Clone, Debug)]
     pub(super) struct System {
         page_size: u64,
-        clock_ticks_per_sec: u64,
+        ms_per_tick: u64,
     }
 
     impl System {
         pub fn new() -> io::Result<Self> {
             let page_size = Self::sysconf(libc::_SC_PAGESIZE, "page size")?;
+
+            // On Linux, CLK_TCK is ~always `100`, so pure integer division
+            // works. This is probably not suitable if we encounter other
+            // values.
             let clock_ticks_per_sec = Self::sysconf(libc::_SC_CLK_TCK, "clock ticks per second")?;
+            let ms_per_tick = 1_000 / clock_ticks_per_sec;
+            if clock_ticks_per_sec != 100 {
+                warn!(
+                    clock_ticks_per_sec,
+                    ms_per_tick, "Unexpected value; process_cpu_seconds_total may be inaccurate."
+                );
+            }
+
             Ok(Self {
                 page_size,
-                clock_ticks_per_sec,
+                ms_per_tick,
             })
         }
 
@@ -130,9 +142,16 @@ mod system {
             };
 
             let clock_ticks = stat.utime as u64 + stat.stime as u64;
-            let cpu = Counter::from(clock_ticks / self.clock_ticks_per_sec);
+            let cpu_ms = clock_ticks * self.ms_per_tick;
             process_cpu_seconds_total.fmt_help(f)?;
-            process_cpu_seconds_total.fmt_metric(f, &cpu)?;
+            process_cpu_seconds_total.fmt_metric(f, &Counter::from(cpu_ms))?;
+
+            process_virtual_memory_bytes.fmt_help(f)?;
+            process_virtual_memory_bytes.fmt_metric(f, &Gauge::from(stat.vsize as u64))?;
+
+            process_resident_memory_bytes.fmt_help(f)?;
+            process_resident_memory_bytes
+                .fmt_metric(f, &Gauge::from(stat.rss as u64 * self.page_size))?;
 
             match Self::open_fds(stat.pid) {
                 Ok(open_fds) => {
@@ -141,7 +160,6 @@ mod system {
                 }
                 Err(err) => {
                     warn!("could not determine process_open_fds: {}", err);
-                    return Ok(());
                 }
             }
 
@@ -153,17 +171,10 @@ mod system {
                 }
                 Err(err) => {
                     warn!("could not determine process_max_fds: {}", err);
-                    return Ok(());
                 }
             }
 
-            process_virtual_memory_bytes.fmt_help(f)?;
-            let vsz = Gauge::from(stat.vsize as u64);
-            process_virtual_memory_bytes.fmt_metric(f, &vsz)?;
-
-            process_resident_memory_bytes.fmt_help(f)?;
-            let rss = Gauge::from(stat.rss as u64 * self.page_size);
-            process_resident_memory_bytes.fmt_metric(f, &rss)
+            Ok(())
         }
     }
 }
