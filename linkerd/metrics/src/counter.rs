@@ -34,11 +34,11 @@ impl<F: Factor> Counter<F> {
     }
 
     pub fn incr(&self) {
-        self.add(1u64)
+        self.add(1)
     }
 
     pub fn add(&self, n: u64) {
-        self.0.fetch_add(n.into(), Ordering::Release);
+        self.0.fetch_add(n, Ordering::Release);
     }
 
     /// Return current counter value, wrapped to be safe for use with Prometheus.
