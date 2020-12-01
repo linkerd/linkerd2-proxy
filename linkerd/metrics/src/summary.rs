@@ -3,7 +3,7 @@
 
 use crate::{Counter, Factor, FmtLabels, FmtMetric};
 pub use hdrhistogram::{AdditionError, CreationError, Histogram, RecordError};
-use parking_lot::{Mutex, MutexGuard};
+use parking_lot::{MappedRwLockWriteGuard, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use std::fmt;
 use tokio::time;
 
@@ -11,15 +11,8 @@ use tokio::time;
 #[derive(Debug)]
 pub struct Summary<F = ()> {
     rotate_interval: time::Duration,
-    next_rotate: time::Instant,
 
-    /// A ring buffer of active histograms window. Every `rotate_interval` the
-    /// index is advanced and the oldest histogram is reset and reused for new
-    /// values. `window_idx` always refers to the index of the newest active
-    /// histogram and `window_idx + 1 % windows.len()` is the oldest active
-    /// histogram.
-    windows: Vec<Histogram<u64>>,
-    window_idx: usize,
+    windows: RwLock<Windows>,
 
     /// Instead of allocating a new histogram each time a report is formatted, we
     /// hold a single report and reset/repopulate it from the active windows.
@@ -30,6 +23,18 @@ pub struct Summary<F = ()> {
     /// are included.
     count: Counter,
     sum: Counter<F>,
+}
+
+#[derive(Debug)]
+struct Windows {
+    /// A ring buffer of active histograms window. Every `rotate_interval` the
+    /// index is advanced and the oldest histogram is reset and reused for new
+    /// values. `window_idx` always refers to the index of the newest active
+    /// histogram and `window_idx + 1 % windows.len()` is the oldest active
+    /// histogram.
+    active: Vec<Histogram<u64>>,
+    idx: usize,
+    next_rotate: time::Instant,
 }
 
 /// Helper that lazily formats `quantile` labels.
@@ -69,22 +74,26 @@ impl<F> Summary<F> {
 
     fn new_inner(n_windows: u32, lifetime: time::Duration, histogram: Histogram<u64>) -> Self {
         debug_assert!(n_windows > 0);
-        let mut windows = Vec::with_capacity(n_windows as usize);
-        for _ in 0..n_windows {
-            windows.push(histogram.clone());
-        }
+        let rotate_interval = lifetime / n_windows;
+
+        let windows = {
+            let mut active = Vec::with_capacity(n_windows as usize);
+            for _ in 0..n_windows {
+                active.push(histogram.clone());
+            }
+            let next_rotate = time::Instant::now() + rotate_interval;
+            RwLock::new(Windows {
+                active,
+                idx: 0,
+                next_rotate,
+            })
+        };
 
         let report = Mutex::new(histogram);
 
-        let rotate_interval = lifetime / n_windows;
-        let next_rotate = time::Instant::now() + rotate_interval;
-
         Self {
             windows,
-            window_idx: 0,
-
             rotate_interval,
-            next_rotate,
 
             report,
             quantiles: Vec::from(Self::DEFAULT_QUANTILES.clone()),
@@ -104,7 +113,7 @@ impl<F> Summary<F> {
     ///
     /// Histograms are rotated as needed.
     #[inline]
-    pub fn record(&mut self, v: u64) -> Result<(), RecordError> {
+    pub fn record(&self, v: u64) -> Result<(), RecordError> {
         self.rotated_window_mut().record(v)?;
         self.sum.add(v);
         self.count.incr();
@@ -115,7 +124,7 @@ impl<F> Summary<F> {
     ///
     /// Histograms are rotated as needed.
     #[inline]
-    pub fn record_n(&mut self, v: u64, n: usize) -> Result<(), RecordError> {
+    pub fn record_n(&self, v: u64, n: usize) -> Result<(), RecordError> {
         self.rotated_window_mut().record_n(v, n as u64)?;
         self.sum.add(v * n as u64);
         self.count.add(n as u64);
@@ -128,7 +137,7 @@ impl<F> Summary<F> {
     /// clamped to the upper bound. This should not be used with resizable
     /// summaries.
     #[inline]
-    pub fn saturating_record(&mut self, v: u64) {
+    pub fn saturating_record(&self, v: u64) {
         self.rotated_window_mut().saturating_record(v);
         self.sum.add(v);
         self.count.incr();
@@ -140,7 +149,7 @@ impl<F> Summary<F> {
     /// clamped to the upper bound. This should not be used with resizable
     /// summaries.
     #[inline]
-    pub fn saturating_record_n(&mut self, v: u64, n: usize) {
+    pub fn saturating_record_n(&self, v: u64, n: usize) {
         self.rotated_window_mut().saturating_record_n(v, n as u64);
         self.sum.add(v * n as u64);
         self.count.add(n as u64);
@@ -149,22 +158,24 @@ impl<F> Summary<F> {
     /// Get a mutable reference to the current histogram, rotating windows as
     /// necessary.
     #[inline]
-    fn rotated_window_mut(&mut self) -> &mut Histogram<u64> {
+    fn rotated_window_mut(&self) -> MappedRwLockWriteGuard<'_, Histogram<u64>> {
+        let mut w = self.windows.write();
         let now = time::Instant::now();
-        if now >= self.next_rotate {
+        if now >= w.next_rotate {
             // Advance windows per elapsed time. If the more than one interval
             // has elapsed, clear out intermediate windows so reports only
             // include values in the max lifetime.
             let rotations =
-                ((now - self.next_rotate).as_millis() / self.rotate_interval.as_millis()) + 1;
+                ((now - w.next_rotate).as_millis() / self.rotate_interval.as_millis()) + 1;
             for _ in 0..rotations {
-                self.window_idx = (self.window_idx + 1) % self.windows.len();
-                self.windows[self.window_idx].reset();
+                let i = (w.idx + 1) % w.active.len();
+                w.active[i].reset();
+                w.idx = i;
             }
-            self.next_rotate = now + self.rotate_interval;
+            w.next_rotate = now + self.rotate_interval;
         }
 
-        &mut self.windows[self.window_idx]
+        RwLockWriteGuard::map(w, |w| &mut w.active[w.idx])
     }
 
     /// Lock the inner report, clear it, and repopulate from the active windows.
@@ -172,7 +183,8 @@ impl<F> Summary<F> {
         let mut report = self.report.lock();
         // Remove all values from the merged
         report.reset();
-        for w in self.windows.iter() {
+        let windows = self.windows.read();
+        for w in windows.active.iter() {
             // The report histogram must have been created with the same
             // configuration as the other histograms, so they all either share a
             // max value or are all resizable.
@@ -330,7 +342,7 @@ mod tests {
 
         const WINDOWS: u32 = 2;
         const ROTATE_INTERVAL: time::Duration = time::Duration::from_secs(10);
-        let mut s = Summary::<()>::new_resizable(WINDOWS, WINDOWS * ROTATE_INTERVAL, 5).unwrap();
+        let s = Summary::<()>::new_resizable(WINDOWS, WINDOWS * ROTATE_INTERVAL, 5).unwrap();
 
         s.record_n(1, 5_000).unwrap();
         s.record_n(2, 5_000).unwrap();
