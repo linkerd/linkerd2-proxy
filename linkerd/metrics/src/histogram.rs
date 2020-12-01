@@ -349,7 +349,7 @@ mod tests {
         fn sum_equals_total_of_observations(observations: Vec<u64>) -> bool {
             let hist = Histogram::<u64>::new(&BOUNDS);
 
-            let expected_sum = Counter::default();
+            let expected_sum = Counter::<()>::default();
             for obs in observations {
                 expected_sum.add(obs);
                 hist.add(obs);
