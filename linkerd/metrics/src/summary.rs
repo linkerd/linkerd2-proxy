@@ -1,3 +1,6 @@
+// This module is inspired by hdrhistogram-go, which is distributed under the
+// MIT license. Copyright (c) 2014 Coda Hale
+
 use crate::{Counter, Factor, FmtLabels, FmtMetric};
 pub use hdrhistogram::{AdditionError, CreationError, Histogram, RecordError};
 use parking_lot::{Mutex, MutexGuard};
