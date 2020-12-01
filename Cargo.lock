@@ -1219,12 +1219,12 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.15"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.15#d260ea21a0e490d863a9ed02bcc051035be9d238"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tokio-0.3#5dfd1d65f856ad1cc01fc8c6a6670f0783ccc8b0"
 dependencies = [
  "h2 0.2.7",
  "http",
- "prost 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "prost-types 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "prost 0.6.1 (git+https://github.com/danburkert/prost)",
+ "prost-types 0.6.1 (git+https://github.com/danburkert/prost)",
  "quickcheck",
  "rand",
  "tonic",
