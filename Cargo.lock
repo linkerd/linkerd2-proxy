@@ -882,7 +882,7 @@ dependencies = [
 name = "linkerd2-app-integration"
 version = "0.1.0"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 0.6.0",
  "flate2",
  "futures 0.3.7",
  "h2 0.3.0",
