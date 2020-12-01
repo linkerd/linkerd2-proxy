@@ -1,11 +1,12 @@
 //! HTTP/1.1 Upgrades
 
-use crate::{glue::Body, h1};
+use crate::h1;
 use futures::{
     future::{self, Either},
     TryFutureExt,
 };
 use hyper::upgrade::OnUpgrade;
+use hyper::Body;
 use linkerd2_drain as drain;
 use linkerd2_duplex::Duplex;
 use std::fmt;
@@ -199,7 +200,7 @@ where
             return Either::Right(future::ok(res));
         }
 
-        let upgrade = if h1::wants_upgrade(&req) {
+        let _upgrade = if h1::wants_upgrade(&req) {
             trace!("server request wants HTTP/1.1 upgrade");
             // Upgrade requests include several "connection" headers that
             // cannot be removed.
@@ -214,7 +215,7 @@ where
             None
         };
 
-        req.body_mut().upgrade = upgrade;
+        // req.body_mut().upgrade = upgrade;
 
         Either::Left(self.service.call(req))
     }

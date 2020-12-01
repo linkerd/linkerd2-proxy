@@ -1,5 +1,5 @@
 use crate::{
-    glue::{Body, HyperConnect},
+    glue::HyperConnect,
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use futures::prelude::*;
@@ -59,8 +59,9 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
     }
 }
 
-type RspFuture =
-    Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
+type RspFuture = Pin<
+    Box<dyn Future<Output = Result<http::Response<hyper::Body>, hyper::Error>> + Send + 'static>,
+>;
 
 impl<C, T, B> Client<C, T, B>
 where
@@ -144,11 +145,14 @@ where
 
             if is_upgrade(&rsp) {
                 trace!("Client response is HTTP/1.1 upgrade");
+                if let Some(upgrade) = upgrade {
+                    upgrade.insert_half(hyper::upgrade::on(&mut rsp));
+                }
             } else {
                 strip_connection_headers(rsp.headers_mut());
             }
 
-            rsp.map(move |b| Body::new(b, upgrade))
+            rsp
         }))
     }
 }
