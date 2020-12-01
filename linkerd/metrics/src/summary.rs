@@ -114,10 +114,7 @@ impl<F> Summary<F> {
     /// Histograms are rotated as needed.
     #[inline]
     pub fn record(&self, v: u64) -> Result<(), RecordError> {
-        self.rotated_window_mut().record(v)?;
-        self.sum.add(v);
-        self.count.incr();
-        Ok(())
+        self.record_n(v, 1)
     }
 
     /// Record values in the current histogram.
@@ -138,9 +135,7 @@ impl<F> Summary<F> {
     /// summaries.
     #[inline]
     pub fn saturating_record(&self, v: u64) {
-        self.rotated_window_mut().saturating_record(v);
-        self.sum.add(v);
-        self.count.incr();
+        self.saturating_record_n(v, 1);
     }
 
     /// Record values in the current histogram.
