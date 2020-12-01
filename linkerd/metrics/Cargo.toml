@@ -17,7 +17,7 @@ hdrhistogram = { version = "7.1", optional = true }
 http = "0.2"
 hyper = "0.13.7"
 indexmap = "1.0"
-parking_lot = { version = "0.10", optional = true }
+parking_lot = { version = "0.11", optional = true }
 tokio = { version = "0.2", features = ["time"], optional = true }
 tracing = "0.1.2"
 
