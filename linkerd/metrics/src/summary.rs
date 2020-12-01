@@ -6,7 +6,6 @@ pub use hdrhistogram::{AdditionError, CreationError, Histogram, RecordError};
 use parking_lot::{Mutex, MutexGuard};
 use std::fmt;
 use tokio::time;
-use tracing::warn;
 
 /// Summarizes a distribution of values at fixed quantiles over a sliding window.
 #[derive(Debug)]
@@ -45,7 +44,7 @@ impl<F> Summary<F> {
     /// are included for at most `lifetime`.
     ///
     /// Histograms are automatically resized to accomodate values,
-    pub fn new(
+    pub fn new_resizable(
         n_windows: u32,
         lifetime: time::Duration,
         sigfig: u8,
@@ -54,6 +53,10 @@ impl<F> Summary<F> {
         Ok(Self::new_inner(n_windows, lifetime, h))
     }
 
+    /// Creates a new summary with the specified number of windows. Values are
+    /// are included for at most `lifetime`.
+    ///
+    /// Histograms are **not** automatically resized to accomodate values,
     pub fn new_with_max(
         n_windows: u32,
         lifetime: time::Duration,
@@ -91,7 +94,7 @@ impl<F> Summary<F> {
         }
     }
 
-    /// Overrides the default quantiles for this summary.
+    /// Overrides the default quantiles to be reported.
     pub fn with_quantiles(mut self, qs: impl IntoIterator<Item = f64>) -> Self {
         self.quantiles = qs.into_iter().collect();
         self
@@ -110,8 +113,7 @@ impl<F> Summary<F> {
 
     /// Record values in the current histogram.
     ///
-    /// The current histogram is updated as needed. Values that exceed the
-    /// maximum are clamped to the upper bound.
+    /// Histograms are rotated as needed.
     #[inline]
     pub fn record_n(&mut self, v: u64, n: usize) -> Result<(), RecordError> {
         self.rotated_window_mut().record_n(v, n as u64)?;
@@ -122,8 +124,9 @@ impl<F> Summary<F> {
 
     /// Record a value in the current histogram.
     ///
-    /// The current histogram is updated as needed. If the value exceeds the
-    /// maximum, it is clamped to the upper bound.
+    /// Histograms are rotated as needed. If the value exceeds the maximum, it is
+    /// clamped to the upper bound. This should not be used with resizable
+    /// summaries.
     #[inline]
     pub fn saturating_record(&mut self, v: u64) {
         self.rotated_window_mut().saturating_record(v);
@@ -133,8 +136,9 @@ impl<F> Summary<F> {
 
     /// Record values in the current histogram.
     ///
-    /// The current histogram is updated as needed. Values that exceed the
-    /// maximum are clamped to the upper bound.
+    /// Histograms are rotated as needed. Values that exceed the maximum are
+    /// clamped to the upper bound. This should not be used with resizable
+    /// summaries.
     #[inline]
     pub fn saturating_record_n(&mut self, v: u64, n: usize) {
         self.rotated_window_mut().saturating_record_n(v, n as u64);
@@ -148,7 +152,9 @@ impl<F> Summary<F> {
     fn rotated_window_mut(&mut self) -> &mut Histogram<u64> {
         let now = time::Instant::now();
         if now >= self.next_rotate {
-            // Advance windows per elapsed time. If the
+            // Advance windows per elapsed time. If the more than one interval
+            // has elapsed, clear out intermediate windows so reports only
+            // include values in the max lifetime.
             let rotations =
                 ((now - self.next_rotate).as_millis() / self.rotate_interval.as_millis()) + 1;
             for _ in 0..rotations {
@@ -162,14 +168,17 @@ impl<F> Summary<F> {
     }
 
     /// Lock the inner report, clear it, and repopulate from the active windows.
-    fn lock_report(&self) -> Result<MutexGuard<'_, Histogram<u64>>, AdditionError> {
+    fn lock_report(&self) -> MutexGuard<'_, Histogram<u64>> {
         let mut report = self.report.lock();
         // Remove all values from the merged
         report.reset();
         for w in self.windows.iter() {
-            report.add(w)?
+            // The report histogram must have been created with the same
+            // configuration as the other histograms, so they all either share a
+            // max value or are all resizable.
+            report.add(w).expect("Histograms must merge");
         }
-        Ok(report)
+        report
     }
 }
 
@@ -177,13 +186,11 @@ impl<F: Factor> FmtMetric for Summary<F> {
     const KIND: &'static str = "summary";
 
     fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        match self.lock_report() {
-            Err(error) => warn!(%error, "Could not merge histograms"),
-            Ok(report) => {
-                for q in self.quantiles.iter() {
-                    let v = Counter::<F>::from(report.value_at_quantile(*q));
-                    v.fmt_metric_labeled(f, &name, FmtQuantile(q))?;
-                }
+        {
+            let report = self.lock_report();
+            for q in self.quantiles.iter() {
+                let v = Counter::<F>::from(report.value_at_quantile(*q));
+                v.fmt_metric_labeled(f, &name, FmtQuantile(q))?;
             }
         }
         self.count.fmt_metric(f, format_args!("{}_count", name))?;
@@ -201,13 +208,11 @@ impl<F: Factor> FmtMetric for Summary<F> {
         N: fmt::Display,
         L: FmtLabels,
     {
-        match self.lock_report() {
-            Err(error) => warn!(%error, "Could not merge histograms"),
-            Ok(report) => {
-                for q in self.quantiles.iter() {
-                    let v = Counter::<F>::from(report.value_at_quantile(*q));
-                    v.fmt_metric_labeled(f, &name, (FmtQuantile(q), &labels))?;
-                }
+        {
+            let report = self.lock_report();
+            for q in self.quantiles.iter() {
+                let v = Counter::<F>::from(report.value_at_quantile(*q));
+                v.fmt_metric_labeled(f, &name, (FmtQuantile(q), &labels))?;
             }
         }
         self.count
@@ -263,8 +268,8 @@ mod tests {
     fn fmt() {
         let output = {
             let mut f = Fmt {
-                basic: Summary::new(2, time::Duration::from_secs(2), 5).unwrap(),
-                scaled: Summary::new(2, time::Duration::from_secs(2), 5).unwrap(),
+                basic: Summary::new_resizable(2, time::Duration::from_secs(2), 5).unwrap(),
+                scaled: Summary::new_resizable(2, time::Duration::from_secs(2), 5).unwrap(),
             };
 
             record(&mut f.basic).unwrap();
@@ -325,12 +330,12 @@ mod tests {
 
         const WINDOWS: u32 = 2;
         const ROTATE_INTERVAL: time::Duration = time::Duration::from_secs(10);
-        let mut s = Summary::<()>::new(WINDOWS, WINDOWS * ROTATE_INTERVAL, 5).unwrap();
+        let mut s = Summary::<()>::new_resizable(WINDOWS, WINDOWS * ROTATE_INTERVAL, 5).unwrap();
 
         s.record_n(1, 5_000).unwrap();
         s.record_n(2, 5_000).unwrap();
         {
-            let h = s.lock_report().unwrap();
+            let h = s.lock_report();
             assert_eq!(h.value_at_quantile(0.5), 1);
             assert_eq!(h.len(), 10000);
         }
@@ -342,7 +347,7 @@ mod tests {
         s.record_n(1, 4999).unwrap();
         s.record_n(3, 5001).unwrap();
         {
-            let h = s.lock_report().unwrap();
+            let h = s.lock_report();
             assert_eq!(h.value_at_quantile(0.5), 2);
             assert_eq!(h.len(), 20000);
         }
@@ -353,7 +358,7 @@ mod tests {
 
         s.record_n(4, 10_000).unwrap();
         {
-            let h = s.lock_report().unwrap();
+            let h = s.lock_report();
             assert_eq!(h.value_at_quantile(0.5), 3);
             assert_eq!(h.len(), 20000);
         }
@@ -364,7 +369,7 @@ mod tests {
 
         s.record_n(1, 10_000).unwrap();
         {
-            let h = s.lock_report().unwrap();
+            let h = s.lock_report();
             assert_eq!(h.value_at_quantile(0.5), 1);
             assert_eq!(h.len(), 10000);
         }
