@@ -17,7 +17,7 @@ pub struct Summary<F = ()> {
     /// Instead of allocating a new histogram each time a report is formatted, we
     /// hold a single report and reset/repopulate it from the active windows.
     report: Mutex<Histogram<u64>>,
-    quantiles: Vec<f64>,
+    quantiles: Box<[f64]>,
 
     /// Count is tracked independently of the histogams so that rotated values
     /// are included.
@@ -96,7 +96,7 @@ impl<F> Summary<F> {
             rotate_interval,
 
             report,
-            quantiles: Vec::from(Self::DEFAULT_QUANTILES.clone()),
+            quantiles: Box::new(Self::DEFAULT_QUANTILES.clone()),
 
             count: Counter::new(),
             sum: Counter::new(),
