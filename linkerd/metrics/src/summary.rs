@@ -3,6 +3,7 @@ pub use hdrhistogram::{AdditionError, CreationError, Histogram, RecordError};
 use parking_lot::{Mutex, MutexGuard};
 use std::fmt;
 use tokio::time;
+use tracing::warn;
 
 /// Summarizes a distribution of values at fixed quantiles over a sliding window.
 #[derive(Debug)]
@@ -10,11 +11,16 @@ pub struct Summary<F = ()> {
     rotate_interval: time::Duration,
     next_rotate: time::Instant,
 
-    window_idx: usize,
+    /// A ring buffer of active histograms window. Every `rotate_interval` the
+    /// index is advanced and the oldest histogram is reset and reused for new
+    /// values. `window_idx` always refers to the index of the newest active
+    /// histogram and `window_idx + 1 % windows.len()` is the oldest active
+    /// histogram.
     windows: Vec<Histogram<u64>>,
+    window_idx: usize,
 
     /// Instead of allocating a new histogram each time a report is formatted, we
-    /// hold a single report and clear/repopulate it from the active windows.
+    /// hold a single report and reset/repopulate it from the active windows.
     report: Mutex<Histogram<u64>>,
     quantiles: Vec<f64>,
 
@@ -35,37 +41,39 @@ impl<F> Summary<F> {
     /// Creates a new summary with the specified number of windows. Values are
     /// are included for at most `lifetime`.
     ///
-    /// A maximum value is required so that histograms can be merged
-    /// deterministically. Values that exceed this maximum will be clamed, so
-    /// summaries can hide outliers that exceed this maximum.
-    ///
-    /// A higher number of windows increases granularity at the cost of memory.
-    /// For example, with `n_windows=2` and `liftime=1m`, the summary will rotate
-    /// its histograms at most ever 30s. Whereas,with `n_windows=6`, histograms
-    /// are rotated every 10s.
+    /// Histograms are automatically resized to accomodate values,
     pub fn new(
+        n_windows: u32,
+        lifetime: time::Duration,
+        sigfig: u8,
+    ) -> Result<Self, CreationError> {
+        let h = Histogram::new(sigfig)?;
+        Ok(Self::new_inner(n_windows, lifetime, h))
+    }
+
+    pub fn new_with_max(
         n_windows: u32,
         lifetime: time::Duration,
         high: u64,
         sigfig: u8,
     ) -> Result<Self, CreationError> {
-        // Create several histograms.
+        let h = Histogram::new_with_max(high, sigfig)?;
+        Ok(Self::new_inner(n_windows, lifetime, h))
+    }
+
+    fn new_inner(n_windows: u32, lifetime: time::Duration, histogram: Histogram<u64>) -> Self {
         debug_assert!(n_windows > 0);
         let mut windows = Vec::with_capacity(n_windows as usize);
         for _ in 0..n_windows {
-            let h = Histogram::new_with_max(high, sigfig)?;
-            windows.push(h.clone());
+            windows.push(histogram.clone());
         }
 
-        let report = {
-            let r = Histogram::new_with_max(high, sigfig)?;
-            Mutex::new(r)
-        };
+        let report = Mutex::new(histogram);
 
         let rotate_interval = lifetime / n_windows;
         let next_rotate = time::Instant::now() + rotate_interval;
 
-        Ok(Self {
+        Self {
             windows,
             window_idx: 0,
 
@@ -77,7 +85,7 @@ impl<F> Summary<F> {
 
             count: Counter::new(),
             sum: Counter::new(),
-        })
+        }
     }
 
     /// Overrides the default quantiles for this summary.
@@ -88,10 +96,33 @@ impl<F> Summary<F> {
 
     /// Record a value in the current histogram.
     ///
+    /// Histograms are rotated as needed.
+    #[inline]
+    pub fn record(&mut self, v: u64) -> Result<(), RecordError> {
+        self.rotated_window_mut().record(v)?;
+        self.sum.add(v);
+        self.count.incr();
+        Ok(())
+    }
+
+    /// Record values in the current histogram.
+    ///
+    /// The current histogram is updated as needed. Values that exceed the
+    /// maximum are clamped to the upper bound.
+    #[inline]
+    pub fn record_n(&mut self, v: u64, n: usize) -> Result<(), RecordError> {
+        self.rotated_window_mut().record_n(v, n as u64)?;
+        self.sum.add(v * n as u64);
+        self.count.add(n as u64);
+        Ok(())
+    }
+
+    /// Record a value in the current histogram.
+    ///
     /// The current histogram is updated as needed. If the value exceeds the
     /// maximum, it is clamped to the upper bound.
     #[inline]
-    pub fn record(&mut self, v: u64) {
+    pub fn saturating_record(&mut self, v: u64) {
         self.rotated_window_mut().saturating_record(v);
         self.sum.add(v);
         self.count.incr();
@@ -102,7 +133,7 @@ impl<F> Summary<F> {
     /// The current histogram is updated as needed. Values that exceed the
     /// maximum are clamped to the upper bound.
     #[inline]
-    pub fn record_n(&mut self, v: u64, n: usize) {
+    pub fn saturating_record_n(&mut self, v: u64, n: usize) {
         self.rotated_window_mut().saturating_record_n(v, n as u64);
         self.sum.add(v * n as u64);
         self.count.add(n as u64);
@@ -128,16 +159,14 @@ impl<F> Summary<F> {
     }
 
     /// Lock the inner report, clear it, and repopulate from the active windows.
-    fn lock_report(&self) -> MutexGuard<'_, Histogram<u64>> {
+    fn lock_report(&self) -> Result<MutexGuard<'_, Histogram<u64>>, AdditionError> {
         let mut report = self.report.lock();
         // Remove all values from the merged
         report.reset();
         for w in self.windows.iter() {
-            report
-                .add(w)
-                .expect("Histograms must share a maximum value");
+            report.add(w)?
         }
-        report
+        Ok(report)
     }
 }
 
@@ -145,11 +174,13 @@ impl<F: Factor> FmtMetric for Summary<F> {
     const KIND: &'static str = "summary";
 
     fn fmt_metric<N: fmt::Display>(&self, f: &mut fmt::Formatter<'_>, name: N) -> fmt::Result {
-        {
-            let report = self.lock_report();
-            for q in self.quantiles.iter() {
-                let v = Counter::<F>::from(report.value_at_quantile(*q));
-                v.fmt_metric_labeled(f, &name, FmtQuantile(q))?;
+        match self.lock_report() {
+            Err(error) => warn!(%error, "Could not merge histograms"),
+            Ok(report) => {
+                for q in self.quantiles.iter() {
+                    let v = Counter::<F>::from(report.value_at_quantile(*q));
+                    v.fmt_metric_labeled(f, &name, FmtQuantile(q))?;
+                }
             }
         }
         self.count.fmt_metric(f, format_args!("{}_count", name))?;
@@ -167,11 +198,13 @@ impl<F: Factor> FmtMetric for Summary<F> {
         N: fmt::Display,
         L: FmtLabels,
     {
-        {
-            let report = self.lock_report();
-            for q in self.quantiles.iter() {
-                let v = Counter::<F>::from(report.value_at_quantile(*q));
-                v.fmt_metric_labeled(f, &name, (FmtQuantile(q), &labels))?;
+        match self.lock_report() {
+            Err(error) => warn!(%error, "Could not merge histograms"),
+            Ok(report) => {
+                for q in self.quantiles.iter() {
+                    let v = Counter::<F>::from(report.value_at_quantile(*q));
+                    v.fmt_metric_labeled(f, &name, (FmtQuantile(q), &labels))?;
+                }
             }
         }
         self.count
@@ -197,8 +230,8 @@ mod tests {
     use tokio::time;
 
     crate::metrics! {
-        basic: Summary { "basic summary "},
-        scaled: Summary<MillisAsSeconds> { "scaled summary "}
+        basic: Summary { "A simple summary" },
+        scaled: Summary<MillisAsSeconds> { "A summary of millis as seconds" }
     }
 
     struct Fmt {
@@ -208,8 +241,17 @@ mod tests {
 
     impl FmtMetrics for Fmt {
         fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            struct Label;
+            impl FmtLabels for Label {
+                fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    write!(f, "k=\"v\"")
+                }
+            }
+
+            basic.fmt_help(f)?;
             basic.fmt_metric(f, &self.basic)?;
-            scaled.fmt_metric(f, &self.scaled)?;
+            scaled.fmt_help(f)?;
+            scaled.fmt_metric_labeled(f, &self.scaled, &Label)?;
             Ok(())
         }
     }
@@ -218,12 +260,12 @@ mod tests {
     fn fmt() {
         let output = {
             let mut f = Fmt {
-                basic: Summary::new(2, time::Duration::from_secs(2), 100000, 5).unwrap(),
-                scaled: Summary::new(2, time::Duration::from_secs(2), 100000, 5).unwrap(),
+                basic: Summary::new(2, time::Duration::from_secs(2), 5).unwrap(),
+                scaled: Summary::new(2, time::Duration::from_secs(2), 5).unwrap(),
             };
 
-            record(&mut f.basic);
-            record(&mut f.scaled);
+            record(&mut f.basic).unwrap();
+            record(&mut f.scaled).unwrap();
             f.as_display()
                 .to_string()
                 .lines()
@@ -236,18 +278,21 @@ mod tests {
         }
         assert_eq!(output.len(), EXPECTED.len());
 
-        fn record<F>(s: &mut Summary<F>) {
-            s.record_n(1, 2500);
-            s.record_n(2, 2500);
-            s.record_n(10, 2500);
-            s.record_n(100, 1500);
-            s.record_n(1000, 900);
-            s.record_n(10000, 90);
-            s.record_n(100000, 9);
-            s.record(100001)
+        fn record<F>(s: &mut Summary<F>) -> Result<(), RecordError> {
+            s.record_n(1, 2500)?;
+            s.record_n(2, 2500)?;
+            s.record_n(10, 2500)?;
+            s.record_n(100, 1500)?;
+            s.record_n(1000, 900)?;
+            s.record_n(10000, 90)?;
+            s.record_n(100000, 9)?;
+            s.record(100001)?;
+            Ok(())
         }
 
         const EXPECTED: &'static [&'static str] = &[
+            "# HELP basic A simple summary",
+            "# TYPE basic summary",
             "basic{quantile=\"0\"} 1",
             "basic{quantile=\"0.5\"} 2",
             "basic{quantile=\"0.75\"} 10",
@@ -257,15 +302,17 @@ mod tests {
             "basic{quantile=\"1\"} 100001",
             "basic_count 10000",
             "basic_sum 2982501",
-            "scaled{quantile=\"0\"} 0.001",
-            "scaled{quantile=\"0.5\"} 0.002",
-            "scaled{quantile=\"0.75\"} 0.01",
-            "scaled{quantile=\"0.9\"} 0.1",
-            "scaled{quantile=\"0.99\"} 1",
-            "scaled{quantile=\"0.999\"} 10",
-            "scaled{quantile=\"1\"} 100.001",
-            "scaled_count 10000",
-            "scaled_sum 2982.501",
+            "# HELP scaled A summary of millis as seconds",
+            "# TYPE scaled summary",
+            "scaled{quantile=\"0\",k=\"v\"} 0.001",
+            "scaled{quantile=\"0.5\",k=\"v\"} 0.002",
+            "scaled{quantile=\"0.75\",k=\"v\"} 0.01",
+            "scaled{quantile=\"0.9\",k=\"v\"} 0.1",
+            "scaled{quantile=\"0.99\",k=\"v\"} 1",
+            "scaled{quantile=\"0.999\",k=\"v\"} 10",
+            "scaled{quantile=\"1\",k=\"v\"} 100.001",
+            "scaled_count{k=\"v\"} 10000",
+            "scaled_sum{k=\"v\"} 2982.501",
         ];
     }
 
@@ -275,12 +322,12 @@ mod tests {
 
         const WINDOWS: u32 = 2;
         const ROTATE_INTERVAL: time::Duration = time::Duration::from_secs(10);
-        let mut s = Summary::<()>::new(WINDOWS, WINDOWS * ROTATE_INTERVAL, 100000, 5).unwrap();
+        let mut s = Summary::<()>::new(WINDOWS, WINDOWS * ROTATE_INTERVAL, 5).unwrap();
 
-        s.record_n(1, 5_000);
-        s.record_n(2, 5_000);
+        s.record_n(1, 5_000).unwrap();
+        s.record_n(2, 5_000).unwrap();
         {
-            let h = s.lock_report();
+            let h = s.lock_report().unwrap();
             assert_eq!(h.value_at_quantile(0.5), 1);
             assert_eq!(h.len(), 10000);
         }
@@ -289,10 +336,10 @@ mod tests {
 
         time::advance(ROTATE_INTERVAL).await;
 
-        s.record_n(1, 4999);
-        s.record_n(3, 5001);
+        s.record_n(1, 4999).unwrap();
+        s.record_n(3, 5001).unwrap();
         {
-            let h = s.lock_report();
+            let h = s.lock_report().unwrap();
             assert_eq!(h.value_at_quantile(0.5), 2);
             assert_eq!(h.len(), 20000);
         }
@@ -301,9 +348,9 @@ mod tests {
 
         time::advance(ROTATE_INTERVAL).await;
 
-        s.record_n(4, 10_000);
+        s.record_n(4, 10_000).unwrap();
         {
-            let h = s.lock_report();
+            let h = s.lock_report().unwrap();
             assert_eq!(h.value_at_quantile(0.5), 3);
             assert_eq!(h.len(), 20000);
         }
@@ -312,9 +359,9 @@ mod tests {
 
         time::advance(2 * ROTATE_INTERVAL).await;
 
-        s.record_n(1, 10_000);
+        s.record_n(1, 10_000).unwrap();
         {
-            let h = s.lock_report();
+            let h = s.lock_report().unwrap();
             assert_eq!(h.value_at_quantile(0.5), 1);
             assert_eq!(h.len(), 10000);
         }
