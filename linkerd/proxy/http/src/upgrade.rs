@@ -1,12 +1,11 @@
 //! HTTP/1.1 Upgrades
 
-use crate::h1;
+use crate::{glue::Body, h1};
 use futures::{
     future::{self, Either},
     TryFutureExt,
 };
 use hyper::upgrade::OnUpgrade;
-use hyper::Body;
 use linkerd2_drain as drain;
 use linkerd2_duplex::Duplex;
 use std::fmt;
@@ -215,7 +214,7 @@ where
             None
         };
 
-        // req.body_mut().upgrade = upgrade;
+        req.body_mut().upgrade = upgrade;
 
         Either::Left(self.service.call(req))
     }
