@@ -2996,8 +2996,8 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.21.2"
-source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.21#bb241f5bf80a894d0899ad6719bab3d9d0660b61"
+version = "0.21.3"
+source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.21#b2c3bb3633f97280ae0503a79b501d51137dcb10"
 dependencies = [
  "ring",
  "untrusted",
