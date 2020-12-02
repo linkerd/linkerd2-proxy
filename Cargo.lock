@@ -838,7 +838,6 @@ dependencies = [
  "pin-project",
  "procinfo",
  "prost-types",
- "rand 0.7.2",
  "regex 1.3.9",
  "tokio",
  "tokio-timer",

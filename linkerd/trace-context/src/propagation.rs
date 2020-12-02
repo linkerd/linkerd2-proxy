@@ -2,7 +2,7 @@ use crate::{Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 use http::header::HeaderValue;
 use linkerd2_error::Error;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::thread_rng;
 use std::convert::TryInto;
 use std::fmt;
 use tracing::{trace, warn};
@@ -148,7 +148,7 @@ fn parse_grpc_trace_context_field(
 }
 
 fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
-    let span_id = Id::new_span_id(&mut SmallRng::from_entropy());
+    let span_id = Id::new_span_id(&mut thread_rng());
 
     trace!(message = "incremented span id", %span_id);
 
@@ -195,7 +195,7 @@ fn unpack_http_trace_context<B>(request: &http::Request<B>) -> Option<TraceConte
 }
 
 fn increment_http_span_id<B>(request: &mut http::Request<B>) -> Id {
-    let span_id = Id::new_span_id(&mut SmallRng::from_entropy());
+    let span_id = Id::new_span_id(&mut thread_rng());
 
     trace!("incremented span id: {}", span_id);
 
