@@ -1784,9 +1784,9 @@ checksum = "9cbca9424c482ee628fa549d9c812e2cd22f1180b9222c9200fdfa6eb31aecb2"
 
 [[package]]
 name = "once_cell"
-version = "1.4.0"
+version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
+checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
 
 [[package]]
 name = "opencensus-proto"
@@ -2229,9 +2229,9 @@ dependencies = [
 
 [[package]]
 name = "ring"
-version = "0.16.15"
+version = "0.16.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "952cd6b98c85bbc30efa1ba5783b8abf12fec8b3287ffa52605b9432313e34e4"
+checksum = "024a1e66fea74c66c66624ee5622a7ff0e4b73a13b4f5c326ddb50c708944226"
 dependencies = [
  "cc",
  "libc",
@@ -2995,8 +2995,8 @@ dependencies = [
 
 [[package]]
 name = "webpki"
-version = "0.21.2"
-source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.21#bb241f5bf80a894d0899ad6719bab3d9d0660b61"
+version = "0.21.3"
+source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.21#b2c3bb3633f97280ae0503a79b501d51137dcb10"
 dependencies = [
  "ring",
  "untrusted",
