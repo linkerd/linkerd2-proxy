@@ -10,7 +10,7 @@ test-util = []
 
 [dependencies]
 linkerd2-dns-name = { path = "../dns/name" }
-ring = "0.16"
+ring = "0.16.19"
 rustls = "0.18"
 tracing = "0.1.2"
 untrusted = "0.7"
