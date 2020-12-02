@@ -167,7 +167,7 @@ where
                     .serve_connection(
                         io,
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        HyperServerSvc::new(upgrade::Service::new(svc, self.drain.clone())),
+                        upgrade::Service::new(svc, self.drain.clone()),
                     )
                     .with_upgrades();
 

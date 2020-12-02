@@ -1,5 +1,5 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
-// use bytes::Bytes;
+use bytes::Bytes;
 use futures::TryFuture;
 use http;
 use hyper::body::HttpBody;
@@ -10,6 +10,7 @@ use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tracing::debug;
 
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[pin_project(PinnedDrop)]
@@ -17,8 +18,8 @@ use std::task::{Context, Poll};
 pub struct Body {
     /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
-    body: Option<hyper::Body>,
-    pub(super) upgrade: Option<Http11Upgrade>,
+    body: hyper::Body,
+    pub(super) upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
 }
 
 /// Glue for a `tower::Service` to used as a `hyper::server::Service`.
@@ -57,17 +58,14 @@ impl HttpBody for Body {
     type Error = hyper::Error;
 
     fn is_end_stream(&self) -> bool {
-        self.body
-            .as_ref()
-            .expect("only taken in drop")
-            .is_end_stream()
+        self.body.is_end_stream()
     }
 
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let body = self.project().body.as_mut().expect("only taken in drop");
+        let body = self.project().body;
         let poll = futures::ready!(Pin::new(body) // `hyper::Body` is Unpin
             .poll_data(cx));
         Poll::Ready(poll.map(|x| {
@@ -82,7 +80,7 @@ impl HttpBody for Body {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        let body = self.project().body.as_mut().expect("only taken in drop");
+        let body = self.project().body;
         Pin::new(body) // `hyper::Body` is Unpin
             .poll_trailers(cx)
             .map_err(|e| {
@@ -101,18 +99,18 @@ impl Default for Body {
 impl From<hyper::Body> for Body {
     fn from(body: hyper::Body) -> Self {
         Body {
-            body: Some(body),
+            body,
             upgrade: None,
         }
     }
 }
 
 impl Body {
-    pub(crate) fn new(body: hyper::Body, upgrade: Option<Http11Upgrade>) -> Self {
-        Body {
-            body: Some(body),
-            upgrade: upgrade,
-        }
+    pub(crate) fn new(
+        body: hyper::Body,
+        upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
+    ) -> Self {
+        Body { body, upgrade }
     }
 }
 
@@ -121,8 +119,7 @@ impl PinnedDrop for Body {
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
-        if let Some(upgrade) = this.upgrade.take() {
-            let on_upgrade = this.body.take().expect("take only on drop").on_upgrade();
+        if let Some((upgrade, on_upgrade)) = this.upgrade.take() {
             upgrade.insert_half(on_upgrade);
         }
     }
@@ -149,8 +146,8 @@ where
     }
 
     fn call(&mut self, req: http::Request<hyper::Body>) -> Self::Future {
-        self.service.call(req.map(|b| Body {
-            body: Some(b),
+        self.service.call(req.map(|body| Body {
+            body,
             upgrade: None,
         }))
     }

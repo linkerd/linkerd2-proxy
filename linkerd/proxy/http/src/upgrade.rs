@@ -173,7 +173,7 @@ impl<S> Service<S> {
     }
 }
 
-impl<S, B> tower::Service<http::Request<Body>> for Service<S>
+impl<S, B> tower::Service<http::Request<hyper::Body>> for Service<S>
 where
     S: tower::Service<http::Request<Body>, Response = http::Response<B>>,
     B: Default,
@@ -186,7 +186,7 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<Body>) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<hyper::Body>) -> Self::Future {
         // Should this rejection happen later in the Service stack?
         //
         // Rejecting here means telemetry doesn't record anything about it...
@@ -199,7 +199,7 @@ where
             return Either::Right(future::ok(res));
         }
 
-        let _upgrade = if h1::wants_upgrade(&req) {
+        let upgrade = if h1::wants_upgrade(&req) {
             trace!("server request wants HTTP/1.1 upgrade");
             // Upgrade requests include several "connection" headers that
             // cannot be removed.
@@ -207,14 +207,15 @@ where
             // Setup HTTP Upgrade machinery.
             let halves = Http11Upgrade::new(self.upgrade_drain_signal.clone());
             req.extensions_mut().insert(halves.client);
+            let on_upgrade = hyper::upgrade::on(&mut req);
 
-            Some(halves.server)
+            Some((halves.server, on_upgrade))
         } else {
             h1::strip_connection_headers(req.headers_mut());
             None
         };
 
-        req.body_mut().upgrade = upgrade;
+        let req = req.map(|body| Body::new(body, upgrade));
 
         Either::Left(self.service.call(req))
     }
