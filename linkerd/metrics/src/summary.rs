@@ -3,7 +3,7 @@
 
 use crate::{Counter, Factor, FmtLabels, FmtMetric};
 pub use hdrhistogram::{AdditionError, CreationError, Histogram, RecordError};
-use parking_lot::{MappedRwLockWriteGuard, Mutex, MutexGuard, RwLock, RwLockWriteGuard};
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use std::fmt;
 use tokio::time;
 
@@ -12,7 +12,7 @@ use tokio::time;
 pub struct Summary<F = ()> {
     rotate_interval: time::Duration,
 
-    windows: RwLock<Windows>,
+    windows: Mutex<Windows>,
 
     /// Instead of allocating a new histogram each time a report is formatted, we
     /// hold a single report and reset/repopulate it from the active windows.
@@ -82,7 +82,7 @@ impl<F> Summary<F> {
                 active.push(histogram.clone());
             }
             let next_rotate = time::Instant::now() + rotate_interval;
-            RwLock::new(Windows {
+            Mutex::new(Windows {
                 active,
                 idx: 0,
                 next_rotate,
@@ -153,7 +153,7 @@ impl<F> Summary<F> {
     /// Get a mutable reference to the current histogram, rotating windows as
     /// necessary.
     #[inline]
-    fn rotated_window_mut(&self) -> MappedRwLockWriteGuard<'_, Histogram<u64>> {
+    fn rotated_window_mut(&self) -> MappedMutexGuard<'_, Histogram<u64>> {
         let mut w = self.windows.write();
         let now = time::Instant::now();
         if now >= w.next_rotate {
@@ -170,7 +170,7 @@ impl<F> Summary<F> {
             w.next_rotate = now + self.rotate_interval;
         }
 
-        RwLockWriteGuard::map(w, |w| &mut w.active[w.idx])
+        MutexGuard::map(w, |w| &mut w.active[w.idx])
     }
 
     /// Lock the inner report, clear it, and repopulate from the active windows.
