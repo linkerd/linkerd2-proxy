@@ -5,7 +5,7 @@ use linkerd2_addr::Addr;
 use linkerd2_error::Error;
 use linkerd2_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::{
     fmt,
     marker::PhantomData,
@@ -18,10 +18,8 @@ use tracing::{debug, trace};
 pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>> + Clone {
     // This RNG doesn't need to be cryptographically secure. Small and fast is
     // preferable.
-    let rng = SmallRng::from_entropy();
     layer::mk(move |inner| NewSplit {
         inner,
-        rng: rng.clone(),
         _service: PhantomData,
     })
 }
@@ -29,7 +27,6 @@ pub fn layer<N, S, Req>() -> impl layer::Layer<N, Service = NewSplit<N, S, Req>>
 #[derive(Debug)]
 pub struct NewSplit<N, S, Req> {
     inner: N,
-    rng: SmallRng,
     _service: PhantomData<fn(Req) -> S>,
 }
 
@@ -57,7 +54,6 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            rng: self.rng.clone(),
             _service: self._service,
         }
     }
@@ -115,7 +111,7 @@ where
                     services,
                     addrs,
                     distribution: WeightedIndex::new(weights).unwrap(),
-                    rng: self.rng.clone(),
+                    rng: SmallRng::from_rng(&mut thread_rng()).expect("RNG must initialize"),
                 }
             }
         };

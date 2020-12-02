@@ -1,4 +1,4 @@
-use super::{AsyncRead, AsyncWrite, Io, PeerAddr, Poll, ReadBuf};
+use super::{AsyncRead, AsyncWrite, Io, PeerAddr, Poll, ReadBuf, Result};
 use std::{pin::Pin, task::Context};
 
 /// A public wrapper around a `Box<Io>`.
@@ -14,7 +14,7 @@ impl BoxedIo {
 }
 
 impl PeerAddr for BoxedIo {
-    fn peer_addr(&self) -> std::net::SocketAddr {
+    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.0.peer_addr()
     }
 }

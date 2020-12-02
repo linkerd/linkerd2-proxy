@@ -18,9 +18,9 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", br
 linkerd2-proxy-http = { path = "../http" }
 linkerd2-proxy-transport = { path = "../transport" }
 linkerd2-stack = { path = "../../stack" }
-rand = { version = "0.7", features = ["small_rng"] }
+rand = { version = "0.7" }
 tokio = { version = "0.3", features = ["time"]}
-tower = {version = "0.4", default-features = false }
+tower = { version = "0.4", default-features = false }
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.19"
 tracing-futures = "0.2"

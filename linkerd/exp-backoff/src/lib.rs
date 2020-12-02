@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use pin_project::pin_project;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::fmt;
 use std::future::Future;
 use std::ops::Mul;
@@ -44,7 +44,7 @@ impl ExponentialBackoff {
     pub fn stream(&self) -> ExponentialBackoffStream {
         ExponentialBackoffStream {
             backoff: *self,
-            rng: SmallRng::from_entropy(),
+            rng: SmallRng::from_rng(&mut thread_rng()).expect("RNG must be valid"),
             iterations: 0,
             delay: None,
         }

@@ -1,6 +1,6 @@
 use linkerd2_error::Error;
 use linkerd2_stack::layer;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::thread_rng;
 use std::{hash::Hash, time::Duration};
 pub use tower::{
     balance::p2c::Balance,
@@ -20,10 +20,9 @@ where
     D::Service: tower::Service<T>,
     <D::Service as tower::Service<T>>::Error: Into<Error>,
 {
-    let rng = SmallRng::from_entropy();
     layer::mk(move |discover| {
         let loaded =
             PeakEwmaDiscover::new(discover, default_rtt, decay, CompleteOnResponse::default());
-        Balance::from_rng(loaded, rng.clone()).expect("RNG must be valid")
+        Balance::from_rng(loaded, &mut thread_rng()).expect("RNG must be valid")
     })
 }

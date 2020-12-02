@@ -4,7 +4,7 @@ use linkerd2_errno::Errno;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::Context;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, Result};
 
 pub trait Sensor {
     fn record_read(&mut self, sz: usize);
@@ -63,7 +63,7 @@ impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncWrite for SensorIo<T, S> {
 impl<T: Io, S: Sensor + Send> crate::internal::Sealed for SensorIo<T, S> {}
 
 impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
-    fn peer_addr(&self) -> std::net::SocketAddr {
+    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
     }
 }

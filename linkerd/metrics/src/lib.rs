@@ -31,3 +31,28 @@ macro_rules! metrics {
         )+
     }
 }
+
+pub trait Factor {
+    fn factor(n: u64) -> f64;
+}
+
+pub struct MillisAsSeconds;
+
+/// Largest `u64` that can fit without loss of precision in `f64` (2^53).
+///
+/// Wrapping is based on the fact that Prometheus models values as f64 (52-bits
+/// mantissa), thus integer values over 2^53 are not guaranteed to be correctly
+/// exposed.
+const MAX_PRECISE_UINT64: u64 = 0x20_0000_0000_0000;
+
+impl Factor for () {
+    fn factor(n: u64) -> f64 {
+        n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64
+    }
+}
+
+impl Factor for MillisAsSeconds {
+    fn factor(n: u64) -> f64 {
+        n.wrapping_rem((MAX_PRECISE_UINT64 + 1) * 1000) as f64 * 0.001
+    }
+}

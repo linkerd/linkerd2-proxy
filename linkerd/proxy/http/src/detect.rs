@@ -158,21 +158,20 @@ where
                     svc
                 };
 
-                let (svc, closed) = SetClientHandle::new(io.peer_addr(), http1);
-
-                let mut conn = self
-                    .server
-                    .clone()
-                    .http1_only(true)
-                    .serve_connection(
-                        io,
-                        // Enable support for HTTP upgrades (CONNECT and websockets).
-                        upgrade::Service::new(svc, self.drain.clone()),
-                    )
-                    .with_upgrades();
-
+                let mut server = self.server.clone();
                 let drain = self.drain.clone();
                 Box::pin(async move {
+                    let (svc, closed) = SetClientHandle::new(io.peer_addr()?, http1);
+
+                    let mut conn = server
+                        .http1_only(true)
+                        .serve_connection(
+                            io,
+                            // Enable support for HTTP upgrades (CONNECT and websockets).
+                            upgrade::Service::new(svc, drain.clone()),
+                        )
+                        .with_upgrades();
+
                     tokio::select! {
                         res = &mut conn => {
                             debug!(?res, "The client is shutting down the connection");
@@ -208,16 +207,15 @@ where
                     svc
                 };
 
-                let (svc, closed) = SetClientHandle::new(io.peer_addr(), h2);
-
-                let mut conn = self
-                    .server
-                    .clone()
-                    .http2_only(true)
-                    .serve_connection(io, HyperServerSvc::new(svc));
-
+                let mut server = self.server.clone();
                 let drain = self.drain.clone();
                 Box::pin(async move {
+                    let (svc, closed) = SetClientHandle::new(io.peer_addr()?, h2);
+
+                    let mut conn = server
+                        .http2_only(true)
+                        .serve_connection(io, HyperServerSvc::new(svc));
+
                     tokio::select! {
                         res = &mut conn => {
                             debug!(?res, "The client is shutting down the connection");

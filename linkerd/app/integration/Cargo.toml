@@ -38,7 +38,7 @@ tower = { version = "0.4", default-features = false}
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.19"
 tracing-futures = { version = "0.2", features = ["std-future"] }
-webpki = "0.21.0"
+webpki = "0.21"
 
 [dependencies.tracing-subscriber]
 version = "0.2.14"
