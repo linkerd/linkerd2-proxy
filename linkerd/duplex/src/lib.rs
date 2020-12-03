@@ -224,60 +224,60 @@ unsafe impl BufMut for CopyBuf {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    // use std::io::{Error, Read, Result, Write};
-    // use std::sync::atomic::{AtomicBool, Ordering};
+// #[cfg(test)]
+// mod tests {
+//     use std::io::{Error, Read, Result, Write};
+//     use std::sync::atomic::{AtomicBool, Ordering};
 
-    // use super::*;
-    // use tokio::io::{AsyncRead, AsyncWrite};
+//     use super::*;
+//     use tokio::io::{AsyncRead, AsyncWrite};
 
-    // #[derive(Debug)]
-    // struct DoneIo(AtomicBool);
+//     #[derive(Debug)]
+//     struct DoneIo(AtomicBool);
 
-    // impl<'a> Read for &'a DoneIo {
-    //     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-    //         if self.0.swap(false, Ordering::Relaxed) {
-    //             Ok(buf.len())
-    //         } else {
-    //             Ok(0)
-    //         }
-    //     }
-    // }
+//     impl<'a> Read for &'a DoneIo {
+//         fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+//             if self.0.swap(false, Ordering::Relaxed) {
+//                 Ok(buf.len())
+//             } else {
+//                 Ok(0)
+//             }
+//         }
+//     }
 
-    // impl<'a> AsyncRead for &'a DoneIo {
-    //     unsafe fn prepare_uninitialized_buffer(&self, _buf: &mut [u8]) -> bool {
-    //         true
-    //     }
-    // }
+//     impl<'a> AsyncRead for &'a DoneIo {
+//         unsafe fn prepare_uninitialized_buffer(&self, _buf: &mut [u8]) -> bool {
+//             true
+//         }
+//     }
 
-    // impl<'a> Write for &'a DoneIo {
-    //     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-    //         Ok(buf.len())
-    //     }
-    //     fn flush(&mut self) -> Result<()> {
-    //         Ok(())
-    //     }
-    // }
-    // impl<'a> AsyncWrite for &'a DoneIo {
-    //     fn shutdown(&mut self) -> Poll<(), Error> {
-    //         if self.0.swap(false, Ordering::Relaxed) {
-    //             Ok(Async::NotReady)
-    //         } else {
-    //             Ok(Async::Ready(()))
-    //         }
-    //     }
-    // }
+//     impl<'a> Write for &'a DoneIo {
+//         fn write(&mut self, buf: &[u8]) -> Result<usize> {
+//             Ok(buf.len())
+//         }
+//         fn flush(&mut self) -> Result<()> {
+//             Ok(())
+//         }
+//     }
+//     impl<'a> AsyncWrite for &'a DoneIo {
+//         fn shutdown(&mut self) -> Poll<(), Error> {
+//             if self.0.swap(false, Ordering::Relaxed) {
+//                 Ok(Async::NotReady)
+//             } else {
+//                 Ok(Async::Ready(()))
+//             }
+//         }
+//     }
 
-    // #[test]
-    // fn duplex_doesnt_hang_when_one_half_finishes() {
-    //     // Test reproducing an infinite loop in Duplex that caused issue #519,
-    //     // where a Duplex would enter an infinite loop when one half finishes.
-    //     let io_1 = DoneIo(AtomicBool::new(true));
-    //     let io_2 = DoneIo(AtomicBool::new(true));
-    //     let mut duplex = Duplex::new(&io_1, &io_2);
+//     #[test]
+//     fn duplex_doesnt_hang_when_one_half_finishes() {
+//         // Test reproducing an infinite loop in Duplex that caused issue #519,
+//         // where a Duplex would enter an infinite loop when one half finishes.
+//         let io_1 = DoneIo(AtomicBool::new(true));
+//         let io_2 = DoneIo(AtomicBool::new(true));
+//         let mut duplex = Duplex::new(&io_1, &io_2);
 
-    //     assert_eq!(duplex.poll().unwrap(), Async::NotReady);
-    //     assert_eq!(duplex.poll().unwrap(), Async::Ready(()));
-    // }
-}
+//         assert_eq!(duplex.poll().unwrap(), Async::NotReady);
+//         assert_eq!(duplex.poll().unwrap(), Async::Ready(()));
+//     }
+// }
