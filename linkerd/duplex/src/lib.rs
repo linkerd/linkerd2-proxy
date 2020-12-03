@@ -124,7 +124,7 @@ where
                 buf.reset();
 
                 trace!("reading");
-                let n = ready!(io::poll_read_buf(cx, Pin::new(&mut self.io), buf))?;
+                let n = ready!(io::poll_read_buf(Pin::new(&mut self.io), cx, buf))?;
                 trace!("read {}B", n);
 
                 is_eof = n == 0;
@@ -149,7 +149,7 @@ where
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
                 trace!("writing {}B", buf.remaining());
-                let n = ready!(io::poll_write_buf(cx, Pin::new(&mut dst.io), buf))?;
+                let n = ready!(io::poll_write_buf(Pin::new(&mut dst.io), cx, buf))?;
                 trace!("wrote {}B", n);
                 if n == 0 {
                     return Poll::Ready(Err(write_zero()));
