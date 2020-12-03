@@ -78,6 +78,14 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
         self.project().io.poll_write(cx, buf)
     }
+
+    fn poll_write_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &[IoSlice<'_>]) -> Poll<usize> {
+        self.project().io.poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
+    }
 }
 
 impl<S: Io> crate::internal::Sealed for PrefixedIo<S> {}

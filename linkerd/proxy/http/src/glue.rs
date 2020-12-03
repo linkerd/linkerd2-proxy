@@ -242,12 +242,24 @@ where
         self.project().transport.poll_write(cx, buf)
     }
 
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>]
+    ) -> Poll<Result<usize, io::Error>> {
+        self.project().transport.poll_write_vectored(cx, bufs)
+    }
+
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         self.project().transport.poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         self.project().transport.poll_shutdown(cx)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.transport.is_write_vectored()
     }
 }
 
