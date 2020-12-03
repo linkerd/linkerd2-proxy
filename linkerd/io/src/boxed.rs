@@ -1,4 +1,4 @@
-use super::{internal::Io, AsyncRead, AsyncWrite, PeerAddr, Poll};
+use super::{internal::Io, AsyncRead, AsyncWrite, PeerAddr, Poll, Result};
 use bytes::{Buf, BufMut};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
 
@@ -15,7 +15,7 @@ impl BoxedIo {
 }
 
 impl PeerAddr for BoxedIo {
-    fn peer_addr(&self) -> std::net::SocketAddr {
+    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.0.peer_addr()
     }
 }
@@ -106,8 +106,8 @@ mod tests {
     struct WriteBufDetector;
 
     impl PeerAddr for WriteBufDetector {
-        fn peer_addr(&self) -> std::net::SocketAddr {
-            ([0, 0, 0, 0], 0).into()
+        fn peer_addr(&self) -> Result<std::net::SocketAddr> {
+            Ok(([0, 0, 0, 0], 0).into())
         }
     }
 

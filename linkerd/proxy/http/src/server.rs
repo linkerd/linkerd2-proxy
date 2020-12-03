@@ -129,7 +129,7 @@ where
                 mut server,
             } => Box::pin(async move {
                 debug!(?version, "Handling as HTTP");
-                let (svc, closed) = SetClientHandle::new(io.peer_addr(), service);
+                let (svc, closed) = SetClientHandle::new(io.peer_addr()?, service);
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).

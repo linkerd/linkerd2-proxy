@@ -189,9 +189,6 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
 
-// 10_000 is arbitrarily chosen for now...
-const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
-
 // This configuration limits the amount of time Linkerd retains cached clients &
 // connections.
 //
@@ -213,9 +210,21 @@ const DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE: Duration = Duration::from_secs(5);
 const DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = std::usize::MAX;
 const DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: usize = std::usize::MAX;
 
-// By default, don't accept more requests than we can buffer.
-const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
-const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = DEFAULT_BUFFER_CAPACITY;
+// These settings limit the number of requests that have not received responses,
+// including those buffered in the proxy and dispatched to the destination
+// service.
+const DEFAULT_INBOUND_MAX_IN_FLIGHT: usize = 100_000;
+const DEFAULT_OUTBOUND_MAX_IN_FLIGHT: usize = 100_000;
+
+// This value should be large enough to admit requests without exerting
+// backpressure so that requests implicitly buffer in the executor; but it
+// should be small enough that callers can't force the proxy to consume an
+// extreme amount of memory. Also keep in mind that there may be several buffers
+// used in a given proxy, each of which assumes this capacity.
+//
+// The value of 10K is chosen somewhat arbitrarily, but seems high enough to
+// buffer requests for high-load services.
+const DEFAULT_BUFFER_CAPACITY: usize = 10_000;
 
 const DEFAULT_DESTINATION_PROFILE_SUFFIXES: &str = "svc.cluster.local.";
 const DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT: Duration = Duration::from_millis(500);

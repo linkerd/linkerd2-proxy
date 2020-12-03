@@ -1,10 +1,9 @@
 use crate::{internal::Io, PeerAddr, Poll};
 use bytes::{Buf, BufMut, Bytes};
+use pin_project::pin_project;
 use std::{cmp, io};
 use std::{mem::MaybeUninit, pin::Pin, task::Context};
-use tokio::io::{AsyncRead, AsyncWrite};
-
-use pin_project::pin_project;
+use tokio::io::{AsyncRead, AsyncWrite, Result};
 
 /// A TcpStream where the initial reads will be served from `prefix`.
 #[pin_project]
@@ -28,7 +27,7 @@ impl<S> PrefixedIo<S> {
 }
 
 impl<S: PeerAddr> PeerAddr for PrefixedIo<S> {
-    fn peer_addr(&self) -> std::net::SocketAddr {
+    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
     }
 }
