@@ -12,7 +12,7 @@ pub use self::{
 use bytes::{Buf, BufMut};
 use futures::ready;
 pub use std::io::*;
-use std::{mem::MaybeUninit, net::SocketAddr, pin::Pin, task::Context};
+use std::{net::SocketAddr, pin::Pin, task::Context};
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 pub use tokio_util::io::poll_read_buf;
 
@@ -71,7 +71,7 @@ pub trait Io: AsyncRead + AsyncWrite + PeerAddr + Send + internal::Sealed {
     where
         Self: Sized,
     {
-        crate::poll_read_buf(cx, self, &mut buf)
+        crate::poll_read_buf(self, cx, &mut buf)
     }
 
     /// This method is to allow using `Async::poll_write_buf` even through a

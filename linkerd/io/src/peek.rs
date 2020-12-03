@@ -64,6 +64,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Inner<T> {
         if self.buf.capacity() == 0 {
             return Poll::Ready(Ok(self.buf.len()));
         }
-        crate::poll_read_buf(cx, Pin::new(&mut self.io), &mut self.buf)
+        crate::poll_read_buf(Pin::new(&mut self.io), cx, &mut self.buf)
     }
 }
