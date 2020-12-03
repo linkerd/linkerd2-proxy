@@ -483,7 +483,7 @@ dependencies = [
  "http",
  "indexmap",
  "slab",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-util 0.5.0",
  "tracing",
  "tracing-futures",
@@ -602,7 +602,7 @@ dependencies = [
  "itoa",
  "pin-project 1.0.1",
  "socket2",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower-service",
  "tracing",
  "want",
@@ -616,7 +616,7 @@ dependencies = [
  "http",
  "hyper",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-test 0.2.1",
  "tower",
 ]
@@ -780,7 +780,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-opencensus",
  "regex 1.4.1",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tonic",
  "tower",
  "tracing",
@@ -840,7 +840,7 @@ dependencies = [
  "procinfo",
  "prost-types",
  "regex 1.4.1",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-timer",
  "tonic",
  "tower",
@@ -860,7 +860,7 @@ dependencies = [
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "linkerd2-app-test",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-test 0.2.1",
  "tower",
  "tower-test",
@@ -876,7 +876,7 @@ dependencies = [
  "http",
  "indexmap",
  "linkerd2-app-core",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower",
  "tracing",
 ]
@@ -900,7 +900,7 @@ dependencies = [
  "regex 0.1.80",
  "rustls",
  "socket2",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-rustls",
  "tonic",
  "tower",
@@ -926,7 +926,7 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-retry",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower",
  "tracing",
  "tracing-futures",
@@ -937,7 +937,7 @@ name = "linkerd2-app-profiling"
 version = "0.1.0"
 dependencies = [
  "linkerd2-app-integration",
- "tokio 0.3.4",
+ "tokio 0.3.5",
 ]
 
 [[package]]
@@ -951,7 +951,7 @@ dependencies = [
  "hyper",
  "linkerd2-app-core",
  "regex 0.1.80",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-test 0.3.0",
  "tower",
  "tracing",
@@ -967,7 +967,7 @@ dependencies = [
  "linkerd2-channel",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-test 0.2.1",
  "tower",
  "tower-test",
@@ -993,7 +993,7 @@ name = "linkerd2-channel"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.7",
- "tokio 0.3.4",
+ "tokio 0.3.5",
 ]
 
 [[package]]
@@ -1019,7 +1019,7 @@ dependencies = [
  "linkerd2-dns-name",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tracing",
  "trust-dns-resolver",
 ]
@@ -1039,7 +1039,7 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-test 0.3.0",
 ]
 
@@ -1051,7 +1051,7 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-io",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tracing",
 ]
 
@@ -1095,7 +1095,7 @@ dependencies = [
  "pin-project 0.4.27",
  "quickcheck",
  "rand",
- "tokio 0.3.4",
+ "tokio 0.3.5",
 ]
 
 [[package]]
@@ -1161,9 +1161,10 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-errno",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-rustls",
  "tokio-test 0.3.0",
+ "tokio-util 0.5.0",
 ]
 
 [[package]]
@@ -1208,7 +1209,7 @@ dependencies = [
  "linkerd2-signal",
  "mimalloc",
  "num_cpus",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tracing",
 ]
 
@@ -1268,7 +1269,7 @@ dependencies = [
  "linkerd2-proxy-core",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1283,7 +1284,7 @@ dependencies = [
  "linkerd2-dns",
  "linkerd2-error",
  "linkerd2-proxy-core",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1312,7 +1313,7 @@ dependencies = [
  "linkerd2-timeout",
  "pin-project 1.0.1",
  "rand",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1330,7 +1331,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "linkerd2-proxy-transport",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tonic",
  "tracing",
 ]
@@ -1366,7 +1367,7 @@ dependencies = [
  "pin-project 0.4.27",
  "prost-types",
  "rand",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tonic",
  "tower",
  "tracing",
@@ -1383,7 +1384,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.27",
  "rand",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower",
 ]
 
@@ -1407,7 +1408,7 @@ dependencies = [
  "pin-project 0.4.27",
  "rustls",
  "socket2",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-rustls",
  "tokio-util 0.5.0",
  "tower",
@@ -1462,7 +1463,7 @@ dependencies = [
  "quickcheck",
  "rand",
  "regex 1.4.1",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tonic",
  "tower",
  "tracing",
@@ -1473,7 +1474,7 @@ dependencies = [
 name = "linkerd2-signal"
 version = "0.1.0"
 dependencies = [
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tracing",
 ]
 
@@ -1485,7 +1486,7 @@ dependencies = [
  "futures 0.3.7",
  "linkerd2-error",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-test 0.2.1",
  "tower",
  "tower-test",
@@ -1523,7 +1524,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.27",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tokio-connect",
  "tokio-test 0.2.1",
  "tower",
@@ -2376,9 +2377,8 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dfe2523e6fa84ddf5e688151d4e5fddc51678de9752c6512a24714c23818d61"
+version = "0.3.5"
+source = "git+https://github.com/tokio-rs/tokio?rev=a6051a61ec5c96113f4b543de3ec55431695347a#a6051a61ec5c96113f4b543de3ec55431695347a"
 dependencies = [
  "autocfg",
  "bytes 0.6.0",
@@ -2440,8 +2440,7 @@ dependencies = [
 [[package]]
 name = "tokio-macros"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d30fdbb5dc2d8f91049691aa1a9d4d4ae422a21c334ce8936e5886d30c5c45"
+source = "git+https://github.com/tokio-rs/tokio?rev=a6051a61ec5c96113f4b543de3ec55431695347a#a6051a61ec5c96113f4b543de3ec55431695347a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2454,7 +2453,7 @@ version = "0.20.0"
 source = "git+https://github.com/tokio-rs/tls?rev=e6ef54641b911cfcf23b77a8c4826ae0f8e9870e#e6ef54641b911cfcf23b77a8c4826ae0f8e9870e"
 dependencies = [
  "rustls",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "webpki",
 ]
 
@@ -2477,7 +2476,7 @@ checksum = "7edc5a2b13a713b9134debc9aa1265b0a1ccf6a81fa05af2ba26e4aee56cdf1a"
 dependencies = [
  "bytes 0.5.6",
  "futures-core",
- "tokio 0.3.4",
+ "tokio 0.3.5",
 ]
 
 [[package]]
@@ -2521,16 +2520,15 @@ dependencies = [
 [[package]]
 name = "tokio-util"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73af76301319bcacf00d26d3c75534ef248dcad7ceaf36d93ec902453c3b1706"
+source = "git+https://github.com/tokio-rs/tokio?rev=a6051a61ec5c96113f4b543de3ec55431695347a#a6051a61ec5c96113f4b543de3ec55431695347a"
 dependencies = [
  "bytes 0.6.0",
  "futures-core",
  "futures-io",
  "futures-sink",
  "log",
- "pin-project-lite 0.1.11",
- "tokio 0.3.4",
+ "pin-project-lite 0.2.0",
+ "tokio 0.3.5",
 ]
 
 [[package]]
@@ -2577,7 +2575,7 @@ dependencies = [
  "pin-project 1.0.1",
  "rand",
  "slab",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "tower-layer 0.3.0 (git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7)",
  "tower-service",
  "tracing",
@@ -2729,7 +2727,7 @@ dependencies = [
  "rand",
  "smallvec",
  "thiserror",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "url",
 ]
 
@@ -2748,7 +2746,7 @@ dependencies = [
  "resolv-conf",
  "smallvec",
  "thiserror",
- "tokio 0.3.4",
+ "tokio 0.3.5",
  "trust-dns-proto",
 ]
 
