@@ -14,6 +14,7 @@ use futures::ready;
 pub use std::io::*;
 use std::{mem::MaybeUninit, net::SocketAddr, pin::Pin, task::Context};
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+pub use tokio_util::io::poll_read_buf;
 
 pub type Poll<T> = std::task::Poll<Result<T>>;
 
@@ -95,40 +96,6 @@ mod internal {
     impl Sealed for tokio::net::TcpStream {}
     impl<S: Io + Unpin> Sealed for tokio_rustls::server::TlsStream<S> {}
     impl<S: Io + Unpin> Sealed for tokio_rustls::client::TlsStream<S> {}
-}
-
-// Vendored from upstream Tokio implementation, which is currently private.
-// https://github.com/tokio-rs/tokio/blob/24ed874e81fa27a6505613051955127ba8ddfdf2/tokio-util/src/lib.rs#L72-L100
-//
-// TODO(eliza): if tokio makes this public, it would be nice to not vendor it.
-pub fn poll_read_buf<T: AsyncRead>(
-    cx: &mut Context<'_>,
-    io: Pin<&mut T>,
-    buf: &mut impl BufMut,
-) -> Poll<usize> {
-    if !buf.has_remaining_mut() {
-        return Poll::Ready(Ok(0));
-    }
-
-    let n = {
-        let dst = buf.bytes_mut();
-        let dst = unsafe { &mut *(dst as *mut _ as *mut [MaybeUninit<u8>]) };
-        let mut buf = ReadBuf::uninit(dst);
-        let ptr = buf.filled().as_ptr();
-        ready!(io.poll_read(cx, &mut buf)?);
-
-        // Ensure the pointer does not change from under us
-        assert_eq!(ptr, buf.filled().as_ptr());
-        buf.filled().len()
-    };
-
-    // Safety: This is guaranteed to be the number of initialized (and read)
-    // bytes due to the invariants provided by `ReadBuf::filled`.
-    unsafe {
-        buf.advance_mut(n);
-    }
-
-    Poll::Ready(Ok(n))
 }
 
 pub fn poll_write_buf<T: AsyncWrite>(
