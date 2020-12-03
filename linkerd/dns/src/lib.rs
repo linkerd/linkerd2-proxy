@@ -41,17 +41,17 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub async fn from_system_config_with<C: ConfigureResolver>(
+    pub fn from_system_config_with<C: ConfigureResolver>(
         c: &C,
     ) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
         trace!("DNS opts: {:?}", &opts);
-        Ok(Self::new(config, opts).await)
+        Ok(Self::new(config, opts))
     }
 
-    pub async fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
+    pub fn new(config: ResolverConfig, mut opts: ResolverOpts) -> Self {
         // Disable Trust-DNS's caching.
         opts.cache_size = 0;
         // This function is synchronous, but needs to be called within the Tokio

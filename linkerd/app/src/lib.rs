@@ -90,7 +90,7 @@ impl Config {
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
 
-        let dns = dns.build().await;
+        let dns = dns.build();
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
