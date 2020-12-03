@@ -85,7 +85,7 @@ pub trait Io: AsyncRead + AsyncWrite + PeerAddr + Send + internal::Sealed {
     where
         Self: Sized,
     {
-        crate::poll_write_buf(cx, self, &mut buf)
+        crate::poll_write_buf(self, cx, &mut buf)
     }
 }
 
@@ -98,16 +98,31 @@ mod internal {
     impl<S: Io + Unpin> Sealed for tokio_rustls::client::TlsStream<S> {}
 }
 
-pub fn poll_write_buf<T: AsyncWrite>(
-    cx: &mut Context<'_>,
+// Vendored from upstream:
+// https://github.com/tokio-rs/tokio/blob/920bd4333c1ec563fa3a32498a26c021e8fb1fed/tokio-util/src/lib.rs#L177-L199
+// which hasn't merged yet.
+//
+// TODO(eliza): depend on this from upstream when `tokio-rs/tokio#3156` merges.
+pub fn poll_write_buf<T: AsyncWrite, B: Buf>(
     io: Pin<&mut T>,
-    buf: &mut impl Buf,
+    cx: &mut Context<'_>,
+    buf: &mut B,
 ) -> Poll<usize> {
+    const MAX_BUFS: usize = 64;
+
     if !buf.has_remaining() {
         return Poll::Ready(Ok(0));
     }
 
-    let n = ready!(io.poll_write(cx, buf.bytes()))?;
+    let n = if io.is_write_vectored() {
+        let mut slices = [IoSlice::new(&[]); MAX_BUFS];
+        let cnt = buf.bytes_vectored(&mut slices);
+        ready!(io.poll_write_vectored(cx, &slices[..cnt]))?
+    } else {
+        ready!(io.poll_write(cx, buf.bytes()))?
+    };
+
     buf.advance(n);
+
     Poll::Ready(Ok(n))
 }
