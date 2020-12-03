@@ -1,4 +1,4 @@
-use crate::{Io, PeerAddr, Poll, IoSlice};
+use crate::{Io, IoSlice, PeerAddr, Poll};
 use bytes::{Buf, Bytes};
 use pin_project::pin_project;
 use std::{cmp, io};
@@ -79,7 +79,11 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
         self.project().io.poll_write(cx, buf)
     }
 
-    fn poll_write_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &[IoSlice<'_>]) -> Poll<usize> {
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<usize> {
         self.project().io.poll_write_vectored(cx, bufs)
     }
 

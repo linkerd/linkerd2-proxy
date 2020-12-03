@@ -245,7 +245,7 @@ where
     fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        bufs: &[io::IoSlice<'_>]
+        bufs: &[io::IoSlice<'_>],
     ) -> Poll<Result<usize, io::Error>> {
         self.project().transport.poll_write_vectored(cx, bufs)
     }

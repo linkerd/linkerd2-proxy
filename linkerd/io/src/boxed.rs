@@ -1,4 +1,4 @@
-use super::{AsyncRead, AsyncWrite, Io, PeerAddr, Poll, ReadBuf, Result, IoSlice};
+use super::{AsyncRead, AsyncWrite, Io, IoSlice, PeerAddr, Poll, ReadBuf, Result};
 use std::{pin::Pin, task::Context};
 
 /// A public wrapper around a `Box<Io>`.
@@ -38,7 +38,11 @@ impl AsyncWrite for BoxedIo {
         self.as_mut().0.as_mut().poll_write(cx, buf)
     }
 
-    fn poll_write_vectored(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[IoSlice<'_>]) -> Poll<usize> {
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[IoSlice<'_>],
+    ) -> Poll<usize> {
         self.as_mut().0.as_mut().poll_write_vectored(cx, buf)
     }
 
@@ -99,7 +103,6 @@ mod tests {
             Poll::Ready(Ok(0))
         }
     }
-
 
     impl crate::internal::Sealed for WriteBufDetector {}
 

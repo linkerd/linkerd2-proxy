@@ -1,4 +1,4 @@
-use crate::{Io, PeerAddr, Poll, IoSlice};
+use crate::{Io, IoSlice, PeerAddr, Poll};
 use futures::ready;
 use linkerd2_errno::Errno;
 use pin_project::pin_project;
@@ -59,9 +59,15 @@ impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncWrite for SensorIo<T, S> {
         Poll::Ready(Ok(bytes))
     }
 
-    fn poll_write_vectored(self: Pin<&mut Self>, cx: &mut Context<'_>, bufs: &[IoSlice<'_>]) -> Poll<usize> {
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<usize> {
         let this = self.project();
-        let bytes = ready!(this.sensor.record_error(this.io.poll_write_vectored(cx, bufs)))?;
+        let bytes = ready!(this
+            .sensor
+            .record_error(this.io.poll_write_vectored(cx, bufs)))?;
         this.sensor.record_write(bytes);
         Poll::Ready(Ok(bytes))
     }
