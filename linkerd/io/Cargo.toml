@@ -18,7 +18,7 @@ linkerd2-errno = { path = "../errno" }
 tokio = { version = "0.3", features = ["io-util", "net"] }
 tokio-rustls = "0.20"
 tokio-test = { version = "0.3", optional = true }
-tokio-util = { version = "0.5", features = ["io"] }
+tokio-util = { version = "0.5.1", features = ["io"] }
 pin-project = "0.4"
 
 [dev-dependencies]
