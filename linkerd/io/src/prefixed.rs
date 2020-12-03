@@ -1,4 +1,4 @@
-use crate::{Io, PeerAddr, Poll};
+use crate::{Io, PeerAddr, Poll, IoSlice};
 use bytes::{Buf, Bytes};
 use pin_project::pin_project;
 use std::{cmp, io};

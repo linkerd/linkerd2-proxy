@@ -2378,7 +2378,7 @@ dependencies = [
 [[package]]
 name = "tokio"
 version = "0.3.5"
-source = "git+https://github.com/tokio-rs/tokio?rev=a6051a61ec5c96113f4b543de3ec55431695347a#a6051a61ec5c96113f4b543de3ec55431695347a"
+source = "git+https://github.com/tokio-rs/tokio?rev=647299866a2262c8a1183adad73673e5803293ed#647299866a2262c8a1183adad73673e5803293ed"
 dependencies = [
  "autocfg",
  "bytes 0.6.0",
@@ -2440,7 +2440,7 @@ dependencies = [
 [[package]]
 name = "tokio-macros"
 version = "0.3.1"
-source = "git+https://github.com/tokio-rs/tokio?rev=a6051a61ec5c96113f4b543de3ec55431695347a#a6051a61ec5c96113f4b543de3ec55431695347a"
+source = "git+https://github.com/tokio-rs/tokio?rev=647299866a2262c8a1183adad73673e5803293ed#647299866a2262c8a1183adad73673e5803293ed"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2520,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "tokio-util"
 version = "0.5.0"
-source = "git+https://github.com/tokio-rs/tokio?rev=a6051a61ec5c96113f4b543de3ec55431695347a#a6051a61ec5c96113f4b543de3ec55431695347a"
+source = "git+https://github.com/tokio-rs/tokio?rev=647299866a2262c8a1183adad73673e5803293ed#647299866a2262c8a1183adad73673e5803293ed"
 dependencies = [
  "bytes 0.6.0",
  "futures-core",

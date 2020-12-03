@@ -68,8 +68,8 @@ hyper = { git = "https://github.com/hyperium/hyper", rev = "d6aadb830072959497f4
 http-body = { git = "https://github.com/hyperium/http-body" }
 # depending on `tokio-util` from git means we get its path dep on Tokio for some
 # reason, so i guess we need to patch all tokio deps`.
-tokio = { version = "0.3", git = "https://github.com/tokio-rs/tokio", rev = "a6051a61ec5c96113f4b543de3ec55431695347a" }
-tokio-util = { git = "https://github.com/tokio-rs/tokio", rev = "a6051a61ec5c96113f4b543de3ec55431695347a" }
+tokio = { version = "0.3", git = "https://github.com/tokio-rs/tokio", rev = "647299866a2262c8a1183adad73673e5803293ed" }
+tokio-util = { git = "https://github.com/tokio-rs/tokio", rev = "647299866a2262c8a1183adad73673e5803293ed" }
 tokio-rustls = { git = "https://github.com/tokio-rs/tls", rev = "e6ef54641b911cfcf23b77a8c4826ae0f8e9870e" }
 tonic = { git = "https://github.com/hawkw/tonic", branch = "eliza/tokio-0.3" }
 tonic-build = { git = "https://github.com/hawkw/tonic", branch = "eliza/tokio-0.3" }
