@@ -7,15 +7,20 @@ publish = false
 
 [features]
 default = []
+summary = ["hdrhistogram", "parking_lot", "tokio"]
 test_util = []
 
 [dependencies]
 deflate = { version = "0.7.18", features = ["gzip"] }
 futures = "0.3"
+hdrhistogram = { version = "7.1", optional = true }
 http = "0.2"
 hyper = "0.14.0-dev"
 indexmap = "1.0"
+parking_lot = { version = "0.11", optional = true }
+tokio = { version = "0.2", features = ["time"], optional = true }
 tracing = "0.1.2"
 
 [dev-dependencies]
 quickcheck = { version = "0.9", default-features = false }
+tokio = { version = "0.2", features = ["macros", "test-util", "time"] }

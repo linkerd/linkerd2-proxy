@@ -45,9 +45,6 @@ pub enum Bucket {
 #[derive(Debug)]
 pub struct Bounds(pub &'static [Bucket]);
 
-/// Helper that lazily formats metric keys as {0}_{1}.
-struct Key<A: fmt::Display, B: fmt::Display>(A, B);
-
 /// Helper that lazily formats an `{K}="{V}"`" label.
 struct Label<K: fmt::Display, V: fmt::Display>(K, V);
 
@@ -189,11 +186,10 @@ impl<V: Into<u64>, F: Factor> FmtMetric for Histogram<V, F> {
         let total = Counter::<F>::new();
         for (le, count) in self {
             total.add(count.into());
-            total.fmt_metric_labeled(f, Key(&name, "bucket"), Label("le", le))?;
+            total.fmt_metric_labeled(f, format_args!("{}_bucket", &name), Label("le", le))?;
         }
-        total.fmt_metric(f, Key(&name, "count"))?;
-        self.sum.fmt_metric(f, Key(&name, "sum"))?;
-
+        total.fmt_metric(f, format_args!("{}_count", &name))?;
+        self.sum.fmt_metric(f, format_args!("{}_sum", &name))?;
         Ok(())
     }
 
@@ -210,20 +206,16 @@ impl<V: Into<u64>, F: Factor> FmtMetric for Histogram<V, F> {
         let total = Counter::<F>::new();
         for (le, count) in self {
             total.add(count.into());
-            total.fmt_metric_labeled(f, Key(&name, "bucket"), (&labels, Label("le", le)))?;
+            total.fmt_metric_labeled(
+                f,
+                format_args!("{}_bucket", &name),
+                (&labels, Label("le", le)),
+            )?;
         }
-        total.fmt_metric_labeled(f, Key(&name, "count"), &labels)?;
-        self.sum.fmt_metric_labeled(f, Key(&name, "sum"), &labels)?;
-
+        total.fmt_metric_labeled(f, format_args!("{}_count", &name), &labels)?;
+        self.sum
+            .fmt_metric_labeled(f, format_args!("{}_sum", &name), &labels)?;
         Ok(())
-    }
-}
-
-// ===== impl Key =====
-
-impl<A: fmt::Display, B: fmt::Display> fmt::Display for Key<A, B> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", self.0, self.1)
     }
 }
 

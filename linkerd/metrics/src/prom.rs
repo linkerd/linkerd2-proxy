@@ -94,6 +94,16 @@ impl<'a, N: fmt::Display, M: FmtMetric> Metric<'a, N, M> {
         metric.fmt_metric(f, &self.name)
     }
 
+    /// Formats a single metric with labels.
+    pub fn fmt_metric_labeled<L: FmtLabels>(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        metric: &M,
+        labels: &L,
+    ) -> fmt::Result {
+        metric.fmt_metric_labeled(f, &self.name, labels)
+    }
+
     /// Formats a single metric across labeled scopes.
     pub fn fmt_scopes<'s, L, S: 's, I, F>(
         &self,
