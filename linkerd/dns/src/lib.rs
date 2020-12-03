@@ -41,9 +41,7 @@ impl Resolver {
     /// could not be parsed.
     ///
     /// TODO: This should be infallible like it is in the `domain` crate.
-    pub fn from_system_config_with<C: ConfigureResolver>(
-        c: &C,
-    ) -> Result<Self, ResolveError> {
+    pub fn from_system_config_with<C: ConfigureResolver>(c: &C) -> Result<Self, ResolveError> {
         let (config, mut opts) = system_conf::read_system_conf()?;
         c.configure_resolver(&mut opts);
         trace!("DNS config: {:?}", &config);
