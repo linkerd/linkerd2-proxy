@@ -22,7 +22,7 @@ rand = { version = "0.7" }
 tokio = { version = "0.3", features = ["time"]}
 tower = { version = "0.4", default-features = false }
 tonic = { version = "0.3", default-features = false }
-tracing = "0.1.19"
+tracing = "0.1.22"
 tracing-futures = "0.2"
 pin-project = "0.4"
 

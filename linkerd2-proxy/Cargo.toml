@@ -18,4 +18,4 @@ num_cpus = { version = "1", optional = true }
 linkerd2-app = { path = "../linkerd/app" }
 linkerd2-signal = { path = "../linkerd/signal" }
 tokio = { version = "0.3", features = ["rt", "time", "net"] }
-tracing = "0.1.19"
+tracing = "0.1.22"

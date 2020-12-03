@@ -20,5 +20,5 @@ http-body = "0.4"
 tonic = { version = "0.3", default-features = false }
 indexmap = "1.0"
 tower = { version = "0.4", default-features = false }
-tracing = "0.1.19"
+tracing = "0.1.22"
 pin-project = "0.4"

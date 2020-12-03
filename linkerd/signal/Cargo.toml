@@ -7,4 +7,4 @@ publish = false
 
 [dependencies]
 tokio = { version = "0.3", features = ["macros", "signal"] }
-tracing = "0.1.19"
+tracing = "0.1.22"

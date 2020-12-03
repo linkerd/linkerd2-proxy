@@ -28,7 +28,7 @@ regex = "0.1"
 tokio = { version = "0.3", features = ["io-util", "net", "rt", "sync"]}
 tokio-test = "0.3"
 tower = { version = "0.4", default-features = false}
-tracing = "0.1.19"
+tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 tracing-subscriber = "0.2.11"
 

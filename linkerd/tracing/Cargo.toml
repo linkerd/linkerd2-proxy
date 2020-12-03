@@ -14,7 +14,7 @@ linkerd2-error = { path = "../error" }
 serde_json = "1"
 tokio-timer = "0.2"
 tokio-trace = { git = "https://github.com/hawkw/tokio-trace", rev = "a8240c5cbb4ff981def84920d4087ef23b5edb93", features = ["serde"] }
-tracing = "0.1.19"
+tracing = "0.1.22"
 tracing-log = "0.1"
 
 [dependencies.tracing-subscriber]

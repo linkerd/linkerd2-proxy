@@ -13,7 +13,7 @@ linkerd2-app-core = { path = "../core" }
 linkerd2-app-inbound = { path = "../inbound" }
 linkerd2-app-outbound = { path = "../outbound" }
 tower = { version = "0.4", default-features = false }
-tracing = "0.1.19"
+tracing = "0.1.22"
 
 [dev-dependencies]
 tokio = { version = "0.3", features = ["rt", "macros"] }

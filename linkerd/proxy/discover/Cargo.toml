@@ -17,7 +17,7 @@ linkerd2-proxy-core = { path = "../core" }
 linkerd2-stack = { path = "../../stack" }
 indexmap = "1.0"
 tokio = { version = "0.3", features = ["sync", "time", "stream"] }
-tracing = "0.1.19"
+tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
 

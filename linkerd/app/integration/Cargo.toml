@@ -36,7 +36,7 @@ tokio = { version = "0.3", features = ["io-util", "net", "rt", "macros"]}
 tokio-rustls = "0.20"
 tower = { version = "0.4", default-features = false}
 tonic = { version = "0.3", default-features = false }
-tracing = "0.1.19"
+tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 webpki = "0.21"
 
