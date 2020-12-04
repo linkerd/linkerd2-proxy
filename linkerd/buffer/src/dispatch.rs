@@ -8,7 +8,7 @@ use tower::util::ServiceExt;
 use tracing::trace;
 
 pub(crate) async fn idle(max: std::time::Duration) -> IdleError {
-    tokio::time::delay_for(max).await;
+    tokio::time::sleep(max).await;
     IdleError(max)
 }
 
@@ -29,7 +29,7 @@ pub(crate) async fn run<S, Req, I>(
             req = requests.recv().fuse() => {
                 match req {
                     None => return,
-                    Some(InFlight { request, tx }) => {
+                    Some(InFlight { request, tx, .. }) => {
                        match service.ready_and().await {
                             Ok(svc) => {
                                 trace!("Dispatching request");
@@ -44,7 +44,7 @@ pub(crate) async fn run<S, Req, I>(
                                 while let Some(InFlight { tx, .. }) = requests.recv().await {
                                     let _ = tx.send(Err(error.clone().into()));
                                 }
-                                return;
+                                break;
                             }
                         };
                     }
@@ -65,7 +65,7 @@ mod test {
     use super::*;
     use std::time::Duration;
     use tokio::sync::oneshot;
-    use tokio::time::delay_for;
+    use tokio::time::sleep;
     use tokio_test::{assert_pending, assert_ready, task};
     use tower_test::mock;
 
@@ -81,7 +81,7 @@ mod test {
         // Service ready without requests. Idle counter starts ticking.
         assert_pending!(dispatch.poll());
 
-        delay_for(max_idle).await;
+        sleep(max_idle).await;
 
         assert_ready!(dispatch.poll());
         drop((tx, handle));
@@ -98,7 +98,7 @@ mod test {
 
         // Service ready without requests. Idle counter starts ticking.
         assert_pending!(dispatch.poll());
-        delay_for(max_idle).await;
+        sleep(max_idle).await;
 
         // Send a request after the deadline has fired but before the
         // dispatch future is polled. Ensure that the request is admitted,
@@ -115,7 +115,7 @@ mod test {
         handle.allow(1);
         assert_pending!(dispatch.poll());
 
-        delay_for(max_idle).await;
+        sleep(max_idle).await;
 
         assert_ready!(dispatch.poll());
         drop((tx, handle));

@@ -1,11 +1,12 @@
 use super::{Receiver, RequestMatch, Route};
 use crate::Profile;
-use futures::{future::ErrInto, prelude::*, ready};
+use futures::{future::ErrInto, prelude::*, ready, Stream};
 use linkerd2_error::Error;
 use linkerd2_stack::{layer, NewService, Proxy};
 use std::{
     collections::HashMap,
     marker::PhantomData,
+    pin::Pin,
     task::{Context, Poll},
 };
 use tracing::{debug, trace};
@@ -33,7 +34,7 @@ pub struct NewRouteRequest<M, N, R> {
 
 pub struct RouteRequest<T, S, N, R> {
     target: T,
-    rx: Option<Receiver>,
+    rx: Option<Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>>,
     inner: S,
     new_route: N,
     http_routes: Vec<(RequestMatch, Route)>,
@@ -62,7 +63,7 @@ where
     type Service = RouteRequest<T, M::Service, N, N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let rx = (&target).into();
+        let rx = (&target).into().map(crate::stream_profile);
         let inner = self.inner.new_service(target.clone());
         let default = self
             .new_route
@@ -95,8 +96,9 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
         if let Some(rx) = self.rx.as_mut() {
-            while let Poll::Ready(Some(up)) = rx.poll_recv_ref(cx) {
-                update = Some(up.clone());
+            while let Poll::Ready(Some(up)) = rx.as_mut().poll_next(cx) {
+                tracing::trace!(update = ?up, "updated profile");
+                update = Some(up);
             }
         }
 

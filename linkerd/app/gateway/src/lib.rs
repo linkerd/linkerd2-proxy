@@ -19,6 +19,7 @@ mod test {
         Error, NameAddr, NameMatch, Never,
     };
     use linkerd2_app_inbound::endpoint as inbound;
+    use linkerd2_app_test as support;
     use std::{net::SocketAddr, str::FromStr};
     use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;
@@ -133,11 +134,10 @@ mod test {
             >();
             let mut make_gateway = {
                 let profiles = service_fn(move |na: NameAddr| async move {
-                    let (mut tx, rx) = tokio::sync::watch::channel(profiles::Profile {
+                    let rx = support::profile::only(profiles::Profile {
                         name: Some(na.name().clone()),
                         ..profiles::Profile::default()
                     });
-                    tokio::spawn(async move { tx.closed().await });
                     Ok::<_, Never>(Some(rx))
                 });
                 let allow_discovery = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));

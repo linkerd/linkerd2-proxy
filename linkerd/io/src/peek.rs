@@ -59,11 +59,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Future for Peek<T> {
 
 // === impl Inner ===
 
-impl<T: AsyncRead + Unpin> Inner<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> Inner<T> {
     fn poll_peek(&mut self, cx: &mut Context<'_>) -> Poll<Result<usize, io::Error>> {
         if self.buf.capacity() == 0 {
             return Poll::Ready(Ok(self.buf.len()));
         }
-        Pin::new(&mut self.io).poll_read_buf(cx, &mut self.buf)
+        crate::poll_read_buf(Pin::new(&mut self.io), cx, &mut self.buf)
     }
 }

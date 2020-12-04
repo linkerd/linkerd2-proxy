@@ -1494,7 +1494,9 @@ async fn metrics_compression() {
             let mut body = hyper::body::aggregate(resp.into_body())
                 .await
                 .expect("response body concat");
-            let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(body.to_bytes()));
+            let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(
+                body.copy_to_bytes(body.remaining()),
+            ));
             let mut scrape = String::new();
             decoder.read_to_string(&mut scrape).expect(&format!(
                 "decode gzip (requested Accept-Encoding: {})",

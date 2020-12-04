@@ -39,7 +39,7 @@ where
     pub fn register(&self, tap: T) {
         if let Ok(mut inner) = self.inner.lock() {
             inner.taps.push(tap);
-            let _ = inner.taps_send.broadcast(inner.taps.clone());
+            let _ = inner.taps_send.send(inner.taps.clone());
         }
     }
 

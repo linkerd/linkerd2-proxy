@@ -170,7 +170,9 @@ where
             match self {
                 Self::Http1(ref mut h1) => h1.request(req),
                 Self::OrigProtoUpgrade(ref mut svc) => svc.call(req),
-                Self::H2(ref mut svc) => Box::pin(svc.call(req)) as RspFuture,
+                Self::H2(ref mut svc) => {
+                    Box::pin(svc.call(req).map_ok(|rsp| rsp.map(Body::from))) as RspFuture
+                }
             }
         })
         .instrument(span)

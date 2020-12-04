@@ -1,3 +1,4 @@
+pub use crate::profile::Sender as ProfileSender;
 use futures::future;
 pub use linkerd2_app_core::proxy::{
     api_resolve::{Metadata, ProtocolHint},
@@ -27,8 +28,6 @@ pub type Profiles<T> = Resolver<T, Option<profiles::Receiver>>;
 
 #[derive(Debug, Clone)]
 pub struct DstSender<T>(mpsc::UnboundedSender<Result<Update<T>, Error>>);
-
-pub type ProfileSender = watch::Sender<Profile>;
 
 #[derive(Debug, Clone)]
 pub struct Handle<T, E>(Arc<State<T, E>>);

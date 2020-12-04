@@ -82,8 +82,8 @@ pub trait Inspect {
 /// for Registry/Layer/grpc, but need not be implemented outside of the `tap`
 /// module.
 mod iface {
-    use bytes::Buf;
     use http;
+    use hyper::body::Buf;
     use hyper::body::HttpBody;
     use linkerd2_proxy_http::HasH2Reason;
 

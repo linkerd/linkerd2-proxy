@@ -213,12 +213,13 @@ macro_rules! generate_tests {
             .await
         }
 
-        #[tokio::test]
+        #[tokio::test(flavor = "current_thread")]
         async fn outbound_destinations_reset_on_reconnect_followed_by_dne() {
             outbound_destinations_reset_on_reconnect(controller::destination_does_not_exist()).await
         }
 
         async fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
+            let _trace = trace_init();
             let env = TestEnv::new();
             let srv = $make_server().route("/", "hello").run().await;
             let ctrl = controller::new();
@@ -250,7 +251,7 @@ macro_rules! generate_tests {
             dst_tx1.send(up);
 
             // Wait for the reconnect to happen. TODO: Replace this flaky logic.
-            tokio::time::delay_for(Duration::from_millis(1000)).await;
+            tokio::time::sleep(Duration::from_millis(1000)).await;
 
             let rsp = initially_exists
                 .request(initially_exists.request_builder("/"))
@@ -320,12 +321,12 @@ macro_rules! generate_tests {
                 .await;
 
             // Allow the control client to notice a connection error
-            tokio::time::delay_for(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
 
             // Allow our controller to start accepting connections,
             // and then wait a little bit so the client tries again.
             drop(tx);
-            tokio::time::delay_for(Duration::from_millis(500)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
 
             let client = $make_client(proxy.outbound, "disco.test.svc.cluster.local");
 

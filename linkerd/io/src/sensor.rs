@@ -1,12 +1,10 @@
-use crate::{internal::Io, PeerAddr, Poll};
-use bytes::{Buf, BufMut};
+use crate::{Io, IoSlice, PeerAddr, Poll};
 use futures::ready;
 use linkerd2_errno::Errno;
 use pin_project::pin_project;
-use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::task::Context;
-use tokio::io::{AsyncRead, AsyncWrite, Result};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, Result};
 
 pub trait Sensor {
     fn record_read(&mut self, sz: usize);
@@ -34,26 +32,12 @@ impl<T, S: Sensor> SensorIo<T, S> {
 }
 
 impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncRead for SensorIo<T, S> {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<usize> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<()> {
         let this = self.project();
-        let bytes = ready!(this.sensor.record_error(this.io.poll_read(cx, buf)))?;
-        this.sensor.record_read(bytes);
-        Poll::Ready(Ok(bytes))
-    }
-
-    fn poll_read_buf<B: BufMut>(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<usize> {
-        let this = self.project();
-        let bytes = ready!(this.sensor.record_error(this.io.poll_read_buf(cx, buf)))?;
-        this.sensor.record_read(bytes);
-        Poll::Ready(Ok(bytes))
-    }
-
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
-        self.io.prepare_uninitialized_buffer(buf)
+        let prev_filled = buf.filled().len();
+        ready!(this.sensor.record_error(this.io.poll_read(cx, buf)))?;
+        this.sensor.record_read(buf.filled().len() - prev_filled);
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -75,35 +59,25 @@ impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncWrite for SensorIo<T, S> {
         Poll::Ready(Ok(bytes))
     }
 
-    fn poll_write_buf<B: Buf>(
+    fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut B,
+        bufs: &[IoSlice<'_>],
     ) -> Poll<usize> {
         let this = self.project();
-        let bytes = ready!(this.sensor.record_error(this.io.poll_write_buf(cx, buf)))?;
+        let bytes = ready!(this
+            .sensor
+            .record_error(this.io.poll_write_vectored(cx, bufs)))?;
         this.sensor.record_write(bytes);
         Poll::Ready(Ok(bytes))
     }
-}
 
-impl<T: Io, S: Sensor + Send> Io for SensorIo<T, S> {
-    fn poll_write_buf_erased(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        mut buf: &mut dyn Buf,
-    ) -> Poll<usize> {
-        self.poll_write_buf(cx, &mut buf)
-    }
-
-    fn poll_read_buf_erased(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        mut buf: &mut dyn BufMut,
-    ) -> Poll<usize> {
-        self.poll_read_buf(cx, &mut buf)
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
     }
 }
+
+impl<T: Io, S: Sensor + Send> crate::internal::Sealed for SensorIo<T, S> {}
 
 impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
     fn peer_addr(&self) -> Result<std::net::SocketAddr> {

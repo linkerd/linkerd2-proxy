@@ -175,7 +175,7 @@ where
         };
 
         trace!("daemonizing");
-        let (mut tx, rx) = watch::channel(profile);
+        let (tx, rx) = watch::channel(profile);
         let inner = this.inner.take().expect("polled after ready");
         let daemon = async move {
             tokio::pin!(inner);
@@ -195,7 +195,7 @@ where
                             }
                             Ok(profile) => {
                                 trace!(?profile, "publishing");
-                                if tx.broadcast(profile).is_err() {
+                                if tx.send(profile).is_err() {
                                     trace!("failed to publish profile");
                                     return;
                                 }

@@ -66,7 +66,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
     //
     // Note: this can't be an async_stream, due to pinniness.
     let (addrs, expiry) = dns.resolve_addrs(na.name(), na.port()).await?;
-    let (mut tx, rx) = mpsc::channel(1);
+    let (tx, rx) = mpsc::channel(1);
     tokio::spawn(
         async move {
             let eps = addrs.into_iter().map(|a| (a, ())).collect();

@@ -144,11 +144,14 @@ where
 
             if is_upgrade(&rsp) {
                 trace!("Client response is HTTP/1.1 upgrade");
+                if let Some(upgrade) = upgrade {
+                    upgrade.insert_half(hyper::upgrade::on(&mut rsp));
+                }
             } else {
                 strip_connection_headers(rsp.headers_mut());
             }
 
-            rsp.map(move |b| Body::new(b, upgrade))
+            rsp.map(Body::from)
         }))
     }
 }

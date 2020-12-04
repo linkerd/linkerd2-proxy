@@ -1,9 +1,9 @@
-use crate::{internal::Io, PeerAddr, Poll};
-use bytes::{Buf, BufMut, Bytes};
+use crate::{Io, IoSlice, PeerAddr, Poll};
+use bytes::{Buf, Bytes};
 use pin_project::pin_project;
 use std::{cmp, io};
-use std::{mem::MaybeUninit, pin::Pin, task::Context};
-use tokio::io::{AsyncRead, AsyncWrite, Result};
+use std::{pin::Pin, task::Context};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, Result};
 
 /// A TcpStream where the initial reads will be served from `prefix`.
 #[pin_project]
@@ -33,7 +33,7 @@ impl<S: PeerAddr> PeerAddr for PrefixedIo<S> {
 }
 
 impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<usize> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<()> {
         let this = self.project();
         // Check the length only once, since looking as the length
         // of a Bytes isn't as cheap as the length of a &[u8].
@@ -42,8 +42,8 @@ impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
         if peeked_len == 0 {
             this.io.poll_read(cx, buf)
         } else {
-            let len = cmp::min(buf.len(), peeked_len);
-            buf[..len].copy_from_slice(&this.prefix.as_ref()[..len]);
+            let len = cmp::min(buf.remaining(), peeked_len);
+            buf.put_slice(&this.prefix.as_ref()[..len]);
             this.prefix.advance(len);
             // If we've finally emptied the prefix, drop it so we don't
             // hold onto the allocated memory any longer. We won't peek
@@ -51,21 +51,17 @@ impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
             if peeked_len == len {
                 *this.prefix = Bytes::new();
             }
-            Poll::Ready(Ok(len))
+            Poll::Ready(Ok(()))
         }
-    }
-
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [MaybeUninit<u8>]) -> bool {
-        self.io.prepare_uninitialized_buffer(buf)
     }
 }
 
 impl<S: io::Write> io::Write for PrefixedIo<S> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.io.write(buf)
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> Result<()> {
         self.io.flush()
     }
 }
@@ -83,32 +79,17 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
         self.project().io.poll_write(cx, buf)
     }
 
-    fn poll_write_buf<B: Buf>(
+    fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut B,
-    ) -> Poll<usize>
-    where
-        Self: Sized,
-    {
-        self.project().io.poll_write_buf(cx, buf)
+        bufs: &[IoSlice<'_>],
+    ) -> Poll<usize> {
+        self.project().io.poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
     }
 }
 
-impl<S: Io> Io for PrefixedIo<S> {
-    fn poll_write_buf_erased(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        mut buf: &mut dyn Buf,
-    ) -> Poll<usize> {
-        self.poll_write_buf(cx, &mut buf)
-    }
-
-    fn poll_read_buf_erased(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        mut buf: &mut dyn BufMut,
-    ) -> Poll<usize> {
-        self.poll_read_buf(cx, &mut buf)
-    }
-}
+impl<S: Io> crate::internal::Sealed for PrefixedIo<S> {}

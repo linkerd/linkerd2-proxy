@@ -35,7 +35,7 @@ pub struct SetClientHandle<S> {
 
 impl Close {
     pub fn close(&self) {
-        self.0.notify()
+        self.0.notify_one()
     }
 }
 

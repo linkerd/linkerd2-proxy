@@ -9,16 +9,16 @@ Configures and runs the inbound proxy
 """
 
 [dependencies]
-bytes = "0.5"
+bytes = "0.6"
 http = "0.2"
 futures = { version = "0.3" }
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
-tokio = { version = "0.2", features = ["sync"] }
-tracing = "0.1.19"
+tokio = { version = "0.3", features = ["sync"] }
+tracing = "0.1.22"
 
 [dependencies.tower]
-version = "0.3"
+version = "0.4"
 # disable tower's tracing `log` integration for performance reasons, since we
 # will consume tower's traces as traces.
 default-features = false

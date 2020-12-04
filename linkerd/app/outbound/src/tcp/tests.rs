@@ -27,7 +27,7 @@ use tls::HasPeerIdentity;
 use tower::ServiceExt;
 use tracing_futures::Instrument;
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test]
 async fn plaintext_tcp() {
     let _trace = support::trace_init();
 
@@ -39,7 +39,7 @@ async fn plaintext_tcp() {
     let concrete = Concrete {
         logical: Logical {
             orig_dst: target_addr,
-            profile: Some(default_profile()),
+            profile: Some(profile::only_default()),
             protocol: (),
         },
         resolve: Some(target_addr.into()),
@@ -78,7 +78,7 @@ async fn plaintext_tcp() {
         .expect("conn should succeed");
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test]
 async fn tls_when_hinted() {
     let _trace = support::trace_init();
 
@@ -86,7 +86,7 @@ async fn tls_when_hinted() {
     let tls_concrete = Concrete {
         logical: Logical {
             orig_dst: tls_addr,
-            profile: Some(default_profile()),
+            profile: Some(profile::only_default()),
             protocol: (),
         },
         resolve: Some(tls_addr.into()),
@@ -96,7 +96,7 @@ async fn tls_when_hinted() {
     let plain_concrete = Concrete {
         logical: Logical {
             orig_dst: tls_addr,
-            profile: Some(default_profile()),
+            profile: Some(profile::only_default()),
             protocol: (),
         },
         resolve: Some(plain_addr.into()),
@@ -335,7 +335,7 @@ async fn load_balances() {
     );
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test]
 async fn load_balancer_add_endpoints() {
     let _trace = support::trace_init();
 
@@ -643,7 +643,7 @@ async fn no_profiles_when_outside_search_nets() {
     );
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test(flavor = "current_thread")]
 async fn no_discovery_when_profile_has_an_endpoint() {
     let _trace = support::trace_init();
 
@@ -692,7 +692,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     );
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test(flavor = "current_thread")]
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
     // connecting to that endpoint fails, the proxy will resolve a new endpoint
@@ -733,7 +733,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let profiles = profile::resolver();
     let profile_tx = profiles.profile_tx(ep1);
     profile_tx
-        .broadcast(profile::Profile {
+        .send(profile::Profile {
             opaque_protocol: true,
             endpoint: Some((ep1, meta.clone())),
             ..Default::default()
@@ -752,7 +752,14 @@ async fn profile_endpoint_propagates_conn_errors() {
     ));
 
     let res = svc
-        .oneshot(support::io().read(b"hello\r\n").write(b"world").build())
+        .oneshot(
+            support::io()
+                .read_error(io::Error::new(
+                    io::ErrorKind::ConnectionReset,
+                    "i dont like you, go away",
+                ))
+                .build(),
+        )
         .await
         .map_err(Into::into);
     tracing::info!(?res);

@@ -29,17 +29,15 @@ pub struct NewSplit<N, S, Req> {
     _service: PhantomData<fn(Req) -> S>,
 }
 
-#[derive(Debug)]
 pub struct Split<T, N, S, Req> {
     inner: Inner<T, N, S, Req>,
 }
 
-#[derive(Debug)]
 enum Inner<T, N, S, Req> {
     Default(S),
     Split {
         rng: SmallRng,
-        rx: Receiver,
+        rx: Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>,
         target: T,
         new_service: N,
         distribution: WeightedIndex<u32>,
@@ -105,7 +103,7 @@ where
                 }
 
                 Inner::Split {
-                    rx,
+                    rx: crate::stream_profile(rx),
                     target,
                     new_service,
                     services,
@@ -150,7 +148,7 @@ where
                 ..
             } => {
                 let mut update = None;
-                while let Poll::Ready(Some(up)) = rx.poll_recv_ref(cx) {
+                while let Poll::Ready(Some(up)) = rx.as_mut().poll_next(cx) {
                     update = Some(up.clone());
                 }
 

@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
-use tokio::time::{self, Delay};
+use tokio::time::{self, Sleep};
 use tonic::{
     self as grpc,
     body::{Body, BoxBody},
@@ -95,7 +95,7 @@ where
                                     }
                                     Ok(crt_key) => {
                                         debug!("daemon certified until {:?}", expiry);
-                                        if crt_key_watch.broadcast(Some(crt_key)).is_err() {
+                                        if crt_key_watch.send(Some(crt_key)).is_err() {
                                             // If we can't store a value, than all observations
                                             // have been dropped and we can stop refreshing.
                                             return;
@@ -122,7 +122,7 @@ impl Config {
     ///
     /// A refresh is scheduled at 70% of the current certificate's lifetime;
     /// though it is never less than min_refresh or larger than max_refresh.
-    fn refresh(&self, expiry: SystemTime) -> Delay {
+    fn refresh(&self, expiry: SystemTime) -> Sleep {
         let refresh = match expiry
             .duration_since(SystemTime::now())
             .ok()
@@ -134,7 +134,7 @@ impl Config {
             Some(lifetime) => lifetime,
         };
         trace!("will refresh in {:?}", refresh);
-        time::delay_for(refresh)
+        time::sleep(refresh)
     }
 }
 
@@ -158,7 +158,7 @@ impl Local {
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
         while self.crt_key.borrow().is_none() {
             // If the sender is dropped, the daemon task has ended.
-            if let None = self.crt_key.recv().await {
+            if self.crt_key.changed().await.is_err() {
                 return Err(LostDaemon);
             }
         }

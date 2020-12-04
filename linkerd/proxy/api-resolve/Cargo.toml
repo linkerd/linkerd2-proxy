@@ -12,13 +12,13 @@ Implements the Resolve trait using the proxy's gRPC API
 async-stream = "0.2.1"
 futures = "0.3"
 linkerd2-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.15" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "259628840ba613c2e5673fc6a39b946e1b06f09a" }
 linkerd2-proxy-core = { path = "../core" }
 prost = "0.6"
 http = "0.2"
-http-body = "0.3"
+http-body = "0.4"
 tonic = { version = "0.3", default-features = false }
 indexmap = "1.0"
-tower = { version = "0.3", default-features = false }
-tracing = "0.1.19"
+tower = { version = "0.4", default-features = false }
+tracing = "0.1.22"
 pin-project = "0.4"

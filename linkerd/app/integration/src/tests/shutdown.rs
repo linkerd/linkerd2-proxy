@@ -52,7 +52,7 @@ async fn h2_exercise_goaways_connections() {
         .map(|resp| {
             hyper::body::aggregate(resp.into_body())
                 // Make sure the bodies weren't cut off
-                .map_ok(|mut buf| assert_eq!(buf.to_bytes().len(), RESPONSE_SIZE))
+                .map_ok(|buf| assert_eq!(buf.remaining(), RESPONSE_SIZE))
         })
         .collect::<Vec<_>>();
 

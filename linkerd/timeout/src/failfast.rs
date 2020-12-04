@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::time::{self, Delay};
+use tokio::time::{self, Sleep};
 use tracing::{debug, trace};
 
 #[derive(Copy, Clone, Debug)]
@@ -28,7 +28,7 @@ pub struct FailFastError(());
 #[derive(Debug)]
 enum State {
     Open,
-    Waiting(Delay),
+    Waiting(Sleep),
     FailFast,
 }
 
@@ -92,7 +92,7 @@ where
             Poll::Pending => loop {
                 self.state = match self.state {
                     // The inner service just transitioned to NotReady, so initiate a new timeout.
-                    State::Open => State::Waiting(time::delay_for(self.max_unavailable)),
+                    State::Open => State::Waiting(time::sleep(self.max_unavailable)),
 
                     // A timeout has been set, so wait for it to complete.
                     State::Waiting(ref mut fut) => {
@@ -181,7 +181,7 @@ mod test {
 
         // Then we wait for the idle timeout, at which point the service
         // should start failing fast.
-        tokio::time::delay_for(max_unavailable + Duration::from_millis(1)).await;
+        tokio::time::sleep(max_unavailable + Duration::from_millis(1)).await;
         assert_ready_ok!(service.poll_ready());
 
         let err = service.call(()).await.err().expect("should failfast");

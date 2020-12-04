@@ -18,25 +18,25 @@ flaky_tests = []
 nyi = []
 
 [dependencies]
-bytes = "0.5"
-futures = "0.3" 
-h2 = "0.2.6"
+bytes = "0.6"
+futures = "0.3"
+h2 = "0.3"
 http = "0.2"
-http-body = "0.3"
-hyper = "0.13.7"
+http-body = "0.4"
+hyper = "0.14.0-dev"
 linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.15", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "259628840ba613c2e5673fc6a39b946e1b06f09a", features = ["arbitrary"] }
 linkerd2-app-test = { path = "../test" }
 regex = "0.1"
 socket2 = "0.3.12"
 rustls = "0.18"
-tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
-tokio-rustls = "0.14.1"
-tower = { version = "0.3", default-features = false}
+tokio = { version = "0.3", features = ["io-util", "net", "rt", "macros"]}
+tokio-rustls = "0.20"
+tower = { version = "0.4", default-features = false}
 tonic = { version = "0.3", default-features = false }
-tracing = "0.1.19"
+tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 webpki = "0.21"
 
