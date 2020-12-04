@@ -25,14 +25,12 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     (tx, rx)
 }
 
-#[derive(Debug)]
 pub struct Sender<T> {
     tx: mpsc::UnboundedSender<(T, Permit)>,
     semaphore: Arc<Semaphore>,
     state: State,
 }
 
-#[derive(Debug)]
 pub struct Receiver<T> {
     rx: mpsc::UnboundedReceiver<(T, Permit)>,
     semaphore: Weak<Semaphore>,
@@ -76,9 +74,18 @@ impl<T> Sender<T> {
             return Err(SendError::Closed(value, Closed(())));
         }
         self.state = match mem::replace(&mut self.state, State::Empty) {
-            State::Acquired(_permit) => {
-                self.tx.send((value, _permit)).ok().expect("was not closed");
+            // Have we previously acquired a permit?
+            State::Acquired(permit) => {
+                self.send2(value, permit);
                 return Ok(());
+            }
+            // Okay, can we acquire a permit now?
+            State::Empty => {
+                if let Ok(permit) = self.semaphore.clone().try_acquire_owned() {
+                    self.send2(value, permit);
+                    return Ok(());
+                }
+                State::Empty
             }
             state => state,
         };
@@ -88,12 +95,16 @@ impl<T> Sender<T> {
     pub async fn send(&mut self, value: T) -> Result<(), Closed> {
         self.ready().await?;
         match mem::replace(&mut self.state, State::Empty) {
-            State::Acquired(_permit) => {
-                self.tx.send((value, _permit)).ok().expect("was not closed");
+            State::Acquired(permit) => {
+                self.send2(value, permit);
                 Ok(())
             }
             state => panic!("unexpected state after poll_ready: {:?}", state),
         }
+    }
+
+    fn send2(&mut self, value: T, permit: Permit) {
+        self.tx.send((value, permit)).ok().expect("was not closed");
     }
 }
 
@@ -104,6 +115,16 @@ impl<T> Clone for Sender<T> {
             semaphore: self.semaphore.clone(),
             state: State::Empty,
         }
+    }
+}
+
+impl<T> fmt::Debug for Sender<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Sender")
+            .field("message_type", &std::any::type_name::<T>())
+            .field("state", &self.state)
+            .field("semaphore", &self.semaphore)
+            .finish()
     }
 }
 
@@ -139,6 +160,16 @@ impl<T> Drop for Receiver<T> {
         }
     }
 }
+
+impl<T> fmt::Debug for Receiver<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Receiver")
+            .field("message_type", &std::any::type_name::<T>())
+            .field("semaphore", &self.semaphore)
+            .finish()
+    }
+}
+
 // === impl State ===
 
 impl fmt::Debug for State {
