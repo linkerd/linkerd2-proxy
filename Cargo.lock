@@ -664,7 +664,7 @@ dependencies = [
  "hyper",
  "pin-project",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
 ]
 
@@ -903,7 +903,7 @@ dependencies = [
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -994,7 +994,7 @@ dependencies = [
  "linkerd2-app-core",
  "regex 0.1.80",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1010,7 +1010,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -1036,6 +1036,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "tokio 0.3.5",
+ "tokio-test 0.3.0",
 ]
 
 [[package]]
@@ -1082,7 +1083,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
 ]
 
 [[package]]
@@ -1204,7 +1205,7 @@ dependencies = [
  "pin-project",
  "tokio 0.2.23",
  "tokio-rustls",
- "tokio-test",
+ "tokio-test 0.2.1",
 ]
 
 [[package]]
@@ -1526,7 +1527,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -1565,7 +1566,7 @@ dependencies = [
  "pin-project",
  "tokio 0.2.23",
  "tokio-connect",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower",
  "tower-test",
  "tracing",
@@ -2604,7 +2605,7 @@ dependencies = [
  "pin-project-lite 0.1.4",
  "signal-hook-registry",
  "slab",
- "tokio-macros",
+ "tokio-macros 0.2.6",
  "tracing",
  "winapi 0.3.8",
 ]
@@ -2618,6 +2619,8 @@ dependencies = [
  "autocfg 1.0.0",
  "futures-core",
  "pin-project-lite 0.2.0",
+ "slab",
+ "tokio-macros 0.3.1",
 ]
 
 [[package]]
@@ -2662,6 +2665,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-macros"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21d30fdbb5dc2d8f91049691aa1a9d4d4ae422a21c334ce8936e5886d30c5c45"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "tokio-rustls"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2682,6 +2696,17 @@ dependencies = [
  "bytes 0.5.4",
  "futures-core",
  "tokio 0.2.23",
+]
+
+[[package]]
+name = "tokio-test"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7edc5a2b13a713b9134debc9aa1265b0a1ccf6a81fa05af2ba26e4aee56cdf1a"
+dependencies = [
+ "bytes 0.5.4",
+ "futures-core",
+ "tokio 0.3.5",
 ]
 
 [[package]]
@@ -2821,7 +2846,7 @@ dependencies = [
  "futures-util",
  "pin-project",
  "tokio 0.2.23",
- "tokio-test",
+ "tokio-test 0.2.1",
  "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service",
 ]

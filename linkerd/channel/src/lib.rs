@@ -4,6 +4,9 @@ use std::task::{Context, Poll};
 use std::{fmt, future::Future, mem, pin::Pin};
 use tokio::sync::{mpsc, OwnedSemaphorePermit as Permit, Semaphore};
 
+use self::error::{SendError, TrySendError};
+pub use tokio::sync::mpsc::error;
+
 /// Returns a new pollable, bounded MPSC channel.
 ///
 /// Unlike `tokio::sync`'s `MPSC` channel, this channel exposes a `poll_ready`
@@ -25,21 +28,24 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     (tx, rx)
 }
 
+/// A bounded, pollable MPSC sender.
+///
+/// This is similar to Tokio's bounded MPSC channel's `Sender` type, except that
+/// it exposes a `poll_ready` function, at the cost of an allocation when
+/// driving it to readiness.
 pub struct Sender<T> {
     tx: mpsc::UnboundedSender<(T, Permit)>,
     semaphore: Arc<Semaphore>,
     state: State,
 }
 
+/// A bounded MPSC receiver.
+///
+/// This is similar to Tokio's bounded MPSC channel's `Receiver` type.
 pub struct Receiver<T> {
     rx: mpsc::UnboundedReceiver<(T, Permit)>,
     semaphore: Weak<Semaphore>,
     buffer: usize,
-}
-
-pub enum SendError<T> {
-    AtCapacity(T),
-    Closed(T, Closed),
 }
 
 enum State {
@@ -48,30 +54,27 @@ enum State {
     Empty,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Closed(pub(crate) ());
-
-// === impl Sender ===
-
 impl<T> Sender<T> {
-    pub fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Closed>> {
+    pub fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), SendError<()>>> {
         loop {
             self.state = match self.state {
                 State::Empty => State::Waiting(Box::pin(self.semaphore.clone().acquire_owned())),
                 State::Waiting(ref mut f) => State::Acquired(ready!(Pin::new(f).poll(cx))),
-                State::Acquired(_) if self.tx.is_closed() => return Poll::Ready(Err(Closed(()))),
+                State::Acquired(_) if self.tx.is_closed() => {
+                    return Poll::Ready(Err(SendError(())))
+                }
                 State::Acquired(_) => return Poll::Ready(Ok(())),
             }
         }
     }
 
-    pub async fn ready(&mut self) -> Result<(), Closed> {
+    pub async fn ready(&mut self) -> Result<(), SendError<()>> {
         future::poll_fn(|cx| self.poll_ready(cx)).await
     }
 
-    pub fn try_send(&mut self, value: T) -> Result<(), SendError<T>> {
+    pub fn try_send(&mut self, value: T) -> Result<(), TrySendError<T>> {
         if self.tx.is_closed() {
-            return Err(SendError::Closed(value, Closed(())));
+            return Err(TrySendError::Closed(value));
         }
         self.state = match mem::replace(&mut self.state, State::Empty) {
             // Have we previously acquired a permit?
@@ -89,11 +92,13 @@ impl<T> Sender<T> {
             }
             state => state,
         };
-        Err(SendError::AtCapacity(value))
+        Err(TrySendError::Full(value))
     }
 
-    pub async fn send(&mut self, value: T) -> Result<(), Closed> {
-        self.ready().await?;
+    pub async fn send(&mut self, value: T) -> Result<(), SendError<T>> {
+        if let Err(_) = self.ready().await {
+            return Err(SendError(value));
+        }
         match mem::replace(&mut self.state, State::Empty) {
             State::Acquired(permit) => {
                 self.send2(value, permit);
@@ -184,49 +189,3 @@ impl fmt::Debug for State {
         )
     }
 }
-
-// === impl SendError ===
-
-impl<T> fmt::Debug for SendError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SendError::AtCapacity(_) => f
-                .debug_tuple("SendError::AtCapacity")
-                .field(&format_args!(".."))
-                .finish(),
-            SendError::Closed(_, c) => f
-                .debug_tuple("SendError::Closed")
-                .field(c)
-                .field(&format_args!(".."))
-                .finish(),
-        }
-    }
-}
-
-impl<T> std::fmt::Display for SendError<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SendError::AtCapacity(_) => fmt::Display::fmt("channel at capacity", f),
-            SendError::Closed(_, _) => fmt::Display::fmt("channel closed", f),
-        }
-    }
-}
-
-impl<T> std::error::Error for SendError<T> {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            SendError::Closed(_, c) => Some(c),
-            _ => None,
-        }
-    }
-}
-
-// === impl Closed ===
-
-impl std::fmt::Display for Closed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "closed")
-    }
-}
-
-impl std::error::Error for Closed {}

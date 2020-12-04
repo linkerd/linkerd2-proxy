@@ -1,5 +1,5 @@
 #![warn(rust_2018_idioms)]
-use linkerd2_channel::{channel, Receiver, SendError, Sender};
+use linkerd2_channel::{channel, error::TrySendError, Receiver, Sender};
 
 use std::sync::Arc;
 use tokio_test::task;
@@ -191,7 +191,7 @@ async fn try_send_fail() {
 
     // This should fail
     match assert_err!(tx.try_send("fail")) {
-        SendError::AtCapacity(..) => {}
+        TrySendError::Full(..) => {}
         _ => panic!(),
     }
 
@@ -246,7 +246,7 @@ fn dropping_rx_closes_channel_for_try() {
     {
         let err = assert_err!(tx.try_send(msg.clone()));
         match err {
-            SendError::Closed(..) => {}
+            TrySendError::Closed(..) => {}
             _ => panic!(),
         }
     }
