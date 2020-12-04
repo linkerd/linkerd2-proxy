@@ -1,8 +1,9 @@
 #![recursion_limit = "256"]
 
+use linkerd2_channel as mpsc;
 use linkerd2_error::Error;
-use std::{future::Future, pin::Pin, time::Duration};
-use tokio::sync::{mpsc, oneshot};
+use std::{fmt, future::Future, pin::Pin, time::Duration};
+use tokio::sync::oneshot;
 
 mod dispatch;
 pub mod error;
@@ -42,4 +43,14 @@ where
     };
     let dispatch = dispatch::run(inner, rx, idle);
     (Buffer::new(tx), dispatch)
+}
+
+// Required so that `TrySendError`/`SendError` can be `expect`ed.
+impl<Req, Rsp> fmt::Debug for InFlight<Req, Rsp> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InFlight")
+            .field("request_type", &std::any::type_name::<Req>())
+            .field("response_type", &std::any::type_name::<Rsp>())
+            .finish()
+    }
 }

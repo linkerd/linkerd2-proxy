@@ -1,0 +1,17 @@
+[package]
+name = "linkerd2-channel"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+description = """
+A bounded MPSC channel where senders expose a `poll_ready` method.
+"""
+
+[dependencies]
+tokio = { version = "0.3", features = ["sync", "stream"] }
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "0.3", features = ["sync", "stream", "macros"] }
+tokio-test = "0.3"
