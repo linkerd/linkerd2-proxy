@@ -1,8 +1,9 @@
 #![recursion_limit = "256"]
 
+use linkerd2_channel as mpsc;
 use linkerd2_error::Error;
 use std::{future::Future, pin::Pin, time::Duration};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 mod dispatch;
 pub mod error;

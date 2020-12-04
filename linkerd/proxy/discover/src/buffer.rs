@@ -1,11 +1,12 @@
 use futures::{ready, Stream, TryFuture};
+use linkerd2_channel as mpsc;
 use linkerd2_error::{Error, Never};
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio::time::{self, Delay};
 use tower::discover;
 use tracing::warn;
