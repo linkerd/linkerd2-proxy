@@ -1055,6 +1055,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "tokio 0.3.5",
+ "tokio-test 0.3.0",
 ]
 
 [[package]]
