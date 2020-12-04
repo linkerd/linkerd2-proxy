@@ -7,7 +7,6 @@ use linkerd2_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::{
-    fmt,
     marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
@@ -30,7 +29,6 @@ pub struct NewSplit<N, S, Req> {
     _service: PhantomData<fn(Req) -> S>,
 }
 
-#[derive(Debug)]
 pub struct Split<T, N, S, Req> {
     inner: Inner<T, N, S, Req>,
 }
@@ -222,38 +220,6 @@ where
                 trace!(?addr, "Dispatching");
                 Box::pin(services.call_ready(addr, req).err_into::<Error>())
             }
-        }
-    }
-}
-
-impl<T, N, S, Req> fmt::Debug for Inner<T, N, S, Req>
-where
-    T: fmt::Debug,
-    N: fmt::Debug,
-    S: fmt::Debug,
-    Req: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Inner::Default(ref s) => f.debug_tuple("Inner::Default").field(s).finish(),
-            Inner::Split {
-                rng,
-                rx: _,
-                target,
-                new_service,
-                distribution,
-                addrs,
-                services,
-            } => f
-                .debug_struct("Inner")
-                .field("rng", rng)
-                .field("rx", &format_args!("<dyn Stream>"))
-                .field("target", target)
-                .field("new_service", new_service)
-                .field("distribution", distribution)
-                .field("addrs", addrs)
-                .field("services", services)
-                .finish(),
         }
     }
 }
