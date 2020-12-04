@@ -29,7 +29,7 @@ pub(crate) async fn run<S, Req, I>(
             req = requests.recv().fuse() => {
                 match req {
                     None => return,
-                    Some(InFlight { request, tx, .. }) => {
+                    Some(InFlight { request, tx }) => {
                        match service.ready_and().await {
                             Ok(svc) => {
                                 trace!("Dispatching request");
