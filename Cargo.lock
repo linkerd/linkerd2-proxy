@@ -2600,21 +2600,7 @@ dependencies = [
  "signal-hook-registry",
  "slab",
  "tokio-macros 0.3.1",
- "tracing",
  "winapi 0.3.8",
-]
-
-[[package]]
-name = "tokio"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12a3eb39ee2c231be64487f1fcbe726c8f2514876a55480a5ab8559fc374252"
-dependencies = [
- "autocfg 1.0.0",
- "futures-core",
- "pin-project-lite 0.2.0",
- "slab",
- "tokio-macros 0.3.1",
 ]
 
 [[package]]
