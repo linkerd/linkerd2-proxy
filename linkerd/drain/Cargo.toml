@@ -7,9 +7,9 @@ publish = false
 
 [dependencies]
 linkerd2-error = { path = "../error" }
-tokio = {version = "0.2.17", features = ["sync", "macros"]}
+tokio = {version = "0.3", features = ["sync", "macros", "stream"]}
 pin-project = "0.4"
 futures = "0.3"
 
 [dev-dependencies]
-tokio-test = "0.2"
+tokio-test = "0.3"

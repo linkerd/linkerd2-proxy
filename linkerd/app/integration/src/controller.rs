@@ -362,7 +362,7 @@ where
     let task = tokio::spawn(
         cancelable(drain.clone(), async move {
             // Start listening on the socket.
-            let mut listener = crate::listen(sock);
+            let listener = crate::listen(sock);
             let mut listening_tx = Some(listening_tx);
 
             if let Some(delay) = delay {

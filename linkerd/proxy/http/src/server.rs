@@ -133,10 +133,9 @@ where
                 match version {
                     Version::Http1 => {
                         // Enable support for HTTP upgrades (CONNECT and websockets).
-                        let svc = upgrade::Service::new(svc, drain.clone());
                         let mut conn = server
                             .http1_only(true)
-                            .serve_connection(io, HyperServerSvc::new(svc))
+                            .serve_connection(io, upgrade::Service::new(svc, drain.clone()))
                             .with_upgrades();
 
                         tokio::select! {

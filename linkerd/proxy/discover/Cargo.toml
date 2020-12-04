@@ -11,17 +11,18 @@ Utilities to implement a Discover with the core Resolve type
 
 [dependencies]
 futures = "0.3"
+linkerd2-channel = { path = "../../channel" }
 linkerd2-error = { path = "../../error" }
 linkerd2-proxy-core = { path = "../core" }
 linkerd2-stack = { path = "../../stack" }
 indexmap = "1.0"
-tokio = { version = "0.2", features = ["sync", "time", "stream"] }
-tracing = "0.1.19"
+tokio = { version = "0.3", features = ["sync", "time", "stream"] }
+tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
 
 [dependencies.tower]
-version = "0.3"
+version = "0.4"
 # disable tower's tracing `log` integration for performance reasons, since we
 # will consume tower's traces as traces.
 default-features = false
@@ -29,5 +30,5 @@ features = ["discover"]
 
 [dev-dependencies]
 async-stream = "0.2"
-tokio = { version = "0.2", features = ["macros", "rt-core"] }
-tower = { version = "0.3", default-features = false, features = ["discover", "util"]}
+tokio = { version = "0.3", features = ["macros", "rt"] }
+tower = { version = "0.4", default-features = false, features = ["discover", "util"]}

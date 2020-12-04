@@ -1,4 +1,5 @@
 use super::*;
+use hyper::body::Buf;
 use linkerd2_app_core::proxy::http::trace;
 use rustls::ClientConfig;
 use std::io;
@@ -121,7 +122,7 @@ impl Client {
         );
         let stream = res.into_parts().1;
         let mut body = hyper::body::aggregate(stream).await.expect("wait body");
-        std::str::from_utf8(body.to_bytes().as_ref())
+        std::str::from_utf8(body.copy_to_bytes(body.remaining()).as_ref())
             .unwrap()
             .to_string()
     }

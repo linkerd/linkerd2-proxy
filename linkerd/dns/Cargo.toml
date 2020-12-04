@@ -9,14 +9,14 @@ publish = false
 futures = "0.3"
 linkerd2-dns-name = { path = "./name" }
 linkerd2-error = { path = "../error" }
-tracing = "0.1.19"
-tokio = { version = "0.2", features = ["rt-core", "sync"] }
+tracing = "0.1.22"
+tokio = { version = "0.3", features = ["rt", "sync"] }
 pin-project = "0.4"
 
 [dependencies.trust-dns-resolver]
-version = "0.20"
+version = "0.20.0-alpha.3"
 default-features = false
 features = ["system-config", "tokio-runtime"]
 # TODO(eliza): when 0.20 is published, depend on it from crates.io.
-git = "https://github.com/bluejekyll/trust-dns.git"
-rev = "97d3bf10ecb0711aebf523e930f5de873808eb33"
+git = "https://github.com/bluejekyll/trust-dns"
+rev = "028ac68ee016c1b5d92366ee5fe6661f6132de4d"

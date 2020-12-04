@@ -36,20 +36,18 @@ pub(crate) fn build() -> Runtime {
         // `0` is unexpected, but it's a wild world out there.
         0 | 1 => {
             info!("Using single-threaded proxy runtime");
-            Builder::new()
+            Builder::new_current_thread()
                 .enable_all()
                 .thread_name("proxy")
-                .basic_scheduler()
                 .build()
                 .expect("failed to build basic runtime!")
         }
         num_cpus => {
             info!(%cores, "Using multi-threaded proxy runtime");
-            Builder::new()
+            Builder::new_multi_thread()
                 .enable_all()
                 .thread_name("proxy")
-                .threaded_scheduler()
-                .core_threads(num_cpus)
+                .worker_threads(num_cpus)
                 .max_threads(num_cpus)
                 .build()
                 .expect("failed to build threaded runtime!")

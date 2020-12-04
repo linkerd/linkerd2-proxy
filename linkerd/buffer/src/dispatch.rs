@@ -1,14 +1,14 @@
 use crate::error::{IdleError, ServiceError};
 use crate::InFlight;
 use futures::{prelude::*, select_biased};
+use linkerd2_channel as mpsc;
 use linkerd2_error::Error;
 use std::sync::Arc;
-use tokio::sync::mpsc;
 use tower::util::ServiceExt;
 use tracing::trace;
 
 pub(crate) async fn idle(max: std::time::Duration) -> IdleError {
-    tokio::time::delay_for(max).await;
+    tokio::time::sleep(max).await;
     IdleError(max)
 }
 
@@ -29,7 +29,7 @@ pub(crate) async fn run<S, Req, I>(
             req = requests.recv().fuse() => {
                 match req {
                     None => return,
-                    Some(InFlight { request, tx }) => {
+                    Some(InFlight { request, tx, .. }) => {
                        match service.ready_and().await {
                             Ok(svc) => {
                                 trace!("Dispatching request");
@@ -44,7 +44,7 @@ pub(crate) async fn run<S, Req, I>(
                                 while let Some(InFlight { tx, .. }) = requests.recv().await {
                                     let _ = tx.send(Err(error.clone().into()));
                                 }
-                                return;
+                                break;
                             }
                         };
                     }
@@ -54,7 +54,7 @@ pub(crate) async fn run<S, Req, I>(
             e = idle().fuse() => {
                 let error = ServiceError(Arc::new(e.into()));
                 trace!(%error, "Idling out inner service");
-                return;
+                break;
             }
         }
     }
@@ -64,8 +64,8 @@ pub(crate) async fn run<S, Req, I>(
 mod test {
     use super::*;
     use std::time::Duration;
-    use tokio::sync::{mpsc, oneshot};
-    use tokio::time::delay_for;
+    use tokio::sync::oneshot;
+    use tokio::time::sleep;
     use tokio_test::{assert_pending, assert_ready, task};
     use tower_test::mock;
 
@@ -81,7 +81,7 @@ mod test {
         // Service ready without requests. Idle counter starts ticking.
         assert_pending!(dispatch.poll());
 
-        delay_for(max_idle).await;
+        sleep(max_idle).await;
 
         assert_ready!(dispatch.poll());
         drop((tx, handle));
@@ -98,15 +98,16 @@ mod test {
 
         // Service ready without requests. Idle counter starts ticking.
         assert_pending!(dispatch.poll());
-        delay_for(max_idle).await;
+        sleep(max_idle).await;
 
         // Send a request after the deadline has fired but before the
-        // dispatch future is polled. Ensure that the request is admitted, resetting idleness.
-        tx.try_send({
+        // dispatch future is polled. Ensure that the request is admitted,
+        // resetting idleness.
+        tx.send({
             let (tx, _rx) = oneshot::channel();
             super::InFlight { request: (), tx }
         })
-        .ok()
+        .await
         .expect("request not sent");
 
         assert_pending!(dispatch.poll());
@@ -114,7 +115,7 @@ mod test {
         handle.allow(1);
         assert_pending!(dispatch.poll());
 
-        delay_for(max_idle).await;
+        sleep(max_idle).await;
 
         assert_ready!(dispatch.poll());
         drop((tx, handle));

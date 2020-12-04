@@ -203,7 +203,7 @@ async fn test_server_speaks_first(env: TestEnv) {
     let msg1 = "custom tcp server starts";
     let msg2 = "custom tcp client second";
 
-    let (mut tx, mut rx) = mpsc::channel(1);
+    let (tx, mut rx) = mpsc::channel(1);
     let srv = server::tcp()
         .accept_fut(move |mut sock| {
             async move {
@@ -813,8 +813,8 @@ macro_rules! http1_tests {
                     assert_eq!(req.headers()["transfer-encoding"], "chunked");
                     let body = req
                         .into_body()
-                        .fold(String::new(), |s, mut chunk| {
-                            s + std::str::from_utf8(chunk.to_bytes().as_ref()).expect("req is utf8")
+                        .fold(String::new(), |s, chunk| {
+                            s + std::str::from_utf8(chunk.bytes()).expect("req is utf8")
                         })
                         .await;
                     assert_eq!(body, "hello");
@@ -841,10 +841,10 @@ macro_rules! http1_tests {
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["transfer-encoding"], "chunked");
-            let mut body = hyper::body::aggregate(resp.into_body())
+            let body = hyper::body::aggregate(resp.into_body())
                 .await
                 .expect("rsp aggregate");
-            let body = std::str::from_utf8(body.to_bytes().as_ref())
+            let body = std::str::from_utf8(body.bytes())
                 .expect("rsp is utf8")
                 .to_owned();
             assert_eq!(body, "world");
@@ -1027,10 +1027,10 @@ macro_rules! http1_tests {
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["content-length"], "55");
 
-            let mut body = hyper::body::aggregate(resp.into_body())
+            let body = hyper::body::aggregate(resp.into_body())
                 .await
                 .expect("response body aggregate");
-            let body = std::str::from_utf8(body.to_bytes().as_ref())
+            let body = std::str::from_utf8(body.bytes())
                 .expect("empty body is utf8")
                 .to_owned();
 
@@ -1097,10 +1097,10 @@ macro_rules! http1_tests {
                     v
                 );
 
-                let mut body = hyper::body::aggregate(resp.into_body())
+                let body = hyper::body::aggregate(resp.into_body())
                     .await
                     .expect("aggregate response body");
-                let body = std::str::from_utf8(body.to_bytes().as_ref())
+                let body = std::str::from_utf8(body.bytes())
                     .expect("body is utf8")
                     .to_owned();
 
@@ -1145,8 +1145,6 @@ mod proxy_to_proxy {
     }
 
     http1_tests! { proxy: |srv: server::Listening| async move {
-        use tracing_futures::Instrument;
-
         let ctrl = controller::new();
         let srv_addr = srv.addr;
         let _profile_in = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
@@ -1373,7 +1371,7 @@ async fn retry_reconnect_errors() {
 
     drop(tx); // start `listen` now
               // This may be flaky on CI.
-    tokio::time::delay_for(std::time::Duration::from_millis(100)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let res = fut.await.expect("response");
     assert_eq!(res.status(), http::StatusCode::OK);

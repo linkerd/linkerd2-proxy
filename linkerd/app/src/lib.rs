@@ -311,8 +311,7 @@ impl App {
         std::thread::Builder::new()
             .name("admin".into())
             .spawn(move || {
-                let mut rt = tokio::runtime::Builder::new()
-                    .basic_scheduler()
+                let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .expect("building admin runtime must succeed");

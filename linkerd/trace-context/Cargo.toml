@@ -7,13 +7,13 @@ publish = false
 
 [dependencies]
 base64 = "0.10.1"
-bytes = "0.5"
+bytes = "0.6"
 futures = "0.3"
 hex = "0.3.2"
 http = "0.2"
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
-rand = { version = "0.7" }
-tower = { version = "0.3", default-features = false, features = ["util"] }
+rand = "0.7"
+tower = { version = "0.4", default-features = false, features = ["util"] }
 tracing = "0.1.2"
 tokio = {version = "0.2", features = ["sync"]}

@@ -6,10 +6,10 @@ edition = "2018"
 publish = false
 
 [dependencies]
-bytes = "0.5"
+bytes = "0.6"
 futures = "0.3"
 http = "0.2"
-http-body = "0.3"
+http-body = "0.4"
 linkerd2-error = { path = "../error" }
-tower = {version = "0.3", default-features = false }
+tower = {version = "0.4", default-features = false }
 pin-project = "0.4"

@@ -34,7 +34,7 @@ pub struct ExponentialBackoffStream {
     rng: SmallRng,
     iterations: u32,
     #[pin]
-    delay: Option<time::Delay>,
+    delay: Option<time::Sleep>,
 }
 
 #[derive(Clone, Debug)]
@@ -120,7 +120,7 @@ impl Stream for ExponentialBackoffStream {
                 let base = this.backoff.base(*this.iterations);
                 base + this.backoff.jitter(base, &mut this.rng)
             };
-            this.delay.as_mut().set(Some(time::delay_for(backoff)));
+            this.delay.as_mut().set(Some(time::sleep(backoff)));
         }
     }
 }

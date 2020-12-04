@@ -80,6 +80,10 @@ impl bytes::Buf for Data {
     fn advance(&mut self, n: usize) {
         self.inner.advance(n)
     }
+
+    fn bytes_vectored<'a>(&'a self, dst: &mut [std::io::IoSlice<'a>]) -> usize {
+        self.inner.bytes_vectored(dst)
+    }
 }
 
 impl<B> Body for Inner<B>

@@ -45,7 +45,7 @@ where
         let mut i = 0;
         let mut maybe_h2 = true;
 
-        let mut timeout = time::delay_for(self.timeout).fuse();
+        let mut timeout = time::sleep(self.timeout).fuse();
         loop {
             trace!(capacity = buf.capacity() - i, "Reading");
             let sz = futures::select_biased! {

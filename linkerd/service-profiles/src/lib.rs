@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
+use futures::stream::Stream;
 use linkerd2_addr::Addr;
 pub use linkerd2_dns_name::Name;
 use linkerd2_error::Error;
@@ -7,6 +8,7 @@ use linkerd2_proxy_api_resolve::Metadata;
 use std::{
     future::Future,
     net::SocketAddr,
+    pin::Pin,
     task::{Context, Poll},
 };
 use tower::util::{Oneshot, ServiceExt};
@@ -82,4 +84,20 @@ where
     fn call(&mut self, target: T) -> Self::Future {
         self.0.get_profile(target)
     }
+}
+
+fn stream_profile(mut rx: Receiver) -> Pin<Box<dyn Stream<Item = Profile> + Send + Sync>> {
+    Box::pin(async_stream::stream! {
+        loop {
+            let val = rx.borrow().clone();
+            yield val;
+            // This is a loop with a return condition rather than a while loop,
+            // because we want to yield the *first* value immediately, rather
+            // than waiting for the profile to change again.
+            if let Err(_) = rx.changed().await {
+                tracing::trace!("profile sender dropped");
+                return;
+            }
+        }
+    })
 }

@@ -19,16 +19,16 @@ nyi = []
 
 [dependencies]
 futures = "0.3"
-h2 = "0.2.6"
+h2 = { git = "https://github.com/hyperium/h2" }
 http = "0.2"
-http-body = "0.3"
-hyper = "0.13.7"
+http-body = "0.4"
+hyper = "0.14.0-dev"
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 regex = "0.1"
-tokio = { version = "0.2", features = ["io-util", "net", "rt-core"]}
-tokio-test = "0.2.1"
-tower = { version = "0.3", default-features = false} 
-tracing = "0.1.19"
+tokio = { version = "0.3", features = ["io-util", "net", "rt", "sync"]}
+tokio-test = "0.3"
+tower = { version = "0.4", default-features = false}
+tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 tracing-subscriber = "0.2.11"
 

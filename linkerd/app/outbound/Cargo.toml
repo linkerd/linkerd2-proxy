@@ -9,19 +9,19 @@ Configures and runs the outbound proxy
 """
 
 [dependencies]
-bytes = "0.5"
+bytes = "0.6"
 http = "0.2"
 futures = "0.3"
 indexmap = "1.0"
 linkerd2-app-core = { path = "../core" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-retry = { path = "../../retry" }
-tokio = { version = "0.2", features = ["sync"]}
-tracing = "0.1.19"
+tokio = { version = "0.3", features = ["sync"]}
+tracing = "0.1.22"
 pin-project = "0.4"
 
 [dependencies.tower]
-version = "0.3"
+version = "0.4"
 # disable tower's tracing `log` integration for performance reasons, since we
 # will consume tower's traces as traces.
 default-features = false
@@ -30,9 +30,9 @@ features = [
 ]
 
 [dev-dependencies]
-hyper = "0.13"
+hyper = "0.14.0-dev"
 ipnet = "1.0"
 linkerd2-app-test = { path = "../test" }
 linkerd2-io = { path = "../../io", features = ["tokio-test"] }
-tokio = { version = "0.2", features = ["full", "macros"]}
+tokio = { version = "0.3", features = ["full", "macros"]}
 tracing-futures = "0.2"

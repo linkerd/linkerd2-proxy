@@ -66,7 +66,7 @@ where
     (svc, drain_tx)
 }
 
-#[tokio::test(core_threads = 1)]
+#[tokio::test(flavor = "current_thread")]
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
     // connecting to that endpoint fails, the client connection will also be reset.
@@ -101,7 +101,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let profiles = profile::resolver();
     let profile_tx = profiles.profile_tx(ep1);
     profile_tx
-        .broadcast(profile::Profile {
+        .send(profile::Profile {
             opaque_protocol: false,
             endpoint: Some((ep1, meta.clone())),
             ..Default::default()
@@ -146,7 +146,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
 
     tokio::select! {
-        _ = time::delay_for(time::Duration::from_secs(10)) => {
+        _ = time::sleep(time::Duration::from_secs(10)) => {
             panic!("timeout");
         }
         res = &mut client_task => {

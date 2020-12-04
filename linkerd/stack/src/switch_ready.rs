@@ -6,7 +6,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio::time::{delay_for, Delay, Instant};
+use tokio::time::{sleep, Instant, Sleep};
 use tower::util::Either;
 
 /// A service which falls back to a secondary service if the primary service
@@ -16,7 +16,7 @@ pub struct SwitchReady<A, B> {
     primary: A,
     secondary: B,
     switch_after: Duration,
-    delay: Delay,
+    delay: Sleep,
     state: State,
 }
 
@@ -84,7 +84,7 @@ impl<A, B> SwitchReady<A, B> {
             // the delay is reset whenever the service becomes unready; this
             // initial one will never actually be used, so it's okay to start it
             // now.
-            delay: delay_for(switch_after),
+            delay: sleep(switch_after),
             state: State::Primary,
         }
     }
@@ -162,7 +162,7 @@ impl<A: Clone, B: Clone> Clone for SwitchReady<A, B> {
             switch_after: self.switch_after,
             // Reset the state and delay; each clone of the underlying services
             // may become ready independently (e.g. semaphore).
-            delay: delay_for(self.switch_after),
+            delay: sleep(self.switch_after),
             state: State::Primary,
         }
     }
@@ -237,7 +237,7 @@ mod tests {
         assert_pending!(switch.poll_ready());
 
         // Idle out the primary service.
-        delay_for(dur + Duration::from_millis(1)).await;
+        sleep(dur + Duration::from_millis(1)).await;
         assert_pending!(switch.poll_ready());
 
         // The secondary service becomes ready.
@@ -266,7 +266,7 @@ mod tests {
         a_handle.allow(0);
         assert_pending!(switch.poll_ready());
 
-        delay_for(dur + Duration::from_millis(1)).await;
+        sleep(dur + Duration::from_millis(1)).await;
         assert_pending!(switch.poll_ready());
 
         // The secondary service becomes ready.
@@ -291,7 +291,7 @@ mod tests {
 
         // delay for _half_ the duration. *not* long enough to time out.
         assert_pending!(switch.poll_ready());
-        delay_for(dur / 2).await;
+        sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready again.
@@ -321,7 +321,7 @@ mod tests {
         assert_pending!(switch.poll_ready());
 
         // delay for _half_ the duration. *not* long enough to time out.
-        delay_for(dur / 2).await;
+        sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready.
@@ -336,7 +336,7 @@ mod tests {
 
         // delay for half the duration again
         assert_pending!(switch.poll_ready());
-        delay_for(dur / 2).await;
+        sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready.
@@ -353,7 +353,7 @@ mod tests {
         // for longer than the total duration after which we idle out the
         // primary service, this should be reset every time the primary becomes ready.
         assert_pending!(switch.poll_ready());
-        delay_for(dur / 2).await;
+        sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready.
@@ -386,7 +386,7 @@ mod tests {
         a_handle.send_error("lol");
         assert_ready_err!(switch.poll_ready());
 
-        delay_for(dur + Duration::from_millis(1)).await;
+        sleep(dur + Duration::from_millis(1)).await;
         assert_pending!(switch.poll_ready());
 
         b_handle.send_error("lol");

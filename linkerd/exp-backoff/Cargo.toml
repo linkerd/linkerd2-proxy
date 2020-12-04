@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 futures = "0.3"
 rand = { version = "0.7", features = ["small_rng"] }
-tokio = { version = "0.2", features = ["time", "stream"]}
+tokio = { version = "0.3", features = ["time", "stream"]}
 pin-project = "0.4"
 
 [dev-dependencies]

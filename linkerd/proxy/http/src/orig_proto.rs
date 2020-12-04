@@ -101,7 +101,7 @@ where
                 .unwrap_or(orig_version);
             trace!(?version, "Downgrading response");
             *rsp.version_mut() = version;
-            rsp
+            rsp.map(Body::from)
         }))
     }
 }
