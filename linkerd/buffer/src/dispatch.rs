@@ -44,7 +44,7 @@ pub(crate) async fn run<S, Req, I>(
                                 while let Some(InFlight { tx, .. }) = requests.recv().await {
                                     let _ = tx.send(Err(error.clone().into()));
                                 }
-                                break;
+                                return;
                             }
                         };
                     }
