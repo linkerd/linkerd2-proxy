@@ -1,11 +1,11 @@
 #![deny(warnings, rust_2018_idioms)]
 
-mod payload;
+mod body;
 pub mod request;
 pub mod response;
 
 pub use self::{
-    payload::{Data, Payload},
+    body::{BoxBody, Data},
     request::BoxRequest,
     response::BoxResponse,
 };

@@ -1,5 +1,5 @@
 use crate::{
-    glue::{Body, HyperConnect},
+    glue::{HyperConnect, UpgradeBody},
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use futures::prelude::*;
@@ -59,8 +59,9 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
     }
 }
 
-type RspFuture =
-    Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
+type RspFuture = Pin<
+    Box<dyn Future<Output = Result<http::Response<UpgradeBody>, hyper::Error>> + Send + 'static>,
+>;
 
 impl<C, T, B> Client<C, T, B>
 where
@@ -151,7 +152,7 @@ where
                 strip_connection_headers(rsp.headers_mut());
             }
 
-            rsp.map(Body::from)
+            rsp.map(UpgradeBody::from)
         }))
     }
 }

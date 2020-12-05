@@ -1,6 +1,6 @@
 //! A middleware that boxes HTTP request bodies.
 
-use crate::Payload;
+use crate::BoxBody;
 use linkerd2_error::Error;
 use std::task::{Context, Poll};
 
@@ -30,7 +30,7 @@ where
     B: http_body::Body + 'static,
     B::Data: Send + 'static,
     B::Error: Into<Error>,
-    S: tower::Service<http::Request<Payload>>,
+    S: tower::Service<http::Request<BoxBody>>,
     BoxRequest<S, B>: tower::Service<http::Request<B>>,
 {
     type Service = BoxRequest<S, B>;
@@ -51,7 +51,7 @@ where
     B: http_body::Body + Send + 'static,
     B::Data: Send + 'static,
     B::Error: Into<Error>,
-    S: tower::Service<http::Request<Payload>>,
+    S: tower::Service<http::Request<BoxBody>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -62,6 +62,6 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        self.0.call(req.map(Payload::new))
+        self.0.call(req.map(BoxBody::new))
     }
 }

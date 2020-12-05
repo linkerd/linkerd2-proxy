@@ -5,7 +5,7 @@ use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct Payload {
+pub struct BoxBody {
     inner: Pin<Box<dyn Body<Data = Data, Error = Error> + Send + 'static>>,
 }
 
@@ -18,17 +18,17 @@ pub struct Data {
 #[pin_project]
 struct Inner<B: Body>(#[pin] B);
 
-struct NoPayload;
+struct NoBody;
 
-impl Default for Payload {
+impl Default for BoxBody {
     fn default() -> Self {
         Self {
-            inner: Box::pin(NoPayload),
+            inner: Box::pin(NoBody),
         }
     }
 }
 
-impl Payload {
+impl BoxBody {
     pub fn new<B>(inner: B) -> Self
     where
         B: Body + Send + 'static,
@@ -41,7 +41,7 @@ impl Payload {
     }
 }
 
-impl Body for Payload {
+impl Body for BoxBody {
     type Data = Data;
     type Error = Error;
 
@@ -123,13 +123,13 @@ where
     }
 }
 
-impl std::fmt::Debug for Payload {
+impl std::fmt::Debug for BoxBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Payload").finish()
+        f.debug_struct("BoxBody").finish()
     }
 }
 
-impl Body for NoPayload {
+impl Body for NoBody {
     type Data = Data;
     type Error = Error;
 

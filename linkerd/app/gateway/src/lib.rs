@@ -120,7 +120,7 @@ mod test {
     }
 
     impl Test {
-        async fn run(self) -> Result<http::Response<http::boxed::Payload>, Error> {
+        async fn run(self) -> Result<http::Response<http::boxed::BoxBody>, Error> {
             let Self {
                 suffix,
                 dst_name,
@@ -129,8 +129,8 @@ mod test {
             } = self;
 
             let (outbound, mut handle) = mock::pair::<
-                http::Request<http::boxed::Payload>,
-                http::Response<http::boxed::Payload>,
+                http::Request<http::boxed::BoxBody>,
+                http::Response<http::boxed::BoxBody>,
             >();
             let mut make_gateway = {
                 let profiles = service_fn(move |na: NameAddr| async move {

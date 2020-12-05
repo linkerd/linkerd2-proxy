@@ -79,8 +79,8 @@ impl Config {
     where
         L: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
         S: tower::Service<
-                http::Request<http::boxed::Payload>,
-                Response = http::Response<http::boxed::Payload>,
+                http::Request<http::boxed::BoxBody>,
+                Response = http::Response<http::boxed::BoxBody>,
             > + Unpin
             + Send
             + 'static,
@@ -160,8 +160,8 @@ impl Config {
     ) -> impl svc::NewService<
         Target,
         Service = impl tower::Service<
-            http::Request<http::boxed::Payload>,
-            Response = http::Response<http::boxed::Payload>,
+            http::Request<http::boxed::BoxBody>,
+            Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
             Future = impl Send,
         > + Unpin
@@ -180,8 +180,8 @@ impl Config {
         // The loopback router processes requests sent to the inbound port.
         L: svc::NewService<Target, Service = S> + Unpin + Send + Clone + Sync + 'static,
         S: tower::Service<
-                http::Request<http::boxed::Payload>,
-                Response = http::Response<http::boxed::Payload>,
+                http::Request<http::boxed::BoxBody>,
+                Response = http::Response<http::boxed::BoxBody>,
             > + Unpin
             + Send
             + 'static,
@@ -237,7 +237,7 @@ impl Config {
         // request has not been received for `cache_max_idle_age`.
         let profile = target
             .clone()
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
+            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .push_on_response(svc::layers().box_http_request())
             // The target stack doesn't use the profile resolution, so drop it.
             .push_map_target(endpoint::Target::from)
@@ -264,7 +264,7 @@ impl Config {
             .instrument(|_: &Target| debug_span!("profile"))
             // Skip the profile stack if it takes too long to become ready.
             .push_when_unready(target.clone(), self.profile_idle_timeout)
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>();
+            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>();
 
         // If the traffic is targeted at the inbound port, send it through
         // the loopback service (i.e. as a gateway).
@@ -273,7 +273,7 @@ impl Config {
         // Attempts to resolve the target as a service profile or, if that
         // fails, skips that stack to forward to the local endpoint.
         svc::stack(switch_loopback)
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
+            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .cache(
                 svc::layers().push_on_response(
                     svc::layers()
@@ -286,7 +286,7 @@ impl Config {
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .box_new_service()
-            .check_new_service::<Target, http::Request<http::boxed::Payload>>()
+            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .into_inner()
     }
 
@@ -317,8 +317,8 @@ impl Config {
         A::Future: Send,
         H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + 'static,
         S: tower::Service<
-                http::Request<http::boxed::Payload>,
-                Response = http::Response<http::boxed::Payload>,
+                http::Request<http::boxed::BoxBody>,
+                Response = http::Response<http::boxed::BoxBody>,
                 Error = Error,
             > + Send
             + 'static,
