@@ -1,6 +1,6 @@
 //! A middleware that boxes HTTP response bodies.
 
-use crate::Payload;
+use crate::BoxBody;
 use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
 use std::task::{Context, Poll};
@@ -32,7 +32,7 @@ where
     B::Data: Send + 'static,
     B::Error: Into<Error> + 'static,
 {
-    type Response = http::Response<Payload>;
+    type Response = http::Response<BoxBody>;
     type Error = S::Error;
     type Future = future::MapOk<S::Future, fn(S::Response) -> Self::Response>;
 
@@ -41,6 +41,6 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        self.0.call(req).map_ok(|rsp| rsp.map(Payload::new))
+        self.0.call(req).map_ok(|rsp| rsp.map(BoxBody::new))
     }
 }

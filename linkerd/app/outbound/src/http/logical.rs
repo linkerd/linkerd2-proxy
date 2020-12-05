@@ -20,7 +20,7 @@ pub fn stack<B, E, S, R>(
     Logical,
     Service = impl tower::Service<
         http::Request<B>,
-        Response = http::Response<http::boxed::Payload>,
+        Response = http::Response<http::boxed::BoxBody>,
         Error = Error,
         Future = impl Send,
     > + Send,
@@ -32,8 +32,8 @@ where
     B::Data: Send + 'static,
     E: svc::NewService<Endpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
     S: tower::Service<
-            http::Request<http::boxed::Payload>,
-            Response = http::Response<http::boxed::Payload>,
+            http::Request<http::boxed::BoxBody>,
+            Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
         > + Send
         + 'static,
@@ -51,7 +51,7 @@ where
     let watchdog = cache_max_idle_age * 2;
 
     svc::stack(endpoint.clone())
-        .check_new_service::<Endpoint, http::Request<http::boxed::Payload>>()
+        .check_new_service::<Endpoint, http::Request<http::boxed::BoxBody>>()
         .push_on_response(
             svc::layers()
                 .push(svc::layer::mk(svc::SpawnReady::new))

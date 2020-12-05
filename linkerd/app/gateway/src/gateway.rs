@@ -44,7 +44,7 @@ impl<O> Gateway<O> {
 impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
 where
     B: http::HttpBody + 'static,
-    O: tower::Service<http::Request<B>, Response = http::Response<http::boxed::Payload>>,
+    O: tower::Service<http::Request<B>, Response = http::Response<http::boxed::BoxBody>>,
     O::Error: Into<Error> + 'static,
     O::Future: Send + 'static,
 {

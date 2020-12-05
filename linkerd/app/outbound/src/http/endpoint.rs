@@ -24,7 +24,7 @@ pub fn stack<B, C>(
     Endpoint,
     Service = impl tower::Service<
         http::Request<B>,
-        Response = http::Response<http::boxed::Payload>,
+        Response = http::Response<http::boxed::BoxBody>,
         Error = Error,
         Future = impl Send,
     > + Send,

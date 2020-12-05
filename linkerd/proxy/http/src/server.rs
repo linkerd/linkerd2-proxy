@@ -127,7 +127,7 @@ where
     H: NewService<(HttpVersion, T), Service = HSvc> + Clone,
     HSvc: Service<
             http::Request<UpgradeBody>,
-            Response = http::Response<http::boxed::Payload>,
+            Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
         > + Clone
         + Unpin

@@ -44,8 +44,8 @@ where
     C::Future: Unpin + Send,
     H: svc::NewService<http::Logical, Service = S> + Unpin + Clone + Send + Sync + 'static,
     S: tower::Service<
-            http::Request<http::boxed::Payload>,
-            Response = http::Response<http::boxed::Payload>,
+            http::Request<http::boxed::BoxBody>,
+            Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
         > + Send
         + 'static,
