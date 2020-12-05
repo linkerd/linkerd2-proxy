@@ -15,7 +15,7 @@ use tracing::debug;
 /// Provides optional HTTP/1.1 upgrade support on the body.
 #[pin_project(PinnedDrop)]
 #[derive(Debug)]
-pub struct Body {
+pub struct UpgradeBody {
     /// In UpgradeBody::drop, if this was an HTTP upgrade, the body is taken
     /// to be inserted into the Http11Upgrade half.
     body: hyper::Body,
@@ -53,7 +53,7 @@ pub struct HyperConnectFuture<F> {
 }
 // ===== impl UpgradeBody =====
 
-impl HttpBody for Body {
+impl HttpBody for UpgradeBody {
     type Data = Bytes;
     type Error = hyper::Error;
 
@@ -90,32 +90,32 @@ impl HttpBody for Body {
     }
 }
 
-impl Default for Body {
+impl Default for UpgradeBody {
     fn default() -> Self {
         hyper::Body::empty().into()
     }
 }
 
-impl From<hyper::Body> for Body {
+impl From<hyper::Body> for UpgradeBody {
     fn from(body: hyper::Body) -> Self {
-        Body {
+        Self {
             body,
             upgrade: None,
         }
     }
 }
 
-impl Body {
+impl UpgradeBody {
     pub(crate) fn new(
         body: hyper::Body,
         upgrade: Option<(Http11Upgrade, hyper::upgrade::OnUpgrade)>,
     ) -> Self {
-        Body { body, upgrade }
+        Self { body, upgrade }
     }
 }
 
 #[pinned_drop]
-impl PinnedDrop for Body {
+impl PinnedDrop for UpgradeBody {
     fn drop(self: Pin<&mut Self>) {
         let this = self.project();
         // If an HTTP/1 upgrade was wanted, send the upgrade future.
@@ -135,7 +135,7 @@ impl<S> HyperServerSvc<S> {
 
 impl<S> tower::Service<http::Request<hyper::Body>> for HyperServerSvc<S>
 where
-    S: tower::Service<http::Request<Body>>,
+    S: tower::Service<http::Request<UpgradeBody>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -146,10 +146,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<hyper::Body>) -> Self::Future {
-        self.service.call(req.map(|body| Body {
-            body,
-            upgrade: None,
-        }))
+        self.service.call(req.map(UpgradeBody::from))
     }
 }
 

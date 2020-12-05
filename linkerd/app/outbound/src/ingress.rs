@@ -50,8 +50,8 @@ where
     TSvc::Future: Send,
     H: svc::NewService<http::Logical, Service = HSvc> + Unpin + Clone + Send + Sync + 'static,
     HSvc: tower::Service<
-            http::Request<http::boxed::Payload>,
-            Response = http::Response<http::boxed::Payload>,
+            http::Request<http::boxed::BoxBody>,
+            Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
         > + Send
         + 'static,

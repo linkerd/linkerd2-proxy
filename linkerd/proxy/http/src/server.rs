@@ -1,7 +1,7 @@
 use crate::{
     self as http,
     client_handle::SetClientHandle,
-    glue::{Body, HyperServerSvc},
+    glue::{HyperServerSvc, UpgradeBody},
     h2::Settings as H2Settings,
     trace, upgrade, Version,
 };
@@ -104,8 +104,11 @@ where
     F: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
     F::Error: Into<Error>,
     F::Future: Send + 'static,
-    H: Service<http::Request<Body>, Response = http::Response<http::boxed::Payload>, Error = Error>
-        + Clone
+    H: Service<
+            http::Request<UpgradeBody>,
+            Response = http::Response<http::boxed::BoxBody>,
+            Error = Error,
+        > + Clone
         + Unpin
         + Send
         + 'static,
@@ -181,14 +184,12 @@ where
 
                 Ok(())
             }),
-            Self::Opaque(tcp, drain) => {
+            Self::Opaque(tcp, drain) => Box::pin({
                 debug!("Forwarding TCP");
-                Box::pin(
-                    drain
-                        .ignore_signal()
-                        .release_after(tcp.oneshot(io).err_into::<Error>()),
-                )
-            }
+                drain
+                    .ignore_signal()
+                    .release_after(tcp.oneshot(io).err_into::<Error>())
+            }),
         }
     }
 }

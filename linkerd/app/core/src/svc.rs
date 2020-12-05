@@ -275,7 +275,7 @@ impl<S> Stack<S> {
     // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
     // where
     //     B: hyper::body::HttpBody<Data = http::boxed::Data, Error = Error> + 'static,
-    //     S: tower::Service<http::Request<http::boxed::Payload>>,
+    //     S: tower::Service<http::Request<http::boxed::BoxBody>>,
     // {
     //     self.push(http::boxed::request::Layer::new())
     // }

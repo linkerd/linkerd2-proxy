@@ -1,6 +1,6 @@
 //! HTTP/1.1 Upgrades
 
-use crate::{glue::Body, h1};
+use crate::{glue::UpgradeBody, h1};
 use futures::{
     future::{self, Either},
     TryFutureExt,
@@ -175,7 +175,7 @@ impl<S> Service<S> {
 
 impl<S, B> tower::Service<http::Request<hyper::Body>> for Service<S>
 where
-    S: tower::Service<http::Request<Body>, Response = http::Response<B>>,
+    S: tower::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
     B: Default,
 {
     type Response = S::Response;
@@ -215,7 +215,7 @@ where
             None
         };
 
-        let req = req.map(|body| Body::new(body, upgrade));
+        let req = req.map(|body| UpgradeBody::new(body, upgrade));
 
         Either::Left(self.service.call(req))
     }
