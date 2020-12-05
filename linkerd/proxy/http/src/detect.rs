@@ -90,14 +90,14 @@ where
             if maybe_h1 {
                 // Scan up to the first line ending to determine whether the
                 // request is HTTP/1.1.
-                for j in scan_idx..(buf.len() - 1) {
-                    if &buf[j..j + 2] == b"\r\n" {
-                        trace!(offset = j, "Found newline");
+                for i in scan_idx..(buf.len() - 1) {
+                    if &buf[i..=i + 1] == b"\r\n" {
+                        trace!(offset = i, "Found newline");
                         // If the first line looks like an HTTP/2 first line,
                         // then we almost definitely got a fragmented first
                         // read. Only try HTTP/1 parsing if it doesn't look like
                         // HTTP/2.
-                        if !is_h2_first_line(&buf[..j + 2]) {
+                        if !is_h2_first_line(&buf[..=i + 1]) {
                             trace!("Parsing HTTP/1 message");
                             // If we get to reading headers (and fail), the
                             // first line looked like an HTTP/1 request; so
