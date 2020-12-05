@@ -129,7 +129,7 @@ where
         ))
         .into_inner();
 
-    svc::stack(http::DetectHttp::new(h2_settings, http, tcp, drain))
+    svc::stack(http::NewServeHttp::new(h2_settings, http, tcp, drain))
         .check_new_service::<tcp::Accept, io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
             transport::Prefix::layer(

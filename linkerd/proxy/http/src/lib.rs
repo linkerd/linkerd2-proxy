@@ -8,7 +8,6 @@ pub mod add_header;
 pub mod balance;
 pub mod client;
 pub mod client_handle;
-pub mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -17,6 +16,7 @@ pub mod insert;
 pub mod normalize_uri;
 pub mod orig_proto;
 pub mod override_authority;
+mod server;
 pub mod strip_header;
 pub mod timeout;
 pub mod trace;
@@ -25,9 +25,9 @@ mod version;
 
 pub use self::{
     client_handle::{ClientHandle, SetClientHandle},
-    detect::DetectHttp,
     glue::{Body as Payload, HyperServerSvc},
     override_authority::CanOverrideAuthority,
+    server::NewServeHttp,
     timeout::MakeTimeoutLayer,
     version::Version,
 };
