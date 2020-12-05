@@ -124,7 +124,7 @@ where
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
     .into_inner();
 
-    let http = svc::stack(http::DetectHttp::new(
+    let http = svc::stack(http::NewServeHttp::new(
         h2_settings,
         http_server,
         tcp_balance,

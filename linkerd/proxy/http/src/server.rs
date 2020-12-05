@@ -21,7 +21,7 @@ use tracing::{debug, trace};
 type Server = hyper::server::conn::Http<trace::Executor>;
 
 #[derive(Clone, Debug)]
-pub struct DetectHttp<F, H> {
+pub struct NewServeHttp<F, H> {
     tcp: F,
     http: H,
     server: Server,
@@ -37,7 +37,7 @@ pub struct DetectHttp<F, H> {
 /// Otherwise, the `F` type forwarding service is used to handle the TCP
 /// connection.
 #[derive(Debug)]
-pub struct AcceptHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
+pub struct ServeHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
     target: T,
     new_tcp: F,
     tcp: Option<F::Service>,
@@ -48,10 +48,10 @@ pub struct AcceptHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
     drain: drain::Watch,
 }
 
-// === impl DetectHttp ===
+// === impl NewServeHttp ===
 
-impl<F, H> DetectHttp<F, H> {
-    /// Creates a new `AcceptHttp`.
+impl<F, H> NewServeHttp<F, H> {
+    /// Creates a new `ServeHttp`.
     pub fn new(h2: H2Settings, http: H, tcp: F, drain: drain::Watch) -> Self {
         let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
         server
@@ -77,15 +77,15 @@ impl<F, H> DetectHttp<F, H> {
     }
 }
 
-impl<T, F, H> NewService<T> for DetectHttp<F, H>
+impl<T, F, H> NewService<T> for NewServeHttp<F, H>
 where
     F: NewService<T> + Clone,
     H: NewService<(HttpVersion, T)> + Clone,
 {
-    type Service = AcceptHttp<T, F, H>;
+    type Service = ServeHttp<T, F, H>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        AcceptHttp::new(
+        ServeHttp::new(
             target,
             self.server.clone(),
             self.http.clone(),
@@ -95,9 +95,9 @@ where
     }
 }
 
-// === impl AcceptHttp ===
+// === impl ServeHttp ===
 
-impl<T, F, H> AcceptHttp<T, F, H>
+impl<T, F, H> ServeHttp<T, F, H>
 where
     F: NewService<T>,
     H: NewService<(HttpVersion, T)>,
@@ -116,7 +116,7 @@ where
     }
 }
 
-impl<T, I, F, FSvc, H, HSvc> Service<PrefixedIo<I>> for AcceptHttp<T, F, H>
+impl<T, I, F, FSvc, H, HSvc> Service<PrefixedIo<I>> for ServeHttp<T, F, H>
 where
     T: Clone,
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,

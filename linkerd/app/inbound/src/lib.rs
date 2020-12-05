@@ -375,7 +375,7 @@ impl Config {
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
-        svc::stack(http::DetectHttp::new(
+        svc::stack(http::NewServeHttp::new(
             h2_settings,
             http_server,
             svc::stack(tcp_forward)
