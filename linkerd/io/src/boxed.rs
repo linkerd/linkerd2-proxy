@@ -1,4 +1,4 @@
-use super::{AsyncRead, AsyncWrite, Io, IoSlice, PeerAddr, Poll, ReadBuf, Result};
+use super::{AsyncRead, AsyncWrite, IoSlice, PeerAddr, Poll, ReadBuf, Result};
 use std::{pin::Pin, task::Context};
 
 /// A public wrapper around a `Box<Io>`.
@@ -7,8 +7,18 @@ use std::{pin::Pin, task::Context};
 /// to allow vectored writes to occur.
 pub struct BoxedIo(Pin<Box<dyn Io + Unpin>>);
 
+/// This is necessary for `BoxedIo`, as `dyn AsyncRead + AsyncWrite + PeerAddr`
+/// is not a valid trait object. However, it needn't be public --- it's just
+/// used internally.
+trait Io: AsyncRead + AsyncWrite + PeerAddr + Send {}
+
+impl<I> Io for I where I: AsyncRead + AsyncWrite + PeerAddr + Send {}
+
 impl BoxedIo {
-    pub fn new<T: Io + Unpin + 'static>(io: T) -> Self {
+    pub fn new<T>(io: T) -> Self
+    where
+        T: AsyncRead + AsyncWrite + PeerAddr + Send + Unpin + 'static,
+    {
         BoxedIo(Box::pin(io))
     }
 }
@@ -50,8 +60,6 @@ impl AsyncWrite for BoxedIo {
         self.0.is_write_vectored()
     }
 }
-
-impl crate::internal::Sealed for BoxedIo {}
 
 impl std::fmt::Debug for BoxedIo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -104,8 +112,6 @@ mod tests {
         }
     }
 
-    impl crate::internal::Sealed for WriteBufDetector {}
-
     #[tokio::test]
     async fn boxed_io_uses_vectored_io() {
         use bytes::Bytes;
@@ -115,7 +121,7 @@ mod tests {
             // This method will trigger the panic in WriteBufDetector::write IFF
             // BoxedIo doesn't call write_buf_erased, but write_buf, and triggering
             // a regular write.
-            match Pin::new(&mut io).poll_write_buf_erased(cx, &mut Bytes::from("hello")) {
+            match crate::poll_write_buf(Pin::new(&mut io), cx, &mut Bytes::from("hello")) {
                 Poll::Ready(Ok(_)) => {}
                 _ => panic!("poll_write_buf should return Poll::Ready(Ok(_))"),
             }

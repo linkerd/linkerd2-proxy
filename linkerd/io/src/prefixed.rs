@@ -1,4 +1,4 @@
-use crate::{Io, IoSlice, PeerAddr, Poll};
+use crate::{IoSlice, PeerAddr, Poll};
 use bytes::{Buf, Bytes};
 use pin_project::pin_project;
 use std::{cmp, io};
@@ -91,5 +91,3 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
         self.io.is_write_vectored()
     }
 }
-
-impl<S: Io> crate::internal::Sealed for PrefixedIo<S> {}
