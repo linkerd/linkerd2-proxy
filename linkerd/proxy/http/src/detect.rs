@@ -144,6 +144,8 @@ mod tests {
 
     const HTTP11_LINE: &'static [u8] = b"GET / HTTP/1.1\r\n";
     const TIMEOUT: time::Duration = time::Duration::from_secs(10);
+    const GARBAGE: &'static [u8] =
+        b"garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage";
 
     #[tokio::test]
     async fn h2() {
@@ -201,11 +203,23 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
 
         let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(io::Builder::new().read(b"foo.bar.blah\n").build())
+            .detect(
+                io::Builder::new()
+                    .read(b"foo.bar.blah\r")
+                    .read(b"\nbobo")
+                    .build(),
+            )
             .await
             .unwrap();
         assert_eq!(kind, None);
-        assert_eq!(&io.prefix()[..], b"foo.bar.blah\n");
+        assert_eq!(&io.prefix()[..], b"foo.bar.blah\r\nbobo");
+
+        let (kind, io) = DetectHttp::new(TIMEOUT)
+            .detect(io::Builder::new().read(GARBAGE).build())
+            .await
+            .unwrap();
+        assert_eq!(kind, None);
+        assert_eq!(&io.prefix()[..], GARBAGE);
 
         let (kind, io) = DetectHttp::new(TIMEOUT)
             .detect(
