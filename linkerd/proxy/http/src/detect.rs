@@ -148,6 +148,7 @@ mod tests {
 
     const HTTP11_LINE: &'static [u8] = b"GET / HTTP/1.1\r\n";
     const TIMEOUT: time::Duration = time::Duration::from_secs(10);
+    const H2_AND_GARBAGE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\ngarbage";
     const GARBAGE: &'static [u8] =
         b"garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage";
 
@@ -157,14 +158,14 @@ mod tests {
 
         for i in 1..H2_PREFACE.len() {
             let mut buf = BytesMut::with_capacity(H2_PREFACE.len());
-            buf.put(H2_PREFACE);
-            debug!(read0 = ?std::str::from_utf8(&H2_PREFACE[..i]).unwrap());
-            debug!(read1 = ?std::str::from_utf8(&H2_PREFACE[i..]).unwrap());
+            buf.put(H2_AND_GARBAGE);
+            debug!(read0 = ?std::str::from_utf8(&H2_AND_GARBAGE[..i]).unwrap());
+            debug!(read1 = ?std::str::from_utf8(&H2_AND_GARBAGE[i..]).unwrap());
             let (kind, _) = DetectHttp::new(TIMEOUT)
                 .detect(
                     io::Builder::new()
-                        .read(&H2_PREFACE[..i])
-                        .read(&H2_PREFACE[i..])
+                        .read(&H2_AND_GARBAGE[..i])
+                        .read(&H2_AND_GARBAGE[i..])
                         .build(),
                 )
                 .await
