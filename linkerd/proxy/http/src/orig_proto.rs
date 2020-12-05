@@ -1,4 +1,4 @@
-use super::{glue::Body, h1, h2, upgrade};
+use super::{glue::UpgradeBody, h1, h2, upgrade};
 use futures::{future, prelude::*};
 use http::header::{HeaderValue, TRANSFER_ENCODING};
 use linkerd2_error::Error;
@@ -44,10 +44,13 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<Body>;
+    type Response = http::Response<UpgradeBody>;
     type Error = hyper::Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
+    type Future = Pin<
+        Box<
+            dyn Future<Output = Result<http::Response<UpgradeBody>, hyper::Error>> + Send + 'static,
+        >,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.h2.poll_ready(cx)
@@ -101,7 +104,7 @@ where
                 .unwrap_or(orig_version);
             trace!(?version, "Downgrading response");
             *rsp.version_mut() = version;
-            rsp.map(Body::from)
+            rsp.map(UpgradeBody::from)
         }))
     }
 }

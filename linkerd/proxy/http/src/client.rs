@@ -5,7 +5,7 @@
 //! HTTP/1 messages over an H2 transport; however, some requests cannot be
 //! proxied via this method, so it also maintains a fallback HTTP/1 client.
 
-use crate::{glue::Body, h1, h2, orig_proto};
+use crate::{glue::UpgradeBody, h1, h2, orig_proto};
 use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_stack::layer;
@@ -125,8 +125,9 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 // === impl Client ===
 
-type RspFuture =
-    Pin<Box<dyn Future<Output = Result<http::Response<Body>, hyper::Error>> + Send + 'static>>;
+type RspFuture = Pin<
+    Box<dyn Future<Output = Result<http::Response<UpgradeBody>, hyper::Error>> + Send + 'static>,
+>;
 
 impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
@@ -139,7 +140,7 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<Body>;
+    type Response = http::Response<UpgradeBody>;
     type Error = hyper::Error;
     type Future = Instrumented<RspFuture>;
 
@@ -171,7 +172,7 @@ where
                 Self::Http1(ref mut h1) => h1.request(req),
                 Self::OrigProtoUpgrade(ref mut svc) => svc.call(req),
                 Self::H2(ref mut svc) => {
-                    Box::pin(svc.call(req).map_ok(|rsp| rsp.map(Body::from))) as RspFuture
+                    Box::pin(svc.call(req).map_ok(|rsp| rsp.map(UpgradeBody::from))) as RspFuture
                 }
             }
         })

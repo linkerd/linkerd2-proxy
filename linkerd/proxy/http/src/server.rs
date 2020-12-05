@@ -1,7 +1,7 @@
 use crate::{
     self as http,
     client_handle::SetClientHandle,
-    glue::{Body, HyperServerSvc},
+    glue::{HyperServerSvc, UpgradeBody},
     h2::Settings as H2Settings,
     trace, upgrade, Version as HttpVersion,
 };
@@ -125,8 +125,11 @@ where
     FSvc::Error: Into<Error>,
     FSvc::Future: Send + 'static,
     H: NewService<(HttpVersion, T), Service = HSvc> + Clone,
-    HSvc: Service<http::Request<Body>, Response = http::Response<http::boxed::Payload>, Error = Error>
-        + Clone
+    HSvc: Service<
+            http::Request<UpgradeBody>,
+            Response = http::Response<http::boxed::Payload>,
+            Error = Error,
+        > + Clone
         + Unpin
         + Send
         + 'static,
