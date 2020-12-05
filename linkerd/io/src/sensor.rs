@@ -1,4 +1,4 @@
-use crate::{Io, IoSlice, PeerAddr, Poll};
+use crate::{IoSlice, PeerAddr, Poll};
 use futures::ready;
 use linkerd2_errno::Errno;
 use pin_project::pin_project;
@@ -76,8 +76,6 @@ impl<T: AsyncRead + AsyncWrite, S: Sensor> AsyncWrite for SensorIo<T, S> {
         self.io.is_write_vectored()
     }
 }
-
-impl<T: Io, S: Sensor + Send> crate::internal::Sealed for SensorIo<T, S> {}
 
 impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
     fn peer_addr(&self) -> Result<std::net::SocketAddr> {
