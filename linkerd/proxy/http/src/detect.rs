@@ -121,13 +121,9 @@ where
                     }
                 }
 
-                // Advance our scan index to the end of buffer. If the last byte is
-                // `\r`, we leave it so that the subsequent read can match the
-                // line ending.
+                // Advance our scan index to the end of buffer so the next
+                // iteration starts scanning where we left off.
                 scan_idx = buf.len() - 1;
-                if buf[scan_idx] == b'\r' {
-                    scan_idx -= 1;
-                }
             }
 
             if !maybe_h1 && !maybe_h2 {
