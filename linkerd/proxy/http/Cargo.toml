@@ -39,4 +39,5 @@ try-lock = "0.2"
 pin-project = "1"
 
 [dev-dependencies]
-tokio-test = "0.2"
+tokio-test = "0.3"
+tracing-subscriber = "0.2"

@@ -12,6 +12,11 @@ const BUFFER_CAPACITY: usize = 8192;
 const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const H2_FIRST_LINE_LEN: usize = 16;
 
+#[inline]
+fn is_h2_first_line(line: &[u8]) -> bool {
+    line.len() == H2_FIRST_LINE_LEN && line == &H2_PREFACE[..H2_FIRST_LINE_LEN]
+}
+
 #[derive(Clone, Debug)]
 pub struct DetectHttp {
     capacity: usize,
@@ -42,77 +47,93 @@ where
 
     async fn detect(&self, mut io: I) -> Result<(Option<Version>, io::PrefixedIo<I>), Error> {
         let mut buf = BytesMut::with_capacity(self.capacity);
-        let mut i = 0;
+        let mut bufidx = 0;
+        let mut maybe_h1 = true;
         let mut maybe_h2 = true;
 
+        // Start tracking a detection timeout before reading.
         let mut timeout = time::sleep(self.timeout).fuse();
         loop {
-            trace!(capacity = buf.capacity() - i, "Reading");
-            let sz = futures::select_biased! {
-                res = io.read_buf(&mut buf).fuse() => res?,
-                _ = (&mut timeout) => {
-                    debug!(ms = %self.timeout.as_millis(), "Read timeout");
-                    0
-                }
-            };
-
-            if sz == 0 {
-                debug!(read = buf.len(), "Could not detect protocol");
+            if !(maybe_h1 || maybe_h2) {
+                trace!("Unknown protocol");
                 return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
             }
 
-            trace!(
-                buf = buf.len(),
-                h2 = H2_PREFACE.len(),
-                "Checking H2 preface"
-            );
+            // Read data from the socket or timeout detection.
+            trace!(capacity = buf.capacity() - bufidx, "Reading");
+            let sz = futures::select_biased! {
+                res = io.read_buf(&mut buf).fuse() => {
+                    let sz = res?;
+                    if sz == 0 {
+                        debug!(read = buf.len(), "Could not detect protocol");
+                        return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
+                    }
+                    sz
+                }
+                _ = (&mut timeout) => {
+                    debug!(ms = %self.timeout.as_millis(), "Detection timeout");
+                    return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
+                }
+            };
+            // If no data was read
+
+            // If we've read enough
             if maybe_h2 && buf.len() >= H2_PREFACE.len() {
+                trace!(
+                    buf = buf.len(),
+                    h2 = H2_PREFACE.len(),
+                    "Checking H2 preface"
+                );
                 if &buf[..H2_PREFACE.len()] == H2_PREFACE {
                     trace!("Matched HTTP/2 prefix");
                     return Ok((Some(Version::H2), io::PrefixedIo::new(buf.freeze(), io)));
-                } else {
-                    maybe_h2 = false;
                 }
+                // If the buffer was long enough
+                maybe_h2 = false;
             }
 
-            for j in i..(buf.len() - 1) {
-                // If we've reached the end of a line, we have enough information to know whether
-                // the protocol is HTTP/1.1 or not.
-                if &buf[j..j + 2] == b"\r\n" {
-                    trace!(offset = j, "Found newline");
-                    if !is_h2_first_line(&buf[..j + 2]) {
-                        trace!("Atempt to parse HTTP/1 message");
-                        let mut p = httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0]);
-                        // Check whether the first line looks like HTTP/1.1.
-                        let kind = match p.parse(&buf[..]) {
-                            Ok(_) | Err(httparse::Error::TooManyHeaders) => {
-                                trace!("Matched HTTP/1");
-                                Some(Version::Http1)
-                            }
-                            Err(_) => {
-                                trace!("Unknown protocol");
-                                None
-                            }
-                        };
-                        return Ok((kind, io::PrefixedIo::new(buf.freeze(), io)));
-                    } else if !maybe_h2 {
-                        trace!("Unknown protocol");
-                        return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
+            // Scan newly-read bytes for a line ending
+            if maybe_h1 {
+                for j in bufidx..(buf.len() - 1) {
+                    // If we've reached the end of a line, we have enough
+                    // information to know whether the protocol is HTTP/1.1 or not.
+                    if &buf[j..j + 2] == b"\r\n" {
+                        trace!(offset = j, "Found newline");
+                        if is_h2_first_line(&buf[..j + 2]) {
+                            maybe_h1 = false;
+                            break;
+                        } else {
+                            trace!("Atempt to parse HTTP/1 message");
+                            let mut p = httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0]);
+                            // Check whether the first line looks like HTTP/1.1.
+                            match p.parse(&buf[..]) {
+                                Ok(_) | Err(httparse::Error::TooManyHeaders) => {
+                                    trace!("Matched HTTP/1");
+                                    return Ok((
+                                        Some(Version::Http1),
+                                        io::PrefixedIo::new(buf.freeze(), io),
+                                    ));
+                                }
+                                Err(_) => {
+                                    if !maybe_h2 {
+                                        trace!("Unknown protocol");
+                                        return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
+                                    }
+                                    maybe_h1 = false;
+                                }
+                            };
+                        }
                     }
                 }
             }
 
-            i += sz - 1;
-            if buf[i] == b'\r' {
-                i -= 1;
+            bufidx += sz - 1;
+            if buf[bufidx] == b'\r' {
+                bufidx -= 1;
             }
-            trace!(offset = %i, "Continuing to read");
+            trace!(offset = %bufidx, "Continuing to read");
         }
     }
-}
-
-fn is_h2_first_line(line: &[u8]) -> bool {
-    line.len() == H2_FIRST_LINE_LEN && line == &H2_PREFACE[..H2_FIRST_LINE_LEN]
 }
 
 #[cfg(test)]
@@ -126,53 +147,44 @@ mod tests {
 
     #[tokio::test]
     async fn h2() {
-        let (kind, _) = DetectHttp::new(TIMEOUT)
-            .detect(io::Builder::new().read(H2_PREFACE).build())
-            .await
-            .unwrap();
-        assert_eq!(kind, Some(Version::H2));
+        let _ = tracing_subscriber::fmt::try_init();
 
-        let mut buf = BytesMut::with_capacity(H2_PREFACE.len() * 2);
-        buf.put(H2_PREFACE);
-        buf.put(H2_PREFACE);
-        let (kind, _) = DetectHttp::new(TIMEOUT)
-            .detect(io::Builder::new().read(&buf[..]).build())
-            .await
-            .unwrap();
-        assert_eq!(kind, Some(Version::H2));
-
-        let (kind, _) = DetectHttp::new(TIMEOUT)
-            .detect(
-                io::Builder::new()
-                    .read(&H2_PREFACE[0..H2_FIRST_LINE_LEN])
-                    .read(&H2_PREFACE[H2_FIRST_LINE_LEN..])
-                    .build(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(kind, Some(Version::H2));
+        for i in 1..H2_PREFACE.len() {
+            let mut buf = BytesMut::with_capacity(H2_PREFACE.len());
+            buf.put(H2_PREFACE);
+            debug!(read0 = ?std::str::from_utf8(&H2_PREFACE[0..i]).unwrap());
+            debug!(read1 = ?std::str::from_utf8(&H2_PREFACE[i..]).unwrap());
+            let (kind, _) = DetectHttp::new(TIMEOUT)
+                .detect(
+                    io::Builder::new()
+                        .read(&H2_PREFACE[..i])
+                        .read(&H2_PREFACE[i..])
+                        .build(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(kind, Some(Version::H2));
+        }
     }
 
     #[tokio::test]
     async fn http1() {
-        let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(io::Builder::new().read(HTTP11_LINE).build())
-            .await
-            .unwrap();
-        assert_eq!(kind, Some(Version::Http1));
-        assert_eq!(io.prefix(), HTTP11_LINE);
+        let _ = tracing_subscriber::fmt::try_init();
 
-        let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(
-                io::Builder::new()
-                    .read(&HTTP11_LINE[..16])
-                    .read(&HTTP11_LINE[16..])
-                    .build(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(kind, Some(Version::Http1));
-        assert_eq!(io.prefix(), HTTP11_LINE);
+        for i in 1..HTTP11_LINE.len() {
+            debug!(read0 = ?std::str::from_utf8(&HTTP11_LINE[0..i]).unwrap());
+            debug!(read1 = ?std::str::from_utf8(&HTTP11_LINE[i..]).unwrap());
+            let (kind, _) = DetectHttp::new(TIMEOUT)
+                .detect(
+                    io::Builder::new()
+                        .read(&HTTP11_LINE[..i])
+                        .read(&HTTP11_LINE[i..])
+                        .build(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(kind, Some(Version::Http1));
+        }
 
         const REQ: &'static [u8] =
             b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
@@ -186,6 +198,8 @@ mod tests {
 
     #[tokio::test]
     async fn unknown() {
+        let _ = tracing_subscriber::fmt::try_init();
+
         let (kind, io) = DetectHttp::new(TIMEOUT)
             .detect(io::Builder::new().read(b"foo.bar.blah\n").build())
             .await

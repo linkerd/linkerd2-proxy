@@ -1378,10 +1378,11 @@ dependencies = [
  "pin-project 1.0.2",
  "rand 0.7.2",
  "tokio 0.3.5",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
  "tower",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
  "try-lock",
 ]
 
