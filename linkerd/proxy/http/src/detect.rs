@@ -57,7 +57,13 @@ where
             .fuse();
         loop {
             // Read data from the socket or timeout detection.
-            trace!(capacity = buf.capacity() - scan_idx, "Reading");
+            trace!(
+                capacity = buf.capacity(),
+                scan_idx,
+                maybe_h1,
+                maybe_h2,
+                "Reading"
+            );
             futures::select_biased! {
                 res = io.read_buf(&mut buf).fuse() => {
                     if res? == 0 {
@@ -130,8 +136,6 @@ where
                 trace!("Not HTTP");
                 return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
             }
-
-            trace!(scan_idx, maybe_h1, maybe_h2, "Continuing to read");
         }
     }
 }
