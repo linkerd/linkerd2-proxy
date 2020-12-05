@@ -25,7 +25,7 @@ mod version;
 
 pub use self::{
     client_handle::{ClientHandle, SetClientHandle},
-    glue::{HyperServerSvc, UpgradeBody as Payload},
+    glue::HyperServerSvc,
     override_authority::CanOverrideAuthority,
     server::NewServeHttp,
     timeout::MakeTimeoutLayer,
