@@ -47,91 +47,95 @@ where
 
     async fn detect(&self, mut io: I) -> Result<(Option<Version>, io::PrefixedIo<I>), Error> {
         let mut buf = BytesMut::with_capacity(self.capacity);
-        let mut bufidx = 0;
+        let mut scan_idx = 0;
         let mut maybe_h1 = true;
         let mut maybe_h2 = true;
 
         // Start tracking a detection timeout before reading.
-        let mut timeout = time::sleep(self.timeout).fuse();
+        let mut timeout = time::sleep(self.timeout)
+            .map(|_| self.timeout.as_millis())
+            .fuse();
         loop {
-            if !(maybe_h1 || maybe_h2) {
-                trace!("Unknown protocol");
-                return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
-            }
-
             // Read data from the socket or timeout detection.
-            trace!(capacity = buf.capacity() - bufidx, "Reading");
-            let sz = futures::select_biased! {
+            trace!(capacity = buf.capacity() - scan_idx, "Reading");
+            futures::select_biased! {
                 res = io.read_buf(&mut buf).fuse() => {
-                    let sz = res?;
-                    if sz == 0 {
+                    if res? == 0 {
+                        // No data was read because the socket closed or the
+                        // buffer capacity was exhausted.
                         debug!(read = buf.len(), "Could not detect protocol");
                         return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
                     }
-                    sz
                 }
-                _ = (&mut timeout) => {
-                    debug!(ms = %self.timeout.as_millis(), "Detection timeout");
+                ms = (&mut timeout) => {
+                    debug!(%ms, "Detection timeout");
                     return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
                 }
-            };
-            // If no data was read
+            }
 
-            // If we've read enough
+            // HTTP/2 checking is faster because it's a simple string match. If
+            // we have enough data, check it first. In almost all cases, the
+            // whole preface should be available from the first read.
             if maybe_h2 && buf.len() >= H2_PREFACE.len() {
-                trace!(
-                    buf = buf.len(),
-                    h2 = H2_PREFACE.len(),
-                    "Checking H2 preface"
-                );
+                trace!("Checking H2 preface");
                 if &buf[..H2_PREFACE.len()] == H2_PREFACE {
                     trace!("Matched HTTP/2 prefix");
                     return Ok((Some(Version::H2), io::PrefixedIo::new(buf.freeze(), io)));
                 }
-                // If the buffer was long enough
+
+                // Not a match. Don't check for an HTTP/2 preface again.
                 maybe_h2 = false;
             }
 
-            // Scan newly-read bytes for a line ending
             if maybe_h1 {
-                for j in bufidx..(buf.len() - 1) {
-                    // If we've reached the end of a line, we have enough
-                    // information to know whether the protocol is HTTP/1.1 or not.
+                // Scan up to the first line ending to determine whether the
+                // request is HTTP/1.1.
+                for j in scan_idx..(buf.len() - 1) {
                     if &buf[j..j + 2] == b"\r\n" {
                         trace!(offset = j, "Found newline");
-                        if is_h2_first_line(&buf[..j + 2]) {
-                            maybe_h1 = false;
-                            break;
-                        } else {
-                            trace!("Atempt to parse HTTP/1 message");
-                            let mut p = httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0]);
-                            // Check whether the first line looks like HTTP/1.1.
-                            match p.parse(&buf[..]) {
-                                Ok(_) | Err(httparse::Error::TooManyHeaders) => {
-                                    trace!("Matched HTTP/1");
-                                    return Ok((
-                                        Some(Version::Http1),
-                                        io::PrefixedIo::new(buf.freeze(), io),
-                                    ));
-                                }
-                                Err(_) => {
-                                    if !maybe_h2 {
-                                        trace!("Unknown protocol");
-                                        return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
-                                    }
-                                    maybe_h1 = false;
-                                }
-                            };
+                        // If the first line looks like an HTTP/2 first line,
+                        // then we almost definitely got a fragmented first
+                        // read. Only try HTTP/1 parsing if it doesn't look like
+                        // HTTP/2.
+                        if !is_h2_first_line(&buf[..j + 2]) {
+                            trace!("Parsing HTTP/1 message");
+                            // If we get to reading headers (and fail), the
+                            // first line looked like an HTTP/1 request; so
+                            // handle the stream as HTTP/1.
+                            if let Ok(_) | Err(httparse::Error::TooManyHeaders) =
+                                httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0])
+                                    .parse(&buf[..])
+                            {
+                                trace!("Matched HTTP/1");
+                                return Ok((
+                                    Some(Version::Http1),
+                                    io::PrefixedIo::new(buf.freeze(), io),
+                                ));
+                            }
                         }
+
+                        // We found the EOL and it wasn't an HTTP/1.x request;
+                        // stop scanning and don't scan again.
+                        maybe_h1 = false;
+                        break;
                     }
+                }
+
+                // Advance our scan index to the end of buffer. If the last byte is
+                // `\r`, we leave it so that the subsequent read can match the
+                // line ending.
+                scan_idx = buf.len() - 1;
+                if buf[scan_idx] == b'\r' {
+                    scan_idx -= 1;
                 }
             }
 
-            bufidx += sz - 1;
-            if buf[bufidx] == b'\r' {
-                bufidx -= 1;
+            if !maybe_h1 && !maybe_h2 {
+                trace!("Not HTTP");
+                return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
             }
-            trace!(offset = %bufidx, "Continuing to read");
+
+            trace!(scan_idx, maybe_h1, maybe_h2, "Continuing to read");
         }
     }
 }
