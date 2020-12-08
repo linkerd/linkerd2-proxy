@@ -57,12 +57,12 @@ where
 {
     pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy + Clone {
         layer::mk(|inner| {
-            let (cache, _) = Self::new(inner);
+            let (cache, _) = Self::spawn(inner);
             cache
         })
     }
 
-    fn new(inner: N) -> (Self, tokio::task::JoinHandle<()>) {
+    fn spawn(inner: N) -> (Self, tokio::task::JoinHandle<()>) {
         let services = Services::default();
         let evict = Arc::new(Notify::new());
 
