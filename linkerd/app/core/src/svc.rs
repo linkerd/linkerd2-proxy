@@ -239,14 +239,19 @@ impl<S> Stack<S> {
         self.push(http::insert::target::layer())
     }
 
-    pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
+    pub fn push_cache<T>(self) -> Stack<cache::Cache<T, S, S::Service>>
     where
-        T: Eq + std::hash::Hash + Send + 'static,
-        S: NewService<T> + Clone,
-        L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
-        L::Service: NewService<T, Service = U>,
+        T: Eq + std::hash::Hash,
+        S: NewService<(cache::Handle, T)>,
     {
-        self.push(cache::CacheLayer::new(track))
+        self.push(cache::Cache::layer())
+    }
+
+    pub fn push_cache_tracker<T>(self) -> Stack<cache::NewTrack<S>>
+    where
+        S: NewService<T>,
+    {
+        self.push(cache::NewTrack::layer())
     }
 
     /// Push a service that either calls the inner service if it is ready, or

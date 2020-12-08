@@ -1,6 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_stack::NewService;
+pub mod track;
+
+pub use self::track::{NewTrack, Track};
+use linkerd2_stack::{layer, NewService};
 use parking_lot::RwLock;
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -9,53 +12,47 @@ use std::{
 };
 use tracing::{debug, trace};
 
-pub mod layer;
-
-pub use self::layer::CacheLayer;
-
 #[derive(Clone)]
-pub struct Cache<T, N>
+pub struct Cache<T, N, S>
 where
     T: Eq + Hash,
-    N: NewService<(T, Handle)>,
 {
-    new_service: N,
-    services: Services<T, N::Service>,
+    inner: N,
+    services: Services<T, S>,
 }
 
-/// A tracker inserted into each inner service that, when dropped, indicates the service may be
-/// removed from the cache.
-#[derive(Clone, Debug)]
-pub struct Handle(Arc<()>);
+/// A tracker inserted into each inner service that, when dropped, indicates the
+/// service may be removed from the cache.
+pub type Handle = Arc<()>;
 
 type Services<T, S> = Arc<RwLock<HashMap<T, (S, Weak<()>)>>>;
 
 // === impl Cache ===
 
-impl<T, N> Cache<T, N>
+impl<T, N> Cache<T, N, N::Service>
 where
     T: Eq + Hash,
-    N: NewService<(T, Handle)>,
+    N: NewService<(Handle, T)>,
 {
-    pub fn new(new_service: N) -> Self {
-        Self {
-            new_service,
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy + Clone {
+        layer::mk(|inner| Self {
+            inner,
             services: Services::default(),
-        }
+        })
     }
 
     fn new_entry(new: &mut N, target: T) -> (N::Service, Weak<()>) {
         let handle = Arc::new(());
         let weak = Arc::downgrade(&handle);
-        let svc = new.new_service((target, Handle(handle)));
+        let svc = new.new_service((handle, target));
         (svc, weak)
     }
 }
 
-impl<T, N> NewService<T> for Cache<T, N>
+impl<T, N> NewService<T> for Cache<T, N, N::Service>
 where
     T: Clone + Eq + Hash,
-    N: NewService<(T, Handle)>,
+    N: NewService<(Handle, T)>,
     N::Service: Clone,
 {
     type Service = N::Service;
@@ -80,8 +77,8 @@ where
                     trace!("Using cached service");
                     svc.clone()
                 } else {
-                    debug!("Caching new service");
-                    let (svc, weak) = Self::new_entry(&mut self.new_service, target);
+                    debug!("Replacing defunct service");
+                    let (svc, weak) = Self::new_entry(&mut self.inner, target);
                     entry.insert((svc.clone(), weak));
                     svc
                 }
@@ -89,7 +86,7 @@ where
             Entry::Vacant(entry) => {
                 // Make a new service for the target.
                 debug!("Caching new service");
-                let (svc, weak) = Self::new_entry(&mut self.new_service, target);
+                let (svc, weak) = Self::new_entry(&mut self.inner, target);
                 entry.insert((svc.clone(), weak));
                 svc
             }
@@ -97,7 +94,7 @@ where
 
         // Drop defunct services before inserting the new service into the
         // cache.
-        let n = services.len();
+        let orig_len = services.len();
         services.retain(|_, (_, weak)| {
             if weak.strong_count() > 0 {
                 true
@@ -106,7 +103,10 @@ where
                 false
             }
         });
-        debug!(services = services.len(), dropped = n - services.len());
+        debug!(
+            services = services.len(),
+            dropped = orig_len - services.len()
+        );
 
         service
     }

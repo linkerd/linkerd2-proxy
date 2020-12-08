@@ -156,13 +156,13 @@ where
             AllowProfile(config.allow_discovery.clone().into()),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
+        .push_cache_tracker()
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
         )
+        .push_cache()
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)

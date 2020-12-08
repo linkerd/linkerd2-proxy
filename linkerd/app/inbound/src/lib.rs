@@ -274,15 +274,15 @@ impl Config {
         // fails, skips that stack to forward to the local endpoint.
         svc::stack(switch_loopback)
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("logical")))
-                        .box_http_response(),
-                ),
+            .push_cache_tracker()
+            .push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
+                    .push(metrics.stack.layer(stack_labels("logical")))
+                    .box_http_response(),
             )
+            .push_cache()
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .box_new_service()
