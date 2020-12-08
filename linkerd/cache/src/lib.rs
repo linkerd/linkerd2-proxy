@@ -29,7 +29,7 @@ where
 
 /// A tracker inserted into each inner service that, when dropped, indicates the
 /// service may be removed from the cache.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Handle {
     inner: Arc<()>,
     evict: Weak<Notify>,
@@ -83,7 +83,9 @@ where
     // evict handle remains active.
     async fn evict(evict: Weak<Notify>, services: Services<T, N::Service>) {
         loop {
-            // If the cache still holds the eviction handle
+            // If the cache still holds the eviction handle, wait for it to be
+            // notified before evicting services. It is notified whenever a
+            // handle is dropped and when the cache is dropped.
             match evict.upgrade() {
                 Some(e) => {
                     trace!("Awaiting eviction signal");
