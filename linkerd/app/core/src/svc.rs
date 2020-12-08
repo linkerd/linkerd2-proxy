@@ -229,8 +229,9 @@ impl<S> Stack<S> {
 
     pub fn push_cache<T>(self) -> Stack<cache::Cache<T, S, S::Service>>
     where
-        T: Eq + std::hash::Hash,
-        S: NewService<(cache::Handle, T)>,
+        T: Eq + std::hash::Hash + Send + Sync + 'static,
+        S: NewService<(cache::Handle, T)> + 'static,
+        S::Service: Send + Sync + 'static,
     {
         self.push(cache::Cache::layer())
     }
