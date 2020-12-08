@@ -10,6 +10,7 @@ futures = "0.3"
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 parking_lot = "0.11"
-tokio = "0.2"
+tokio = { version = "0.3", default-features = false, features = ["macros", "sync"] }
 tower = { version = "0.4", default-features = false, features = ["util"] }
 tracing = "0.1.22"
+tracing-futures = "0.2"
