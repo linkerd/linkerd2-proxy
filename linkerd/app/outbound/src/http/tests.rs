@@ -4,11 +4,15 @@ use crate::test_util::{
     *,
 };
 use crate::Config;
+use hyper::{body::Buf, Body, Request, Response};
 use linkerd2_app_core::{
     drain, metrics,
     proxy::{identity::Name, tap},
     svc::{self, NewService},
-    transport::{io, listen},
+    transport::{
+        io::{self, BoxedIo},
+        listen,
+    },
     Addr, Error,
 };
 use std::{
@@ -20,6 +24,7 @@ use std::{
 };
 use tokio::time;
 use tower::{Service, ServiceExt};
+use tracing::Instrument;
 
 fn build_server<I>(
     cfg: Config,
@@ -190,4 +195,103 @@ async fn profile_endpoint_propagates_conn_errors() {
     drop(client_task);
     drop(client);
     drop(shutdown);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unmeshed_http1_hello_world() {
+    let mut server = hyper::server::conn::Http::new();
+    server.http1_only(true);
+    let client = hyper::client::conn::Builder::new();
+    unmeshed_hello_world(server, client).await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn unmeshed_http2_hello_world() {
+    let mut server = hyper::server::conn::Http::new();
+    server.http2_only(true);
+    let mut client = hyper::client::conn::Builder::new();
+    client.http2_only(true);
+    unmeshed_hello_world(server, client).await;
+}
+
+async fn unmeshed_hello_world(
+    server_settings: hyper::server::conn::Http,
+    client_settings: hyper::client::conn::Builder,
+) {
+    let _trace = support::trace_init();
+
+    let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let addrs = listen::Addrs::new(
+        ([127, 0, 0, 1], 4140).into(),
+        ([127, 0, 0, 1], 666).into(),
+        Some(ep1),
+    );
+
+    let cfg = default_config(ep1);
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server_settings));
+
+    let profiles = profile::resolver();
+    let profile_tx = profiles.profile_tx(ep1);
+    profile_tx.send(profile::Profile::default()).unwrap();
+
+    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+
+    // Build the outbound server
+    let (mut s, _shutdown) = build_server(cfg, profiles, resolver, connect);
+    let server = s.new_service(addrs);
+
+    let (client_io, server_io) = support::io::duplex(4096);
+    tokio::spawn(async move {
+        let res = server.oneshot(server_io).err_into::<Error>().await;
+        tracing::info!(?res, "Server complete");
+        res
+    });
+    let (mut client, conn) = client_settings
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+    tokio::spawn(async move {
+        let res = conn.await;
+        tracing::info!(?res, "Client connection complete");
+        res
+    });
+
+    let rsp = client
+        .ready_and()
+        .await
+        .expect("Client must not fail")
+        .call(
+            hyper::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("Request must succeed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+    let mut body = hyper::body::aggregate(rsp.into_body())
+        .await
+        .expect("body shouldn't error");
+    let mut buf = vec![0u8; body.remaining()];
+    body.copy_to_slice(&mut buf[..]);
+    assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+}
+
+fn hello_server(http: hyper::server::conn::Http) -> impl Fn(Endpoint) -> Result<BoxedIo, Error> {
+    move |endpoint| {
+        let span = tracing::info_span!("hello_server", ?endpoint);
+        let _e = span.enter();
+        tracing::info!("mock connecting");
+        let (client_io, server_io) = support::io::duplex(4096);
+        let hello_svc = hyper::service::service_fn(|request: Request<Body>| async move {
+            tracing::info!(?request);
+            Ok::<_, Error>(Response::new(Body::from("Hello world!")))
+        });
+        tokio::spawn(
+            http.serve_connection(server_io, hello_svc)
+                .in_current_span(),
+        );
+        Ok(BoxedIo::new(client_io))
+    }
 }
