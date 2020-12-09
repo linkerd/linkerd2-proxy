@@ -11,7 +11,13 @@ use linkerd2_app_core::{
     transport::{io, listen},
     Addr, Error,
 };
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{
+    net::SocketAddr,
+    pin::Pin,
+    str::FromStr,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio::time;
 use tower::{Service, ServiceExt};
 
@@ -53,17 +59,43 @@ where
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let svc = crate::server::stack(
+    let svc = crate::server::stack_with_tcp_balancer(
         &cfg,
         profiles,
-        resolver,
         support::connect::NoRawTcp,
+        NoTcpBalancer,
         router,
         metrics.outbound,
         None,
         drain,
     );
     (svc, drain_tx)
+}
+
+#[derive(Clone, Debug)]
+struct NoTcpBalancer;
+
+impl svc::NewService<crate::tcp::Concrete> for NoTcpBalancer {
+    type Service = Self;
+    fn new_service(&mut self, target: crate::tcp::Concrete) -> Self::Service {
+        panic!(
+            "no TCP load balancer should be created in this test!\n\ttarget = {:?}",
+            target
+        );
+    }
+}
+
+impl<I> svc::Service<I> for NoTcpBalancer {
+    type Response = ();
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        unreachable!("no TCP load balancer should be created in this test!");
+    }
+
+    fn call(&mut self, _: I) -> Self::Future {
+        unreachable!("no TCP load balancer should be created in this test!");
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -54,6 +54,59 @@ where
     P::Future: Unpin + Send,
     P::Error: Send,
 {
+    let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
+    stack_with_tcp_balancer(
+        config,
+        profiles,
+        tcp_connect,
+        tcp_balance,
+        http_router,
+        metrics,
+        span_sink,
+        drain,
+    )
+}
+
+pub fn stack_with_tcp_balancer<P, C, T, H, S, I>(
+    config: &Config,
+    profiles: P,
+    tcp_connect: C,
+    tcp_balance: T,
+    http_router: H,
+    metrics: metrics::Proxy,
+    span_sink: Option<mpsc::Sender<oc::Span>>,
+    drain: drain::Watch,
+) -> impl svc::NewService<
+    listen::Addrs,
+    Service = impl tower::Service<
+        I,
+        Response = (),
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+    > + Send
+                  + 'static,
+> + Send
+       + 'static
+where
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    C: tower::Service<tcp::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
+    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    C::Future: Unpin + Send,
+    T: svc::NewService<tcp::Concrete> + Clone + Unpin + Send + 'static,
+    T::Service: tower::Service<transport::io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = (), Error = Error> + Unpin + Send + 'static,
+    <T::Service as tower::Service<transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>>::Future: Unpin + Send + 'static,
+    H: svc::NewService<http::Logical, Service = S> + Unpin + Clone + Send + Sync + 'static,
+    S: tower::Service<
+            http::Request<http::boxed::BoxBody>,
+            Response = http::Response<http::boxed::BoxBody>,
+            Error = Error,
+        > + Send
+        + 'static,
+    S::Future: Send,
+    P: profiles::GetProfile<SocketAddr> + Unpin + Clone + Send + Sync + 'static,
+    P::Future: Unpin + Send,
+    P::Error: Send,
+{
     let ProxyConfig {
         server: ServerConfig { h2_settings, .. },
         dispatch_timeout,
@@ -106,11 +159,7 @@ where
         .into_inner();
 
     // Load balances TCP streams that cannot be decoded as HTTP.
-    let tcp_balance = svc::stack(tcp::balance::stack(
-        &config.proxy,
-        tcp_connect.clone(),
-        resolve,
-    ))
+    let tcp_balance = svc::stack(tcp_balance)
     .push_map_target(tcp::Concrete::from)
     .push(profiles::split::layer())
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
