@@ -214,6 +214,90 @@ async fn unmeshed_http2_hello_world() {
     unmeshed_hello_world(server, client).await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn meshed_hello_world() {
+    let _trace = support::trace_init();
+
+    let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let addrs = listen::Addrs::new(
+        ([127, 0, 0, 1], 4140).into(),
+        ([127, 0, 0, 1], 666).into(),
+        Some(ep1),
+    );
+
+    let cfg = default_config(ep1);
+    let id_name = Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let meta = support::resolver::Metadata::new(
+        Default::default(),
+        support::resolver::ProtocolHint::Http2,
+        Some(id_name.clone()),
+        10_000,
+        None,
+    );
+
+    // Pretend the upstream is a proxy that supports proto upgrades...
+    let mut server_settings = hyper::server::conn::Http::new();
+    server_settings.http2_only(true);
+    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server_settings));
+
+    let profiles = profile::resolver();
+    let profile_tx = profiles.profile_tx(ep1);
+    profile_tx
+        .send(profile::Profile {
+            opaque_protocol: false,
+            name: Some(svc_name.clone()),
+            ..Default::default()
+        })
+        .expect("still listening");
+
+    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
+    dst.add(Some((ep1, meta.clone())))
+        .expect("still listening to resolution");
+
+    // Build the outbound server
+    let (mut s, _shutdown) = build_server(cfg, profiles, resolver, connect);
+    let server = s.new_service(addrs);
+
+    let (client_io, server_io) = support::io::duplex(4096);
+    tokio::spawn(async move {
+        let res = server.oneshot(server_io).err_into::<Error>().await;
+        tracing::info!(?res, "Server complete");
+        res
+    });
+    let (mut client, conn) = hyper::client::conn::Builder::new()
+        .handshake(client_io)
+        .await
+        .expect("Client must connect");
+    tokio::spawn(async move {
+        let res = conn.await;
+        tracing::info!(?res, "Client connection complete");
+        res
+    });
+
+    let rsp = client
+        .ready_and()
+        .await
+        .expect("Client must not fail")
+        .call(
+            hyper::Request::builder()
+                .body(hyper::Body::default())
+                .unwrap(),
+        )
+        .await
+        .expect("Request must succeed");
+    tracing::info!(?rsp);
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+    let mut body = hyper::body::aggregate(rsp.into_body())
+        .await
+        .expect("body shouldn't error");
+    let mut buf = vec![0u8; body.remaining()];
+    body.copy_to_slice(&mut buf[..]);
+    assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+}
+
 async fn unmeshed_hello_world(
     server_settings: hyper::server::conn::Http,
     client_settings: hyper::client::conn::Builder,
