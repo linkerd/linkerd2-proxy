@@ -1,17 +1,17 @@
-use crate::{JsonFormatter, PlainFormatter};
 use hyper::{body::Buf, Body};
 use linkerd2_error::Error;
 use std::{io, str};
 use tracing::{trace, warn};
-use tracing_subscriber::{reload, EnvFilter};
+use tracing_subscriber::{reload, EnvFilter, Registry};
 
 #[derive(Clone)]
-pub(crate) enum Handle {
-    Json(reload::Handle<EnvFilter, JsonFormatter>),
-    Plain(reload::Handle<EnvFilter, PlainFormatter>),
-}
+pub(crate) struct Handle(reload::Handle<EnvFilter, Registry>);
 
 impl Handle {
+    pub(crate) fn new(handle: reload::Handle<EnvFilter, Registry>) -> Self {
+        Self(handle)
+    }
+
     pub(crate) async fn serve(
         &self,
         req: http::Request<Body>,
@@ -60,22 +60,14 @@ impl Handle {
     pub fn set_level(&self, level: impl AsRef<str>) -> Result<(), Error> {
         let level = level.as_ref();
         let filter = level.parse::<EnvFilter>()?;
-        match self {
-            Self::Json(level) => level.reload(filter)?,
-            Self::Plain(level) => level.reload(filter)?,
-        }
+        self.0.reload(filter)?;
         tracing::info!(%level, "set new log level");
         Ok(())
     }
 
     pub fn current(&self) -> Result<String, Error> {
-        match self {
-            Self::Json(handle) => handle
-                .with_current(|f| format!("{}", f))
-                .map_err(Into::into),
-            Self::Plain(handle) => handle
-                .with_current(|f| format!("{}", f))
-                .map_err(Into::into),
-        }
+        self.0
+            .with_current(|f| format!("{}", f))
+            .map_err(Into::into)
     }
 }

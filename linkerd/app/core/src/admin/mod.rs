@@ -210,7 +210,7 @@ mod tests {
         let (r, l0) = Readiness::new();
         let l1 = l0.clone();
 
-        let (_, t) = trace::with_filter_and_format("", "");
+        let (_, t) = trace::Settings::default().build();
         let admin = Admin::new((), r, t);
         macro_rules! call {
             () => {{
