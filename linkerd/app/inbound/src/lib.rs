@@ -164,7 +164,8 @@ impl Config {
             Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
             Future = impl Send,
-        > + Unpin
+        > + Clone
+                      + Unpin
                       + Send,
     > + Unpin
            + Clone
@@ -320,7 +321,9 @@ impl Config {
                 http::Request<http::boxed::BoxBody>,
                 Response = http::Response<http::boxed::BoxBody>,
                 Error = Error,
-            > + Send
+            > + Clone
+            + Send
+            + Sync
             + 'static,
         S::Future: Send,
     {
@@ -349,7 +352,11 @@ impl Config {
         let http_server = svc::stack(http_router)
             // Removes the override header after it has been used to
             // determine a reuquest target.
-            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+            .push_on_response(
+                svc::layers()
+                    .push(strip_header::request::layer(DST_OVERRIDE_HEADER))
+                    .push(http::Retain::layer()),
+            )
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
