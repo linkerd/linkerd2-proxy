@@ -55,7 +55,7 @@ impl<S: Clone, B> Clone for Retain<S, B> {
 
 impl<S, Req, RspB> tower::Service<Req> for Retain<S, RspB>
 where
-    S: tower::Service<Req, Response = http::Response<RspB>> + Clone + Send + Sync + 'static,
+    S: tower::Service<Req, Response = http::Response<RspB>> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
     type Response = http::Response<RetainBody<S, RspB>>;

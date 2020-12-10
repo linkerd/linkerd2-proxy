@@ -323,7 +323,6 @@ impl Config {
                 Error = Error,
             > + Clone
             + Send
-            + Sync
             + 'static,
         S::Future: Send,
     {
