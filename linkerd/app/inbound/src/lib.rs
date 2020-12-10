@@ -279,7 +279,7 @@ impl Config {
                     svc::layers()
                         .push_failfast(dispatch_timeout)
                         .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("logical")))
+                        .push(metrics.stack.layer(stack_labels("http", "logical")))
                         .box_http_response(),
                 ),
             )
@@ -366,7 +366,7 @@ impl Config {
                     .push(TraceContext::layer(span_sink.map(|span_sink| {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
-                    .push(metrics.stack.layer(stack_labels("source")))
+                    .push(metrics.stack.layer(stack_labels("http", "source")))
                     .box_http_request()
                     .box_http_response(),
             )
@@ -455,8 +455,8 @@ pub fn trace_labels() -> HashMap<String, String> {
     l
 }
 
-fn stack_labels(name: &'static str) -> metrics::StackLabels {
-    metrics::StackLabels::inbound(name)
+fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
+    metrics::StackLabels::inbound(proto, name)
 }
 
 // === impl SkipByPort ===

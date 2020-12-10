@@ -55,7 +55,11 @@ where
         .push_on_response(
             svc::layers()
                 .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(metrics.stack.layer(stack_labels("balance.endpoint")))
+                .push(
+                    metrics
+                        .stack
+                        .layer(stack_labels("http", "balance.endpoint")),
+                )
                 .box_http_request(),
         )
         .check_new_service::<Endpoint, http::Request<_>>()
@@ -71,7 +75,7 @@ where
                 // If the balancer has been empty/unavailable for 10s, eagerly fail
                 // requests.
                 .push_failfast(dispatch_timeout)
-                .push(metrics.stack.layer(stack_labels("concrete"))),
+                .push(metrics.stack.layer(stack_labels("http", "concrete"))),
         )
         .into_new_service()
         .check_new_service::<Concrete, http::Request<_>>()

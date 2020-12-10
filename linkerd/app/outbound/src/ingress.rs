@@ -110,7 +110,7 @@ where
                 .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.stack.layer(stack_labels("source")))
+                .push(metrics.stack.layer(stack_labels("http", "source")))
                 .push_failfast(dispatch_timeout)
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
