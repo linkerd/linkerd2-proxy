@@ -1,6 +1,6 @@
 use super::Endpoint;
 use crate::test_util::{
-    support::{connect::Connect, profile, resolver},
+    support::{connect::Connect, profile, resolver, track},
     *,
 };
 use crate::Config;
@@ -275,6 +275,101 @@ async fn meshed_hello_world() {
 
     drop(client);
     bg.await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stacks_idle_out() {
+    let _trace = support::trace_init();
+
+    let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let addrs = listen::Addrs::new(
+        ([127, 0, 0, 1], 4140).into(),
+        ([127, 0, 0, 1], 666).into(),
+        Some(ep1),
+    );
+
+    let idle_timeout = Duration::from_millis(500);
+    let mut cfg = default_config(ep1);
+    cfg.proxy.cache_max_idle_age = idle_timeout;
+
+    let id_name = Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let meta = support::resolver::Metadata::new(
+        Default::default(),
+        support::resolver::ProtocolHint::Http2,
+        Some(id_name.clone()),
+        10_000,
+        None,
+    );
+
+    // Pretend the upstream is a proxy that supports proto upgrades...
+    let mut server_settings = hyper::server::conn::Http::new();
+    server_settings.http2_only(true);
+    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server_settings));
+
+    let profiles = profile::resolver().profile(
+        ep1,
+        profile::Profile {
+            opaque_protocol: false,
+            name: Some(svc_name.clone()),
+            ..Default::default()
+        },
+    );
+
+    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
+    dst.add(Some((ep1, meta.clone())))
+        .expect("still listening to resolution");
+
+    // Build the outbound server
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (_, drain) = drain::channel();
+
+    let (_, tap, _) = tap::new();
+    let router = super::logical::stack(
+        &cfg.proxy,
+        super::endpoint::stack(
+            &cfg.proxy.connect,
+            connect,
+            tap,
+            metrics.outbound.clone(),
+            None,
+        ),
+        resolver.clone(),
+        metrics.outbound.clone(),
+    );
+    let (handle, router) = track::new_service(router);
+    let mut svc = crate::server::stack_with_tcp_balancer(
+        &cfg,
+        profiles,
+        support::connect::NoRawTcp,
+        NoTcpBalancer,
+        router,
+        metrics.outbound,
+        None,
+        drain,
+    );
+    assert_eq!(handle.tracked_services(), 0);
+
+    let server = svc.new_service(addrs);
+    let (mut client, bg) = connect_client(&mut ClientBuilder::new(), server).await;
+    let rsp = http_request(&mut client, Request::default()).await;
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+    let mut body = hyper::body::aggregate(rsp.into_body())
+        .await
+        .expect("body shouldn't error");
+    let mut buf = vec![0u8; body.remaining()];
+    body.copy_to_slice(&mut buf[..]);
+    assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+
+    drop(client);
+    bg.await.unwrap();
+
+    assert_eq!(handle.tracked_services(), 1);
+    // wait for long enough to ensure that it _definitely_ idles out...
+    tokio::time::sleep(idle_timeout * 2).await;
+    assert_eq!(handle.tracked_services(), 0);
 }
 
 async fn connect_client<S>(
