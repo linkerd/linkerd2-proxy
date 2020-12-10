@@ -762,7 +762,7 @@ async fn profile_endpoint_propagates_conn_errors() {
         )
         .await
         .map_err(Into::into);
-    tracing::info!(?res);
+    tracing::debug!(?res);
     assert_eq!(
         res.unwrap_err()
             .downcast_ref::<io::Error>()
@@ -861,13 +861,13 @@ where
             Some(orig_dst),
         );
         let svc = new_svc.new_service(addrs);
-        tracing::debug!("new service");
+        tracing::trace!("new service");
         svc
     };
     async move {
         let io = support::io().read(b"hello\r\n").write(b"world").build();
         let res = svc.oneshot(io).err_into::<Error>().await;
-        tracing::debug!(?res);
+        tracing::trace!(?res);
         if let Err(err) = res {
             if let Some(err) = err.downcast_ref::<std::io::Error>() {
                 // did the pretend server hang up, or did something
