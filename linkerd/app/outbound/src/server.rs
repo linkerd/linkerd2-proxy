@@ -55,27 +55,23 @@ where
     P::Error: Send,
 {
     let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
-    stack_with_tcp_balancer(
+    let accept = accept_with_tcp_balancer(
         config,
         profiles,
         tcp_connect,
         tcp_balance,
         http_router,
-        metrics,
+        metrics.clone(),
         span_sink,
         drain,
-    )
+    );
+    cache_accept(&config.proxy, metrics, accept)
 }
 
-pub fn stack_with_tcp_balancer<P, C, T, H, S, I>(
-    config: &Config,
-    profiles: P,
-    tcp_connect: C,
-    tcp_balance: T,
-    http_router: H,
+pub fn cache_accept<N, S, I>(
+    config: &ProxyConfig,
     metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
-    drain: drain::Watch,
+    stack: N,
 ) -> impl svc::NewService<
     listen::Addrs,
     Service = impl tower::Service<
@@ -86,6 +82,53 @@ pub fn stack_with_tcp_balancer<P, C, T, H, S, I>(
     > + Send
                   + 'static,
 > + Send
+       + 'static
+where
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    transport::metrics::SensorIo<I>: Send + 'static,
+    N: svc::NewService<tcp::Accept, Service = S> + Clone + Send + 'static,
+    S: svc::Service<transport::metrics::SensorIo<I>, Response = ()> + Send + 'static,
+    S::Error: Into<Error> + Send + 'static,
+    S::Future: Send + 'static,
+{
+    svc::stack(stack)
+        .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
+        .cache(
+            svc::layers().push_on_response(
+                svc::layers()
+                    .push_failfast(config.dispatch_timeout)
+                    .push_spawn_buffer_with_idle_timeout(
+                        config.buffer_capacity,
+                        config.cache_max_idle_age,
+                    ),
+            ),
+        )
+        .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
+        .push(metrics.transport.layer_accept())
+        .push_map_target(tcp::Accept::from)
+        .check_new_service::<listen::Addrs, I>()
+        .into_inner()
+}
+
+pub fn accept_with_tcp_balancer<P, C, T, H, S, I>(
+    config: &Config,
+    profiles: P,
+    tcp_connect: C,
+    tcp_balance: T,
+    http_router: H,
+    metrics: metrics::Proxy,
+    span_sink: Option<mpsc::Sender<oc::Span>>,
+    drain: drain::Watch,
+) -> impl svc::NewService<
+    tcp::Accept,
+    Service = impl tower::Service<
+        transport::metrics::SensorIo<I>,
+        Response = (),
+        Error = impl Into<Error>,
+        Future = impl Send + 'static,
+    > + Send
+                  + 'static,
+> + Clone + Send
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
@@ -205,17 +248,6 @@ where
             AllowProfile(config.allow_discovery.clone().into()),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
-        )
-        .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .push(metrics.transport.layer_accept())
-        .push_map_target(tcp::Accept::from)
-        .check_new_service::<listen::Addrs, I>()
         .into_inner()
 }
 

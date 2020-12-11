@@ -69,16 +69,17 @@ where
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let svc = crate::server::stack_with_tcp_balancer(
+    let accept = crate::server::accept_with_tcp_balancer(
         &cfg,
         profiles,
         support::connect::NoRawTcp,
         NoTcpBalancer,
         router,
-        metrics.outbound,
+        metrics.outbound.clone(),
         None,
         drain,
     );
+    let svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
     (svc, drain_tx)
 }
 
@@ -340,17 +341,18 @@ async fn stacks_idle_out() {
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let (handle, router) = track::new_service(router);
-    let mut svc = crate::server::stack_with_tcp_balancer(
+    let accept = crate::server::accept_with_tcp_balancer(
         &cfg,
         profiles,
         support::connect::NoRawTcp,
         NoTcpBalancer,
         router,
-        metrics.outbound,
+        metrics.outbound.clone(),
         None,
         drain,
     );
+    let (handle, accept) = track::new_service(accept);
+    let mut svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
@@ -437,7 +439,7 @@ async fn active_stacks_dont_idle_out() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (metrics, _) = metrics::Metrics::new(Duration::from_millis(10));
     let (_, drain) = drain::channel();
 
     let (_, tap, _) = tap::new();
@@ -453,21 +455,23 @@ async fn active_stacks_dont_idle_out() {
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let (handle, router) = track::new_service(router);
-    let mut svc = crate::server::stack_with_tcp_balancer(
+    let accept = crate::server::accept_with_tcp_balancer(
         &cfg,
         profiles,
         support::connect::NoRawTcp,
         NoTcpBalancer,
         router,
-        metrics.outbound,
+        metrics.outbound.clone(),
         None,
         drain,
     );
+    let (handle, accept) = track::new_service(accept);
+    let mut svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
-    let (client_io, proxy_bg) = run_proxy(server);
+    let (client_io, proxy_bg) = run_proxy(server).await;
+
     let (mut client, client_bg) = connect_client(&mut ClientBuilder::new(), client_io).await;
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
@@ -482,9 +486,6 @@ async fn active_stacks_dont_idle_out() {
     body_tx.send_data(Bytes::from("Hello ")).await.unwrap();
     tracing::info!("sent first chunk");
 
-    proxy_bg.await.unwrap();
-    tracing::info!("oneshotted");
-
     assert_eq!(handle.tracked_services(), 1, "before waiting");
     tokio::time::sleep(idle_timeout * 2).await;
     assert_eq!(handle.tracked_services(), 1, "after waiting");
@@ -493,7 +494,7 @@ async fn active_stacks_dont_idle_out() {
     tracing::info!("client dropped");
 
     assert_eq!(handle.tracked_services(), 1, "before waiting");
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    tokio::time::sleep(idle_timeout * 2).await;
     assert_eq!(handle.tracked_services(), 1, "after waiting");
 
     body_tx.send_data(Bytes::from("world!")).await.unwrap();
@@ -507,9 +508,10 @@ async fn active_stacks_dont_idle_out() {
     assert_eq!(handle.tracked_services(), 0);
 
     client_bg.await.unwrap();
+    proxy_bg.await.unwrap();
 }
 
-fn run_proxy<S>(server: S) -> (support::io::DuplexStream, tokio::task::JoinHandle<()>)
+async fn run_proxy<S>(mut server: S) -> (support::io::DuplexStream, tokio::task::JoinHandle<()>)
 where
     S: svc::Service<support::io::DuplexStream> + Send + Sync + 'static,
     S::Error: Into<Error>,
@@ -517,14 +519,21 @@ where
     S::Future: Send,
 {
     let (client_io, server_io) = support::io::duplex(4096);
-    let proxy = server
-        .oneshot(server_io)
-        .map(|res| {
-            let res = res.map_err(Into::into);
-            tracing::info!(?res, "proxy serve task complete");
-            res.expect("proxy failed");
-        })
-        .instrument(tracing::info_span!("proxy"));
+    let f = server
+        .ready_and()
+        .await
+        .map_err(Into::into)
+        .expect("proxy server failed to become ready")
+        .call(server_io);
+    drop(server);
+
+    tracing::debug!("dropped server");
+    let proxy = async move {
+        let res = f.await.map_err(Into::into);
+        tracing::info!(?res, "proxy serve task complete");
+        res.expect("proxy failed");
+    }
+    .instrument(tracing::info_span!("proxy"));
     (client_io, tokio::spawn(proxy))
 }
 
@@ -562,7 +571,7 @@ where
     S::Future: Send,
 {
     tracing::info!(settings = ?client_settings, "connecting client with");
-    let (client_io, proxy) = run_proxy(server);
+    let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;
     let bg = async move {
         let res = tokio::try_join! {

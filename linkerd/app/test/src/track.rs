@@ -63,3 +63,10 @@ impl<S: Service<R>, R> Service<R> for Track<S> {
         self.inner.call(request)
     }
 }
+
+impl<S> Drop for Track<S> {
+    fn drop(&mut self) {
+        let tracked = self.track.take();
+        tracing::trace!(is_tracked = tracked.is_some(), "drop tracked service");
+    }
+}
