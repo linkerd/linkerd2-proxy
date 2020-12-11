@@ -15,6 +15,7 @@ use linkerd2_app_core::{
     proxy::{identity::Name, tap},
     svc::{self, NewService},
     transport::{
+        self,
         io::{self, BoxedIo},
         listen,
     },
@@ -54,6 +55,35 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (accept, drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
+    let svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
+    (svc, drain_tx)
+}
+
+fn build_accept<I>(
+    cfg: &Config,
+    profiles: resolver::Profiles<SocketAddr>,
+    resolver: resolver::Dst<Addr, resolver::Metadata>,
+    connect: Connect<Endpoint>,
+    metrics: &metrics::Metrics,
+) -> (
+    impl svc::NewService<
+            crate::tcp::Accept,
+            Service = impl tower::Service<
+                transport::metrics::SensorIo<I>,
+                Response = (),
+                Error = impl Into<Error>,
+                Future = impl Send + 'static,
+            > + Send
+                          + 'static,
+        > + Clone
+        + Send
+        + 'static,
+    drain::Signal,
+)
+where
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+{
     let (drain_tx, drain) = drain::channel();
 
     let (_, tap, _) = tap::new();
@@ -79,8 +109,7 @@ where
         None,
         drain,
     );
-    let svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
-    (svc, drain_tx)
+    (accept, drain_tx)
 }
 
 #[derive(Clone, Debug)]
@@ -326,31 +355,7 @@ async fn stacks_idle_out() {
 
     // Build the outbound server
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (_, drain) = drain::channel();
-
-    let (_, tap, _) = tap::new();
-    let router = super::logical::stack(
-        &cfg.proxy,
-        super::endpoint::stack(
-            &cfg.proxy.connect,
-            connect,
-            tap,
-            metrics.outbound.clone(),
-            None,
-        ),
-        resolver.clone(),
-        metrics.outbound.clone(),
-    );
-    let accept = crate::server::accept_stack(
-        &cfg,
-        profiles,
-        support::connect::NoRawTcp,
-        NoTcpBalancer,
-        router,
-        metrics.outbound.clone(),
-        None,
-        drain,
-    );
+    let (accept, _drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let (handle, accept) = track::new_service(accept);
     let mut svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
     assert_eq!(handle.tracked_services(), 0);
@@ -439,32 +444,8 @@ async fn active_stacks_dont_idle_out() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (metrics, _) = metrics::Metrics::new(Duration::from_millis(10));
-    let (_, drain) = drain::channel();
-
-    let (_, tap, _) = tap::new();
-    let router = super::logical::stack(
-        &cfg.proxy,
-        super::endpoint::stack(
-            &cfg.proxy.connect,
-            connect,
-            tap,
-            metrics.outbound.clone(),
-            None,
-        ),
-        resolver.clone(),
-        metrics.outbound.clone(),
-    );
-    let accept = crate::server::accept_stack(
-        &cfg,
-        profiles,
-        support::connect::NoRawTcp,
-        NoTcpBalancer,
-        router,
-        metrics.outbound.clone(),
-        None,
-        drain,
-    );
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (accept, _drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let (handle, accept) = track::new_service(accept);
     let mut svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
     assert_eq!(handle.tracked_services(), 0);
