@@ -209,54 +209,50 @@ where
 #[cfg(test)]
 #[tokio::test]
 async fn cached_idle_retain() {
-    use futures::prelude::*;
-
     let _ = tracing_subscriber::fmt::try_init();
     time::pause();
 
-    let evict = Arc::new(Notify::new());
+    let cache = Services::default();
+    let handle = Arc::new(());
+    cache.write().insert((), ((), Arc::downgrade(&handle)));
     let c0 = Cached {
         inner: (),
-        handle: Arc::new(()),
-        evict: Arc::downgrade(&evict),
         idle: time::Duration::from_secs(10),
+        handle: Some(Handle {
+            handle,
+            cache: Arc::downgrade(&cache),
+        }),
     };
-    let handle = Arc::downgrade(&c0.handle);
+    let handle = Arc::downgrade(&c0.handle.as_ref().unwrap().handle);
 
     // Drop the original cached instance and elapse only half of the idle
     // timeout.
     drop(c0);
-    futures::select_biased! {
-        _ = evict.notified().fuse() => panic!("Premature eviction"),
-        _ = time::sleep(time::Duration::from_secs(5)).fuse() => {}
-    }
+    time::sleep(time::Duration::from_secs(5)).await;
+    assert!(handle.upgrade().is_some());
+    assert!(cache.read().contains_key(&()));
 
     // Ensure that the handle hasn't been dropped yet and revive it to create a
     // new cached instance.
-    assert!(handle.upgrade().is_some());
     let c1 = Cached {
         inner: (),
-        handle: handle.upgrade().expect("handle must be retained"),
-        evict: Arc::downgrade(&evict),
         idle: time::Duration::from_secs(10),
+        handle: Some(Handle {
+            handle: handle.upgrade().unwrap(),
+            cache: Arc::downgrade(&cache),
+        }),
     };
 
     // Drop the new cache instance. Wait the remainder of the first idle timeout
     // and esnure that the handle is still retained.
     drop(c1);
-    futures::select_biased! {
-        _ = evict.notified().fuse() => panic!("Premature eviction"),
-        _ = time::sleep(time::Duration::from_secs(5)).fuse() => {}
-    }
+    time::sleep(time::Duration::from_secs(5)).await;
     assert!(handle.upgrade().is_some());
+    assert!(cache.read().contains_key(&()));
 
     // Wait the remainder of the second idle timeout and esnure the handle has
     // been dropped.
-    let mut sleep = time::sleep(time::Duration::from_secs(5)).fuse();
-
-    futures::select_biased! {
-        _ = evict.notified().fuse() => {}
-        _ = sleep => panic!("Eviction not signaled"),
-    }
+    time::sleep(time::Duration::from_secs(5)).await;
     assert!(handle.upgrade().is_none());
+    assert!(!cache.read().contains_key(&()));
 }
