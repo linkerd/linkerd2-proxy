@@ -118,7 +118,7 @@ where
     .push_on_response(
         svc::layers()
             .push_failfast(dispatch_timeout)
-            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+            .push_spawn_buffer(buffer_capacity),
     )
     .instrument(|_: &_| debug_span!("tcp"))
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
@@ -156,13 +156,12 @@ where
             AllowProfile(config.allow_discovery.clone().into()),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer(buffer_capacity),
         )
+        .push_cache(cache_max_idle_age)
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)
