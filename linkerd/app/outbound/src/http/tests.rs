@@ -494,11 +494,11 @@ where
         .map_err(Into::into)
         .expect("proxy server failed to become ready")
         .call(server_io);
-    drop(server);
 
-    tracing::debug!("dropped server");
     let proxy = async move {
         let res = f.await.map_err(Into::into);
+        drop(server);
+        tracing::debug!("dropped server");
         tracing::info!(?res, "proxy serve task complete");
         res.expect("proxy failed");
     }
