@@ -249,7 +249,6 @@ async fn meshed_hello_world() {
     let profiles = profile::resolver().profile(
         ep1,
         profile::Profile {
-            opaque_protocol: false,
             name: Some(svc_name.clone()),
             ..Default::default()
         },

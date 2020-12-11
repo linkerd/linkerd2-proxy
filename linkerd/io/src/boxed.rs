@@ -66,6 +66,7 @@ impl std::fmt::Debug for BoxedIo {
         f.debug_struct("BoxedIo").finish()
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
