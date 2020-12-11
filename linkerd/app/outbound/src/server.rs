@@ -55,7 +55,7 @@ where
     P::Error: Send,
 {
     let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
-    let accept = accept_with_tcp_balancer(
+    let accept = accept_stack(
         config,
         profiles,
         tcp_connect,
@@ -110,7 +110,7 @@ where
         .into_inner()
 }
 
-pub fn accept_with_tcp_balancer<P, C, T, H, S, I>(
+pub fn accept_stack<P, C, T, H, S, I>(
     config: &Config,
     profiles: P,
     tcp_connect: C,

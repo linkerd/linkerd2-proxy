@@ -69,7 +69,7 @@ where
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let accept = crate::server::accept_with_tcp_balancer(
+    let accept = crate::server::accept_stack(
         &cfg,
         profiles,
         support::connect::NoRawTcp,
@@ -341,7 +341,7 @@ async fn stacks_idle_out() {
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let accept = crate::server::accept_with_tcp_balancer(
+    let accept = crate::server::accept_stack(
         &cfg,
         profiles,
         support::connect::NoRawTcp,
@@ -455,7 +455,7 @@ async fn active_stacks_dont_idle_out() {
         resolver.clone(),
         metrics.outbound.clone(),
     );
-    let accept = crate::server::accept_with_tcp_balancer(
+    let accept = crate::server::accept_stack(
         &cfg,
         profiles,
         support::connect::NoRawTcp,
