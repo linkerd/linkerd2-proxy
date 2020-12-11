@@ -1,5 +1,4 @@
 use crate::io;
-use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_stack::{layer, NewService};
 use std::{
@@ -75,11 +74,14 @@ where
         let target = self.target.clone();
         Box::pin(async move {
             let (kind, io) = detect.detect(io).await?;
-            new_accept
+            let mut accept = new_accept
                 .new_service((kind, target))
-                .oneshot(io)
-                .err_into::<Error>()
-                .await?;
+                .ready_oneshot()
+                .await
+                .map_err(Into::into)?;
+            accept.call(io).await.map_err(Into::into)?;
+            // Hold the service until it's done being used.
+            drop(accept);
             Ok(())
         })
     }
