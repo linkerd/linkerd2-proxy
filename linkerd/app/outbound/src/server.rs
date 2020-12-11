@@ -65,10 +65,10 @@ where
         span_sink,
         drain,
     );
-    cache_accept(&config.proxy, metrics, accept)
+    cache(&config.proxy, metrics, accept)
 }
 
-pub fn cache_accept<N, S, I>(
+pub fn cache<N, S, I>(
     config: &ProxyConfig,
     metrics: metrics::Proxy,
     stack: N,

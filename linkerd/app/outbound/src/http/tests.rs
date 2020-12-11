@@ -56,7 +56,7 @@ where
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (accept, drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
-    let svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
+    let svc = crate::server::cache(&cfg.proxy, metrics.outbound, accept);
     (svc, drain_tx)
 }
 
@@ -357,7 +357,7 @@ async fn stacks_idle_out() {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (accept, _drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let (handle, accept) = track::new_service(accept);
-    let mut svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
+    let mut svc = crate::server::cache(&cfg.proxy, metrics.outbound, accept);
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
@@ -435,7 +435,7 @@ async fn active_stacks_dont_idle_out() {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (accept, _drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let (handle, accept) = track::new_service(accept);
-    let mut svc = crate::server::cache_accept(&cfg.proxy, metrics.outbound, accept);
+    let mut svc = crate::server::cache(&cfg.proxy, metrics.outbound, accept);
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
