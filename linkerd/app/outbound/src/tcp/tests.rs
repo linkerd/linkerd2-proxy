@@ -804,7 +804,7 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
                 .read(b"world")
                 .read_error(std::io::ErrorKind::ConnectionReset.into())
                 .build();
-            Box::pin(async move { Ok(io) })
+            Box::pin(async move { Ok(io::BoxedIo::new(io)) })
         })
     }
 }
