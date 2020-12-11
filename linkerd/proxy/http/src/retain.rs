@@ -1,5 +1,5 @@
 //! Provides a middleware that holds an inner service as long as responses are
-//! being processed..
+//! being processed.
 
 use linkerd2_stack::layer;
 use pin_project::pin_project;
