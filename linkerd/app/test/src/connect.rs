@@ -1,4 +1,4 @@
-use linkerd2_app_core::Error;
+use linkerd2_app_core::{transport::io::BoxedIo, Error};
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
@@ -11,7 +11,7 @@ use tracing_futures::{Instrument, Instrumented};
 
 type ConnectFn<E> = Box<dyn FnMut(E) -> ConnectFuture + Send>;
 
-pub type ConnectFuture = Pin<Box<dyn Future<Output = Result<io::Mock, Error>> + Send + 'static>>;
+pub type ConnectFuture = Pin<Box<dyn Future<Output = Result<BoxedIo, Error>> + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct Connect<E> {
@@ -25,7 +25,7 @@ impl<E> tower::Service<E> for Connect<E>
 where
     E: Clone + fmt::Debug + Into<SocketAddr>,
 {
-    type Response = io::Mock;
+    type Response = BoxedIo;
     type Future = Instrumented<ConnectFuture>;
     type Error = Error;
 
@@ -53,7 +53,7 @@ where
 }
 
 impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
-    type Response = io::Mock;
+    type Response = BoxedIo;
     type Future = Instrumented<ConnectFuture>;
     type Error = Error;
 
@@ -88,10 +88,10 @@ impl<E: fmt::Debug> Connect<E> {
         self
     }
 
-    pub fn endpoint_fn(
+    pub fn endpoint_fn_boxed(
         self,
         endpoint: impl Into<SocketAddr>,
-        mut on_connect: impl (FnMut(E) -> Result<io::Mock, Error>) + Send + 'static,
+        mut on_connect: impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static,
     ) -> Self {
         self.endpoints.lock().unwrap().insert(
             endpoint.into(),
@@ -101,6 +101,14 @@ impl<E: fmt::Debug> Connect<E> {
             }),
         );
         self
+    }
+
+    pub fn endpoint_fn(
+        self,
+        endpoint: impl Into<SocketAddr>,
+        mut on_connect: impl (FnMut(E) -> Result<io::Mock, Error>) + Send + 'static,
+    ) -> Self {
+        self.endpoint_fn_boxed(endpoint, move |ep| on_connect(ep).map(BoxedIo::new))
     }
 
     pub fn endpoint_builder(
