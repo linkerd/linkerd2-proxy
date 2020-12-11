@@ -24,7 +24,7 @@ use linkerd2_app_core::{
     },
     reconnect,
     spans::SpanConverter,
-    svc::{self},
+    svc,
     transport::{self, io, listen, tls},
     Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
@@ -164,8 +164,10 @@ impl Config {
             Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
             Future = impl Send,
-        > + Unpin
-                      + Send,
+        > + Clone
+                      + Send
+                      + Sync
+                      + Unpin,
     > + Unpin
            + Clone
            + Send
@@ -274,14 +276,17 @@ impl Config {
         // fails, skips that stack to forward to the local endpoint.
         svc::stack(switch_loopback)
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
-            .cache(
-                svc::layers().push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age)
-                        .push(metrics.stack.layer(stack_labels("http", "logical")))
-                        .box_http_response(),
-                ),
+            .push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity)
+                    .push(metrics.stack.layer(stack_labels("http", "logical"))),
+            )
+            .push_cache(cache_max_idle_age)
+            .push_on_response(
+                svc::layers()
+                    .push(http::Retain::layer())
+                    .box_http_response(),
             )
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
@@ -320,7 +325,8 @@ impl Config {
                 http::Request<http::boxed::BoxBody>,
                 Response = http::Response<http::boxed::BoxBody>,
                 Error = Error,
-            > + Send
+            > + Clone
+            + Send
             + 'static,
         S::Future: Send,
     {
@@ -357,9 +363,9 @@ impl Config {
             .push(svc::layer::mk(|inner| {
                 svc::stack::NewRouter::new(RequestTarget::from, inner)
             }))
+            .check_new_service::<TcpAccept, http::Request<_>>()
             // Used by tap.
             .push_http_insert_target()
-            .check_new_service::<TcpAccept, http::Request<_>>()
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
@@ -384,13 +390,12 @@ impl Config {
                 .into_inner(),
             drain.clone(),
         ))
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer(buffer_capacity),
         )
+        .push_cache(cache_max_idle_age)
         .push(http::DetectHttp::layer(detect_protocol_timeout))
         .into_inner()
     }

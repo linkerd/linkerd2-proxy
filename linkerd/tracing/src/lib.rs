@@ -9,24 +9,13 @@ use linkerd2_error::Error;
 use std::{env, str};
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
-use tracing_subscriber::{
-    fmt::{format, Layer as FmtLayer},
-    layer::Layered,
-    prelude::*,
-};
+use tracing_subscriber::{fmt::format, prelude::*};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 
 const DEFAULT_LOG_LEVEL: &str = "warn,linkerd2_proxy=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
-
-type JsonFormatter = Formatter<format::JsonFields, format::Json>;
-type PlainFormatter = Formatter<format::DefaultFields, format::Full>;
-type Formatter<F, E> = Layered<
-    FmtLayer<Layered<TasksLayer<F>, tracing_subscriber::Registry>, F, format::Format<E, Uptime>>,
-    Layered<TasksLayer<F>, tracing_subscriber::Registry>,
->;
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
@@ -37,7 +26,10 @@ pub fn init() -> Result<Handle, Error> {
     }
 
     let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
-    let (dispatch, handle) = with_filter_and_format(log_level, log_format);
+    let (dispatch, handle) = Settings::default()
+        .filter(log_level)
+        .format(log_format)
+        .build();
 
     // Set up log compatibility.
     init_log_compat()?;
@@ -51,55 +43,92 @@ pub fn init_log_compat() -> Result<(), Error> {
     tracing_log::LogTracer::init().map_err(Error::from)
 }
 
-pub fn with_filter_and_format(
-    filter: impl AsRef<str>,
-    format: impl AsRef<str>,
-) -> (Dispatch, Handle) {
-    let filter = filter.as_ref();
+#[derive(Debug, Default)]
+pub struct Settings {
+    filter: Option<String>,
+    format: Option<String>,
+    test: bool,
+}
 
-    // Set up the subscriber
-    let filter = tracing_subscriber::EnvFilter::new(filter);
-    let formatter = tracing_subscriber::fmt::format()
-        .with_timer(Uptime::starting_now())
-        .with_thread_ids(true);
-
-    let (dispatch, level, tasks) = match format.as_ref().to_uppercase().as_ref() {
-        "JSON" => {
-            let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
-            let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
-            let dispatch = tracing_subscriber::registry()
-                .with(tasks_layer)
-                .with(
-                    tracing_subscriber::fmt::layer()
-                        .event_format(formatter)
-                        .json()
-                        .with_span_list(true),
-                )
-                .with(filter)
-                .into();
-            let handle = level::Handle::Json(level);
-            (dispatch, handle, tasks)
+impl Settings {
+    pub fn from_env() -> Self {
+        let mut settings = Settings::default();
+        if let Ok(filter) = env::var(ENV_LOG_LEVEL) {
+            settings = settings.filter(filter);
         }
-        _ => {
-            let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
-            let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
-            let dispatch = tracing_subscriber::registry()
-                .with(tasks_layer)
-                .with(tracing_subscriber::fmt::layer().event_format(formatter))
-                .with(filter)
-                .into();
-            let handle = level::Handle::Plain(level);
-            (dispatch, handle, tasks)
+        if let Ok(format) = env::var(ENV_LOG_FORMAT) {
+            settings = settings.format(format);
         }
-    };
+        settings
+    }
 
-    (
-        dispatch,
-        Handle(Inner::Enabled {
-            level,
-            tasks: tasks::Handle { tasks },
-        }),
-    )
+    pub fn filter(self, filter: impl Into<String>) -> Self {
+        Self {
+            filter: Some(filter.into()),
+            ..self
+        }
+    }
+
+    pub fn format(self, format: impl Into<String>) -> Self {
+        Self {
+            format: Some(format.into()),
+            ..self
+        }
+    }
+
+    pub fn test(self, test: bool) -> Self {
+        Self { test, ..self }
+    }
+
+    pub fn build(self) -> (Dispatch, Handle) {
+        let filter = self.filter.unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_string());
+        let format = self
+            .format
+            .unwrap_or_else(|| DEFAULT_LOG_FORMAT.to_string());
+
+        // Set up the subscriber
+        let fmt = tracing_subscriber::fmt::format()
+            .with_timer(Uptime::starting_now())
+            .with_thread_ids(!self.test);
+        let filter = tracing_subscriber::EnvFilter::new(filter);
+        let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
+        let level = level::Handle::new(level);
+        let registry = tracing_subscriber::registry().with(filter);
+
+        let (dispatch, tasks) = match format.to_uppercase().as_ref() {
+            "JSON" => {
+                let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
+                let fmt =
+                    tracing_subscriber::fmt::layer().event_format(fmt.json().with_span_list(true));
+                let registry = registry.with(tasks_layer);
+                let dispatch = if self.test {
+                    registry.with(fmt.with_test_writer()).into()
+                } else {
+                    registry.with(fmt).into()
+                };
+                (dispatch, tasks)
+            }
+            _ => {
+                let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
+                let registry = registry.with(tasks_layer);
+                let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
+                let dispatch = if self.test {
+                    registry.with(fmt.with_test_writer()).into()
+                } else {
+                    registry.with(fmt).into()
+                };
+                (dispatch, tasks)
+            }
+        };
+
+        (
+            dispatch,
+            Handle(Inner::Enabled {
+                level,
+                tasks: tasks::Handle { tasks },
+            }),
+        )
+    }
 }
 
 #[derive(Clone)]

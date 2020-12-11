@@ -47,9 +47,10 @@ pub fn io() -> io::Builder {
 }
 
 /// By default, disable logging in modules that are expected to error in tests.
-const DEFAULT_LOG: &'static str = "error,\
-                                   linkerd2_proxy_http=off,\
-                                   linkerd2_proxy_transport=off";
+const DEFAULT_LOG: &'static str = "warn,\
+                                   linkerd=debug,\
+                                   linkerd2_proxy_http=error,\
+                                   linkerd2_proxy_transport=error";
 
 pub fn trace_subscriber() -> (Dispatch, app_core::trace::Handle) {
     use std::env;
@@ -63,7 +64,11 @@ pub fn trace_subscriber() -> (Dispatch, app_core::trace::Handle) {
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
     let _ = app_core::trace::init_log_compat();
-    app_core::trace::with_filter_and_format(&log_level, &log_format)
+    app_core::trace::Settings::default()
+        .filter(log_level)
+        .format(log_format)
+        .test(true)
+        .build()
 }
 
 pub fn trace_init() -> tracing::dispatcher::DefaultGuard {

@@ -3,7 +3,7 @@ use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
-use tracing::{debug, info, info_span};
+use tracing::{debug, info, info_span, warn};
 use tracing_futures::Instrument;
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
@@ -28,7 +28,7 @@ where
             match listen.next().await {
                 None => return Ok(()),
                 Some(conn) => {
-                    // If the listener returned an error, complete the task
+                    // If the listener returned an error, complete the task.
                     let (addrs, io) = conn?;
 
                     // The local addr should be instrumented from the listener's context.
@@ -43,9 +43,20 @@ where
                     // Dispatch all of the work for a given connection onto a connection-specific task.
                     tokio::spawn(
                         async move {
-                            match accept.oneshot(io).err_into::<Error>().await {
-                                Ok(()) => debug!("Connection closed"),
-                                Err(error) => info!(%error, "Connection closed"),
+                            match accept.ready_oneshot().err_into::<Error>().await {
+                                Ok(mut accept) => {
+                                    match accept.call(io).err_into::<Error>().await {
+                                        Ok(()) => debug!("Connection closed"),
+                                        Err(error) => info!(%error, "Connection closed"),
+                                    }
+                                    // Hold the service until the connection is
+                                    // complete. This helps tie any inner cache
+                                    // lifetimes to the services they return.
+                                    drop(accept);
+                                }
+                                Err(error) => {
+                                    warn!(%error, "Server failed to become ready");
+                                }
                             }
                         }
                         .instrument(span),

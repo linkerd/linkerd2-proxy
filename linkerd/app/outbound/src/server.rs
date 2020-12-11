@@ -119,8 +119,7 @@ where
     .push_on_response(
         svc::layers()
             .push_failfast(dispatch_timeout)
-            .push(metrics.stack.layer(stack_labels("tcp", "balance")))
-            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
+            .push_spawn_buffer(buffer_capacity),
     )
     .instrument(|_: &_| debug_span!("tcp"))
     .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
@@ -133,11 +132,12 @@ where
         drain.clone(),
     ))
     .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .cache(svc::layers().push_on_response(
+    .push_on_response(
         svc::layers()
             .push_failfast(dispatch_timeout)
-            .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-    ))
+            .push_spawn_buffer(buffer_capacity),
+    )
+    .push_cache(cache_max_idle_age)
     .push(http::DetectHttp::layer(detect_protocol_timeout))
     .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
     .into_inner();
@@ -159,14 +159,13 @@ where
             AllowProfile(config.allow_discovery.clone().into()),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push(metrics.stack.layer(stack_labels("tcp", "accept")))
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push(metrics.stack.layer(stack_labels("tcp", "accept")))
+                .push_spawn_buffer(buffer_capacity),
         )
+        .push_cache(cache_max_idle_age)
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)

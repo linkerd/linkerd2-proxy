@@ -82,13 +82,13 @@ where
             AllowHttpProfile(allow_discovery),
         ))
         .check_new_service::<Target, http::Request<_>>()
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer(buffer_capacity),
         )
+        .push_cache(cache_max_idle_age)
+        .push_on_response(http::Retain::layer())
         .check_new_service::<Target, http::Request<_>>()
         .instrument(|t: &Target| info_span!("target", dst = %t.dst))
         .push(svc::layer::mk(|inner| {
@@ -131,11 +131,12 @@ where
 
     svc::stack(http::NewServeHttp::new(h2_settings, http, tcp, drain))
         .check_new_service::<(Option<http::Version>, tcp::Accept), io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-        .cache(svc::layers().push_on_response(
+        .push_on_response(
             svc::layers()
                 .push_failfast(dispatch_timeout)
-                .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-        ))
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .push_cache(cache_max_idle_age)
         .push(http::DetectHttp::layer(detect_protocol_timeout))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
