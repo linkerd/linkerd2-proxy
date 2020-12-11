@@ -407,28 +407,16 @@ async fn active_stacks_dont_idle_out() {
     );
 
     // Pretend the upstream is a proxy that supports proto upgrades...
-    let mut server_settings = hyper::server::conn::Http::new();
-    server_settings.http2_only(true);
     let (mut body_tx, body) = Body::channel();
     let mut body = Some(body);
-    let connect = support::connect().endpoint_fn_boxed(ep1, move |_| {
-        let (client_io, server_io) = support::io::duplex(4096);
-        let mut body = body.take();
-        let hello_svc = hyper::service::service_fn(move |request: Request<Body>| {
-            let body = body.take().expect("service only called once in this test");
-            async move {
-                tracing::info!(?request);
-                Ok::<_, Error>(Response::new(body))
-            }
-        });
-        tokio::spawn(
-            server_settings
-                .serve_connection(server_io, hello_svc)
-                .in_current_span(),
-        );
-        Ok(BoxedIo::new(client_io))
-    });
+    let server = support::http_util::Server::new(move |_| {
+        let body = body.take().expect("service only called once in this test");
+        Response::new(body)
+    })
+    .http2()
+    .expect_identity(id_name.clone());
 
+    let connect = support::connect().endpoint_fn_boxed(ep1, server.run());
     let profiles = profile::resolver().profile(
         ep1,
         profile::Profile {

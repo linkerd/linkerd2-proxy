@@ -20,6 +20,7 @@ pub mod io {
 }
 
 pub mod connect;
+pub mod http_util;
 pub mod profile;
 pub mod resolver;
 pub mod service;
