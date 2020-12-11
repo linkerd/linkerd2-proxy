@@ -4,6 +4,7 @@ use crate::test_util::{
     *,
 };
 use crate::Config;
+use bytes::Bytes;
 use hyper::{
     body::Buf,
     client::conn::{Builder as ClientBuilder, SendRequest},
@@ -370,6 +371,138 @@ async fn stacks_idle_out() {
     // wait for long enough to ensure that it _definitely_ idles out...
     tokio::time::sleep(idle_timeout * 2).await;
     assert_eq!(handle.tracked_services(), 0);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn active_stacks_dont_idle_out() {
+    let _trace = support::trace_init();
+
+    let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let addrs = listen::Addrs::new(
+        ([127, 0, 0, 1], 4140).into(),
+        ([127, 0, 0, 1], 666).into(),
+        Some(ep1),
+    );
+
+    let idle_timeout = Duration::from_millis(500);
+    let mut cfg = default_config(ep1);
+    cfg.proxy.cache_max_idle_age = idle_timeout;
+
+    let id_name = Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
+    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let meta = support::resolver::Metadata::new(
+        Default::default(),
+        support::resolver::ProtocolHint::Http2,
+        Some(id_name.clone()),
+        10_000,
+        None,
+    );
+
+    // Pretend the upstream is a proxy that supports proto upgrades...
+    let mut server_settings = hyper::server::conn::Http::new();
+    server_settings.http2_only(true);
+    let (mut body_tx, body) = Body::channel();
+    let mut body = Some(body);
+    let connect = support::connect().endpoint_fn_boxed(ep1, move |_| {
+        let (client_io, server_io) = support::io::duplex(4096);
+        let mut body = body.take();
+        let hello_svc = hyper::service::service_fn(move |request: Request<Body>| {
+            let body = body.take().expect("service only called once in this test");
+            async move {
+                tracing::info!(?request);
+                Ok::<_, Error>(Response::new(body))
+            }
+        });
+        tokio::spawn(
+            server_settings
+                .serve_connection(server_io, hello_svc)
+                .in_current_span(),
+        );
+        Ok(BoxedIo::new(client_io))
+    });
+
+    let profiles = profile::resolver().profile(
+        ep1,
+        profile::Profile {
+            opaque_protocol: false,
+            name: Some(svc_name.clone()),
+            ..Default::default()
+        },
+    );
+
+    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
+    dst.add(Some((ep1, meta.clone())))
+        .expect("still listening to resolution");
+
+    // Build the outbound server
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (_, drain) = drain::channel();
+
+    let (_, tap, _) = tap::new();
+    let router = super::logical::stack(
+        &cfg.proxy,
+        super::endpoint::stack(
+            &cfg.proxy.connect,
+            connect,
+            tap,
+            metrics.outbound.clone(),
+            None,
+        ),
+        resolver.clone(),
+        metrics.outbound.clone(),
+    );
+    let (handle, router) = track::new_service(router);
+    let mut svc = crate::server::stack_with_tcp_balancer(
+        &cfg,
+        profiles,
+        support::connect::NoRawTcp,
+        NoTcpBalancer,
+        router,
+        metrics.outbound,
+        None,
+        drain,
+    );
+    assert_eq!(handle.tracked_services(), 0);
+
+    let server = svc.new_service(addrs);
+    let (mut client, bg) = connect_client(&mut ClientBuilder::new(), server).await;
+    let rsp = http_request(&mut client, Request::default()).await;
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+    let body = hyper::body::aggregate(rsp.into_body());
+    let body_task = tokio::spawn(async move {
+        let mut body = body.await.expect("body shouldn't error");
+        let mut buf = vec![0u8; body.remaining()];
+        body.copy_to_slice(&mut buf[..]);
+        assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+    });
+
+    body_tx.send_data(Bytes::from("Hello ")).await.unwrap();
+    tracing::info!("sent first chunk");
+
+    assert_eq!(handle.tracked_services(), 1, "before waiting");
+    tokio::time::sleep(idle_timeout * 2).await;
+    assert_eq!(handle.tracked_services(), 1, "after waiting");
+
+    drop(client);
+    tracing::info!("client dropped");
+
+    assert_eq!(handle.tracked_services(), 1, "before waiting");
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    assert_eq!(handle.tracked_services(), 1, "after waiting");
+
+    body_tx.send_data(Bytes::from("world!")).await.unwrap();
+    tracing::info!("sent second body chunk");
+    drop(body_tx);
+    tracing::info!("closed body stream");
+    body_task.await.unwrap();
+
+    // wait for long enough to ensure that it _definitely_ idles out...
+    tokio::time::sleep(idle_timeout * 2).await;
+    assert_eq!(handle.tracked_services(), 0);
+
+    bg.await.unwrap();
 }
 
 async fn connect_client<S>(
