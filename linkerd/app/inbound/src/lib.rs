@@ -317,10 +317,10 @@ impl Config {
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Unpin + Send + 'static,
         F: svc::NewService<TcpEndpoint, Service = A> + Unpin + Clone + Send + 'static,
-        A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
+        A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + Sync + 'static,
         A::Error: Into<Error>,
         A::Future: Send,
-        H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + 'static,
+        H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
         S: tower::Service<
                 http::Request<http::boxed::BoxBody>,
                 Response = http::Response<http::boxed::BoxBody>,
@@ -336,7 +336,6 @@ impl Config {
             max_in_flight_requests,
             detect_protocol_timeout,
             cache_max_idle_age,
-            buffer_capacity,
             ..
         } = self.proxy.clone();
 
@@ -390,11 +389,7 @@ impl Config {
                 .into_inner(),
             drain.clone(),
         ))
-        .push_on_response(
-            svc::layers()
-                .push_failfast(dispatch_timeout)
-                .push_spawn_buffer(buffer_capacity),
-        )
+        .check_new_clone::<(Option<http::Version>, TcpAccept)>()
         .push_cache(cache_max_idle_age)
         .push(http::DetectHttp::layer(detect_protocol_timeout))
         .into_inner()

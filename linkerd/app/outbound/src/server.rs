@@ -165,6 +165,7 @@ where
                 .push(metrics.stack.layer(stack_labels("tcp", "accept")))
                 .push_spawn_buffer(buffer_capacity),
         )
+        .check_new_clone::<tcp::Accept>()
         .push_cache(cache_max_idle_age)
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())

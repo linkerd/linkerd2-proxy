@@ -33,7 +33,7 @@ pub struct ConcurrencyLimit<T> {
 }
 
 enum State {
-    Waiting(Pin<Box<dyn Future<Output = OwnedSemaphorePermit> + Send + 'static>>),
+    Waiting(Pin<Box<dyn Future<Output = OwnedSemaphorePermit> + Send + Sync + 'static>>),
     Ready(OwnedSemaphorePermit),
     Empty,
 }
