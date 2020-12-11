@@ -131,12 +131,8 @@ where
         tcp_balance,
         drain.clone(),
     ))
+    .check_new_clone::<(Option<http::Version>, tcp::Logical)>()
     .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_on_response(
-        svc::layers()
-            .push_failfast(dispatch_timeout)
-            .push_spawn_buffer(buffer_capacity),
-    )
     .push_cache(cache_max_idle_age)
     .push(http::DetectHttp::layer(detect_protocol_timeout))
     .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
