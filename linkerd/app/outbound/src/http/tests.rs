@@ -263,7 +263,7 @@ async fn meshed_hello_world() {
     // Build the outbound server
     let (mut s, _shutdown) = build_server(cfg, profiles, resolver, connect);
     let server = s.new_service(addrs);
-    let (mut client, bg) = connect_client(&mut ClientBuilder::new(), server).await;
+    let (mut client, bg) = connect_and_accept(&mut ClientBuilder::new(), server).await;
 
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
@@ -275,7 +275,7 @@ async fn meshed_hello_world() {
     assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
 
     drop(client);
-    bg.await.unwrap();
+    bg.await;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -354,7 +354,7 @@ async fn stacks_idle_out() {
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
-    let (mut client, bg) = connect_client(&mut ClientBuilder::new(), server).await;
+    let (mut client, bg) = connect_and_accept(&mut ClientBuilder::new(), server).await;
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
     let mut body = hyper::body::aggregate(rsp.into_body())
@@ -365,7 +365,7 @@ async fn stacks_idle_out() {
     assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
 
     drop(client);
-    bg.await.unwrap();
+    bg.await;
 
     assert_eq!(handle.tracked_services(), 1);
     // wait for long enough to ensure that it _definitely_ idles out...
@@ -467,7 +467,8 @@ async fn active_stacks_dont_idle_out() {
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
-    let (mut client, bg) = connect_client(&mut ClientBuilder::new(), server).await;
+    let (client_io, proxy_bg) = run_proxy(server);
+    let (mut client, client_bg) = connect_client(&mut ClientBuilder::new(), client_io).await;
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
     let body = hyper::body::aggregate(rsp.into_body());
@@ -480,6 +481,9 @@ async fn active_stacks_dont_idle_out() {
 
     body_tx.send_data(Bytes::from("Hello ")).await.unwrap();
     tracing::info!("sent first chunk");
+
+    proxy_bg.await.unwrap();
+    tracing::info!("oneshotted");
 
     assert_eq!(handle.tracked_services(), 1, "before waiting");
     tokio::time::sleep(idle_timeout * 2).await;
@@ -502,34 +506,37 @@ async fn active_stacks_dont_idle_out() {
     tokio::time::sleep(idle_timeout * 2).await;
     assert_eq!(handle.tracked_services(), 0);
 
-    bg.await.unwrap();
+    client_bg.await.unwrap();
 }
 
-async fn connect_client<S>(
-    client_settings: &mut ClientBuilder,
-    server: S,
-) -> (
-    hyper::client::conn::SendRequest<Body>,
-    tokio::task::JoinHandle<()>,
-)
+fn run_proxy<S>(server: S) -> (support::io::DuplexStream, tokio::task::JoinHandle<()>)
 where
     S: svc::Service<support::io::DuplexStream> + Send + Sync + 'static,
     S::Error: Into<Error>,
     S::Response: std::fmt::Debug + Send + Sync + 'static,
     S::Future: Send,
 {
-    tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, server_io) = support::io::duplex(4096);
     let proxy = server
         .oneshot(server_io)
         .map(|res| {
             let res = res.map_err(Into::into);
-            tracing::info!(?res, "Server complete");
+            tracing::info!(?res, "proxy serve task complete");
             res.expect("proxy failed");
         })
         .instrument(tracing::info_span!("proxy"));
+    (client_io, tokio::spawn(proxy))
+}
+
+async fn connect_client(
+    client_settings: &mut ClientBuilder,
+    io: support::io::DuplexStream,
+) -> (
+    hyper::client::conn::SendRequest<Body>,
+    tokio::task::JoinHandle<()>,
+) {
     let (client, conn) = client_settings
-        .handshake(client_io)
+        .handshake(io)
         .await
         .expect("Client must connect");
     let client_bg = conn
@@ -538,12 +545,32 @@ where
             res.expect("client bg task failed");
         })
         .instrument(tracing::info_span!("client_bg"));
-    let bg = tokio::spawn(async move {
-        tokio::join! {
+    (client, tokio::spawn(client_bg))
+}
+
+async fn connect_and_accept<S>(
+    client_settings: &mut ClientBuilder,
+    server: S,
+) -> (
+    hyper::client::conn::SendRequest<Body>,
+    impl Future<Output = ()>,
+)
+where
+    S: svc::Service<support::io::DuplexStream> + Send + Sync + 'static,
+    S::Error: Into<Error>,
+    S::Response: std::fmt::Debug + Send + Sync + 'static,
+    S::Future: Send,
+{
+    tracing::info!(settings = ?client_settings, "connecting client with");
+    let (client_io, proxy) = run_proxy(server);
+    let (client, client_bg) = connect_client(client_settings, client_io).await;
+    let bg = async move {
+        let res = tokio::try_join! {
             proxy,
             client_bg,
         };
-    });
+        res.unwrap();
+    };
     (client, bg)
 }
 
@@ -588,7 +615,7 @@ async fn unmeshed_hello_world(
     // Build the outbound server
     let (mut s, _shutdown) = build_server(cfg, profiles, resolver, connect);
     let server = s.new_service(addrs);
-    let (mut client, bg) = connect_client(&mut client_settings, server).await;
+    let (mut client, bg) = connect_and_accept(&mut client_settings, server).await;
 
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
@@ -600,7 +627,7 @@ async fn unmeshed_hello_world(
     assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
 
     drop(client);
-    bg.await.unwrap();
+    bg.await;
 }
 
 #[tracing::instrument]
