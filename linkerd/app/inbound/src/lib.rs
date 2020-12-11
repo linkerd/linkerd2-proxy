@@ -164,7 +164,8 @@ impl Config {
             Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
             Future = impl Send,
-        > + Unpin
+        > + Clone
+                      + Unpin
                       + Send,
     > + Unpin
            + Clone
@@ -320,7 +321,8 @@ impl Config {
                 http::Request<http::boxed::BoxBody>,
                 Response = http::Response<http::boxed::BoxBody>,
                 Error = Error,
-            > + Send
+            > + Clone
+            + Send
             + 'static,
         S::Future: Send,
     {
