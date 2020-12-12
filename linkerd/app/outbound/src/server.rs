@@ -68,6 +68,11 @@ where
     cache(&config.proxy, metrics, accept)
 }
 
+/// Wraps an `N`-typed TCP stack with caching.
+///
+/// Services are cached as long as they are retained by the caller (usually
+/// core::serve) and are evicted from the cache when they have been dropped for
+/// `config.cache_max_idle_age` with no new acquisitions.
 pub fn cache<N, S, I>(
     config: &ProxyConfig,
     metrics: metrics::Proxy,
