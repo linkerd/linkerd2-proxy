@@ -28,7 +28,7 @@ impl DetectHttp {
 
 #[async_trait::async_trait]
 impl Detect for DetectHttp {
-    type Protocol = Option<Version>;
+    type Protocol = Version;
 
     async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
         &self,

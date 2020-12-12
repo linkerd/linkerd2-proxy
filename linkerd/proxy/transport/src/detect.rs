@@ -20,7 +20,7 @@ pub trait Detect: Clone + Send + Sync + 'static {
         &self,
         io: &mut I,
         buf: &mut BytesMut,
-    ) -> Result<Self::Protocol, Error>;
+    ) -> Result<Option<Self::Protocol>, Error>;
 }
 
 #[derive(Copy, Clone)]
@@ -90,7 +90,7 @@ where
     I: io::AsyncRead + Send + Unpin + 'static,
     D: Detect,
     D::Protocol: std::fmt::Debug,
-    N: NewService<(D::Protocol, T), Service = S> + Clone + Send + 'static,
+    N: NewService<(Option<D::Protocol>, T), Service = S> + Clone + Send + 'static,
     S: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     S::Error: Into<Error>,
     S::Future: Send,
