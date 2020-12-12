@@ -123,16 +123,20 @@ where
             let mut accept = new_accept
                 .new_service((kind, target))
                 .ready_oneshot()
-                .await
-                .map_err(Into::into)?;
+                .err_into::<Error>()
+                .await?;
+
             trace!("Dispatching connection");
             accept
                 .call(io::PrefixedIo::new(buf.freeze(), io))
-                .await
-                .map_err(Into::into)?;
+                .err_into::<Error>()
+                .await?;
+
             trace!("Connection completed");
-            // Hold the service until it's done being used.
+            // Hold the service until it's done being used so that cache
+            // idleness is reset.
             drop(accept);
+
             Ok(())
         })
     }
