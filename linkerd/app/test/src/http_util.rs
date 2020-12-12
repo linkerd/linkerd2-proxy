@@ -16,8 +16,6 @@ pub struct Server {
     f: Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>,
 }
 
-pub struct Client {}
-
 impl Default for Server {
     fn default() -> Self {
         Self {
