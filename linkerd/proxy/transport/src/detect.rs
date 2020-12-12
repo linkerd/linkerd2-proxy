@@ -10,17 +10,17 @@ use std::{
 };
 use tokio::time;
 use tower::util::ServiceExt;
-use tracing::trace;
+use tracing::{debug, trace};
 
 #[async_trait::async_trait]
 pub trait Detect: Clone + Send + Sync + 'static {
-    type Kind: Send;
+    type Protocol: Send;
 
     async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
         &self,
         io: &mut I,
         buf: &mut BytesMut,
-    ) -> Result<Self::Kind, Error>;
+    ) -> Result<Self::Protocol, Error>;
 }
 
 #[derive(Copy, Clone)]
@@ -43,7 +43,7 @@ pub struct DetectService<N, D, T> {
 #[derive(Debug)]
 pub struct DetectTimeout {
     bytes: usize,
-    timeout: time::Duration,
+    elapsed: time::Duration,
 }
 
 // === impl NewDetectService ===
@@ -89,8 +89,8 @@ where
     T: Clone + Send + 'static,
     I: io::AsyncRead + Send + Unpin + 'static,
     D: Detect,
-    D::Kind: std::fmt::Debug,
-    N: NewService<(D::Kind, T), Service = S> + Clone + Send + 'static,
+    D::Protocol: std::fmt::Debug,
+    N: NewService<(D::Protocol, T), Service = S> + Clone + Send + 'static,
     S: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     S::Error: Into<Error>,
     S::Future: Send,
@@ -111,17 +111,23 @@ where
         let timeout = self.timeout;
         Box::pin(async move {
             trace!("Starting protocol detection");
-            let kind = futures::select_biased! {
+            let t0 = time::Instant::now();
+            let protocol = futures::select_biased! {
                 res = detect.detect(&mut io, &mut buf).fuse() => res?,
                 _ = time::sleep(timeout).fuse() => {
                     let bytes = buf.len();
-                    return Err(DetectTimeout { bytes, timeout }.into());
+                    let elapsed = time::Instant::now() - t0;
+                    return Err(DetectTimeout { bytes, elapsed }.into());
                 }
             };
+            debug!(
+                ?protocol,
+                elapsed = ?(time::Instant::now() - t0),
+                "Detected"
+            );
 
-            trace!(?kind, "Creating service");
             let mut accept = new_accept
-                .new_service((kind, target))
+                .new_service((protocol, target))
                 .ready_oneshot()
                 .err_into::<Error>()
                 .await?;
@@ -149,7 +155,7 @@ impl std::fmt::Display for DetectTimeout {
         write!(
             f,
             "Protocol detection timeout after: {}B after {:?}",
-            self.bytes, self.timeout
+            self.bytes, self.elapsed
         )
     }
 }
