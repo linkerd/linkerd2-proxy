@@ -138,7 +138,7 @@ where
 
 impl std::fmt::Display for DetectTimeout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Protocol detectiont timeout after {:?}", self.0)
+        write!(f, "Protocol detection timeout after {:?}", self.0)
     }
 }
 
