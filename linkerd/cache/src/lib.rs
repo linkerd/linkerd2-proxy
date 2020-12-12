@@ -116,8 +116,6 @@ where
     type Service = Cached<N::Service>;
 
     fn new_service(&mut self, target: T) -> Cached<N::Service> {
-        let cache = Arc::downgrade(&self.services);
-
         // We expect the item to be available in most cases, so initially obtain
         // only a read lock.
         if let Some((svc, weak)) = self.services.read().get(&target) {
@@ -146,6 +144,7 @@ where
                     }
                     None => {
                         debug!(?target, "Replacing defunct service");
+                        let cache = Arc::downgrade(&self.services);
                         let (inner, handle) =
                             Self::spawn_entry(target, &mut self.inner, self.idle, cache);
                         entry.insert((inner.clone(), Arc::downgrade(&handle)));
@@ -155,6 +154,7 @@ where
             }
             Entry::Vacant(entry) => {
                 debug!(?target, "Caching new service");
+                let cache = Arc::downgrade(&self.services);
                 let (inner, handle) = Self::spawn_entry(target, &mut self.inner, self.idle, cache);
                 entry.insert((inner.clone(), Arc::downgrade(&handle)));
                 Cached { inner, handle }
