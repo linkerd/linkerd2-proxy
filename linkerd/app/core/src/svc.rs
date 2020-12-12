@@ -227,7 +227,7 @@ impl<S> Stack<S> {
         self.push(http::insert::target::layer())
     }
 
-    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S, S::Service>>
+    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>
     where
         T: Eq + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,
