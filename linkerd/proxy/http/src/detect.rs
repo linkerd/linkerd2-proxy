@@ -1,6 +1,5 @@
 use crate::Version;
 use bytes::BytesMut;
-use futures::prelude::*;
 use linkerd2_error::Error;
 use linkerd2_io::{self as io, AsyncReadExt};
 use linkerd2_proxy_transport::{Detect, NewDetectService};
@@ -8,7 +7,6 @@ use linkerd2_stack::layer;
 use tokio::time;
 use tracing::{debug, trace};
 
-const BUFFER_CAPACITY: usize = 8192;
 const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 const H2_FIRST_LINE_LEN: usize = 16;
 
@@ -17,42 +15,30 @@ fn is_h2_first_line(line: &[u8]) -> bool {
     line.len() == H2_FIRST_LINE_LEN && line == &H2_PREFACE[..H2_FIRST_LINE_LEN]
 }
 
-#[derive(Clone, Debug)]
-pub struct DetectHttp {
-    capacity: usize,
-    timeout: time::Duration,
-}
+#[derive(Clone, Debug, Default)]
+pub struct DetectHttp(());
 
 impl DetectHttp {
-    pub fn new(timeout: time::Duration) -> Self {
-        Self {
-            timeout,
-            capacity: BUFFER_CAPACITY,
-        }
-    }
-
     pub fn layer<N>(
         timeout: time::Duration,
     ) -> impl layer::Layer<N, Service = NewDetectService<N, Self>> + Clone {
-        NewDetectService::layer(Self::new(timeout))
+        NewDetectService::layer(timeout, Self(()))
     }
 }
 
 #[async_trait::async_trait]
-impl<I> Detect<I> for DetectHttp
-where
-    I: io::AsyncRead + Send + Unpin + 'static,
-{
+impl Detect for DetectHttp {
     type Kind = Option<Version>;
 
-    async fn detect(&self, mut io: I) -> Result<(Option<Version>, io::PrefixedIo<I>), Error> {
-        let mut buf = BytesMut::with_capacity(self.capacity);
+    async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
+        &self,
+        io: &mut I,
+        buf: &mut BytesMut,
+    ) -> Result<Option<Version>, Error> {
         let mut scan_idx = 0;
         let mut maybe_h1 = true;
         let mut maybe_h2 = true;
 
-        // Start tracking a detection timeout before reading.
-        let mut timeout = time::sleep(self.timeout).map(|_| self.timeout).fuse();
         loop {
             // Read data from the socket or timeout detection.
             trace!(
@@ -62,19 +48,12 @@ where
                 maybe_h2,
                 "Reading"
             );
-            futures::select_biased! {
-                res = io.read_buf(&mut buf).fuse() => {
-                    if res? == 0 {
-                        // No data was read because the socket closed or the
-                        // buffer capacity was exhausted.
-                        debug!(read = buf.len(), "Could not detect protocol");
-                        return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
-                    }
-                }
-                timeout = (&mut timeout) => {
-                    debug!(?timeout, "Detection timeout");
-                    return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
-                }
+            let sz = io.read_buf(buf).await?;
+            if sz == 0 {
+                // No data was read because the socket closed or the
+                // buffer capacity was exhausted.
+                debug!(read = buf.len(), "Could not detect protocol");
+                return Ok(None);
             }
 
             // HTTP/2 checking is faster because it's a simple string match. If
@@ -84,7 +63,7 @@ where
                 trace!("Checking H2 preface");
                 if &buf[..H2_PREFACE.len()] == H2_PREFACE {
                     trace!("Matched HTTP/2 prefix");
-                    return Ok((Some(Version::H2), io::PrefixedIo::new(buf.freeze(), io)));
+                    return Ok(Some(Version::H2));
                 }
 
                 // Not a match. Don't check for an HTTP/2 preface again.
@@ -111,10 +90,7 @@ where
                                     .parse(&buf[..])
                             {
                                 trace!("Matched HTTP/1");
-                                return Ok((
-                                    Some(Version::Http1),
-                                    io::PrefixedIo::new(buf.freeze(), io),
-                                ));
+                                return Ok(Some(Version::Http1));
                             }
                         }
 
@@ -132,7 +108,7 @@ where
 
             if !maybe_h1 && !maybe_h2 {
                 trace!("Not HTTP");
-                return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
+                return Ok(None);
             }
         }
     }
