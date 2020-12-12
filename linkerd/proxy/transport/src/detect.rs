@@ -41,7 +41,10 @@ pub struct DetectService<N, D, T> {
 }
 
 #[derive(Debug)]
-pub struct DetectTimeout(time::Duration);
+pub struct DetectTimeout {
+    bytes: usize,
+    timeout: time::Duration,
+}
 
 // === impl NewDetectService ===
 
@@ -111,7 +114,8 @@ where
             let kind = futures::select_biased! {
                 res = detect.detect(&mut io, &mut buf).fuse() => res?,
                 _ = time::sleep(timeout).fuse() => {
-                    return Err(DetectTimeout(timeout).into());
+                    let bytes = buf.len();
+                    return Err(DetectTimeout { bytes, timeout }.into());
                 }
             };
 
@@ -138,7 +142,11 @@ where
 
 impl std::fmt::Display for DetectTimeout {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Protocol detection timeout after {:?}", self.0)
+        write!(
+            f,
+            "Protocol detection timeout after: {}B after {:?}",
+            self.bytes, self.timeout
+        )
     }
 }
 
