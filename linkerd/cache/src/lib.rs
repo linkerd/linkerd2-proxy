@@ -13,12 +13,13 @@ use tracing::{debug, debug_span, trace};
 use tracing_futures::Instrument;
 
 #[derive(Clone)]
-pub struct Cache<T, N, S>
+pub struct Cache<T, N>
 where
     T: Eq + Hash,
+    N: NewService<T>,
 {
     inner: N,
-    services: Services<T, S>,
+    services: Services<T, N::Service>,
     idle: time::Duration,
 }
 
@@ -43,7 +44,7 @@ type Services<T, S> = Arc<RwLock<HashMap<T, (S, Weak<T>)>>>;
 
 // === impl Cache ===
 
-impl<T, N> Cache<T, N, N::Service>
+impl<T, N> Cache<T, N>
 where
     T: Eq + Hash + Send + Sync + 'static,
     N: NewService<T> + 'static,
@@ -64,7 +65,7 @@ where
     }
 }
 
-impl<T, N> NewService<T> for Cache<T, N, N::Service>
+impl<T, N> NewService<T> for Cache<T, N>
 where
     T: Clone + Eq + Hash + Send + Sync + 'static,
     N: NewService<T>,
