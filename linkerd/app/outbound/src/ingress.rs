@@ -82,13 +82,13 @@ where
             AllowHttpProfile(allow_discovery),
         ))
         .check_new_service::<Target, http::Request<_>>()
-        .cache(
-            svc::layers().push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer_with_idle_timeout(buffer_capacity, cache_max_idle_age),
-            ),
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer(buffer_capacity),
         )
+        .push_cache(cache_max_idle_age)
+        .push_on_response(http::Retain::layer())
         .check_new_service::<Target, http::Request<_>>()
         .instrument(|t: &Target| info_span!("target", dst = %t.dst))
         .push(svc::layer::mk(|inner| {

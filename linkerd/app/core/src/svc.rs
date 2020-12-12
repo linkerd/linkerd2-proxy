@@ -78,18 +78,6 @@ impl<L> Layers<L> {
         self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
-    pub fn push_spawn_buffer_with_idle_timeout<Req, Rsp>(
-        self,
-        capacity: usize,
-        idle_timeout: Duration,
-    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req, Rsp>>>
-    where
-        Req: Send + 'static,
-        Rsp: Send + 'static,
-    {
-        self.push(buffer::SpawnBufferLayer::new(capacity).with_idle_timeout(idle_timeout))
-    }
-
     // Makes the service eagerly process and fail requests after the given timeout.
     pub fn push_failfast(self, timeout: Duration) -> Layers<Pair<L, timeout::FailFastLayer>> {
         self.push(timeout::FailFastLayer::new(timeout))
@@ -239,14 +227,13 @@ impl<S> Stack<S> {
         self.push(http::insert::target::layer())
     }
 
-    pub fn cache<T, L, U>(self, track: L) -> Stack<cache::Cache<T, cache::layer::NewTrack<L, S>>>
+    pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>
     where
-        T: Eq + std::hash::Hash + Send + 'static,
-        S: NewService<T> + Clone,
-        L: tower::layer::Layer<cache::layer::Track<S>> + Clone,
-        L::Service: NewService<T, Service = U>,
+        T: Eq + std::hash::Hash + Send + Sync + 'static,
+        S: NewService<T> + 'static,
+        S::Service: Send + Sync + 'static,
     {
-        self.push(cache::CacheLayer::new(track))
+        self.push(cache::Cache::layer(idle))
     }
 
     /// Push a service that either calls the inner service if it is ready, or
