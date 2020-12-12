@@ -8,8 +8,10 @@ use linkerd2_concurrency_limit as concurrency_limit;
 pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
-use std::task::{Context, Poll};
-use std::time::Duration;
+use std::{
+    task::{Context, Poll},
+    time::Duration,
+};
 use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
 pub use tower::make::MakeService;
@@ -229,7 +231,7 @@ impl<S> Stack<S> {
 
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>
     where
-        T: Eq + std::hash::Hash + Send + Sync + 'static,
+        T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
         S: NewService<T> + 'static,
         S::Service: Send + Sync + 'static,
     {
