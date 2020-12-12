@@ -52,9 +52,7 @@ where
         let mut maybe_h2 = true;
 
         // Start tracking a detection timeout before reading.
-        let mut timeout = time::sleep(self.timeout)
-            .map(|_| self.timeout.as_millis())
-            .fuse();
+        let mut timeout = time::sleep(self.timeout).map(|_| self.timeout).fuse();
         loop {
             // Read data from the socket or timeout detection.
             trace!(
@@ -73,8 +71,8 @@ where
                         return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
                     }
                 }
-                ms = (&mut timeout) => {
-                    debug!(%ms, "Detection timeout");
+                timeout = (&mut timeout) => {
+                    debug!(?timeout, "Detection timeout");
                     return Ok((None, io::PrefixedIo::new(buf.freeze(), io)));
                 }
             }

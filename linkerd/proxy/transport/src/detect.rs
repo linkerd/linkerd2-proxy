@@ -7,6 +7,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::util::ServiceExt;
+use tracing::trace;
 
 #[async_trait::async_trait]
 pub trait Detect<I>: Clone + Send + Sync + 'static {
@@ -55,6 +56,7 @@ where
     T: Clone + Send + 'static,
     I: Send + 'static,
     D: Detect<I>,
+    D::Kind: std::fmt::Debug,
     N: NewService<(D::Kind, T), Service = S> + Clone + Send + 'static,
     S: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     S::Error: Into<Error>,
@@ -73,13 +75,17 @@ where
         let detect = self.detect.clone();
         let target = self.target.clone();
         Box::pin(async move {
+            trace!("Starting protocol detection");
             let (kind, io) = detect.detect(io).await?;
+            trace!(?kind, "Creating service");
             let mut accept = new_accept
                 .new_service((kind, target))
                 .ready_oneshot()
                 .await
                 .map_err(Into::into)?;
+            trace!("Dispatching connection");
             accept.call(io).await.map_err(Into::into)?;
+            trace!("Connection completed");
             // Hold the service until it's done being used.
             drop(accept);
             Ok(())
