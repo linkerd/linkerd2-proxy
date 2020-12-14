@@ -55,8 +55,8 @@ impl<N, D: Clone> NewDetectService<N, D> {
         Self {
             detect,
             new_accept,
-            capacity: Self::BUFFER_CAPACITY,
             timeout,
+            capacity: Self::BUFFER_CAPACITY,
         }
     }
 
@@ -115,9 +115,10 @@ where
             let protocol = futures::select_biased! {
                 res = detect.detect(&mut io, &mut buf).fuse() => res?,
                 _ = time::sleep(timeout).fuse() => {
-                    let bytes = buf.len();
-                    let elapsed = time::Instant::now() - t0;
-                    return Err(DetectTimeout { bytes, elapsed }.into());
+                    //let bytes = buf.len();
+                    //let elapsed = time::Instant::now() - t0;
+                    //return Err(DetectTimeout { bytes, elapsed }.into());
+                    None
                 }
             };
             debug!(
