@@ -391,7 +391,12 @@ impl Config {
         ))
         .check_new_clone::<(Option<http::Version>, TcpAccept)>()
         .push_cache(cache_max_idle_age)
-        .push(http::DetectHttp::layer(detect_protocol_timeout))
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ),
+        ))
         .into_inner()
     }
 

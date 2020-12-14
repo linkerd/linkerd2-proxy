@@ -1,3 +1,6 @@
+mod timeout;
+
+pub use self::timeout::{DetectTimeout, DetectTimeoutError};
 use crate::io;
 use bytes::BytesMut;
 use futures::prelude::*;
@@ -28,7 +31,6 @@ pub struct NewDetectService<N, D> {
     new_accept: N,
     detect: D,
     capacity: usize,
-    timeout: time::Duration,
 }
 
 #[derive(Copy, Clone)]
@@ -37,13 +39,6 @@ pub struct DetectService<N, D, T> {
     new_accept: N,
     detect: D,
     capacity: usize,
-    timeout: time::Duration,
-}
-
-#[derive(Debug)]
-pub struct DetectTimeout {
-    bytes: usize,
-    elapsed: time::Duration,
 }
 
 // === impl NewDetectService ===
@@ -51,20 +46,16 @@ pub struct DetectTimeout {
 impl<N, D: Clone> NewDetectService<N, D> {
     const BUFFER_CAPACITY: usize = 8192;
 
-    pub fn new(timeout: time::Duration, new_accept: N, detect: D) -> Self {
+    pub fn new(new_accept: N, detect: D) -> Self {
         Self {
             detect,
             new_accept,
-            timeout,
             capacity: Self::BUFFER_CAPACITY,
         }
     }
 
-    pub fn layer(
-        timeout: time::Duration,
-        detect: D,
-    ) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new| Self::new(timeout, new, detect.clone()))
+    pub fn layer(detect: D) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |new| Self::new(new, detect.clone()))
     }
 }
 
@@ -77,7 +68,6 @@ impl<N: Clone, D: Clone, T> NewService<T> for NewDetectService<N, D> {
             new_accept: self.new_accept.clone(),
             detect: self.detect.clone(),
             capacity: self.capacity,
-            timeout: self.timeout,
         }
     }
 }
@@ -108,19 +98,10 @@ where
         let mut buf = BytesMut::with_capacity(self.capacity);
         let detect = self.detect.clone();
         let target = self.target.clone();
-        let timeout = self.timeout;
         Box::pin(async move {
             trace!("Starting protocol detection");
             let t0 = time::Instant::now();
-            let protocol = futures::select_biased! {
-                res = detect.detect(&mut io, &mut buf).fuse() => res?,
-                _ = time::sleep(timeout).fuse() => {
-                    //let bytes = buf.len();
-                    //let elapsed = time::Instant::now() - t0;
-                    //return Err(DetectTimeout { bytes, elapsed }.into());
-                    None
-                }
-            };
+            let protocol = detect.detect(&mut io, &mut buf).await?;
             debug!(
                 ?protocol,
                 elapsed = ?(time::Instant::now() - t0),
@@ -148,17 +129,3 @@ where
         })
     }
 }
-
-// === impl DetectTimeout ===
-
-impl std::fmt::Display for DetectTimeout {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Protocol detection timeout after: {}B after {:?}",
-            self.bytes, self.elapsed
-        )
-    }
-}
-
-impl std::error::Error for DetectTimeout {}

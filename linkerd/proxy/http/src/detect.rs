@@ -2,23 +2,13 @@ use crate::Version;
 use bytes::BytesMut;
 use linkerd2_error::Error;
 use linkerd2_io::{self as io, AsyncReadExt};
-use linkerd2_proxy_transport::{Detect, NewDetectService};
-use linkerd2_stack::layer;
-use tokio::time;
+use linkerd2_proxy_transport::Detect;
 use tracing::{debug, trace};
 
 const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 #[derive(Clone, Debug, Default)]
 pub struct DetectHttp(());
-
-impl DetectHttp {
-    pub fn layer<N>(
-        timeout: time::Duration,
-    ) -> impl layer::Layer<N, Service = NewDetectService<N, Self>> + Clone {
-        NewDetectService::layer(timeout, Self(()))
-    }
-}
 
 #[async_trait::async_trait]
 impl Detect for DetectHttp {

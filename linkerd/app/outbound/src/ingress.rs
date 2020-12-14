@@ -134,7 +134,12 @@ where
         .check_new_service::<(Option<http::Version>, tcp::Accept), io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .check_new_clone::<(Option<http::Version>, tcp::Accept)>()
         .push_cache(cache_max_idle_age)
-        .push(http::DetectHttp::layer(detect_protocol_timeout))
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ),
+        ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)
