@@ -96,7 +96,7 @@ where
                 }
                 _ = time::sleep(idle).fuse() => match cache.upgrade() {
                     Some(cache) => match Arc::try_unwrap(reset) {
-                        // If this is the last reference to handle after the
+                        // If this is the last reference to the handle after the
                         // idle timeout, remove the cache entry.
                         Ok(_) => {
                             let removed = cache.write().remove(&target).is_some();
