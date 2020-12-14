@@ -121,7 +121,6 @@ mod tests {
     use tokio_test::io;
 
     const HTTP11_LINE: &'static [u8] = b"GET / HTTP/1.1\r\n";
-    const TIMEOUT: time::Duration = time::Duration::from_secs(10);
     const H2_AND_GARBAGE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\ngarbage";
     const GARBAGE: &'static [u8] =
         b"garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage";
@@ -135,15 +134,12 @@ mod tests {
             buf.put(H2_AND_GARBAGE);
             debug!(read0 = ?std::str::from_utf8(&H2_AND_GARBAGE[..i]).unwrap());
             debug!(read1 = ?std::str::from_utf8(&H2_AND_GARBAGE[i..]).unwrap());
-            let (kind, _) = DetectHttp::new(TIMEOUT)
-                .detect(
-                    io::Builder::new()
-                        .read(&H2_AND_GARBAGE[..i])
-                        .read(&H2_AND_GARBAGE[i..])
-                        .build(),
-                )
-                .await
-                .unwrap();
+            let mut buf = BytesMut::with_capacity(1024);
+            let mut io = io::Builder::new()
+                .read(&H2_AND_GARBAGE[..i])
+                .read(&H2_AND_GARBAGE[i..])
+                .build();
+            let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
             assert_eq!(kind, Some(Version::H2));
         }
     }
@@ -155,73 +151,51 @@ mod tests {
         for i in 1..HTTP11_LINE.len() {
             debug!(read0 = ?std::str::from_utf8(&HTTP11_LINE[..i]).unwrap());
             debug!(read1 = ?std::str::from_utf8(&HTTP11_LINE[i..]).unwrap());
-            let (kind, _) = DetectHttp::new(TIMEOUT)
-                .detect(
-                    io::Builder::new()
-                        .read(&HTTP11_LINE[..i])
-                        .read(&HTTP11_LINE[i..])
-                        .build(),
-                )
-                .await
-                .unwrap();
+            let mut buf = BytesMut::with_capacity(1024);
+            let mut io = io::Builder::new()
+                .read(&HTTP11_LINE[..i])
+                .read(&HTTP11_LINE[i..])
+                .build();
+            let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
             assert_eq!(kind, Some(Version::Http1));
         }
 
         const REQ: &'static [u8] =
             b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
-        let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(io::Builder::new().read(&REQ).build())
-            .await
-            .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut io = io::Builder::new().read(&REQ).build();
+        let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, Some(Version::Http1));
-        assert_eq!(io.prefix(), REQ);
+        assert_eq!(&buf[..], REQ);
     }
 
     #[tokio::test]
     async fn unknown() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(
-                io::Builder::new()
-                    .read(b"foo.bar.blah\r")
-                    .read(b"\nbobo")
-                    .build(),
-            )
-            .await
-            .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut io = io::Builder::new()
+            .read(b"foo.bar.blah\r")
+            .read(b"\nbobo")
+            .build();
+        let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, None);
-        assert_eq!(&io.prefix()[..], b"foo.bar.blah\r\nbobo");
+        assert_eq!(&buf[..], b"foo.bar.blah\r\nbobo");
 
-        let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(io::Builder::new().read(GARBAGE).build())
-            .await
-            .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut io = io::Builder::new().read(GARBAGE).build();
+        let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, None);
-        assert_eq!(&io.prefix()[..], GARBAGE);
+        assert_eq!(&buf[..], GARBAGE);
 
-        let (kind, io) = DetectHttp::new(TIMEOUT)
-            .detect(
-                io::Builder::new()
-                    .read(&HTTP11_LINE[..14])
-                    .read(b"\n")
-                    .build(),
-            )
-            .await
-            .unwrap();
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut io = io::Builder::new()
+            .read(&HTTP11_LINE[..14])
+            .read(b"\n")
+            .build();
+        let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, None);
-        assert_eq!(&io.prefix()[..14], &HTTP11_LINE[..14]);
-        assert_eq!(&io.prefix()[14..], b"\n");
-    }
-
-    #[tokio::test]
-    async fn timeout() {
-        let (io, _handle) = io::Builder::new().read(b"GET").build_with_handle();
-        let (kind, io) = DetectHttp::new(time::Duration::from_millis(1))
-            .detect(io)
-            .await
-            .unwrap();
-        assert_eq!(kind, None);
-        assert_eq!(&io.prefix()[..], b"GET");
+        assert_eq!(&buf[..14], &HTTP11_LINE[..14]);
+        assert_eq!(&buf[14..], b"\n");
     }
 }
