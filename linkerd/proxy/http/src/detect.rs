@@ -8,12 +8,6 @@ use tokio::time;
 use tracing::{debug, trace};
 
 const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
-const H2_FIRST_LINE_LEN: usize = 16;
-
-#[inline]
-fn is_h2_first_line(line: &[u8]) -> bool {
-    line.len() == H2_FIRST_LINE_LEN && line == &H2_PREFACE[..H2_FIRST_LINE_LEN]
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct DetectHttp(());
@@ -59,15 +53,25 @@ impl Detect for DetectHttp {
             // HTTP/2 checking is faster because it's a simple string match. If
             // we have enough data, check it first. In almost all cases, the
             // whole preface should be available from the first read.
-            if maybe_h2 && buf.len() >= H2_PREFACE.len() {
-                trace!("Checking H2 preface");
-                if &buf[..H2_PREFACE.len()] == H2_PREFACE {
-                    trace!("Matched HTTP/2 prefix");
-                    return Ok(Some(Version::H2));
-                }
+            if maybe_h2 {
+                if buf.len() < H2_PREFACE.len() {
+                    // Check the prefix we have already read to see if it looks likely to be HTTP/2.
+                    if buf[..] == H2_PREFACE[..buf.len()] {
+                        // If it looks like HTTP/2, it's not HTTP/1.
+                        maybe_h1 = false;
+                    } else {
+                        maybe_h2 = false;
+                    }
+                } else {
+                    trace!("Checking H2 preface");
+                    if &buf[..H2_PREFACE.len()] == H2_PREFACE {
+                        trace!("Matched HTTP/2 prefix");
+                        return Ok(Some(Version::H2));
+                    }
 
-                // Not a match. Don't check for an HTTP/2 preface again.
-                maybe_h2 = false;
+                    // Not a match. Don't check for an HTTP/2 preface again.
+                    maybe_h2 = false;
+                }
             }
 
             if maybe_h1 {
@@ -80,7 +84,7 @@ impl Detect for DetectHttp {
                         // then we almost definitely got a fragmented first
                         // read. Only try HTTP/1 parsing if it doesn't look like
                         // HTTP/2.
-                        if !is_h2_first_line(&buf[..=i + 1]) {
+                        if !maybe_h2 {
                             trace!("Parsing HTTP/1 message");
                             // If we get to reading headers (and fail), the
                             // first line looked like an HTTP/1 request; so
