@@ -7,6 +7,7 @@ mod gauge;
 mod histogram;
 pub mod latency;
 mod prom;
+mod registry;
 mod scopes;
 mod serve;
 #[cfg(feature = "summary")]
@@ -16,6 +17,7 @@ pub use self::counter::Counter;
 pub use self::gauge::Gauge;
 pub use self::histogram::Histogram;
 pub use self::prom::{FmtLabels, FmtMetric, FmtMetrics, Metric};
+pub use self::registry::Registry;
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
 #[cfg(feature = "summary")]
