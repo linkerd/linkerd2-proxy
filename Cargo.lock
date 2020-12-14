@@ -1012,6 +1012,7 @@ dependencies = [
  "hyper",
  "linkerd2-app-core",
  "linkerd2-identity",
+ "linkerd2-io",
  "regex 0.1.80",
  "tokio 0.3.5",
  "tokio-test 0.3.0",
