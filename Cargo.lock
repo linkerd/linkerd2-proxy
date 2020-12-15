@@ -1244,7 +1244,7 @@ dependencies = [
  "indexmap",
  "parking_lot",
  "quickcheck",
- "tokio 0.2.23",
+ "tokio 0.3.5",
  "tracing",
 ]
 
@@ -2580,7 +2580,6 @@ dependencies = [
  "memchr 2.3.3",
  "pin-project-lite 0.1.4",
  "slab",
- "tokio-macros 0.2.6",
  "tracing",
 ]
 
@@ -2602,7 +2601,7 @@ dependencies = [
  "pin-project-lite 0.2.0",
  "signal-hook-registry",
  "slab",
- "tokio-macros 0.3.1",
+ "tokio-macros",
  "winapi 0.3.8",
 ]
 
@@ -2634,17 +2633,6 @@ dependencies = [
  "bytes 0.4.11",
  "futures 0.1.26",
  "log",
-]
-
-[[package]]
-name = "tokio-macros"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e44da00bfc73a25f814cd8d7e57a68a5c31b74b3152a0a1d1f590c97ed06265a"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

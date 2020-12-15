@@ -154,7 +154,7 @@ impl<F> Summary<F> {
     /// necessary.
     #[inline]
     fn rotated_window_mut(&self) -> MappedMutexGuard<'_, Histogram<u64>> {
-        let mut w = self.windows.write();
+        let mut w = self.windows.lock();
         let now = time::Instant::now();
         if now >= w.next_rotate {
             // Advance windows per elapsed time. If the more than one interval
@@ -178,7 +178,7 @@ impl<F> Summary<F> {
         let mut report = self.report.lock();
         // Remove all values from the merged
         report.reset();
-        let windows = self.windows.read();
+        let windows = self.windows.lock();
         for w in windows.active.iter() {
             // The report histogram must have been created with the same
             // configuration as the other histograms, so they all either share a

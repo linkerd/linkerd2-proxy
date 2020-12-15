@@ -70,7 +70,7 @@ fetch: Cargo.lock
 
 .PHONY: check
 check: fetch
-	$(CARGO) check
+	$(CARGO) check --all-features
 
 .PHONY: build
 build: $(TARGET_BIN)
