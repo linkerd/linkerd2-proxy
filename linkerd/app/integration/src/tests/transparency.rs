@@ -50,7 +50,7 @@ async fn inbound_http1() {
 async fn outbound_tcp() {
     let _trace = trace_init();
 
-    let msg1 = "custom tcp hello";
+    let msg1 = "custom tcp hello\r\n";
     let msg2 = "custom tcp bye";
 
     let srv = server::tcp()
@@ -88,7 +88,7 @@ async fn outbound_tcp() {
 async fn outbound_tcp_external() {
     let _trace = trace_init();
 
-    let msg1 = "custom tcp hello";
+    let msg1 = "custom tcp hello\r\n";
     let msg2 = "custom tcp bye";
 
     let srv = server::tcp()
@@ -127,7 +127,7 @@ async fn outbound_tcp_external() {
 async fn inbound_tcp() {
     let _trace = trace_init();
 
-    let msg1 = "custom tcp hello";
+    let msg1 = "custom tcp hello\r\n";
     let msg2 = "custom tcp bye";
 
     let srv = server::tcp()
@@ -296,7 +296,7 @@ async fn tcp_server_first_tls() {
 async fn tcp_connections_close_if_client_closes() {
     let _trace = trace_init();
 
-    let msg1 = "custom tcp hello";
+    let msg1 = "custom tcp hello\r\n";
     let msg2 = "custom tcp bye";
 
     let (mut tx, mut rx) = mpsc::channel(1);
