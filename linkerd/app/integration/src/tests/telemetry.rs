@@ -76,7 +76,7 @@ impl Fixture {
 }
 
 impl TcpFixture {
-    const HELLO_MSG: &'static str = "custom tcp hello";
+    const HELLO_MSG: &'static str = "custom tcp hello\n";
     const BYE_MSG: &'static str = "custom tcp bye";
 
     async fn server() -> server::Listening {

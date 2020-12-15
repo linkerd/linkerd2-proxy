@@ -15,6 +15,7 @@ mock-orig-dst  = []
 
 [dependencies]
 async-stream = "0.2.1"
+async-trait = "0.1"
 bytes = "0.6"
 futures = "0.3"
 indexmap = "1.0.0"
@@ -27,13 +28,13 @@ linkerd2-io = { path = "../../io" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-stack = { path = "../../stack" }
 rustls = "0.18"
-tokio = { version = "0.3", features = ["net", "io-util"]}
+tokio = { version = "0.3", features = ["io-util", "net", "time"]}
 tokio-rustls = "0.20"
+tokio-util = { version = "0.5", features = ["compat"]}
 tracing = "0.1.22"
 webpki = "0.21"
 untrusted = "0.7"
 pin-project = "0.4"
-tokio-util = { version = "0.5", features = ["compat"]}
 socket2 = "0.3"
 
 [dependencies.tower]

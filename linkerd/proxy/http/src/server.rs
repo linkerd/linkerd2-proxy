@@ -3,7 +3,7 @@ use crate::{
     client_handle::SetClientHandle,
     glue::{HyperServerSvc, UpgradeBody},
     h2::Settings as H2Settings,
-    trace, upgrade, Version as HttpVersion,
+    trace, upgrade, Version,
 };
 use futures::prelude::*;
 use linkerd2_drain as drain;
@@ -16,7 +16,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::{util::ServiceExt, Service};
-use tracing::{debug, trace};
+use tracing::debug;
 
 type Server = hyper::server::conn::Http<trace::Executor>;
 
@@ -28,24 +28,15 @@ pub struct NewServeHttp<F, H> {
     drain: drain::Watch,
 }
 
-/// Accepts HTTP connections.
-///
-/// The server accepts TCP connections with their detected protocol. If the
-/// protocol is known to be HTTP, a server is built with a new HTTP service
-/// (built using the `H`-typed NewService).
-///
-/// Otherwise, the `F` type forwarding service is used to handle the TCP
-/// connection.
-#[derive(Debug)]
-pub struct ServeHttp<T, F: NewService<T>, H: NewService<(HttpVersion, T)>> {
-    target: T,
-    new_tcp: F,
-    tcp: Option<F::Service>,
-    new_http: H,
-    http1: Option<H::Service>,
-    h2: Option<H::Service>,
-    server: hyper::server::conn::Http<trace::Executor>,
-    drain: drain::Watch,
+#[derive(Clone, Debug)]
+pub enum ServeHttp<F, H> {
+    Opaque(F, drain::Watch),
+    Http {
+        version: Version,
+        service: H,
+        server: Server,
+        drain: drain::Watch,
+    },
 }
 
 // === impl NewServeHttp ===
@@ -77,55 +68,43 @@ impl<F, H> NewServeHttp<F, H> {
     }
 }
 
-impl<T, F, H> NewService<T> for NewServeHttp<F, H>
+impl<T, F, H> NewService<(Option<Version>, T)> for NewServeHttp<F, H>
 where
     F: NewService<T> + Clone,
-    H: NewService<(HttpVersion, T)> + Clone,
+    H: NewService<(Version, T)> + Clone,
 {
-    type Service = ServeHttp<T, F, H>;
+    type Service = ServeHttp<F::Service, H::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
-        ServeHttp::new(
-            target,
-            self.server.clone(),
-            self.http.clone(),
-            self.tcp.clone(),
-            self.drain.clone(),
-        )
+    fn new_service(&mut self, (v, target): (Option<Version>, T)) -> Self::Service {
+        match v {
+            Some(version) => {
+                debug!(?version, "Creating HTTP service");
+                let service = self.http.new_service((version, target));
+                ServeHttp::Http {
+                    version,
+                    service,
+                    server: self.server.clone(),
+                    drain: self.drain.clone(),
+                }
+            }
+            None => {
+                debug!("Creating TCP service");
+                let svc = self.tcp.new_service(target);
+                ServeHttp::Opaque(svc, self.drain.clone())
+            }
+        }
     }
 }
 
 // === impl ServeHttp ===
 
-impl<T, F, H> ServeHttp<T, F, H>
+impl<I, F, H> Service<PrefixedIo<I>> for ServeHttp<F, H>
 where
-    F: NewService<T>,
-    H: NewService<(HttpVersion, T)>,
-{
-    pub fn new(target: T, server: Server, new_http: H, new_tcp: F, drain: drain::Watch) -> Self {
-        Self {
-            target,
-            server,
-            new_tcp,
-            tcp: None,
-            new_http,
-            http1: None,
-            h2: None,
-            drain,
-        }
-    }
-}
-
-impl<T, I, F, FSvc, H, HSvc> Service<PrefixedIo<I>> for ServeHttp<T, F, H>
-where
-    T: Clone,
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
-    F: NewService<T, Service = FSvc> + Clone,
-    FSvc: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
-    FSvc::Error: Into<Error>,
-    FSvc::Future: Send + 'static,
-    H: NewService<(HttpVersion, T), Service = HSvc> + Clone,
-    HSvc: Service<
+    F: tower::Service<PrefixedIo<I>, Response = ()> + Clone + Send + 'static,
+    F::Error: Into<Error>,
+    F::Future: Send + 'static,
+    H: Service<
             http::Request<UpgradeBody>,
             Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
@@ -133,7 +112,7 @@ where
         + Unpin
         + Send
         + 'static,
-    HSvc::Future: Send + 'static,
+    H::Future: Send + 'static,
 {
     type Response = ();
     type Error = Error;
@@ -145,120 +124,72 @@ where
     }
 
     fn call(&mut self, io: PrefixedIo<I>) -> Self::Future {
-        let version = HttpVersion::from_prefix(io.prefix());
-        match version {
-            Some(HttpVersion::Http1) => {
-                debug!("Handling as HTTP");
-                let http1 = if let Some(svc) = self.http1.clone() {
-                    trace!("HTTP service already exists");
-                    svc
-                } else {
-                    trace!("Building new HTTP service");
-                    let svc = self
-                        .new_http
-                        .new_service((HttpVersion::Http1, self.target.clone()));
-                    self.http1 = Some(svc.clone());
-                    svc
-                };
+        match self.clone() {
+            Self::Http {
+                version,
+                service,
+                drain,
+                mut server,
+            } => Box::pin(async move {
+                debug!(?version, "Handling as HTTP");
+                let (svc, closed) = SetClientHandle::new(io.peer_addr()?, service);
+                match version {
+                    Version::Http1 => {
+                        // Enable support for HTTP upgrades (CONNECT and websockets).
+                        let mut conn = server
+                            .http1_only(true)
+                            .serve_connection(io, upgrade::Service::new(svc, drain.clone()))
+                            .with_upgrades();
 
-                let mut server = self.server.clone();
-                let drain = self.drain.clone();
-                Box::pin(async move {
-                    let (svc, closed) = SetClientHandle::new(io.peer_addr()?, http1);
-
-                    let mut conn = server
-                        .http1_only(true)
-                        .serve_connection(
-                            io,
-                            // Enable support for HTTP upgrades (CONNECT and websockets).
-                            upgrade::Service::new(svc, drain.clone()),
-                        )
-                        .with_upgrades();
-
-                    tokio::select! {
-                        res = &mut conn => {
-                            debug!(?res, "The client is shutting down the connection");
-                            res?
-                        }
-                        shutdown = drain.signal() => {
-                            debug!("The process is shutting down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            shutdown.release_after(conn).await?;
-                        }
-                        () = closed => {
-                            debug!("The stack is tearing down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            conn.await?;
+                        tokio::select! {
+                            res = &mut conn => {
+                                debug!(?res, "The client is shutting down the connection");
+                                res?
+                            }
+                            shutdown = drain.signal() => {
+                                debug!("The process is shutting down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            () = closed => {
+                                debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
                         }
                     }
+                    Version::H2 => {
+                        let mut conn = server
+                            .http2_only(true)
+                            .serve_connection(io, HyperServerSvc::new(svc));
 
-                    Ok(())
-                })
-            }
-
-            Some(HttpVersion::H2) => {
-                debug!("Handling as H2");
-                let h2 = if let Some(svc) = self.h2.clone() {
-                    trace!("H2 service already exists");
-                    svc
-                } else {
-                    trace!("Building new H2 service");
-                    let svc = self
-                        .new_http
-                        .new_service((HttpVersion::H2, self.target.clone()));
-                    self.h2 = Some(svc.clone());
-                    svc
-                };
-
-                let mut server = self.server.clone();
-                let drain = self.drain.clone();
-                Box::pin(async move {
-                    let (svc, closed) = SetClientHandle::new(io.peer_addr()?, h2);
-
-                    let mut conn = server
-                        .http2_only(true)
-                        .serve_connection(io, HyperServerSvc::new(svc));
-
-                    tokio::select! {
-                        res = &mut conn => {
-                            debug!(?res, "The client is shutting down the connection");
-                            res?
-                        }
-                        shutdown = drain.signal() => {
-                            debug!("The process is shutting down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            shutdown.release_after(conn).await?;
-                        }
-                        () = closed => {
-                            debug!("The stack is tearing down the connection");
-                            Pin::new(&mut conn).graceful_shutdown();
-                            conn.await?;
+                        tokio::select! {
+                            res = &mut conn => {
+                                debug!(?res, "The client is shutting down the connection");
+                                res?
+                            }
+                            shutdown = drain.signal() => {
+                                debug!("The process is shutting down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                shutdown.release_after(conn).await?;
+                            }
+                            () = closed => {
+                                debug!("The stack is tearing down the connection");
+                                Pin::new(&mut conn).graceful_shutdown();
+                                conn.await?;
+                            }
                         }
                     }
+                }
 
-                    Ok(())
-                })
-            }
-
-            None => {
+                Ok(())
+            }),
+            Self::Opaque(tcp, drain) => Box::pin({
                 debug!("Forwarding TCP");
-                let tcp = if let Some(svc) = self.tcp.clone() {
-                    trace!("TCP service already exists");
-                    svc
-                } else {
-                    trace!("Building new TCP service");
-                    let svc = self.new_tcp.new_service(self.target.clone());
-                    self.tcp = Some(svc.clone());
-                    svc
-                };
-
-                Box::pin(
-                    self.drain
-                        .clone()
-                        .ignore_signal()
-                        .release_after(tcp.oneshot(io).err_into::<Error>()),
-                )
-            }
+                drain
+                    .ignore_signal()
+                    .release_after(tcp.oneshot(io).err_into::<Error>())
+            }),
         }
     }
 }

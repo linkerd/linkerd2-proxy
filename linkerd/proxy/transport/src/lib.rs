@@ -5,17 +5,17 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 
 pub mod connect;
+pub mod detect;
 pub use linkerd2_io as io;
 pub mod listen;
 pub mod metrics;
-pub mod prefix;
 pub mod tls;
 
 pub use self::{
     connect::Connect,
+    detect::{Detect, DetectService, NewDetectService},
     io::BoxedIo,
     listen::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
-    prefix::Prefix,
 };
 
 // Misc.

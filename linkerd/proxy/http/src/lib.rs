@@ -8,6 +8,7 @@ pub mod add_header;
 pub mod balance;
 pub mod client;
 pub mod client_handle;
+mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -26,6 +27,7 @@ mod version;
 
 pub use self::{
     client_handle::{ClientHandle, SetClientHandle},
+    detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
     override_authority::CanOverrideAuthority,
     retain::Retain,

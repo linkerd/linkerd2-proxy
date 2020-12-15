@@ -156,6 +156,7 @@ where
         max_in_flight_requests,
         detect_protocol_timeout,
         buffer_capacity,
+        cache_max_idle_age,
         ..
     } = config.proxy.clone();
 
@@ -222,11 +223,13 @@ where
         tcp_balance,
         drain.clone(),
     ))
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
-        transport::Prefix::layer(
-            http::Version::DETECT_BUFFER_CAPACITY,
+    .check_new_clone::<(Option<http::Version>, tcp::Logical)>()
+    .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+    .push_cache(cache_max_idle_age)
+    .push(transport::NewDetectService::layer(
+        transport::detect::DetectTimeout::new(
             detect_protocol_timeout,
+            http::DetectHttp::default(),
         ),
     ))
     .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()

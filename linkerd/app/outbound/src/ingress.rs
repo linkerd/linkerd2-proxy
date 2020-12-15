@@ -46,6 +46,7 @@ where
             Error = Error,
         > + Clone
         + Send
+        + Sync
         + 'static,
     TSvc::Future: Send,
     H: svc::NewService<http::Logical, Service = HSvc> + Unpin + Clone + Send + Sync + 'static,
@@ -130,11 +131,13 @@ where
         .into_inner();
 
     svc::stack(http::NewServeHttp::new(h2_settings, http, tcp, drain))
-        .check_new_service::<tcp::Accept, io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-        .push_on_response(svc::layers().push_spawn_buffer(buffer_capacity).push(
-            transport::Prefix::layer(
-                http::Version::DETECT_BUFFER_CAPACITY,
+        .check_new_service::<(Option<http::Version>, tcp::Accept), io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .check_new_clone::<(Option<http::Version>, tcp::Accept)>()
+        .push_cache(cache_max_idle_age)
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
                 detect_protocol_timeout,
+                http::DetectHttp::default(),
             ),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()

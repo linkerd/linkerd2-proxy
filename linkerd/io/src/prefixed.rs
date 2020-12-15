@@ -15,7 +15,7 @@ pub struct PrefixedIo<S> {
     io: S,
 }
 
-impl<S: AsyncRead + AsyncWrite> PrefixedIo<S> {
+impl<S> PrefixedIo<S> {
     pub fn new(prefix: impl Into<Bytes>, io: S) -> Self {
         let prefix = prefix.into();
         Self { prefix, io }

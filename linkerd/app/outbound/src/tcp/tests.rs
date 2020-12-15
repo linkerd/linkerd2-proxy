@@ -865,7 +865,7 @@ where
         svc
     };
     async move {
-        let io = support::io().read(b"hello\r\n").write(b"world").build();
+        let io = support::io().read(b"hello\n").write(b"world").build();
         let res = svc.oneshot(io).err_into::<Error>().await;
         tracing::trace!(?res);
         if let Err(err) = res {
