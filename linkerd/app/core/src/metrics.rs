@@ -56,6 +56,7 @@ pub struct EndpointLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StackLabels {
     pub direction: Direction,
+    pub protocol: &'static str,
     pub name: &'static str,
 }
 
@@ -297,17 +298,19 @@ impl FmtLabels for TlsId {
 // === impl StackLabels ===
 
 impl StackLabels {
-    pub fn inbound(name: &'static str) -> Self {
+    pub fn inbound(protocol: &'static str, name: &'static str) -> Self {
         Self {
-            direction: Direction::In,
             name,
+            protocol,
+            direction: Direction::In,
         }
     }
 
-    pub fn outbound(name: &'static str) -> Self {
+    pub fn outbound(protocol: &'static str, name: &'static str) -> Self {
         Self {
-            direction: Direction::Out,
             name,
+            protocol,
+            direction: Direction::Out,
         }
     }
 }
@@ -315,6 +318,6 @@ impl StackLabels {
 impl FmtLabels for StackLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
-        write!(f, ",name=\"{}\"", self.name)
+        write!(f, ",protocol=\"{}\",name=\"{}\"", self.protocol, self.name)
     }
 }

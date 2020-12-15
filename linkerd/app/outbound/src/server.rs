@@ -176,7 +176,7 @@ where
                 .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.stack.layer(stack_labels("source")))
+                .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push_failfast(dispatch_timeout)
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
@@ -193,6 +193,7 @@ where
         .check_make_service::<tcp::Endpoint, ()>()
         .push_on_response(svc::layer::mk(tcp::Forward::new))
         .into_new_service()
+        .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
         .check_new_service::<tcp::Endpoint, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .push_map_target(tcp::Endpoint::from_logical(
             tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
@@ -235,6 +236,7 @@ where
         .push_map_target(tcp::Endpoint::from_logical(
             tls::ReasonForNoPeerName::PortSkipped,
         ))
+        .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
         .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
         .into_inner();
 
