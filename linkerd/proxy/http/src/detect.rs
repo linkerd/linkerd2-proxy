@@ -119,9 +119,9 @@ mod tests {
     const GARBAGE: &'static [u8] =
         b"garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage";
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn h2() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer();
 
         for i in 1..H2_PREFACE.len() {
             let mut buf = BytesMut::with_capacity(H2_PREFACE.len());
@@ -138,9 +138,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn http1() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer();
 
         for i in 1..HTTP11_LINE.len() {
             debug!(read0 = ?std::str::from_utf8(&HTTP11_LINE[..i]).unwrap());
@@ -163,9 +163,9 @@ mod tests {
         assert_eq!(&buf[..], REQ);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn unknown() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer();
 
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new()
