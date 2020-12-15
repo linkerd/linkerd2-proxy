@@ -118,7 +118,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn h2() {
-        let _ = tracing_subscriber::fmt().with_test_writer();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         for i in 1..H2_PREFACE.len() {
             let mut buf = BytesMut::with_capacity(H2_PREFACE.len());
@@ -137,7 +137,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn http1() {
-        let _ = tracing_subscriber::fmt().with_test_writer();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         for i in 1..HTTP11_LINE.len() {
             debug!(read0 = ?std::str::from_utf8(&HTTP11_LINE[..i]).unwrap());
@@ -162,7 +162,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn unknown() {
-        let _ = tracing_subscriber::fmt().with_test_writer();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new()
