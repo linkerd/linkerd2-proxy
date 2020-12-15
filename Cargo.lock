@@ -1078,6 +1078,22 @@ name = "linkerd2-conditional"
 version = "0.1.0"
 
 [[package]]
+name = "linkerd2-connection-header"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 0.6.0",
+ "linkerd2-dns-name",
+ "linkerd2-error",
+ "linkerd2-io",
+ "linkerd2-proxy-transport",
+ "prost",
+ "prost-build",
+ "tokio 0.3.5",
+ "tokio-test 0.3.0",
+]
+
+[[package]]
 name = "linkerd2-dns"
 version = "0.1.0"
 dependencies = [
