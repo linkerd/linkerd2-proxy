@@ -100,7 +100,7 @@ async fn tcp_waits_for_proxies_to_close() {
     let _trace = trace_init();
 
     let (shdn, rx) = shutdown_signal();
-    let msg1 = "custom tcp hello\r\n";
+    let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
 
     let srv = server::tcp()

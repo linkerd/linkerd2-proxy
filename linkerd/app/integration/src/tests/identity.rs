@@ -25,7 +25,7 @@ async fn nonblocking_identity_detection() {
         .await;
     let proxy = proxy::new().identity(id_svc);
 
-    let msg1 = "custom tcp hello\r\n";
+    let msg1 = "custom tcp hello\n";
     let msg2 = "custom tcp bye";
     let srv = server::tcp()
         .accept(move |read| {

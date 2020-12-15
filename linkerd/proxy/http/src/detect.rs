@@ -66,33 +66,30 @@ impl Detect for DetectHttp {
 
             if maybe_h1 {
                 // Scan up to the first line ending to determine whether the
-                // request is HTTP/1.1.
-                for window in buf[scan_idx..].windows(2) {
-                    if window == b"\r\n" {
-                        trace!("Found newline");
-                        // If the first line looks like an HTTP/2 first line,
-                        // then we almost definitely got a fragmented first
-                        // read. Only try HTTP/1 parsing if it doesn't look like
-                        // HTTP/2.
-                        if !maybe_h2 {
-                            trace!("Parsing HTTP/1 message");
-                            // If we get to reading headers (and fail), the
-                            // first line looked like an HTTP/1 request; so
-                            // handle the stream as HTTP/1.
-                            if let Ok(_) | Err(httparse::Error::TooManyHeaders) =
-                                httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0])
-                                    .parse(&buf[..])
-                            {
-                                trace!("Matched HTTP/1");
-                                return Ok(Some(Version::Http1));
-                            }
+                // request is HTTP/1.1. HTTP expects \r\n, so we just look for
+                // any \n to indicate that we can make a determination.
+                if buf[scan_idx..].contains(&b'\n') {
+                    trace!("Found newline");
+                    // If the first line looks like an HTTP/2 first line,
+                    // then we almost definitely got a fragmented first
+                    // read. Only try HTTP/1 parsing if it doesn't look like
+                    // HTTP/2.
+                    if !maybe_h2 {
+                        trace!("Parsing HTTP/1 message");
+                        // If we get to reading headers (and fail), the
+                        // first line looked like an HTTP/1 request; so
+                        // handle the stream as HTTP/1.
+                        if let Ok(_) | Err(httparse::Error::TooManyHeaders) =
+                            httparse::Request::new(&mut [httparse::EMPTY_HEADER; 0]).parse(&buf[..])
+                        {
+                            trace!("Matched HTTP/1");
+                            return Ok(Some(Version::Http1));
                         }
-
-                        // We found the EOL and it wasn't an HTTP/1.x request;
-                        // stop scanning and don't scan again.
-                        maybe_h1 = false;
-                        break;
                     }
+
+                    // We found the EOL and it wasn't an HTTP/1.x request;
+                    // stop scanning and don't scan again.
+                    maybe_h1 = false;
                 }
 
                 // Advance our scan index to the end of buffer so the next
@@ -183,13 +180,9 @@ mod tests {
         assert_eq!(&buf[..], GARBAGE);
 
         let mut buf = BytesMut::with_capacity(1024);
-        let mut io = io::Builder::new()
-            .read(&HTTP11_LINE[..14])
-            .read(b"\n")
-            .build();
+        let mut io = io::Builder::new().read(&HTTP11_LINE[..14]).build();
         let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, None);
         assert_eq!(&buf[..14], &HTTP11_LINE[..14]);
-        assert_eq!(&buf[14..], b"\n");
     }
 }
