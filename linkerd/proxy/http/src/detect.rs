@@ -67,9 +67,9 @@ impl Detect for DetectHttp {
             if maybe_h1 {
                 // Scan up to the first line ending to determine whether the
                 // request is HTTP/1.1.
-                for i in scan_idx..(buf.len() - 1) {
-                    if &buf[i..=i + 1] == b"\r\n" {
-                        trace!(offset = i, "Found newline");
+                for window in buf[scan_idx..].windows(2) {
+                    if window == b"\r\n" {
+                        trace!("Found newline");
                         // If the first line looks like an HTTP/2 first line,
                         // then we almost definitely got a fragmented first
                         // read. Only try HTTP/1 parsing if it doesn't look like
