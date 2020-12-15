@@ -239,7 +239,7 @@ where
         .push_map_target(tcp::Endpoint::from_logical(
             tls::ReasonForNoPeerName::PortSkipped,
         ))
-        .push_on_response(metrics.stack.layer(stack_labels("tcp", "skipped")))
+        .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
         .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
         .into_inner();
 

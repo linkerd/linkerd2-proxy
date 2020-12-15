@@ -371,7 +371,7 @@ impl Config {
                     .push(TraceContext::layer(span_sink.map(|span_sink| {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
-                    .push(metrics.stack.layer(stack_labels("http", "source")))
+                    .push(metrics.stack.layer(stack_labels("http", "server")))
                     .box_http_request()
                     .box_http_response(),
             )
