@@ -65,6 +65,6 @@ impl Factor for MillisAsSeconds {
 
 impl Factor for MicrosAsSeconds {
     fn factor(n: u64) -> f64 {
-        n.wrapping_rem(MAX_PRECISE_UINT64 + 1) as f64 * 0.000_001
+        n.wrapping_rem((MAX_PRECISE_UINT64 + 1) * 1_000) as f64 * 0.000_001
     }
 }

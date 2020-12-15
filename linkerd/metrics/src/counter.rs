@@ -94,7 +94,7 @@ impl<F: Factor> FmtMetric for Counter<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MillisAsSeconds, MAX_PRECISE_UINT64};
+    use crate::{MicrosAsSeconds, MillisAsSeconds, MAX_PRECISE_UINT64};
 
     #[test]
     fn count_simple() {
@@ -139,5 +139,25 @@ mod tests {
 
         let max = Counter::<MillisAsSeconds>::from(MAX_PRECISE_UINT64 * 1000);
         assert_eq!(max.value(), MAX_PRECISE_UINT64 as f64);
+    }
+
+    #[test]
+    fn micros_as_seconds() {
+        let c = Counter::<MicrosAsSeconds>::from(1);
+        assert_eq!(c.value(), 0.000_001);
+        c.add(110);
+        assert_eq!(c.value(), 0.000_111);
+
+        let c = Counter::<MicrosAsSeconds>::from((MAX_PRECISE_UINT64 - 1) * 1000);
+        assert_eq!(c.value(), (MAX_PRECISE_UINT64 - 1) as f64 * 0.001);
+        c.add(1_000);
+        assert_eq!(c.value(), MAX_PRECISE_UINT64 as f64 * 0.001);
+        c.add(1_000);
+        assert_eq!(c.value(), 0.0);
+        c.add(1);
+        assert_eq!(c.value(), 0.000_001);
+
+        let max = Counter::<MicrosAsSeconds>::from(MAX_PRECISE_UINT64 * 1000);
+        assert_eq!(max.value(), MAX_PRECISE_UINT64 as f64 * 0.001);
     }
 }
