@@ -46,12 +46,7 @@ impl Detect for DetectHttp {
             if maybe_h2 {
                 if buf.len() < H2_PREFACE.len() {
                     // Check the prefix we have already read to see if it looks likely to be HTTP/2.
-                    if buf[..] == H2_PREFACE[..buf.len()] {
-                        // If it looks like HTTP/2, it's not HTTP/1.
-                        maybe_h1 = false;
-                    } else {
-                        maybe_h2 = false;
-                    }
+                    maybe_h2 = buf[..] == H2_PREFACE[..buf.len()];
                 } else {
                     trace!("Checking H2 preface");
                     if &buf[..H2_PREFACE.len()] == H2_PREFACE {
@@ -158,6 +153,18 @@ mod tests {
         let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, Some(Version::Http1));
         assert_eq!(&buf[..], REQ);
+
+        // Starts with a P, like the h2 preface.
+        const POST: &'static [u8] = b"POST /foo HTTP/1.1\r\n";
+        for i in 1..POST.len() {
+            let mut buf = BytesMut::with_capacity(1024);
+            let mut io = io::Builder::new().read(&POST[..i]).read(&POST[i..]).build();
+            println!("buf0 = {:?}", &POST[..i]);
+            println!("buf1 = {:?}", &POST[i..]);
+            let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
+            assert_eq!(kind, Some(Version::Http1));
+            assert_eq!(&buf[..], POST);
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
