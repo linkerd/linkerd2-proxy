@@ -44,7 +44,7 @@ pub struct DetectService<N, D, T> {
 // === impl NewDetectService ===
 
 impl<N, D: Clone> NewDetectService<N, D> {
-    const BUFFER_CAPACITY: usize = 8192;
+    const BUFFER_CAPACITY: usize = 1024;
 
     pub fn new(new_accept: N, detect: D) -> Self {
         Self {
