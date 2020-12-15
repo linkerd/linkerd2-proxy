@@ -26,8 +26,8 @@ pub struct Config {
     pub allow_discovery: AddrMatch,
 }
 
-fn stack_labels(name: &'static str) -> metrics::StackLabels {
-    metrics::StackLabels::outbound(name)
+fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
+    metrics::StackLabels::outbound(proto, name)
 }
 
 pub fn trace_labels() -> HashMap<String, String> {
