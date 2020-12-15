@@ -25,6 +25,7 @@ http-body = "0.4"
 hyper = "0.14.0-dev"
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-identity = { path = "../../identity" }
+linkerd2-io = { path = "../../io", features = ["tokio-test"] }
 regex = "0.1"
 tokio = { version = "0.3", features = ["io-util", "net", "rt", "sync"]}
 tokio-test = "0.3"
