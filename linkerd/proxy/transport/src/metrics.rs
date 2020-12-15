@@ -1,5 +1,4 @@
 use futures::{ready, TryFuture};
-use indexmap::IndexMap;
 use linkerd2_errno::Errno;
 use linkerd2_io as io;
 use linkerd2_metrics::{
@@ -7,6 +6,7 @@ use linkerd2_metrics::{
 };
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
+use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::hash::Hash;
@@ -70,15 +70,20 @@ pub struct Connecting<F> {
 }
 
 /// Stores a class of transport's metrics.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Metrics {
     open_total: Counter,
     open_connections: Gauge,
     write_bytes_total: Counter,
     read_bytes_total: Counter,
 
-    last_update: Mutex<Instant>,
-    by_eos: Arc<Mutex<IndexMap<Eos, EosMetrics>>>,
+    by_eos: Arc<Mutex<ByEos>>,
+}
+
+#[derive(Debug)]
+struct ByEos {
+    last_update: Instant,
+    metrics: HashMap<Eos, EosMetrics>,
 }
 
 /// Describes a classtransport end.
@@ -361,6 +366,9 @@ impl Sensor {
     fn open(metrics: Arc<Metrics>) -> Self {
         metrics.open_total.incr();
         metrics.open_connections.incr();
+        if let Ok(mut by_eos) = metrics.by_eos.lock() {
+            by_eos.last_update = Instant::now();
+        }
         Self {
             metrics: Some(metrics),
             opened_at: Instant::now(),
@@ -372,12 +380,18 @@ impl io::Sensor for Sensor {
     fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.read_bytes_total.add(sz as u64);
+            if let Ok(mut by_eos) = m.by_eos.lock() {
+                by_eos.last_update = Instant::now();
+            }
         }
     }
 
     fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.write_bytes_total.add(sz as u64);
+            if let Ok(mut by_eos) = m.by_eos.lock() {
+                by_eos.last_update = Instant::now();
+            }
         }
     }
 
@@ -390,9 +404,13 @@ impl io::Sensor for Sensor {
             m.open_connections.decr();
 
             let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
-            let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
+            let class = by_eos
+                .metrics
+                .entry(Eos(eos))
+                .or_insert_with(EosMetrics::default);
             class.close_total.incr();
             class.connection_duration.add(duration);
+            by_eos.last_update = Instant::now();
         }
     }
 
@@ -443,25 +461,11 @@ impl FmtLabels for Eos {
 
 // ===== impl Metrics =====
 
-impl Default for Metrics {
-    fn default() -> Self {
-        Self {
-            open_total: Default::default(),
-            open_connections: Default::default(),
-            write_bytes_total: Default::default(),
-            read_bytes_total: Default::default(),
-
-            last_update: Mutex::new(Instant::now()),
-            by_eos: Default::default(),
-        }
-    }
-}
-
 impl LastUpdate for Metrics {
     fn last_update(&self) -> Instant {
-        self.last_update
+        self.by_eos
             .lock()
-            .map(|x| *x)
+            .map(|metrics| metrics.last_update)
             .unwrap_or_else(|_| Instant::now()) // XXX(eliza): ew
     }
 }
@@ -475,11 +479,22 @@ impl store::FmtChildren for Metrics {
         F: FnMut(&Self::ChildLabels, &Self::ChildMetric) -> fmt::Result,
     {
         if let Ok(by_eos) = self.by_eos.lock() {
-            for (eos, metric) in by_eos.iter() {
+            for (eos, metric) in by_eos.metrics.iter() {
                 f(eos, metric)?;
             }
         }
 
         Ok(())
+    }
+}
+
+// ===== impl ByEos =====
+
+impl Default for ByEos {
+    fn default() -> Self {
+        Self {
+            metrics: HashMap::new(),
+            last_update: Instant::now(),
+        }
     }
 }
