@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use linkerd2_errno::Errno;
 use linkerd2_io as io;
 use linkerd2_metrics::{
-    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
+    latency, metrics, store, Counter, FmtLabels, FmtMetrics, Gauge, Histogram, LastUpdate, Store,
 };
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
@@ -13,7 +13,7 @@ use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
@@ -27,16 +27,16 @@ metrics! {
     tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
 }
 
-pub fn new<K: Eq + Hash + FmtLabels>() -> (Registry<K>, Report<K>) {
-    let inner = Arc::new(Mutex::new(Inner::default()));
+pub fn new<K: Eq + Hash + FmtLabels>(retain_idle: Duration) -> (Registry<K>, Report<K>) {
+    let inner = Arc::new(Mutex::new(Inner::new(retain_idle)));
     (Registry(inner.clone()), Report(inner))
 }
 
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
 #[derive(Debug)]
@@ -70,13 +70,14 @@ pub struct Connecting<F> {
 }
 
 /// Stores a class of transport's metrics.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Metrics {
     open_total: Counter,
     open_connections: Gauge,
     write_bytes_total: Counter,
     read_bytes_total: Counter,
 
+    last_update: Mutex<Instant>,
     by_eos: Arc<Mutex<IndexMap<Eos, EosMetrics>>>,
 }
 
@@ -109,72 +110,55 @@ pub type SensorIo<T> = io::SensorIo<T, Sensor>;
 struct NewSensor(Arc<Metrics>);
 
 /// Shares state between `Report` and `Registry`.
-#[derive(Debug)]
-struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Metrics>>);
+// #[derive(Debug)]
+// struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Metrics>>);
+
+type Inner<K> = Store<K, Arc<Metrics>>;
 
 // ===== impl Inner =====
 
-impl<K: Eq + Hash + FmtLabels> Default for Inner<K> {
-    fn default() -> Self {
-        Inner(IndexMap::default())
-    }
-}
+// impl<K: Eq + Hash + FmtLabels> Default for Inner<K> {
+//     fn default() -> Self {
+//         Inner(IndexMap::default())
+//     }
+// }
 
-impl<K: Eq + Hash + FmtLabels> Inner<K> {
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
+// impl<K: Eq + Hash + FmtLabels> Inner<K> {
+//     fn is_empty(&self) -> bool {
+//         self.0.is_empty()
+//     }
 
-    fn iter(&self) -> impl Iterator<Item = (&K, &Arc<Metrics>)> {
-        self.0.iter()
-    }
+//     fn iter(&self) -> impl Iterator<Item = (&K, &Arc<Metrics>)> {
+//         self.0.iter()
+//     }
 
-    /// Formats a metric across all instances of `Metrics` in the registry.
-    fn fmt_by<F, N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        F: Fn(&Metrics) -> &M,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, m) in self.iter() {
-            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
-        }
+//     /// Formats a metric across all instances of `EosMetrics` in the registry.
+//     fn fmt_eos_by<F, N, M>(
+//         &self,
+//         f: &mut fmt::Formatter<'_>,
+//         metric: Metric<'_, N, M>,
+//         get_metric: F,
+//     ) -> fmt::Result
+//     where
+//         F: Fn(&EosMetrics) -> &M,
+//         N: fmt::Display,
+//         M: FmtMetric,
+//     {
+//         for (key, metrics) in self.iter() {
+//             if let Ok(by_eos) = (*metrics).by_eos.lock() {
+//                 for (eos, m) in by_eos.iter() {
+//                     get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
+//                 }
+//             }
+//         }
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    /// Formats a metric across all instances of `EosMetrics` in the registry.
-    fn fmt_eos_by<F, N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        F: Fn(&EosMetrics) -> &M,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, metrics) in self.iter() {
-            if let Ok(by_eos) = (*metrics).by_eos.lock() {
-                for (eos, m) in by_eos.iter() {
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn get_or_default(&mut self, k: K) -> &Arc<Metrics> {
-        self.0.entry(k).or_insert_with(Default::default)
-    }
-}
+//     fn get_or_default(&mut self, k: K) -> &Arc<Metrics> {
+//         self.0.entry(k).or_insert_with(|| Default::default())
+//     }
+// }
 
 // ===== impl Registry =====
 
@@ -343,7 +327,7 @@ where
 
 impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let metrics = self.0.lock().expect("metrics registry poisoned");
+        let mut metrics = self.0.lock().expect("metrics registry poisoned");
         if metrics.is_empty() {
             return Ok(());
         }
@@ -361,10 +345,11 @@ impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
         metrics.fmt_by(f, tcp_write_bytes_total, |m| &m.write_bytes_total)?;
 
         tcp_close_total.fmt_help(f)?;
-        metrics.fmt_eos_by(f, tcp_close_total, |e| &e.close_total)?;
+        metrics.fmt_children(f, tcp_close_total, |e| &e.close_total)?;
 
         tcp_connection_duration_ms.fmt_help(f)?;
-        metrics.fmt_eos_by(f, tcp_connection_duration_ms, |e| &e.connection_duration)?;
+        metrics.fmt_children(f, tcp_connection_duration_ms, |e| &e.connection_duration)?;
+        metrics.retain_active();
 
         Ok(())
     }
@@ -453,5 +438,48 @@ impl FmtLabels for Eos {
             None => f.pad("errno=\"\""),
             Some(errno) => write!(f, "errno=\"{}\"", errno),
         }
+    }
+}
+
+// ===== impl Metrics =====
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            open_total: Default::default(),
+            open_connections: Default::default(),
+            write_bytes_total: Default::default(),
+            read_bytes_total: Default::default(),
+
+            last_update: Mutex::new(Instant::now()),
+            by_eos: Default::default(),
+        }
+    }
+}
+
+impl LastUpdate for Metrics {
+    fn last_update(&self) -> Instant {
+        self.last_update
+            .lock()
+            .map(|x| *x)
+            .unwrap_or_else(|_| Instant::now()) // XXX(eliza): ew
+    }
+}
+
+impl store::FmtChildren for Metrics {
+    type ChildLabels = Eos;
+    type ChildMetric = EosMetrics;
+
+    fn with_children<F>(&self, mut f: F) -> fmt::Result
+    where
+        F: FnMut(&Self::ChildLabels, &Self::ChildMetric) -> fmt::Result,
+    {
+        if let Ok(by_eos) = self.by_eos.lock() {
+            for (eos, metric) in by_eos.iter() {
+                f(eos, metric)?;
+            }
+        }
+
+        Ok(())
     }
 }
