@@ -34,7 +34,8 @@ jobs:
       image: docker://rust:1.47.0-buster
     steps:
       - uses: actions/checkout@v1
-      - run: make check
+      # Iterate through all subcrates to ensure each compiles indpendently.
+      - run: for d in $(for toml in $(find . -name Cargo.toml) ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
   test:
     timeout-minutes: 15
