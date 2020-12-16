@@ -62,8 +62,7 @@ where
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
         .push(svc::layer::mk(NewRequireIdentity::new))
         .push(http::override_authority::Layer::new(vec![
-            #[allow(clippy::borrow_interior_mutable_const)]
-            ::http::header::HOST.as_str(),
+            "host",
             CANONICAL_DST_HEADER,
         ]))
         .push_on_response(svc::layers().box_http_response())
