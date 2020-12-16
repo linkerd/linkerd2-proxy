@@ -1612,10 +1612,10 @@ dependencies = [
  "futures 0.3.5",
  "hex",
  "http",
+ "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-stack",
  "rand 0.7.2",
- "tokio 0.2.23",
  "tower",
  "tracing",
 ]
