@@ -14,4 +14,4 @@ tower = { version = "0.4", default-features = false, features = ["load"]}
 tokio = { version = "0.3", features = ["macros"]}
 
 [dev-dependencies]
-tokio-test = "0.2"
+tokio-test = "0.3"

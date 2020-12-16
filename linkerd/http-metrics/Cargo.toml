@@ -8,7 +8,6 @@ publish = false
 [dependencies]
 bytes = "0.6"
 futures = "0.3"
-h2 = { git = "https://github.com/hyperium/h2" }
 http = "0.2"
 http-body = "0.4"
 hyper = "0.14.0-dev"
