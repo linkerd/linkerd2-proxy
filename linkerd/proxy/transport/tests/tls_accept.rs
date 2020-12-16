@@ -133,7 +133,7 @@ where
             Conditional::Some(ClientTls(crtkey)),
             Conditional::Some(name),
         ),
-        Conditional::None(reason) => (Conditional::None(reason.clone()), Conditional::None(reason)),
+        Conditional::None(reason) => (Conditional::None(reason), Conditional::None(reason)),
     };
 
     // A future that will receive a single connection.

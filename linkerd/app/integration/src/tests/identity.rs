@@ -234,7 +234,7 @@ async fn refresh() {
 
     tokio::time::sleep(how_long).await;
 
-    assert_eventually!(refreshed.load(Ordering::SeqCst) == true);
+    assert_eventually!(refreshed.load(Ordering::SeqCst));
 }
 
 mod require_id_header {

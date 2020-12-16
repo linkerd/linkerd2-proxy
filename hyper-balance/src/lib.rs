@@ -438,7 +438,7 @@ mod tests {
         ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
             let mut this = self.as_mut();
             assert!(this.0.is_empty());
-            Poll::Ready(Ok(this.1.take().into()))
+            Poll::Ready(Ok(this.1.take()))
         }
     }
 

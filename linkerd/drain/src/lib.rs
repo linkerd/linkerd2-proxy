@@ -216,13 +216,13 @@ mod tests {
             poll_cnt: AtomicUsize::new(0),
         });
 
-        let watch1 = task::spawn(rx.clone().watch(TestMeFut(fut1.clone()), |fut| {
-            fut.0.draining.store(true, Relaxed)
-        }));
+        let watch1 = task::spawn(
+            rx.clone()
+                .watch(TestMeFut(fut1), |fut| fut.0.draining.store(true, Relaxed)),
+        );
 
-        let watch2 = task::spawn(rx.watch(TestMeFut(fut2.clone()), |fut| {
-            fut.0.draining.store(true, Relaxed)
-        }));
+        let watch2 =
+            task::spawn(rx.watch(TestMeFut(fut2), |fut| fut.0.draining.store(true, Relaxed)));
 
         let mut draining = task::spawn(tx.drain());
 

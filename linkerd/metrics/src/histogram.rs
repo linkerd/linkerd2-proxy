@@ -275,6 +275,7 @@ impl cmp::PartialOrd<f64> for Bucket {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -282,7 +283,7 @@ mod tests {
     use std::collections::HashMap;
     use std::u64;
 
-    static BOUNDS: &'static Bounds = &Bounds(&[
+    static BOUNDS: &Bounds = &Bounds(&[
         Bucket::Le(0.010),
         Bucket::Le(0.020),
         Bucket::Le(0.030),

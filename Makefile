@@ -90,7 +90,7 @@ fmt:
 
 .PHONY: lint
 lint:
-	$(CARGO_CLIPPY)
+	$(CARGO_CLIPPY) --all-targets
 
 
 .PHONY: shellcheck

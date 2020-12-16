@@ -3,6 +3,8 @@
 #![deny(warnings, rust_2018_idioms)]
 #![recursion_limit = "256"]
 #![type_length_limit = "16289823"]
+// It's not clear where this originates.
+#![allow(clippy::eval_order_dependence)]
 
 mod test_env;
 
