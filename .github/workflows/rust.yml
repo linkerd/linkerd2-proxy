@@ -17,6 +17,16 @@ jobs:
       - run: rustup component add rustfmt
       - run: make check-fmt
 
+  clippy:
+    timeout-minutes: 5
+    runs-on: ubuntu-18.04
+    container:
+      image: docker://rust:1.47.0-buster
+    steps:
+      - uses: actions/checkout@v1
+      - run: rustup component add clippy
+      - run: make lint
+
   check:
     timeout-minutes: 5
     runs-on: ubuntu-18.04

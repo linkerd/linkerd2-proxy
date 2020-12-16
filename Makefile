@@ -25,6 +25,7 @@ CARGO ?= cargo
 CARGO_BUILD = $(CARGO) build --frozen $(RELEASE) --target $(CARGO_TARGET)
 CARGO_TEST = $(CARGO) test --frozen $(RELEASE) --target $(CARGO_TARGET)
 CARGO_FMT = $(CARGO) fmt --all
+CARGO_CLIPPY = $(CARGO) clippy
 
 DOCKER = docker
 DOCKER_BUILD = docker build
@@ -86,6 +87,11 @@ check-fmt:
 .PHONY: fmt
 fmt:
 	$(CARGO_FMT)
+
+.PHONY: lint
+lint:
+	$(CARGO_CLIPPY)
+
 
 .PHONY: shellcheck
 shellcheck:
