@@ -90,6 +90,6 @@ impl<F: TryFuture> Future for MakeFuture<F> {
             None => Timeout::passthru(inner),
         };
 
-        Poll::Ready(Ok(svc.into()))
+        Poll::Ready(Ok(svc))
     }
 }

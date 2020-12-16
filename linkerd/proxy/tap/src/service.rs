@@ -2,7 +2,6 @@ use super::iface::{Tap, TapPayload, TapResponse};
 use super::registry::Registry;
 use super::Inspect;
 use futures::{ready, TryFuture};
-use http;
 use hyper::body::HttpBody;
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_stack::NewService;

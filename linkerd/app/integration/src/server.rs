@@ -278,21 +278,21 @@ enum Run {
     Http2,
 }
 
-struct Route(
-    Box<
-        dyn Fn(
-                Request<ReqBody>,
-            ) -> Pin<
-                Box<
-                    dyn Future<Output = Result<http::Response<Bytes>, BoxError>>
-                        + Send
-                        + Sync
-                        + 'static,
-                >,
-            > + Send
-            + Sync,
-    >,
-);
+struct Route(RouteFuture);
+
+type RouteFuture = Box<
+    dyn Fn(
+            Request<ReqBody>,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<http::Response<Bytes>, BoxError>>
+                    + Send
+                    + Sync
+                    + 'static,
+            >,
+        > + Send
+        + Sync,
+>;
 
 impl Route {
     fn string(body: &str) -> Route {
@@ -343,11 +343,13 @@ impl Svc {
     }
 }
 
+type SvcFuture =
+    Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, BoxError>> + Send + 'static>>;
+
 impl tower::Service<Request<hyper::Body>> for Svc {
     type Response = Response<hyper::Body>;
     type Error = BoxError;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Response<hyper::Body>, Self::Error>> + Send + 'static>>;
+    type Future = SvcFuture;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -356,10 +358,7 @@ impl tower::Service<Request<hyper::Body>> for Svc {
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
         let req =
             req.map(|body| Box::pin(body.map(|chunk| chunk.expect("body error!"))) as ReqBody);
-        Box::pin(
-            self.route(req)
-                .map_ok(|res| res.map(|s| hyper::Body::from(s))),
-        )
+        Box::pin(self.route(req).map_ok(|res| res.map(hyper::Body::from)))
     }
 }
 

@@ -42,7 +42,7 @@ where
     type Service = RequireIdentity<N::Service>;
 
     fn new_service(&mut self, target: Endpoint) -> Self::Service {
-        let peer_identity = target.peer_identity().clone();
+        let peer_identity = target.peer_identity();
         let inner = self.inner.new_service(target);
         RequireIdentity {
             peer_identity,
@@ -53,6 +53,9 @@ where
 
 // === impl RequireIdentity ===
 
+type ResponseFuture<F, T, E> =
+    Either<future::Ready<Result<T, Error>>, future::MapErr<F, fn(E) -> Error>>;
+
 impl<S, A> svc::Service<http::Request<A>> for RequireIdentity<S>
 where
     S: svc::Service<http::Request<A>>,
@@ -60,10 +63,7 @@ where
 {
     type Response = S::Response;
     type Error = Error;
-    type Future = Either<
-        future::Ready<Result<Self::Response, Self::Error>>,
-        future::MapErr<S::Future, fn(S::Error) -> Error>,
-    >;
+    type Future = ResponseFuture<S::Future, S::Response, S::Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)

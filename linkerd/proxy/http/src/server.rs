@@ -98,6 +98,8 @@ where
 
 // === impl ServeHttp ===
 
+type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+
 impl<I, F, H> Service<PrefixedIo<I>> for ServeHttp<F, H>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
@@ -116,11 +118,10 @@ where
 {
     type Response = ();
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = ServeFuture;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(().into()))
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, io: PrefixedIo<I>) -> Self::Future {

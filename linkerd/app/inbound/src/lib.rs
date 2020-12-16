@@ -53,6 +53,7 @@ type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
 
 // === impl Config ===
 
+#[allow(clippy::too_many_arguments)]
 impl Config {
     pub fn build<L, S, P>(
         self,
@@ -223,9 +224,7 @@ impl Config {
             // Records metrics for each `Target`.
             .push(metrics.http_endpoint.into_layer::<classify::Response>())
             .push_on_response(TraceContext::layer(
-                span_sink
-                    .clone()
-                    .map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
+                span_sink.map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             ));
 
         let target = endpoint
@@ -387,7 +386,7 @@ impl Config {
             svc::stack(tcp_forward)
                 .push_map_target(TcpEndpoint::from)
                 .into_inner(),
-            drain.clone(),
+            drain,
         ))
         .check_new_clone::<(Option<http::Version>, TcpAccept)>()
         .push_cache(cache_max_idle_age)
@@ -438,10 +437,7 @@ impl Config {
             .push_request_filter(require_identity)
             .push(metrics.transport.layer_accept())
             .push_map_target(TcpAccept::from)
-            .push(tls::DetectTls::layer(
-                identity.clone(),
-                detect_protocol_timeout,
-            ))
+            .push(tls::DetectTls::layer(identity, detect_protocol_timeout))
             .push_switch(
                 self.disable_protocol_detection_for_ports,
                 svc::stack(tcp_forward)

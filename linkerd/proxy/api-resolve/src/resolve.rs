@@ -45,6 +45,9 @@ where
 type UpdatesStream =
     Pin<Box<dyn Stream<Item = Result<Update<Metadata>, grpc::Status>> + Send + 'static>>;
 
+type ResolveFuture =
+    Pin<Box<dyn Future<Output = Result<UpdatesStream, grpc::Status>> + Send + 'static>>;
+
 impl<T, S> Service<T> for Resolve<S>
 where
     T: ToString,
@@ -57,8 +60,7 @@ where
 {
     type Response = UpdatesStream;
     type Error = grpc::Status;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = ResolveFuture;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

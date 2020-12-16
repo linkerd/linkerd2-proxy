@@ -46,9 +46,7 @@ pub struct IdentityProxy(());
 
 impl<T> NewService<T> for IdentityProxy {
     type Service = ();
-    fn new_service(&mut self, _: T) -> Self::Service {
-        ()
-    }
+    fn new_service(&mut self, _: T) -> Self::Service {}
 }
 
 #[allow(dead_code)]

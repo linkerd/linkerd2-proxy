@@ -1,15 +1,12 @@
 use std::future::Future;
 use tracing_futures::Instrument;
 
-#[derive(Clone, Debug)]
-pub struct Executor {
-    _p: (),
-}
+#[derive(Clone, Debug, Default)]
+pub struct Executor(());
 
 impl Executor {
-    #[inline]
     pub fn new() -> Self {
-        Self { _p: () }
+        Self(())
     }
 }
 

@@ -44,7 +44,6 @@ where
 }
 
 pub mod request {
-    use http;
     use http::header::AsHeaderName;
     use linkerd2_stack::Proxy;
     use std::task::{Context, Poll};
@@ -99,7 +98,6 @@ pub mod request {
 
 pub mod response {
     use futures::{ready, Future, TryFuture};
-    use http;
     use http::header::AsHeaderName;
     use linkerd2_error::Error;
     use pin_project::pin_project;

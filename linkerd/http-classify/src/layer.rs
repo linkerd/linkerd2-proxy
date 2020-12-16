@@ -1,7 +1,7 @@
 use super::{CanClassify, Classify};
 use linkerd2_stack as stack;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Layer(());
 
 #[derive(Clone, Debug)]

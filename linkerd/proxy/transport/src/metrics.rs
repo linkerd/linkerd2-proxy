@@ -172,7 +172,7 @@ impl<K: Eq + Hash + FmtLabels> Inner<K> {
     }
 
     fn get_or_default(&mut self, k: K) -> &Arc<Metrics> {
-        self.0.entry(k).or_insert_with(|| Default::default())
+        self.0.entry(k).or_insert_with(Default::default)
     }
 }
 

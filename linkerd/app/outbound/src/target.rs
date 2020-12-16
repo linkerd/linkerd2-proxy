@@ -69,7 +69,7 @@ impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
         const NO_TLS: tls::Conditional<identity::Name> =
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS.into())
+        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS)
     }
 }
 
@@ -120,7 +120,7 @@ impl<P> Logical<P> {
     pub fn should_resolve(&self) -> bool {
         if let Some(p) = self.profile.as_ref() {
             let p = p.borrow();
-            p.endpoint.is_none() && (p.name.is_some() || p.targets.len() > 0)
+            p.endpoint.is_none() && (p.name.is_some() || !p.targets.is_empty())
         } else {
             false
         }
@@ -199,7 +199,7 @@ impl<P> Endpoint<P> {
                 },
             },
             Some((addr, metadata)) => Self {
-                addr: addr.into(),
+                addr,
                 identity: metadata
                     .identity()
                     .cloned()
@@ -241,7 +241,7 @@ impl<P> tls::HasPeerIdentity for Endpoint<P> {
 
 impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(self.clone().into())
+        transport::labels::Key::Connect(self.into())
     }
 }
 
@@ -281,7 +281,7 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             .cloned()
             .map(Conditional::Some)
             .unwrap_or_else(|| {
-                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery.into())
+                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)
             });
 
         Endpoint {

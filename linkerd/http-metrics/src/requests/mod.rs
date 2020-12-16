@@ -1,5 +1,4 @@
 use super::{LastUpdate, Registry, Report};
-use http;
 use indexmap::IndexMap;
 use linkerd2_http_classify::ClassifyResponse;
 use linkerd2_metrics::{latency, Counter, FmtMetrics, Histogram};

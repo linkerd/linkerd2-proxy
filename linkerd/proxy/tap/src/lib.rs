@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-use http;
+
 use indexmap::IndexMap;
 use linkerd2_conditional::Conditional;
 use linkerd2_identity as identity;
@@ -82,9 +82,7 @@ pub trait Inspect {
 /// for Registry/Layer/grpc, but need not be implemented outside of the `tap`
 /// module.
 mod iface {
-    use http;
-    use hyper::body::Buf;
-    use hyper::body::HttpBody;
+    use hyper::body::{Buf, HttpBody};
     use linkerd2_proxy_http::HasH2Reason;
 
     pub trait Tap: Clone {

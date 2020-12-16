@@ -16,11 +16,8 @@ struct Inner<T> {
     taps_send: watch::Sender<Vec<T>>,
 }
 
-impl<T> Registry<T>
-where
-    T: iface::Tap + Clone,
-{
-    pub fn new() -> Self {
+impl<T> Default for Registry<T> {
+    fn default() -> Self {
         let (taps_send, taps_recv) = watch::channel(vec![]);
         let inner = Inner {
             taps: Vec::default(),
@@ -30,6 +27,15 @@ where
             inner: Arc::new(Mutex::new(inner)),
             taps_recv,
         }
+    }
+}
+
+impl<T> Registry<T>
+where
+    T: iface::Tap + Clone,
+{
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn get_taps(&self) -> Vec<T> {
@@ -45,7 +51,7 @@ where
 
     pub async fn clean(self, wakeup: impl Stream) {
         futures::pin_mut!(wakeup);
-        while let Some(_) = wakeup.next().await {
+        while wakeup.next().await.is_some() {
             if let Ok(mut inner) = self.inner.lock() {
                 let count = inner.taps.len();
                 inner.taps.retain(|tap| tap.can_tap_more());

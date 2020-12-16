@@ -131,10 +131,7 @@ impl TcpServer {
                     let write = cb(vec).into();
                     sock.write_all(&write).await
                 }
-                .map(|r| match r {
-                    Err(e) => panic!("tcp server error: {}", e),
-                    _ => {}
-                }),
+                .map(|r| r.expect("TCP server must not fail")),
             )
         })
     }

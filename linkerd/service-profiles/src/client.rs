@@ -64,22 +64,24 @@ enum State<B> {
         backoff: Option<B>,
     },
     Waiting {
-        future: Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            tonic::Response<tonic::Streaming<api::DestinationProfile>>,
-                            grpc::Status,
-                        >,
-                    > + Send
-                    + 'static,
-            >,
-        >,
+        future: RspFuture,
         backoff: Option<B>,
     },
     Streaming(#[pin] grpc::Streaming<api::DestinationProfile>),
     Backoff(Option<B>),
 }
+
+type RspFuture = Pin<
+    Box<
+        dyn Future<
+                Output = Result<
+                    tonic::Response<tonic::Streaming<api::DestinationProfile>>,
+                    grpc::Status,
+                >,
+            > + Send
+            + 'static,
+    >,
+>;
 
 // === impl Client ===
 
@@ -294,7 +296,7 @@ where
                 StateProj::Streaming(s) => {
                     trace!("streaming");
                     let status = match ready!(Self::poll_rx(s, cx)) {
-                        Some(Ok(profile)) => return Poll::Ready(Ok(profile.into())),
+                        Some(Ok(profile)) => return Poll::Ready(Ok(profile)),
                         None => grpc::Status::new(grpc::Code::Ok, ""),
                         Some(Err(status)) => status,
                     };

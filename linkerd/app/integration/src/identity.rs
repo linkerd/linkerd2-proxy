@@ -17,7 +17,7 @@ pub struct Identity {
     pub server_config: Arc<rustls::ServerConfig>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Controller {
     expect_calls: Arc<Mutex<VecDeque<Certify>>>,
 }
@@ -146,7 +146,7 @@ impl Identity {
 
         let certify_rsp = certs.response();
         let (client_config, server_config) = Identity::configs(&trust_anchors, &certs, key);
-        let mut env = TestEnv::new();
+        let mut env = TestEnv::default();
 
         env.put(app::env::ENV_IDENTITY_DIR, id_dir);
         env.put(app::env::ENV_IDENTITY_TOKEN_FILE, token);
@@ -163,23 +163,17 @@ impl Identity {
 
     pub fn service(&self) -> Controller {
         let rsp = self.certify_rsp.clone();
-        Controller::new().certify(move |_req| {
+        Controller::default().certify(move |_req| {
             let expiry = SystemTime::now() + Duration::from_secs(666);
             pb::CertifyResponse {
                 valid_until: Some(expiry.into()),
-                ..rsp.clone()
+                ..rsp
             }
         })
     }
 }
 
 impl Controller {
-    pub fn new() -> Self {
-        Self {
-            expect_calls: Arc::new(Mutex::new(VecDeque::new())),
-        }
-    }
-
     pub fn certify<F>(self, f: F) -> Self
     where
         F: FnOnce(pb::CertifyRequest) -> pb::CertifyResponse + Send + 'static,

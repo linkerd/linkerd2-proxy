@@ -495,10 +495,10 @@ impl TryFrom<api::observe_request::Extract> for ExtractKind {
     fn try_from(req: api::observe_request::Extract) -> Result<Self, Self::Error> {
         match req.extract {
             Some(api::observe_request::extract::Extract::Http(inner)) => {
-                let headers = match inner.extract {
-                    Some(api::observe_request::extract::http::Extract::Headers(_)) => true,
-                    _ => false,
-                };
+                let headers = matches!(
+                    inner.extract,
+                    Some(api::observe_request::extract::http::Extract::Headers(_))
+                );
                 Ok(ExtractKind::Http { headers })
             }
             _ => Err(()),

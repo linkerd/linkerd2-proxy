@@ -69,13 +69,15 @@ impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
     }
 }
 
-impl<E: fmt::Debug> Connect<E> {
-    pub fn new() -> Self {
+impl<E> Default for Connect<E> {
+    fn default() -> Self {
         Self {
-            endpoints: Arc::new(Mutex::new(HashMap::new())),
+            endpoints: Default::default(),
         }
     }
+}
 
+impl<E: fmt::Debug> Connect<E> {
     pub fn endpoint(
         self,
         endpoint: impl Into<SocketAddr>,

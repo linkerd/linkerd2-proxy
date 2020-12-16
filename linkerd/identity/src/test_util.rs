@@ -25,7 +25,7 @@ pub static BAR_NS1: Identity = Identity {
 impl Identity {
     pub fn trust_anchors(&self) -> TrustAnchors {
         let pem = ::std::str::from_utf8(self.trust_anchors).expect("utf-8");
-        TrustAnchors::from_pem(pem).unwrap_or_else(|| TrustAnchors::empty())
+        TrustAnchors::from_pem(pem).unwrap_or_else(TrustAnchors::empty)
     }
 
     pub fn key(&self) -> Key {
@@ -36,7 +36,7 @@ impl Identity {
         const HOUR: Duration = Duration::from_secs(60 * 60);
 
         let n = Name::from_str(&self.name).expect("name must be valid");
-        let der = self.crt.iter().map(|b| *b).collect();
+        let der = self.crt.iter().copied().collect();
         Crt::new(n, der, vec![], SystemTime::now() + HOUR)
     }
 

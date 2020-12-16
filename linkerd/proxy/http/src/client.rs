@@ -61,6 +61,9 @@ impl From<crate::Version> for Settings {
 
 // === impl MakeClient ===
 
+type MakeFuture<C, T, B> =
+    Pin<Box<dyn Future<Output = Result<Client<C, T, B>, Error>> + Send + 'static>>;
+
 impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
     T: Clone + Send + Sync + 'static,
@@ -75,7 +78,7 @@ where
 {
     type Response = Client<C, T, B>;
     type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Client<C, T, B>, Error>> + Send + 'static>>;
+    type Future = MakeFuture<C, T, B>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

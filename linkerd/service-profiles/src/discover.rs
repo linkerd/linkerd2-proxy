@@ -26,6 +26,8 @@ pub struct Discover<G, M> {
     inner: M,
 }
 
+type MakeFuture<S, E> = Pin<Box<dyn Future<Output = Result<S, E>> + Send + 'static>>;
+
 impl<T, G, M> NewService<T> for Discover<G, M>
 where
     T: Clone + Send + 'static,
@@ -34,10 +36,7 @@ where
     G::Error: Send,
     M: NewService<(Option<Receiver>, T)> + Clone + Send + 'static,
 {
-    type Service = FutureService<
-        Pin<Box<dyn Future<Output = Result<M::Service, G::Error>> + Send + 'static>>,
-        M::Service,
-    >;
+    type Service = FutureService<MakeFuture<M::Service, G::Error>, M::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let mut inner = self.inner.clone();

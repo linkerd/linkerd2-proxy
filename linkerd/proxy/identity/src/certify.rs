@@ -162,7 +162,7 @@ impl Local {
                 return Err(LostDaemon);
             }
         }
-        return Ok(self);
+        Ok(self)
     }
 }
 

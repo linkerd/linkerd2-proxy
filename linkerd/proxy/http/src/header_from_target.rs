@@ -1,5 +1,4 @@
 use futures::{ready, TryFuture};
-use http;
 use http::header::{HeaderValue, IntoHeaderName};
 use linkerd2_stack::NewService;
 use pin_project::pin_project;

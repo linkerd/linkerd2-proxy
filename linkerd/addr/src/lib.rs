@@ -30,13 +30,17 @@ pub enum Error {
 
 // === impl Addr ===
 
-impl Addr {
-    pub fn from_str(hostport: &str) -> Result<Self, Error> {
+impl FromStr for Addr {
+    type Err = Error;
+
+    fn from_str(hostport: &str) -> Result<Self, Error> {
         SocketAddr::from_str(hostport)
             .map(Addr::Socket)
             .or_else(|_| NameAddr::from_str(hostport).map(Addr::Name))
     }
+}
 
+impl Addr {
     pub fn from_str_and_port(host: &str, port: u16) -> Result<Self, Error> {
         IpAddr::from_str(host)
             .map(|ip| Addr::Socket((ip, port).into()))
@@ -149,8 +153,10 @@ impl From<(Name, u16)> for NameAddr {
     }
 }
 
-impl NameAddr {
-    pub fn from_str(hostport: &str) -> Result<Self, Error> {
+impl FromStr for NameAddr {
+    type Err = Error;
+
+    fn from_str(hostport: &str) -> Result<Self, Error> {
         let mut parts = hostport.rsplitn(2, ':');
         let port = parts
             .next()
@@ -159,7 +165,9 @@ impl NameAddr {
         let host = parts.next().ok_or(Error::InvalidHost)?;
         Self::from_str_and_port(host, port)
     }
+}
 
+impl NameAddr {
     pub fn from_str_and_port(host: &str, port: u16) -> Result<Self, Error> {
         if host.is_empty() {
             return Err(Error::InvalidHost);

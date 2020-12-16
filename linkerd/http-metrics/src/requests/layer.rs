@@ -1,6 +1,5 @@
 use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
 use futures::{ready, TryFuture};
-use http;
 use http_body::Body;
 use linkerd2_error::Error;
 use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
@@ -244,7 +243,7 @@ where
             metrics: this.metrics.clone(),
             _p: PhantomData,
         };
-        Poll::Ready(Ok(service.into()))
+        Poll::Ready(Ok(service))
     }
 }
 
@@ -390,7 +389,7 @@ where
                     latency_recorded: false,
                     inner,
                 };
-                Ok(http::Response::from_parts(head, body).into())
+                Ok(http::Response::from_parts(head, body))
             }
             Err(e) => {
                 let e = e.into();
@@ -503,7 +502,7 @@ where
         let status_metrics = metrics
             .by_status
             .entry(Some(*this.status))
-            .or_insert_with(|| StatusMetrics::default());
+            .or_insert_with(StatusMetrics::default);
 
         status_metrics.latency.add(now - *this.stream_open_at);
 
@@ -547,12 +546,12 @@ fn measure_class<C: Hash + Eq>(
     let status_metrics = metrics
         .by_status
         .entry(status)
-        .or_insert_with(|| StatusMetrics::default());
+        .or_insert_with(StatusMetrics::default);
 
     let class_metrics = status_metrics
         .by_class
         .entry(class)
-        .or_insert_with(|| ClassMetrics::default());
+        .or_insert_with(ClassMetrics::default);
 
     class_metrics.total.incr();
 }

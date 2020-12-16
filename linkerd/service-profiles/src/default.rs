@@ -14,6 +14,12 @@ impl<S> RecoverDefault<S> {
     }
 }
 
+type RspFuture<F, E> = future::OrElse<
+    F,
+    future::Ready<Result<Option<Receiver>, Error>>,
+    fn(E) -> future::Ready<Result<Option<Receiver>, Error>>,
+>;
+
 impl<T, S> tower::Service<T> for RecoverDefault<S>
 where
     S: GetProfile<T>,
@@ -21,11 +27,7 @@ where
 {
     type Response = Option<Receiver>;
     type Error = Error;
-    type Future = future::OrElse<
-        S::Future,
-        future::Ready<Result<Option<Receiver>, Error>>,
-        fn(S::Error) -> future::Ready<Result<Option<Receiver>, Error>>,
-    >;
+    type Future = RspFuture<S::Future, S::Error>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
         Poll::Ready(Ok(()))

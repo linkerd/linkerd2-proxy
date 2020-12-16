@@ -37,7 +37,6 @@ pub struct Http11UpgradeHalves {
     pub server: Http11Upgrade,
     /// The "client" half.
     pub client: Http11Upgrade,
-    _inner: (),
 }
 
 /// A marker type inserted into Extensions to signal it was an HTTP CONNECT
@@ -71,7 +70,7 @@ impl Http11Upgrade {
     ///
     /// Each handle is used to insert 1 half of the upgrade. When both handles
     /// have inserted, the upgrade future will be spawned onto the executor.
-    pub fn new(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
+    pub fn halves(upgrade_drain_signal: drain::Watch) -> Http11UpgradeHalves {
         let inner = Arc::new(Inner {
             server: TryLock::new(None),
             client: TryLock::new(None),
@@ -85,9 +84,8 @@ impl Http11Upgrade {
             },
             client: Http11Upgrade {
                 half: Half::Client,
-                inner: inner,
+                inner,
             },
-            _inner: (),
         }
     }
 
@@ -173,6 +171,8 @@ impl<S> Service<S> {
     }
 }
 
+type ResponseFuture<F, B, E> = Either<F, future::Ready<Result<http::Response<B>, E>>>;
+
 impl<S, B> tower::Service<http::Request<hyper::Body>> for Service<S>
 where
     S: tower::Service<http::Request<UpgradeBody>, Response = http::Response<B>>,
@@ -180,7 +180,7 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Either<S::Future, future::Ready<Result<http::Response<B>, Self::Error>>>;
+    type Future = ResponseFuture<S::Future, B, S::Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.service.poll_ready(cx)
@@ -205,7 +205,7 @@ where
             // cannot be removed.
 
             // Setup HTTP Upgrade machinery.
-            let halves = Http11Upgrade::new(self.upgrade_drain_signal.clone());
+            let halves = Http11Upgrade::halves(self.upgrade_drain_signal.clone());
             req.extensions_mut().insert(halves.client);
             let on_upgrade = hyper::upgrade::on(&mut req);
 

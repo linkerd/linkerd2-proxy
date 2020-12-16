@@ -5,7 +5,7 @@ use linkerd2_io::{self as io, AsyncReadExt};
 use linkerd2_proxy_transport::Detect;
 use tracing::{debug, trace};
 
-const H2_PREFACE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
 #[derive(Clone, Debug, Default)]
 pub struct DetectHttp(());
@@ -106,9 +106,9 @@ mod tests {
     use bytes::BufMut;
     use tokio_test::io;
 
-    const HTTP11_LINE: &'static [u8] = b"GET / HTTP/1.1\r\n";
-    const H2_AND_GARBAGE: &'static [u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\ngarbage";
-    const GARBAGE: &'static [u8] =
+    const HTTP11_LINE: &[u8] = b"GET / HTTP/1.1\r\n";
+    const H2_AND_GARBAGE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\ngarbage";
+    const GARBAGE: &[u8] =
         b"garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage garbage";
 
     #[tokio::test(flavor = "current_thread")]

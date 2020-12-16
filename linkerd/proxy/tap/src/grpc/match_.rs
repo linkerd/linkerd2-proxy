@@ -1,5 +1,4 @@
 use crate::Inspect;
-use http;
 use indexmap::IndexMap;
 use ipnet::{Ipv4Net, Ipv6Net};
 use linkerd2_proxy_api::net::ip_address;
@@ -149,7 +148,7 @@ impl TryFrom<observe_request::r#match::Label> for LabelMatch {
 
         Ok(LabelMatch {
             key: m.key.clone(),
-            value: m.value.clone(),
+            value: m.value,
         })
     }
 }
@@ -285,7 +284,7 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
                     Ok(HttpMatch::Scheme(http::uri::Scheme::HTTPS))
                 }
                 Type::Registered(_) => Err(InvalidMatch::InvalidScheme),
-                Type::Unregistered(ref s) => http::uri::Scheme::from_str(s.as_str().into())
+                Type::Unregistered(ref s) => http::uri::Scheme::from_str(s.as_str())
                     .map(HttpMatch::Scheme)
                     .map_err(|_| InvalidMatch::InvalidScheme),
             }),
@@ -299,12 +298,9 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
             Pb::Authority(a) => a
                 .r#match
                 .ok_or(InvalidMatch::Empty)
-                .map(|a| HttpMatch::Authority(a)),
+                .map(HttpMatch::Authority),
 
-            Pb::Path(p) => p
-                .r#match
-                .ok_or(InvalidMatch::Empty)
-                .map(|p| HttpMatch::Path(p)),
+            Pb::Path(p) => p.r#match.ok_or(InvalidMatch::Empty).map(HttpMatch::Path),
         })
     }
 }

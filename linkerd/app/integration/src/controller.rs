@@ -20,7 +20,7 @@ pub fn new_unordered() -> Controller {
 }
 
 pub fn identity() -> identity::Controller {
-    identity::Controller::new()
+    identity::Controller::default()
 }
 
 pub type Labels = HashMap<String, String>;
@@ -74,7 +74,7 @@ impl Controller {
     pub fn destination_tx(&self, dest: impl Into<String>) -> DstSender {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut path = dest.into();
-        if !path.contains(":") {
+        if !path.contains(':') {
             path.push_str(":80");
         };
         let dst = pb::GetDestination {
@@ -96,7 +96,7 @@ impl Controller {
 
     pub fn destination_fail(&self, dest: impl Into<String>, status: grpc::Status) {
         let mut path = dest.into();
-        if !path.contains(":") {
+        if !path.contains(':') {
             path.push_str(":80");
         };
         let dst = pb::GetDestination {
@@ -137,7 +137,7 @@ impl Controller {
     pub fn profile_tx(&self, dest: impl Into<String>) -> ProfileSender {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut path = dest.into();
-        if !path.contains(":") {
+        if !path.contains(':') {
             path.push_str(":80");
         };
         let dst = pb::GetDestination {
@@ -480,7 +480,6 @@ pub fn destination_remove_none() -> pb::Update {
     pb::Update {
         update: Some(pb::update::Update::Remove(pb::AddrSet {
             addrs: Vec::new(),
-            ..Default::default()
         })),
     }
 }

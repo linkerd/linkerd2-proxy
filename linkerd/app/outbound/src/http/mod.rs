@@ -36,7 +36,7 @@ impl From<(http::Version, tcp::Logical)> for Logical {
 }
 
 impl Logical {
-    pub fn into_route((route, logical): (profiles::http::Route, Self)) -> dst::Route {
+    pub fn mk_route((route, logical): (profiles::http::Route, Self)) -> dst::Route {
         use linkerd2_app_core::metrics::Direction;
         dst::Route {
             route,
@@ -81,7 +81,7 @@ impl tap::Inspect for Endpoint {
         &self,
         _: &'a http::Request<B>,
     ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+        Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {

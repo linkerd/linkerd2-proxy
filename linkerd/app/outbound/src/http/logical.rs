@@ -111,7 +111,7 @@ where
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::Layer::new())
-                .push_map_target(Logical::into_route)
+                .push_map_target(Logical::mk_route)
                 .into_inner(),
         ))
         .check_new_service::<Logical, http::Request<_>>()

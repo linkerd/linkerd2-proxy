@@ -13,8 +13,10 @@ use tracing::Instrument;
 pub struct Server {
     settings: hyper::server::conn::Http,
     identity: Option<PeerIdentity>,
-    f: Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>,
+    f: HandleFuture,
 }
+
+type HandleFuture = Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>;
 
 impl Default for Server {
     fn default() -> Self {

@@ -6,9 +6,10 @@ use std::thread;
 use tracing_futures::Instrument;
 
 pub fn new() -> Proxy {
-    Proxy::new()
+    Proxy::default()
 }
 
+#[derive(Default)]
 pub struct Proxy {
     controller: Option<controller::Listening>,
     identity: Option<controller::Listening>,
@@ -47,22 +48,6 @@ pub struct Listening {
 }
 
 impl Proxy {
-    pub fn new() -> Self {
-        Proxy {
-            controller: None,
-            identity: None,
-
-            inbound: None,
-            outbound: None,
-
-            inbound_server: None,
-            outbound_server: None,
-
-            inbound_disable_ports_protocol_detection: None,
-            shutdown_signal: None,
-        }
-    }
-
     /// Pass a customized support `Controller` for this proxy to use.
     ///
     /// If not used, a default controller will be used.
@@ -134,7 +119,7 @@ impl Proxy {
     }
 
     pub async fn run(self) -> Listening {
-        self.run_with_test_env(TestEnv::new()).await
+        self.run_with_test_env(TestEnv::default()).await
     }
 
     pub async fn run_with_test_env(self, env: TestEnv) -> Listening {
@@ -202,9 +187,9 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     // disables most of the proxy's logs by default.
     // TODO(eliza): when we're on Rust 1.49.0+, libtest *will* capture these
     // logs, so we can use the same default filter as other test code.
-    const DEFAULT_LOG: &'static str = "error,\
-                                       linkerd2_proxy_http=off,\
-                                       linkerd2_proxy_transport=off";
+    const DEFAULT_LOG: &str = "error,\
+                               linkerd2_proxy_http=off,\
+                               linkerd2_proxy_transport=off";
 
     use app::env::Strings;
 
@@ -253,8 +238,8 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         env.put(app::env::ENV_CONTROL_LISTEN_ADDR, local_control);
     }
 
-    static IDENTITY_SVC_NAME: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
-    static IDENTITY_SVC_ADDR: &'static str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
+    static IDENTITY_SVC_NAME: &str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
+    static IDENTITY_SVC_ADDR: &str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
 
     let identity_addr = if let Some(ref identity) = identity {
         env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());

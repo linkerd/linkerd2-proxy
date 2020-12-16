@@ -374,7 +374,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         Default::default();
 
     let dst_profile_suffixes = dst_profile_suffixes?
-        .unwrap_or(parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
+        .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
 
     let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
@@ -420,10 +420,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
         outbound::Config {
-            allow_discovery: AddrMatch::new(
-                dst_profile_suffixes.clone(),
-                dst_profile_networks.clone(),
-            ),
+            allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -482,8 +479,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
         let require_identity_for_inbound_ports =
-            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
-                .unwrap_or_else(|| IndexSet::new());
+            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(
@@ -494,7 +490,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         }
 
         inbound::Config {
-            allow_discovery: NameMatch::new(dst_profile_suffixes.clone()),
+            allow_discovery: NameMatch::new(dst_profile_suffixes),
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -545,7 +541,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         min_ttl: dns_min_ttl?,
         max_ttl: dns_max_ttl?,
         resolv_conf_path: resolv_conf_path?
-            .unwrap_or(DEFAULT_RESOLV_CONF.into())
+            .unwrap_or_else(|| DEFAULT_RESOLV_CONF.into())
             .into(),
     };
 
@@ -565,7 +561,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 })
                 .unwrap_or_default();
 
-            oc_collector::Config::Enabled {
+            oc_collector::Config::Enabled(Box::new(oc_collector::EnabledConfig {
                 attributes,
                 hostname: hostname?,
                 control: ControlConfig {
@@ -573,7 +569,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     connect,
                     buffer_capacity: 10,
                 },
-            }
+            }))
         }
     };
 
@@ -637,7 +633,7 @@ fn convert_attributes_string_to_map(attributes: String) -> HashMap<String, Strin
     attributes
         .lines()
         .filter_map(|line| {
-            let mut parts = line.splitn(2, "=");
+            let mut parts = line.splitn(2, '=');
             parts.next().and_then(move |key| {
                 parts.next().map(move |val|
                 // Trim double quotes in value, present by default when attached through k8s downwardAPI
@@ -900,7 +896,7 @@ pub fn parse_control_addr<S: Strings>(
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
-            identity: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()),
+            identity: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
