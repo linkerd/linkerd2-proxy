@@ -1,5 +1,3 @@
-#![allow(clippy::large_enum_variant)]
-
 pub use linkerd2_app_core::proxy::identity::{
     certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
@@ -14,6 +12,8 @@ use std::future::Future;
 use std::pin::Pin;
 use tracing::debug;
 
+// The Disabled case is extraordinarily rare.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum Config {
     Disabled,
@@ -23,6 +23,8 @@ pub enum Config {
     },
 }
 
+// The Disabled case is extraordinarily rare.
+#[allow(clippy::large_enum_variant)]
 pub enum Identity {
     Disabled,
     Enabled {
