@@ -201,10 +201,10 @@ impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
     type Item = Result<tower::discover::Change<K, S>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        return match self.project().rx.poll_next(cx) {
+        match self.project().rx.poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(change)) => Poll::Ready(Some(Ok(change))),
             Poll::Ready(None) => Poll::Ready(None),
-        };
+        }
     }
 }

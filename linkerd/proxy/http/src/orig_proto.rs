@@ -120,13 +120,15 @@ impl<S> Downgrade<S> {
     }
 }
 
+type DowngradeFuture<F, T> = future::MapOk<F, fn(T) -> T>;
+
 impl<S, A, B> tower::Service<http::Request<A>> for Downgrade<S>
 where
     S: tower::Service<http::Request<A>, Response = http::Response<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = future::MapOk<S::Future, fn(S::Response) -> S::Response>;
+    type Future = DowngradeFuture<S::Future, S::Response>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)

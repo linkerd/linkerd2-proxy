@@ -160,7 +160,7 @@ async fn loop_outbound_http1() {
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10751));
 
-    let mut env = TestEnv::new();
+    let mut env = TestEnv::default();
     env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, listen_addr.to_string());
     let _proxy = proxy::new()
         .outbound_ip(listen_addr)
@@ -181,7 +181,7 @@ async fn loop_inbound_http1() {
 
     let listen_addr = SocketAddr::from(([127, 0, 0, 1], 10752));
 
-    let mut env = TestEnv::new();
+    let mut env = TestEnv::default();
     env.put(app::env::ENV_INBOUND_LISTEN_ADDR, listen_addr.to_string());
     let _proxy = proxy::new()
         .inbound_ip(listen_addr)
@@ -245,7 +245,7 @@ async fn test_server_speaks_first(env: TestEnv) {
 
 #[tokio::test]
 async fn tcp_server_first() {
-    test_server_speaks_first(TestEnv::new()).await;
+    test_server_speaks_first(TestEnv::default()).await;
 }
 
 #[tokio::test]
@@ -277,7 +277,7 @@ async fn tcp_server_first_tls() {
         (cert, key, trust_anchors)
     };
 
-    let env = TestEnv::new();
+    let env = TestEnv::default();
 
     // FIXME
     //env.put(app::env::ENV_TLS_CERT, cert);

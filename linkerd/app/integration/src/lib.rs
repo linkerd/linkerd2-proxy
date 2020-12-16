@@ -40,7 +40,7 @@ pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
 /// Environment variable for overriding the test patience.
-pub const ENV_TEST_PATIENCE_MS: &'static str = "RUST_TEST_PATIENCE_MS";
+pub const ENV_TEST_PATIENCE_MS: &str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);
 
 pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -216,7 +216,7 @@ pub fn running() -> (oneshot::Sender<()>, Running) {
 pub type Running = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
 
 pub fn s(bytes: &[u8]) -> &str {
-    ::std::str::from_utf8(bytes.as_ref()).unwrap()
+    ::std::str::from_utf8(bytes).unwrap()
 }
 
 /// The Rust test runner creates a thread per unit test, naming it after

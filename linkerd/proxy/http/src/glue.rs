@@ -1,7 +1,6 @@
 use crate::{upgrade::Http11Upgrade, HasH2Reason};
 use bytes::Bytes;
 use futures::TryFuture;
-use http;
 use hyper::body::HttpBody;
 use hyper::client::connect as hyper_connect;
 use linkerd2_error::Error;

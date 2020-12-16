@@ -88,6 +88,7 @@ impl<V: Into<u64>, F: Factor> Histogram<V, F> {
 }
 
 #[cfg(any(test, feature = "test_util"))]
+#[allow(clippy::float_cmp)]
 impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
     /// Assert the bucket containing `le` has a count of at least `at_least`.
     pub fn assert_bucket_at_least(&self, le: f64, at_least: f64) {
@@ -242,8 +243,8 @@ impl cmp::PartialOrd<Bucket> for Bucket {
     fn partial_cmp(&self, rhs: &Bucket) -> Option<cmp::Ordering> {
         match (self, rhs) {
             (Bucket::Inf, Bucket::Inf) => None,
-            (Bucket::Le(s), _) if *s == std::f64::NAN => None,
-            (_, Bucket::Le(r)) if *r == std::f64::NAN => None,
+            (Bucket::Le(s), _) if s.is_nan() => None,
+            (_, Bucket::Le(r)) if r.is_nan() => None,
             (Bucket::Le(_), Bucket::Inf) => Some(cmp::Ordering::Less),
             (Bucket::Inf, Bucket::Le(_)) => Some(cmp::Ordering::Greater),
             (Bucket::Le(s), Bucket::Le(r)) => s.partial_cmp(r),

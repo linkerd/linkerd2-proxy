@@ -41,6 +41,8 @@ impl<O> Gateway<O> {
     }
 }
 
+type ResponseFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
+
 impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
 where
     B: http::HttpBody + 'static,
@@ -50,8 +52,7 @@ where
 {
     type Response = O::Response;
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = ResponseFuture<O::Response>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {

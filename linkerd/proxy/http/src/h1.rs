@@ -77,7 +77,7 @@ where
     pub(crate) fn request(&mut self, mut req: http::Request<B>) -> RspFuture {
         // Marked by `upgrade`.
         let upgrade = req.extensions_mut().remove::<Http11Upgrade>();
-        let is_http_connect = req.method() == &http::Method::CONNECT;
+        let is_http_connect = req.method() == http::Method::CONNECT;
 
         // Configured by `normalize_uri` or `orig_proto::Downgrade`.
         let use_absolute_form = req.extensions_mut().remove::<WasAbsoluteForm>().is_some();
@@ -165,7 +165,7 @@ pub fn authority_from_host<B>(req: &http::Request<B>) -> Option<Authority> {
 }
 
 pub(crate) fn set_authority(uri: &mut http::Uri, auth: Authority) {
-    let mut parts = Parts::from(mem::replace(uri, Uri::default()));
+    let mut parts = Parts::from(mem::take(uri));
 
     parts.authority = Some(auth);
 
@@ -227,7 +227,7 @@ pub(crate) fn wants_upgrade<B>(req: &http::Request<B>) -> bool {
     }
 
     // HTTP/1.1 CONNECT requests are just like upgrades!
-    req.method() == &http::Method::CONNECT
+    req.method() == http::Method::CONNECT
 }
 
 /// Checks responses to determine if they are successful HTTP upgrades.
@@ -286,7 +286,7 @@ fn is_origin_form(uri: &Uri) -> bool {
 /// - `GET example.com`
 /// - `CONNECT /just-a-path
 pub(crate) fn is_bad_request<B>(req: &http::Request<B>) -> bool {
-    if req.method() == &http::Method::CONNECT {
+    if req.method() == http::Method::CONNECT {
         // CONNECT is only valid over HTTP/1.1
         if req.version() != http::Version::HTTP_11 {
             debug!("CONNECT request not valid for HTTP/1.0: {:?}", req.uri());

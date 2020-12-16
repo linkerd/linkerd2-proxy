@@ -1,6 +1,5 @@
 use crate::trace;
 use futures::prelude::*;
-use http;
 use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
@@ -58,6 +57,9 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     }
 }
 
+type ConnectFuture<B> =
+    Pin<Box<dyn Future<Output = Result<Connection<B>, Error>> + Send + 'static>>;
+
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
     C: tower::make::MakeConnection<T>,
@@ -70,8 +72,7 @@ where
 {
     type Response = Connection<B>;
     type Error = Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+    type Future = ConnectFuture<B>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)

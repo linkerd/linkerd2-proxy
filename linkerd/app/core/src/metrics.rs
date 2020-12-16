@@ -189,7 +189,7 @@ impl From<&'_ control::ControlAddr> for ControlLabels {
     fn from(c: &'_ control::ControlAddr) -> Self {
         ControlLabels {
             addr: c.addr.clone(),
-            tls_status: c.identity.clone().map(|id| TlsId::ServerId(id)).into(),
+            tls_status: c.identity.clone().map(TlsId::ServerId).into(),
         }
     }
 }

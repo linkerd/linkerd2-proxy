@@ -22,7 +22,7 @@ pub fn resolver<T>() -> crate::resolver::Profiles<T>
 where
     T: std::hash::Hash + Eq + std::fmt::Debug,
 {
-    crate::resolver::Resolver::new()
+    crate::resolver::Resolver::default()
 }
 
 pub fn with_name(name: &str) -> Profile {

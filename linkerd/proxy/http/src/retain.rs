@@ -53,6 +53,9 @@ impl<S: Clone, B> Clone for Retain<S, B> {
     }
 }
 
+type RetainFuture<S, B, E> =
+    Pin<Box<dyn Future<Output = Result<http::Response<RetainBody<S, B>>, E>> + Send + 'static>>;
+
 impl<S, Req, RspB> tower::Service<Req> for Retain<S, RspB>
 where
     S: tower::Service<Req, Response = http::Response<RspB>> + Clone + Send + 'static,
@@ -60,13 +63,7 @@ where
 {
     type Response = http::Response<RetainBody<S, RspB>>;
     type Error = S::Error;
-    type Future = Pin<
-        Box<
-            dyn Future<Output = Result<http::Response<RetainBody<S, RspB>>, S::Error>>
-                + Send
-                + 'static,
-        >,
-    >;
+    type Future = RetainFuture<S, RspB, S::Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)

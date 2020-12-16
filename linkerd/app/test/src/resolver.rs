@@ -42,11 +42,11 @@ struct State<T, E> {
 
 pub type DstReceiver<E> = mpsc::UnboundedReceiver<Result<Update<E>, Error>>;
 
-impl<T, E> Resolver<T, E>
+impl<T, E> Default for Resolver<T, E>
 where
     T: Hash + Eq,
 {
-    pub fn new() -> Self {
+    fn default() -> Self {
         Self {
             state: Arc::new(State {
                 endpoints: Mutex::new(HashMap::new()),
@@ -55,9 +55,14 @@ where
             }),
         }
     }
+}
 
+impl<T, E> Resolver<T, E>
+where
+    T: Hash + Eq,
+{
     pub fn with_handle() -> (Self, Handle<T, E>) {
-        let r = Self::new();
+        let r = Self::default();
         let handle = r.handle();
         (r, handle)
     }

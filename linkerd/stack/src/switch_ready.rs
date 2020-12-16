@@ -62,7 +62,7 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         SwitchReady::new(
             self.new_primary.new_service(target.clone()),
-            self.new_secondary.new_service(target.clone()),
+            self.new_secondary.new_service(target),
             self.switch_after,
         )
     }

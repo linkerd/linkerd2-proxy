@@ -4,11 +4,11 @@ use std::fmt;
 use std::string::String;
 use std::sync::Arc;
 
-const GIT_BRANCH: &'static str = env!("GIT_BRANCH");
-const GIT_SHA: &'static str = env!("GIT_SHA");
-const GIT_VERSION: &'static str = env!("GIT_VERSION");
-const PROFILE: &'static str = env!("PROFILE");
-const RUST_VERSION: &'static str = env!("RUST_VERSION");
+const GIT_BRANCH: &str = env!("GIT_BRANCH");
+const GIT_SHA: &str = env!("GIT_SHA");
+const GIT_VERSION: &str = env!("GIT_VERSION");
+const PROFILE: &str = env!("PROFILE");
+const RUST_VERSION: &str = env!("RUST_VERSION");
 
 metrics! {
     proxy_build_info: Gauge {

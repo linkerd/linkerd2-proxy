@@ -42,7 +42,7 @@ where
             .0
             .lock()
             .expect("stack metrics lock poisoned")
-            .entry(labels.into())
+            .entry(labels)
             .or_insert_with(Default::default)
             .clone();
         TrackServiceLayer::new(metrics)
@@ -77,17 +77,17 @@ impl<L: FmtLabels + Hash + Eq> FmtMetrics for Registry<L> {
         stack_poll_total.fmt_help(f)?;
         stack_poll_total.fmt_scopes(
             f,
-            metrics.iter().map(|(s, m)| ((s, Ready::Ready), m)),
+            metrics.iter().map(|(s, m)| ((s, Readiness::Ready), m)),
             |m| &m.ready_total,
         )?;
         stack_poll_total.fmt_scopes(
             f,
-            metrics.iter().map(|(s, m)| ((s, Ready::NotReady), m)),
+            metrics.iter().map(|(s, m)| ((s, Readiness::NotReady), m)),
             |m| &m.not_ready_total,
         )?;
         stack_poll_total.fmt_scopes(
             f,
-            metrics.iter().map(|(s, m)| ((s, Ready::Error), m)),
+            metrics.iter().map(|(s, m)| ((s, Readiness::Error), m)),
             |m| &m.error_total,
         )?;
 
@@ -98,18 +98,18 @@ impl<L: FmtLabels + Hash + Eq> FmtMetrics for Registry<L> {
     }
 }
 
-enum Ready {
+enum Readiness {
     Ready,
     NotReady,
     Error,
 }
 
-impl FmtLabels for Ready {
+impl FmtLabels for Readiness {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Ready::Ready => write!(f, "ready=\"true\""),
-            Ready::NotReady => write!(f, "ready=\"false\""),
-            Ready::Error => write!(f, "ready=\"error\""),
+            Self::Ready => write!(f, "ready=\"true\""),
+            Self::NotReady => write!(f, "ready=\"false\""),
+            Self::Error => write!(f, "ready=\"error\""),
         }
     }
 }

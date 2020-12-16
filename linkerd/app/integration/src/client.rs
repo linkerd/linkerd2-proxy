@@ -107,7 +107,7 @@ impl Client {
             task,
             tx,
             version: v,
-            tls: tls,
+            tls,
         }
     }
 
@@ -269,9 +269,8 @@ struct Conn {
 
 impl tower::Service<hyper::Uri> for Conn {
     type Response = RunningIo;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
     type Error = io::Error;
+    type Future = Pin<Box<dyn Future<Output = io::Result<RunningIo>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

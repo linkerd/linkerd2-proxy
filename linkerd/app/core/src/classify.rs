@@ -1,5 +1,4 @@
 use crate::profiles;
-use http;
 use linkerd2_error::Error;
 use linkerd2_http_classify as classify;
 pub use linkerd2_http_classify::{CanClassify, Layer};
@@ -216,12 +215,10 @@ fn h2_error(err: &Error) -> String {
 
 impl Class {
     pub(super) fn is_failure(&self) -> bool {
-        match self {
+        matches!(self,
             Class::Default(SuccessOrFailure::Failure)
             | Class::Grpc(SuccessOrFailure::Failure, _)
-            | Class::Stream(SuccessOrFailure::Failure, _) => true,
-            _ => false,
-        }
+            | Class::Stream(SuccessOrFailure::Failure, _))
     }
 }
 

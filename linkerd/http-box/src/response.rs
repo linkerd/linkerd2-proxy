@@ -5,7 +5,7 @@ use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
 use std::task::{Context, Poll};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Layer(());
 
 #[derive(Clone, Debug)]

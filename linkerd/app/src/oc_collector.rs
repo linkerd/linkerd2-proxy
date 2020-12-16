@@ -10,11 +10,14 @@ use tracing::debug;
 #[derive(Clone, Debug)]
 pub enum Config {
     Disabled,
-    Enabled {
-        control: control::Config,
-        attributes: HashMap<String, String>,
-        hostname: Option<String>,
-    },
+    Enabled(Box<EnabledConfig>),
+}
+
+#[derive(Clone, Debug)]
+pub struct EnabledConfig {
+    pub control: control::Config,
+    pub attributes: HashMap<String, String>,
+    pub hostname: Option<String>,
 }
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -23,11 +26,13 @@ pub type SpanSink = mpsc::Sender<proto::trace::v1::Span>;
 
 pub enum OcCollector {
     Disabled,
-    Enabled {
-        addr: control::ControlAddr,
-        span_sink: SpanSink,
-        task: Task,
-    },
+    Enabled(Box<EnabledCollector>),
+}
+
+pub struct EnabledCollector {
+    pub addr: control::ControlAddr,
+    pub span_sink: SpanSink,
+    pub task: Task,
 }
 
 impl Config {
@@ -43,13 +48,9 @@ impl Config {
     ) -> Result<OcCollector, Error> {
         match self {
             Config::Disabled => Ok(OcCollector::Disabled),
-            Config::Enabled {
-                control,
-                hostname,
-                attributes,
-            } => {
-                let addr = control.addr.clone();
-                let svc = control.build(dns, client_metrics, identity);
+            Config::Enabled(inner) => {
+                let addr = inner.control.addr.clone();
+                let svc = inner.control.build(dns, client_metrics, identity);
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
 
@@ -58,14 +59,14 @@ impl Config {
 
                     let node = oc::Node {
                         identifier: Some(oc::ProcessIdentifier {
-                            host_name: hostname.unwrap_or_default(),
+                            host_name: inner.hostname.unwrap_or_default(),
                             pid: std::process::id(),
                             start_timestamp: Some(SystemTime::now().into()),
                         }),
                         service_info: Some(oc::ServiceInfo {
                             name: Self::SERVICE_NAME.to_string(),
                         }),
-                        attributes,
+                        attributes: inner.attributes,
                         ..oc::Node::default()
                     };
 
@@ -76,11 +77,11 @@ impl Config {
                     })
                 };
 
-                Ok(OcCollector::Enabled {
+                Ok(OcCollector::Enabled(Box::new(EnabledCollector {
                     addr,
                     task,
                     span_sink,
-                })
+                })))
             }
         }
     }
@@ -90,7 +91,7 @@ impl OcCollector {
     pub fn span_sink(&self) -> Option<SpanSink> {
         match self {
             OcCollector::Disabled => None,
-            OcCollector::Enabled { ref span_sink, .. } => Some(span_sink.clone()),
+            OcCollector::Enabled(inner) => Some(inner.span_sink.clone()),
         }
     }
 }

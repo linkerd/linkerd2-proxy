@@ -90,7 +90,7 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(().into()))
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, mut io: I) -> Self::Future {

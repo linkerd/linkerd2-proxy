@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 use super::metrics::Direction;
 use linkerd2_metrics::{latency, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 use linkerd2_proxy_http::insert;
@@ -38,7 +40,7 @@ impl Metrics {
         Metric::new(Self::NAME, Self::HELP)
     }
 
-    fn scopes<'a>(&'a self) -> impl Iterator<Item = (Direction, &'a Scope)> {
+    fn scopes(&self) -> impl Iterator<Item = (Direction, &Scope)> {
         std::iter::once((Direction::In, &self.inbound))
             .chain(std::iter::once((Direction::Out, &self.outbound)))
     }

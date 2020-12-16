@@ -36,7 +36,7 @@ impl<T: Hash + Eq, M> Clone for Report<T, M> {
     fn clone(&self) -> Self {
         Self {
             include_latencies: self.include_latencies,
-            prefix: self.prefix.clone(),
+            prefix: self.prefix,
             registry: self.registry.clone(),
             retain_idle: self.retain_idle,
         }

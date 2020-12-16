@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
@@ -174,7 +176,7 @@ where
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
+                .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
@@ -221,7 +223,7 @@ where
         h2_settings,
         http_server,
         tcp_balance,
-        drain.clone(),
+        drain,
     ))
     .check_new_clone::<(Option<http::Version>, tcp::Logical)>()
     .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()

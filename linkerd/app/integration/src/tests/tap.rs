@@ -28,7 +28,7 @@ async fn tap_disabled_when_identity_disabled() {
 #[tokio::test]
 async fn can_disable_tap() {
     let _trace = trace_init();
-    let mut env = TestEnv::new();
+    let mut env = TestEnv::default();
     env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());
 
     let proxy = proxy::new().run_with_test_env(env).await;

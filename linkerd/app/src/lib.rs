@@ -106,7 +106,7 @@ impl Config {
 
         let oc_collector = {
             let identity = identity.local();
-            let dns = dns.resolver.clone();
+            let dns = dns.resolver;
             let client_metrics = metrics.control;
             let metrics = metrics.opencensus;
             info_span!("opencensus")
@@ -286,7 +286,7 @@ impl App {
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
         match self.oc_collector {
             oc_collector::OcCollector::Disabled { .. } => None,
-            oc_collector::OcCollector::Enabled { ref addr, .. } => Some(addr),
+            oc_collector::OcCollector::Enabled(ref oc) => Some(&oc.addr),
         }
     }
 
@@ -365,8 +365,8 @@ impl App {
                             );
                         }
 
-                        if let oc_collector::OcCollector::Enabled { task, .. } = oc_collector {
-                            tokio::spawn(task.instrument(info_span!("opencensus")));
+                        if let oc_collector::OcCollector::Enabled(oc) = oc_collector {
+                            tokio::spawn(oc.task.instrument(info_span!("opencensus")));
                         }
 
                         // we don't care if the admin shutdown channel is

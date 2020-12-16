@@ -1,5 +1,4 @@
 use futures::{ready, TryFuture};
-use http;
 use linkerd2_stack::{layer, Proxy};
 use std::future::Future;
 use std::marker::PhantomData;

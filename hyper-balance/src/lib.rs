@@ -1,5 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
-use http;
+
 use hyper::body::HttpBody;
 use pin_project::pin_project;
 use std::pin::Pin;
@@ -186,7 +186,6 @@ impl<T: Send + 'static, B: HttpBody> HttpBody for PendingUntilEosBody<T, B> {
 mod tests {
     use super::{PendingUntilEos, PendingUntilFirstData};
     use futures::future::poll_fn;
-    use http;
     use hyper::body::HttpBody;
     use std::collections::VecDeque;
     use std::io::Cursor;

@@ -83,6 +83,6 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let inner = ready!(this.inner.try_poll(cx))?;
-        Poll::Ready(Ok(this.layer.layer(inner).into()))
+        Poll::Ready(Ok(this.layer.layer(inner)))
     }
 }

@@ -14,10 +14,12 @@ pub use self::{layer::SpawnBufferLayer, service::Buffer};
 
 struct InFlight<Req, Rsp> {
     request: Req,
-    tx: oneshot::Sender<
-        Result<Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>, Error>,
-    >,
+    tx: Tx<Rsp>,
 }
+
+type Tx<Rsp> = oneshot::Sender<
+    Result<Pin<Box<dyn Future<Output = Result<Rsp, Error>> + Send + 'static>>, Error>,
+>;
 
 pub(crate) fn new<Req, S>(
     inner: S,

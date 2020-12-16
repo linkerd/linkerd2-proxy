@@ -1,7 +1,7 @@
 use linkerd2_app::env::{EnvError, Strings};
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TestEnv {
     values: HashMap<&'static str, String>,
 }
@@ -9,12 +9,6 @@ pub struct TestEnv {
 // ===== impl TestEnv =====
 
 impl TestEnv {
-    pub fn new() -> Self {
-        Self {
-            values: Default::default(),
-        }
-    }
-
     pub fn put(&mut self, key: &'static str, value: String) {
         self.values.insert(key, value);
     }

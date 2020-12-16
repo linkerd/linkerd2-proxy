@@ -151,7 +151,7 @@ macro_rules! generate_tests {
                 .route("/", "hello from my great website")
                 .run()
                 .await;
-            let mut env = TestEnv::new();
+            let mut env = TestEnv::default();
             // The test server will be on localhost, and we default to
             // configuring the profile search networks to include localhost so
             // that...every other test can work, so just put some random network
@@ -220,7 +220,7 @@ macro_rules! generate_tests {
 
         async fn outbound_destinations_reset_on_reconnect(up: pb::destination::Update) {
             let _trace = trace_init();
-            let env = TestEnv::new();
+            let env = TestEnv::default();
             let srv = $make_server().route("/", "hello").run().await;
             let ctrl = controller::new();
             let _profile =
@@ -265,7 +265,7 @@ macro_rules! generate_tests {
 
         #[tokio::test]
         async fn outbound_times_out() {
-            let env = TestEnv::new();
+            let env = TestEnv::default();
 
             let srv = $make_server().route("/hi", "hello").run().await;
             let ctrl = controller::new();

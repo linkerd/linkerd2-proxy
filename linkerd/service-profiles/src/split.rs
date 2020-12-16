@@ -29,21 +29,19 @@ pub struct NewSplit<N, S, Req> {
     _service: PhantomData<fn(Req) -> S>,
 }
 
-pub struct Split<T, N, S, Req> {
-    inner: Inner<T, N, S, Req>,
+pub enum Split<T, N, S, Req> {
+    Default(S),
+    Split(Box<Inner<T, N, S, Req>>),
 }
 
-enum Inner<T, N, S, Req> {
-    Default(S),
-    Split {
-        rng: SmallRng,
-        rx: Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>,
-        target: T,
-        new_service: N,
-        distribution: WeightedIndex<u32>,
-        addrs: IndexSet<Addr>,
-        services: ReadyCache<Addr, S, Req>,
-    },
+pub struct Inner<T, N, S, Req> {
+    rng: SmallRng,
+    rx: Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>,
+    target: T,
+    new_service: N,
+    distribution: WeightedIndex<u32>,
+    addrs: IndexSet<Addr>,
+    services: ReadyCache<Addr, S, Req>,
 }
 
 // === impl NewSplit ===
@@ -74,14 +72,14 @@ where
         //
         // Otherwise, profile lookup was rejected and, therefore, no concrete
         // address is provided.
-        let inner = match Into::<Option<Receiver>>::into(&target) {
+        match Into::<Option<Receiver>>::into(&target) {
             None => {
                 trace!("Building default service");
-                Inner::Default(self.inner.new_service((None, target)))
+                Split::Default(self.inner.new_service((None, target)))
             }
             Some(rx) => {
                 let mut targets = rx.borrow().targets.clone();
-                if targets.len() == 0 {
+                if targets.is_empty() {
                     targets.push(Target {
                         addr: (&target).into(),
                         weight: 1,
@@ -102,7 +100,7 @@ where
                     weights.push(weight);
                 }
 
-                Inner::Split {
+                Split::Split(Box::new(Inner {
                     rx: crate::stream_profile(rx),
                     target,
                     new_service,
@@ -110,11 +108,9 @@ where
                     addrs,
                     distribution: WeightedIndex::new(weights).unwrap(),
                     rng: SmallRng::from_rng(&mut thread_rng()).expect("RNG must initialize"),
-                }
+                }))
             }
-        };
-
-        Split { inner }
+        }
     }
 }
 
@@ -136,28 +132,20 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        match self.inner {
-            Inner::Default(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
-            Inner::Split {
-                ref mut rx,
-                ref mut services,
-                ref mut addrs,
-                ref mut distribution,
-                ref mut new_service,
-                ref target,
-                ..
-            } => {
+        match self {
+            Self::Default(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
+            Self::Split(ref mut inner) => {
                 let mut update = None;
-                while let Poll::Ready(Some(up)) = rx.as_mut().poll_next(cx) {
+                while let Poll::Ready(Some(up)) = inner.rx.as_mut().poll_next(cx) {
                     update = Some(up.clone());
                 }
 
                 // Every time the profile updates, rebuild the distribution, reusing
                 // services that existed in the prior state.
                 if let Some(Profile { mut targets, .. }) = update {
-                    if targets.len() == 0 {
+                    if targets.is_empty() {
                         targets.push(Target {
-                            addr: target.into(),
+                            addr: (&inner.target).into(),
                             weight: 1,
                         })
                     }
@@ -168,7 +156,7 @@ where
                     // needs to be created and what stale services should be
                     // removed.
                     let mut prior_addrs =
-                        std::mem::replace(addrs, IndexSet::with_capacity(targets.len()));
+                        std::mem::replace(&mut inner.addrs, IndexSet::with_capacity(targets.len()));
                     let mut weights = Vec::with_capacity(targets.len());
 
                     // Create an updated distribution and set of services.
@@ -176,49 +164,45 @@ where
                         // Reuse the prior services whenever possible.
                         if !prior_addrs.remove(&addr) {
                             debug!(%addr, "Creating target");
-                            let svc = new_service.new_service((Some(addr.clone()), target.clone()));
-                            services.push(addr.clone(), svc);
+                            let svc = inner
+                                .new_service
+                                .new_service((Some(addr.clone()), inner.target.clone()));
+                            inner.services.push(addr.clone(), svc);
                         } else {
                             trace!(%addr, "Target already exists");
                         }
-                        addrs.insert(addr);
+                        inner.addrs.insert(addr);
                         weights.push(weight);
                     }
 
-                    *distribution = WeightedIndex::new(weights).unwrap();
+                    inner.distribution = WeightedIndex::new(weights).unwrap();
 
                     // Remove all prior services that did not exist in the new
                     // set of targets.
                     for addr in prior_addrs.into_iter() {
-                        services.evict(&addr);
+                        inner.services.evict(&addr);
                     }
                 }
 
                 // Wait for all target services to be ready. If any services fail, then
                 // the whole service fails.
-                Poll::Ready(ready!(services.poll_pending(cx)).map_err(Into::into))
+                Poll::Ready(ready!(inner.services.poll_pending(cx)).map_err(Into::into))
             }
         }
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        match self.inner {
-            Inner::Default(ref mut svc) => Box::pin(svc.call(req).err_into::<Error>()),
-            Inner::Split {
-                ref addrs,
-                ref distribution,
-                ref mut services,
-                ref mut rng,
-                ..
-            } => {
-                let idx = if addrs.len() == 1 {
+        match self {
+            Self::Default(ref mut svc) => Box::pin(svc.call(req).err_into::<Error>()),
+            Self::Split(ref mut inner) => {
+                let idx = if inner.addrs.len() == 1 {
                     0
                 } else {
-                    distribution.sample(rng)
+                    inner.distribution.sample(&mut inner.rng)
                 };
-                let addr = addrs.get_index(idx).expect("invalid index");
+                let addr = inner.addrs.get_index(idx).expect("invalid index");
                 trace!(?addr, "Dispatching");
-                Box::pin(services.call_ready(addr, req).err_into::<Error>())
+                Box::pin(inner.services.call_ready(addr, req).err_into::<Error>())
             }
         }
     }

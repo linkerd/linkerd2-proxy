@@ -20,12 +20,12 @@ const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<Handle, Error> {
-    let log_level = env::var(ENV_LOG_LEVEL).unwrap_or(DEFAULT_LOG_LEVEL.to_string());
+    let log_level = env::var(ENV_LOG_LEVEL).unwrap_or_else(|_| DEFAULT_LOG_LEVEL.to_string());
     if let "OFF" = log_level.to_uppercase().trim() {
         return Ok(Handle(Inner::Disabled));
     }
 
-    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or(DEFAULT_LOG_FORMAT.to_string());
+    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or_else(|_| DEFAULT_LOG_FORMAT.to_string());
     let (dispatch, handle) = Settings::default()
         .filter(log_level)
         .format(log_format)

@@ -58,6 +58,8 @@ where
     }
 }
 
+type MakeFuture<T, E> = Pin<Box<dyn Future<Output = Result<NormalizeUri<T>, E>> + Send + 'static>>;
+
 impl<M, T> tower::Service<T> for MakeNormalizeUri<M>
 where
     for<'t> &'t T: Into<SocketAddr>,
@@ -66,8 +68,7 @@ where
 {
     type Response = NormalizeUri<M::Response>;
     type Error = M::Error;
-    type Future =
-        Pin<Box<dyn Future<Output = Result<NormalizeUri<M::Response>, M::Error>> + Send + 'static>>;
+    type Future = MakeFuture<M::Response, M::Error>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
         self.inner.poll_ready(cx)

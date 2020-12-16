@@ -30,7 +30,7 @@ pub fn resolver<T, E>() -> resolver::Dst<T, E>
 where
     T: std::hash::Hash + Eq + fmt::Debug,
 {
-    resolver::Resolver::new()
+    resolver::Resolver::default()
 }
 
 pub fn profiles<T>() -> resolver::Profiles<T>
@@ -40,8 +40,8 @@ where
     profile::resolver()
 }
 
-pub fn connect<E: fmt::Debug>() -> connect::Connect<E> {
-    connect::Connect::new()
+pub fn connect<E>() -> connect::Connect<E> {
+    connect::Connect::default()
 }
 
 pub fn io() -> io::Builder {
@@ -49,10 +49,10 @@ pub fn io() -> io::Builder {
 }
 
 /// By default, disable logging in modules that are expected to error in tests.
-const DEFAULT_LOG: &'static str = "warn,\
-                                   linkerd=debug,\
-                                   linkerd2_proxy_http=error,\
-                                   linkerd2_proxy_transport=error";
+const DEFAULT_LOG: &str = "warn,\
+                           linkerd=debug,\
+                           linkerd2_proxy_http=error,\
+                           linkerd2_proxy_transport=error";
 
 pub fn trace_subscriber(default_filter: &str) -> (Dispatch, app_core::trace::Handle) {
     use std::env;

@@ -1,5 +1,4 @@
 use crate::Error;
-use http;
 use hyper::body::HttpBody;
 pub use hyper_balance::{PendingUntilFirstData, PendingUntilFirstDataBody};
 use rand::thread_rng;

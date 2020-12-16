@@ -187,6 +187,9 @@ impl TapEventExt for pb::TapEvent {
 
 struct SyncSvc(client::Client);
 
+type ResponseFuture =
+    Pin<Box<dyn Future<Output = Result<http::Response<hyper::Body>, String>> + Send>>;
+
 impl<B> tower::Service<http::Request<B>> for SyncSvc
 where
     B: Body + Send + Sync + 'static,
@@ -195,7 +198,7 @@ where
 {
     type Response = http::Response<hyper::Body>;
     type Error = String;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = ResponseFuture;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

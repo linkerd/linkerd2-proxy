@@ -68,7 +68,7 @@ pub enum ResponseBody<B> {
     },
 }
 
-const GRPC_CONTENT_TYPE: &'static str = "application/grpc";
+const GRPC_CONTENT_TYPE: &str = "application/grpc";
 
 impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
 where
@@ -224,9 +224,7 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
 }
 
 fn should_teardown_connection(error: &(dyn std::error::Error + 'static)) -> bool {
-    if error.is::<ResponseTimeout>() {
-        false
-    } else if error.is::<tower::timeout::error::Elapsed>() {
+    if error.is::<ResponseTimeout>() || error.is::<tower::timeout::error::Elapsed>() {
         false
     } else if let Some(e) = error.source() {
         should_teardown_connection(e)
@@ -240,9 +238,7 @@ fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
         *http
     } else if error.is::<ResponseTimeout>() {
         http::StatusCode::GATEWAY_TIMEOUT
-    } else if error.is::<FailFastError>() {
-        http::StatusCode::SERVICE_UNAVAILABLE
-    } else if error.is::<tower::timeout::error::Elapsed>() {
+    } else if error.is::<FailFastError>() || error.is::<tower::timeout::error::Elapsed>() {
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
         http::StatusCode::FORBIDDEN
@@ -257,8 +253,8 @@ fn set_grpc_status(
     error: &(dyn std::error::Error + 'static),
     headers: &mut http::HeaderMap,
 ) -> grpc::Code {
-    const GRPC_STATUS: &'static str = "grpc-status";
-    const GRPC_MESSAGE: &'static str = "grpc-message";
+    const GRPC_STATUS: &str = "grpc-status";
+    const GRPC_MESSAGE: &str = "grpc-message";
 
     if let Some(HttpError { grpc, message, .. }) = error.downcast_ref::<HttpError>() {
         headers.insert(GRPC_STATUS, code_header(*grpc));

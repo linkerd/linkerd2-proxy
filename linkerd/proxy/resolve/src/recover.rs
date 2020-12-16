@@ -96,7 +96,7 @@ where
                     future,
                     backoff: None,
                 },
-                target: target.clone(),
+                target,
                 recover: self.recover.clone(),
                 resolve: self.resolve.clone(),
             }),
@@ -146,6 +146,9 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
         loop {
+            // XXX(eliza): note that this match was originally an `if let`,
+            // but that doesn't work with `#[project]` for some kinda reason
+            #[allow(clippy::single_match)]
             match this.inner.state {
                 State::Connected {
                     ref mut resolution,
@@ -181,8 +184,6 @@ where
                         }
                     }
                 },
-                // XXX(eliza): note that this match was originally an `if let`,
-                // but that doesn't work with `#[project]` for some kinda reason
                 _ => {}
             }
 

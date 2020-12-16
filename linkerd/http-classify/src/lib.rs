@@ -1,7 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::layer::{Layer, NewProxy, Proxy};
-use http;
 use linkerd2_error::Error;
 
 mod layer;

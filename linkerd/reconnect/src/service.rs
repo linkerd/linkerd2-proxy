@@ -102,7 +102,7 @@ where
                             backoff: None,
                         }
                     }
-                    Ok(ready) => return Poll::Ready(Ok(ready)),
+                    Ok(()) => return Poll::Ready(Ok(())),
                 },
 
                 State::Recover {

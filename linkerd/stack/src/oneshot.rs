@@ -1,6 +1,6 @@
 use std::task::{Context, Poll};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct OneshotLayer(());
 
 #[derive(Clone, Debug)]
@@ -9,8 +9,8 @@ pub struct Oneshot<S>(S);
 // === impl OneshotLayer ===
 
 impl OneshotLayer {
-    pub fn new() -> OneshotLayer {
-        OneshotLayer(())
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 

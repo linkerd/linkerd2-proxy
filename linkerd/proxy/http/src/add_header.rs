@@ -111,11 +111,13 @@ where
 
 // === impl MakeFuture ===
 
+type Service<H, T, R> = tower::util::Either<AddHeader<H, T, R>, T>;
+
 impl<F, H, R> Future for MakeFuture<F, H, R>
 where
     F: TryFuture,
 {
-    type Output = Result<tower::util::Either<AddHeader<H, F::Ok, R>, F::Ok>, F::Error>;
+    type Output = Result<Service<H, F::Ok, R>, F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
@@ -135,7 +137,6 @@ where
 }
 
 pub mod request {
-    use http;
     use http::header::{AsHeaderName, IntoHeaderName};
     use std::task::{Context, Poll};
 
@@ -173,7 +174,6 @@ pub mod request {
 
 pub mod response {
     use futures::{ready, TryFuture};
-    use http;
     use http::header::{AsHeaderName, HeaderValue, IntoHeaderName};
     use pin_project::pin_project;
     use std::future::Future;

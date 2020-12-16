@@ -1,7 +1,6 @@
 use linkerd2_identity as identity;
 use std::convert::TryFrom;
 use tracing::trace;
-use untrusted;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Match {

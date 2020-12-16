@@ -34,7 +34,7 @@ async fn main() {
     let _transparency_profile_tx =
         ctrl.profile_tx_default(addr, "transparency.test.svc.cluster.local");
 
-    let mut env = TestEnv::new();
+    let mut env = TestEnv::default();
     env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "0.0.0.0:4143".to_owned());
     env.put(
         app::env::ENV_OUTBOUND_LISTEN_ADDR,
@@ -53,5 +53,5 @@ async fn main() {
     stream
         .read_exact(&mut buf)
         .expect("could not read singal byte");
-    assert_eq!(buf[0], 'F' as u8);
+    assert_eq!(buf[0], b'F');
 }

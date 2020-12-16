@@ -108,7 +108,7 @@ where
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                .push(TraceContext::layer(span_sink.clone().map(|span_sink| {
+                .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))

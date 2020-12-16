@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_dns_name;
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
@@ -187,10 +186,7 @@ impl TokenSource {
         let t = fs::read(self.0.as_str())?;
 
         if t.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other.into(),
-                "token is empty",
-            ));
+            return Err(io::Error::new(io::ErrorKind::Other, "token is empty"));
         }
 
         Ok(t)
@@ -248,7 +244,7 @@ impl TrustAnchors {
         // safe API, use it to pass proof to CertCertResolver::new....
         //
         // TODO: Restrict accepted signatutre algorithms.
-        static NO_OCSP: &'static [u8] = &[];
+        static NO_OCSP: &[u8] = &[];
         client
             .get_verifier()
             .verify_server_cert(
@@ -260,7 +256,7 @@ impl TrustAnchors {
             .map_err(InvalidCrt)?;
         debug!("certified {}", crt.name.as_ref());
 
-        let k = SigningKey(key.0.clone());
+        let k = SigningKey(key.0);
         let key = rustls::sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k)));
         let resolver = Arc::new(CertResolver(key));
 

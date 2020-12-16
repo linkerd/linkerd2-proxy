@@ -7,7 +7,7 @@ use linkerd2_app_core::{
     transport::{self, listen, tls},
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::{convert::TryInto, net::SocketAddr, sync::Arc};
+use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -57,7 +57,7 @@ impl From<listen::Addrs> for TcpAccept {
         Self {
             target_addr: tcp.target_addr(),
             peer_addr: tcp.peer(),
-            peer_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped.into()),
+            peer_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
         }
     }
 }
@@ -115,7 +115,7 @@ impl From<Target> for HttpEndpoint {
 
 impl tls::HasPeerIdentity for HttpEndpoint {
     fn peer_identity(&self) -> tls::PeerIdentity {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+        Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 }
 
@@ -125,7 +125,7 @@ impl Into<transport::labels::Key> for &'_ HttpEndpoint {
             direction: transport::labels::Direction::In,
             authority: None,
             labels: None,
-            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
+            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback).into(),
         })
     }
 }
@@ -154,7 +154,7 @@ impl Into<SocketAddr> for &'_ TcpEndpoint {
 
 impl tls::HasPeerIdentity for TcpEndpoint {
     fn peer_identity(&self) -> tls::PeerIdentity {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+        Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 }
 
@@ -164,7 +164,7 @@ impl Into<transport::labels::Key> for &'_ TcpEndpoint {
             direction: transport::labels::Direction::In,
             authority: None,
             labels: None,
-            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback.into()).into(),
+            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback).into(),
         })
     }
 }
@@ -197,7 +197,7 @@ impl Into<SocketAddr> for &'_ Target {
 
 impl tls::HasPeerIdentity for Target {
     fn peer_identity(&self) -> tls::PeerIdentity {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+        Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 }
 
@@ -257,7 +257,7 @@ impl tap::Inspect for Target {
         &self,
         _: &http::Request<B>,
     ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback.into())
+        Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {

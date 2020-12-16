@@ -37,7 +37,7 @@ impl<L: FmtLabels + Hash + Eq, S> Scopes<L, S> {
 
 impl<L: FmtLabels + Hash + Eq, S: Default> Scopes<L, S> {
     pub fn get_or_default(&mut self, key: L) -> &mut S {
-        self.0.entry(key).or_insert_with(|| S::default())
+        self.0.entry(key).or_insert_with(S::default)
     }
 }
 
