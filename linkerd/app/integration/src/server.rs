@@ -278,21 +278,10 @@ enum Run {
     Http2,
 }
 
-struct Route(RouteFuture);
+struct Route(Box<dyn Fn(Request<ReqBody>) -> RspFuture + Send + Sync>);
 
-type RouteFuture = Box<
-    dyn Fn(
-            Request<ReqBody>,
-        ) -> Pin<
-            Box<
-                dyn Future<Output = Result<http::Response<Bytes>, BoxError>>
-                    + Send
-                    + Sync
-                    + 'static,
-            >,
-        > + Send
-        + Sync,
->;
+type RspFuture =
+    Pin<Box<dyn Future<Output = Result<http::Response<Bytes>, BoxError>> + Send + Sync + 'static>>;
 
 impl Route {
     fn string(body: &str) -> Route {
