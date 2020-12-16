@@ -1,11 +1,14 @@
 use super::{ClassMetrics, Metrics, StatusMetrics};
 use crate::{Prefixed, Registry, Report};
-use linkerd2_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
+use linkerd2_metrics::{
+    latency, store::FmtChildren, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric,
+};
 use std::fmt;
 use std::hash::Hash;
 use std::time::Instant;
 use tracing::trace;
 
+#[derive(Copy, Clone)]
 struct Status(http::StatusCode);
 
 impl<T, C> Report<T, Metrics<C>>
@@ -79,84 +82,99 @@ where
     }
 }
 
-impl<T, C> Registry<T, Metrics<C>>
+#[inline]
+fn fmt_by_target<T, C, N, V, F>(
+    registry: &Registry<T, Metrics<C>>,
+    f: &mut fmt::Formatter<'_>,
+    metric: Metric<'_, N, V>,
+    get_metric: F,
+) -> fmt::Result
 where
     T: FmtLabels + Hash + Eq,
     C: FmtLabels + Hash + Eq,
+    N: fmt::Display,
+    V: FmtMetric,
+    F: Fn(&Metrics<C>) -> &V,
 {
-    fn fmt_by_target<N, V, F>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, V>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        N: fmt::Display,
-        V: FmtMetric,
-        F: Fn(&Metrics<C>) -> &V,
-    {
-        for (tgt, tm) in &self.by_target {
-            if let Ok(m) = tm.lock() {
-                get_metric(&*m).fmt_metric_labeled(f, &metric.name, tgt)?;
-            }
-        }
+    registry.fmt_by(f, metric, get_metric)
+}
 
-        Ok(())
+#[inline]
+fn fmt_by_status<T, C, N, V, F>(
+    registry: &Registry<T, Metrics<C>>,
+    f: &mut fmt::Formatter<'_>,
+    metric: Metric<'_, N, V>,
+    get_metric: F,
+) -> fmt::Result
+where
+    T: FmtLabels + Hash + Eq,
+    C: FmtLabels + Hash + Eq,
+    N: fmt::Display,
+    V: FmtMetric,
+    F: Fn(&StatusMetrics<C>) -> &V,
+{
+    registry.fmt_children(f, metric, get_metric)
+}
+
+#[inline]
+fn fmt_by_class<T, C, N, V, F>(
+    registry: &Registry<T, Metrics<C>>,
+    f: &mut fmt::Formatter<'_>,
+    metric: Metric<'_, N, V>,
+    get_metric: F,
+) -> fmt::Result
+where
+    T: FmtLabels + Hash + Eq,
+    C: FmtLabels + Hash + Eq,
+    N: fmt::Display,
+    V: FmtMetric,
+    F: Fn(&ClassMetrics) -> &V,
+{
+    registry.fmt_children(f, metric, get_metric)
+}
+
+impl FmtLabels for Status {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "status_code=\"{}\"", self.0.as_u16())
     }
+}
 
-    fn fmt_by_status<N, M, F>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: F,
-    ) -> fmt::Result
+impl<C> FmtChildren<StatusMetrics<C>> for Metrics<C>
+where
+    C: FmtLabels + Hash + Eq,
+{
+    type ChildLabels = Option<Status>;
+
+    fn with_children<F>(&self, mut f: F) -> fmt::Result
     where
-        N: fmt::Display,
-        M: FmtMetric,
-        F: Fn(&StatusMetrics<C>) -> &M,
+        F: FnMut(&Self::ChildLabels, &StatusMetrics<C>) -> fmt::Result,
     {
-        for (tgt, tm) in &self.by_target {
-            if let Ok(tm) = tm.lock() {
-                for (status, m) in &tm.by_status {
-                    let status = status.as_ref().map(|s| Status(*s));
-                    let labels = (tgt, status);
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn fmt_by_class<N, M, F>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        N: fmt::Display,
-        M: FmtMetric,
-        F: Fn(&ClassMetrics) -> &M,
-    {
-        for (tgt, tm) in &self.by_target {
-            if let Ok(tm) = tm.lock() {
-                for (status, sm) in &tm.by_status {
-                    for (cls, m) in &sm.by_class {
-                        let status = status.as_ref().map(|s| Status(*s));
-                        let labels = (tgt, (status, cls));
-                        get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
-                    }
-                }
-            }
+        for (status, sm) in &self.by_status {
+            let status = status.as_ref().map(|s| Status(*s));
+            f(&status, sm)?;
         }
 
         Ok(())
     }
 }
 
-impl FmtLabels for Status {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "status_code=\"{}\"", self.0.as_u16())
+impl<C> FmtChildren<ClassMetrics> for Metrics<C>
+where
+    C: FmtLabels + Hash + Eq,
+{
+    type ChildLabels = (Option<Status>, C);
+
+    fn with_children<F>(&self, mut f: F) -> fmt::Result
+    where
+        F: FnMut(&Self::ChildLabels, &ClassMetrics) -> fmt::Result,
+    {
+        for (status, sm) in &self.by_status {
+            for (cls, m) in &sm.by_class {
+                let status = status.as_ref().map(|s| Status(*s));
+                let labels = (status, cls);
+                f(&labels, sm)?;
+            }
+        }
+        Ok(())
     }
 }

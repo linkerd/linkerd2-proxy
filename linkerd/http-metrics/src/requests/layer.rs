@@ -172,8 +172,7 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
-                r.by_target
-                    .entry((&target).into())
+                r.entry((&target).into())
                     .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
                     .clone(),
             ),

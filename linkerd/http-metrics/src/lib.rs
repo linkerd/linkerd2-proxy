@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::{requests::Requests, retries::Retries};
-use indexmap::IndexMap;
+use linkerd2_metrics::{LastUpdate, Store};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
@@ -10,13 +10,7 @@ use std::time::{Duration, Instant};
 pub mod requests;
 pub mod retries;
 
-#[derive(Debug)]
-struct Registry<T, M>
-where
-    T: Hash + Eq,
-{
-    by_target: IndexMap<T, Arc<Mutex<M>>>,
-}
+type Registry<T, M> = Store<T, Arc<Mutex<M>>>;
 
 /// Reports metrics for prometheus.
 #[derive(Debug)]
@@ -26,8 +20,6 @@ where
 {
     prefix: &'static str,
     registry: Arc<Mutex<Registry<T, M>>>,
-    /// The amount time metrics with no updates should be retained for reports
-    retain_idle: Duration,
     /// Whether latencies should be reported.
     include_latencies: bool,
 }
@@ -38,7 +30,6 @@ impl<T: Hash + Eq, M> Clone for Report<T, M> {
             include_latencies: self.include_latencies,
             prefix: self.prefix,
             registry: self.registry.clone(),
-            retain_idle: self.retain_idle,
         }
     }
 }
@@ -46,35 +37,6 @@ impl<T: Hash + Eq, M> Clone for Report<T, M> {
 struct Prefixed<'p, N: fmt::Display> {
     prefix: &'p str,
     name: N,
-}
-
-trait LastUpdate {
-    fn last_update(&self) -> Instant;
-}
-
-impl<T, M> Default for Registry<T, M>
-where
-    T: Hash + Eq,
-{
-    fn default() -> Self {
-        Self {
-            by_target: IndexMap::default(),
-        }
-    }
-}
-
-impl<T, M> Registry<T, M>
-where
-    T: Hash + Eq,
-    M: LastUpdate,
-{
-    /// Retains metrics for all targets that (1) no longer have an active
-    /// reference to the `RequestMetrics` structure and (2) have not been updated since `epoch`.
-    fn retain_since(&mut self, epoch: Instant) {
-        self.by_target.retain(|_, m| {
-            Arc::strong_count(&m) > 1 || m.lock().map(|m| m.last_update() >= epoch).unwrap_or(false)
-        })
-    }
 }
 
 impl<T, M> Report<T, M>

@@ -118,7 +118,7 @@ struct NewSensor(Arc<Metrics>);
 // #[derive(Debug)]
 // struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Metrics>>);
 
-type Inner<K> = Store<K, Arc<Metrics>>;
+type Inner<K> = Store<K, Metrics>;
 
 // ===== impl Inner =====
 
@@ -330,7 +330,7 @@ where
 
 // ===== impl Report =====
 
-impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
+impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut metrics = self.0.lock().expect("metrics registry poisoned");
         if metrics.is_empty() {
@@ -354,6 +354,7 @@ impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
 
         tcp_connection_duration_ms.fmt_help(f)?;
         metrics.fmt_children(f, tcp_connection_duration_ms, |e| &e.connection_duration)?;
+
         metrics.retain_active();
 
         Ok(())
@@ -470,13 +471,12 @@ impl LastUpdate for Metrics {
     }
 }
 
-impl store::FmtChildren for Metrics {
+impl store::FmtChildren<EosMetrics> for Metrics {
     type ChildLabels = Eos;
-    type ChildMetric = EosMetrics;
 
     fn with_children<F>(&self, mut f: F) -> fmt::Result
     where
-        F: FnMut(&Self::ChildLabels, &Self::ChildMetric) -> fmt::Result,
+        F: FnMut(&Self::ChildLabels, &EosMetrics) -> fmt::Result,
     {
         if let Ok(by_eos) = self.by_eos.lock() {
             for (eos, metric) in by_eos.metrics.iter() {
