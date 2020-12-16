@@ -16,20 +16,20 @@ impl Handle {
         &self,
         req: http::Request<Body>,
     ) -> Result<http::Response<Body>, Error> {
-        match req.method() {
-            &http::Method::GET => {
+        match *req.method() {
+            http::Method::GET => {
                 let level = self.current()?;
                 Self::rsp(http::StatusCode::OK, level)
             }
 
-            &http::Method::PUT => {
+            http::Method::PUT => {
                 let body = hyper::body::aggregate(req.into_body())
                     .await
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 match self.set_from(body.bytes()) {
                     Err(error) => {
                         warn!(message = "setting log level failed", %error);
-                        Self::rsp(http::StatusCode::BAD_REQUEST, error.to_string())
+                        Self::rsp(http::StatusCode::BAD_REQUEST, error)
                     }
                     Ok(()) => Self::rsp(http::StatusCode::NO_CONTENT, Body::empty()),
                 }

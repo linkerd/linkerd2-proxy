@@ -96,7 +96,7 @@ impl<T> Sender<T> {
     }
 
     pub async fn send(&mut self, value: T) -> Result<(), SendError<T>> {
-        if let Err(_) = self.ready().await {
+        if self.ready().await.is_err() {
             return Err(SendError(value));
         }
         match mem::replace(&mut self.state, State::Empty) {

@@ -27,8 +27,8 @@ enum State<F, S> {
     Ready(Option<S>),
 }
 
-impl<Req> MakeReadyLayer<Req> {
-    pub fn new() -> Self {
+impl<Req> Default for MakeReadyLayer<Req> {
+    fn default() -> Self {
         MakeReadyLayer(PhantomData)
     }
 }

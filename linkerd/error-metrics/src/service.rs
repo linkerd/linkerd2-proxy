@@ -37,10 +37,7 @@ impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
     {
         let labels = label.label_error(&err);
         if let Ok(mut errors) = errors.lock() {
-            errors
-                .entry(labels)
-                .or_insert_with(|| Default::default())
-                .incr();
+            errors.entry(labels).or_insert_with(Default::default).incr();
         }
     }
 }

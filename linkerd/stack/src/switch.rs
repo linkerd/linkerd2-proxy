@@ -71,6 +71,8 @@ where
 {
     type Response = tower::util::Either<P::Response, F::Response>;
     type Error = Error;
+
+    #[allow(clippy::type_complexity)]
     type Future = future::Either<
         future::MapOk<
             future::ErrInto<tower::util::Oneshot<P, T>, Error>,

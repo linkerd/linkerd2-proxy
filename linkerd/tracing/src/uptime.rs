@@ -16,7 +16,7 @@ impl Uptime {
     }
 
     fn format(d: Duration, w: &mut dyn fmt::Write) -> fmt::Result {
-        let micros = d.subsec_nanos() / 1000;
+        let micros = d.subsec_micros();
         write!(w, "[{:>6}.{:06}s]", d.as_secs(), micros)
     }
 }

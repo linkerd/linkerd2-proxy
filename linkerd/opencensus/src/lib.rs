@@ -37,6 +37,7 @@ pub struct SpanExporter<T, S> {
     metrics: Registry,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum State {
     Idle,
     Sending {

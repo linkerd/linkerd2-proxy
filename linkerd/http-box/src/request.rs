@@ -10,11 +10,11 @@ pub struct Layer<B>(std::marker::PhantomData<fn(B)>);
 #[derive(Debug)]
 pub struct BoxRequest<S, B>(S, std::marker::PhantomData<fn(B)>);
 
-impl<B> Layer<B>
+impl<B> Default for Layer<B>
 where
     B: http_body::Body + 'static,
 {
-    pub fn new() -> Self {
+    fn default() -> Self {
         Layer(std::marker::PhantomData)
     }
 }

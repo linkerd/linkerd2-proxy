@@ -92,7 +92,7 @@ impl<L> Layers<L> {
     }
 
     pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
-        self.push(stack::MakeReadyLayer::new())
+        self.push(stack::MakeReadyLayer::default())
     }
 
     pub fn push_map_response<R: Clone>(
@@ -106,7 +106,7 @@ impl<L> Layers<L> {
     where
         B: hyper::body::HttpBody + 'static,
     {
-        self.push(http::boxed::request::Layer::new())
+        self.push(http::boxed::request::Layer::default())
     }
 
     pub fn box_http_response(self) -> Layers<Pair<L, http::boxed::response::Layer>> {
@@ -178,7 +178,7 @@ impl<S> Stack<S> {
     }
 
     pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
-        self.push(stack::MakeReadyLayer::new())
+        self.push(stack::MakeReadyLayer::default())
     }
 
     /// Buffer requests when when the next layer is out of capacity.

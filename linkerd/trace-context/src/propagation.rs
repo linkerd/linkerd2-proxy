@@ -94,7 +94,7 @@ fn parse_grpc_trace_context_fields(buf: &mut Bytes) -> Option<TraceContext> {
         flags: Default::default(),
     };
 
-    while buf.len() > 0 {
+    while !buf.is_empty() {
         match parse_grpc_trace_context_field(buf, &mut context) {
             Ok(()) => {}
             Err(ref e) if e.is::<UnknownFieldId>() => break,
@@ -222,8 +222,7 @@ fn parse_header_id<B>(request: &http::Request<B>, header: &str, pad_to: usize) -
         .map(|mut data| {
             if data.len() < pad_to {
                 let padding = pad_to - data.len();
-                let mut padded = Vec::with_capacity(padding);
-                padded.resize(padding, 0u8);
+                let mut padded = vec![0u8; padding];
                 padded.append(&mut data);
                 Id(padded)
             } else {
