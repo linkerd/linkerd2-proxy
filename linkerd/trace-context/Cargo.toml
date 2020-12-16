@@ -11,9 +11,9 @@ bytes = "0.6"
 futures = "0.3"
 hex = "0.3.2"
 http = "0.2"
+linkerd2-channel = { path = "../channel" }
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 rand = "0.7"
 tower = { version = "0.4", default-features = false, features = ["util"] }
 tracing = "0.1.2"
-tokio = {version = "0.2", features = ["sync"]}

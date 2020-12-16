@@ -1,6 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 use futures::{ready, FutureExt, Stream};
 use http_body::Body as HttpBody;
+use linkerd2_channel as mpsc;
 use linkerd2_error::Error;
 use metrics::Registry;
 pub use opencensus_proto as proto;
@@ -14,7 +15,6 @@ use std::convert::TryInto;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
 use tonic::{
     self as grpc,
     body::{Body as GrpcBody, BoxBody},

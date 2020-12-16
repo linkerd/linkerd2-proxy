@@ -2,13 +2,13 @@
 
 pub use self::layer::TraceContext;
 use bytes::Bytes;
+use linkerd2_channel as mpsc;
 use linkerd2_error::Error;
 use rand::Rng;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
-use tokio::sync::mpsc;
 
 pub mod layer;
 mod propagation;
