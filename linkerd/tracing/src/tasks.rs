@@ -58,7 +58,7 @@ impl Handle {
                             <th>Busy Time</th>
                             <th>Idle Time</th>
                             <th>Scope</th>
-                            <th>Future</th>
+                            <th>Spawn Location</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -76,7 +76,7 @@ impl Handle {
                     <td>{busy:?}</td>
                     <td>{idle:?}</td>
                     <td>{scope}</td>
-                    <td>{future}</td>
+                    <td>{location}</td>
                 </tr>
                 ",
                 kind = task.kind,
@@ -86,7 +86,7 @@ impl Handle {
                 busy = timings.busy_time(),
                 idle = timings.idle_time(),
                 scope = html_escape::encode_text(&task.scope),
-                future = html_escape::encode_text(&task.future),
+                location = html_escape::encode_text(&task.location),
             )
             .expect("writing to a String doesn't fail");
         });
