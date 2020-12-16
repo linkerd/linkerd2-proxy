@@ -2586,7 +2586,6 @@ dependencies = [
  "memchr 2.3.3",
  "pin-project-lite 0.1.4",
  "slab",
- "tracing",
 ]
 
 [[package]]
@@ -2608,6 +2607,7 @@ dependencies = [
  "signal-hook-registry",
  "slab",
  "tokio-macros",
+ "tracing",
  "winapi 0.3.8",
 ]
 
@@ -2699,11 +2699,11 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace?rev=a8240c5cbb4ff981def84920d4087ef23b5edb93#a8240c5cbb4ff981def84920d4087ef23b5edb93"
+source = "git+https://github.com/hawkw/tokio-trace?rev=8bba933f49349cc14665bee7b102f013119c74fa#8bba933f49349cc14665bee7b102f013119c74fa"
 dependencies = [
  "num_cpus",
  "serde",
- "tokio 0.2.23",
+ "tokio 0.3.5",
  "tracing-core",
  "tracing-subscriber",
 ]
