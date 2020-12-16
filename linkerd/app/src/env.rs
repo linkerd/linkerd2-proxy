@@ -1081,12 +1081,12 @@ mod tests {
 
     #[test]
     fn parse_duration_unit_ms() {
-        test_unit("ms", |v| Duration::from_millis(v));
+        test_unit("ms", Duration::from_millis);
     }
 
     #[test]
     fn parse_duration_unit_s() {
-        test_unit("s", |v| Duration::from_secs(v));
+        test_unit("s", Duration::from_secs);
     }
 
     #[test]

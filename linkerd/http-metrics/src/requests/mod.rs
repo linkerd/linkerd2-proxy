@@ -145,7 +145,7 @@ mod tests {
         let metrics = registry
             .by_target
             .entry(Target(123))
-            .or_insert_with(|| Default::default())
+            .or_insert_with(Default::default)
             .clone();
         assert_eq!(registry.by_target.len(), 1, "target should be registered");
         let after_update = Instant::now();

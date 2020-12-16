@@ -182,7 +182,7 @@ macro_rules! generate_tests {
 
             let srv = $make_server().route("/", "hello").run().await;
 
-            const NAME: &'static str = "unresolvable.svc.cluster.local";
+            const NAME: &str = "unresolvable.svc.cluster.local";
             let ctrl = controller::new();
             let profile = ctrl.profile_tx(&srv.addr.to_string());
             profile.send_err(grpc::Status::new(

@@ -113,10 +113,7 @@ async fn tcp_waits_for_proxies_to_close() {
                 assert_eq!(&vec[..n], msg1.as_bytes());
                 sock.write_all(msg2.as_bytes()).await
             }
-            .map(|res| match res {
-                Err(e) => panic!("tcp server error: {}", e),
-                Ok(_) => {}
-            })
+            .map(|res| res.expect("TCP server must not error"))
         })
         .run()
         .await;

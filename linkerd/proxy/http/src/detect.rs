@@ -146,8 +146,7 @@ mod tests {
             assert_eq!(kind, Some(Version::Http1));
         }
 
-        const REQ: &'static [u8] =
-            b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
+        const REQ: &[u8] = b"GET /foo/bar/bar/blah HTTP/1.1\r\nHost: foob.example.com\r\n\r\n";
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().read(&REQ).build();
         let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
@@ -155,7 +154,7 @@ mod tests {
         assert_eq!(&buf[..], REQ);
 
         // Starts with a P, like the h2 preface.
-        const POST: &'static [u8] = b"POST /foo HTTP/1.1\r\n";
+        const POST: &[u8] = b"POST /foo HTTP/1.1\r\n";
         for i in 1..POST.len() {
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(&POST[..i]).read(&POST[i..]).build();

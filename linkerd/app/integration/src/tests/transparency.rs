@@ -1,3 +1,6 @@
+// It's not clear where this originates.
+#![allow(clippy::redundant_closure_call)]
+
 use crate::*;
 use std::error::Error as _;
 use tokio::sync::mpsc;
@@ -212,12 +215,9 @@ async fn test_server_speaks_first(env: TestEnv) {
                 let n = sock.read(&mut vec).await?;
                 assert_eq!(s(&vec[..n]), msg2);
                 tx.send(()).await.unwrap();
-                Ok(())
+                Ok::<(), io::Error>(())
             }
-            .map(|res: std::io::Result<()>| match res {
-                Err(e) => panic!("tcp server error: {}", e),
-                Ok(()) => {}
-            })
+            .map(|res| res.expect("TCP server must not fail"))
         })
         .run()
         .await;
@@ -313,12 +313,9 @@ async fn tcp_connections_close_if_client_closes() {
                 assert_eq!(n, 0);
                 panic!("lol");
                 tx.send(()).await.unwrap();
-                Ok(())
+                Ok::<(), io::Error>(())
             }
-            .map(|res: std::io::Result<()>| match res {
-                Err(e) => panic!("tcp server error: {}", e),
-                Ok(()) => {}
-            })
+            .map(|res| res.expect("TCP server must not fail"))
         })
         .run()
         .await;
@@ -519,10 +516,7 @@ macro_rules! http1_tests {
                         // Some processing... and then write back in chatproto...
                         sock.write_all(chatproto_res.as_bytes()).await
                     }
-                    .map(|res: std::io::Result<()>| match res {
-                        Ok(()) => {}
-                        Err(e) => panic!("tcp server error: {}", e),
-                    })
+                    .map(|res| res.expect("TCP server must not fail"))
                 })
                 .run()
                 .await;

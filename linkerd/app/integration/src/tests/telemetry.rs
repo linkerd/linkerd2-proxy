@@ -191,8 +191,8 @@ mod response_classification {
     use crate::*;
     use tracing::info;
 
-    const REQ_STATUS_HEADER: &'static str = "x-test-status-requested";
-    const REQ_GRPC_STATUS_HEADER: &'static str = "x-test-grpc-status-requested";
+    const REQ_STATUS_HEADER: &str = "x-test-status-requested";
+    const REQ_GRPC_STATUS_HEADER: &str = "x-test-grpc-status-requested";
 
     const STATUSES: [http::StatusCode; 6] = [
         http::StatusCode::OK,
@@ -1000,7 +1000,7 @@ mod transport {
     }
 
     #[tokio::test]
-    #[cfg(macos)]
+    #[cfg(target_os = "macos")]
     async fn inbound_tcp_connect_err() {
         let _trace = trace_init();
         let srv = tcp::server()
@@ -1031,7 +1031,7 @@ mod transport {
     }
 
     #[test]
-    #[cfg(macos)]
+    #[cfg(target_os = "macos")]
     fn outbound_tcp_connect_err() {
         let _trace = trace_init();
         let srv = tcp::server()
@@ -1498,10 +1498,9 @@ async fn metrics_compression() {
                 body.copy_to_bytes(body.remaining()),
             ));
             let mut scrape = String::new();
-            decoder.read_to_string(&mut scrape).expect(&format!(
-                "decode gzip (requested Accept-Encoding: {})",
-                encoding
-            ));
+            decoder.read_to_string(&mut scrape).unwrap_or_else(|_| {
+                panic!("decode gzip (requested Accept-Encoding: {})", encoding)
+            });
             scrape
         }
     };
