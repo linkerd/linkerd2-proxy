@@ -1254,11 +1254,11 @@ dependencies = [
  "futures 0.3.5",
  "http",
  "http-body",
+ "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-metrics",
  "opencensus-proto",
  "pin-project 0.4.22",
- "tokio 0.2.23",
  "tonic",
  "tower",
  "tracing",
@@ -1609,10 +1609,10 @@ dependencies = [
  "futures 0.3.5",
  "hex",
  "http",
+ "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-stack",
  "rand 0.7.2",
- "tokio 0.2.23",
  "tower",
  "tracing",
 ]
@@ -2787,13 +2787,13 @@ dependencies = [
 [[package]]
 name = "tower-layer"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
+source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
 
 [[package]]
 name = "tower-layer"
 version = "0.3.0"
-source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
 
 [[package]]
 name = "tower-request-modifier"
