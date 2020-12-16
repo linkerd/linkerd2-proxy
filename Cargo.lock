@@ -682,7 +682,7 @@ dependencies = [
  "hyper",
  "pin-project 0.4.22",
  "tokio 0.3.5",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
  "tower",
 ]
 
@@ -922,7 +922,7 @@ dependencies = [
  "linkerd2-app-outbound",
  "linkerd2-app-test",
  "tokio 0.3.5",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
  "tower",
  "tower-test",
  "tracing",
@@ -1031,7 +1031,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.22",
  "tokio 0.3.5",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
  "tower",
  "tower-test",
  "tracing",
@@ -1193,7 +1193,6 @@ version = "0.1.0"
 dependencies = [
  "bytes 0.6.0",
  "futures 0.3.5",
- "h2 0.3.0",
  "http",
  "http-body",
  "hyper",
@@ -1238,7 +1237,6 @@ name = "linkerd2-metrics"
 version = "0.1.0"
 dependencies = [
  "deflate",
- "futures 0.3.5",
  "hdrhistogram",
  "http",
  "hyper",
@@ -1329,7 +1327,6 @@ version = "0.1.0"
 dependencies = [
  "async-stream 0.2.1",
  "futures 0.3.5",
- "indexmap",
  "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-proxy-core",
@@ -1558,7 +1555,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.22",
  "tokio 0.3.5",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
  "tower",
  "tower-test",
  "tracing",
@@ -1597,7 +1594,7 @@ dependencies = [
  "pin-project 0.4.22",
  "tokio 0.3.5",
  "tokio-connect",
- "tokio-test 0.2.1",
+ "tokio-test 0.3.0",
  "tower",
  "tower-test",
  "tracing",

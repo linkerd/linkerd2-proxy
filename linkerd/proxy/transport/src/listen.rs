@@ -186,7 +186,6 @@ mod sys {
 
     #[cfg(target_os = "linux")]
     mod linux {
-        use libc;
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
         use std::os::unix::io::RawFd;
         use std::{io, mem};

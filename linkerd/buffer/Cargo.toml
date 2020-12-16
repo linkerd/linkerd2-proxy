@@ -16,5 +16,6 @@ tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
 
 [dev-dependencies]
+tokio = { version = "0.3", features = ["rt-multi-thread"] }
 tower-test = "0.3"
-tokio-test = "0.2"
+tokio-test = "0.3"
