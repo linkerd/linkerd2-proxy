@@ -4,12 +4,20 @@ use std::{
     collections::hash_map::{self, HashMap},
     fmt,
     hash::Hash,
-    sync::{Arc, Mutex},
-    time::Instant,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
 };
 
 pub trait LastUpdate {
-    fn last_update(&self) -> Instant;
+    fn last_update(&self) -> quanta::Instant;
+}
+
+#[derive(Debug, Default)]
+pub struct UpdatedAt {
+    last_update: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -18,14 +26,18 @@ where
     K: Hash + Eq,
 {
     inner: HashMap<K, Arc<V>>,
+    clock: quanta::Clock,
 }
 
 impl<K, V> Store<K, V>
 where
     K: Hash + Eq,
 {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(clock: quanta::Clock) -> Self {
+        Self {
+            inner: Default::default(),
+            clock,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -48,18 +60,30 @@ where
         self.inner.entry(key)
     }
 
-    pub fn get_or_default(&mut self, k: K) -> &Arc<V>
+    pub fn get_or_insert(&mut self, k: K) -> Arc<V>
     where
-        V: Default,
+        V: From<quanta::Clock>,
     {
-        self.inner.entry(k).or_default()
+        let clock = &self.clock;
+        let inner = &mut self.inner;
+        inner
+            .entry(k)
+            .or_insert_with(|| Arc::new(V::from(clock.clone())))
+            .clone()
     }
 
     pub fn iter(&self) -> hash_map::Iter<'_, K, Arc<V>> {
         self.inner.iter()
     }
 
-    pub fn retain_since(&mut self, epoch: Instant)
+    pub fn retain_active(&mut self, idle: Duration)
+    where
+        V: LastUpdate,
+    {
+        self.retain_since(self.clock.recent() - idle)
+    }
+
+    pub fn retain_since(&mut self, epoch: quanta::Instant)
     where
         V: LastUpdate,
     {
@@ -84,6 +108,10 @@ where
         }
 
         Ok(())
+    }
+
+    pub fn clock(&self) -> &quanta::Clock {
+        &self.clock
     }
 }
 
@@ -112,27 +140,35 @@ where
     }
 }
 
-impl<K, V> Default for Store<K, V>
-where
-    K: Hash + Eq,
-{
-    fn default() -> Self {
-        Self {
-            inner: HashMap::new(),
-        }
-    }
-}
-
 // === impl LastUpdate ===
 
 impl<M: LastUpdate> LastUpdate for Mutex<M> {
-    fn last_update(&self) -> Instant {
+    fn last_update(&self) -> quanta::Instant {
         self.lock().unwrap().last_update()
     }
 }
 
 impl<M: LastUpdate> LastUpdate for Arc<M> {
-    fn last_update(&self) -> Instant {
+    fn last_update(&self) -> quanta::Instant {
         std::ops::Deref::deref(self).last_update()
+    }
+}
+
+// === impl UpdatedAt ===
+
+impl UpdatedAt {
+    pub fn new(clock: &quanta::Clock) -> Self {
+        let now = clock.recent().as_u64();
+        Self {
+            last_update: AtomicU64::new(now),
+        }
+    }
+
+    pub fn update(&self, now: quanta::Instant) {
+        self.last_update.fetch_max(now.as_u64(), Ordering::AcqRel);
+    }
+
+    pub fn last_update(&self, clock: &quanta::Clock) -> quanta::Instant {
+        clock.scaled(self.last_update.load(Ordering::Acquire))
     }
 }

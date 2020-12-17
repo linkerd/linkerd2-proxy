@@ -1,18 +1,22 @@
-use super::{LastUpdate, Registry, Report};
-use indexmap::IndexMap;
+use super::{LastUpdate, Report};
 use linkerd2_http_classify::ClassifyResponse;
-use linkerd2_metrics::{latency, Counter, FmtMetrics, Histogram};
+use linkerd2_metrics::{
+    latency,
+    store::{self, Store},
+    Counter, FmtMetrics, Histogram,
+};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod layer;
 mod report;
 
 pub use self::layer::ResponseBody;
 
-type SharedRegistry<T, C> = Arc<Mutex<Registry<T, Metrics<C>>>>;
+type SharedRegistry<T, C> = Arc<Mutex<Store<T, Metrics<C>>>>;
 
 #[derive(Debug)]
 pub struct Requests<T, C>(SharedRegistry<T, C>)
@@ -25,9 +29,10 @@ pub struct Metrics<C>
 where
     C: Hash + Eq,
 {
-    last_update: Instant,
+    last_update: store::UpdatedAt,
     total: Counter,
-    by_status: IndexMap<Option<http::StatusCode>, StatusMetrics<C>>,
+    clock: quanta::Clock,
+    by_status: Mutex<HashMap<Option<http::StatusCode>, StatusMetrics<C>>>,
 }
 
 #[derive(Debug)]
@@ -36,7 +41,7 @@ where
     C: Hash + Eq,
 {
     latency: Histogram<latency::Ms>,
-    by_class: IndexMap<C, ClassMetrics>,
+    by_class: HashMap<C, ClassMetrics>,
 }
 
 #[derive(Debug, Default)]
@@ -46,13 +51,11 @@ pub struct ClassMetrics {
 
 // === impl Requests ===
 
-impl<T: Hash + Eq, C: Hash + Eq> Default for Requests<T, C> {
-    fn default() -> Self {
-        Requests(Arc::new(Mutex::new(Registry::default())))
-    }
-}
-
 impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
+    pub fn new(clock: quanta::Clock) -> Self {
+        Requests(Arc::new(Mutex::new(Store::new(clock))))
+    }
+
     pub fn into_report(self, retain_idle: Duration) -> Report<T, Metrics<C>>
     where
         Report<T, Metrics<C>>: FmtMetrics,
@@ -76,19 +79,21 @@ impl<T: Hash + Eq, C: Hash + Eq> Clone for Requests<T, C> {
 
 // === impl Metrics ===
 
-impl<C: Hash + Eq> Default for Metrics<C> {
-    fn default() -> Self {
+impl<C: Hash + Eq> From<quanta::Clock> for Metrics<C> {
+    fn from(clock: quanta::Clock) -> Self {
+        let last_update = store::UpdatedAt::new(&clock);
         Self {
-            last_update: Instant::now(),
-            total: Counter::default(),
-            by_status: IndexMap::default(),
+            last_update,
+            clock,
+            total: Default::default(),
+            by_status: Mutex::new(Default::default()),
         }
     }
 }
 
 impl<C: Hash + Eq> LastUpdate for Metrics<C> {
-    fn last_update(&self) -> Instant {
-        self.last_update
+    fn last_update(&self) -> quanta::Instant {
+        self.last_update.last_update(&self.clock)
     }
 }
 
@@ -99,7 +104,7 @@ where
     fn default() -> Self {
         Self {
             latency: Histogram::default(),
-            by_class: IndexMap::default(),
+            by_class: HashMap::default(),
         }
     }
 }
@@ -110,7 +115,7 @@ mod tests {
     fn expiry() {
         use linkerd2_metrics::FmtLabels;
         use std::fmt;
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
 
         #[derive(Clone, Debug, Hash, Eq, PartialEq)]
         struct Target(usize);
@@ -136,18 +141,18 @@ mod tests {
             }
         }
 
-        let retain_idle_for = Duration::from_secs(1);
-        let r = super::Requests::<Target, Class>::default();
+        let (clock, time) = quanta::Clock::mock();
+
+        let retain_idle_for = Duration::from_secs(10);
+        let r = super::Requests::<Target, Class>::new(clock.clone());
         let report = r.clone().into_report(retain_idle_for);
         let mut registry = r.0.lock().unwrap();
 
-        let before_update = Instant::now();
-        let metrics = registry
-            .entry(Target(123))
-            .or_insert_with(Default::default)
-            .clone();
+        let before_update = clock.recent();
+        let metrics = registry.get_or_insert(Target(123));
         assert_eq!(registry.len(), 1, "target should be registered");
-        let after_update = Instant::now();
+        time.increment(retain_idle_for);
+        let after_update = clock.recent();
 
         registry.retain_since(after_update);
         assert_eq!(

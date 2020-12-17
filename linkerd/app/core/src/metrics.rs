@@ -98,37 +98,40 @@ where
 // === impl Metrics ===
 
 impl Metrics {
-    pub fn new(retain_idle: Duration) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
+    pub fn new(
+        retain_idle: Duration,
+        clock: quanta::Clock,
+    ) -> (Self, impl FmtMetrics + Clone + Send + 'static) {
         let process = telemetry::process::Report::new(SystemTime::now());
 
         let build_info = telemetry::build_info::Report::new();
 
         let (control, control_report) = {
-            let m = metrics::Requests::<ControlLabels, Class>::default();
+            let m = metrics::Requests::<ControlLabels, Class>::new(clock.clone());
             let r = m.clone().into_report(retain_idle).with_prefix("control");
             (m, r)
         };
 
         let (http_endpoint, endpoint_report) = {
-            let m = metrics::Requests::<EndpointLabels, Class>::default();
+            let m = metrics::Requests::<EndpointLabels, Class>::new(clock.clone());
             let r = m.clone().into_report(retain_idle);
             (m, r)
         };
 
         let (http_route, route_report) = {
-            let m = metrics::Requests::<RouteLabels, Class>::default();
+            let m = metrics::Requests::<RouteLabels, Class>::new(clock.clone());
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
         let (http_route_retry, retry_report) = {
-            let m = metrics::Retries::<RouteLabels>::default();
+            let m = metrics::Retries::<RouteLabels>::from(clock.clone());
             let r = m.clone().into_report(retain_idle).with_prefix("route");
             (m, r)
         };
 
         let (http_route_actual, actual_report) = {
-            let m = metrics::Requests::<RouteLabels, Class>::default();
+            let m = metrics::Requests::<RouteLabels, Class>::new(clock.clone());
             let r = m
                 .clone()
                 .into_report(retain_idle)
@@ -140,7 +143,7 @@ impl Metrics {
 
         let stack = stack_metrics::Registry::default();
 
-        let (transport, transport_report) = transport::metrics::new(retain_idle);
+        let (transport, transport_report) = transport::metrics::new(retain_idle, clock.clone());
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();
 

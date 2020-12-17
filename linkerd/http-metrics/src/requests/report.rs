@@ -1,7 +1,9 @@
 use super::{ClassMetrics, Metrics, StatusMetrics};
-use crate::{Prefixed, Registry, Report};
-use linkerd2_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
-use std::{fmt, hash::Hash, time::Instant};
+use crate::{Prefixed, Report};
+use linkerd2_metrics::{
+    latency, store::Store as Registry, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric,
+};
+use std::{fmt, hash::Hash};
 use tracing::trace;
 
 #[derive(Copy, Clone)]
@@ -52,7 +54,7 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        registry.fmt_by_locked(f, metric, get_metric)
+        registry.fmt_by(f, metric, get_metric)
     }
 
     fn fmt_by_status<N, M>(
@@ -66,8 +68,8 @@ where
         M: FmtMetric,
     {
         for (tgt, tm) in registry.iter() {
-            if let Ok(tm) = tm.lock() {
-                for (status, m) in &tm.by_status {
+            if let Ok(by_status) = tm.by_status.lock() {
+                for (status, m) in by_status.iter() {
                     let status = status.as_ref().map(|s| Status(*s));
                     let labels = (tgt, status);
                     get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
@@ -89,8 +91,8 @@ where
         M: FmtMetric,
     {
         for (tgt, tm) in registry.iter() {
-            if let Ok(tm) = tm.lock() {
-                for (status, sm) in &tm.by_status {
+            if let Ok(by_status) = tm.by_status.lock() {
+                for (status, sm) in by_status.iter() {
                     for (cls, m) in &sm.by_class {
                         let status = status.as_ref().map(|s| Status(*s));
                         let labels = (tgt, (status, cls));
@@ -139,7 +141,7 @@ where
         metric.fmt_help(f)?;
         Self::fmt_by_class(&registry, f, metric, |s| &s.total)?;
 
-        registry.retain_since(Instant::now() - self.retain_idle);
+        registry.retain_active(self.retain_idle);
 
         Ok(())
     }

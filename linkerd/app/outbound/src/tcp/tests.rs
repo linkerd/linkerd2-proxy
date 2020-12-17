@@ -828,7 +828,8 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (clock, _) = quanta::Clock::mock();
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10), clock);
     let (_, drain) = drain::channel();
     crate::server::stack(
         &cfg,

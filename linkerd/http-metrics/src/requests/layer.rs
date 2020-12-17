@@ -9,9 +9,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Instant;
 
 /// A stack module that wraps services to record metrics.
 #[derive(Debug)]
@@ -46,7 +45,7 @@ where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
+    metrics: Option<Arc<Metrics<C::Class>>>,
     #[pin]
     inner: S,
     _p: PhantomData<fn() -> C>,
@@ -59,8 +58,8 @@ where
     C::Class: Hash + Eq,
 {
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
-    stream_open_at: Instant,
+    metrics: Option<Arc<Metrics<C::Class>>>,
+    stream_open_at: Option<quanta::Instant>,
     #[pin]
     inner: F,
 }
@@ -72,7 +71,7 @@ where
     B: Body,
     C: Hash + Eq,
 {
-    metrics: Option<Arc<Mutex<Metrics<C>>>>,
+    metrics: Option<Arc<Metrics<C>>>,
     #[pin]
     inner: B,
 }
@@ -87,8 +86,8 @@ where
 {
     status: http::StatusCode,
     classify: Option<C>,
-    metrics: Option<Arc<Mutex<Metrics<C::Class>>>>,
-    stream_open_at: Instant,
+    metrics: Option<Arc<Metrics<C::Class>>>,
+    stream_open_at: Option<quanta::Instant>,
     latency_recorded: bool,
     #[pin]
     inner: B,
@@ -171,11 +170,7 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(
-                r.entry((&target).into())
-                    .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
-                    .clone(),
-            ),
+            Ok(mut r) => Some(r.get_or_insert((&target).into())),
             Err(_) => None,
         };
 
@@ -207,7 +202,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(r.entry((&target).into()).or_default().clone()),
+            Ok(mut r) => Some(r.get_or_insert((&target).into())),
             Err(_) => None,
         };
 
@@ -274,16 +269,14 @@ where
 
     fn proxy(&self, svc: &mut S, req: http::Request<A>) -> Self::Future {
         let mut req_metrics = self.metrics.clone();
-
         if req.body().is_end_stream() {
-            if let Some(lock) = req_metrics.take() {
-                let now = Instant::now();
-                if let Ok(mut metrics) = lock.lock() {
-                    (*metrics).last_update = now;
-                    (*metrics).total.incr();
-                }
+            if let Some(metrics) = req_metrics.take() {
+                metrics.last_update.update(metrics.clock.recent());
+                metrics.total.incr();
             }
         }
+
+        let stream_open_at = req_metrics.as_ref().map(|metrics| metrics.clock.recent());
 
         let req = {
             let (head, inner) = req.into_parts();
@@ -299,7 +292,7 @@ where
         ResponseFuture {
             classify: Some(classify),
             metrics: self.metrics.clone(),
-            stream_open_at: Instant::now(),
+            stream_open_at,
             inner: self.inner.proxy(svc, req),
         }
     }
@@ -326,14 +319,13 @@ where
         let mut req_metrics = self.metrics.clone();
 
         if req.body().is_end_stream() {
-            if let Some(lock) = req_metrics.take() {
-                let now = Instant::now();
-                if let Ok(mut metrics) = lock.lock() {
-                    (*metrics).last_update = now;
-                    (*metrics).total.incr();
-                }
+            if let Some(metrics) = req_metrics.take() {
+                metrics.last_update.update(metrics.clock.recent());
+                metrics.total.incr();
             }
         }
+
+        let stream_open_at = req_metrics.as_ref().map(|metrics| metrics.clock.recent());
 
         let req = {
             let (head, inner) = req.into_parts();
@@ -349,7 +341,7 @@ where
         ResponseFuture {
             classify: Some(classify),
             metrics: self.metrics.clone(),
-            stream_open_at: Instant::now(),
+            stream_open_at,
             inner: self.inner.call(req),
         }
     }
@@ -418,12 +410,9 @@ where
         let this = self.project();
         let frame = ready!(this.inner.poll_data(cx));
 
-        if let Some(lock) = this.metrics.take() {
-            let now = Instant::now();
-            if let Ok(mut metrics) = lock.lock() {
-                (*metrics).last_update = now;
-                (*metrics).total.incr();
-            }
+        if let Some(metrics) = this.metrics.take() {
+            metrics.last_update.update(metrics.clock.recent());
+            metrics.total.incr();
         }
 
         Poll::Ready(frame)
@@ -454,24 +443,6 @@ where
     }
 }
 
-impl<B, C> Default for ResponseBody<B, C>
-where
-    B: Body + Default,
-    C: ClassifyEos,
-    C::Class: Hash + Eq,
-{
-    fn default() -> Self {
-        Self {
-            status: http::StatusCode::OK,
-            inner: B::default(),
-            stream_open_at: Instant::now(),
-            classify: None,
-            metrics: None,
-            latency_recorded: false,
-        }
-    }
-}
-
 impl<B, C> ResponseBody<B, C>
 where
     B: Body,
@@ -480,25 +451,23 @@ where
 {
     fn record_latency(self: Pin<&mut Self>) {
         let this = self.project();
-        let now = Instant::now();
 
-        let lock = match this.metrics.as_mut() {
-            Some(lock) => lock,
-            None => return,
+        let (metrics, stream_open_at) = match (this.metrics, this.stream_open_at) {
+            (Some(metrics), Some(open_at)) => (metrics, open_at),
+            _ => return,
         };
-        let mut metrics = match lock.lock() {
-            Ok(m) => m,
+
+        let now = metrics.clock.recent();
+        metrics.last_update.update(now);
+
+        match metrics.by_status.lock() {
+            Ok(mut m) => m
+                .entry(Some(*this.status))
+                .or_insert_with(StatusMetrics::default)
+                .latency
+                .add(now - *stream_open_at),
             Err(_) => return,
-        };
-
-        (*metrics).last_update = now;
-
-        let status_metrics = metrics
-            .by_status
-            .entry(Some(*this.status))
-            .or_insert_with(StatusMetrics::default);
-
-        status_metrics.latency.add(now - *this.stream_open_at);
+        }
 
         *this.latency_recorded = true;
     }
@@ -525,23 +494,20 @@ where
 }
 
 fn measure_class<C: Hash + Eq>(
-    lock: &Arc<Mutex<Metrics<C>>>,
+    metrics: &Arc<Metrics<C>>,
     class: C,
     status: Option<http::StatusCode>,
 ) {
-    let now = Instant::now();
-    let mut metrics = match lock.lock() {
+    metrics.last_update.update(metrics.clock.recent());
+
+    let mut by_status = match metrics.by_status.lock() {
         Ok(m) => m,
         Err(_) => return,
     };
 
-    (*metrics).last_update = now;
-
-    let status_metrics = metrics
-        .by_status
+    let status_metrics = by_status
         .entry(status)
         .or_insert_with(StatusMetrics::default);
-
     let class_metrics = status_metrics
         .by_class
         .entry(class)

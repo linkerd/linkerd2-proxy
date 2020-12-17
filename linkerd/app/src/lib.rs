@@ -88,7 +88,12 @@ impl Config {
             ingress_mode,
         } = self;
         debug!("building app");
-        let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
+        let clock = quanta::Clock::new();
+        let _upkeep =
+            quanta::Upkeep::new_with_clock(std::time::Duration::from_millis(1), clock.clone())
+                .start()
+                .map_err(|_| "failed to start clock upkeep thread")?;
+        let (metrics, report) = Metrics::new(admin.metrics_retain_idle, clock);
 
         let dns = dns.build();
 

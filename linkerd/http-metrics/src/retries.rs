@@ -1,9 +1,12 @@
-use super::{LastUpdate, Prefixed, Registry, Report};
-use linkerd2_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, Metric};
+use super::{Prefixed, Report};
+use linkerd2_metrics::{
+    store::{LastUpdate, Store as Registry, UpdatedAt},
+    Counter, FmtLabels, FmtMetric, FmtMetrics, Metric,
+};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::trace;
 
 #[derive(Debug)]
@@ -12,11 +15,12 @@ where
     T: Hash + Eq;
 
 #[derive(Clone, Debug)]
-pub struct Handle(Arc<Mutex<Metrics>>);
+pub struct Handle(Arc<Metrics>);
 
 #[derive(Debug)]
 pub struct Metrics {
-    last_update: Instant,
+    clock: quanta::Clock,
+    last_update: UpdatedAt,
     retryable: Counter,
     no_budget: Counter,
 }
@@ -25,9 +29,9 @@ struct NoBudgetLabel;
 
 // === impl Retries ===
 
-impl<T: Hash + Eq> Default for Retries<T> {
-    fn default() -> Self {
-        Retries(Arc::new(Mutex::new(Registry::default())))
+impl<T: Hash + Eq> From<quanta::Clock> for Retries<T> {
+    fn from(clock: quanta::Clock) -> Self {
+        Retries(Arc::new(Mutex::new(Registry::new(clock))))
     }
 }
 
@@ -38,7 +42,7 @@ impl<T: Hash + Eq> Retries<T> {
 
     pub fn get_handle(&self, target: impl Into<T>) -> Handle {
         let mut reg = self.0.lock().expect("retry metrics registry poisoned");
-        Handle(reg.entry(target.into()).or_default().clone())
+        Handle(reg.get_or_insert(target.into()))
     }
 }
 
@@ -52,22 +56,23 @@ impl<T: Hash + Eq> Clone for Retries<T> {
 
 impl Handle {
     pub fn incr_retryable(&self, has_budget: bool) {
-        if let Ok(mut m) = self.0.lock() {
-            m.last_update = Instant::now();
-            m.retryable.incr();
-            if !has_budget {
-                m.no_budget.incr();
-            }
+        let m = &self.0;
+        m.last_update.update(m.clock.recent());
+        m.retryable.incr();
+        if !has_budget {
+            m.no_budget.incr();
         }
     }
 }
 
 // === impl Metrics ===
 
-impl Default for Metrics {
-    fn default() -> Self {
+impl From<quanta::Clock> for Metrics {
+    fn from(clock: quanta::Clock) -> Self {
+        let last_update = UpdatedAt::new(&clock);
         Self {
-            last_update: Instant::now(),
+            last_update,
+            clock,
             retryable: Counter::default(),
             no_budget: Counter::default(),
         }
@@ -75,8 +80,8 @@ impl Default for Metrics {
 }
 
 impl LastUpdate for Metrics {
-    fn last_update(&self) -> Instant {
-        self.last_update
+    fn last_update(&self) -> quanta::Instant {
+        self.last_update.last_update(&self.clock)
     }
 }
 
@@ -115,15 +120,13 @@ where
 
         let metric = self.retryable_total();
         metric.fmt_help(f)?;
-        for (tgt, tm) in registry.iter() {
-            if let Ok(m) = tm.lock() {
-                m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
-                m.no_budget
-                    .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
-            }
+        for (tgt, m) in registry.iter() {
+            m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
+            m.no_budget
+                .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
         }
 
-        registry.retain_since(Instant::now() - self.retain_idle);
+        registry.retain_active(self.retain_idle);
 
         Ok(())
     }

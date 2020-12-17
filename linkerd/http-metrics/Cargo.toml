@@ -18,6 +18,7 @@ linkerd2-metrics = { path  = "../metrics" }
 linkerd2-stack = { path  = "../stack" } 
 tracing = "0.1.22"
 pin-project = "0.4"
+quanta = "0.6"
 
 [dependencies.tower]
 version = "0.4"

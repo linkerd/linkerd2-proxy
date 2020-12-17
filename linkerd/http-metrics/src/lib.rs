@@ -10,8 +10,6 @@ use std::time::Duration;
 pub mod requests;
 pub mod retries;
 
-type Registry<T, M> = Store<T, Mutex<M>>;
-
 /// Reports metrics for prometheus.
 #[derive(Debug)]
 pub struct Report<T, M>
@@ -19,7 +17,7 @@ where
     T: Hash + Eq,
 {
     prefix: &'static str,
-    registry: Arc<Mutex<Registry<T, M>>>,
+    registry: Arc<Mutex<Store<T, M>>>,
     /// The amount of time metrics with no updates should be retained for reports
     retain_idle: Duration,
     /// Whether latencies should be reported.
@@ -46,7 +44,7 @@ impl<T, M> Report<T, M>
 where
     T: Hash + Eq,
 {
-    fn new(retain_idle: Duration, registry: Arc<Mutex<Registry<T, M>>>) -> Self {
+    fn new(retain_idle: Duration, registry: Arc<Mutex<Store<T, M>>>) -> Self {
         Self {
             prefix: "",
             registry,

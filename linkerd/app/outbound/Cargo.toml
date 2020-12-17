@@ -19,6 +19,7 @@ linkerd2-retry = { path = "../../retry" }
 tokio = { version = "0.3", features = ["sync"]}
 tracing = "0.1.22"
 pin-project = "0.4"
+quanta = "0.6"
 
 [dependencies.tower]
 version = "0.4"

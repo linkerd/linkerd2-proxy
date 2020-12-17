@@ -2,8 +2,8 @@ use futures::{ready, TryFuture};
 use linkerd2_errno::Errno;
 use linkerd2_io as io;
 use linkerd2_metrics::{
-    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, LastUpdate,
-    Metric, Store,
+    latency, metrics, store, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram,
+    LastUpdate, Metric, Store,
 };
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
@@ -14,7 +14,7 @@ use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
@@ -28,8 +28,11 @@ metrics! {
     tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
 }
 
-pub fn new<K: Eq + Hash + FmtLabels>(retain_idle: Duration) -> (Registry<K>, Report<K>) {
-    let inner = Arc::new(Mutex::new(Inner::new()));
+pub fn new<K: Eq + Hash + FmtLabels>(
+    retain_idle: Duration,
+    clock: quanta::Clock,
+) -> (Registry<K>, Report<K>) {
+    let inner = Arc::new(Mutex::new(Inner::new(clock)));
     let report = Report {
         metrics: inner.clone(),
         retain_idle,
@@ -78,20 +81,15 @@ pub struct Connecting<F> {
 }
 
 /// Stores a class of transport's metrics.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Metrics {
     open_total: Counter,
     open_connections: Gauge,
     write_bytes_total: Counter,
     read_bytes_total: Counter,
-
-    by_eos: Arc<Mutex<ByEos>>,
-}
-
-#[derive(Debug)]
-struct ByEos {
-    last_update: Instant,
-    metrics: HashMap<Eos, EosMetrics>,
+    clock: quanta::Clock,
+    by_eos: Mutex<HashMap<Eos, EosMetrics>>,
+    last_update: store::UpdatedAt,
 }
 
 /// Describes a classtransport end.
@@ -113,7 +111,7 @@ struct EosMetrics {
 #[derive(Debug)]
 pub struct Sensor {
     metrics: Option<Arc<Metrics>>,
-    opened_at: Instant,
+    opened_at: quanta::Instant,
 }
 
 pub type SensorIo<T> = io::SensorIo<T, Sensor>;
@@ -192,7 +190,7 @@ where
             .registry
             .lock()
             .expect("metrics registry poisoned")
-            .get_or_default(labels)
+            .get_or_insert(labels)
             .clone();
 
         let inner = self.inner.new_service(target);
@@ -253,7 +251,7 @@ where
             .registry
             .lock()
             .expect("metrics registr poisoned")
-            .get_or_default(labels)
+            .get_or_insert(labels)
             .clone();
 
         Connecting {
@@ -303,7 +301,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
     {
         for (key, metrics) in inner.iter() {
             if let Ok(by_eos) = (*metrics).by_eos.lock() {
-                for (eos, m) in by_eos.metrics.iter() {
+                for (eos, m) in by_eos.iter() {
                     get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
                 }
             }
@@ -340,7 +338,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
             &e.connection_duration
         })?;
 
-        metrics.retain_since(Instant::now() - self.retain_idle);
+        metrics.retain_active(self.retain_idle);
 
         Ok(())
     }
@@ -352,12 +350,11 @@ impl Sensor {
     fn open(metrics: Arc<Metrics>) -> Self {
         metrics.open_total.incr();
         metrics.open_connections.incr();
-        if let Ok(mut by_eos) = metrics.by_eos.lock() {
-            by_eos.last_update = Instant::now();
-        }
+        let opened_at = metrics.clock.recent();
+        metrics.last_update.update(opened_at);
         Self {
             metrics: Some(metrics),
-            opened_at: Instant::now(),
+            opened_at,
         }
     }
 }
@@ -366,23 +363,18 @@ impl io::Sensor for Sensor {
     fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.read_bytes_total.add(sz as u64);
-            if let Ok(mut by_eos) = m.by_eos.lock() {
-                by_eos.last_update = Instant::now();
-            }
+            m.last_update.update(m.clock.recent());
         }
     }
 
     fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.write_bytes_total.add(sz as u64);
-            if let Ok(mut by_eos) = m.by_eos.lock() {
-                by_eos.last_update = Instant::now();
-            }
+            m.last_update.update(m.clock.recent());
         }
     }
 
     fn record_close(&mut self, eos: Option<Errno>) {
-        let duration = self.opened_at.elapsed();
         // When closed, the metrics structure is dropped so that no further
         // updates can occur (i.e. so that an additional close won't be recorded
         // on Drop).
@@ -390,13 +382,14 @@ impl io::Sensor for Sensor {
             m.open_connections.decr();
 
             let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
-            let class = by_eos
-                .metrics
-                .entry(Eos(eos))
-                .or_insert_with(EosMetrics::default);
+            let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
             class.close_total.incr();
+
+            let now = m.clock.recent();
+            let duration = now.duration_since(self.opened_at);
             class.connection_duration.add(duration);
-            by_eos.last_update = Instant::now();
+
+            m.last_update.update(now);
         }
     }
 
@@ -448,32 +441,31 @@ impl FmtLabels for Eos {
 // ===== impl Metrics =====
 
 impl LastUpdate for Metrics {
-    fn last_update(&self) -> Instant {
-        self.by_eos
-            .lock()
-            .map(|metrics| metrics.last_update)
-            .unwrap_or_else(|_| Instant::now()) // XXX(eliza): ew
+    fn last_update(&self) -> quanta::Instant {
+        self.last_update.last_update(&self.clock)
     }
 }
 
-// ===== impl ByEos =====
-
-impl Default for ByEos {
-    fn default() -> Self {
+impl From<quanta::Clock> for Metrics {
+    fn from(clock: quanta::Clock) -> Self {
+        let last_update = store::UpdatedAt::new(&clock);
         Self {
-            metrics: HashMap::new(),
-            last_update: Instant::now(),
+            open_total: Counter::default(),
+            open_connections: Gauge::default(),
+            write_bytes_total: Counter::default(),
+            read_bytes_total: Counter::default(),
+            clock,
+            by_eos: Default::default(),
+            last_update,
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     #[test]
     fn expiry() {
         use linkerd2_metrics::FmtLabels;
-        use std::fmt;
-        use std::time::{Duration, Instant};
+        use std::{fmt, time::Duration};
 
         #[derive(Clone, Debug, Hash, Eq, PartialEq)]
         struct Target(usize);
@@ -483,14 +475,17 @@ mod tests {
             }
         }
 
-        let retain_idle_for = Duration::from_secs(1);
-        let (r, report) = super::new(retain_idle_for);
+        let (clock, time) = quanta::Clock::mock();
+
+        let retain_idle_for = Duration::from_secs(10);
+        let (r, report) = super::new(retain_idle_for, clock.clone());
         let mut registry = r.0.lock().unwrap();
 
-        let before_update = Instant::now();
-        let metrics = registry.entry(Target(123)).or_default().clone();
+        let before_update = clock.recent();
+        let metrics = registry.get_or_insert(Target(123));
         assert_eq!(registry.len(), 1, "target should be registered");
-        let after_update = Instant::now();
+        time.increment(retain_idle_for);
+        let after_update = clock.recent();
 
         registry.retain_since(after_update);
         assert_eq!(

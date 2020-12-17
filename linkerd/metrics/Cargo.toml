@@ -19,6 +19,7 @@ indexmap = "1.0"
 parking_lot = { version = "0.11", optional = true }
 tokio = { version = "0.3", features = ["time"], optional = true }
 tracing = "0.1.2"
+quanta = "0.6"
 
 [dev-dependencies]
 quickcheck = { version = "0.9", default-features = false }

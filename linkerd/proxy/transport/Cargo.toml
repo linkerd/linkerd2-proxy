@@ -36,6 +36,7 @@ webpki = "0.21"
 untrusted = "0.7"
 pin-project = "0.4"
 socket2 = "0.3"
+quanta = "0.6"
 
 [dependencies.tower]
 version = "0.4"

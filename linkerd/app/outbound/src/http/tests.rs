@@ -54,7 +54,8 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (clock, _) = quanta::Clock::mock();
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10), clock);
     let (accept, drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let svc = crate::server::cache(&cfg.proxy, metrics.outbound, accept);
     (svc, drain_tx)
@@ -354,7 +355,8 @@ async fn stacks_idle_out() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (clock, _) = quanta::Clock::mock();
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10), clock);
     let (accept, _drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let (handle, accept) = track::new_service(accept);
     let mut svc = crate::server::cache(&cfg.proxy, metrics.outbound, accept);
@@ -432,7 +434,8 @@ async fn active_stacks_dont_idle_out() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
+    let (clock, _) = quanta::Clock::mock();
+    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10), clock);
     let (accept, _drain_tx) = build_accept(&cfg, profiles, resolver, connect, &metrics);
     let (handle, accept) = track::new_service(accept);
     let mut svc = crate::server::cache(&cfg.proxy, metrics.outbound, accept);
