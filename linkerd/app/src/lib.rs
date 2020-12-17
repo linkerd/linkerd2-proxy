@@ -63,6 +63,7 @@ pub struct App {
     outbound_addr: SocketAddr,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
+    upkeep: Option<quanta::Handle>,
 }
 
 impl Config {
@@ -89,10 +90,15 @@ impl Config {
         } = self;
         debug!("building app");
         let clock = quanta::Clock::new();
-        let _upkeep =
-            quanta::Upkeep::new_with_clock(std::time::Duration::from_millis(1), clock.clone())
-                .start()
-                .map_err(|_| "failed to start clock upkeep thread")?;
+        let upkeep =
+            quanta::Upkeep::new_with_clock(std::time::Duration::from_millis(1), clock.clone());
+        let upkeep = match upkeep.start() {
+            Ok(upkeep) => Some(upkeep),
+            Err(error) => {
+                tracing::warn!(%error, "failed to start clock upkeep thread");
+                None
+            }
+        };
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle, clock);
 
         let dns = dns.build();
@@ -246,6 +252,7 @@ impl Config {
             outbound_addr,
             start_proxy,
             tap,
+            upkeep,
         })
     }
 }
@@ -303,6 +310,7 @@ impl App {
             oc_collector,
             start_proxy,
             tap,
+            upkeep,
             ..
         } = self;
 
@@ -377,6 +385,7 @@ impl App {
                         // we don't care if the admin shutdown channel is
                         // dropped or actually triggered.
                         let _ = admin_shutdown_rx.await;
+                        drop(upkeep);
                     }
                     .instrument(info_span!("daemon")),
                 )
