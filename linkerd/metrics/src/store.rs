@@ -1,4 +1,5 @@
 use crate::{FmtLabels, FmtMetric, Metric};
+use parking_lot::RwLock;
 use std::{
     borrow::Borrow,
     collections::hash_map::{self, HashMap},
@@ -21,6 +22,11 @@ pub struct UpdatedAt {
 }
 
 #[derive(Debug)]
+pub struct Registry<K, V>(Arc<RwLock<Store<K, V>>>)
+where
+    K: Hash + Eq;
+
+#[derive(Debug)]
 pub struct Store<K, V>
 where
     K: Hash + Eq,
@@ -28,6 +34,52 @@ where
     inner: HashMap<K, Arc<V>>,
     clock: quanta::Clock,
 }
+
+// === impl Registry ===
+
+impl<K, V> Registry<K, V>
+where
+    K: Hash + Eq,
+{
+    pub fn new(clock: quanta::Clock) -> Self {
+        Self(Arc::new(RwLock::new(Store::new(clock))))
+    }
+
+    pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, Store<K, V>> {
+        self.0.read()
+    }
+
+    pub fn write(&self) -> parking_lot::RwLockWriteGuard<'_, Store<K, V>> {
+        self.0.write()
+    }
+
+    pub fn get_or_insert(&self, k: K) -> Arc<V>
+    where
+        V: From<quanta::Clock>,
+    {
+        if let Some(v) = self.0.read().get(&k) {
+            return v.clone();
+        }
+
+        let mut this = self.0.write();
+        let clock = this.clock.clone();
+        this.inner
+            .entry(k)
+            .or_insert_with(|| Arc::new(V::from(clock)))
+            .clone()
+    }
+}
+
+impl<K, V> Clone for Registry<K, V>
+where
+    K: Hash + Eq,
+{
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+// === impl Store ===
 
 impl<K, V> Store<K, V>
 where

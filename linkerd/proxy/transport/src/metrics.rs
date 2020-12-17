@@ -3,7 +3,7 @@ use linkerd2_errno::Errno;
 use linkerd2_io as io;
 use linkerd2_metrics::{
     latency, metrics, store, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram,
-    LastUpdate, Metric, Store,
+    LastUpdate, Metric,
 };
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
@@ -32,7 +32,7 @@ pub fn new<K: Eq + Hash + FmtLabels>(
     retain_idle: Duration,
     clock: quanta::Clock,
 ) -> (Registry<K>, Report<K>) {
-    let inner = Arc::new(Mutex::new(Inner::new(clock)));
+    let inner = store::Registry::new(clock);
     let report = Report {
         metrics: inner.clone(),
         retain_idle,
@@ -43,22 +43,26 @@ pub fn new<K: Eq + Hash + FmtLabels>(
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
 #[derive(Clone, Debug)]
 pub struct Report<K: Eq + Hash + FmtLabels> {
-    metrics: Arc<Mutex<Inner<K>>>,
+    metrics: store::Registry<K, Metrics>,
     retain_idle: Duration,
 }
 
 #[derive(Clone, Debug)]
-pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
+pub struct Registry<K>(Inner<K>)
+where
+    K: Hash + Eq + FmtLabels;
+
+type Inner<K> = store::Registry<K, Metrics>;
 
 #[derive(Debug)]
 pub struct ConnectLayer<K: Eq + Hash + FmtLabels> {
-    registry: Arc<Mutex<Inner<K>>>,
+    registry: Inner<K>,
 }
 
 #[derive(Debug)]
 pub struct MakeAccept<K: Eq + Hash + FmtLabels, M> {
     inner: M,
-    registry: Arc<Mutex<Inner<K>>>,
+    registry: Inner<K>,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +74,7 @@ pub struct Accept<A> {
 #[derive(Debug)]
 pub struct Connect<K: Eq + Hash + FmtLabels, M> {
     inner: M,
-    registry: Arc<Mutex<Inner<K>>>,
+    registry: Inner<K>,
 }
 
 #[pin_project]
@@ -120,8 +124,6 @@ pub type SensorIo<T> = io::SensorIo<T, Sensor>;
 #[derive(Clone, Debug)]
 struct NewSensor(Arc<Metrics>);
 
-type Inner<K> = Store<K, Metrics>;
-
 // ===== impl Registry =====
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
@@ -139,7 +141,7 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
 }
 
 impl<K: Eq + Hash + FmtLabels> ConnectLayer<K> {
-    fn new(registry: Arc<Mutex<Inner<K>>>) -> Self {
+    fn new(registry: Inner<K>) -> Self {
         Self { registry }
     }
 }
@@ -186,12 +188,7 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let labels = (&target).into();
-        let metrics = self
-            .registry
-            .lock()
-            .expect("metrics registry poisoned")
-            .get_or_insert(labels)
-            .clone();
+        let metrics = self.registry.get_or_insert(labels);
 
         let inner = self.inner.new_service(target);
         Accept { metrics, inner }
@@ -247,12 +244,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let labels = (&target).into();
-        let metrics = self
-            .registry
-            .lock()
-            .expect("metrics registr poisoned")
-            .get_or_insert(labels)
-            .clone();
+        let metrics = self.registry.get_or_insert(labels);
 
         Connecting {
             new_sensor: Some(NewSensor(metrics)),
@@ -290,7 +282,7 @@ where
 impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
     /// Formats a metric across all instances of `EosMetrics` in the registry.
     fn fmt_eos_by<N, M>(
-        inner: &Inner<K>,
+        inner: &store::Store<K, Metrics>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&EosMetrics) -> &M,
@@ -313,7 +305,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
 
 impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut metrics = self.metrics.lock().expect("metrics registry poisoned");
+        let metrics = self.metrics.read();
         if metrics.is_empty() {
             return Ok(());
         }
@@ -337,8 +329,9 @@ impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
         Self::fmt_eos_by(&*metrics, f, tcp_connection_duration_ms, |e| {
             &e.connection_duration
         })?;
+        drop(metrics);
 
-        metrics.retain_active(self.retain_idle);
+        self.metrics.write().retain_active(self.retain_idle);
 
         Ok(())
     }
@@ -479,7 +472,7 @@ mod tests {
 
         let retain_idle_for = Duration::from_secs(10);
         let (r, report) = super::new(retain_idle_for, clock.clone());
-        let mut registry = r.0.lock().unwrap();
+        let mut registry = r.0.write();
 
         let before_update = clock.recent();
         let metrics = registry.get_or_insert(Target(123));
