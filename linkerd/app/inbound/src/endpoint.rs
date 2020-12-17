@@ -1,7 +1,9 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, metrics, profiles,
+    classify,
+    connection_header::Header,
+    dst, http_request_authority_addr, http_request_host_addr, http_request_l5d_override_dst_addr,
+    metrics, profiles,
     proxy::{http, identity, tap},
     stack_tracing, svc,
     transport::{self, listen, tls},
@@ -136,6 +138,15 @@ impl From<TcpAccept> for TcpEndpoint {
     fn from(tcp: TcpAccept) -> Self {
         Self {
             port: tcp.target_addr.port(),
+        }
+    }
+}
+
+impl From<(Option<Header>, TcpAccept)> for TcpEndpoint {
+    fn from((hdr, tcp): (Option<Header>, TcpAccept)) -> Self {
+        match hdr {
+            Some(Header { port, .. }) => Self { port },
+            None => tcp.into(),
         }
     }
 }

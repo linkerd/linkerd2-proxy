@@ -15,6 +15,7 @@ use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
+    connection_header::DetectHeader,
     drain, dst, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
@@ -111,6 +112,7 @@ impl Config {
             .into_inner();
 
         let accept = self.build_accept(
+            prevent_loop,
             tcp_forward.clone(),
             http_router,
             metrics.clone(),
@@ -269,11 +271,8 @@ impl Config {
 
         // If the traffic is targeted at the inbound port, send it through
         // the loopback service (i.e. as a gateway).
-        let switch_loopback = svc::stack(loopback).push_switch(prevent_loop, profile);
-
-        // Attempts to resolve the target as a service profile or, if that
-        // fails, skips that stack to forward to the local endpoint.
-        svc::stack(switch_loopback)
+        svc::stack(profile)
+            .push_switch(prevent_loop, loopback)
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .push_on_response(
                 svc::layers()
@@ -296,6 +295,7 @@ impl Config {
 
     pub fn build_accept<I, F, A, H, S>(
         &self,
+        prevent_loop: impl Into<PreventLoop>,
         tcp_forward: F,
         http_router: H,
         metrics: metrics::Proxy,
@@ -315,10 +315,17 @@ impl Config {
            + 'static
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Unpin + Send + 'static,
-        F: svc::NewService<TcpEndpoint, Service = A> + Unpin + Clone + Send + 'static,
+        F: svc::NewService<TcpEndpoint, Service = A> + Unpin + Clone + Send + Sync + 'static,
         A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + Sync + 'static,
-        A::Error: Into<Error>,
-        A::Future: Send,
+        <A as tower::Service<io::PrefixedIo<I>>>::Error: Into<Error>,
+        <A as tower::Service<io::PrefixedIo<I>>>::Future: Send,
+        A: tower::Service<io::PrefixedIo<io::PrefixedIo<I>>, Response = ()>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        <A as tower::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Error: Into<Error>,
+        <A as tower::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Future: Send,
         H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
         S: tower::Service<
                 http::Request<http::boxed::BoxBody>,
@@ -380,12 +387,25 @@ impl Config {
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
+        let tcp = svc::stack(tcp_forward.clone())
+            .push_map_target(TcpEndpoint::from)
+            .push_switch(
+                prevent_loop.into(),
+                svc::stack(tcp_forward)
+                    .push_map_target(TcpEndpoint::from)
+                    .push(transport::NewDetectService::layer(
+                        transport::detect::DetectTimeout::new(
+                            self.proxy.detect_protocol_timeout,
+                            DetectHeader::default(),
+                        ),
+                    )),
+            )
+            .into_inner();
+
         svc::stack(http::NewServeHttp::new(
             h2_settings,
             http_server,
-            svc::stack(tcp_forward)
-                .push_map_target(TcpEndpoint::from)
-                .into_inner(),
+            tcp,
             drain,
         ))
         .check_new_clone::<(Option<http::Version>, TcpAccept)>()

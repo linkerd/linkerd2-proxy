@@ -16,7 +16,7 @@ mod proto {
 #[derive(Clone, Debug)]
 pub struct Header {
     /// The target port.
-    port: u16,
+    pub port: u16,
 
     /// The logical name of the target (service), if one is known.
     pub name: Option<Name>,

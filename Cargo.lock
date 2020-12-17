@@ -865,6 +865,7 @@ dependencies = [
  "linkerd2-cache",
  "linkerd2-concurrency-limit",
  "linkerd2-conditional",
+ "linkerd2-connection-header",
  "linkerd2-dns",
  "linkerd2-drain",
  "linkerd2-duplex",

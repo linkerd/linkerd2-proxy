@@ -12,6 +12,7 @@
 pub use linkerd2_addr::{self as addr, Addr, NameAddr};
 pub use linkerd2_cache as cache;
 pub use linkerd2_conditional::Conditional;
+pub use linkerd2_connection_header as connection_header;
 pub use linkerd2_dns;
 pub use linkerd2_drain as drain;
 pub use linkerd2_error::{Error, Never, Recover};
