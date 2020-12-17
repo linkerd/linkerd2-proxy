@@ -349,7 +349,7 @@ mod tests {
         assert_eq!(s.count.value(), 10000.0);
         assert_eq!(s.sum.value(), 15_000.0);
 
-        time::advance(ROTATE_INTERVAL).await;
+        time::sleep(ROTATE_INTERVAL).await;
 
         s.record_n(1, 4999).unwrap();
         s.record_n(3, 5001).unwrap();
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(s.count.value(), 20000.0);
         assert_eq!(s.sum.value(), 35_002.0);
 
-        time::advance(ROTATE_INTERVAL).await;
+        time::sleep(ROTATE_INTERVAL).await;
 
         s.record_n(4, 10_000).unwrap();
         {
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(s.count.value(), 30000.0);
         assert_eq!(s.sum.value(), 75_002.0);
 
-        time::advance(2 * ROTATE_INTERVAL).await;
+        time::sleep(2 * ROTATE_INTERVAL).await;
 
         s.record_n(1, 10_000).unwrap();
         {
