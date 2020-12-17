@@ -38,12 +38,7 @@ impl<T: Hash + Eq> Retries<T> {
 
     pub fn get_handle(&self, target: impl Into<T>) -> Handle {
         let mut reg = self.0.lock().expect("retry metrics registry poisoned");
-        Handle(
-            reg.by_target
-                .entry(target.into())
-                .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
-                .clone(),
-        )
+        Handle(reg.entry(target.into()).or_default().clone())
     }
 }
 
@@ -110,17 +105,17 @@ where
         };
         trace!(
             prfefix = %self.prefix,
-            targets = %registry.by_target.len(),
+            targets = %registry.len(),
             "Formatting HTTP retry metrics",
         );
 
-        if registry.by_target.is_empty() {
+        if registry.is_empty() {
             return Ok(());
         }
 
         let metric = self.retryable_total();
         metric.fmt_help(f)?;
-        for (tgt, tm) in &registry.by_target {
+        for (tgt, tm) in registry.iter() {
             if let Ok(m) = tm.lock() {
                 m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
                 m.no_budget

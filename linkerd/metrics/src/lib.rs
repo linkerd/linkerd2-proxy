@@ -9,7 +9,7 @@ pub mod latency;
 mod prom;
 mod scopes;
 mod serve;
-pub mod store;
+mod store;
 #[cfg(feature = "summary")]
 mod summary;
 

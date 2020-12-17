@@ -5,18 +5,11 @@ use std::{
     fmt,
     hash::Hash,
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 pub trait LastUpdate {
     fn last_update(&self) -> Instant;
-}
-
-pub trait FmtChildren<C> {
-    type ChildLabels;
-    fn with_children<F>(&self, f: F) -> fmt::Result
-    where
-        F: FnMut(&Self::ChildLabels, &C) -> fmt::Result;
 }
 
 #[derive(Debug)]
@@ -25,22 +18,22 @@ where
     K: Hash + Eq,
 {
     inner: HashMap<K, Arc<V>>,
-    retain_idle: Duration,
 }
 
 impl<K, V> Store<K, V>
 where
     K: Hash + Eq,
 {
-    pub fn new(retain_idle: Duration) -> Self {
-        Self {
-            retain_idle,
-            inner: HashMap::default(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
     }
 
     pub fn get<Q>(&self, q: &Q) -> Option<&Arc<V>>
@@ -66,14 +59,12 @@ where
         self.inner.iter()
     }
 
-    pub fn retain_active(&mut self)
+    pub fn retain_since(&mut self, epoch: Instant)
     where
         V: LastUpdate,
     {
-        let idle = self.retain_idle;
-        self.inner.retain(|_, metric| {
-            Arc::strong_count(&metric) > 1 || metric.last_update().elapsed() < idle
-        })
+        self.inner
+            .retain(|_, metric| Arc::strong_count(&metric) > 1 || metric.last_update() >= epoch)
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
@@ -94,28 +85,45 @@ where
 
         Ok(())
     }
+}
 
-    pub fn fmt_children<N, M, C>(
+impl<K, V> Store<K, Mutex<V>>
+where
+    K: Hash + Eq,
+{
+    /// Formats a metric across all instances of `Metrics` in the registry.
+    pub fn fmt_by_locked<N, M>(
         &self,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
-        get_metric: impl Fn(&C) -> &M,
+        get_metric: impl Fn(&V) -> &M,
     ) -> fmt::Result
     where
-        for<'a, 'b> (&'a K, &'b V::ChildLabels): FmtLabels,
-        V: FmtChildren<C>,
+        K: FmtLabels,
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (key, metrics) in self.iter() {
-            metrics.with_children(|child_key, child| {
-                get_metric(child).fmt_metric_labeled(f, &metric.name, (key, child_key))
-            })?;
+        for (key, m) in self.iter() {
+            let m = m.lock().unwrap();
+            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
         Ok(())
     }
 }
+
+impl<K, V> Default for Store<K, V>
+where
+    K: Hash + Eq,
+{
+    fn default() -> Self {
+        Self {
+            inner: HashMap::new(),
+        }
+    }
+}
+
+// === impl LastUpdate ===
 
 impl<M: LastUpdate> LastUpdate for Mutex<M> {
     fn last_update(&self) -> Instant {
@@ -126,31 +134,5 @@ impl<M: LastUpdate> LastUpdate for Mutex<M> {
 impl<M: LastUpdate> LastUpdate for Arc<M> {
     fn last_update(&self) -> Instant {
         std::ops::Deref::deref(self).last_update()
-    }
-}
-
-impl<M: FmtChildren<C>, C> FmtChildren<C> for Mutex<M> {
-    type ChildLabels = M::ChildLabels;
-
-    fn with_children<F>(&self, f: F) -> fmt::Result
-    where
-        F: FnMut(&Self::ChildLabels, &C) -> fmt::Result,
-    {
-        if let Ok(lock) = self.lock() {
-            lock.with_children(f)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-impl<M: FmtChildren<C>, C> FmtChildren<C> for Arc<M> {
-    type ChildLabels = M::ChildLabels;
-
-    fn with_children<F>(&self, f: F) -> fmt::Result
-    where
-        F: FnMut(&Self::ChildLabels, &C) -> fmt::Result,
-    {
-        std::ops::Deref::deref(self).with_children(f)
     }
 }

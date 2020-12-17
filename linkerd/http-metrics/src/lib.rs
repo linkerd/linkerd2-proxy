@@ -5,12 +5,12 @@ use linkerd2_metrics::{LastUpdate, Store};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub mod requests;
 pub mod retries;
 
-type Registry<T, M> = Store<T, Arc<Mutex<M>>>;
+type Registry<T, M> = Store<T, Mutex<M>>;
 
 /// Reports metrics for prometheus.
 #[derive(Debug)]
@@ -20,6 +20,8 @@ where
 {
     prefix: &'static str,
     registry: Arc<Mutex<Registry<T, M>>>,
+    /// The amount of time metrics with no updates should be retained for reports
+    retain_idle: Duration,
     /// Whether latencies should be reported.
     include_latencies: bool,
 }
@@ -30,6 +32,7 @@ impl<T: Hash + Eq, M> Clone for Report<T, M> {
             include_latencies: self.include_latencies,
             prefix: self.prefix,
             registry: self.registry.clone(),
+            retain_idle: self.retain_idle,
         }
     }
 }

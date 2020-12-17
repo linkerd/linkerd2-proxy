@@ -207,12 +207,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(
-                r.by_target
-                    .entry((&target).into())
-                    .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
-                    .clone(),
-            ),
+            Ok(mut r) => Some(r.entry((&target).into()).or_default().clone()),
             Err(_) => None,
         };
 
