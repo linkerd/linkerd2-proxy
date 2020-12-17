@@ -9,6 +9,7 @@ pub mod latency;
 mod prom;
 mod scopes;
 mod serve;
+mod store;
 #[cfg(feature = "summary")]
 mod summary;
 
@@ -18,6 +19,7 @@ pub use self::histogram::Histogram;
 pub use self::prom::{FmtLabels, FmtMetric, FmtMetrics, Metric};
 pub use self::scopes::Scopes;
 pub use self::serve::Serve;
+pub use self::store::{LastUpdate, Store};
 #[cfg(feature = "summary")]
 pub use self::summary::Summary;
 

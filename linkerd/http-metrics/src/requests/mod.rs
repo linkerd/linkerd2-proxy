@@ -143,16 +143,15 @@ mod tests {
 
         let before_update = Instant::now();
         let metrics = registry
-            .by_target
             .entry(Target(123))
             .or_insert_with(Default::default)
             .clone();
-        assert_eq!(registry.by_target.len(), 1, "target should be registered");
+        assert_eq!(registry.len(), 1, "target should be registered");
         let after_update = Instant::now();
 
         registry.retain_since(after_update);
         assert_eq!(
-            registry.by_target.len(),
+            registry.len(),
             1,
             "target should not be evicted by time alone"
         );
@@ -160,14 +159,14 @@ mod tests {
         drop(metrics);
         registry.retain_since(before_update);
         assert_eq!(
-            registry.by_target.len(),
+            registry.len(),
             1,
             "target should not be evicted by availability alone"
         );
 
         registry.retain_since(after_update);
         assert_eq!(
-            registry.by_target.len(),
+            registry.len(),
             0,
             "target should be evicted by time once the handle is dropped"
         );

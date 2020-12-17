@@ -1,19 +1,20 @@
 use futures::{ready, TryFuture};
-use indexmap::IndexMap;
 use linkerd2_errno::Errno;
 use linkerd2_io as io;
 use linkerd2_metrics::{
-    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, Metric,
+    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, LastUpdate,
+    Metric, Store,
 };
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
+use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
@@ -27,16 +28,23 @@ metrics! {
     tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
 }
 
-pub fn new<K: Eq + Hash + FmtLabels>() -> (Registry<K>, Report<K>) {
-    let inner = Arc::new(Mutex::new(Inner::default()));
-    (Registry(inner.clone()), Report(inner))
+pub fn new<K: Eq + Hash + FmtLabels>(retain_idle: Duration) -> (Registry<K>, Report<K>) {
+    let inner = Arc::new(Mutex::new(Inner::new()));
+    let report = Report {
+        metrics: inner.clone(),
+        retain_idle,
+    };
+    (Registry(inner), report)
 }
 
 /// Implements `FmtMetrics` to render prometheus-formatted metrics for all transports.
-#[derive(Clone, Debug, Default)]
-pub struct Report<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
+#[derive(Clone, Debug)]
+pub struct Report<K: Eq + Hash + FmtLabels> {
+    metrics: Arc<Mutex<Inner<K>>>,
+    retain_idle: Duration,
+}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
 #[derive(Debug)]
@@ -77,7 +85,13 @@ struct Metrics {
     write_bytes_total: Counter,
     read_bytes_total: Counter,
 
-    by_eos: Arc<Mutex<IndexMap<Eos, EosMetrics>>>,
+    by_eos: Arc<Mutex<ByEos>>,
+}
+
+#[derive(Debug)]
+struct ByEos {
+    last_update: Instant,
+    metrics: HashMap<Eos, EosMetrics>,
 }
 
 /// Describes a classtransport end.
@@ -108,73 +122,7 @@ pub type SensorIo<T> = io::SensorIo<T, Sensor>;
 #[derive(Clone, Debug)]
 struct NewSensor(Arc<Metrics>);
 
-/// Shares state between `Report` and `Registry`.
-#[derive(Debug)]
-struct Inner<K: Eq + Hash + FmtLabels>(IndexMap<K, Arc<Metrics>>);
-
-// ===== impl Inner =====
-
-impl<K: Eq + Hash + FmtLabels> Default for Inner<K> {
-    fn default() -> Self {
-        Inner(IndexMap::default())
-    }
-}
-
-impl<K: Eq + Hash + FmtLabels> Inner<K> {
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = (&K, &Arc<Metrics>)> {
-        self.0.iter()
-    }
-
-    /// Formats a metric across all instances of `Metrics` in the registry.
-    fn fmt_by<F, N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        F: Fn(&Metrics) -> &M,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, m) in self.iter() {
-            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
-        }
-
-        Ok(())
-    }
-
-    /// Formats a metric across all instances of `EosMetrics` in the registry.
-    fn fmt_eos_by<F, N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: F,
-    ) -> fmt::Result
-    where
-        F: Fn(&EosMetrics) -> &M,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, metrics) in self.iter() {
-            if let Ok(by_eos) = (*metrics).by_eos.lock() {
-                for (eos, m) in by_eos.iter() {
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn get_or_default(&mut self, k: K) -> &Arc<Metrics> {
-        self.0.entry(k).or_insert_with(Default::default)
-    }
-}
+type Inner<K> = Store<K, Metrics>;
 
 // ===== impl Registry =====
 
@@ -341,9 +289,33 @@ where
 
 // ===== impl Report =====
 
-impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
+impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
+    /// Formats a metric across all instances of `EosMetrics` in the registry.
+    fn fmt_eos_by<N, M>(
+        inner: &Inner<K>,
+        f: &mut fmt::Formatter<'_>,
+        metric: Metric<'_, N, M>,
+        get_metric: impl Fn(&EosMetrics) -> &M,
+    ) -> fmt::Result
+    where
+        N: fmt::Display,
+        M: FmtMetric,
+    {
+        for (key, metrics) in inner.iter() {
+            if let Ok(by_eos) = (*metrics).by_eos.lock() {
+                for (eos, m) in by_eos.metrics.iter() {
+                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let metrics = self.0.lock().expect("metrics registry poisoned");
+        let mut metrics = self.metrics.lock().expect("metrics registry poisoned");
         if metrics.is_empty() {
             return Ok(());
         }
@@ -361,10 +333,14 @@ impl<K: Eq + Hash + FmtLabels> FmtMetrics for Report<K> {
         metrics.fmt_by(f, tcp_write_bytes_total, |m| &m.write_bytes_total)?;
 
         tcp_close_total.fmt_help(f)?;
-        metrics.fmt_eos_by(f, tcp_close_total, |e| &e.close_total)?;
+        Self::fmt_eos_by(&*metrics, f, tcp_close_total, |e| &e.close_total)?;
 
         tcp_connection_duration_ms.fmt_help(f)?;
-        metrics.fmt_eos_by(f, tcp_connection_duration_ms, |e| &e.connection_duration)?;
+        Self::fmt_eos_by(&*metrics, f, tcp_connection_duration_ms, |e| {
+            &e.connection_duration
+        })?;
+
+        metrics.retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
     }
@@ -376,6 +352,9 @@ impl Sensor {
     fn open(metrics: Arc<Metrics>) -> Self {
         metrics.open_total.incr();
         metrics.open_connections.incr();
+        if let Ok(mut by_eos) = metrics.by_eos.lock() {
+            by_eos.last_update = Instant::now();
+        }
         Self {
             metrics: Some(metrics),
             opened_at: Instant::now(),
@@ -387,12 +366,18 @@ impl io::Sensor for Sensor {
     fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.read_bytes_total.add(sz as u64);
+            if let Ok(mut by_eos) = m.by_eos.lock() {
+                by_eos.last_update = Instant::now();
+            }
         }
     }
 
     fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.write_bytes_total.add(sz as u64);
+            if let Ok(mut by_eos) = m.by_eos.lock() {
+                by_eos.last_update = Instant::now();
+            }
         }
     }
 
@@ -405,9 +390,13 @@ impl io::Sensor for Sensor {
             m.open_connections.decr();
 
             let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
-            let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
+            let class = by_eos
+                .metrics
+                .entry(Eos(eos))
+                .or_insert_with(EosMetrics::default);
             class.close_total.incr();
             class.connection_duration.add(duration);
+            by_eos.last_update = Instant::now();
         }
     }
 
@@ -453,5 +442,78 @@ impl FmtLabels for Eos {
             None => f.pad("errno=\"\""),
             Some(errno) => write!(f, "errno=\"{}\"", errno),
         }
+    }
+}
+
+// ===== impl Metrics =====
+
+impl LastUpdate for Metrics {
+    fn last_update(&self) -> Instant {
+        self.by_eos
+            .lock()
+            .map(|metrics| metrics.last_update)
+            .unwrap_or_else(|_| Instant::now()) // XXX(eliza): ew
+    }
+}
+
+// ===== impl ByEos =====
+
+impl Default for ByEos {
+    fn default() -> Self {
+        Self {
+            metrics: HashMap::new(),
+            last_update: Instant::now(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn expiry() {
+        use linkerd2_metrics::FmtLabels;
+        use std::fmt;
+        use std::time::{Duration, Instant};
+
+        #[derive(Clone, Debug, Hash, Eq, PartialEq)]
+        struct Target(usize);
+        impl FmtLabels for Target {
+            fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "n=\"{}\"", self.0)
+            }
+        }
+
+        let retain_idle_for = Duration::from_secs(1);
+        let (r, report) = super::new(retain_idle_for);
+        let mut registry = r.0.lock().unwrap();
+
+        let before_update = Instant::now();
+        let metrics = registry.entry(Target(123)).or_default().clone();
+        assert_eq!(registry.len(), 1, "target should be registered");
+        let after_update = Instant::now();
+
+        registry.retain_since(after_update);
+        assert_eq!(
+            registry.len(),
+            1,
+            "target should not be evicted by time alone"
+        );
+
+        drop(metrics);
+        registry.retain_since(before_update);
+        assert_eq!(
+            registry.len(),
+            1,
+            "target should not be evicted by availability alone"
+        );
+
+        registry.retain_since(after_update);
+        assert_eq!(
+            registry.len(),
+            0,
+            "target should be evicted by time once the handle is dropped"
+        );
+
+        drop((registry, report));
     }
 }

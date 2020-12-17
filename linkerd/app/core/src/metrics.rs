@@ -140,7 +140,7 @@ impl Metrics {
 
         let stack = stack_metrics::Registry::default();
 
-        let (transport, transport_report) = transport::metrics::new();
+        let (transport, transport_report) = transport::metrics::new(retain_idle);
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();
 
