@@ -52,7 +52,7 @@ where
     where
         V: Default,
     {
-        self.inner.entry(k).or_insert_with(|| Default::default())
+        self.inner.entry(k).or_default()
     }
 
     pub fn iter(&self) -> hash_map::Iter<'_, K, Arc<V>> {
