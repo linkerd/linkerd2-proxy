@@ -291,7 +291,7 @@ where
 
 impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
     /// Formats a metric across all instances of `EosMetrics` in the registry.
-    fn fmt_eos_by<F, N, M>(
+    fn fmt_eos_by<N, M>(
         inner: &Inner<K>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
@@ -336,7 +336,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
         Self::fmt_eos_by(&*metrics, f, tcp_close_total, |e| &e.close_total)?;
 
         tcp_connection_duration_ms.fmt_help(f)?;
-        Self::fmt_eos_by(&*metrics, tcp_connection_duration_ms, |e| {
+        Self::fmt_eos_by(&*metrics, f, tcp_connection_duration_ms, |e| {
             &e.connection_duration
         })?;
 
@@ -464,5 +464,56 @@ impl Default for ByEos {
             metrics: HashMap::new(),
             last_update: Instant::now(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn expiry() {
+        use linkerd2_metrics::FmtLabels;
+        use std::fmt;
+        use std::time::{Duration, Instant};
+
+        #[derive(Clone, Debug, Hash, Eq, PartialEq)]
+        struct Target(usize);
+        impl FmtLabels for Target {
+            fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "n=\"{}\"", self.0)
+            }
+        }
+
+        let retain_idle_for = Duration::from_secs(1);
+        let (r, report) = super::new(retain_idle_for);
+        let mut registry = r.0.lock().unwrap();
+
+        let before_update = Instant::now();
+        let metrics = registry.entry(Target(123)).or_default().clone();
+        assert_eq!(registry.len(), 1, "target should be registered");
+        let after_update = Instant::now();
+
+        registry.retain_since(after_update);
+        assert_eq!(
+            registry.len(),
+            1,
+            "target should not be evicted by time alone"
+        );
+
+        drop(metrics);
+        registry.retain_since(before_update);
+        assert_eq!(
+            registry.len(),
+            1,
+            "target should not be evicted by availability alone"
+        );
+
+        registry.retain_since(after_update);
+        assert_eq!(
+            registry.len(),
+            0,
+            "target should be evicted by time once the handle is dropped"
+        );
+
+        drop((registry, report));
     }
 }
