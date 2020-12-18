@@ -112,10 +112,7 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut registry = match self.registry.lock() {
-            Err(_) => return Ok(()),
-            Ok(r) => r,
-        };
+        let registry = self.registry.read();
         trace!(
             prefix = self.prefix,
             targets = registry.len(),
@@ -141,7 +138,8 @@ where
         metric.fmt_help(f)?;
         Self::fmt_by_class(&registry, f, metric, |s| &s.total)?;
 
-        registry.retain_active(self.retain_idle);
+        drop(registry);
+        self.registry.write().retain_active(self.retain_idle);
 
         Ok(())
     }

@@ -1,10 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::{requests::Requests, retries::Retries};
-use linkerd2_metrics::{LastUpdate, Store};
+use linkerd2_metrics::{store::Registry, LastUpdate};
 use std::fmt;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub mod requests;
@@ -17,7 +16,7 @@ where
     T: Hash + Eq,
 {
     prefix: &'static str,
-    registry: Arc<Mutex<Store<T, M>>>,
+    registry: Registry<T, M>,
     /// The amount of time metrics with no updates should be retained for reports
     retain_idle: Duration,
     /// Whether latencies should be reported.
@@ -44,7 +43,7 @@ impl<T, M> Report<T, M>
 where
     T: Hash + Eq,
 {
-    fn new(retain_idle: Duration, registry: Arc<Mutex<Store<T, M>>>) -> Self {
+    fn new(retain_idle: Duration, registry: Registry<T, M>) -> Self {
         Self {
             prefix: "",
             registry,

@@ -1,14 +1,10 @@
 use super::{LastUpdate, Report};
 use linkerd2_http_classify::ClassifyResponse;
-use linkerd2_metrics::{
-    latency,
-    store::{self, Store},
-    Counter, FmtMetrics, Histogram,
-};
+use linkerd2_metrics::{latency, store, Counter, FmtMetrics, Histogram};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
 
 mod layer;
@@ -16,7 +12,7 @@ mod report;
 
 pub use self::layer::ResponseBody;
 
-type SharedRegistry<T, C> = Arc<Mutex<Store<T, Metrics<C>>>>;
+type SharedRegistry<T, C> = store::Registry<T, Metrics<C>>;
 
 #[derive(Debug)]
 pub struct Requests<T, C>(SharedRegistry<T, C>)
@@ -53,7 +49,7 @@ pub struct ClassMetrics {
 
 impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
     pub fn new(clock: quanta::Clock) -> Self {
-        Requests(Arc::new(Mutex::new(Store::new(clock))))
+        Requests(store::Registry::new(clock))
     }
 
     pub fn into_report(self, retain_idle: Duration) -> Report<T, Metrics<C>>
@@ -146,7 +142,7 @@ mod tests {
         let retain_idle_for = Duration::from_secs(10);
         let r = super::Requests::<Target, Class>::new(clock.clone());
         let report = r.clone().into_report(retain_idle_for);
-        let mut registry = r.0.lock().unwrap();
+        let mut registry = r.0.write();
 
         let before_update = clock.recent();
         let metrics = registry.get_or_insert(Target(123));

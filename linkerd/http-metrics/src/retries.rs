@@ -1,16 +1,16 @@
 use super::{Prefixed, Report};
 use linkerd2_metrics::{
-    store::{LastUpdate, Store as Registry, UpdatedAt},
+    store::{LastUpdate, Registry, UpdatedAt},
     Counter, FmtLabels, FmtMetric, FmtMetrics, Metric,
 };
 use std::fmt;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::trace;
 
 #[derive(Debug)]
-pub struct Retries<T>(Arc<Mutex<Registry<T, Metrics>>>)
+pub struct Retries<T>(Registry<T, Metrics>)
 where
     T: Hash + Eq;
 
@@ -31,7 +31,7 @@ struct NoBudgetLabel;
 
 impl<T: Hash + Eq> From<quanta::Clock> for Retries<T> {
     fn from(clock: quanta::Clock) -> Self {
-        Retries(Arc::new(Mutex::new(Registry::new(clock))))
+        Retries(Registry::new(clock))
     }
 }
 
@@ -41,8 +41,7 @@ impl<T: Hash + Eq> Retries<T> {
     }
 
     pub fn get_handle(&self, target: impl Into<T>) -> Handle {
-        let mut reg = self.0.lock().expect("retry metrics registry poisoned");
-        Handle(reg.get_or_insert(target.into()))
+        Handle(self.0.get_or_insert(target.into()))
     }
 }
 
@@ -104,10 +103,7 @@ where
     T: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut registry = match self.registry.lock() {
-            Err(_) => return Ok(()),
-            Ok(r) => r,
-        };
+        let registry = self.registry.read();
         trace!(
             prfefix = %self.prefix,
             targets = %registry.len(),
@@ -126,7 +122,8 @@ where
                 .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
         }
 
-        registry.retain_active(self.retain_idle);
+        drop(registry);
+        self.registry.write().retain_active(self.retain_idle);
 
         Ok(())
     }

@@ -169,11 +169,7 @@ where
     type Service = Service<M::Service, C>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(r.get_or_insert((&target).into())),
-            Err(_) => None,
-        };
-
+        let metrics = Some(self.registry.get_or_insert((&target).into()));
         let inner = self.inner.new_service(target);
 
         Self::Service {
@@ -201,11 +197,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(r.get_or_insert((&target).into())),
-            Err(_) => None,
-        };
-
+        let metrics = Some(self.registry.get_or_insert((&target).into()));
         let inner = self.inner.call(target);
 
         Self::Future {
