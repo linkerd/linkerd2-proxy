@@ -67,13 +67,13 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (tgt, tm) in registry.iter() {
-            if let Ok(by_status) = tm.by_status.lock() {
-                for (status, m) in by_status.iter() {
-                    let status = status.as_ref().map(|s| Status(*s));
-                    let labels = (tgt, status);
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
-                }
+        for kv in registry.iter() {
+            let (tgt, tm) = kv.pair();
+            for kv in tm.by_status.iter() {
+                let (status, m) = kv.pair();
+                let status = status.as_ref().map(|s| Status(*s));
+                let labels = (tgt, status);
+                get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
             }
         }
 
@@ -90,14 +90,15 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (tgt, tm) in registry.iter() {
-            if let Ok(by_status) = tm.by_status.lock() {
-                for (status, sm) in by_status.iter() {
-                    for (cls, m) in &sm.by_class {
-                        let status = status.as_ref().map(|s| Status(*s));
-                        let labels = (tgt, (status, cls));
-                        get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
-                    }
+        for kv in registry.iter() {
+            let (tgt, tm) = kv.pair();
+            for kv in tm.by_status.iter() {
+                let (status, sm) = kv.pair();
+                for kv in &sm.by_class {
+                    let (cls, m) = kv.pair();
+                    let status = status.as_ref().map(|s| Status(*s));
+                    let labels = (tgt, (status, cls));
+                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
                 }
             }
         }
@@ -112,34 +113,32 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let registry = self.registry.read();
         trace!(
             prefix = self.prefix,
-            targets = registry.len(),
+            targets = self.registry.len(),
             include_latencies = self.include_latencies,
             "Formatting HTTP request metrics",
         );
 
-        if registry.is_empty() {
+        if self.registry.is_empty() {
             return Ok(());
         }
 
         let metric = self.request_total();
         metric.fmt_help(f)?;
-        Self::fmt_by_target(&registry, f, metric, |s| &s.total)?;
+        Self::fmt_by_target(&self.registry, f, metric, |s| &s.total)?;
 
         if self.include_latencies {
             let metric = self.response_latency_ms();
             metric.fmt_help(f)?;
-            Self::fmt_by_status(&registry, f, metric, |s| &s.latency)?;
+            Self::fmt_by_status(&self.registry, f, metric, |s| &s.latency)?;
         }
 
         let metric = self.response_total();
         metric.fmt_help(f)?;
-        Self::fmt_by_class(&registry, f, metric, |s| &s.total)?;
+        Self::fmt_by_class(&self.registry, f, metric, |s| &s.total)?;
 
-        drop(registry);
-        self.registry.write().retain_active(self.retain_idle);
+        self.registry.retain_active(self.retain_idle);
 
         Ok(())
     }

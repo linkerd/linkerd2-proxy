@@ -1,6 +1,6 @@
 use super::{Prefixed, Report};
 use linkerd2_metrics::{
-    store::{LastUpdate, Registry, UpdatedAt},
+    store::{self, LastUpdate, Registry, UpdatedAt},
     Counter, FmtLabels, FmtMetric, FmtMetrics, Metric,
 };
 use std::fmt;
@@ -31,7 +31,7 @@ struct NoBudgetLabel;
 
 impl<T: Hash + Eq> From<quanta::Clock> for Retries<T> {
     fn from(clock: quanta::Clock) -> Self {
-        Retries(Registry::new(clock))
+        Retries(store::registry(clock))
     }
 }
 
@@ -41,7 +41,7 @@ impl<T: Hash + Eq> Retries<T> {
     }
 
     pub fn get_handle(&self, target: impl Into<T>) -> Handle {
-        Handle(self.0.get_or_insert(target.into()))
+        Handle(self.0.metric(target.into()))
     }
 }
 
@@ -103,27 +103,26 @@ where
     T: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let registry = self.registry.read();
         trace!(
             prfefix = %self.prefix,
-            targets = %registry.len(),
+            targets = self.registry.len(),
             "Formatting HTTP retry metrics",
         );
 
-        if registry.is_empty() {
+        if self.registry.is_empty() {
             return Ok(());
         }
 
         let metric = self.retryable_total();
         metric.fmt_help(f)?;
-        for (tgt, m) in registry.iter() {
+        for kv in self.registry.iter() {
+            let (tgt, m) = kv.pair();
             m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
             m.no_budget
                 .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
         }
 
-        drop(registry);
-        self.registry.write().retain_active(self.retain_idle);
+        self.registry.retain_active(self.retain_idle);
 
         Ok(())
     }

@@ -1,10 +1,9 @@
 use super::{LastUpdate, Report};
 use linkerd2_http_classify::ClassifyResponse;
 use linkerd2_metrics::{latency, store, Counter, FmtMetrics, Histogram};
-use std::collections::HashMap;
+use std::collections::hash_map::RandomState;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::Mutex;
 use std::time::Duration;
 
 mod layer;
@@ -12,10 +11,10 @@ mod report;
 
 pub use self::layer::ResponseBody;
 
-type SharedRegistry<T, C> = store::Registry<T, Metrics<C>>;
+type Registry<T, C> = store::Registry<T, Metrics<C>>;
 
 #[derive(Debug)]
-pub struct Requests<T, C>(SharedRegistry<T, C>)
+pub struct Requests<T, C>(Registry<T, C>)
 where
     T: Hash + Eq,
     C: Hash + Eq;
@@ -28,7 +27,7 @@ where
     last_update: store::UpdatedAt,
     total: Counter,
     clock: quanta::Clock,
-    by_status: Mutex<HashMap<Option<http::StatusCode>, StatusMetrics<C>>>,
+    by_status: store::Map<Option<http::StatusCode>, StatusMetrics<C>>,
 }
 
 #[derive(Debug)]
@@ -37,7 +36,7 @@ where
     C: Hash + Eq,
 {
     latency: Histogram<latency::Ms>,
-    by_class: HashMap<C, ClassMetrics>,
+    by_class: store::Map<C, ClassMetrics>,
 }
 
 #[derive(Debug, Default)]
@@ -49,7 +48,7 @@ pub struct ClassMetrics {
 
 impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
     pub fn new(clock: quanta::Clock) -> Self {
-        Requests(store::Registry::new(clock))
+        Requests(store::Registry::new(store::Store::new(clock)))
     }
 
     pub fn into_report(self, retain_idle: Duration) -> Report<T, Metrics<C>>
@@ -78,11 +77,12 @@ impl<T: Hash + Eq, C: Hash + Eq> Clone for Requests<T, C> {
 impl<C: Hash + Eq> From<quanta::Clock> for Metrics<C> {
     fn from(clock: quanta::Clock) -> Self {
         let last_update = store::UpdatedAt::new(&clock);
+        let s = RandomState::new();
         Self {
             last_update,
             clock,
             total: Default::default(),
-            by_status: Mutex::new(Default::default()),
+            by_status: store::Map::with_hasher(s),
         }
     }
 }
@@ -98,9 +98,10 @@ where
     C: Hash + Eq,
 {
     fn default() -> Self {
+        let s = RandomState::new();
         Self {
             latency: Histogram::default(),
-            by_class: HashMap::default(),
+            by_class: store::Map::with_hasher(s),
         }
     }
 }
@@ -142,10 +143,10 @@ mod tests {
         let retain_idle_for = Duration::from_secs(10);
         let r = super::Requests::<Target, Class>::new(clock.clone());
         let report = r.clone().into_report(retain_idle_for);
-        let mut registry = r.0.write();
+        let registry = r.0;
 
         let before_update = clock.recent();
-        let metrics = registry.get_or_insert(Target(123));
+        let metrics = registry.metric(Target(123));
         assert_eq!(registry.len(), 1, "target should be registered");
         time.increment(retain_idle_for);
         let after_update = clock.recent();

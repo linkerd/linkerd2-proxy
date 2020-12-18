@@ -7,12 +7,11 @@ use linkerd2_metrics::{
 };
 use linkerd2_stack::{layer, NewService};
 use pin_project::pin_project;
-use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -32,7 +31,7 @@ pub fn new<K: Eq + Hash + FmtLabels>(
     retain_idle: Duration,
     clock: quanta::Clock,
 ) -> (Registry<K>, Report<K>) {
-    let inner = store::Registry::new(clock);
+    let inner = store::registry(clock);
     let report = Report {
         metrics: inner.clone(),
         retain_idle,
@@ -92,7 +91,7 @@ struct Metrics {
     write_bytes_total: Counter,
     read_bytes_total: Counter,
     clock: quanta::Clock,
-    by_eos: Mutex<HashMap<Eos, EosMetrics>>,
+    by_eos: store::Map<Eos, EosMetrics>,
     last_update: store::UpdatedAt,
 }
 
@@ -188,7 +187,7 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let labels = (&target).into();
-        let metrics = self.registry.get_or_insert(labels);
+        let metrics = self.registry.metric(labels);
 
         let inner = self.inner.new_service(target);
         Accept { metrics, inner }
@@ -244,7 +243,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let labels = (&target).into();
-        let metrics = self.registry.get_or_insert(labels);
+        let metrics = self.registry.metric(labels);
 
         Connecting {
             new_sensor: Some(NewSensor(metrics)),
@@ -291,11 +290,11 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (key, metrics) in inner.iter() {
-            if let Ok(by_eos) = (*metrics).by_eos.lock() {
-                for (eos, m) in by_eos.iter() {
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
-                }
+        for kv in inner.iter() {
+            let (key, metrics) = kv.pair();
+            for kv in metrics.by_eos.iter() {
+                let (eos, m) = kv.pair();
+                get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
             }
         }
 
@@ -305,33 +304,33 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
 
 impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let metrics = self.metrics.read();
-        if metrics.is_empty() {
+        if self.metrics.is_empty() {
             return Ok(());
         }
 
         tcp_open_total.fmt_help(f)?;
-        metrics.fmt_by(f, tcp_open_total, |m| &m.open_total)?;
+        self.metrics.fmt_by(f, tcp_open_total, |m| &m.open_total)?;
 
         tcp_open_connections.fmt_help(f)?;
-        metrics.fmt_by(f, tcp_open_connections, |m| &m.open_connections)?;
+        self.metrics
+            .fmt_by(f, tcp_open_connections, |m| &m.open_connections)?;
 
         tcp_read_bytes_total.fmt_help(f)?;
-        metrics.fmt_by(f, tcp_read_bytes_total, |m| &m.read_bytes_total)?;
+        self.metrics
+            .fmt_by(f, tcp_read_bytes_total, |m| &m.read_bytes_total)?;
 
         tcp_write_bytes_total.fmt_help(f)?;
-        metrics.fmt_by(f, tcp_write_bytes_total, |m| &m.write_bytes_total)?;
+        self.metrics
+            .fmt_by(f, tcp_write_bytes_total, |m| &m.write_bytes_total)?;
 
         tcp_close_total.fmt_help(f)?;
-        Self::fmt_eos_by(&*metrics, f, tcp_close_total, |e| &e.close_total)?;
+        Self::fmt_eos_by(&*self.metrics, f, tcp_close_total, |e| &e.close_total)?;
 
         tcp_connection_duration_ms.fmt_help(f)?;
-        Self::fmt_eos_by(&*metrics, f, tcp_connection_duration_ms, |e| {
+        Self::fmt_eos_by(&*self.metrics, f, tcp_connection_duration_ms, |e| {
             &e.connection_duration
         })?;
-        drop(metrics);
-
-        self.metrics.write().retain_active(self.retain_idle);
+        self.metrics.retain_active(self.retain_idle);
 
         Ok(())
     }
@@ -374,8 +373,7 @@ impl io::Sensor for Sensor {
         if let Some(m) = self.metrics.take() {
             m.open_connections.decr();
 
-            let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
-            let class = by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
+            let class = m.by_eos.entry(Eos(eos)).or_insert_with(EosMetrics::default);
             class.close_total.incr();
 
             let now = m.clock.recent();
@@ -472,10 +470,10 @@ mod tests {
 
         let retain_idle_for = Duration::from_secs(10);
         let (r, report) = super::new(retain_idle_for, clock.clone());
-        let mut registry = r.0.write();
+        let registry = r.0;
 
         let before_update = clock.recent();
-        let metrics = registry.get_or_insert(Target(123));
+        let metrics = registry.metric(Target(123));
         assert_eq!(registry.len(), 1, "target should be registered");
         time.increment(retain_idle_for);
         let after_update = clock.recent();

@@ -1,8 +1,6 @@
 use crate::{FmtLabels, FmtMetric, Metric};
-use parking_lot::RwLock;
 use std::{
-    borrow::Borrow,
-    collections::hash_map::{self, HashMap},
+    collections::hash_map,
     fmt,
     hash::Hash,
     sync::{
@@ -11,6 +9,8 @@ use std::{
     },
     time::Duration,
 };
+
+use dashmap::DashMap;
 
 pub trait LastUpdate {
     fn last_update(&self) -> quanta::Instant;
@@ -21,62 +21,27 @@ pub struct UpdatedAt {
     last_update: AtomicU64,
 }
 
-#[derive(Debug)]
-pub struct Registry<K, V>(Arc<RwLock<Store<K, V>>>)
-where
-    K: Hash + Eq;
+pub type Registry<K, V> = Arc<Store<K, V>>;
 
+pub fn registry<K, V>(clock: quanta::Clock) -> Registry<K, V>
+where
+    K: Hash + Eq,
+{
+    Registry::new(Store::new(clock))
+}
+
+// DashMap defaults to using `ahash` as the default hasher, which has
+// unknown security properties --- its claims of DOS-resistance have not
+// been peer-reviewed. Therefore, let's use the default hasher (SipHash) for
+// metrics where keys may be exposed to untrusted input.
+pub type Map<K, V> = DashMap<K, V, hash_map::RandomState>;
 #[derive(Debug)]
 pub struct Store<K, V>
 where
     K: Hash + Eq,
 {
-    inner: HashMap<K, Arc<V>>,
+    inner: Map<K, Arc<V>>,
     clock: quanta::Clock,
-}
-
-// === impl Registry ===
-
-impl<K, V> Registry<K, V>
-where
-    K: Hash + Eq,
-{
-    pub fn new(clock: quanta::Clock) -> Self {
-        Self(Arc::new(RwLock::new(Store::new(clock))))
-    }
-
-    pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, Store<K, V>> {
-        self.0.read()
-    }
-
-    pub fn write(&self) -> parking_lot::RwLockWriteGuard<'_, Store<K, V>> {
-        self.0.write()
-    }
-
-    pub fn get_or_insert(&self, k: K) -> Arc<V>
-    where
-        V: From<quanta::Clock>,
-    {
-        if let Some(v) = self.0.read().get(&k) {
-            return v.clone();
-        }
-
-        let mut this = self.0.write();
-        let clock = this.clock.clone();
-        this.inner
-            .entry(k)
-            .or_insert_with(|| Arc::new(V::from(clock)))
-            .clone()
-    }
-}
-
-impl<K, V> Clone for Registry<K, V>
-where
-    K: Hash + Eq,
-{
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
 }
 
 // === impl Store ===
@@ -86,8 +51,9 @@ where
     K: Hash + Eq,
 {
     pub fn new(clock: quanta::Clock) -> Self {
+        let hasher = hash_map::RandomState::new();
         Self {
-            inner: Default::default(),
+            inner: DashMap::with_hasher(hasher),
             clock,
         }
     }
@@ -100,42 +66,28 @@ where
         self.inner.len()
     }
 
-    pub fn get<Q>(&self, q: &Q) -> Option<&Arc<V>>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq,
-    {
-        self.inner.get(q)
-    }
-
-    pub fn entry(&mut self, key: K) -> hash_map::Entry<'_, K, Arc<V>> {
-        self.inner.entry(key)
-    }
-
-    pub fn get_or_insert(&mut self, k: K) -> Arc<V>
+    pub fn metric(&self, k: K) -> Arc<V>
     where
         V: From<quanta::Clock>,
     {
-        let clock = &self.clock;
-        let inner = &mut self.inner;
-        inner
+        self.inner
             .entry(k)
-            .or_insert_with(|| Arc::new(V::from(clock.clone())))
+            .or_insert_with(|| Arc::new(V::from(self.clock.clone())))
             .clone()
     }
 
-    pub fn iter(&self) -> hash_map::Iter<'_, K, Arc<V>> {
+    pub fn iter(&self) -> dashmap::iter::Iter<'_, K, Arc<V>, hash_map::RandomState> {
         self.inner.iter()
     }
 
-    pub fn retain_active(&mut self, idle: Duration)
+    pub fn retain_active(&self, idle: Duration)
     where
         V: LastUpdate,
     {
         self.retain_since(self.clock.recent() - idle)
     }
 
-    pub fn retain_since(&mut self, epoch: quanta::Instant)
+    pub fn retain_since(&self, epoch: quanta::Instant)
     where
         V: LastUpdate,
     {
@@ -155,7 +107,8 @@ where
         N: fmt::Display,
         M: FmtMetric,
     {
-        for (key, m) in self.iter() {
+        for kv in self.iter() {
+            let (key, m) = kv.pair();
             get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
@@ -164,31 +117,6 @@ where
 
     pub fn clock(&self) -> &quanta::Clock {
         &self.clock
-    }
-}
-
-impl<K, V> Store<K, Mutex<V>>
-where
-    K: Hash + Eq,
-{
-    /// Formats a metric across all instances of `Metrics` in the registry.
-    pub fn fmt_by_locked<N, M>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        metric: Metric<'_, N, M>,
-        get_metric: impl Fn(&V) -> &M,
-    ) -> fmt::Result
-    where
-        K: FmtLabels,
-        N: fmt::Display,
-        M: FmtMetric,
-    {
-        for (key, m) in self.iter() {
-            let m = m.lock().unwrap();
-            get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
-        }
-
-        Ok(())
     }
 }
 

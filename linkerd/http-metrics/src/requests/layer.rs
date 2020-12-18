@@ -1,4 +1,4 @@
-use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
+use super::{ClassMetrics, Metrics, Registry, StatusMetrics};
 use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd2_error::Error;
@@ -20,7 +20,7 @@ where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    registry: SharedRegistry<K, C::Class>,
+    registry: Registry<K, C::Class>,
     _p: PhantomData<fn() -> C>,
 }
 
@@ -32,7 +32,7 @@ where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    registry: SharedRegistry<K, C::Class>,
+    registry: Registry<K, C::Class>,
     inner: M,
     _p: PhantomData<fn() -> C>,
 }
@@ -101,7 +101,7 @@ where
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    pub(super) fn new(registry: SharedRegistry<K, C::Class>) -> Self {
+    pub(super) fn new(registry: Registry<K, C::Class>) -> Self {
         Layer {
             registry,
             _p: PhantomData,
@@ -169,7 +169,7 @@ where
     type Service = Service<M::Service, C>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let metrics = Some(self.registry.get_or_insert((&target).into()));
+        let metrics = Some(self.registry.metric((&target).into()));
         let inner = self.inner.new_service(target);
 
         Self::Service {
@@ -197,7 +197,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let metrics = Some(self.registry.get_or_insert((&target).into()));
+        let metrics = Some(self.registry.metric((&target).into()));
         let inner = self.inner.call(target);
 
         Self::Future {
@@ -452,14 +452,12 @@ where
         let now = metrics.clock.recent();
         metrics.last_update.update(now);
 
-        match metrics.by_status.lock() {
-            Ok(mut m) => m
-                .entry(Some(*this.status))
-                .or_insert_with(StatusMetrics::default)
-                .latency
-                .add(now - *stream_open_at),
-            Err(_) => return,
-        }
+        metrics
+            .by_status
+            .entry(Some(*this.status))
+            .or_insert_with(StatusMetrics::default)
+            .latency
+            .add(now - *stream_open_at);
 
         *this.latency_recorded = true;
     }
@@ -492,12 +490,8 @@ fn measure_class<C: Hash + Eq>(
 ) {
     metrics.last_update.update(metrics.clock.recent());
 
-    let mut by_status = match metrics.by_status.lock() {
-        Ok(m) => m,
-        Err(_) => return,
-    };
-
-    let status_metrics = by_status
+    let status_metrics = metrics
+        .by_status
         .entry(status)
         .or_insert_with(StatusMetrics::default);
     let class_metrics = status_metrics
