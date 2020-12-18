@@ -41,7 +41,7 @@ linkerd2-http-metrics = { path = "../../http-metrics" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "259628840ba613c2e5673fc6a39b946e1b06f09a" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/opaque-header" }
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
 linkerd2-proxy-identity = { path = "../../proxy/identity" }
@@ -86,5 +86,5 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "259628840ba613c2e5673fc6a39b946e1b06f09a", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/opaque-header", features = ["arbitrary"] }
 prost-types = "0.6.0"

@@ -9,7 +9,7 @@ publish = false
 futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", rev = "259628840ba613c2e5673fc6a39b946e1b06f09a" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/opaque-header" }
 linkerd2-proxy-transport = { path = "../transport" }
 tokio = { version = "0.3", features = ["time", "sync"] }
 tonic = { version = "0.3", default-features = false }

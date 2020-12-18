@@ -13,6 +13,7 @@ linkerd2-error = { path = "../error" }
 linkerd2-io = { path = "../io" }
 linkerd2-proxy-transport = { path = "../proxy/transport" }
 prost = "0.6"
+tracing = "0.1"
 
 [build-dependencies]
 prost-build = { version = "0.6", default-features = false }

@@ -35,4 +35,6 @@ ipnet = "1.0"
 linkerd2-app-test = { path = "../test" }
 linkerd2-io = { path = "../../io", features = ["tokio-test"] }
 tokio = { version = "0.3", features = ["full", "macros"]}
+tokio-test = "0.3"
 tracing-futures = "0.2"
+tracing-subscriber = "0.2"

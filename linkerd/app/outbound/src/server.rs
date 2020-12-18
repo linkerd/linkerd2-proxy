@@ -128,10 +128,8 @@ pub fn accept_stack<P, C, T, H, S, I>(
         Response = (),
         Error = impl Into<Error>,
         Future = impl Send + 'static,
-    > + Send
-                  + 'static,
-> + Clone + Send
-       + 'static
+    > + Send + 'static,
+> + Clone + Send + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
     C: tower::Service<tcp::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
@@ -206,18 +204,18 @@ where
 
     // Load balances TCP streams that cannot be decoded as HTTP.
     let tcp_balance = svc::stack(tcp_balance)
-    .push_map_target(tcp::Concrete::from)
-    .push(profiles::split::layer())
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_switch(tcp::Logical::should_resolve, tcp_forward)
-    .push_on_response(
-        svc::layers()
-            .push_failfast(dispatch_timeout)
-            .push_spawn_buffer(buffer_capacity),
-    )
-    .instrument(|_: &_| debug_span!("tcp"))
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .into_inner();
+        .push_map_target(tcp::Concrete::from)
+        .push(profiles::split::layer())
+        .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .push_switch(tcp::Logical::should_resolve, tcp_forward)
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .instrument(|_: &_| debug_span!("tcp"))
+        .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .into_inner();
 
     let http = svc::stack(http::NewServeHttp::new(
         h2_settings,

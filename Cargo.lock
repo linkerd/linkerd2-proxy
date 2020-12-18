@@ -989,9 +989,11 @@ dependencies = [
  "linkerd2-retry",
  "pin-project 0.4.22",
  "tokio 0.3.5",
+ "tokio-test 0.3.0",
  "tower",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1092,6 +1094,7 @@ dependencies = [
  "prost-build",
  "tokio 0.3.5",
  "tokio-test 0.3.0",
+ "tracing",
 ]
 
 [[package]]
@@ -1297,7 +1300,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.15"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=259628840ba613c2e5673fc6a39b946e1b06f09a#259628840ba613c2e5673fc6a39b946e1b06f09a"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/opaque-header#fa491c699a698dbb77c54af89ca6d876a3797ea5"
 dependencies = [
  "h2 0.2.6",
  "http",

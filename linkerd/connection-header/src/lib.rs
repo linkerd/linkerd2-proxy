@@ -1,13 +1,14 @@
 use bytes::{
     buf::{Buf, BufMut},
-    BytesMut,
+    Bytes, BytesMut,
 };
 use linkerd2_dns_name::Name;
 use linkerd2_error::Error;
-use linkerd2_io::{self as io, AsyncReadExt};
+use linkerd2_io::{self as io, AsyncReadExt, AsyncWriteExt};
 use linkerd2_proxy_transport::Detect;
 use prost::Message;
 use std::str::FromStr;
+use tracing::trace;
 
 mod proto {
     include!(concat!(env!("OUT_DIR"), "/header.proxy.l5d.io.rs"));
@@ -38,14 +39,31 @@ impl Detect for DetectHeader {
         io: &mut I,
         buf: &mut BytesMut,
     ) -> Result<Option<Header>, Error> {
-        let header = Header::read_prefaced(io, buf).await?;
-        Ok(header)
+        Header::read_prefaced(io, buf).await.map_err(Into::into)
     }
 }
 
 impl Header {
-    /// Encodes the connection header to a byte buffer.
+    pub async fn write(&self, io: &mut (impl io::AsyncWrite + Unpin)) -> Result<(), Error> {
+        let mut buf = self.encode_prefaced_buf()?;
+        while !buf.is_empty() {
+            println!("Writing header: {}B", buf.len());
+            trace!(remaining = buf.len(), "Writing header");
+            let sz = io.write_buf(&mut buf).await?;
+            println!("Wrote header: {}B", sz);
+        }
+
+        Ok(())
+    }
+
     #[inline]
+    pub fn encode_prefaced_buf(&self) -> Result<Bytes, Error> {
+        let mut buf = BytesMut::new();
+        self.encode_prefaced(&mut buf)?;
+        Ok(buf.freeze())
+    }
+
+    /// Encodes the connection header to a byte buffer.
     pub fn encode_prefaced(&self, buf: &mut BytesMut) -> Result<(), Error> {
         buf.reserve(PREFACE_AND_SIZE_LEN);
         buf.put(PREFACE);
@@ -91,9 +109,8 @@ impl Header {
     /// returned.
     ///
     /// An I/O error is returned if the connection header is invalid.
-    #[inline]
-    async fn read_prefaced<I: io::AsyncRead + Unpin + 'static>(
-        io: &mut I,
+    async fn read_prefaced(
+        io: &mut (impl io::AsyncRead + Unpin),
         buf: &mut BytesMut,
     ) -> io::Result<Option<Self>> {
         // Read at least enough data to determine whether a connection header is
@@ -139,7 +156,6 @@ impl Header {
     }
 
     // Decodes a protobuf message from the buffer.
-    #[inline]
     fn decode<B: Buf>(buf: B) -> io::Result<Option<Self>> {
         let h = proto::Header::decode(buf)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;

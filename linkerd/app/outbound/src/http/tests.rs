@@ -157,6 +157,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name.clone()),
         None,
     );
@@ -266,6 +267,7 @@ async fn meshed_hello_world() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Http2,
+        None,
         Some(id_name.clone()),
         None,
     );
@@ -327,6 +329,7 @@ async fn stacks_idle_out() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Http2,
+        None,
         Some(id_name.clone()),
         None,
     );
@@ -398,6 +401,7 @@ async fn active_stacks_dont_idle_out() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Http2,
+        None,
         Some(id_name.clone()),
         None,
     );
