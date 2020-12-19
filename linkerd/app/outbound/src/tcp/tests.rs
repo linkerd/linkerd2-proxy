@@ -132,7 +132,6 @@ async fn tls_when_hinted() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name),
-        10_000,
         None,
     );
 
@@ -190,7 +189,6 @@ async fn resolutions_are_reused() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name),
-        10_000,
         None,
     );
 
@@ -290,7 +288,6 @@ async fn load_balances() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name),
-        10_000,
         None,
     );
 
@@ -385,7 +382,6 @@ async fn load_balancer_add_endpoints() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name),
-        10_000,
         None,
     );
 
@@ -500,7 +496,6 @@ async fn load_balancer_remove_endpoints() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name),
-        10_000,
         None,
     );
 
@@ -601,7 +596,6 @@ async fn no_profiles_when_outside_search_nets() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name),
-        10_000,
         None,
     );
 
@@ -656,7 +650,6 @@ async fn no_discovery_when_profile_has_an_endpoint() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name.clone()),
-        10_000,
         None,
     );
 
@@ -710,7 +703,6 @@ async fn profile_endpoint_propagates_conn_errors() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name.clone()),
-        10_000,
         None,
     );
 
