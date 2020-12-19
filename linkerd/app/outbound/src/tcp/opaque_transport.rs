@@ -141,9 +141,7 @@ mod test {
             .oneshot(ep(Metadata::default()))
             .await
             .expect("Connect must not fail");
-        io.write_all(b"hello")
-            .await
-            .expect("Write must succeed");
+        io.write_all(b"hello").await.expect("Write must succeed");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -175,9 +173,7 @@ mod test {
             None,
         ));
         let mut io = svc.oneshot(e).await.expect("Connect must not fail");
-        io.write_all(b"hello")
-            .await
-            .expect("Write must succeed");
+        io.write_all(b"hello").await.expect("Write must succeed");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -209,9 +205,7 @@ mod test {
             Some(http::uri::Authority::from_str("foo.bar.example.com:5555").unwrap()),
         ));
         let mut io = svc.oneshot(e).await.expect("Connect must not fail");
-        io.write_all(b"hello")
-            .await
-            .expect("Write must succeed");
+        io.write_all(b"hello").await.expect("Write must succeed");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -243,8 +237,6 @@ mod test {
             None,
         ));
         let mut io = svc.oneshot(e).await.expect("Connect must not fail");
-        io.write_all(b"hello")
-            .await
-            .expect("Write must succeed");
+        io.write_all(b"hello").await.expect("Write must succeed");
     }
 }
