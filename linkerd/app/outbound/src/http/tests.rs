@@ -158,7 +158,6 @@ async fn profile_endpoint_propagates_conn_errors() {
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         Some(id_name.clone()),
-        10_000,
         None,
     );
 
@@ -268,7 +267,6 @@ async fn meshed_hello_world() {
         Default::default(),
         support::resolver::ProtocolHint::Http2,
         Some(id_name.clone()),
-        10_000,
         None,
     );
 
@@ -330,7 +328,6 @@ async fn stacks_idle_out() {
         Default::default(),
         support::resolver::ProtocolHint::Http2,
         Some(id_name.clone()),
-        10_000,
         None,
     );
 
@@ -402,7 +399,6 @@ async fn active_stacks_dont_idle_out() {
         Default::default(),
         support::resolver::ProtocolHint::Http2,
         Some(id_name.clone()),
-        10_000,
         None,
     );
 

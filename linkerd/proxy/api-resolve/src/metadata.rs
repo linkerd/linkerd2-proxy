@@ -5,17 +5,6 @@ use indexmap::IndexMap;
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
-    /// An endpoint's relative weight.
-    ///
-    /// A weight of 0 means that the endpoint should never be preferred over a
-    /// non 0-weighted endpoint.
-    ///
-    /// The default weight, corresponding to 1.0, is 10,000. This enables us to
-    /// specify weights as small as 0.0001 and as large as 400,000+.
-    ///
-    /// A float is not used so that this type can implement `Eq`.
-    weight: u32,
-
     /// Arbitrary endpoint labels. Primarily used for telemetry.
     labels: IndexMap<String, String>,
 
@@ -47,7 +36,6 @@ impl Default for Metadata {
             labels: IndexMap::default(),
             protocol_hint: ProtocolHint::Unknown,
             identity: None,
-            weight: 10_000,
             authority_override: None,
         }
     }
@@ -58,14 +46,12 @@ impl Metadata {
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
         identity: Option<identity::Name>,
-        weight: u32,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
             labels,
             protocol_hint,
             identity,
-            weight,
             authority_override,
         }
     }

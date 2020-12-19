@@ -43,7 +43,7 @@ pub fn to_addr_meta(
     }
 
     let tls_id = pb.tls_identity.and_then(to_id);
-    let meta = Metadata::new(meta, proto_hint, tls_id, pb.weight, authority_override);
+    let meta = Metadata::new(meta, proto_hint, tls_id, authority_override);
     Some((addr, meta))
 }
 
