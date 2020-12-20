@@ -1,4 +1,4 @@
-use crate::{Either, NewService};
+use crate::{layer, Either, NewService};
 
 #[derive(Clone, Debug, Default)]
 pub struct NewOptional<A, B> {
@@ -6,12 +6,19 @@ pub struct NewOptional<A, B> {
     b: B,
 }
 
-// === impl NewServeHttp ===
+// === impl NewOptional ===
 
 impl<A, B> NewOptional<A, B> {
     /// Creates a new `ServeHttp`.
     pub fn new(a: A, b: B) -> Self {
         Self { a, b }
+    }
+
+    pub fn layer(b: B) -> impl layer::Layer<A, Service = Self>
+    where
+        B: Clone,
+    {
+        layer::mk(move |a| Self::new(a, b.clone()))
     }
 }
 

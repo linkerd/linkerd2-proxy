@@ -222,17 +222,16 @@ where
         .instrument(|_: &_| debug_span!("tcp"))
         .into_inner();
 
-    let http = svc::stack(http::NewServeHttp::new(
-        h2_settings,
-        http_server,
-        tcp_balance,
-        drain,
-    ))
-    .push_cache(cache_max_idle_age)
-    .push(transport::NewDetectService::layer(
-        transport::detect::DetectTimeout::new(detect_protocol_timeout, http::DetectHttp::default()),
-    ))
-    .into_inner();
+    let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+        .push(svc::stack::NewOptional::layer(tcp_balance))
+        .push_cache(cache_max_idle_age)
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ),
+        ))
+        .into_inner();
 
     let tcp = svc::stack(tcp::connect::forward(tcp_connect))
         .push_map_target(tcp::Endpoint::from_logical(

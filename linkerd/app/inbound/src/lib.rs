@@ -402,21 +402,16 @@ impl Config {
             )
             .into_inner();
 
-        svc::stack(http::NewServeHttp::new(
-            h2_settings,
-            http_server,
-            tcp,
-            drain,
-        ))
-        .check_new_clone::<(Option<http::Version>, TcpAccept)>()
-        .push_cache(cache_max_idle_age)
-        .push(transport::NewDetectService::layer(
-            transport::detect::DetectTimeout::new(
-                detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ),
-        ))
-        .into_inner()
+        svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+            .push(svc::stack::NewOptional::layer(tcp))
+            .push_cache(cache_max_idle_age)
+            .push(transport::NewDetectService::layer(
+                transport::detect::DetectTimeout::new(
+                    detect_protocol_timeout,
+                    http::DetectHttp::default(),
+                ),
+            ))
+            .into_inner()
     }
 
     pub fn build_tls_accept<D, A, F, B>(
