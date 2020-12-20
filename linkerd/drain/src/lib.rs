@@ -1,9 +1,15 @@
 #![deny(warnings, rust_2018_idioms)]
+
+mod retain;
+
+pub use crate::retain::NewRetain;
 use linkerd2_error::Never;
 use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tokio::{
     stream::Stream,
     sync::{mpsc, watch},
