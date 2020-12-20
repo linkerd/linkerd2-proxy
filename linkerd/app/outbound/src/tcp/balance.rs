@@ -21,6 +21,11 @@ pub fn stack<C, R, I>(
         Response = (),
         Future = impl Unpin + Send + 'static,
         Error = Error,
+    > + tower::Service<
+        io::PrefixedIo<I>,
+        Response = (),
+        Future = impl Unpin + Send + 'static,
+        Error = Error,
     > + Unpin
                   + Send
                   + 'static,
@@ -39,11 +44,9 @@ where
 {
     svc::stack(connect)
         .push_make_thunk()
-        .check_make_service::<Endpoint, ()>()
         .instrument(
             |t: &Endpoint| debug_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity),
         )
-        .check_make_service::<Endpoint, ()>()
         .push(resolve::layer(resolve, config.cache_max_idle_age * 2))
         .push_on_response(
             svc::layers()
@@ -53,7 +56,5 @@ where
                 ))
                 .push(svc::layer::mk(tcp::Forward::new)),
         )
-        .check_make_service::<Concrete, I>()
         .into_new_service()
-        .check_new_service::<Concrete, I>()
 }
