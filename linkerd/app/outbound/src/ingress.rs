@@ -125,6 +125,7 @@ where
         .into_inner();
 
     let tcp = svc::stack(tcp)
+        .push(drain::NewRetain::layer(drain.clone()))
         .push_map_target(tcp::Endpoint::from_accept(
             tls::ReasonForNoPeerName::IngressNonHttp,
         ))

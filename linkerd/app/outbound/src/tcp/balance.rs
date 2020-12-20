@@ -10,7 +10,7 @@ use linkerd2_app_core::{
 use tracing::debug_span;
 
 /// Constructs a TCP load balancer.
-pub fn stack<C, R, I>(
+pub fn stack<I, C, R>(
     config: &ProxyConfig,
     connect: C,
     resolve: R,

@@ -211,6 +211,7 @@ where
 
     // Load balances TCP streams that cannot be decoded as HTTP.
     let tcp_balance = svc::stack(tcp_balance)
+        .push(drain::NewRetain::layer(drain.clone()))
         .push_map_target(tcp::Concrete::from)
         .push(profiles::split::layer())
         .push_switch(tcp::Logical::should_resolve, tcp_forward)
@@ -222,18 +223,20 @@ where
         .instrument(|_: &_| debug_span!("tcp"))
         .into_inner();
 
-    let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
-        .push(svc::stack::NewOptional::layer(tcp_balance))
-        .push_cache(cache_max_idle_age)
-        .push(transport::NewDetectService::layer(
-            transport::detect::DetectTimeout::new(
-                detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ),
-        ))
-        .into_inner();
+    let http = svc::stack(http::NewServeHttp::new(
+        h2_settings,
+        http_server,
+        drain.clone(),
+    ))
+    .push(svc::stack::NewOptional::layer(tcp_balance))
+    .push_cache(cache_max_idle_age)
+    .push(transport::NewDetectService::layer(
+        transport::detect::DetectTimeout::new(detect_protocol_timeout, http::DetectHttp::default()),
+    ))
+    .into_inner();
 
     let tcp = svc::stack(tcp::connect::forward(tcp_connect))
+        .push(drain::NewRetain::layer(drain))
         .push_map_target(tcp::Endpoint::from_logical(
             tls::ReasonForNoPeerName::PortSkipped,
         ))

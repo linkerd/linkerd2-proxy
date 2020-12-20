@@ -26,6 +26,12 @@ impl<S> PrefixedIo<S> {
     }
 }
 
+impl<S> From<S> for PrefixedIo<S> {
+    fn from(io: S) -> Self {
+        Self::new(Bytes::default(), io)
+    }
+}
+
 impl<S: PeerAddr> PeerAddr for PrefixedIo<S> {
     fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
