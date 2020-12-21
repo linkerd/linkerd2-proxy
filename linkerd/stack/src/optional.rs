@@ -1,24 +1,26 @@
 use crate::{layer, Either, NewService};
 
+/// A stack middleware that takes an optional target type and builds an `A`-typed
+/// stack if the target is set and a `B`-typed stack if it is not.
 #[derive(Clone, Debug, Default)]
 pub struct NewOptional<A, B> {
-    a: A,
-    b: B,
+    new_some: A,
+    new_none: B,
 }
 
 // === impl NewOptional ===
 
 impl<A, B> NewOptional<A, B> {
     /// Creates a new `ServeHttp`.
-    pub fn new(a: A, b: B) -> Self {
-        Self { a, b }
+    pub fn new(new_some: A, new_none: B) -> Self {
+        Self { new_some, new_none }
     }
 
-    pub fn layer(b: B) -> impl layer::Layer<A, Service = Self>
+    pub fn layer(new_none: B) -> impl layer::Layer<A, Service = Self>
     where
         B: Clone,
     {
-        layer::mk(move |a| Self::new(a, b.clone()))
+        layer::mk(move |new_some| Self::new(new_some, new_none.clone()))
     }
 }
 
@@ -31,8 +33,8 @@ where
 
     fn new_service(&mut self, (t, u): (Option<T>, U)) -> Self::Service {
         match t {
-            Some(t) => Either::A(self.a.new_service((t, u))),
-            None => Either::B(self.b.new_service(u)),
+            Some(t) => Either::A(self.new_some.new_service((t, u))),
+            None => Either::B(self.new_none.new_service(u)),
         }
     }
 }

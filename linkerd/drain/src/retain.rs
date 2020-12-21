@@ -6,17 +6,21 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Holds a drain::Watch for as long as a request is pending.
 #[derive(Clone, Debug)]
 pub struct NewRetain<N> {
     inner: N,
     drain: Watch,
 }
 
+/// Holds a drain::Watch for as long as a request is pending.
 #[derive(Clone, Debug)]
 pub struct Retain<S> {
     inner: S,
     drain: Watch,
 }
+
+// === impl NewRetain ===
 
 impl<N> NewRetain<N> {
     pub fn new(drain: Watch, inner: N) -> Self {
@@ -39,6 +43,8 @@ impl<T, N: NewService<T>> NewService<T> for NewRetain<N> {
         }
     }
 }
+
+// === impl Retain ===
 
 impl<Req, S> tower::Service<Req> for Retain<S>
 where
