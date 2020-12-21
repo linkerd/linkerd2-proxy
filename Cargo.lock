@@ -632,7 +632,7 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "0.4.0"
-source = "git+https://github.com/hyperium/http-body#5e434739e747c0b6611ec41020740b17f735d25a"
+source = "git+https://github.com/hyperium/http-body?branch=master#5e434739e747c0b6611ec41020740b17f735d25a"
 dependencies = [
  "bytes 0.6.0",
  "http",
@@ -1302,7 +1302,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.15"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/opaque-header#fa491c699a698dbb77c54af89ca6d876a3797ea5"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/opaque-header#2913e990c702eb3759507880233db962dc91dea5"
 dependencies = [
  "h2 0.2.6",
  "http",
@@ -2048,7 +2048,7 @@ dependencies = [
 [[package]]
 name = "prost-derive"
 version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
+source = "git+https://github.com/danburkert/prost#423f5ec5bd165a7007a388edfb2b485d5bbf40c7"
 dependencies = [
  "anyhow",
  "itertools",

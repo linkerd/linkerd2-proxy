@@ -1,5 +1,5 @@
 use crate::api::destination::{
-    protocol_hint::{OpaqueHeader, Protocol},
+    protocol_hint::{OpaqueTransport, Protocol},
     AuthorityOverride, TlsIdentity, WeightedAddr,
 };
 use crate::api::net::TcpAddress;
@@ -43,9 +43,9 @@ pub fn to_addr_meta(
             }
         }
 
-        if let Some(OpaqueHeader { port }) = hint.opaque_header {
-            if port > 0 && port < std::u16::MAX as u32 {
-                opaque_transport_port = Some(port as u16);
+        if let Some(OpaqueTransport { inbound_port }) = hint.opaque_transport {
+            if inbound_port > 0 && inbound_port < std::u16::MAX as u32 {
+                opaque_transport_port = Some(inbound_port as u16);
             }
         }
     }
