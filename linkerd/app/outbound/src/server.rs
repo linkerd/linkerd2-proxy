@@ -56,7 +56,8 @@ where
     P::Future: Unpin + Send,
     P::Error: Send,
 {
-    let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
+    let tcp_balance =
+        tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve, drain.clone());
     let accept = accept_stack(
         config,
         profiles,
@@ -206,36 +207,30 @@ where
 
     // Load balances TCP streams that cannot be decoded as HTTP.
     let tcp_balance = svc::stack(tcp_balance)
-    .push_map_target(tcp::Concrete::from)
-    .push(profiles::split::layer())
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_switch(tcp::Logical::should_resolve, tcp_forward)
-    .push_on_response(
-        svc::layers()
-            .push_failfast(dispatch_timeout)
-            .push_spawn_buffer(buffer_capacity),
-    )
-    .instrument(|_: &_| debug_span!("tcp"))
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .into_inner();
+        .push_map_target(tcp::Concrete::from)
+        .push(profiles::split::layer())
+        .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .push_switch(tcp::Logical::should_resolve, tcp_forward)
+        .push_on_response(
+            svc::layers()
+                .push_failfast(dispatch_timeout)
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .instrument(|_: &_| debug_span!("tcp"))
+        .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
+        .into_inner();
 
-    let http = svc::stack(http::NewServeHttp::new(
-        h2_settings,
-        http_server,
-        tcp_balance,
-        drain,
-    ))
-    .check_new_clone::<(Option<http::Version>, tcp::Logical)>()
-    .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_cache(cache_max_idle_age)
-    .push(transport::NewDetectService::layer(
-        transport::detect::DetectTimeout::new(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
-        ),
-    ))
-    .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
-    .into_inner();
+    let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+        .push(svc::stack::NewOptional::layer(tcp_balance))
+        .push_cache(cache_max_idle_age)
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ),
+        ))
+        .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
+        .into_inner();
 
     let tcp = svc::stack(tcp::connect::forward(tcp_connect))
         .push_map_target(tcp::Endpoint::from_logical(

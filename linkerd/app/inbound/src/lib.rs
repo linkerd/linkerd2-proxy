@@ -106,7 +106,11 @@ impl Config {
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
+            .push_on_response(
+                svc::layers()
+                    .push(svc::layer::mk(tcp::Forward::new))
+                    .push(drain::Retain::layer(drain.clone())),
+            )
             .instrument(|_: &_| debug_span!("tcp"))
             .into_inner();
 
@@ -380,23 +384,21 @@ impl Config {
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
-        svc::stack(http::NewServeHttp::new(
-            h2_settings,
-            http_server,
-            svc::stack(tcp_forward)
-                .push_map_target(TcpEndpoint::from)
-                .into_inner(),
-            drain,
-        ))
-        .check_new_clone::<(Option<http::Version>, TcpAccept)>()
-        .push_cache(cache_max_idle_age)
-        .push(transport::NewDetectService::layer(
-            transport::detect::DetectTimeout::new(
-                detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ),
-        ))
-        .into_inner()
+        svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+            .push(svc::stack::NewOptional::layer(
+                svc::stack(tcp_forward)
+                    .push_map_target(TcpEndpoint::from)
+                    .into_inner(),
+            ))
+            .check_new_clone::<(Option<http::Version>, TcpAccept)>()
+            .push_cache(cache_max_idle_age)
+            .push(transport::NewDetectService::layer(
+                transport::detect::DetectTimeout::new(
+                    detect_protocol_timeout,
+                    http::DetectHttp::default(),
+                ),
+            ))
+            .into_inner()
     }
 
     pub fn build_tls_accept<D, A, F, B>(
