@@ -38,7 +38,7 @@ where
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(futures::ready!(self.inner.poll_ready(cx)).map_err(Into::into))
+        self.inner.poll_ready(cx).map_err(Into::into)
     }
 
     fn call(&mut self, mut ep: Endpoint<P>) -> Self::Future {
