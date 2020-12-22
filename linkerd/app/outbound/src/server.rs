@@ -56,7 +56,8 @@ where
     P::Future: Unpin + Send,
     P::Error: Send,
 {
-    let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
+    let tcp_balance =
+        tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve, drain.clone());
     let accept = accept_stack(
         config,
         profiles,
@@ -207,7 +208,6 @@ where
     // Load balances TCP streams that cannot be decoded as HTTP.
     let tcp_balance = svc::stack(tcp_balance)
         .push_map_target(tcp::Concrete::from)
-        .push_on_response(drain::Retain::layer(drain.clone()))
         .push(profiles::split::layer())
         .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .push_switch(tcp::Logical::should_resolve, tcp_forward)
