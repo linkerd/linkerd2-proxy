@@ -200,7 +200,7 @@ where
         .push_map_target(http::Logical::from)
         .into_inner();
 
-    let tcp_forward = svc::stack(tcp_connect.clone())
+    let tcp_forward = svc::stack(tcp_connect)
         .push_make_thunk()
         .push_on_response(svc::layer::mk(tcp::Forward::new))
         .into_new_service()
@@ -210,29 +210,28 @@ where
         ))
         .into_inner();
 
-    let http = svc::stack(http::NewServeHttp::new(
-        h2_settings,
-        http_server,
-        drain.clone(),
-    ))
-    .push(svc::stack::NewOptional::layer(
-        svc::stack(tcp_balance.clone())
-            .push_map_target(tcp::Concrete::from)
-            .push(profiles::split::layer())
-            .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
-            .push_on_response(
-                svc::layers()
-                    .push_failfast(dispatch_timeout)
-                    .push_spawn_buffer(buffer_capacity),
-            )
-            .instrument(|_: &_| debug_span!("tcp"))
-            .into_inner(),
-    ))
-    .push_cache(cache_max_idle_age)
-    .push(transport::NewDetectService::layer(
-        transport::detect::DetectTimeout::new(detect_protocol_timeout, http::DetectHttp::default()),
-    ))
-    .into_inner();
+    let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+        .push(svc::stack::NewOptional::layer(
+            svc::stack(tcp_balance.clone())
+                .push_map_target(tcp::Concrete::from)
+                .push(profiles::split::layer())
+                .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
+                .push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer(buffer_capacity),
+                )
+                .instrument(|_: &_| debug_span!("tcp"))
+                .into_inner(),
+        ))
+        .push_cache(cache_max_idle_age)
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ),
+        ))
+        .into_inner();
 
     svc::stack(http)
         .push_switch(
