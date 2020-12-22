@@ -1,6 +1,6 @@
 use crate::{dns, identity::LocalIdentity};
 use linkerd2_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
-use linkerd2_opencensus::{metrics, proto, SpanExporter};
+use linkerd2_opencensus::{self as opencensus, metrics, proto};
 use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
@@ -73,7 +73,7 @@ impl Config {
                     let addr = addr.clone();
                     Box::pin(async move {
                         debug!(peer.addr = ?addr, "running");
-                        SpanExporter::new(svc, node, spans_rx, metrics).await
+                        opencensus::export_spans(svc, node, spans_rx, metrics).await
                     })
                 };
 
