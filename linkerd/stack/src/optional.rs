@@ -11,7 +11,6 @@ pub struct NewOptional<A, B> {
 // === impl NewOptional ===
 
 impl<A, B> NewOptional<A, B> {
-    /// Creates a new `ServeHttp`.
     pub fn new(new_some: A, new_none: B) -> Self {
         Self { new_some, new_none }
     }
