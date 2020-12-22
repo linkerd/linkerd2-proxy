@@ -64,6 +64,7 @@ where
             self.metrics.start_stream();
             let mut rsp = Box::pin(svc.export(req));
             let mut drive_rsp = true;
+
             loop {
                 tokio::select! {
                     res = &mut rsp, if drive_rsp => match res {
@@ -73,8 +74,9 @@ where
                             continue 'reconnect;
                         }
                     },
-                    res = self.batch_spans(&request_tx) => match res {
-                        Ok(()) => return,
+                    res = self.send_batch(&request_tx) => match res {
+                        Ok(false) => return, // The span strean has ended --- the proxy is shutting down.
+                        Ok(true) => {} // Continue the inner loop and send a new batch of spans.
                         Err(()) => continue 'reconnect,
                     }
                 }
@@ -82,42 +84,25 @@ where
         }
     }
 
-    async fn batch_spans(
-        &mut self,
-        tx: &mpsc::Sender<ExportTraceServiceRequest>,
-    ) -> Result<(), ()> {
+    async fn send_batch(&mut self, tx: &mpsc::Sender<ExportTraceServiceRequest>) -> Result<(), ()> {
         const MAX_BATCH_SIZE: usize = 100;
+        // If the sender is dead, return an error so we can reconnect.
+        let send = tx.reserve().await.map_err(|_| ())?;
 
-        'batch: loop {
-            // If the sender is dead, return an error so we can reconnect.
-            let send = tx.reserve().await.map_err(|_| ())?;
-
-            let mut spans = Vec::new();
-            while let Some(span) = self.spans.next().await {
-                spans.push(span);
-                if spans.len() == MAX_BATCH_SIZE {
-                    self.send_batch(spans, send);
-                    // There may still be more spans to send --- keep pulling
-                    // from this receiver until we hit an error or the receiver
-                    // terminates.
-                    continue 'batch;
-                }
+        let mut spans = Vec::new();
+        let mut can_send_more = false;
+        while let Some(span) = self.spans.next().await {
+            spans.push(span);
+            if spans.len() == MAX_BATCH_SIZE {
+                can_send_more = true;
+                break;
             }
-
-            // The receiver stream has terminated. Send the current batch, if
-            // there is one, and return.
-            if !spans.is_empty() {
-                self.send_batch(spans, send);
-            }
-            return Ok(());
         }
-    }
 
-    fn send_batch(
-        &mut self,
-        spans: Vec<Span>,
-        sender: mpsc::Permit<'_, ExportTraceServiceRequest>,
-    ) {
+        if spans.is_empty() {
+            return Ok(false);
+        }
+
         if let Ok(num_spans) = spans.len().try_into() {
             self.metrics.send(num_spans);
         }
@@ -128,6 +113,7 @@ where
         };
         trace!(message = "Transmitting", ?req);
         sender.send(req);
+        Ok(can_send_more)
     }
 }
 
