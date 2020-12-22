@@ -86,7 +86,10 @@ where
         }
     }
 
-    async fn send_batch(&mut self, tx: &mpsc::Sender<ExportTraceServiceRequest>) -> Result<(), ()> {
+    async fn send_batch(
+        &mut self,
+        tx: &mpsc::Sender<ExportTraceServiceRequest>,
+    ) -> Result<bool, ()> {
         const MAX_BATCH_SIZE: usize = 100;
         // If the sender is dead, return an error so we can reconnect.
         let send = tx.reserve().await.map_err(|_| ())?;
@@ -114,7 +117,7 @@ where
             resource: None,
         };
         trace!(message = "Transmitting", ?req);
-        sender.send(req);
+        send.send(req);
         Ok(can_send_more)
     }
 }
