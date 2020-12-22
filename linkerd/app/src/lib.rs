@@ -75,6 +75,8 @@ impl Config {
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
     pub async fn build(self, log_level: trace::Handle) -> Result<App, Error> {
+        use metrics::FmtMetrics;
+
         let Config {
             admin,
             dns,
@@ -94,6 +96,7 @@ impl Config {
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+        let report = report.and_then(identity.metrics());
 
         let (drain_tx, drain_rx) = drain::channel();
 
