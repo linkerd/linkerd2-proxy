@@ -46,7 +46,7 @@ impl Config {
         match self {
             Config::Disabled => Ok(Identity::Disabled),
             Config::Enabled { control, certify } => {
-                let (local, crt_store) = Local::new(&certify);
+                let (local, daemon) = Local::new(&certify);
 
                 let addr = control.addr.clone();
                 let svc = control.build(
@@ -60,7 +60,7 @@ impl Config {
                     let addr = addr.clone();
                     Box::pin(async move {
                         debug!(peer.addr = ?addr, "running");
-                        certify::daemon(certify, crt_store, svc).await
+                        daemon.run(svc).await
                     })
                 };
 
