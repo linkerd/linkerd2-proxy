@@ -106,8 +106,11 @@ impl Config {
         // Forwards TCP streams that cannot be decoded as HTTP.
         let tcp_forward = svc::stack(tcp_connect)
             .push_make_thunk()
-            .push_on_response(svc::layer::mk(tcp::Forward::new))
-            .push(drain::NewRetain::layer(drain.clone()))
+            .push_on_response(
+                svc::layers()
+                    .push(svc::layer::mk(tcp::Forward::new))
+                    .push(drain::Retain::layer(drain.clone())),
+            )
             .instrument(|_: &_| debug_span!("tcp"))
             .into_inner();
 

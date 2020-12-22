@@ -1,5 +1,5 @@
 use crate::Watch;
-use linkerd2_stack::{layer, NewService};
+use linkerd2_stack::layer;
 use std::{
     future::Future,
     pin::Pin,
@@ -8,43 +8,22 @@ use std::{
 
 /// Holds a drain::Watch for as long as a request is pending.
 #[derive(Clone, Debug)]
-pub struct NewRetain<N> {
-    inner: N,
-    drain: Watch,
-}
-
-/// Holds a drain::Watch for as long as a request is pending.
-#[derive(Clone, Debug)]
 pub struct Retain<S> {
     inner: S,
     drain: Watch,
 }
 
-// === impl NewRetain ===
+// === impl Retain ===
 
-impl<N> NewRetain<N> {
-    pub fn new(drain: Watch, inner: N) -> Self {
+impl<S> Retain<S> {
+    pub fn new(drain: Watch, inner: S) -> Self {
         Self { drain, inner }
     }
 
-    pub fn layer(drain: Watch) -> impl layer::Layer<N, Service = Self> + Clone {
+    pub fn layer(drain: Watch) -> impl layer::Layer<S, Service = Self> + Clone {
         layer::mk(move |inner| Self::new(drain.clone(), inner))
     }
 }
-
-impl<T, N: NewService<T>> NewService<T> for NewRetain<N> {
-    type Service = Retain<N::Service>;
-
-    fn new_service(&mut self, target: T) -> Self::Service {
-        let inner = self.inner.new_service(target);
-        Retain {
-            inner,
-            drain: self.drain.clone(),
-        }
-    }
-}
-
-// === impl Retain ===
 
 impl<Req, S> tower::Service<Req> for Retain<S>
 where
