@@ -69,7 +69,8 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    let forward = super::balance::stack(&cfg.proxy, connect, resolver).new_service(concrete);
+    let (_, drain) = drain::channel();
+    let forward = super::balance::stack(&cfg.proxy, connect, resolver, drain).new_service(concrete);
 
     forward
         .oneshot(client_io.into())
@@ -151,7 +152,8 @@ async fn tls_when_hinted() {
     client_io.read(b"hello").write(b"world");
 
     // Build the outbound TCP balancer stack.
-    let mut balance = super::balance::stack(&cfg.proxy, connect, resolver);
+    let (_, drain) = drain::channel();
+    let mut balance = super::balance::stack(&cfg.proxy, connect, resolver, drain);
 
     let plain = balance
         .new_service(plain_concrete)

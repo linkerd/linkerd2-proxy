@@ -56,7 +56,8 @@ where
     P::Future: Unpin + Send,
     P::Error: Send,
 {
-    let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
+    let tcp_balance =
+        tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve, drain.clone());
     let accept = accept_stack(
         config,
         profiles,
@@ -216,7 +217,6 @@ where
     ))
     .push(svc::stack::NewOptional::layer(
         svc::stack(tcp_balance.clone())
-            .push(drain::NewRetain::layer(drain.clone()))
             .push_map_target(tcp::Concrete::from)
             .push(profiles::split::layer())
             .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
@@ -237,8 +237,7 @@ where
     svc::stack(http)
         .push_switch(
             SkipByProfile,
-            svc::stack(tcp_balance.clone())
-                .push(drain::NewRetain::layer(drain.clone()))
+            svc::stack(tcp_balance)
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
                 .push_switch(tcp::Logical::should_resolve, tcp_forward)
@@ -247,7 +246,7 @@ where
                         .push_failfast(dispatch_timeout)
                         .push_spawn_buffer(buffer_capacity),
                 )
-                .instrument(|_: &_| debug_span!("tcp"))
+                .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )
         .push_map_target(tcp::Logical::from)

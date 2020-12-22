@@ -2,7 +2,7 @@
 
 mod retain;
 
-pub use crate::retain::NewRetain;
+pub use crate::retain::Retain;
 use linkerd2_error::Never;
 use pin_project::pin_project;
 use std::{

@@ -2,6 +2,7 @@ use super::{Concrete, Endpoint};
 use crate::resolve;
 use linkerd2_app_core::{
     config::ProxyConfig,
+    drain,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
     svc,
     transport::io,
@@ -14,6 +15,7 @@ pub fn stack<I, C, R>(
     config: &ProxyConfig,
     connect: C,
     resolve: R,
+    drain: drain::Watch,
 ) -> impl svc::NewService<
     Concrete,
     Service = impl tower::Service<
@@ -54,7 +56,8 @@ where
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
                 ))
-                .push(svc::layer::mk(tcp::Forward::new)),
+                .push(svc::layer::mk(tcp::Forward::new))
+                .push(drain::Retain::layer(drain)),
         )
         .into_new_service()
 }
