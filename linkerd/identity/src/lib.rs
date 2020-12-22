@@ -331,6 +331,10 @@ impl CrtKey {
     pub fn tls_server_config(&self) -> Arc<rustls::ServerConfig> {
         self.server_config.clone()
     }
+
+    pub fn expiry(&self) -> SystemTime {
+        self.expiry
+    }
 }
 
 impl fmt::Debug for CrtKey {

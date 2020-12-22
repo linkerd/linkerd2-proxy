@@ -1,5 +1,5 @@
 pub use linkerd2_app_core::proxy::identity::{
-    certify, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
+    certify, metrics, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
 use linkerd2_app_core::{
     control, dns,
@@ -77,6 +77,13 @@ impl Identity {
                 tls::Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)
             }
             Identity::Enabled { ref local, .. } => tls::Conditional::Some(local.clone()),
+        }
+    }
+
+    pub fn metrics(&self) -> metrics::Report {
+        match self {
+            Identity::Disabled => metrics::Report::disabled(),
+            Identity::Enabled { ref local, .. } => local.metrics(),
         }
     }
 

@@ -164,6 +164,10 @@ impl Local {
         }
         Ok(self)
     }
+
+    pub fn metrics(&self) -> crate::metrics::Report {
+        crate::metrics::Report::new(self.crt_key.clone())
+    }
 }
 
 impl tls::client::HasConfig for Local {

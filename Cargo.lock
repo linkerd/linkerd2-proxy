@@ -1395,6 +1395,7 @@ dependencies = [
  "http-body",
  "linkerd2-error",
  "linkerd2-identity",
+ "linkerd2-metrics",
  "linkerd2-proxy-api",
  "linkerd2-proxy-transport",
  "pin-project 0.4.22",
