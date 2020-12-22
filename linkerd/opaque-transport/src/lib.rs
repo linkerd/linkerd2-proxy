@@ -11,7 +11,7 @@ use std::str::FromStr;
 use tracing::trace;
 
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/header.proxy.l5d.io.rs"));
+    include!(concat!(env!("OUT_DIR"), "/opaque.proxy.l5d.io.rs"));
 }
 
 #[derive(Clone, Debug)]
@@ -26,7 +26,7 @@ pub struct Header {
 #[derive(Clone, Debug, Default)]
 pub struct DetectHeader(());
 
-const PREFACE: &[u8] = b"proxy.l5d.io/connect\r\n\r\n";
+const PREFACE: &[u8] = b"proxy.l5d.io/opaque\r\n\r\n";
 const PREFACE_AND_SIZE_LEN: usize = PREFACE.len() + 4;
 
 #[async_trait::async_trait]
@@ -263,7 +263,7 @@ mod tests {
             };
             tokio_test::io::Builder::new()
                 .read(b"proxy.l5d")
-                .read(b".io/connect")
+                .read(b".io/opaque")
                 .read(b"\r\n\r\n")
                 .read(len.as_ref())
                 .read(msg.as_ref())
