@@ -1,0 +1,23 @@
+[package]
+name = "linkerd2-opaque-transport"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+bytes = "0.6"
+linkerd2-dns-name = { path = "../dns/name" }
+linkerd2-error = { path = "../error" }
+linkerd2-io = { path = "../io" }
+linkerd2-proxy-transport = { path = "../proxy/transport" }
+prost = "0.6"
+tracing = "0.1"
+
+[build-dependencies]
+prost-build = { version = "0.6", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "0.3", features = ["macros"] }
+tokio-test = "0.3"

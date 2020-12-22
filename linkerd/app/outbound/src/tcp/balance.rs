@@ -2,6 +2,7 @@ use super::{Concrete, Endpoint};
 use crate::resolve;
 use linkerd2_app_core::{
     config::ProxyConfig,
+    drain,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
     svc,
     transport::io,
@@ -10,14 +11,20 @@ use linkerd2_app_core::{
 use tracing::debug_span;
 
 /// Constructs a TCP load balancer.
-pub fn stack<C, R, I>(
+pub fn stack<I, C, R>(
     config: &ProxyConfig,
     connect: C,
     resolve: R,
+    drain: drain::Watch,
 ) -> impl svc::NewService<
     Concrete,
     Service = impl tower::Service<
         I,
+        Response = (),
+        Future = impl Unpin + Send + 'static,
+        Error = Error,
+    > + tower::Service<
+        io::PrefixedIo<I>,
         Response = (),
         Future = impl Unpin + Send + 'static,
         Error = Error,
@@ -39,11 +46,9 @@ where
 {
     svc::stack(connect)
         .push_make_thunk()
-        .check_make_service::<Endpoint, ()>()
         .instrument(
             |t: &Endpoint| debug_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity),
         )
-        .check_make_service::<Endpoint, ()>()
         .push(resolve::layer(resolve, config.cache_max_idle_age * 2))
         .push_on_response(
             svc::layers()
@@ -51,9 +56,8 @@ where
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
                 ))
-                .push(svc::layer::mk(tcp::Forward::new)),
+                .push(svc::layer::mk(tcp::Forward::new))
+                .push(drain::Retain::layer(drain)),
         )
-        .check_make_service::<Concrete, I>()
         .into_new_service()
-        .check_new_service::<Concrete, I>()
 }

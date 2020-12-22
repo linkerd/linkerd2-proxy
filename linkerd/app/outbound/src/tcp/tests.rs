@@ -69,10 +69,11 @@ async fn plaintext_tcp() {
     );
 
     // Build the outbound TCP balancer stack.
-    let forward = super::balance::stack(&cfg.proxy, connect, resolver).new_service(concrete);
+    let (_, drain) = drain::channel();
+    let forward = super::balance::stack(&cfg.proxy, connect, resolver, drain).new_service(concrete);
 
     forward
-        .oneshot(client_io)
+        .oneshot(client_io.into())
         .err_into::<Error>()
         .await
         .expect("conn should succeed");
@@ -131,6 +132,7 @@ async fn tls_when_hinted() {
     let tls_meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name),
         None,
     );
@@ -150,15 +152,16 @@ async fn tls_when_hinted() {
     client_io.read(b"hello").write(b"world");
 
     // Build the outbound TCP balancer stack.
-    let mut balance = super::balance::stack(&cfg.proxy, connect, resolver);
+    let (_, drain) = drain::channel();
+    let mut balance = super::balance::stack(&cfg.proxy, connect, resolver, drain);
 
     let plain = balance
         .new_service(plain_concrete)
-        .oneshot(client_io.build())
+        .oneshot(client_io.build().into())
         .err_into::<Error>();
     let tls = balance
         .new_service(tls_concrete)
-        .oneshot(client_io.build())
+        .oneshot(client_io.build().into())
         .err_into::<Error>();
 
     let res = tokio::try_join! { plain, tls };
@@ -188,6 +191,7 @@ async fn resolutions_are_reused() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name),
         None,
     );
@@ -287,6 +291,7 @@ async fn load_balances() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name),
         None,
     );
@@ -381,6 +386,7 @@ async fn load_balancer_add_endpoints() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name),
         None,
     );
@@ -495,6 +501,7 @@ async fn load_balancer_remove_endpoints() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name),
         None,
     );
@@ -595,6 +602,7 @@ async fn no_profiles_when_outside_search_nets() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name),
         None,
     );
@@ -649,6 +657,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name.clone()),
         None,
     );
@@ -702,6 +711,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
+        None,
         Some(id_name.clone()),
         None,
     );

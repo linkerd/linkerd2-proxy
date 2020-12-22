@@ -42,7 +42,7 @@ where
     fn use_primary(&self, target: &T) -> bool {
         let addr = target.into();
         tracing::debug!(%addr, self.port);
-        addr.port() == self.port
+        addr.port() != self.port
     }
 }
 

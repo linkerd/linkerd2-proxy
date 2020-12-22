@@ -56,7 +56,8 @@ where
     P::Future: Unpin + Send,
     P::Error: Send,
 {
-    let tcp_balance = tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve);
+    let tcp_balance =
+        tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve, drain.clone());
     let accept = accept_stack(
         config,
         profiles,
@@ -105,14 +106,12 @@ where
                 .push_spawn_buffer(config.buffer_capacity),
         )
         .push_cache(config.cache_max_idle_age)
-        .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)
-        .check_new_service::<listen::Addrs, I>()
         .into_inner()
 }
 
-pub fn accept_stack<P, C, T, H, S, I>(
+pub fn accept_stack<P, C, T, TSvc, H, HSvc, I>(
     config: &Config,
     profiles: P,
     tcp_connect: C,
@@ -130,24 +129,37 @@ pub fn accept_stack<P, C, T, H, S, I>(
         Future = impl Send + 'static,
     > + Send
                   + 'static,
-> + Clone + Send
+> + Clone
+       + Send
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
     C: tower::Service<tcp::Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
     C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     C::Future: Unpin + Send,
-    T: svc::NewService<tcp::Concrete> + Clone + Unpin + Send + 'static,
-    T::Service: tower::Service<transport::io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = (), Error = Error> + Unpin + Send + 'static,
-    <T::Service as tower::Service<transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>>::Future: Unpin + Send + 'static,
-    H: svc::NewService<http::Logical, Service = S> + Unpin + Clone + Send + Sync + 'static,
-    S: tower::Service<
+    T: svc::NewService<tcp::Concrete, Service = TSvc> + Clone + Unpin + Send + 'static,
+    TSvc: tower::Service<
+            transport::io::PrefixedIo<transport::metrics::SensorIo<I>>,
+            Response = (),
+            Error = Error,
+        > + Unpin
+        + Send
+        + 'static,
+    <TSvc as tower::Service<transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>>::Future:
+        Unpin + Send + 'static,
+    TSvc: tower::Service<transport::metrics::SensorIo<I>, Response = (), Error = Error>
+        + Unpin
+        + Send
+        + 'static,
+    <TSvc as tower::Service<transport::metrics::SensorIo<I>>>::Future: Unpin + Send + 'static,
+    H: svc::NewService<http::Logical, Service = HSvc> + Unpin + Clone + Send + Sync + 'static,
+    HSvc: tower::Service<
             http::Request<http::boxed::BoxBody>,
             Response = http::Response<http::boxed::BoxBody>,
             Error = Error,
         > + Send
         + 'static,
-    S::Future: Send,
+    HSvc::Future: Send,
     P: profiles::GetProfile<SocketAddr> + Unpin + Clone + Send + Sync + 'static,
     P::Future: Unpin + Send,
     P::Error: Send,
@@ -163,7 +175,6 @@ where
     } = config.proxy.clone();
 
     let http_server = svc::stack(http_router)
-        .check_new_service::<http::Logical, http::Request<_>>()
         .push_on_response(
             svc::layers()
                 .box_http_request()
@@ -184,76 +195,68 @@ where
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
         )
-        .check_new_service::<http::Logical, http::Request<_>>()
         .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
-        .check_new_service::<(http::Version, tcp::Logical), http::Request<_>>()
         .into_inner();
 
-    let tcp_forward = svc::stack(tcp_connect.clone())
+    let tcp_forward = svc::stack(tcp_connect)
         .push_make_thunk()
-        .check_make_service::<tcp::Endpoint, ()>()
         .push_on_response(svc::layer::mk(tcp::Forward::new))
         .into_new_service()
         .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
-        .check_new_service::<tcp::Endpoint, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .push_map_target(tcp::Endpoint::from_logical(
             tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
         ))
-        .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
         .into_inner();
 
-    // Load balances TCP streams that cannot be decoded as HTTP.
-    let tcp_balance = svc::stack(tcp_balance)
-    .push_map_target(tcp::Concrete::from)
-    .push(profiles::split::layer())
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_switch(tcp::Logical::should_resolve, tcp_forward)
-    .push_on_response(
-        svc::layers()
-            .push_failfast(dispatch_timeout)
-            .push_spawn_buffer(buffer_capacity),
-    )
-    .instrument(|_: &_| debug_span!("tcp"))
-    .check_new_service::<tcp::Logical, transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .into_inner();
-
-    let http = svc::stack(http::NewServeHttp::new(
-        h2_settings,
-        http_server,
-        tcp_balance,
-        drain,
-    ))
-    .check_new_clone::<(Option<http::Version>, tcp::Logical)>()
-    .check_new_service::<(Option<http::Version>, tcp::Logical), transport::io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-    .push_cache(cache_max_idle_age)
-    .push(transport::NewDetectService::layer(
-        transport::detect::DetectTimeout::new(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
-        ),
-    ))
-    .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
-    .into_inner();
-
-    let tcp = svc::stack(tcp::connect::forward(tcp_connect))
-        .push_map_target(tcp::Endpoint::from_logical(
-            tls::ReasonForNoPeerName::PortSkipped,
+    let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+        .push(svc::stack::NewOptional::layer(
+            // When an HTTP version cannot be detected, we fallback to a logical
+            // TCP stack. This service needs to be buffered so that it can be
+            // cached and cloned per connection.
+            svc::stack(tcp_balance.clone())
+                .push_map_target(tcp::Concrete::from)
+                .push(profiles::split::layer())
+                .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
+                .push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer(buffer_capacity)
+                        .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
+                )
+                .instrument(|_: &_| debug_span!("tcp"))
+                .into_inner(),
         ))
-        .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
-        .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
+        .push_cache(cache_max_idle_age)
+        .push(transport::NewDetectService::layer(
+            transport::detect::DetectTimeout::new(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ),
+        ))
         .into_inner();
 
     svc::stack(http)
-        .push_switch(SkipByProfile, tcp)
-        .check_new_service::<tcp::Logical, transport::metrics::SensorIo<I>>()
+        .push_switch(
+            SkipByProfile,
+            // When the profile marks the target as opaque, we skip HTTP
+            // detection and just use the TCP logical stack directly. Unlike the
+            // above case, this stack need not be buffered, since `fn cache`
+            // applies its own buffer on the returned service.
+            svc::stack(tcp_balance)
+                .push_map_target(tcp::Concrete::from)
+                .push(profiles::split::layer())
+                .push_switch(tcp::Logical::should_resolve, tcp_forward)
+                .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
+                .instrument(|_: &_| debug_span!("tcp.opaque"))
+                .into_inner(),
+        )
         .push_map_target(tcp::Logical::from)
         .push(profiles::discover::layer(
             profiles,
             AllowProfile(config.allow_discovery.clone().into()),
         ))
-        .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .into_inner()
 }
 

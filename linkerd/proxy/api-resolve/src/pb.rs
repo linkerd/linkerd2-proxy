@@ -1,5 +1,6 @@
 use crate::api::destination::{
-    protocol_hint::Protocol, AuthorityOverride, TlsIdentity, WeightedAddr,
+    protocol_hint::{OpaqueTransport, Protocol},
+    AuthorityOverride, TlsIdentity, WeightedAddr,
 };
 use crate::api::net::TcpAddress;
 use crate::identity;
@@ -32,6 +33,7 @@ pub fn to_addr_meta(
     };
 
     let mut proto_hint = ProtocolHint::Unknown;
+    let mut opaque_transport_port = None;
     if let Some(hint) = pb.protocol_hint {
         if let Some(proto) = hint.protocol {
             match proto {
@@ -40,10 +42,22 @@ pub fn to_addr_meta(
                 }
             }
         }
+
+        if let Some(OpaqueTransport { inbound_port }) = hint.opaque_transport {
+            if inbound_port > 0 && inbound_port < std::u16::MAX as u32 {
+                opaque_transport_port = Some(inbound_port as u16);
+            }
+        }
     }
 
     let tls_id = pb.tls_identity.and_then(to_id);
-    let meta = Metadata::new(meta, proto_hint, tls_id, authority_override);
+    let meta = Metadata::new(
+        meta,
+        proto_hint,
+        opaque_transport_port,
+        tls_id,
+        authority_override,
+    );
     Some((addr, meta))
 }
 

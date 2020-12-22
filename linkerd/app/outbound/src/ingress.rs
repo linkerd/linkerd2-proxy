@@ -125,14 +125,14 @@ where
         .into_inner();
 
     let tcp = svc::stack(tcp)
+        .push_on_response(drain::Retain::layer(drain.clone()))
         .push_map_target(tcp::Endpoint::from_accept(
             tls::ReasonForNoPeerName::IngressNonHttp,
         ))
         .into_inner();
 
-    svc::stack(http::NewServeHttp::new(h2_settings, http, tcp, drain))
-        .check_new_service::<(Option<http::Version>, tcp::Accept), io::PrefixedIo<transport::metrics::SensorIo<I>>>()
-        .check_new_clone::<(Option<http::Version>, tcp::Accept)>()
+    svc::stack(http::NewServeHttp::new(h2_settings, http, drain))
+        .push(svc::stack::NewOptional::layer(tcp))
         .push_cache(cache_max_idle_age)
         .push(transport::NewDetectService::layer(
             transport::detect::DetectTimeout::new(

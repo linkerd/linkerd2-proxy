@@ -12,6 +12,8 @@ pub struct Metadata {
     /// destination understands.
     protocol_hint: ProtocolHint,
 
+    opaque_transport_port: Option<u16>,
+
     /// How to verify TLS for the endpoint.
     identity: Option<identity::Name>,
 
@@ -34,9 +36,10 @@ impl Default for Metadata {
     fn default() -> Self {
         Self {
             labels: IndexMap::default(),
-            protocol_hint: ProtocolHint::Unknown,
             identity: None,
             authority_override: None,
+            opaque_transport_port: None,
+            protocol_hint: ProtocolHint::Unknown,
         }
     }
 }
@@ -45,12 +48,14 @@ impl Metadata {
     pub fn new(
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
+        opaque_transport_port: Option<u16>,
         identity: Option<identity::Name>,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
             labels,
             protocol_hint,
+            opaque_transport_port,
             identity,
             authority_override,
         }
@@ -67,6 +72,10 @@ impl Metadata {
 
     pub fn identity(&self) -> Option<&identity::Name> {
         self.identity.as_ref()
+    }
+
+    pub fn opaque_transport_port(&self) -> Option<u16> {
+        self.opaque_transport_port
     }
 
     pub fn authority_override(&self) -> Option<&Authority> {
