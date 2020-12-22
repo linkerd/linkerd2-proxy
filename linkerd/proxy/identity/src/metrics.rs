@@ -9,8 +9,8 @@ pub struct Report {
 }
 
 metrics! {
-    certificate_expiration_timestamp_seconds: Gauge {
-        "Time when the this proxy's current TLS certificate will expire (in seconds since the UNIX epoch)"
+    identity_expiration_timestamp_seconds: Gauge {
+        "Time when the this proxy's current mTLS identity certificate will expire (in seconds since the UNIX epoch)"
     }
 }
 
@@ -36,7 +36,7 @@ impl FmtMetrics for Report {
                 .expiry()
                 .duration_since(UNIX_EPOCH)
                 .map_err(|error| {
-                    tracing::warn!(%error, "a certificate would expire before the beginning of the UNIX epoch, something is probably wrong");
+                    tracing::warn!(%error, "an identity would expire before the beginning of the UNIX epoch, something is probably wrong");
                     fmt::Error
                 })?
             } else {
@@ -46,8 +46,8 @@ impl FmtMetrics for Report {
             return Ok(());
         };
 
-        certificate_expiration_timestamp_seconds.fmt_help(f)?;
-        certificate_expiration_timestamp_seconds.fmt_metric(f, &Gauge::from(dur.as_secs()))?;
+        identity_expiration_timestamp_seconds.fmt_help(f)?;
+        identity_expiration_timestamp_seconds.fmt_metric(f, &Gauge::from(dur.as_secs()))?;
         Ok(())
     }
 }
