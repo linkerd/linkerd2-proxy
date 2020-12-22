@@ -209,42 +209,47 @@ where
         ))
         .into_inner();
 
-    // Load balances TCP streams that cannot be decoded as HTTP.
-    let tcp_balance = svc::stack(tcp_balance)
-        .push(drain::NewRetain::layer(drain.clone()))
-        .push_map_target(tcp::Concrete::from)
-        .push(profiles::split::layer())
-        .push_switch(tcp::Logical::should_resolve, tcp_forward)
-        .push_on_response(
-            svc::layers()
-                .push_failfast(dispatch_timeout)
-                .push_spawn_buffer(buffer_capacity),
-        )
-        .instrument(|_: &_| debug_span!("tcp"))
-        .into_inner();
-
     let http = svc::stack(http::NewServeHttp::new(
         h2_settings,
         http_server,
         drain.clone(),
     ))
-    .push(svc::stack::NewOptional::layer(tcp_balance))
+    .push(svc::stack::NewOptional::layer(
+        svc::stack(tcp_balance.clone())
+            .push(drain::NewRetain::layer(drain.clone()))
+            .push_map_target(tcp::Concrete::from)
+            .push(profiles::split::layer())
+            .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
+            .push_on_response(
+                svc::layers()
+                    .push_failfast(dispatch_timeout)
+                    .push_spawn_buffer(buffer_capacity),
+            )
+            .instrument(|_: &_| debug_span!("tcp"))
+            .into_inner(),
+    ))
     .push_cache(cache_max_idle_age)
     .push(transport::NewDetectService::layer(
         transport::detect::DetectTimeout::new(detect_protocol_timeout, http::DetectHttp::default()),
     ))
     .into_inner();
 
-    let tcp = svc::stack(tcp::connect::forward(tcp_connect))
-        .push(drain::NewRetain::layer(drain))
-        .push_map_target(tcp::Endpoint::from_logical(
-            tls::ReasonForNoPeerName::PortSkipped,
-        ))
-        .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
-        .into_inner();
-
     svc::stack(http)
-        .push_switch(SkipByProfile, tcp)
+        .push_switch(
+            SkipByProfile,
+            svc::stack(tcp_balance.clone())
+                .push(drain::NewRetain::layer(drain.clone()))
+                .push_map_target(tcp::Concrete::from)
+                .push(profiles::split::layer())
+                .push_switch(tcp::Logical::should_resolve, tcp_forward)
+                .push_on_response(
+                    svc::layers()
+                        .push_failfast(dispatch_timeout)
+                        .push_spawn_buffer(buffer_capacity),
+                )
+                .instrument(|_: &_| debug_span!("tcp"))
+                .into_inner(),
+        )
         .push_map_target(tcp::Logical::from)
         .push(profiles::discover::layer(
             profiles,
