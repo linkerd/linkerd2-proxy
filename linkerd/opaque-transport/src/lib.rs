@@ -65,42 +65,35 @@ impl Header {
 
     /// Encodes the connection header to a byte buffer.
     pub fn encode_prefaced(&self, buf: &mut BytesMut) -> Result<(), Error> {
+        let header = self.to_proto();
+        let header_len = header.encoded_len();
+        if header_len > std::u32::MAX as usize {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Message length exceeds capacity",
+            )
+            .into());
+        }
+
         buf.reserve(PREFACE_AND_SIZE_LEN);
         buf.put(PREFACE);
-
         debug_assert!(buf.capacity() >= 4);
-        // Safety: These bytes must be initialized below once the message has
-        // been encoded.
-        unsafe {
-            buf.advance_mut(4);
-        }
-
-        self.encode(buf)?;
-
-        // Once the message length is known, we back-fill the length at the
-        // start of the buffer.
-        let len = buf.len() - PREFACE_AND_SIZE_LEN;
-        assert!(len <= std::u32::MAX as usize);
-        {
-            let mut buf = &mut buf[PREFACE.len()..PREFACE_AND_SIZE_LEN];
-            buf.put_u32(len as u32);
-        }
+        buf.put_u32(header_len as u32);
+        header.encode(buf)?;
 
         Ok(())
     }
 
     #[inline]
-    pub fn encode(&self, buf: &mut BytesMut) -> Result<(), Error> {
-        let header = proto::Header {
+    fn to_proto(&self) -> proto::Header {
+        proto::Header {
             port: self.port as i32,
             name: self
                 .name
                 .as_ref()
                 .map(|n| n.to_string())
                 .unwrap_or_default(),
-        };
-        header.encode(buf)?;
-        Ok(())
+        }
     }
 
     /// Attempts to decode a connection header from an I/O stream.
@@ -253,7 +246,7 @@ mod tests {
         let mut rx = {
             let msg = {
                 let mut buf = BytesMut::new();
-                header.encode(&mut buf).expect("must encode");
+                header.to_proto().encode(&mut buf).expect("must encode");
                 buf.freeze()
             };
             let len = {
