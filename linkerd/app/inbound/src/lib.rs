@@ -391,10 +391,17 @@ impl Config {
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .into_inner();
 
+        // When HTTP detection fails, forward the connection to the application
+        // as an opaque TCP stream.
         let tcp = svc::stack(tcp_forward.clone())
             .push_map_target(TcpEndpoint::from)
             .push_switch(
                 prevent_loop.into(),
+                // If the connection targets the inbound port, try to detect an
+                // opaque transport header and rewrite the target port
+                // accordingly. If there was no opaque transport header, the
+                // forwarding will fail when the tcp connect stack applies loop
+                // prevention.
                 svc::stack(tcp_forward)
                     .push_map_target(TcpEndpoint::from)
                     .push(transport::NewDetectService::layer(

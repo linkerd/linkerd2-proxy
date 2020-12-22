@@ -28,6 +28,9 @@ pub fn stack<P>(
     svc::connect(config.keepalive)
         // Initiates mTLS if the target is configured with identity.
         .push(tls::client::ConnectLayer::new(local_identity))
+        // If the endpoint has an opaque transport hint, this layer ensures the
+        // transport header is written on the connection as soon as the
+        // connection is established.
         .push(OpaqueTransport::layer())
         // Limits the time we wait for a connection to be established.
         .push_timeout(config.timeout)

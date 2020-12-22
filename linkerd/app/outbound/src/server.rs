@@ -212,6 +212,9 @@ where
 
     let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
         .push(svc::stack::NewOptional::layer(
+            // When an HTTP version cannot be detected, we fallback to a logical
+            // TCP stack. This service needs to be buffered so that it can be
+            // cached and cloned per connection.
             svc::stack(tcp_balance.clone())
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
@@ -219,7 +222,8 @@ where
                 .push_on_response(
                     svc::layers()
                         .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer(buffer_capacity),
+                        .push_spawn_buffer(buffer_capacity)
+                        .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
                 .into_inner(),
@@ -236,15 +240,15 @@ where
     svc::stack(http)
         .push_switch(
             SkipByProfile,
+            // When the profile marks the target as opaque, we skip HTTP
+            // detection and just use the TCP logical stack directly. Unlike the
+            // above case, this stack need not be buffered, since `fn cache`
+            // applies its own buffer on the returned service.
             svc::stack(tcp_balance)
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
                 .push_switch(tcp::Logical::should_resolve, tcp_forward)
-                .push_on_response(
-                    svc::layers()
-                        .push_failfast(dispatch_timeout)
-                        .push_spawn_buffer(buffer_capacity),
-                )
+                .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )
