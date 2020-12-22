@@ -14,6 +14,7 @@ use std::{
 };
 use tracing::{debug, warn};
 
+#[derive(Clone, Debug)]
 pub struct OpaqueTransport<S> {
     inner: S,
 }
@@ -26,7 +27,6 @@ impl<S> OpaqueTransport<S> {
 
 impl<S, P> svc::Service<Endpoint<P>> for OpaqueTransport<S>
 where
-    P: Send,
     S: svc::Service<Endpoint<P>> + Send + 'static,
     S::Error: Into<Error>,
     S::Response: io::AsyncWrite + Unpin + Send + 'static,
