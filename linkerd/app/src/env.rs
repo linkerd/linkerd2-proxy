@@ -174,7 +174,7 @@ pub const DEFAULT_CONTROL_LISTEN_ADDR: &str = "0.0.0.0:4190";
 const DEFAULT_ADMIN_LISTEN_ADDR: &str = "127.0.0.1:4191";
 const DEFAULT_METRICS_RETAIN_IDLE: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_INBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(1);
-const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(90);
+const DEFAULT_INBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_INBOUND_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
     min: Duration::from_millis(100),
@@ -182,7 +182,7 @@ const DEFAULT_INBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
     jitter: 0.1,
 };
 const DEFAULT_OUTBOUND_DISPATCH_TIMEOUT: Duration = Duration::from_secs(3);
-const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(90);
+const DEFAULT_OUTBOUND_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_OUTBOUND_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_OUTBOUND_CONNECT_BACKOFF: ExponentialBackoff = ExponentialBackoff {
     min: Duration::from_millis(100),
