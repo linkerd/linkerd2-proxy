@@ -1,7 +1,7 @@
 use crate::{dns, identity::LocalCrtKey};
 use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
 use linkerd_channel::into_stream::IntoStream;
-use linkerd_opencensus::{metrics, proto, SpanExporter};
+use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
@@ -54,6 +54,7 @@ impl Config {
                 let svc = inner.control.build(dns, client_metrics, identity);
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
+                let spans_rx = spans_rx.into_stream();
 
                 let task = {
                     use self::proto::agent::common::v1 as oc;
@@ -74,7 +75,7 @@ impl Config {
                     let addr = addr.clone();
                     Box::pin(async move {
                         debug!(peer.addr = ?addr, "running");
-                        SpanExporter::new(svc, node, spans_rx.into_stream(), metrics).await
+                        opencensus::export_spans(svc, node, spans_rx, metrics).await
                     })
                 };
 

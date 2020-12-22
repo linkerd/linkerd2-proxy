@@ -1,65 +1,39 @@
 #![deny(warnings, rust_2018_idioms)]
-use futures::{ready, FutureExt, Stream};
+use futures::stream::{Stream, StreamExt};
 use http_body::Body as HttpBody;
-use linkerd_channel as mpsc;
+use linkerd_channel::into_stream::IntoStream;
 use linkerd_error::Error;
 use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;
 use opencensus_proto::agent::trace::v1::{
-    trace_service_client::TraceServiceClient, ExportTraceServiceRequest, ExportTraceServiceResponse,
+    trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
 };
 use opencensus_proto::trace::v1::Span;
-use pin_project::pin_project;
 use std::convert::TryInto;
-use std::future::Future;
-use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::{
-    self as grpc,
-    body::{Body as GrpcBody, BoxBody},
-    client::GrpcService,
-    Streaming,
-};
+use tokio::sync::mpsc;
+use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::trace;
-
 pub mod metrics;
 
-/// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
-#[pin_project]
-pub struct SpanExporter<T, S> {
-    client: T,
-    node: Node,
-    state: State,
-    #[pin]
-    spans: S,
-    max_batch_size: usize,
-    metrics: Registry,
+pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Registry)
+where
+    T: GrpcService<BoxBody> + Clone,
+    T::Error: Into<Error>,
+    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
+    T::ResponseBody: 'static,
+    S: Stream<Item = Span> + Unpin,
+{
+    SpanExporter::new(client, node, spans, metrics).run().await
 }
 
-#[allow(clippy::large_enum_variant)]
-enum State {
-    Idle,
-    Sending {
-        sender: mpsc::Sender<ExportTraceServiceRequest>,
-        // Node data should only be sent on the first message of a streaming
-        // request.
-        node: Option<Node>,
-        rsp: Option<
-            Pin<
-                Box<
-                    dyn Future<
-                            Output = Result<
-                                grpc::Response<Streaming<ExportTraceServiceResponse>>,
-                                grpc::Status,
-                            >,
-                        > + Send
-                        + 'static,
-                >,
-            >,
-        >,
-        metrics: Registry,
-    },
+/// SpanExporter sends a Stream of spans to the given TraceService gRPC service.
+struct SpanExporter<T, S> {
+    client: T,
+    node: Node,
+    spans: S,
+    metrics: Registry,
 }
 
 // ===== impl SpanExporter =====
@@ -67,160 +41,93 @@ enum State {
 impl<T, S> SpanExporter<T, S>
 where
     T: GrpcService<BoxBody> + Clone,
-    S: Stream<Item = Span>,
+    T::Error: Into<Error>,
+    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
+    T::ResponseBody: 'static,
+    S: Stream<Item = Span> + Unpin,
 {
-    const DEFAULT_MAX_BATCH_SIZE: usize = 100;
-
-    pub fn new(client: T, node: Node, spans: S, metrics: Registry) -> Self {
+    fn new(client: T, node: Node, spans: S, metrics: Registry) -> Self {
         Self {
             client,
             node,
             spans,
-            state: State::Idle,
-            max_batch_size: Self::DEFAULT_MAX_BATCH_SIZE,
             metrics,
         }
     }
 
-    fn do_send(
-        spans: Vec<Span>,
-        sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
-        node: &mut Option<Node>,
-        metrics: &mut Registry,
-    ) -> Result<(), ()> {
-        if spans.is_empty() {
-            return Ok(());
-        }
-
-        if let Ok(num_spans) = spans.len().try_into() {
-            metrics.send(num_spans);
-        }
-        let req = ExportTraceServiceRequest {
-            spans,
-            node: node.take(),
-            resource: None,
-        };
-        trace!(message = "Transmitting", ?req);
-        sender.try_send(req).map_err(|_| ())
-    }
-
-    /// Attempt to read spans from the spans stream and write it to
-    /// the export streaming request.  Returns NotReady there isn't room in
-    /// the streaming request or if there isn't a span available in the spans
-    /// stream.
-    ///
-    /// Returns Ready if the receiver is fully consumed and may no longer be
-    /// used.
-    ///
-    /// An error is returned if the sender fails and must be discarded.
-    ///
-    /// Otherwise NotReady is returned.
-    fn poll_send_spans(
-        mut receiver: Pin<&mut S>,
-        sender: &mut mpsc::Sender<ExportTraceServiceRequest>,
-        node: &mut Option<Node>,
-        max_batch_size: usize,
-        metrics: &mut Registry,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), ()>> {
-        ready!(sender.poll_ready(cx)).map_err(|_| ())?;
-
-        let mut spans = Vec::new();
-        loop {
-            match receiver.as_mut().poll_next(cx) {
-                Poll::Pending => {
-                    // If any spans have been collected send them, potentially consuming `node.
-                    Self::do_send(spans, sender, node, metrics)?;
-                    return Poll::Pending;
-                }
-                Poll::Ready(Some(span)) => {
-                    spans.push(span);
-                    if spans.len() == max_batch_size {
-                        Self::do_send(spans, sender, node, metrics)?;
-                        // Because we've voluntarily stopped work due to a batch
-                        // size limitation, notify the task to be polled again
-                        // immediately.
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
+    async fn run(mut self) {
+        'reconnect: loop {
+            let (request_tx, request_rx) = mpsc::channel(1);
+            let mut svc = TraceServiceClient::new(self.client.clone());
+            let req = grpc::Request::new(request_rx.into_stream());
+            trace!("Establishing new TraceService::export request");
+            self.metrics.start_stream();
+            let mut rsp = Box::pin(svc.export(req));
+            let mut drive_rsp = true;
+            loop {
+                tokio::select! {
+                    res = &mut rsp, if drive_rsp => match res {
+                        Ok(_) => drive_rsp = false,
+                        Err(error) => {
+                            tracing::debug!(%error, "response future failed, sending a new request");
+                            continue 'reconnect;
+                        }
+                    },
+                    res = self.batch_spans(&request_tx) => match res {
+                        Ok(()) => return,
+                        Err(()) => continue 'reconnect,
                     }
-                }
-                Poll::Ready(None) => {
-                    let _ = Self::do_send(spans, sender, node, metrics);
-                    // The span receiver stream completed, so signal completion.
-                    return Poll::Ready(Ok(()));
                 }
             }
         }
     }
-}
 
-impl<T, S> Future for SpanExporter<T, S>
-where
-    T: GrpcService<BoxBody> + Clone + Send + 'static,
-    T::Error: Into<Error> + Send,
-    T::Future: Send,
-    T::ResponseBody: Send + 'static,
-    <T::ResponseBody as GrpcBody>::Data: Send,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-    S: Stream<Item = Span>,
-{
-    type Output = ();
+    async fn batch_spans(
+        &mut self,
+        tx: &mpsc::Sender<ExportTraceServiceRequest>,
+    ) -> Result<(), ()> {
+        const MAX_BATCH_SIZE: usize = 100;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        loop {
-            let this = self.as_mut().project();
-            *this.state = match this.state {
-                State::Idle => {
-                    let (request_tx, request_rx) = mpsc::channel(1);
-                    let mut svc = TraceServiceClient::new(this.client.clone());
-                    let req = grpc::Request::new(request_rx);
-                    trace!("Establishing new TraceService::export request");
-                    this.metrics.start_stream();
-                    let rsp = Box::pin(async move { svc.export(req).await });
-                    State::Sending {
-                        sender: request_tx,
-                        node: Some(this.node.clone()),
-                        rsp: Some(rsp),
-                        metrics: this.metrics.clone(),
-                    }
+        'batch: loop {
+            // If the sender is dead, return an error so we can reconnect.
+            let send = tx.reserve().await.map_err(|_| ())?;
+
+            let mut spans = Vec::new();
+            while let Some(span) = self.spans.next().await {
+                spans.push(span);
+                if spans.len() == MAX_BATCH_SIZE {
+                    self.send_batch(spans, send);
+                    // There may still be more spans to send --- keep pulling
+                    // from this receiver until we hit an error or the receiver
+                    // terminates.
+                    continue 'batch;
                 }
-                State::Sending {
-                    ref mut sender,
-                    ref mut node,
-                    ref mut metrics,
-                    ref mut rsp,
-                    ..
-                } => {
-                    let mut idle = false;
-                    if let Some(mut f) = rsp.take() {
-                        match f.poll_unpin(cx) {
-                            Poll::Ready(Ok(_)) => {}
-                            Poll::Pending => *rsp = Some(f),
-                            Poll::Ready(Err(error)) => {
-                                tracing::debug!(%error, "response future failed, sending a new request");
-                                idle = true;
-                            }
-                        }
-                    }
-                    // this is gross...let's just see if it works.
-                    if idle {
-                        State::Idle
-                    } else {
-                        match ready!(Self::poll_send_spans(
-                            this.spans,
-                            sender,
-                            node,
-                            *this.max_batch_size,
-                            metrics,
-                            cx,
-                        )) {
-                            Ok(()) => return Poll::Ready(()),
-                            Err(()) => State::Idle,
-                        }
-                    }
-                }
-            };
+            }
+
+            // The receiver stream has terminated. Send the current batch, if
+            // there is one, and return.
+            if !spans.is_empty() {
+                self.send_batch(spans, send);
+            }
+            return Ok(());
         }
+    }
+
+    fn send_batch(
+        &mut self,
+        spans: Vec<Span>,
+        sender: mpsc::Permit<'_, ExportTraceServiceRequest>,
+    ) {
+        if let Ok(num_spans) = spans.len().try_into() {
+            self.metrics.send(num_spans);
+        }
+        let req = ExportTraceServiceRequest {
+            spans,
+            node: Some(self.node.clone()),
+            resource: None,
+        };
+        trace!(message = "Transmitting", ?req);
+        sender.send(req);
     }
 }
 

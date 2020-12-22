@@ -7,14 +7,14 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.9"
+futures = "0.3.5"
 http = "0.2"
 http-body = "0.4"
 linkerd-channel = { path = "../channel" }
 linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
 opencensus-proto = { path = "../../opencensus-proto" }
-pin-project = "1"
 tonic = { version = "0.4", default-features = false, features = ["prost", "codegen"] }
 tower = { version = "0.4.1", default-features = false }
+tokio = { version = "1", features = ["macros", "sync"] }
 tracing = "0.1.22"

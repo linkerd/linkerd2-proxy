@@ -1050,7 +1050,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-metrics",
  "opencensus-proto",
- "pin-project 1.0.4",
+ "tokio",
  "tonic",
  "tower",
  "tracing",
