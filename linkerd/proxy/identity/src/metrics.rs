@@ -3,7 +3,7 @@ use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
 use std::{fmt, time::UNIX_EPOCH};
 use tokio::sync::watch;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Report {
     crt_key_watch: Option<watch::Receiver<Option<CrtKey>>>,
 }
