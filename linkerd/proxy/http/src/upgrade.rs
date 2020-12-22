@@ -211,7 +211,7 @@ where
 
             Some((halves.server, on_upgrade))
         } else {
-            h1::strip_connection_headers(req.headers_mut());
+            h1::strip_opaque_transports(req.headers_mut());
             None
         };
 

@@ -1,7 +1,7 @@
 use crate::target::Endpoint;
 use linkerd2_app_core::{
-    connection_header::Header,
     dns::Name,
+    opaque_transport::Header,
     svc::{self, layer},
     transport::io,
     Error,
@@ -98,7 +98,7 @@ mod test {
     use crate::target::{Concrete, Endpoint, Logical};
     use futures::future;
     use linkerd2_app_core::{
-        connection_header::Header,
+        opaque_transport::Header,
         proxy::api_resolve::{Metadata, ProtocolHint},
         transport::{
             io::{self, AsyncWriteExt},

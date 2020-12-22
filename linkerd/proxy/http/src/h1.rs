@@ -149,7 +149,7 @@ where
                     upgrade.insert_half(hyper::upgrade::on(&mut rsp));
                 }
             } else {
-                strip_connection_headers(rsp.headers_mut());
+                strip_opaque_transports(rsp.headers_mut());
             }
 
             rsp.map(UpgradeBody::from)
@@ -184,7 +184,7 @@ pub(crate) fn set_authority(uri: &mut http::Uri, auth: Authority) {
     *uri = new;
 }
 
-pub(crate) fn strip_connection_headers(headers: &mut http::HeaderMap) {
+pub(crate) fn strip_opaque_transports(headers: &mut http::HeaderMap) {
     if let Some(val) = headers.remove(CONNECTION) {
         if let Ok(conn_header) = val.to_str() {
             // A `Connection` header may have a comma-separated list of

@@ -865,7 +865,6 @@ dependencies = [
  "linkerd2-cache",
  "linkerd2-concurrency-limit",
  "linkerd2-conditional",
- "linkerd2-connection-header",
  "linkerd2-dns",
  "linkerd2-drain",
  "linkerd2-duplex",
@@ -877,6 +876,7 @@ dependencies = [
  "linkerd2-http-classify",
  "linkerd2-http-metrics",
  "linkerd2-metrics",
+ "linkerd2-opaque-transport",
  "linkerd2-opencensus",
  "linkerd2-proxy-api",
  "linkerd2-proxy-api-resolve",
@@ -1081,23 +1081,6 @@ name = "linkerd2-conditional"
 version = "0.1.0"
 
 [[package]]
-name = "linkerd2-connection-header"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes 0.6.0",
- "linkerd2-dns-name",
- "linkerd2-error",
- "linkerd2-io",
- "linkerd2-proxy-transport",
- "prost",
- "prost-build",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
- "tracing",
-]
-
-[[package]]
 name = "linkerd2-dns"
 version = "0.1.0"
 dependencies = [
@@ -1266,6 +1249,23 @@ dependencies = [
  "parking_lot",
  "quickcheck",
  "tokio 0.3.5",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd2-opaque-transport"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 0.6.0",
+ "linkerd2-dns-name",
+ "linkerd2-error",
+ "linkerd2-io",
+ "linkerd2-proxy-transport",
+ "prost",
+ "prost-build",
+ "tokio 0.3.5",
+ "tokio-test 0.3.0",
  "tracing",
 ]
 

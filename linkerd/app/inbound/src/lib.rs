@@ -15,8 +15,8 @@ use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    connection_header::DetectHeader,
     drain, dst, errors, metrics,
+    opaque_transport::DetectHeader,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{

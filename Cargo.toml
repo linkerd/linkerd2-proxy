@@ -15,7 +15,7 @@ members = [
     "linkerd/channel",
     "linkerd/concurrency-limit",
     "linkerd/conditional",
-    "linkerd/connection-header",
+    "linkerd/opaque-transport",
     "linkerd/dns/name",
     "linkerd/dns",
     "linkerd/drain",

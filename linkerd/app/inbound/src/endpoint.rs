@@ -1,9 +1,9 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
-    classify,
-    connection_header::Header,
-    dst, http_request_authority_addr, http_request_host_addr, http_request_l5d_override_dst_addr,
-    metrics, profiles,
+    classify, dst, http_request_authority_addr, http_request_host_addr,
+    http_request_l5d_override_dst_addr, metrics,
+    opaque_transport::Header,
+    profiles,
     proxy::{http, identity, tap},
     stack_tracing, svc,
     transport::{self, listen, tls},
