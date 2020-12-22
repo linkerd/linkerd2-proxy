@@ -49,11 +49,8 @@ impl Config {
                 let (local, daemon) = Local::new(&certify);
 
                 let addr = control.addr.clone();
-                let svc = control.build(
-                    dns,
-                    metrics,
-                    tls::Conditional::Some(certify.trust_anchors.clone()),
-                );
+                let svc =
+                    control.build(dns, metrics, tls::Conditional::Some(certify.trust_anchors));
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {
