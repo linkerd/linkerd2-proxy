@@ -632,7 +632,7 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "0.4.0"
-source = "git+https://github.com/hyperium/http-body#5e434739e747c0b6611ec41020740b17f735d25a"
+source = "git+https://github.com/hyperium/http-body?branch=master#5e434739e747c0b6611ec41020740b17f735d25a"
 dependencies = [
  "bytes 0.6.0",
  "http",
@@ -876,6 +876,7 @@ dependencies = [
  "linkerd2-http-classify",
  "linkerd2-http-metrics",
  "linkerd2-metrics",
+ "linkerd2-opaque-transport",
  "linkerd2-opencensus",
  "linkerd2-proxy-api",
  "linkerd2-proxy-api-resolve",
@@ -988,9 +989,11 @@ dependencies = [
  "linkerd2-retry",
  "pin-project 0.4.22",
  "tokio 0.3.5",
+ "tokio-test 0.3.0",
  "tower",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1250,6 +1253,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd2-opaque-transport"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 0.6.0",
+ "linkerd2-dns-name",
+ "linkerd2-error",
+ "linkerd2-io",
+ "linkerd2-proxy-transport",
+ "prost",
+ "prost-build",
+ "tokio 0.3.5",
+ "tokio-test 0.3.0",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd2-opencensus"
 version = "0.1.0"
 dependencies = [
@@ -1281,8 +1301,8 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.15"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?rev=259628840ba613c2e5673fc6a39b946e1b06f09a#259628840ba613c2e5673fc6a39b946e1b06f09a"
+version = "0.1.16"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.16#5d60650505652c804b589e575a9302e75e772ef1"
 dependencies = [
  "h2 0.2.6",
  "http",
@@ -2028,7 +2048,7 @@ dependencies = [
 [[package]]
 name = "prost-derive"
 version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
+source = "git+https://github.com/danburkert/prost#423f5ec5bd165a7007a388edfb2b485d5bbf40c7"
 dependencies = [
  "anyhow",
  "itertools",

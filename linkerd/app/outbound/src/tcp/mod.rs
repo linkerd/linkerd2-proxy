@@ -1,5 +1,6 @@
 pub mod balance;
 pub mod connect;
+pub mod opaque_transport;
 #[cfg(test)]
 mod tests;
 

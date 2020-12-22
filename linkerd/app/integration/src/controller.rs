@@ -426,6 +426,7 @@ pub fn destination_add_labeled(
         Hint::Unknown => None,
         Hint::H2 => Some(pb::ProtocolHint {
             protocol: Some(pb::protocol_hint::Protocol::H2(pb::protocol_hint::H2 {})),
+            ..Default::default()
         }),
     };
     pb::Update {
