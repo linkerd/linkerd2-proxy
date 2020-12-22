@@ -12,7 +12,7 @@ use std::{
     str::FromStr,
     task::{Context, Poll},
 };
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct OpaqueTransport<S> {
@@ -43,51 +43,56 @@ where
 
     fn call(&mut self, mut ep: Endpoint<P>) -> Self::Future {
         // Determine whether an opaque header should written on the socket.
-        let mut opaque_header = None;
-        if let Some(override_port) = ep.metadata.opaque_transport_port() {
-            // If there's a destination override, encode that in the opaque
-            // transport (i.e. for multicluster gateways). Otherwise, simply
-            // encode the original target port.
-            let orig_port = ep.addr.port();
-            let header = ep
-                .metadata
-                .authority_override()
-                .and_then(|auth| {
-                    let port = auth.port_u16().unwrap_or(orig_port);
-                    Name::from_str(auth.host())
-                        .map_err(|error| warn!(%error, "Invalid name"))
-                        .ok()
-                        .map(|n| Header {
-                            port,
-                            name: Some(n),
-                        })
-                })
-                .unwrap_or_else(|| Header {
-                    port: orig_port,
-                    name: None,
-                });
+        let header = match ep.metadata.opaque_transport_port() {
+            None => {
+                trace!("No opaque transport configured");
+                None
+            }
+            Some(override_port) => {
+                // Update the endpoint to target the discovery-provided control
+                // plane port.
+                let orig_port = ep.addr.port();
+                ep.addr = (ep.addr.ip(), override_port).into();
 
-            debug!(?header, override_port, "Using opaque transport");
-            opaque_header = Some(header);
-
-            // Update the endpoint to target the discovery-provided control
-            // plane port.
-            ep.addr = (ep.addr.ip(), override_port).into();
-        }
+                // If there's a destination override, encode that in the opaque
+                // transport (i.e. for multicluster gateways). Otherwise, simply
+                // encode the original target port. Note that we prefer any port
+                // specified in the override to the original destination port.
+                let header = ep
+                    .metadata
+                    .authority_override()
+                    .and_then(|auth| {
+                        let port = auth.port_u16().unwrap_or(orig_port);
+                        Name::from_str(auth.host())
+                            .map_err(|error| warn!(%error, "Invalid name"))
+                            .ok()
+                            .map(|n| Header {
+                                port,
+                                name: Some(n),
+                            })
+                    })
+                    .unwrap_or_else(|| Header {
+                        port: orig_port,
+                        name: None,
+                    });
+                debug!(?header, override_port, "Using opaque transport");
+                Some(header)
+            }
+        };
 
         // Connect to the endpoint.
         let connect = self.inner.call(ep);
         Box::pin(async move {
-            let mut socket = connect.await.map_err(Into::into)?;
+            let mut io = connect.await.map_err(Into::into)?;
 
             // Once connected, write the opaque header on the socket before
             // returning it.
-            if let Some(hdr) = opaque_header {
-                hdr.write(&mut socket).await?;
-                println!("Wrote");
+            if let Some(h) = header {
+                let sz = h.write(&mut io).await?;
+                debug!(sz, "Wrote header to transport");
             }
 
-            Ok(socket)
+            Ok(io)
         })
     }
 }

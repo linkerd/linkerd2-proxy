@@ -44,16 +44,16 @@ impl Detect for DetectHeader {
 }
 
 impl Header {
-    pub async fn write(&self, io: &mut (impl io::AsyncWrite + Unpin)) -> Result<(), Error> {
+    pub async fn write(&self, io: &mut (impl io::AsyncWrite + Unpin)) -> Result<usize, Error> {
         let mut buf = self.encode_prefaced_buf()?;
+        let mut sz = 0usize;
+
         while !buf.is_empty() {
-            println!("Writing header: {}B", buf.len());
-            trace!(remaining = buf.len(), "Writing header");
-            let sz = io.write_buf(&mut buf).await?;
-            println!("Wrote header: {}B", sz);
+            sz += io.write_buf(&mut buf).await?;
+            trace!(written = sz, remaining = buf.len(), "Wrote header");
         }
 
-        Ok(())
+        Ok(sz)
     }
 
     #[inline]
