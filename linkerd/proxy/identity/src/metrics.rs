@@ -9,7 +9,7 @@ pub struct Report {
 }
 
 metrics! {
-    identity_expiration_timestamp_seconds: Gauge {
+    identity_cert_expiration_timestamp_seconds: Gauge {
         "Time when the this proxy's current mTLS identity certificate will expire (in seconds since the UNIX epoch)"
     }
 }
@@ -46,8 +46,8 @@ impl FmtMetrics for Report {
             return Ok(());
         };
 
-        identity_expiration_timestamp_seconds.fmt_help(f)?;
-        identity_expiration_timestamp_seconds.fmt_metric(f, &Gauge::from(dur.as_secs()))?;
+        identity_cert_expiration_timestamp_seconds.fmt_help(f)?;
+        identity_cert_expiration_timestamp_seconds.fmt_metric(f, &Gauge::from(dur.as_secs()))?;
         Ok(())
     }
 }
