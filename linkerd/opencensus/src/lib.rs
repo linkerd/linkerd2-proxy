@@ -68,7 +68,9 @@ where
             loop {
                 tokio::select! {
                     res = &mut rsp, if drive_rsp => match res {
-                        Ok(_) => drive_rsp = false,
+                        Ok(_) => {
+                            drive_rsp = false;
+                        }
                         Err(error) => {
                             tracing::debug!(%error, "response future failed, sending a new request");
                             continue 'reconnect;
