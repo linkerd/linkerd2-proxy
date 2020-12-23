@@ -1251,6 +1251,7 @@ dependencies = [
 name = "linkerd2-opencensus"
 version = "0.1.0"
 dependencies = [
+ "futures 0.3.5",
  "http",
  "http-body",
  "linkerd2-error",

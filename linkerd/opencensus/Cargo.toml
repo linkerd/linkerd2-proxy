@@ -6,6 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
+futures = "0.3"
 http = "0.2"
 http-body = "0.4"
 linkerd2-error = { path = "../error" }
@@ -13,5 +14,5 @@ linkerd2-metrics = { path = "../metrics" }
 opencensus-proto = { path = "../../opencensus-proto" }
 tonic = { version = "0.3", default-features = false, features = ["prost", "codegen"] }
 tower = { version = "0.4", default-features = false }
-tokio = { version = "0.3", features = ["macros", "sync", "stream"] }
+tokio = { version = "0.3", features = ["macros", "sync", "stream", "time"] }
 tracing = "0.1.22"
