@@ -1,6 +1,7 @@
 use crate::{Crt, CrtKey, Csr, Key, Name, TokenSource, TrustAnchors};
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
+use linkerd2_metrics::Counter;
 use linkerd2_proxy_api::identity as api;
 use linkerd2_proxy_transport::tls;
 use pin_project::pin_project;
@@ -37,6 +38,7 @@ pub struct Local {
     trust_anchors: TrustAnchors,
     name: Name,
     crt_key: watch::Receiver<Option<CrtKey>>,
+    refreshes: Arc<Counter>,
 }
 
 /// Produces a `Local` identity once a certificate is available.
@@ -48,74 +50,14 @@ pub struct LostDaemon;
 
 pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
 
-pub async fn daemon<T>(config: Config, crt_key_watch: watch::Sender<Option<CrtKey>>, client: T)
-where
-    T: GrpcService<BoxBody>,
-    T::ResponseBody: Send + 'static,
-    <T::ResponseBody as Body>::Data: Send,
-    <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
-{
-    let mut curr_expiry = UNIX_EPOCH;
-    let mut client = api::identity_client::IdentityClient::new(client);
-
-    loop {
-        match config.token.load() {
-            Ok(token) => {
-                let req = grpc::Request::new(api::CertifyRequest {
-                    token,
-                    identity: config.local_name.as_ref().to_owned(),
-                    certificate_signing_request: config.csr.to_vec(),
-                });
-                trace!("daemon certifying");
-                let rsp = client.certify(req).await;
-                match rsp {
-                    Err(e) => error!("Failed to certify identity: {}", e),
-                    Ok(rsp) => {
-                        let api::CertifyResponse {
-                            leaf_certificate,
-                            intermediate_certificates,
-                            valid_until,
-                        } = rsp.into_inner();
-                        match valid_until.and_then(|d| SystemTime::try_from(d).ok()) {
-                            None => {
-                                error!("Identity service did not specify a certificate expiration.")
-                            }
-                            Some(expiry) => {
-                                let key = config.key.clone();
-                                let crt = Crt::new(
-                                    config.local_name.clone(),
-                                    leaf_certificate,
-                                    intermediate_certificates,
-                                    expiry,
-                                );
-
-                                match config.trust_anchors.certify(key, crt) {
-                                    Err(e) => {
-                                        error!("Received invalid ceritficate: {}", e);
-                                    }
-                                    Ok(crt_key) => {
-                                        debug!("daemon certified until {:?}", expiry);
-                                        if crt_key_watch.send(Some(crt_key)).is_err() {
-                                            // If we can't store a value, than all observations
-                                            // have been dropped and we can stop refreshing.
-                                            return;
-                                        }
-
-                                        curr_expiry = expiry;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Err(e) => error!("Failed to read authentication token: {}", e),
-        }
-        config.refresh(curr_expiry).await;
-    }
+#[derive(Debug)]
+pub struct Daemon {
+    crt_key_watch: CrtKeySender,
+    refreshes: Arc<linkerd2_metrics::Counter>,
+    config: Config,
 }
 
-// // === impl Config ===
+// === impl Config ===
 
 impl Config {
     /// Returns a future that fires when a refresh should occur.
@@ -138,17 +80,101 @@ impl Config {
     }
 }
 
+// === impl Daemon ===
+
+impl Daemon {
+    pub async fn run<T>(self, client: T)
+    where
+        T: GrpcService<BoxBody>,
+        T::ResponseBody: Send + 'static,
+        <T::ResponseBody as Body>::Data: Send,
+        <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    {
+        let Self {
+            config,
+            crt_key_watch,
+            refreshes,
+        } = self;
+        let mut curr_expiry = UNIX_EPOCH;
+        let mut client = api::identity_client::IdentityClient::new(client);
+
+        loop {
+            match config.token.load() {
+                Ok(token) => {
+                    let req = grpc::Request::new(api::CertifyRequest {
+                        token,
+                        identity: config.local_name.as_ref().to_owned(),
+                        certificate_signing_request: config.csr.to_vec(),
+                    });
+                    trace!("daemon certifying");
+                    let rsp = client.certify(req).await;
+                    match rsp {
+                        Err(e) => error!("Failed to certify identity: {}", e),
+                        Ok(rsp) => {
+                            let api::CertifyResponse {
+                                leaf_certificate,
+                                intermediate_certificates,
+                                valid_until,
+                            } = rsp.into_inner();
+                            match valid_until.and_then(|d| SystemTime::try_from(d).ok()) {
+                                None => error!(
+                                    "Identity service did not specify a certificate expiration."
+                                ),
+                                Some(expiry) => {
+                                    let key = config.key.clone();
+                                    let crt = Crt::new(
+                                        config.local_name.clone(),
+                                        leaf_certificate,
+                                        intermediate_certificates,
+                                        expiry,
+                                    );
+
+                                    match config.trust_anchors.certify(key, crt) {
+                                        Err(e) => {
+                                            error!("Received invalid ceritficate: {}", e);
+                                        }
+                                        Ok(crt_key) => {
+                                            debug!("daemon certified until {:?}", expiry);
+                                            if crt_key_watch.send(Some(crt_key)).is_err() {
+                                                // If we can't store a value, than all observations
+                                                // have been dropped and we can stop refreshing.
+                                                return;
+                                            }
+
+                                            refreshes.incr();
+                                            curr_expiry = expiry;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => error!("Failed to read authentication token: {}", e),
+            }
+            config.refresh(curr_expiry).await;
+        }
+    }
+}
+
 // === impl Local ===
 
 impl Local {
-    pub fn new(config: &Config) -> (Self, CrtKeySender) {
+    pub fn new(config: &Config) -> (Self, Daemon) {
         let (s, w) = watch::channel(None);
+        let refreshes = Arc::new(Counter::new());
         let l = Local {
             name: config.local_name.clone(),
             trust_anchors: config.trust_anchors.clone(),
             crt_key: w,
+            refreshes: refreshes.clone(),
         };
-        (l, s)
+        let daemon = Daemon {
+            config: config.clone(),
+            refreshes,
+            crt_key_watch: s,
+        };
+        (l, daemon)
     }
 
     pub fn name(&self) -> &Name {
@@ -166,7 +192,7 @@ impl Local {
     }
 
     pub fn metrics(&self) -> crate::metrics::Report {
-        crate::metrics::Report::new(self.crt_key.clone())
+        crate::metrics::Report::new(self.crt_key.clone(), self.refreshes.clone())
     }
 }
 

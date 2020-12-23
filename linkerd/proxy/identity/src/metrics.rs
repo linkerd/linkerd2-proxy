@@ -1,53 +1,70 @@
 use crate::CrtKey;
-use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
-use std::{fmt, time::UNIX_EPOCH};
+use linkerd2_metrics::{metrics, Counter, FmtMetrics, Gauge};
+use std::{fmt, sync::Arc, time::UNIX_EPOCH};
 use tokio::sync::watch;
 
 #[derive(Debug, Clone)]
 pub struct Report {
-    crt_key_watch: Option<watch::Receiver<Option<CrtKey>>>,
+    inner: Option<Inner>,
 }
 
 metrics! {
     identity_cert_expiration_timestamp_seconds: Gauge {
-        "Time when the this proxy's current mTLS identity certificate will expire (in seconds since the UNIX epoch)"
+        "Time when the this proxy's current mTLS identity certificate will expire (in seconds since the UNIX epoch)."
+    },
+
+    identity_cert_refresh_count: Counter {
+        "The total number of times this proxy's mTLS identity certificate has been refreshed by the Identity service."
     }
 }
 
 impl Report {
-    pub(crate) fn new(watch: watch::Receiver<Option<CrtKey>>) -> Self {
+    pub(crate) fn new(
+        crt_key_watch: watch::Receiver<Option<CrtKey>>,
+        refreshes: Arc<Counter>,
+    ) -> Self {
         Self {
-            crt_key_watch: Some(watch),
+            inner: Some(Inner {
+                crt_key_watch,
+                refreshes,
+            }),
         }
     }
 
     pub fn disabled() -> Self {
-        Self {
-            crt_key_watch: None,
-        }
+        Self { inner: None }
     }
+}
+
+#[derive(Debug, Clone)]
+struct Inner {
+    crt_key_watch: watch::Receiver<Option<CrtKey>>,
+    refreshes: Arc<Counter>,
 }
 
 impl FmtMetrics for Report {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let dur = if let Some(watch) = self.crt_key_watch.as_ref() {
-            if let Some(ref crt_key) = *(watch.borrow()) {
-                crt_key
-                .expiry()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|error| {
-                    tracing::warn!(%error, "an identity would expire before the beginning of the UNIX epoch, something is probably wrong");
-                    fmt::Error
-                })?
-            } else {
-                return Ok(());
-            }
-        } else {
-            return Ok(());
+        let this = match self.inner.as_ref() {
+            Some(inner) => inner,
+            None => return Ok(()),
         };
 
-        identity_cert_expiration_timestamp_seconds.fmt_help(f)?;
-        identity_cert_expiration_timestamp_seconds.fmt_metric(f, &Gauge::from(dur.as_secs()))?;
+        if let Some(ref crt_key) = *(this.crt_key_watch.borrow()) {
+            let dur = crt_key
+            .expiry()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| {
+                tracing::warn!(%error, "an identity would expire before the beginning of the UNIX epoch, something is probably wrong");
+                fmt::Error
+            })?;
+            identity_cert_expiration_timestamp_seconds.fmt_help(f)?;
+            identity_cert_expiration_timestamp_seconds
+                .fmt_metric(f, &Gauge::from(dur.as_secs()))?;
+        }
+
+        identity_cert_refresh_count.fmt_help(f)?;
+        identity_cert_refresh_count.fmt_metric(f, &this.refreshes)?;
+
         Ok(())
     }
 }
