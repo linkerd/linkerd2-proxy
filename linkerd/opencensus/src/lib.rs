@@ -103,6 +103,7 @@ where
             let s = self.spans.next().await.ok_or(())?;
             spans.push(s);
             if spans.len() == Self::MAX_BATCH_SIZE {
+                trace!(capacity = Self::MAX_BATCH_SIZE, "Batch capacity reached");
                 return Ok(());
             }
         }
