@@ -1,5 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
+pub mod metrics;
+
 use futures::FutureExt;
 use http_body::Body as HttpBody;
 use linkerd2_error::Error;
@@ -10,7 +12,6 @@ use opencensus_proto::agent::trace::v1::{
     trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
 };
 use opencensus_proto::trace::v1::Span;
-use std::task::{Context, Poll};
 use tokio::{
     stream::{Stream, StreamExt},
     sync::mpsc,
@@ -18,7 +19,6 @@ use tokio::{
 };
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, trace};
-pub mod metrics;
 
 pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Registry)
 where
@@ -167,23 +167,5 @@ where
                 }
             }
         }
-    }
-}
-
-struct IntoService<T>(T);
-
-impl<T, R> tower::Service<http::Request<R>> for IntoService<T>
-where
-    T: GrpcService<R>,
-{
-    type Response = http::Response<T::ResponseBody>;
-    type Future = T::Future;
-    type Error = T::Error;
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<R>) -> Self::Future {
-        self.0.call(req)
     }
 }
