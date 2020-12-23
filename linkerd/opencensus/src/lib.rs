@@ -8,14 +8,13 @@ use opencensus_proto::agent::trace::v1::{
     trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
 };
 use opencensus_proto::trace::v1::Span;
-use std::convert::TryInto;
 use std::task::{Context, Poll};
 use tokio::{
     stream::{Stream, StreamExt},
     sync::mpsc,
 };
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
-use tracing::trace;
+use tracing::{debug, trace};
 pub mod metrics;
 
 pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Registry)
@@ -47,6 +46,8 @@ where
     T::ResponseBody: 'static,
     S: Stream<Item = Span> + Unpin,
 {
+    const MAX_BATCH_SIZE: usize = 100;
+
     fn new(client: T, node: Node, spans: S, metrics: Registry) -> Self {
         Self {
             client,
@@ -57,69 +58,54 @@ where
     }
 
     async fn run(mut self) {
-        'reconnect: loop {
+        let mut spans = Vec::with_capacity(Self::MAX_BATCH_SIZE);
+        let mut svc = TraceServiceClient::new(self.client.clone());
+        loop {
             let (request_tx, request_rx) = mpsc::channel(1);
-            let mut svc = TraceServiceClient::new(self.client.clone());
             let req = grpc::Request::new(request_rx);
             trace!("Establishing new TraceService::export request");
-            self.metrics.start_stream();
-            let mut rsp = Box::pin(svc.export(req));
-            let mut drive_rsp = true;
+            match svc.export(req).await {
+                Ok(_) => {
+                    self.metrics.start_stream();
 
-            loop {
-                tokio::select! {
-                    res = &mut rsp, if drive_rsp => match res {
-                        Ok(_) => {
-                            drive_rsp = false;
+                    // The node is included on only the first message of every
+                    // stream.
+                    let mut node = Some(self.node.clone());
+
+                    // Send batches as long as the gRPC channel is open.
+                    while let Ok(tx) = request_tx.reserve().await {
+                        // Collect spans and then send them.
+                        let collect = self.collect_batch(&mut spans).await;
+                        if !spans.is_empty() {
+                            let msg = ExportTraceServiceRequest {
+                                spans: spans.drain(..).collect(),
+                                node: node.take(),
+                                ..Default::default()
+                            };
+                            trace!(?msg, "Sending");
+                            tx.send(msg);
                         }
-                        Err(error) => {
-                            tracing::debug!(%error, "response future failed, sending a new request");
-                            continue 'reconnect;
+                        if collect.is_err() {
+                            debug!("Span channel lost");
+                            return;
                         }
-                    },
-                    res = self.send_batch(&request_tx) => match res {
-                        Ok(false) => return, // The span strean has ended --- the proxy is shutting down.
-                        Ok(true) => {} // Continue the inner loop and send a new batch of spans.
-                        Err(()) => continue 'reconnect,
                     }
+                }
+                Err(error) => {
+                    debug!(%error, "Response future failed; restarting");
                 }
             }
         }
     }
 
-    async fn send_batch(
-        &mut self,
-        tx: &mpsc::Sender<ExportTraceServiceRequest>,
-    ) -> Result<bool, ()> {
-        const MAX_BATCH_SIZE: usize = 100;
-        // If the sender is dead, return an error so we can reconnect.
-        let send = tx.reserve().await.map_err(|_| ())?;
-
-        let mut spans = Vec::new();
-        let mut can_send_more = false;
-        while let Some(span) = self.spans.next().await {
-            spans.push(span);
-            if spans.len() == MAX_BATCH_SIZE {
-                can_send_more = true;
-                break;
+    async fn collect_batch(&mut self, spans: &mut Vec<Span>) -> Result<(), ()> {
+        loop {
+            let s = self.spans.next().await.ok_or(())?;
+            spans.push(s);
+            if spans.len() == Self::MAX_BATCH_SIZE {
+                return Ok(());
             }
         }
-
-        if spans.is_empty() {
-            return Ok(false);
-        }
-
-        if let Ok(num_spans) = spans.len().try_into() {
-            self.metrics.send(num_spans);
-        }
-        let req = ExportTraceServiceRequest {
-            spans,
-            node: Some(self.node.clone()),
-            resource: None,
-        };
-        trace!(message = "Transmitting", ?req);
-        send.send(req);
-        Ok(can_send_more)
     }
 }
 
