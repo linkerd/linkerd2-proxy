@@ -43,7 +43,7 @@ struct SpanExporter<T, S> {
 
 impl<T, S> SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<BoxBody>,
     T::Error: Into<Error>,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
     T::ResponseBody: 'static,
@@ -61,18 +61,29 @@ where
         }
     }
 
-    async fn run(mut self) {
+    async fn run(self) {
+        let Self {
+            client,
+            node,
+            mut spans,
+            mut metrics,
+        } = self;
+
         // Holds the batch of pending spans. Cleared as the spans are flushed.
         // Contains no more than MAX_BATCH_SIZE spans.
-        let mut spans = Vec::new();
+        let mut accum = Vec::new();
 
-        let mut svc = TraceServiceClient::new(self.client.clone());
+        let mut svc = TraceServiceClient::new(client);
         loop {
             trace!("Establishing new TraceService::export request");
             let (tx, rx) = mpsc::channel(1);
             match svc.export(grpc::Request::new(rx)).await {
                 Ok(_) => {
-                    if self.stream(tx, &mut spans).await.is_err() {
+                    metrics.start_stream();
+                    if Self::stream(tx, &mut spans, &mut accum, node.clone())
+                        .await
+                        .is_err()
+                    {
                         return;
                     }
                 }
@@ -84,28 +95,26 @@ where
     }
 
     async fn stream(
-        &mut self,
         tx: mpsc::Sender<ExportTraceServiceRequest>,
-        spans: &mut Vec<Span>,
+        spans: &mut S,
+        accum: &mut Vec<Span>,
+        node: Node,
     ) -> Result<(), ()> {
-        self.metrics.start_stream();
-
-        // The node is included on only the first message of every
-        // stream.
-        let mut node = Some(self.node.clone());
+        // The node is only transmitted on the first message of each stream.
+        let mut node = Some(node);
 
         loop {
             // Collect spans into a batch.
-            let collect = self.collect_batch(spans).await;
+            let collect = Self::collect_batch(spans, accum).await;
 
             // If we collected spans, flush them.
-            if !spans.is_empty() {
+            if !accum.is_empty() {
                 // Once a batch has been accumulated, ensure that the
                 // request stream is ready to accept the batch.
                 match tx.reserve().await {
                     Ok(tx) => {
                         let msg = ExportTraceServiceRequest {
-                            spans: spans.drain(..).collect(),
+                            spans: accum.drain(..).collect(),
                             node: node.take(),
                             ..Default::default()
                         };
@@ -133,26 +142,26 @@ where
         }
     }
 
-    async fn collect_batch(&mut self, spans: &mut Vec<Span>) -> Result<(), ()> {
+    async fn collect_batch(spans: &mut S, accum: &mut Vec<Span>) -> Result<(), ()> {
         loop {
-            if spans.len() == Self::MAX_BATCH_SIZE {
+            if accum.len() == Self::MAX_BATCH_SIZE {
                 trace!(capacity = Self::MAX_BATCH_SIZE, "Batch capacity reached");
                 return Ok(());
             }
 
             futures::select_biased! {
-                res = self.spans.next().fuse() => match res {
+                res = spans.next().fuse() => match res {
                     Some(span) => {
                         trace!(?span, "Adding to batch");
-                        spans.push(span);
+                        accum.push(span);
                     }
                     None => return Err(()),
                 },
                 // Don't hold spans indefinitely. Return if we hit an idle
                 // timeout and spans have been collected.
                 _ = time::sleep(Self::MAX_BATCH_IDLE).fuse() => {
-                    if !spans.is_empty() {
-                        trace!(spans = spans.len(), "Flushing spans due to inactivitiy");
+                    if !accum.is_empty() {
+                        trace!(spans = accum.len(), "Flushing spans due to inactivitiy");
                         return Ok(());
                     }
                 }
