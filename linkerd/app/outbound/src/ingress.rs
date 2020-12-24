@@ -100,7 +100,7 @@ where
             svc::layers()
                 .box_http_request()
                 // Limits the number of in-flight requests.
-                .push_concurrency_limit(max_in_flight_requests)
+                .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push_failfast(dispatch_timeout)

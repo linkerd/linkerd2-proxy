@@ -1070,6 +1070,7 @@ name = "linkerd2-concurrency-limit"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
+ "linkerd2-stack",
  "pin-project 0.4.22",
  "tokio 0.2.23",
  "tower",

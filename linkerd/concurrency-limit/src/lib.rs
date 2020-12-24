@@ -6,6 +6,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+use linkerd2_stack::layer;
 use pin_project::pin_project;
 use std::{
     fmt,
@@ -48,29 +49,14 @@ pub struct ResponseFuture<T> {
     permit: Option<OwnedSemaphorePermit>,
 }
 
-impl From<Arc<Semaphore>> for Layer {
-    fn from(semaphore: Arc<Semaphore>) -> Self {
-        Self { semaphore }
+impl<S> ConcurrencyLimit<S> {
+    /// Create a new concurrency-limiting layer.
+    pub fn layer(limit: usize) -> impl layer::Layer<S, Service = Self> + Clone {
+        let semaphore = Arc::new(Semaphore::new(limit));
+        layer::mk(move |inner| Self::new(inner, semaphore.clone()))
     }
-}
 
-impl Layer {
-    pub fn new(max: usize) -> Self {
-        Arc::new(Semaphore::new(max)).into()
-    }
-}
-
-impl<S> tower::layer::Layer<S> for Layer {
-    type Service = ConcurrencyLimit<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        ConcurrencyLimit::new(inner, self.semaphore.clone())
-    }
-}
-
-impl<T> ConcurrencyLimit<T> {
-    /// Create a new concurrency limiter.
-    pub fn new(inner: T, semaphore: Arc<Semaphore>) -> Self {
+    fn new(inner: S, semaphore: Arc<Semaphore>) -> Self {
         ConcurrencyLimit {
             inner,
             semaphore,

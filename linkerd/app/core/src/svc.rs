@@ -4,7 +4,7 @@ pub use crate::proxy::http;
 use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
-use linkerd2_concurrency_limit as concurrency_limit;
+pub use linkerd2_concurrency_limit::ConcurrencyLimit;
 pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
@@ -85,10 +85,6 @@ impl<L> Layers<L> {
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
-    }
-
-    pub fn push_concurrency_limit(self, max: usize) -> Layers<Pair<L, concurrency_limit::Layer>> {
-        self.push(concurrency_limit::Layer::new(max))
     }
 
     pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
@@ -197,13 +193,6 @@ impl<S> Stack<S> {
     /// `L`-typed layer on each service produced by `S`.
     pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
         self.push(stack::OnResponseLayer::new(layer))
-    }
-
-    pub fn push_concurrency_limit(
-        self,
-        max: usize,
-    ) -> Stack<concurrency_limit::ConcurrencyLimit<S>> {
-        self.push(concurrency_limit::Layer::new(max))
     }
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
