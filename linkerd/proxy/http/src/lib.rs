@@ -4,7 +4,6 @@ use http::uri::Authority;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
 
-pub mod add_header;
 pub mod balance;
 pub mod client;
 pub mod client_handle;
