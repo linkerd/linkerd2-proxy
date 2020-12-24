@@ -228,7 +228,7 @@ impl Config {
             // Registers the stack to be tapped.
             .push(tap_layer)
             // Records metrics for each `Target`.
-            .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(TraceContext::layer(
                 span_sink.map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             ));
@@ -254,7 +254,7 @@ impl Config {
                     // by tap.
                     .push_http_insert_target()
                     // Records per-route metrics.
-                    .push(metrics.http_route.into_layer::<classify::Response>())
+                    .push(metrics.http_route.to_layer::<classify::Response, _>())
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::Layer::new())

@@ -101,13 +101,17 @@ where
         .check_new_service::<Logical, http::Request<_>>()
         .push(profiles::http::route_request::layer(
             svc::proxies()
-                .push(metrics.http_route_actual.into_layer::<classify::Response>())
+                .push(
+                    metrics
+                        .http_route_actual
+                        .to_layer::<classify::Response, _>(),
+                )
                 // Sets an optional retry policy.
                 .push(retry::layer(metrics.http_route_retry))
                 // Sets an optional request timeout.
                 .push(http::MakeTimeoutLayer::default())
                 // Records per-route metrics.
-                .push(metrics.http_route.into_layer::<classify::Response>())
+                .push(metrics.http_route.to_layer::<classify::Response, _>())
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::Layer::new())

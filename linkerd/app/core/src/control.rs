@@ -65,7 +65,7 @@ impl Config {
             .push(self::resolve::layer(dns, backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()
-            .push(metrics.into_layer::<classify::Response>())
+            .push(metrics.to_layer::<classify::Response, _>())
             .push(self::add_origin::layer())
             .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
             .new_service(self.addr)

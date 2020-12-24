@@ -55,7 +55,7 @@ where
         }))
         .check_new::<Endpoint>()
         .push(tap_layer)
-        .push(metrics.http_endpoint.into_layer::<classify::Response>())
+        .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
         .push_on_response(TraceContext::layer(
             span_sink.map(|sink| SpanConverter::client(sink, crate::trace_labels())),
         ))
