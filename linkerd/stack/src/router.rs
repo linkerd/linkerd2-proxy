@@ -1,4 +1,4 @@
-use crate::NewService;
+use crate::{layer, NewService};
 use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 
@@ -21,11 +21,18 @@ pub struct Router<T, N> {
 }
 
 impl<K, N> NewRouter<K, N> {
-    pub fn new(new_recgonize: K, inner: N) -> Self {
+    fn new(new_recgonize: K, inner: N) -> Self {
         Self {
             new_recgonize,
             inner,
         }
+    }
+
+    pub fn layer(new_recgonize: K) -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        K: Clone,
+    {
+        layer::mk(move |inner| Self::new(new_recgonize.clone(), inner))
     }
 }
 

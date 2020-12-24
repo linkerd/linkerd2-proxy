@@ -92,9 +92,7 @@ where
         .push_on_response(http::Retain::layer())
         .check_new_service::<Target, http::Request<_>>()
         .instrument(|t: &Target| info_span!("target", dst = %t.dst))
-        .push(svc::layer::mk(|inner| {
-            svc::stack::NewRouter::new(TargetPerRequest::accept, inner)
-        }))
+        .push(svc::NewRouter::layer(TargetPerRequest::accept))
         .check_new_service::<http::Accept, http::Request<_>>()
         .push_on_response(
             svc::layers()

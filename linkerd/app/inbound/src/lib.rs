@@ -369,9 +369,7 @@ impl Config {
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
-            .push(svc::layer::mk(|inner| {
-                svc::stack::NewRouter::new(RequestTarget::from, inner)
-            }))
+            .push(svc::NewRouter::layer(RequestTarget::from))
             .check_new_service::<TcpAccept, http::Request<_>>()
             // Used by tap.
             .push_http_insert_target()
