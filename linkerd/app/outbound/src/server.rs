@@ -202,7 +202,7 @@ where
 
     let tcp_forward = svc::stack(tcp_connect)
         .push_make_thunk()
-        .push_on_response(svc::layer::mk(tcp::Forward::new))
+        .push_on_response(tcp::Forward::layer())
         .into_new_service()
         .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
         .push_map_target(tcp::Endpoint::from_logical(

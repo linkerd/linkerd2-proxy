@@ -59,7 +59,7 @@ where
 {
     svc::stack(connect)
         .push_make_thunk()
-        .push_on_response(svc::layer::mk(super::Forward::new))
+        .push_on_response(super::Forward::layer())
         .instrument(|_: &Endpoint<P>| debug_span!("tcp.forward"))
         .check_new_service::<Endpoint<P>, I>()
         .into_inner()

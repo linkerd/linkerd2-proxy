@@ -109,7 +109,7 @@ impl Config {
             .push_make_thunk()
             .push_on_response(
                 svc::layers()
-                    .push(svc::layer::mk(tcp::Forward::new))
+                    .push(tcp::Forward::layer())
                     .push(drain::Retain::layer(drain.clone())),
             )
             .instrument(|_: &_| debug_span!("tcp"))
