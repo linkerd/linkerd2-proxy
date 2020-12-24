@@ -20,11 +20,6 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tower::Service;
 use tracing::trace;
 
-#[derive(Clone, Debug)]
-pub struct Layer {
-    semaphore: Arc<Semaphore>,
-}
-
 /// Enforces a limit on the number of concurrent requests to the inner service.
 #[derive(Debug)]
 pub struct ConcurrencyLimit<T> {
