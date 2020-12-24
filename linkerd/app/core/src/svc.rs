@@ -5,7 +5,7 @@ use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
-pub use linkerd2_stack::{self as stack, layer, NewService};
+pub use linkerd2_stack::{self as stack, layer, BoxNewService, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
 use std::{
@@ -269,14 +269,6 @@ impl<S> Stack<S> {
 
     pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
         self.push(http::boxed::response::Layer::new())
-    }
-
-    pub fn box_new_service<T>(self) -> Stack<stack::BoxNewService<T, S::Service>>
-    where
-        S: NewService<T> + Clone + Send + Sync + 'static,
-        S::Service: Send + 'static,
-    {
-        self.push(layer::mk(stack::BoxNewService::new))
     }
 
     /// Validates that this stack serves T-typed targets.

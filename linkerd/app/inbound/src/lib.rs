@@ -292,7 +292,7 @@ impl Config {
             )
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
-            .box_new_service()
+            .push(svc::BoxNewService::layer())
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .into_inner()
     }
