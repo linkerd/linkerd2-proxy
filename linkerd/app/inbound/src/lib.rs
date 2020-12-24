@@ -236,7 +236,7 @@ impl Config {
         let target = endpoint
             .push_map_target(HttpEndpoint::from)
             .push(observe)
-            .push_on_response(svc::layers().box_http_response())
+            .push_on_response(http::boxed::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
 
         // Attempts to discover a service profile for each logical target (as
@@ -245,7 +245,7 @@ impl Config {
         let profile = target
             .clone()
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
-            .push_on_response(svc::layers().box_http_request())
+            .push_on_response(http::boxed::BoxRequest::layer())
             // The target stack doesn't use the profile resolution, so drop it.
             .push_map_target(endpoint::Target::from)
             .push(profiles::http::route_request::layer(
@@ -267,7 +267,7 @@ impl Config {
                 profiles_client,
                 AllowProfile(allow_discovery),
             ))
-            .push_on_response(svc::layers().box_http_response())
+            .push_on_response(http::boxed::BoxResponse::layer())
             .instrument(|_: &Target| debug_span!("profile"))
             // Skip the profile stack if it takes too long to become ready.
             .push_when_unready(target.clone(), self.profile_idle_timeout)
@@ -288,7 +288,7 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::Retain::layer())
-                    .box_http_response(),
+                    .push(http::boxed::BoxResponse::layer()),
             )
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
@@ -382,8 +382,8 @@ impl Config {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
                     .push(metrics.stack.layer(stack_labels("http", "server")))
-                    .box_http_request()
-                    .box_http_response(),
+                    .push(http::boxed::BoxRequest::layer())
+                    .push(http::boxed::BoxResponse::layer()),
             )
             .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .push_map_target(|(_, accept): (_, TcpAccept)| accept)

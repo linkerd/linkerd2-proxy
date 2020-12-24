@@ -1178,6 +1178,7 @@ dependencies = [
  "http",
  "http-body",
  "linkerd2-error",
+ "linkerd2-stack",
  "pin-project 0.4.22",
  "tower",
 ]

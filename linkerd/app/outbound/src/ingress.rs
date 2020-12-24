@@ -98,7 +98,7 @@ where
         .check_new_service::<http::Accept, http::Request<_>>()
         .push_on_response(
             svc::layers()
-                .box_http_request()
+                .push(http::boxed::BoxRequest::layer())
                 // Limits the number of in-flight requests.
                 .push_concurrency_limit(max_in_flight_requests)
                 // Eagerly fail requests when the proxy is out of capacity for a
@@ -114,7 +114,7 @@ where
                 .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push_failfast(dispatch_timeout)
                 .push_spawn_buffer(buffer_capacity)
-                .box_http_response(),
+                .push(http::boxed::BoxResponse::layer()),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
         .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))

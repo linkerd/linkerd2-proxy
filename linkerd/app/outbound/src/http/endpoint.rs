@@ -65,7 +65,7 @@ where
             "host",
             CANONICAL_DST_HEADER,
         ]))
-        .push_on_response(svc::layers().box_http_response())
+        .push_on_response(http::boxed::BoxResponse::layer())
         .check_new::<Endpoint>()
         .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
         .into_inner()

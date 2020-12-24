@@ -60,7 +60,7 @@ where
                         .stack
                         .layer(stack_labels("http", "balance.endpoint")),
                 )
-                .box_http_request(),
+                .push(http::boxed::BoxRequest::layer()),
         )
         .check_new_service::<Endpoint, http::Request<_>>()
         .push(resolve::layer(resolve, watchdog))
@@ -120,14 +120,14 @@ where
             svc::layers()
                 // Strips headers that may be set by this proxy.
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                .push(svc::layers().box_http_response()),
+                .push(http::boxed::BoxResponse::layer()),
         )
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
         .check_new_service::<Logical, http::Request<_>>()
         .push_switch(
             Logical::should_resolve,
             svc::stack(endpoint)
-                .push_on_response(svc::layers().box_http_request())
+                .push_on_response(http::boxed::BoxRequest::layer())
                 .push_map_target(Endpoint::from_logical(
                     ReasonForNoPeerName::NotProvidedByServiceDiscovery,
                 ))
