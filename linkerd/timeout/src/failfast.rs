@@ -15,6 +15,7 @@ use tracing::{debug, trace};
 
 #[derive(Debug)]
 pub struct FailFast<S> {
+    scope: &'static str,
     inner: S,
     max_unavailable: Duration,
     state: State,
@@ -22,7 +23,9 @@ pub struct FailFast<S> {
 
 /// An error representing that an operation timed out.
 #[derive(Debug)]
-pub struct FailFastError(());
+pub struct FailFastError {
+    scope: &'static str,
+}
 
 #[derive(Debug)]
 enum State {
@@ -34,14 +37,18 @@ enum State {
 #[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<F> {
     Inner(#[pin] F),
-    FailFast,
+    FailFast(&'static str),
 }
 
 // === impl FailFast ===
 
 impl<S> FailFast<S> {
-    pub fn layer(max_unavailable: Duration) -> impl layer::Layer<S, Service = Self> + Clone + Copy {
+    pub fn layer(
+        scope: &'static str,
+        max_unavailable: Duration,
+    ) -> impl layer::Layer<S, Service = Self> + Clone + Copy {
         layer::mk(move |inner| Self {
+            scope,
             inner,
             max_unavailable,
             state: State::Open,
@@ -59,6 +66,7 @@ where
         // that each connection will have to wait for a timeout before
         // triggering failfast.
         Self {
+            scope: self.scope,
             inner: self.inner.clone(),
             max_unavailable: self.max_unavailable,
             state: State::Open,
@@ -119,7 +127,7 @@ where
     fn call(&mut self, req: T) -> Self::Future {
         match self.state {
             State::Open => ResponseFuture::Inner(self.inner.call(req)),
-            State::FailFast => ResponseFuture::FailFast,
+            State::FailFast => ResponseFuture::FailFast(self.scope),
             State::Waiting(_) => panic!("poll_ready must be called"),
         }
     }
@@ -135,7 +143,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             ResponseFutureProj::Inner(f) => f.try_poll(cx).map_err(Into::into),
-            ResponseFutureProj::FailFast => Poll::Ready(Err(FailFastError(()).into())),
+            ResponseFutureProj::FailFast(scope) => Poll::Ready(Err(FailFastError { scope }.into())),
         }
     }
 }
@@ -144,7 +152,7 @@ where
 
 impl std::fmt::Display for FailFastError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Service in fail-fast")
+        write!(f, "{} service in fail-fast", self.scope)
     }
 }
 
@@ -162,7 +170,7 @@ mod test {
     async fn fails_fast() {
         let max_unavailable = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = Spawn::new(FailFast::layer(max_unavailable).layer(service));
+        let mut service = Spawn::new(FailFast::layer("Test", max_unavailable).layer(service));
 
         // The inner starts unavailable.
         handle.allow(0);

@@ -74,7 +74,7 @@ where
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 // If the balancer has been empty/unavailable for 10s, eagerly fail
                 // requests.
-                .push(svc::FailFast::layer(dispatch_timeout))
+                .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                 .push(metrics.stack.layer(stack_labels("http", "concrete"))),
         )
         .into_new_service()
@@ -95,7 +95,7 @@ where
         // cloneable, as required by the retry middleware.
         .push_on_response(
             svc::layers()
-                .push(svc::FailFast::layer(dispatch_timeout))
+                .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
         .check_new_service::<Logical, http::Request<_>>()
