@@ -3,16 +3,15 @@
 
 use futures::TryFuture;
 use linkerd2_error::Error;
+use linkerd2_stack::layer;
 use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::Duration;
-use tokio::time::{self, Sleep};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+use tokio::time::{self, Duration, Sleep};
 use tracing::{debug, trace};
-
-#[derive(Copy, Clone, Debug)]
-pub struct FailFastLayer(Duration);
 
 #[derive(Debug)]
 pub struct FailFast<S> {
@@ -38,27 +37,17 @@ pub enum ResponseFuture<F> {
     FailFast,
 }
 
-// === impl FailFastLayer ===
-
-impl FailFastLayer {
-    pub fn new(max_unavailable: Duration) -> Self {
-        FailFastLayer(max_unavailable)
-    }
-}
-
-impl<S> tower::layer::Layer<S> for FailFastLayer {
-    type Service = FailFast<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        Self::Service {
-            inner,
-            max_unavailable: self.0,
-            state: State::Open,
-        }
-    }
-}
-
 // === impl FailFast ===
+
+impl<S> FailFast<S> {
+    pub fn layer(max_unavailable: Duration) -> impl layer::Layer<S, Service = Self> + Clone + Copy {
+        layer::mk(move |inner| Self {
+            inner,
+            max_unavailable,
+            state: State::Open,
+        })
+    }
+}
 
 impl<S> Clone for FailFast<S>
 where
@@ -163,7 +152,7 @@ impl std::error::Error for FailFastError {}
 
 #[cfg(test)]
 mod test {
-    use super::FailFastLayer;
+    use super::FailFast;
     use std::time::Duration;
     use tokio_test::{assert_pending, assert_ready, assert_ready_ok};
     use tower::layer::Layer;
@@ -173,7 +162,7 @@ mod test {
     async fn fails_fast() {
         let max_unavailable = Duration::from_millis(100);
         let (service, mut handle) = mock::pair::<(), ()>();
-        let mut service = Spawn::new(FailFastLayer::new(max_unavailable).layer(service));
+        let mut service = Spawn::new(FailFast::layer(max_unavailable).layer(service));
 
         // The inner starts unavailable.
         handle.allow(0);

@@ -16,7 +16,7 @@ use tokio_connect::Connect;
 pub mod error;
 mod failfast;
 
-pub use self::failfast::{FailFast, FailFastError, FailFastLayer};
+pub use self::failfast::{FailFast, FailFastError};
 
 /// A timeout that wraps an underlying operation.
 #[derive(Debug, Clone)]

@@ -85,7 +85,7 @@ where
         .check_new_service::<Target, http::Request<_>>()
         .push_on_response(
             svc::layers()
-                .push_failfast(dispatch_timeout)
+                .push(svc::FailFast::layer(dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
         .push_cache(cache_max_idle_age)
@@ -103,7 +103,7 @@ where
                 .push_concurrency_limit(max_in_flight_requests)
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
-                .push_failfast(dispatch_timeout)
+                .push(svc::FailFast::layer(dispatch_timeout))
                 .push(metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
@@ -112,7 +112,7 @@ where
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
-                .push_failfast(dispatch_timeout)
+                .push(svc::FailFast::layer(dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
         )

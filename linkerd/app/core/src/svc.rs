@@ -7,7 +7,7 @@ pub use linkerd2_buffer as buffer;
 use linkerd2_concurrency_limit as concurrency_limit;
 pub use linkerd2_stack::{self as stack, layer, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
-pub use linkerd2_timeout as timeout;
+pub use linkerd2_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,
@@ -76,11 +76,6 @@ impl<L> Layers<L> {
         Rsp: Send + 'static,
     {
         self.push(buffer::SpawnBufferLayer::new(capacity))
-    }
-
-    // Makes the service eagerly process and fail requests after the given timeout.
-    pub fn push_failfast(self, timeout: Duration) -> Layers<Pair<L, timeout::FailFastLayer>> {
-        self.push(timeout::FailFastLayer::new(timeout))
     }
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
@@ -208,11 +203,6 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
-    }
-
-    // Makes the service eagerly process and fail requests after the given timeout.
-    pub fn push_failfast(self, timeout: Duration) -> Stack<timeout::FailFast<S>> {
-        self.push(timeout::FailFastLayer::new(timeout))
     }
 
     pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
