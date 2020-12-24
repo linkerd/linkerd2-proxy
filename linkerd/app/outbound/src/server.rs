@@ -195,7 +195,7 @@ where
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
         )
-        .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+        .push(http::NewNormalizeUri::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .into_inner();
