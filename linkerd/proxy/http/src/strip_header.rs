@@ -1,65 +1,47 @@
-use http::header::AsHeaderName;
 use std::marker::PhantomData;
 
-#[derive(Clone, Debug)]
-pub struct Layer<H, R> {
-    header: H,
-    _marker: PhantomData<fn(R)>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Service<H, S, R> {
+pub struct StripHeader<H, S, R> {
     header: H,
     inner: S,
     _marker: PhantomData<fn(R)>,
 }
 
-// === impl Layer ===
-
-/// Call `request::layer(header)` or `response::layer(header)`.
-fn layer<H, R>(header: H) -> Layer<H, R>
-where
-    H: AsHeaderName + Clone,
-    R: Clone,
-{
-    Layer {
-        header,
-        _marker: PhantomData,
-    }
-}
-
-impl<H, S, R> tower::layer::Layer<S> for Layer<H, R>
-where
-    H: AsHeaderName + Clone,
-{
-    type Service = Service<H, S, R>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        Self::Service {
+impl<H: Clone, S: Clone, R> Clone for StripHeader<H, S, R> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
             header: self.header.clone(),
-            inner,
-            _marker: PhantomData,
+            _marker: self._marker,
         }
     }
 }
 
 pub mod request {
     use http::header::AsHeaderName;
-    use linkerd2_stack::Proxy;
-    use std::task::{Context, Poll};
+    use linkerd2_stack::{layer, Proxy};
+    use std::{
+        marker::PhantomData,
+        task::{Context, Poll},
+    };
 
-    pub fn layer<H>(header: H) -> super::Layer<H, ReqHeader>
+    /// Marker type used to specify that the `Request` headers should be
+    /// stripped.
+    pub enum ReqHeader {}
+
+    type StripHeader<H, S> = super::StripHeader<H, S, ReqHeader>;
+
+    pub fn layer<H, S>(header: H) -> impl layer::Layer<S, Service = StripHeader<H, S>> + Clone
     where
         H: AsHeaderName + Clone,
     {
-        super::layer(header)
+        layer::mk(move |inner| StripHeader {
+            inner,
+            header: header.clone(),
+            _marker: PhantomData,
+        })
     }
 
-    /// Marker type used to specify that the `Request` headers should be stripped.
-    #[derive(Clone, Debug)]
-    pub enum ReqHeader {}
-
-    impl<H, P, S, B> Proxy<http::Request<B>, S> for super::Service<H, P, ReqHeader>
+    impl<H, P, S, B> Proxy<http::Request<B>, S> for StripHeader<H, P>
     where
         P: Proxy<http::Request<B>, S>,
         H: AsHeaderName + Clone,
@@ -76,7 +58,7 @@ pub mod request {
         }
     }
 
-    impl<H, S, B> tower::Service<http::Request<B>> for super::Service<H, S, ReqHeader>
+    impl<H, S, B> tower::Service<http::Request<B>> for StripHeader<H, S>
     where
         H: AsHeaderName + Clone,
         S: tower::Service<http::Request<B>>,
@@ -100,20 +82,30 @@ pub mod response {
     use futures::{ready, Future, TryFuture};
     use http::header::AsHeaderName;
     use linkerd2_error::Error;
+    use linkerd2_stack::layer;
     use pin_project::pin_project;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
+    use std::{
+        marker::PhantomData,
+        pin::Pin,
+        task::{Context, Poll},
+    };
 
-    pub fn layer<H>(header: H) -> super::Layer<H, ResHeader>
+    /// Marker type used to specify that the `Response` headers should be
+    /// stripped.
+    pub enum RspHeader {}
+
+    type StripHeader<H, S> = super::StripHeader<H, S, RspHeader>;
+
+    pub fn layer<H, S>(header: H) -> impl layer::Layer<S, Service = StripHeader<H, S>> + Clone
     where
         H: AsHeaderName + Clone,
     {
-        super::layer(header)
+        layer::mk(move |inner| StripHeader {
+            inner,
+            header: header.clone(),
+            _marker: PhantomData,
+        })
     }
-
-    /// Marker type used to specify that the `Response` headers should be stripped.
-    #[derive(Clone, Debug)]
-    pub enum ResHeader {}
 
     #[pin_project]
     pub struct ResponseFuture<F, H> {
@@ -122,7 +114,7 @@ pub mod response {
         header: H,
     }
 
-    impl<H, S, B, Req> tower::Service<Req> for super::Service<H, S, ResHeader>
+    impl<H, S, B, Req> tower::Service<Req> for StripHeader<H, S>
     where
         H: AsHeaderName + Clone,
         S: tower::Service<Req, Response = http::Response<B>>,
