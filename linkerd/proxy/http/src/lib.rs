@@ -16,7 +16,7 @@ pub mod header_from_target;
 pub mod insert;
 pub mod normalize_uri;
 pub mod orig_proto;
-pub mod override_authority;
+mod override_authority;
 mod retain;
 mod server;
 pub mod strip_header;
@@ -29,7 +29,7 @@ pub use self::{
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
-    override_authority::CanOverrideAuthority,
+    override_authority::{CanOverrideAuthority, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,
     timeout::MakeTimeoutLayer,
