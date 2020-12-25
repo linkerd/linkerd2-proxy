@@ -11,7 +11,7 @@ use indexmap::IndexSet;
 use std::{
     collections::HashMap, fmt, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration,
 };
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 /// The strings used to build a configuration.
 pub trait Strings {
@@ -489,13 +489,35 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
-        let require_identity_for_inbound_ports =
+        let mut require_identity_for_inbound_ports =
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(
                 "if {} is true, {} must be empty",
                 ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_IDENTITY
+            );
+            return Err(EnvError::InvalidEnvVar);
+        }
+
+        // Ensure that connections thaat directly target the inbound port are
+        // secured (unless identity is disabled).
+        let inbound_port = server.bind.bind_addr().port();
+        if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
+            debug!(
+                "Adding {} to {}",
+                inbound_port, ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
+            );
+            require_identity_for_inbound_ports.insert(inbound_port);
+        }
+
+        // Ensure that the inbound port does not disable protocol detection, as
+        // is required for opaque transport.
+        let inbound_opaque_ports = inbound_disable_ports?.unwrap_or_default();
+        if inbound_opaque_ports.contains(&inbound_port) {
+            error!(
+                "{} must not contain {} ({})",
+                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, ENV_INBOUND_LISTEN_ADDR, inbound_port
             );
             return Err(EnvError::InvalidEnvVar);
         }
@@ -515,7 +537,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
-            disable_protocol_detection_for_ports: inbound_disable_ports?.unwrap_or_default().into(),
+            disable_protocol_detection_for_ports: inbound_opaque_ports.into(),
         }
     };
 
