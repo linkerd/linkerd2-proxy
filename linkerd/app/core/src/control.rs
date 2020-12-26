@@ -58,7 +58,7 @@ impl Config {
             move |_| Ok(backoff.stream())
         };
         svc::connect(self.connect.keepalive)
-            .push(tls::ConnectLayer::new(identity))
+            .push(tls::Client::layer(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
             .push(reconnect::layer(backoff))
