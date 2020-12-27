@@ -10,13 +10,12 @@ retain = ["linkerd2-stack", "tower"]
 
 [dependencies]
 futures = "0.3"
-linkerd2-error = { path = "../error" }
-pin-project = "0.4"
 tokio = { version = "0.3", features = ["macros", "stream", "sync"] }
 
 linkerd2-stack = { path = "../stack", optional = true }
 tower = { version = "0.4", default-features = false, optional = true }
 
 [dev-dependencies]
+pin-project = "0.4"
 tokio = { version = "0.3", features = ["time"] }
 tokio-test = "0.3"

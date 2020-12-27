@@ -5,17 +5,8 @@ mod retain;
 
 #[cfg(feature = "tower")]
 pub use crate::retain::Retain;
-use linkerd2_error::Never;
-use pin_project::pin_project;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use tokio::{
-    stream::Stream,
-    sync::{mpsc, watch},
-};
+use std::future::Future;
+use tokio::sync::{mpsc, watch};
 
 /// Creates a drain channel.
 ///
@@ -27,6 +18,8 @@ pub fn channel() -> (Signal, Watch) {
 
     (Signal { drained_rx, tx }, Watch { drained_tx, rx })
 }
+
+type Never = std::convert::Infallible;
 
 /// Send a drain command to all watchers.
 ///
@@ -47,18 +40,11 @@ pub struct Watch {
     rx: watch::Receiver<()>,
 }
 
-/// A future that resolves when all `Watch`ers have been dropped (drained).
-#[pin_project]
-pub struct Drained {
-    #[pin]
-    drained_rx: mpsc::Receiver<Never>,
-}
-
 #[must_use = "ReleaseShutdown should be dropped explicitly to release the runtime"]
 #[derive(Clone, Debug)]
 pub struct ReleaseShutdown(mpsc::Sender<Never>);
 
-// ===== impl Signal =====
+// === impl Signal ===
 
 impl Signal {
     /// Start the draining process.
@@ -66,15 +52,13 @@ impl Signal {
     /// A signal is sent to all futures watching for the signal. A new future
     /// is returned from this method that resolves when all watchers have
     /// completed.
-    pub fn drain(self) -> Drained {
+    pub async fn drain(mut self) {
         let _ = self.tx.send(());
-        Drained {
-            drained_rx: self.drained_rx,
-        }
+        self.drained_rx.recv().await;
     }
 }
 
-// ===== impl Watch =====
+// === impl Watch ===
 
 impl Watch {
     /// Returns a `ReleaseShutdown` handle after the drain has been signaled. The
@@ -116,19 +100,6 @@ impl ReleaseShutdown {
     /// Releases shutdown after `future` completes.
     pub async fn release_after<F: Future>(self, future: F) -> F::Output {
         future.await
-    }
-}
-
-// ===== impl Drained =====
-
-impl Future for Drained {
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match futures::ready!(self.project().drained_rx.poll_next(cx)) {
-            Some(never) => match never {},
-            None => Poll::Ready(()),
-        }
     }
 }
 
