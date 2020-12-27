@@ -114,6 +114,13 @@ impl<M> Admin<M> {
             .expect("builder with known status code must not fail")
     }
 
+    fn method_not_allowed() -> Response<Body> {
+        Response::builder()
+            .status(http::StatusCode::METHOD_NOT_ALLOWED)
+            .body(Body::empty())
+            .expect("builder with known status code must not fail")
+    }
+
     fn forbidden_not_localhost() -> Response<Body> {
         Response::builder()
             .status(http::StatusCode::FORBIDDEN)
@@ -164,10 +171,14 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
                 }
             }
             "/shutdown" => {
-                if Self::client_is_localhost(&req) {
-                    Box::pin(future::ok(self.shutdown()))
+                if req.method() == http::Method::POST {
+                    if Self::client_is_localhost(&req) {
+                        Box::pin(future::ok(self.shutdown()))
+                    } else {
+                        Box::pin(future::ok(Self::forbidden_not_localhost()))
+                    }
                 } else {
-                    Box::pin(future::ok(Self::forbidden_not_localhost()))
+                    Box::pin(future::ok(Self::method_not_allowed()))
                 }
             }
             path if path.starts_with("/tasks") => {
