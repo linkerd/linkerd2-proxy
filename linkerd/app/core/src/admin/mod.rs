@@ -18,6 +18,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use tokio::sync::mpsc;
 
 mod readiness;
 
@@ -28,6 +29,7 @@ pub struct Admin<M> {
     metrics: metrics::Serve<M>,
     tracing: trace::Handle,
     ready: Readiness,
+    shutdown_tx: mpsc::UnboundedSender<()>,
 }
 
 #[derive(Clone)]
@@ -40,11 +42,17 @@ pub type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Response<Body>, Never>> + Send + 'static>>;
 
 impl<M> Admin<M> {
-    pub fn new(m: M, ready: Readiness, tracing: trace::Handle) -> Self {
+    pub fn new(
+        metrics: M,
+        ready: Readiness,
+        shutdown_tx: mpsc::UnboundedSender<()>,
+        tracing: trace::Handle,
+    ) -> Self {
         Self {
-            metrics: metrics::Serve::new(m),
-            tracing,
+            metrics: metrics::Serve::new(metrics),
             ready,
+            shutdown_tx,
+            tracing,
         }
     }
 
@@ -56,6 +64,7 @@ impl<M> Admin<M> {
         if self.ready.is_ready() {
             Response::builder()
                 .status(StatusCode::OK)
+                .header(http::header::CONTENT_TYPE, "text/plain")
                 .body("ready\n".into())
                 .expect("builder with known status code must not fail")
         } else {
@@ -69,8 +78,25 @@ impl<M> Admin<M> {
     fn live_rsp() -> Response<Body> {
         Response::builder()
             .status(StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, "text/plain")
             .body("live\n".into())
             .expect("builder with known status code must not fail")
+    }
+
+    fn shutdown(&self) -> Response<Body> {
+        if self.shutdown_tx.send(()).is_ok() {
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(http::header::CONTENT_TYPE, "text/plain")
+                .body("shutdown\n".into())
+                .expect("builder with known status code must not fail")
+        } else {
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(http::header::CONTENT_TYPE, "text/plain")
+                .body("shutdown listener dropped\n".into())
+                .expect("builder with known status code must not fail")
+        }
     }
 
     fn internal_error_rsp(error: impl ToString) -> http::Response<Body> {
@@ -133,6 +159,13 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
                             Ok(Self::internal_error_rsp(error))
                         })
                     })
+                } else {
+                    Box::pin(future::ok(Self::forbidden_not_localhost()))
+                }
+            }
+            "/shutdown" => {
+                if Self::client_is_localhost(&req) {
+                    Box::pin(future::ok(self.shutdown()))
                 } else {
                     Box::pin(future::ok(Self::forbidden_not_localhost()))
                 }
@@ -200,7 +233,7 @@ mod tests {
     use super::*;
     use http::method::Method;
     use std::time::Duration;
-    use tokio::time::timeout;
+    use tokio::{sync::mpsc, time::timeout};
     use tower::util::ServiceExt;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
@@ -211,7 +244,8 @@ mod tests {
         let l1 = l0.clone();
 
         let (_, t) = trace::Settings::default().build();
-        let admin = Admin::new((), r, t);
+        let (s, _) = mpsc::unbounded_channel();
+        let admin = Admin::new((), r, s, t);
         macro_rules! call {
             () => {{
                 let r = Request::builder()

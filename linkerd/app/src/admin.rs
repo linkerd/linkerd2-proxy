@@ -2,9 +2,8 @@ use crate::identity::LocalIdentity;
 use linkerd2_app_core::{
     admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, trace, transport::tls, Error,
 };
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::time::Duration;
+use std::{net::SocketAddr, pin::Pin, time::Duration};
+use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -25,6 +24,7 @@ impl Config {
         report: R,
         trace: trace::Handle,
         drain: drain::Watch,
+        shutdown: mpsc::UnboundedSender<()>,
     ) -> Result<Admin, Error>
     where
         R: FmtMetrics + Clone + Send + 'static,
@@ -32,7 +32,7 @@ impl Config {
         let (listen_addr, listen) = self.server.bind.bind()?;
 
         let (ready, latch) = admin::Readiness::new();
-        let admin = admin::Admin::new(report, ready, trace);
+        let admin = admin::Admin::new(report, ready, shutdown, trace);
         let accept = tls::DetectTls::new(
             identity,
             admin.into_accept(),

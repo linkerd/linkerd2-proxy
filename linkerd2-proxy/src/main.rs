@@ -5,6 +5,7 @@
 
 use linkerd2_app::{trace, Config};
 use linkerd2_signal as signal;
+use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "mimalloc")]
@@ -27,7 +28,8 @@ fn main() {
     };
 
     rt::build().block_on(async move {
-        let app = match async move { config.build(trace?).await }.await {
+        let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
+        let app = match async move { config.build(shutdown_tx, trace?).await }.await {
             Ok(app) => app,
             Err(e) => {
                 eprintln!("Initialization failure: {}", e);
@@ -74,7 +76,14 @@ fn main() {
         }
 
         let drain = app.spawn();
-        signal::shutdown().await;
+        tokio::select! {
+            _ = signal::shutdown() => {
+                info!("Received shutdown signal");
+            }
+            _ = shutdown_rx.recv() => {
+                info!("Received shutdown via admin interface");
+            }
+        }
         drain.drain().await;
     });
 }
