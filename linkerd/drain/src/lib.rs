@@ -203,7 +203,7 @@ mod tests {
         assert!(drained1.load(SeqCst));
 
         // Complete the first watch.
-        tx0.send(()).ok().expect("must send");
+        tx0.send(()).expect("must send");
         tokio::select! {
             _ = &mut watch0 => {},
             _ = &mut watch1 => panic!("Future terminated early"),
@@ -211,7 +211,7 @@ mod tests {
         }
 
         // Complete the second watch.
-        tx1.send(()).ok().expect("must send");
+        tx1.send(()).expect("must send");
 
         // Ensure that all of our pending tasks, including the drain task,
         // complete.
