@@ -41,10 +41,8 @@ pub struct Signal {
 /// Watch for a drain command.
 ///
 /// This wraps another future and callback to be called when drain is triggered.
-#[pin_project]
 #[derive(Clone, Debug)]
 pub struct Watch {
-    #[pin]
     drained_tx: mpsc::Sender<Never>,
     rx: watch::Receiver<()>,
 }
