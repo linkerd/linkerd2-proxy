@@ -13,26 +13,37 @@ use tokio::sync::{mpsc, watch};
 /// The `Signal` is used to start a drain, and the `Watch` will be notified
 /// when a drain is signaled.
 pub fn channel() -> (Signal, Watch) {
-    let (tx, rx) = watch::channel(());
+    let (signal_tx, signal_rx) = watch::channel(());
     let (drained_tx, drained_rx) = mpsc::channel(1);
 
-    (Signal { drained_rx, tx }, Watch { drained_tx, rx })
+    let signal = Signal {
+        drained_rx,
+        signal_tx,
+    };
+    let watch = Watch {
+        drained_tx,
+        signal_rx,
+    };
+    (signal, watch)
 }
 
-type Never = std::convert::Infallible;
+enum Never {}
 
 /// Send a drain command to all watchers.
 #[derive(Debug)]
 pub struct Signal {
     drained_rx: mpsc::Receiver<Never>,
-    tx: watch::Sender<()>,
+    signal_tx: watch::Sender<()>,
 }
 
 /// Watch for a drain command.
+///
+/// All `Watch` instances must be dropped for a `Signal::signal` call to
+/// complete.
 #[derive(Clone, Debug)]
 pub struct Watch {
     drained_tx: mpsc::Sender<Never>,
-    rx: watch::Receiver<()>,
+    signal_rx: watch::Receiver<()>,
 }
 
 #[must_use = "ReleaseShutdown should be dropped explicitly to release the runtime"]
@@ -48,8 +59,15 @@ impl Signal {
     /// is returned from this method that resolves when all watchers have
     /// completed.
     pub async fn signal(mut self) {
-        let _ = self.tx.send(());
-        self.drained_rx.recv().await;
+        // Update the state of the signal watch so that all watchers are observe
+        // the change.
+        let _ = self.signal_tx.send(());
+
+        // Wait for all watchers to release their drain handle.
+        match self.drained_rx.recv().await {
+            None => {}
+            Some(n) => match n {},
+        }
     }
 }
 
@@ -60,7 +78,12 @@ impl Watch {
     /// handle must be dropped when a shutdown action has been completed to
     /// unblock graceful shutdown.
     pub async fn signaled(mut self) -> ReleaseShutdown {
-        let _ = self.rx.changed().await;
+        // This future completes once `Signal::signal` has been invoked so that
+        // the channel's state is updated.
+        let _ = self.signal_rx.changed().await;
+
+        // Return a handle that holds the drain channel, so that the signal task
+        // is only notified when all handles have been dropped.
         ReleaseShutdown(self.drained_tx)
     }
 
@@ -68,7 +91,7 @@ impl Watch {
     ///
     /// This is intended to allow a task to block shutdown until it completes.
     pub fn ignore_signaled(self) -> ReleaseShutdown {
-        drop(self.rx);
+        drop(self.signal_rx);
         ReleaseShutdown(self.drained_tx)
     }
 
@@ -93,8 +116,11 @@ impl Watch {
 
 impl ReleaseShutdown {
     /// Releases shutdown after `future` completes.
+    #[inline]
     pub async fn release_after<F: Future>(self, future: F) -> F::Output {
-        future.await
+        let res = future.await;
+        drop(self.0);
+        res
     }
 }
 
@@ -114,20 +140,20 @@ mod tests {
 
     #[pin_project]
     struct Fut {
-        drained: Arc<AtomicBool>,
+        notified: Arc<AtomicBool>,
         #[pin]
         inner: oneshot::Receiver<()>,
     }
 
     impl Fut {
         pub fn new() -> (Self, oneshot::Sender<()>, Arc<AtomicBool>) {
-            let drained = Arc::new(AtomicBool::new(false));
+            let notified = Arc::new(AtomicBool::new(false));
             let (tx, rx) = oneshot::channel::<()>();
             let fut = Fut {
-                drained: drained.clone(),
+                notified: notified.clone(),
                 inner: rx,
             };
-            (fut, tx, drained)
+            (fut, tx, notified)
         }
     }
 
@@ -140,7 +166,7 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "current_thread")]
+    #[tokio::test]
     async fn watch() {
         time::pause();
 
@@ -148,18 +174,16 @@ mod tests {
 
         // Setup a future to be drained. When draining begins, `drained0` is
         // flipped . When `tx0` fires, the whole `watch0` future completes.
-        let (fut0, tx0, drained0) = Fut::new();
-        tokio::pin! {
-            let watch0 = watch
-                .clone()
-                .watch(fut0, |f| f.drained.store(true, SeqCst));
-        };
+        let (fut0, tx0, notified0) = Fut::new();
+        let watch0 = watch
+            .clone()
+            .watch(fut0, |f| f.notified.store(true, SeqCst));
+        tokio::pin!(watch0);
 
         // Setup another future to be drained.
-        let (fut1, tx1, drained1) = Fut::new();
-        tokio::pin! {
-            let watch1 = watch.watch(fut1, |f| f.drained.store(true, SeqCst));
-        }
+        let (fut1, tx1, notified1) = Fut::new();
+        let watch1 = watch.watch(fut1, |f| f.notified.store(true, SeqCst));
+        tokio::pin!(watch1);
 
         // Ensure that none of the futures have completed and draining hasn't
         // been signaled.
@@ -168,11 +192,12 @@ mod tests {
             _ = &mut watch1 => panic!("Future terminated early"),
             _ = futures::future::ready(()) => {}
         }
-        assert!(!drained0.load(SeqCst));
-        assert!(!drained1.load(SeqCst));
+        assert!(!notified0.load(SeqCst));
+        assert!(!notified1.load(SeqCst));
 
         // Signal draining and ensure that none of the futures have completed.
         let mut drain = tokio::spawn(signal.signal());
+
         tokio::select! {
             _ = &mut watch0 => panic!("Future terminated early"),
             _ = &mut watch1 => panic!("Future terminated early"),
@@ -180,8 +205,8 @@ mod tests {
             _ = time::sleep(time::Duration::from_secs(1)) => {}
         }
         // Verify that the draining callbacks were invoked.
-        assert!(drained0.load(SeqCst));
-        assert!(drained1.load(SeqCst));
+        assert!(notified0.load(SeqCst));
+        assert!(notified1.load(SeqCst));
 
         // Complete the first watch.
         tx0.send(()).expect("must send");
@@ -197,12 +222,40 @@ mod tests {
         // Ensure that all of our pending tasks, including the drain task,
         // complete.
         let done = async move {
-            let _ = futures::join!(watch1, drain);
+            watch1.await;
+            drain.await.expect("drain must succeed");
         };
         tokio::select! {
             _ = done => {}
             _ = time::sleep(time::Duration::from_secs(1)) => {
                 panic!("Futures did not complete");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn signal() {
+        let (signal, watch) = super::channel();
+
+        let drain = tokio::spawn(signal.signal());
+
+        let signaled = tokio::spawn(async move {
+            let release = watch.signaled().await;
+            drop(release);
+        });
+
+        // Ensure that all of our pending tasks, including the drain task,
+        // complete.
+        tokio::select! {
+            res = signaled => res.expect("signaled must succeed"),
+            _ = time::sleep(time::Duration::from_secs(1)) => {
+                panic!("Signaled did not complete");
+            }
+        }
+        tokio::select! {
+            res = drain => res.expect("drain must succeed"),
+            _ = time::sleep(time::Duration::from_secs(1)) => {
+                panic!("Drain did not complete");
             }
         }
     }
