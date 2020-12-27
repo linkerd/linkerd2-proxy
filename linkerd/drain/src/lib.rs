@@ -22,9 +22,6 @@ pub fn channel() -> (Signal, Watch) {
 type Never = std::convert::Infallible;
 
 /// Send a drain command to all watchers.
-///
-/// When a drain is started, this returns a `Drained` future which resolves
-/// when all `Watch`ers have been dropped.
 #[derive(Debug)]
 pub struct Signal {
     drained_rx: mpsc::Receiver<Never>,
@@ -32,8 +29,6 @@ pub struct Signal {
 }
 
 /// Watch for a drain command.
-///
-/// This wraps another future and callback to be called when drain is triggered.
 #[derive(Clone, Debug)]
 pub struct Watch {
     drained_tx: mpsc::Sender<Never>,
