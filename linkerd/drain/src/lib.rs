@@ -5,18 +5,28 @@ mod retain;
 
 #[cfg(feature = "tower")]
 pub use crate::retain::Retain;
-use std::future::Future;
-use tokio::sync::{mpsc, watch};
+use std::{
+    future::Future,
+    sync::{Arc, Weak},
+};
+use tokio::sync::{mpsc, Notify};
 
 /// Creates a drain channel.
 ///
 /// The `Signal` is used to start a drain, and the `Watch` will be notified
 /// when a drain is signaled.
 pub fn channel() -> (Signal, Watch) {
-    let (tx, rx) = watch::channel(());
+    let notify = Arc::new(Notify::new());
     let (drained_tx, drained_rx) = mpsc::channel(1);
-
-    (Signal { drained_rx, tx }, Watch { drained_tx, rx })
+    let watch = Watch {
+        drained_tx,
+        signal_rx: Arc::downgrade(&notify),
+    };
+    let signal = Signal {
+        drained_rx,
+        signal_tx: Some(notify),
+    };
+    (signal, watch)
 }
 
 type Never = std::convert::Infallible;
@@ -24,15 +34,17 @@ type Never = std::convert::Infallible;
 /// Send a drain command to all watchers.
 #[derive(Debug)]
 pub struct Signal {
+    // Notifies watchers.
+    signal_tx: Option<Arc<Notify>>,
+    // Notified when all drained_tx instances have been dropped.
     drained_rx: mpsc::Receiver<Never>,
-    tx: watch::Sender<()>,
 }
 
 /// Watch for a drain command.
 #[derive(Clone, Debug)]
 pub struct Watch {
     drained_tx: mpsc::Sender<Never>,
-    rx: watch::Receiver<()>,
+    signal_rx: Weak<Notify>,
 }
 
 #[must_use = "ReleaseShutdown should be dropped explicitly to release the runtime"]
@@ -48,7 +60,9 @@ impl Signal {
     /// is returned from this method that resolves when all watchers have
     /// completed.
     pub async fn signal(mut self) {
-        let _ = self.tx.send(());
+        if let Some(tx) = self.signal_tx.take() {
+            tx.notify_waiters();
+        }
         self.drained_rx.recv().await;
     }
 }
@@ -59,8 +73,13 @@ impl Watch {
     /// Returns a `ReleaseShutdown` handle after the drain has been signaled. The
     /// handle must be dropped when a shutdown action has been completed to
     /// unblock graceful shutdown.
-    pub async fn signaled(mut self) -> ReleaseShutdown {
-        let _ = self.rx.changed().await;
+    pub async fn signaled(self) -> ReleaseShutdown {
+        // Wait for the drain to be signaled. If we can't obtain a reference to
+        // the receiver, the signal has already occurred.
+        if let Some(rx) = self.signal_rx.upgrade() {
+            let _ = rx.notified().await;
+        }
+
         ReleaseShutdown(self.drained_tx)
     }
 
@@ -68,7 +87,7 @@ impl Watch {
     ///
     /// This is intended to allow a task to block shutdown until it completes.
     pub fn ignore_signaled(self) -> ReleaseShutdown {
-        drop(self.rx);
+        drop(self.signal_rx);
         ReleaseShutdown(self.drained_tx)
     }
 
