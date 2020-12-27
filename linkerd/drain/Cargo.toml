@@ -5,13 +5,16 @@ authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 edition = "2018"
 publish = false
 
+[features]
+retain = ["linkerd2-stack", "tower"]
+
 [dependencies]
 futures = "0.3"
 linkerd2-error = { path = "../error" }
-linkerd2-stack = { path = "../stack" }
+linkerd2-stack = { path = "../stack", optional = true }
 pin-project = "0.4"
-tokio = { version = "0.3", features = ["sync", "macros", "stream"]}
-tower = { version = "0.4", default-features = false }
+tokio = { version = "0.3", features = ["macros", "stream", "sync"] }
+tower = { version = "0.4", default-features = false, optional = true }
 
 [dev-dependencies]
 tokio-test = "0.3"

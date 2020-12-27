@@ -1,7 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
+#[cfg(feature = "tower")]
 mod retain;
 
+#[cfg(feature = "tower")]
 pub use crate::retain::Retain;
 use linkerd2_error::Never;
 use pin_project::pin_project;
