@@ -52,7 +52,7 @@ impl Signal {
     /// A signal is sent to all futures watching for the signal. A new future
     /// is returned from this method that resolves when all watchers have
     /// completed.
-    pub async fn drain(mut self) {
+    pub async fn signal(mut self) {
         let _ = self.tx.send(());
         self.drained_rx.recv().await;
     }
@@ -64,7 +64,7 @@ impl Watch {
     /// Returns a `ReleaseShutdown` handle after the drain has been signaled. The
     /// handle must be dropped when a shutdown action has been completed to
     /// unblock graceful shutdown.
-    pub async fn signal(mut self) -> ReleaseShutdown {
+    pub async fn signaled(mut self) -> ReleaseShutdown {
         let _ = self.rx.changed().await;
         ReleaseShutdown(self.drained_tx)
     }
@@ -72,7 +72,7 @@ impl Watch {
     /// Return a `ReleaseShutdown` handle immediately, ignoring the release signal.
     ///
     /// This is intended to allow a task to block shutdown until it completes.
-    pub fn ignore_signal(self) -> ReleaseShutdown {
+    pub fn ignore_signaled(self) -> ReleaseShutdown {
         drop(self.rx);
         ReleaseShutdown(self.drained_tx)
     }
@@ -88,7 +88,7 @@ impl Watch {
     {
         tokio::select! {
             res = &mut future => res,
-            shutdown = self.signal() => {
+            shutdown = self.signaled() => {
                 on_drain(&mut future);
                 shutdown.release_after(future).await
             }
@@ -177,7 +177,7 @@ mod tests {
         assert!(!drained1.load(SeqCst));
 
         // Signal draining and ensure that none of the futures have completed.
-        let mut drain = tokio::spawn(signal.drain());
+        let mut drain = tokio::spawn(signal.signal());
         tokio::select! {
             _ = &mut watch0 => panic!("Future terminated early"),
             _ = &mut watch1 => panic!("Future terminated early"),

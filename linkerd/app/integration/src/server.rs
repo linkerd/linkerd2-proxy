@@ -73,7 +73,7 @@ impl Listening {
     pub async fn join(mut self) {
         tracing::info!(addr = %self.addr, "trying to shut down support server...");
         tracing::debug!("draining...");
-        self.drain.drain().await;
+        self.drain.signal().await;
         tracing::debug!("drained!");
 
         if let Some(task) = self.task.take() {

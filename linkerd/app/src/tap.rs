@@ -67,7 +67,7 @@ impl Config {
                     std::time::Duration::from_secs(1),
                 );
 
-                let serve = Box::pin(serve::serve(listen, accept, drain.signal()));
+                let serve = Box::pin(serve::serve(listen, accept, drain.signaled()));
 
                 Ok(Tap::Enabled {
                     listen_addr,

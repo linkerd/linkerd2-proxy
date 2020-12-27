@@ -338,7 +338,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                         on_shutdown.await;
                         debug!("after on_shutdown");
 
-                        drain.drain().await;
+                        drain.signal().await;
                         debug!("after drain");
 
                         // Suppress error as not all tests wait for graceful shutdown
