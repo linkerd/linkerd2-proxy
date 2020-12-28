@@ -61,7 +61,7 @@ where
         ))
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
         .push(NewRequireIdentity::layer())
-        .push(http::override_authority::Layer::new(vec![
+        .push(http::NewOverrideAuthority::layer(vec![
             "host",
             CANONICAL_DST_HEADER,
         ]))

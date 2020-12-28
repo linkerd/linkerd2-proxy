@@ -1,87 +1,65 @@
 use super::h1;
 use http::{self, header::AsHeaderName, uri::Authority};
-use linkerd2_stack::NewService;
-use std::fmt;
-use std::task::{Context, Poll};
+use linkerd2_stack::{layer, NewService};
+use std::{
+    fmt,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tracing::debug;
 
 pub trait CanOverrideAuthority {
     fn override_authority(&self) -> Option<Authority>;
 }
 
-#[derive(Debug, Clone)]
-pub struct Layer<H> {
-    headers_to_strip: Vec<H>,
-}
-
 #[derive(Clone, Debug)]
-pub struct MakeSvc<H, M> {
-    headers_to_strip: Vec<H>,
+pub struct NewOverrideAuthority<H, M> {
+    headers_to_strip: Arc<Vec<H>>,
     inner: M,
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<S, H> {
+pub struct OverrideAuthority<S, H> {
     authority: Option<Authority>,
-    headers_to_strip: Vec<H>,
+    headers_to_strip: Arc<Vec<H>>,
     inner: S,
 }
 
-// === impl Layer ===
+// === impl NewOverrideAuthority ===
 
-impl<H> Layer<H>
-where
-    H: AsHeaderName + Clone,
-{
-    pub fn new(headers_to_strip: Vec<H>) -> Self {
-        Self { headers_to_strip }
-    }
-}
-
-impl<H> Default for Layer<H> {
-    fn default() -> Self {
-        Self {
-            headers_to_strip: Vec::default(),
-        }
-    }
-}
-
-impl<H, M> tower::layer::Layer<M> for Layer<H>
-where
-    H: AsHeaderName + Clone,
-{
-    type Service = MakeSvc<H, M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        Self::Service {
-            headers_to_strip: self.headers_to_strip.clone(),
+impl<H: Clone, N> NewOverrideAuthority<H, N> {
+    pub fn layer(
+        headers_to_strip: impl IntoIterator<Item = H>,
+    ) -> impl layer::Layer<N, Service = Self> + Clone {
+        let headers_to_strip = Arc::new(headers_to_strip.into_iter().collect::<Vec<H>>());
+        layer::mk(move |inner| Self {
             inner,
-        }
+            headers_to_strip: headers_to_strip.clone(),
+        })
     }
 }
 
-impl<H, T, M> NewService<T> for MakeSvc<H, M>
+impl<H, T, M> NewService<T> for NewOverrideAuthority<H, M>
 where
     T: CanOverrideAuthority + Clone + Send + Sync + 'static,
     M: NewService<T>,
     H: AsHeaderName + Clone,
 {
-    type Service = Service<M::Service, H>;
+    type Service = OverrideAuthority<M::Service, H>;
 
+    #[inline]
     fn new_service(&mut self, t: T) -> Self::Service {
-        let authority = t.override_authority();
-        let inner = self.inner.new_service(t);
-        Service {
-            authority,
+        OverrideAuthority {
+            authority: t.override_authority(),
             headers_to_strip: self.headers_to_strip.clone(),
-            inner,
+            inner: self.inner.new_service(t),
         }
     }
 }
 
 // === impl Service ===
 
-impl<S, H, B> tower::Service<http::Request<B>> for Service<S, H>
+impl<S, H, B> tower::Service<http::Request<B>> for OverrideAuthority<S, H>
 where
     S: tower::Service<http::Request<B>>,
     H: AsHeaderName + fmt::Display + Clone,
@@ -90,6 +68,7 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
