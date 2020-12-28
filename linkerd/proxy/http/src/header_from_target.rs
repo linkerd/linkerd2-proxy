@@ -1,130 +1,54 @@
-use futures::{ready, TryFuture};
 use http::header::{HeaderValue, IntoHeaderName};
-use linkerd2_stack::NewService;
-use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
+use linkerd2_stack::{layer, NewService};
 use std::task::{Context, Poll};
-
-/// Wraps HTTP `Service`s  so that a displayable `T` is cloned into each request's
-/// extensions.
-#[derive(Debug, Clone)]
-pub struct Layer<H> {
-    header: H,
-}
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into
 /// each request's headers.
-#[pin_project]
 #[derive(Clone, Debug)]
-pub struct MakeSvc<H, M> {
+pub struct NewHeaderFromTarget<H, M> {
     header: H,
-    #[pin]
     inner: M,
 }
 
 #[derive(Clone, Debug)]
-pub struct Service<H, S> {
+pub struct HeaderFromTarget<H, S> {
     header: H,
     value: HeaderValue,
     inner: S,
 }
 
-// === impl Layer ===
+// === impl NewHeaderFromTarget ===
 
-pub fn layer<H>(header: H) -> Layer<H>
-where
-    H: IntoHeaderName + Clone,
-{
-    Layer { header }
-}
-
-impl<H, M> tower::layer::Layer<M> for Layer<H>
-where
-    H: IntoHeaderName + Clone,
-{
-    type Service = MakeSvc<H, M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            header: self.header.clone(),
+impl<H: Clone, N> NewHeaderFromTarget<H, N> {
+    pub fn layer(header: H) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
             inner,
-        }
+            header: header.clone(),
+        })
     }
 }
 
-// === impl MakeSvc ===
-
-impl<H, T, M> NewService<T> for MakeSvc<H, M>
+impl<H, T, N> NewService<T> for NewHeaderFromTarget<H, N>
 where
     H: IntoHeaderName + Clone,
     T: Clone + Send + Sync + 'static,
     HeaderValue: for<'t> From<&'t T>,
-    M: NewService<T>,
+    N: NewService<T>,
 {
-    type Service = Service<H, M::Service>;
+    type Service = HeaderFromTarget<H, N::Service>;
 
     fn new_service(&mut self, t: T) -> Self::Service {
-        let header = self.header.clone();
-        let value = (&t).into();
-        let inner = self.inner.new_service(t);
-        Service {
-            header,
-            inner,
-            value,
+        HeaderFromTarget {
+            value: (&t).into(),
+            inner: self.inner.new_service(t),
+            header: self.header.clone(),
         }
     }
 }
 
-impl<H, T, M> tower::Service<T> for MakeSvc<H, M>
-where
-    H: IntoHeaderName + Clone,
-    T: Clone + Send + Sync + 'static,
-    HeaderValue: for<'t> From<&'t T>,
-    M: tower::Service<T>,
-{
-    type Response = Service<H, M::Response>;
-    type Error = M::Error;
-    type Future = MakeSvc<(H, HeaderValue), M::Future>;
+// === impl HeaderFromTarget ===
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, t: T) -> Self::Future {
-        let header = self.header.clone();
-        let value = (&t).into();
-        let inner = self.inner.call(t);
-
-        MakeSvc {
-            header: (header, value),
-            inner,
-        }
-    }
-}
-
-impl<H, F> Future for MakeSvc<(H, HeaderValue), F>
-where
-    H: Clone,
-    F: TryFuture,
-{
-    type Output = Result<Service<H, F::Ok>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let inner = ready!(this.inner.try_poll(cx))?;
-        let (header, value) = this.header.clone();
-        Poll::Ready(Ok(Service {
-            header,
-            inner,
-            value,
-        }))
-    }
-}
-
-// === impl Service ===
-
-impl<H, S, B> tower::Service<http::Request<B>> for Service<H, S>
+impl<H, S, B> tower::Service<http::Request<B>> for HeaderFromTarget<H, S>
 where
     H: IntoHeaderName + Clone,
     S: tower::Service<http::Request<B>>,
@@ -133,10 +57,12 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         req.headers_mut()
             .insert(self.header.clone(), self.value.clone());

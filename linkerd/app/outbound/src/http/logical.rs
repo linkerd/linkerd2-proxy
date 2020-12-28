@@ -119,7 +119,7 @@ where
                 .into_inner(),
         ))
         .check_new_service::<Logical, http::Request<_>>()
-        .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+        .push(http::NewHeaderFromTarget::layer(CANONICAL_DST_HEADER))
         .push_on_response(
             svc::layers()
                 // Strips headers that may be set by this proxy.

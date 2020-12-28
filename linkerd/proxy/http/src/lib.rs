@@ -11,7 +11,7 @@ mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;
-pub mod header_from_target;
+mod header_from_target;
 pub mod insert;
 mod normalize_uri;
 pub mod orig_proto;
@@ -28,6 +28,7 @@ pub use self::{
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
+    header_from_target::NewHeaderFromTarget,
     normalize_uri::NewNormalizeUri,
     override_authority::{CanOverrideAuthority, NewOverrideAuthority},
     retain::Retain,
