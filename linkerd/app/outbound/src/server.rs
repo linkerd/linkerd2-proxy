@@ -187,7 +187,7 @@ where
     svc::stack(http_router)
         .push_on_response(
             svc::layers()
-                .box_http_request()
+                .push(http::boxed::BoxRequest::layer())
                 // Limits the number of in-flight requests.
                 .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                 // Eagerly fail requests when the proxy is out of capacity for a
@@ -203,7 +203,7 @@ where
                 .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push_failfast(dispatch_timeout)
                 .push_spawn_buffer(buffer_capacity)
-                .box_http_response(),
+                .push(http::boxed::BoxResponse::layer()),
         )
         .push(http::NewNormalizeUri::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))

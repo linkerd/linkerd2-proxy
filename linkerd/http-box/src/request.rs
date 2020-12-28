@@ -2,41 +2,18 @@
 
 use crate::BoxBody;
 use linkerd2_error::Error;
-use std::task::{Context, Poll};
+use linkerd2_stack::layer;
+use std::{
+    marker::PhantomData,
+    task::{Context, Poll},
+};
 
 #[derive(Debug)]
-pub struct Layer<B>(std::marker::PhantomData<fn(B)>);
+pub struct BoxRequest<S, B>(S, PhantomData<fn(B)>);
 
-#[derive(Debug)]
-pub struct BoxRequest<S, B>(S, std::marker::PhantomData<fn(B)>);
-
-impl<B> Default for Layer<B>
-where
-    B: http_body::Body + 'static,
-{
-    fn default() -> Self {
-        Layer(std::marker::PhantomData)
-    }
-}
-
-impl<B> Clone for Layer<B> {
-    fn clone(&self) -> Self {
-        Layer(self.0)
-    }
-}
-
-impl<S, B> tower::layer::Layer<S> for Layer<B>
-where
-    B: http_body::Body + 'static,
-    B::Data: Send + 'static,
-    B::Error: Into<Error>,
-    S: tower::Service<http::Request<BoxBody>>,
-    BoxRequest<S, B>: tower::Service<http::Request<B>>,
-{
-    type Service = BoxRequest<S, B>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        BoxRequest(inner, self.0)
+impl<S, B> BoxRequest<S, B> {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
+        layer::mk(|inner| BoxRequest(inner, PhantomData))
     }
 }
 
