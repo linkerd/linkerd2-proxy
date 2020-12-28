@@ -385,7 +385,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+            .push(http::NewNormalizeUri::layer())
             .push_map_target(|(_, accept): (_, TcpAccept)| accept)
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
