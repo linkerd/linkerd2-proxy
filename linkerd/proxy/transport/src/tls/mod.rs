@@ -4,10 +4,10 @@ use std::fmt;
 
 pub mod accept;
 pub mod client;
-pub mod conditional_accept;
+mod conditional_accept;
 
 pub use self::accept::DetectTls;
-pub use self::client::ConnectLayer;
+pub use self::client::Client;
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.

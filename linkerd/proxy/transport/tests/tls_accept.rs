@@ -11,7 +11,6 @@ use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_transport::tls::{
     self,
     accept::{self, DetectTls},
-    client::Connection as ClientConnection,
     Conditional,
 };
 use linkerd2_proxy_transport::{
@@ -112,7 +111,7 @@ fn run_test<C, CF, CR, S, SF, SR>(
 ) -> (Transported<CR>, Transported<SR>)
 where
     // Client
-    C: FnOnce(ClientConnection) -> CF + Clone + Send + 'static,
+    C: FnOnce(BoxedIo) -> CF + Clone + Send + 'static,
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
@@ -205,7 +204,7 @@ where
 
         let peer_identity = Some(client_target_name.clone());
         let client = async move {
-            let conn = tls::ConnectLayer::new(client_tls)
+            let conn = tls::Client::layer(client_tls)
                 .layer(connect::Connect::new(None))
                 .oneshot(Target(server_addr, client_target_name))
                 .await;
