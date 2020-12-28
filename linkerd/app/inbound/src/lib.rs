@@ -387,7 +387,7 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     // Downgrades the protocol if upgraded by an outbound proxy.
-                    .push(svc::layer::mk(orig_proto::Downgrade::new))
+                    .push(orig_proto::Downgrade::layer())
                     // Limits the number of in-flight requests.
                     .push_concurrency_limit(max_in_flight_requests)
                     // Eagerly fail requests when the proxy is out of capacity for a
