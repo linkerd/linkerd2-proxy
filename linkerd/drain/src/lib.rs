@@ -53,11 +53,8 @@ pub struct ReleaseShutdown(mpsc::Sender<Never>);
 // === impl Signal ===
 
 impl Signal {
-    /// Start the draining process.
-    ///
-    /// A signal is sent to all futures watching for the signal. A new future
-    /// is returned from this method that resolves when all watchers have
-    /// completed.
+    /// Asynchronously signals all watchers to begin draining and waits for all
+    /// handles to be dropped.
     pub async fn drain(mut self) {
         // Update the state of the signal watch so that all watchers are observe
         // the change.
