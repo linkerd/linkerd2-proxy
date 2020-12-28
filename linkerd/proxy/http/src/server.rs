@@ -8,7 +8,7 @@ use crate::{
 use linkerd2_drain as drain;
 use linkerd2_error::Error;
 use linkerd2_io::{self as io, PeerAddr, PrefixedIo};
-use linkerd2_stack::NewService;
+use linkerd2_stack::{layer, NewService};
 use std::{
     future::Future,
     pin::Pin,
@@ -37,8 +37,15 @@ pub struct ServeHttp<S> {
 // === impl NewServeHttp ===
 
 impl<N> NewServeHttp<N> {
+    pub fn layer(
+        h2: H2Settings,
+        drain: drain::Watch,
+    ) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self::new(h2, inner, drain.clone()))
+    }
+
     /// Creates a new `ServeHttp`.
-    pub fn new(h2: H2Settings, inner: N, drain: drain::Watch) -> Self {
+    fn new(h2: H2Settings, inner: N, drain: drain::Watch) -> Self {
         let mut server = hyper::server::conn::Http::new().with_executor(trace::Executor::new());
         server
             .http2_initial_stream_window_size(h2.initial_stream_window_size)

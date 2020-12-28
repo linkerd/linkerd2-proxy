@@ -75,7 +75,14 @@ where
             },
     } = config.clone();
 
-    let http = svc::stack(http)
+    let tcp = svc::stack(tcp)
+        .push_on_response(drain::Retain::layer(drain.clone()))
+        .push_map_target(tcp::Endpoint::from_accept(
+            tls::ReasonForNoPeerName::IngressNonHttp,
+        ))
+        .into_inner();
+
+    svc::stack(http)
         .check_new_service::<http::Logical, http::Request<_>>()
         .push_map_target(http::Logical::from)
         .push(profiles::discover::layer(
@@ -92,15 +99,13 @@ where
         .push_on_response(http::Retain::layer())
         .check_new_service::<Target, http::Request<_>>()
         .instrument(|t: &Target| info_span!("target", dst = %t.dst))
-        .push(svc::layer::mk(|inner| {
-            svc::stack::NewRouter::new(TargetPerRequest::accept, inner)
-        }))
+        .push(svc::NewRouter::layer(TargetPerRequest::accept))
         .check_new_service::<http::Accept, http::Request<_>>()
         .push_on_response(
             svc::layers()
                 .box_http_request()
                 // Limits the number of in-flight requests.
-                .push_concurrency_limit(max_in_flight_requests)
+                .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push_failfast(dispatch_timeout)
@@ -117,21 +122,12 @@ where
                 .box_http_response(),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
-        .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+        .push(http::NewNormalizeUri::layer())
         .check_new_service::<http::Accept, http::Request<_>>()
         .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
         .push_map_target(http::Accept::from)
         .check_new_service::<(http::Version, tcp::Accept), http::Request<_>>()
-        .into_inner();
-
-    let tcp = svc::stack(tcp)
-        .push_on_response(drain::Retain::layer(drain.clone()))
-        .push_map_target(tcp::Endpoint::from_accept(
-            tls::ReasonForNoPeerName::IngressNonHttp,
-        ))
-        .into_inner();
-
-    svc::stack(http::NewServeHttp::new(h2_settings, http, drain))
+        .push(http::NewServeHttp::layer(h2_settings, drain))
         .push(svc::stack::NewOptional::layer(tcp))
         .push_cache(cache_max_idle_age)
         .push(transport::NewDetectService::layer(
