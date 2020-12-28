@@ -109,7 +109,7 @@ impl Config {
             .push_make_thunk()
             .push_on_response(
                 svc::layers()
-                    .push(svc::layer::mk(tcp::Forward::new))
+                    .push(tcp::Forward::layer())
                     .push(drain::Retain::layer(drain.clone())),
             )
             .instrument(|_: &_| debug_span!("tcp"))
@@ -349,48 +349,6 @@ impl Config {
             ..
         } = self.proxy.clone();
 
-        // Handles requests as they are initially received by the proxy.
-        let http_admit_request = svc::layers()
-            // Downgrades the protocol if upgraded by an outbound proxy.
-            .push(svc::layer::mk(orig_proto::Downgrade::new))
-            // Limits the number of in-flight requests.
-            .push_concurrency_limit(max_in_flight_requests)
-            // Eagerly fail requests when the proxy is out of capacity for a
-            // dispatch_timeout.
-            .push_failfast(dispatch_timeout)
-            .push(metrics.http_errors)
-            // Synthesizes responses for proxy errors.
-            .push(errors::layer());
-
-        let http_server = svc::stack(http_router)
-            // Removes the override header after it has been used to
-            // determine a reuquest target.
-            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
-            // Routes each request to a target, obtains a service for that
-            // target, and dispatches the request.
-            .instrument_from_target()
-            .push(svc::layer::mk(|inner| {
-                svc::stack::NewRouter::new(RequestTarget::from, inner)
-            }))
-            .check_new_service::<TcpAccept, http::Request<_>>()
-            // Used by tap.
-            .push_http_insert_target()
-            .push_on_response(
-                svc::layers()
-                    .push(http_admit_request)
-                    .push(TraceContext::layer(span_sink.map(|span_sink| {
-                        SpanConverter::server(span_sink, trace_labels())
-                    })))
-                    .push(metrics.stack.layer(stack_labels("http", "server")))
-                    .box_http_request()
-                    .box_http_response(),
-            )
-            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
-            .push_map_target(|(_, accept): (_, TcpAccept)| accept)
-            .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
-            .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
-            .into_inner();
-
         // When HTTP detection fails, forward the connection to the application
         // as an opaque TCP stream.
         let tcp = svc::stack(tcp_forward.clone())
@@ -411,10 +369,43 @@ impl Config {
                         ),
                     )),
             )
-            .push_on_response(drain::Retain::layer(drain.clone()))
             .into_inner();
 
-        svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+        svc::stack(http_router)
+            // Removes the override header after it has been used to
+            // determine a reuquest target.
+            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+            // Routes each request to a target, obtains a service for that
+            // target, and dispatches the request.
+            .instrument_from_target()
+            .push(svc::NewRouter::layer(RequestTarget::from))
+            .check_new_service::<TcpAccept, http::Request<_>>()
+            // Used by tap.
+            .push_http_insert_target()
+            .push_on_response(
+                svc::layers()
+                    // Downgrades the protocol if upgraded by an outbound proxy.
+                    .push(orig_proto::Downgrade::layer())
+                    // Limits the number of in-flight requests.
+                    .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
+                    // Eagerly fail requests when the proxy is out of capacity for a
+                    // dispatch_timeout.
+                    .push_failfast(dispatch_timeout)
+                    .push(metrics.http_errors)
+                    // Synthesizes responses for proxy errors.
+                    .push(errors::layer())
+                    .push(TraceContext::layer(span_sink.map(|span_sink| {
+                        SpanConverter::server(span_sink, trace_labels())
+                    })))
+                    .push(metrics.stack.layer(stack_labels("http", "server")))
+                    .box_http_request()
+                    .box_http_response(),
+            )
+            .push(http::NewNormalizeUri::layer())
+            .push_map_target(|(_, accept): (_, TcpAccept)| accept)
+            .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
+            .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
+            .push(http::NewServeHttp::layer(h2_settings, drain))
             .push(svc::stack::NewOptional::layer(tcp))
             .push_cache(cache_max_idle_age)
             .push(transport::NewDetectService::layer(
