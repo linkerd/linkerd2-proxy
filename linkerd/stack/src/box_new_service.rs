@@ -1,4 +1,4 @@
-use crate::NewService;
+use crate::{layer, NewService};
 use dyn_clone::DynClone;
 use std::fmt;
 
@@ -21,6 +21,14 @@ where
 }
 
 impl<T, S> BoxNewService<T, S> {
+    pub fn layer<N>() -> impl layer::Layer<N, Service = Self> + Clone + Copy
+    where
+        N: NewService<T, Service = S> + Clone + Send + Sync + 'static,
+        S: Send + 'static,
+    {
+        layer::mk(Self::new)
+    }
+
     pub fn new<N>(inner: N) -> Self
     where
         N: NewService<T, Service = S> + Clone + Send + Sync + 'static,

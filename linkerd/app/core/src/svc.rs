@@ -5,7 +5,7 @@ use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 pub use linkerd2_concurrency_limit::ConcurrencyLimit;
-pub use linkerd2_stack::{self as stack, layer, NewRouter, NewService};
+pub use linkerd2_stack::{self as stack, layer, BoxNewService, NewRouter, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout::{self as timeout, FailFast};
 use std::{
@@ -225,14 +225,6 @@ impl<S> Stack<S> {
         self.push(layer::mk(|inner: S| {
             stack::MakeSwitch::new(switch.clone(), inner, other.clone())
         }))
-    }
-
-    pub fn box_new_service<T>(self) -> Stack<stack::BoxNewService<T, S::Service>>
-    where
-        S: NewService<T> + Clone + Send + Sync + 'static,
-        S::Service: Send + 'static,
-    {
-        self.push(layer::mk(stack::BoxNewService::new))
     }
 
     /// Validates that this stack serves T-typed targets.

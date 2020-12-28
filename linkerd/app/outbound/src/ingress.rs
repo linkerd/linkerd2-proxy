@@ -141,7 +141,7 @@ where
         .check_new_service::<listen::Addrs, I>()
         // Boxing is necessary purely to limit the link-time overhead of
         // having enormous types.
-        .box_new_service()
+        .push(svc::BoxNewService::layer())
         .into_inner()
 }
 
