@@ -17,7 +17,8 @@ use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::{net::SocketAddr, pin::Pin};
-use tokio::time::Duration;
+use tokio::{sync::mpsc, time::Duration};
+
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -73,7 +74,11 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build(self, log_level: trace::Handle) -> Result<App, Error> {
+    pub async fn build(
+        self,
+        shutdown_tx: mpsc::UnboundedSender<()>,
+        log_level: trace::Handle,
+    ) -> Result<App, Error> {
         use metrics::FmtMetrics;
 
         let Config {
@@ -118,7 +123,8 @@ impl Config {
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
-            info_span!("admin").in_scope(move || admin.build(identity, report, log_level, drain))?
+            info_span!("admin")
+                .in_scope(move || admin.build(identity, report, log_level, drain, shutdown_tx))?
         };
 
         let dst_addr = dst.addr.clone();

@@ -1,8 +1,5 @@
 use super::*;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::Poll;
-use std::thread;
+use std::{future::Future, pin::Pin, task::Poll, thread};
 use tracing_futures::Instrument;
 
 pub fn new() -> Proxy {
@@ -311,7 +308,11 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                     .build()
                     .expect("proxy")
                     .block_on(async move {
-                        let main = config.build(trace_handle).await.expect("config");
+                        let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
+                        let main = config
+                            .build(shutdown_tx, trace_handle)
+                            .await
+                            .expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
                         // the shutdown future is polled, that means all of the proxy is now
@@ -335,8 +336,13 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                         });
 
                         let drain = main.spawn();
-                        on_shutdown.await;
-                        debug!("after on_shutdown");
+
+                        tokio::select! {
+                            _ = on_shutdown => {
+                                debug!("after on_shutdown");
+                            }
+                            _ = shutdown_rx.recv() => {}
+                        }
 
                         drain.drain().await;
                         debug!("after drain");
