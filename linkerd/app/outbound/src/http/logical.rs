@@ -110,7 +110,7 @@ where
                 .push(metrics.http_route.into_layer::<classify::Response>())
                 // Sets the per-route response classifier as a request
                 // extension.
-                .push(classify::Layer::new())
+                .push(classify::NewClassify::layer())
                 .push_map_target(Logical::mk_route)
                 .into_inner(),
         ))

@@ -6,7 +6,7 @@ use futures::{
 use linkerd2_app_core::{
     errors::IdentityRequired,
     proxy::http::identity_from_header,
-    svc,
+    svc::{layer, NewService, Service},
     transport::tls::{self, HasPeerIdentity},
     Conditional, Error, L5D_REQUIRE_ID,
 };
@@ -26,18 +26,19 @@ pub(super) struct RequireIdentity<N> {
 
 // === impl NewRequireIdentity ===
 
-impl<N> NewRequireIdentity<N>
-where
-    N: svc::NewService<Endpoint>,
-{
-    pub fn new(inner: N) -> Self {
+impl<N> NewRequireIdentity<N> {
+    fn new(inner: N) -> Self {
         Self { inner }
+    }
+
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
+        layer::mk(Self::new)
     }
 }
 
-impl<N> svc::NewService<Endpoint> for NewRequireIdentity<N>
+impl<N> NewService<Endpoint> for NewRequireIdentity<N>
 where
-    N: svc::NewService<Endpoint>,
+    N: NewService<Endpoint>,
 {
     type Service = RequireIdentity<N::Service>;
 
@@ -56,9 +57,9 @@ where
 type ResponseFuture<F, T, E> =
     Either<future::Ready<Result<T, Error>>, future::MapErr<F, fn(E) -> Error>>;
 
-impl<S, A> svc::Service<http::Request<A>> for RequireIdentity<S>
+impl<S, A> Service<http::Request<A>> for RequireIdentity<S>
 where
-    S: svc::Service<http::Request<A>>,
+    S: Service<http::Request<A>>,
     S::Error: Into<Error>,
 {
     type Response = S::Response;

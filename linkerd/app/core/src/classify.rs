@@ -1,7 +1,7 @@
 use crate::profiles;
 use linkerd2_error::Error;
 use linkerd2_http_classify as classify;
-pub use linkerd2_http_classify::{CanClassify, Layer};
+pub use linkerd2_http_classify::{CanClassify, NewClassify};
 use linkerd2_proxy_http::HasH2Reason;
 use linkerd2_timeout::error::ResponseTimeout;
 use std::borrow::Cow;
