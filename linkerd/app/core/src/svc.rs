@@ -5,7 +5,7 @@ use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 pub use linkerd2_concurrency_limit::ConcurrencyLimit;
-pub use linkerd2_stack::{self as stack, layer,  BoxNewService, NewRouter, NewService};
+pub use linkerd2_stack::{self as stack, layer, BoxNewService, NewRouter, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
 use std::{
