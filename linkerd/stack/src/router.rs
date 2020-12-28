@@ -1,7 +1,8 @@
-use crate::NewService;
+use crate::{layer, NewService};
 use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 
+/// Determines the router key for each `T`-typed target.
 pub trait RecognizeRoute<T> {
     type Key: Clone;
 
@@ -10,7 +11,7 @@ pub trait RecognizeRoute<T> {
 
 #[derive(Clone, Debug)]
 pub struct NewRouter<T, N> {
-    new_recgonize: T,
+    new_recognize: T,
     inner: N,
 }
 
@@ -21,11 +22,22 @@ pub struct Router<T, N> {
 }
 
 impl<K, N> NewRouter<K, N> {
-    pub fn new(new_recgonize: K, inner: N) -> Self {
+    fn new(new_recognize: K, inner: N) -> Self {
         Self {
-            new_recgonize,
+            new_recognize,
             inner,
         }
+    }
+
+    /// Creates a layer that creates that produces Routers.
+    ///
+    /// The provided `new_recognize` is expected to implement a `NewService` that
+    /// produces `Recognize` implementations.
+    pub fn layer(new_recognize: K) -> impl layer::Layer<N, Service = Self> + Clone
+    where
+        K: Clone,
+    {
+        layer::mk(move |inner| Self::new(new_recognize.clone(), inner))
     }
 }
 
@@ -38,7 +50,7 @@ where
 
     fn new_service(&mut self, t: T) -> Self::Service {
         Router {
-            recognize: self.new_recgonize.new_service(t),
+            recognize: self.new_recognize.new_service(t),
             inner: self.inner.clone(),
         }
     }
