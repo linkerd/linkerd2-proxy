@@ -77,11 +77,7 @@ async fn http1_closes_idle_connections() {
         .route_fn("/", move |_req| {
             // Trigger a shutdown signal while the request is made
             // but a response isn't returned yet.
-            shdn.lock()
-                .unwrap()
-                .take()
-                .expect("only 1 request")
-                .drain();
+            shdn.lock().unwrap().take().expect("only 1 request").drain();
             Response::builder().body(body.clone()).unwrap()
         })
         .run()
