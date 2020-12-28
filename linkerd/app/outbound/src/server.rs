@@ -102,7 +102,7 @@ where
     svc::stack(stack)
         .push_on_response(
             svc::layers()
-                .push_failfast(config.dispatch_timeout)
+                .push(svc::FailFast::layer("Accept", config.dispatch_timeout))
                 .push_spawn_buffer(config.buffer_capacity),
         )
         .push_cache(config.cache_max_idle_age)
@@ -187,12 +187,12 @@ where
     svc::stack(http_router)
         .push_on_response(
             svc::layers()
-                .box_http_request()
+                .push(http::boxed::BoxRequest::layer())
                 // Limits the number of in-flight requests.
                 .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
-                .push_failfast(dispatch_timeout)
+                .push(svc::FailFast::layer("Server", dispatch_timeout))
                 .push(metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
@@ -201,9 +201,8 @@ where
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
-                .push_failfast(dispatch_timeout)
                 .push_spawn_buffer(buffer_capacity)
-                .box_http_response(),
+                .push(http::boxed::BoxResponse::layer()),
         )
         .push(http::NewNormalizeUri::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
@@ -219,7 +218,7 @@ where
                 .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
                 .push_on_response(
                     svc::layers()
-                        .push_failfast(dispatch_timeout)
+                        .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity)
                         .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
                 )

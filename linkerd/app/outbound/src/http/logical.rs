@@ -60,7 +60,7 @@ where
                         .stack
                         .layer(stack_labels("http", "balance.endpoint")),
                 )
-                .box_http_request(),
+                .push(http::boxed::BoxRequest::layer()),
         )
         .check_new_service::<Endpoint, http::Request<_>>()
         .push(resolve::layer(resolve, watchdog))
@@ -74,7 +74,7 @@ where
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 // If the balancer has been empty/unavailable for 10s, eagerly fail
                 // requests.
-                .push_failfast(dispatch_timeout)
+                .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                 .push(metrics.stack.layer(stack_labels("http", "concrete"))),
         )
         .into_new_service()
@@ -95,19 +95,23 @@ where
         // cloneable, as required by the retry middleware.
         .push_on_response(
             svc::layers()
-                .push_failfast(dispatch_timeout)
+                .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
         .check_new_service::<Logical, http::Request<_>>()
         .push(profiles::http::route_request::layer(
             svc::proxies()
-                .push(metrics.http_route_actual.into_layer::<classify::Response>())
+                .push(
+                    metrics
+                        .http_route_actual
+                        .to_layer::<classify::Response, _>(),
+                )
                 // Sets an optional retry policy.
                 .push(retry::layer(metrics.http_route_retry))
                 // Sets an optional request timeout.
                 .push(http::MakeTimeoutLayer::default())
                 // Records per-route metrics.
-                .push(metrics.http_route.into_layer::<classify::Response>())
+                .push(metrics.http_route.to_layer::<classify::Response, _>())
                 // Sets the per-route response classifier as a request
                 // extension.
                 .push(classify::NewClassify::layer())
@@ -115,19 +119,19 @@ where
                 .into_inner(),
         ))
         .check_new_service::<Logical, http::Request<_>>()
-        .push(http::header_from_target::layer(CANONICAL_DST_HEADER))
+        .push(http::NewHeaderFromTarget::layer(CANONICAL_DST_HEADER))
         .push_on_response(
             svc::layers()
                 // Strips headers that may be set by this proxy.
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                .push(svc::layers().box_http_response()),
+                .push(http::boxed::BoxResponse::layer()),
         )
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
         .check_new_service::<Logical, http::Request<_>>()
         .push_switch(
             Logical::should_resolve,
             svc::stack(endpoint)
-                .push_on_response(svc::layers().box_http_request())
+                .push_on_response(http::boxed::BoxRequest::layer())
                 .push_map_target(Endpoint::from_logical(
                     ReasonForNoPeerName::NotProvidedByServiceDiscovery,
                 ))

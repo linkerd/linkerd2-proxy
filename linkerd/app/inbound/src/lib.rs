@@ -228,7 +228,7 @@ impl Config {
             // Registers the stack to be tapped.
             .push(tap_layer)
             // Records metrics for each `Target`.
-            .push(metrics.http_endpoint.into_layer::<classify::Response>())
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(TraceContext::layer(
                 span_sink.map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
             ));
@@ -236,7 +236,7 @@ impl Config {
         let target = endpoint
             .push_map_target(HttpEndpoint::from)
             .push(observe)
-            .push_on_response(svc::layers().box_http_response())
+            .push_on_response(http::boxed::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
 
         // Attempts to discover a service profile for each logical target (as
@@ -245,7 +245,7 @@ impl Config {
         let profile = target
             .clone()
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
-            .push_on_response(svc::layers().box_http_request())
+            .push_on_response(http::boxed::BoxRequest::layer())
             // The target stack doesn't use the profile resolution, so drop it.
             .push_map_target(endpoint::Target::from)
             .push(profiles::http::route_request::layer(
@@ -254,7 +254,7 @@ impl Config {
                     // by tap.
                     .push_http_insert_target()
                     // Records per-route metrics.
-                    .push(metrics.http_route.into_layer::<classify::Response>())
+                    .push(metrics.http_route.to_layer::<classify::Response, _>())
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::NewClassify::layer())
@@ -267,7 +267,7 @@ impl Config {
                 profiles_client,
                 AllowProfile(allow_discovery),
             ))
-            .push_on_response(svc::layers().box_http_response())
+            .push_on_response(http::boxed::BoxResponse::layer())
             .instrument(|_: &Target| debug_span!("profile"))
             // Skip the profile stack if it takes too long to become ready.
             .push_when_unready(target.clone(), self.profile_idle_timeout)
@@ -280,7 +280,7 @@ impl Config {
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .push_on_response(
                 svc::layers()
-                    .push_failfast(dispatch_timeout)
+                    .push(svc::FailFast::layer("Logical", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity)
                     .push(metrics.stack.layer(stack_labels("http", "logical"))),
             )
@@ -288,7 +288,7 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::Retain::layer())
-                    .box_http_response(),
+                    .push(http::boxed::BoxResponse::layer()),
             )
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
@@ -390,7 +390,7 @@ impl Config {
                     .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                     // Eagerly fail requests when the proxy is out of capacity for a
                     // dispatch_timeout.
-                    .push_failfast(dispatch_timeout)
+                    .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                     .push(metrics.http_errors)
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
@@ -398,8 +398,8 @@ impl Config {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
                     .push(metrics.stack.layer(stack_labels("http", "server")))
-                    .box_http_request()
-                    .box_http_response(),
+                    .push(http::boxed::BoxRequest::layer())
+                    .push(http::boxed::BoxResponse::layer()),
             )
             .push(http::NewNormalizeUri::layer())
             .push_map_target(|(_, accept): (_, TcpAccept)| accept)

@@ -1,16 +1,19 @@
+mod report;
+mod service;
+
 use super::{LastUpdate, Registry, Report};
 use indexmap::IndexMap;
 use linkerd2_http_classify::ClassifyResponse;
 use linkerd2_metrics::{latency, Counter, FmtMetrics, Histogram};
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use linkerd2_stack::layer;
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
-mod layer;
-mod report;
-
-pub use self::layer::ResponseBody;
+pub use self::service::{NewHttpMetrics, ResponseBody};
 
 type SharedRegistry<T, C> = Arc<Mutex<Registry<T, Metrics<C>>>>;
 
@@ -60,11 +63,12 @@ impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
         Report::new(retain_idle, self.0)
     }
 
-    pub fn into_layer<L>(self) -> layer::Layer<T, L>
+    pub fn to_layer<L, N>(&self) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L>> + Clone
     where
         L: ClassifyResponse<Class = C> + Send + Sync + 'static,
     {
-        layer::Layer::new(self.0)
+        let reg = self.0.clone();
+        layer::mk(move |inner| NewHttpMetrics::new(reg.clone(), inner))
     }
 }
 

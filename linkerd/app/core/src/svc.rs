@@ -7,7 +7,7 @@ pub use linkerd2_buffer as buffer;
 pub use linkerd2_concurrency_limit::ConcurrencyLimit;
 pub use linkerd2_stack::{self as stack, layer, BoxNewService, NewRouter, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
-pub use linkerd2_timeout as timeout;
+pub use linkerd2_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,
@@ -78,11 +78,6 @@ impl<L> Layers<L> {
         self.push(buffer::SpawnBufferLayer::new(capacity))
     }
 
-    // Makes the service eagerly process and fail requests after the given timeout.
-    pub fn push_failfast(self, timeout: Duration) -> Layers<Pair<L, timeout::FailFastLayer>> {
-        self.push(timeout::FailFastLayer::new(timeout))
-    }
-
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
     }
@@ -96,17 +91,6 @@ impl<L> Layers<L> {
         map_response: R,
     ) -> Layers<Pair<L, stack::MapResponseLayer<R>>> {
         self.push(stack::MapResponseLayer::new(map_response))
-    }
-
-    pub fn box_http_request<B>(self) -> Layers<Pair<L, http::boxed::request::Layer<B>>>
-    where
-        B: hyper::body::HttpBody + 'static,
-    {
-        self.push(http::boxed::request::Layer::default())
-    }
-
-    pub fn box_http_response(self) -> Layers<Pair<L, http::boxed::response::Layer>> {
-        self.push(http::boxed::response::Layer::new())
     }
 
     pub fn push_oneshot(self) -> Layers<Pair<L, stack::OneshotLayer>> {
@@ -199,11 +183,6 @@ impl<S> Stack<S> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
 
-    // Makes the service eagerly process and fail requests after the given timeout.
-    pub fn push_failfast(self, timeout: Duration) -> Stack<timeout::FailFast<S>> {
-        self.push(timeout::FailFastLayer::new(timeout))
-    }
-
     pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
         self.push(stack::OneshotLayer::new())
     }
@@ -246,18 +225,6 @@ impl<S> Stack<S> {
         self.push(layer::mk(|inner: S| {
             stack::MakeSwitch::new(switch.clone(), inner, other.clone())
         }))
-    }
-
-    // pub fn box_http_request<B>(self) -> Stack<http::boxed::BoxRequest<S, B>>
-    // where
-    //     B: hyper::body::HttpBody<Data = http::boxed::Data, Error = Error> + 'static,
-    //     S: tower::Service<http::Request<http::boxed::BoxBody>>,
-    // {
-    //     self.push(http::boxed::request::Layer::new())
-    // }
-
-    pub fn box_http_response(self) -> Stack<http::boxed::BoxResponse<S>> {
-        self.push(http::boxed::response::Layer::new())
     }
 
     /// Validates that this stack serves T-typed targets.
