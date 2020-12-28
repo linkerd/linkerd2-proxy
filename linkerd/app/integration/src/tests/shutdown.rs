@@ -12,7 +12,7 @@ async fn h2_goaways_connections() {
 
     assert_eq!(client.get("/").await, "hello");
 
-    shdn.signal();
+    shdn.drain();
 
     client.wait_for_closed().await;
 }
@@ -45,7 +45,7 @@ async fn h2_exercise_goaways_connections() {
     let resps = future::try_join_all(reqs).await.expect("reqs");
 
     // Trigger a shutdown while bodies are still in progress.
-    shdn.signal();
+    shdn.drain();
 
     let bodies = resps
         .into_iter()
@@ -81,7 +81,7 @@ async fn http1_closes_idle_connections() {
                 .unwrap()
                 .take()
                 .expect("only 1 request")
-                .signal();
+                .drain();
             Response::builder().body(body.clone()).unwrap()
         })
         .run()
@@ -107,7 +107,7 @@ async fn tcp_waits_for_proxies_to_close() {
         // Trigger a shutdown while TCP stream is busy
         .accept_fut(move |mut sock| {
             async move {
-                shdn.signal();
+                shdn.drain();
                 let mut vec = vec![0; 256];
                 let n = sock.read(&mut vec).await?;
                 assert_eq!(&vec[..n], msg1.as_bytes());

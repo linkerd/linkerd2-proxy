@@ -58,7 +58,7 @@ impl Signal {
     /// A signal is sent to all futures watching for the signal. A new future
     /// is returned from this method that resolves when all watchers have
     /// completed.
-    pub async fn signal(mut self) {
+    pub async fn drain(mut self) {
         // Update the state of the signal watch so that all watchers are observe
         // the change.
         let _ = self.signal_tx.send(());
@@ -116,7 +116,6 @@ impl Watch {
 
 impl ReleaseShutdown {
     /// Releases shutdown after `future` completes.
-    #[inline]
     pub async fn release_after<F: Future>(self, future: F) -> F::Output {
         let res = future.await;
         drop(self.0);
@@ -196,7 +195,7 @@ mod tests {
         assert!(!notified1.load(SeqCst));
 
         // Signal draining and ensure that none of the futures have completed.
-        let mut drain = tokio::spawn(signal.signal());
+        let mut drain = tokio::spawn(signal.drain());
 
         tokio::select! {
             _ = &mut watch0 => panic!("Future terminated early"),
@@ -234,10 +233,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn signal() {
+    async fn drain() {
         let (signal, watch) = super::channel();
 
-        let drain = tokio::spawn(signal.signal());
+        let drain = tokio::spawn(signal.drain());
 
         let signaled = tokio::spawn(async move {
             let release = watch.signaled().await;

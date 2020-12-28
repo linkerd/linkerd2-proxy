@@ -315,7 +315,7 @@ impl Listening {
         let span = tracing::info_span!("join", controller = %self.name, addr = %self.addr);
         async move {
             tracing::debug!("shutting down...");
-            self.drain.signal().await;
+            self.drain.drain().await;
             tracing::debug!("drained!");
 
             tracing::debug!("waiting for task to complete...");

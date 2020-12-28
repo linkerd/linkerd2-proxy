@@ -252,7 +252,7 @@ fn run(
         .await;
 
         tracing::trace!("client task shutting down");
-        drain_tx.signal().await;
+        drain_tx.drain().await;
         tracing::trace!("client shutdown completed");
     };
     let task = tokio::spawn(work.instrument(span));
