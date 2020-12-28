@@ -280,7 +280,7 @@ impl Config {
             .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
             .push_on_response(
                 svc::layers()
-                    .push_failfast(dispatch_timeout)
+                    .push(svc::FailFast::layer("Logical", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity)
                     .push(metrics.stack.layer(stack_labels("http", "logical"))),
             )
@@ -390,7 +390,7 @@ impl Config {
                     .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                     // Eagerly fail requests when the proxy is out of capacity for a
                     // dispatch_timeout.
-                    .push_failfast(dispatch_timeout)
+                    .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                     .push(metrics.http_errors)
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
