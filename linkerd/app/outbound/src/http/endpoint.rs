@@ -60,7 +60,7 @@ where
             span_sink.map(|sink| SpanConverter::client(sink, crate::trace_labels())),
         ))
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
-        .push(svc::layer::mk(NewRequireIdentity::new))
+        .push(NewRequireIdentity::layer())
         .push(http::override_authority::Layer::new(vec![
             "host",
             CANONICAL_DST_HEADER,

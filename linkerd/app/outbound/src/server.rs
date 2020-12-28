@@ -174,7 +174,17 @@ where
         ..
     } = config.proxy.clone();
 
-    let http_server = svc::stack(http_router)
+    let tcp_forward = svc::stack(tcp_connect)
+        .push_make_thunk()
+        .push_on_response(tcp::Forward::layer())
+        .into_new_service()
+        .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
+        .push_map_target(tcp::Endpoint::from_logical(
+            tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+        ))
+        .into_inner();
+
+    svc::stack(http_router)
         .push_on_response(
             svc::layers()
                 .box_http_request()
@@ -195,22 +205,10 @@ where
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
         )
-        .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+        .push(http::NewNormalizeUri::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
-        .into_inner();
-
-    let tcp_forward = svc::stack(tcp_connect)
-        .push_make_thunk()
-        .push_on_response(svc::layer::mk(tcp::Forward::new))
-        .into_new_service()
-        .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
-        .push_map_target(tcp::Endpoint::from_logical(
-            tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
-        ))
-        .into_inner();
-
-    let http = svc::stack(http::NewServeHttp::new(h2_settings, http_server, drain))
+        .push(http::NewServeHttp::layer(h2_settings, drain))
         .push(svc::stack::NewOptional::layer(
             // When an HTTP version cannot be detected, we fallback to a logical
             // TCP stack. This service needs to be buffered so that it can be
@@ -235,9 +233,6 @@ where
                 http::DetectHttp::default(),
             ),
         ))
-        .into_inner();
-
-    svc::stack(http)
         .push_switch(
             SkipByProfile,
             // When the profile marks the target as opaque, we skip HTTP

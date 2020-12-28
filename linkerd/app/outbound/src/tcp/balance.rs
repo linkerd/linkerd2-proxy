@@ -56,7 +56,7 @@ where
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
                 ))
-                .push(svc::layer::mk(tcp::Forward::new))
+                .push(tcp::Forward::layer())
                 .push(drain::Retain::layer(drain)),
         )
         .into_new_service()
