@@ -1,9 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::layer::{Layer, NewProxy, Proxy};
-use linkerd2_error::Error;
+mod service;
 
-mod layer;
+pub use self::service::NewClassify;
+use linkerd2_error::Error;
 
 /// Determines how a request's response should be classified.
 pub trait Classify {

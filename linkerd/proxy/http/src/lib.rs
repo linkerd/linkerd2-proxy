@@ -4,7 +4,6 @@ use http::uri::Authority;
 use linkerd2_error::Error;
 use linkerd2_identity as identity;
 
-pub mod add_header;
 pub mod balance;
 pub mod client;
 pub mod client_handle;
@@ -12,11 +11,11 @@ mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;
-pub mod header_from_target;
+mod header_from_target;
 pub mod insert;
-pub mod normalize_uri;
+mod normalize_uri;
 pub mod orig_proto;
-pub mod override_authority;
+mod override_authority;
 mod retain;
 mod server;
 pub mod strip_header;
@@ -29,7 +28,9 @@ pub use self::{
     client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
-    override_authority::CanOverrideAuthority,
+    header_from_target::NewHeaderFromTarget,
+    normalize_uri::NewNormalizeUri,
+    override_authority::{CanOverrideAuthority, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,
     timeout::MakeTimeoutLayer,

@@ -632,7 +632,7 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "0.4.0"
-source = "git+https://github.com/hyperium/http-body?branch=master#5e434739e747c0b6611ec41020740b17f735d25a"
+source = "git+https://github.com/hyperium/http-body#5e434739e747c0b6611ec41020740b17f735d25a"
 dependencies = [
  "bytes 0.6.0",
  "http",
@@ -1070,6 +1070,7 @@ name = "linkerd2-concurrency-limit"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
+ "linkerd2-stack",
  "pin-project 0.4.22",
  "tokio 0.2.23",
  "tower",
@@ -1178,6 +1179,7 @@ dependencies = [
  "http",
  "http-body",
  "linkerd2-error",
+ "linkerd2-stack",
  "pin-project 0.4.22",
  "tower",
 ]

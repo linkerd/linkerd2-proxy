@@ -3,25 +3,15 @@
 use crate::BoxBody;
 use futures::{future, TryFutureExt};
 use linkerd2_error::Error;
+use linkerd2_stack::layer;
 use std::task::{Context, Poll};
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Layer(());
 
 #[derive(Clone, Debug)]
 pub struct BoxResponse<S>(S);
 
-impl Layer {
-    pub fn new() -> Self {
-        Layer(())
-    }
-}
-
-impl<S> tower::layer::Layer<S> for Layer {
-    type Service = BoxResponse<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        BoxResponse(inner)
+impl<S> BoxResponse<S> {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
+        layer::mk(Self)
     }
 }
 

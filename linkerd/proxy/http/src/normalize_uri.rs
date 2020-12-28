@@ -15,7 +15,7 @@
 //! * Otherwise, the target's address is used (as provided by the target).
 
 use super::h1;
-use linkerd2_stack::NewService;
+use linkerd2_stack::{layer, NewService};
 use std::{
     future::Future,
     net::SocketAddr,
@@ -26,7 +26,7 @@ use std::{
 use tracing::trace;
 
 #[derive(Clone, Debug)]
-pub struct MakeNormalizeUri<N> {
+pub struct NewNormalizeUri<N> {
     inner: N,
 }
 
@@ -36,15 +36,19 @@ pub struct NormalizeUri<S> {
     default: http::uri::Authority,
 }
 
-// === impl MakeNormalizeUri ===
+// === impl NewNormalizeUri ===
 
-impl<N> MakeNormalizeUri<N> {
-    pub fn new(inner: N) -> Self {
+impl<N> NewNormalizeUri<N> {
+    pub fn layer() -> impl layer::Layer<N, Service = Self> + Copy + Clone {
+        layer::mk(Self::new)
+    }
+
+    fn new(inner: N) -> Self {
         Self { inner }
     }
 }
 
-impl<T, N> NewService<T> for MakeNormalizeUri<N>
+impl<T, N> NewService<T> for NewNormalizeUri<N>
 where
     for<'t> &'t T: Into<SocketAddr>,
     N: NewService<T>,
@@ -60,7 +64,7 @@ where
 
 type MakeFuture<T, E> = Pin<Box<dyn Future<Output = Result<NormalizeUri<T>, E>> + Send + 'static>>;
 
-impl<M, T> tower::Service<T> for MakeNormalizeUri<M>
+impl<M, T> tower::Service<T> for NewNormalizeUri<M>
 where
     for<'t> &'t T: Into<SocketAddr>,
     M: tower::Service<T>,

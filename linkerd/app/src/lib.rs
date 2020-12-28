@@ -12,12 +12,13 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, metrics, trace};
-use linkerd2_app_core::{control::ControlAddr, dns, drain, serve, svc, Error};
+use linkerd2_app_core::{control::ControlAddr, dns, drain, proxy::http, serve, svc, Error};
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
 use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
+
 use tracing::{debug, error, info, info_span};
 use tracing_futures::Instrument;
 
@@ -222,7 +223,7 @@ impl Config {
                         inbound_addr,
                         local_identity,
                         svc::stack(http_gateway)
-                            .push_on_response(svc::layers().box_http_request())
+                            .push_on_response(http::boxed::BoxRequest::layer())
                             .into_inner(),
                         dst.profiles,
                         tap_layer,

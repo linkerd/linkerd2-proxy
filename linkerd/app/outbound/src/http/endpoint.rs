@@ -55,17 +55,17 @@ where
         }))
         .check_new::<Endpoint>()
         .push(tap_layer)
-        .push(metrics.http_endpoint.into_layer::<classify::Response>())
+        .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
         .push_on_response(TraceContext::layer(
             span_sink.map(|sink| SpanConverter::client(sink, crate::trace_labels())),
         ))
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
-        .push(svc::layer::mk(NewRequireIdentity::new))
-        .push(http::override_authority::Layer::new(vec![
+        .push(NewRequireIdentity::layer())
+        .push(http::NewOverrideAuthority::layer(vec![
             "host",
             CANONICAL_DST_HEADER,
         ]))
-        .push_on_response(svc::layers().box_http_response())
+        .push_on_response(http::boxed::BoxResponse::layer())
         .check_new::<Endpoint>()
         .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
         .into_inner()

@@ -1,15 +1,18 @@
-use crate::io::BoxedIo;
-use futures::TryFuture;
-use linkerd2_conditional::Conditional;
+use super::Conditional;
+use crate::io::{self, BoxedIo};
+use futures::{
+    future::{Either, MapOk},
+    prelude::*,
+};
 use linkerd2_identity as identity;
-use pin_project::pin_project;
+use linkerd2_stack::layer;
 pub use rustls::ClientConfig as Config;
-use std::future::Future;
-use std::io;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use tokio::net::TcpStream;
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tracing::{debug, trace};
 
 pub trait HasConfig {
@@ -17,125 +20,65 @@ pub trait HasConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ConnectLayer<L>(super::Conditional<L>);
-
-#[derive(Clone, Debug)]
-pub struct Connect<L, C> {
-    local: super::Conditional<L>,
+pub struct Client<L, C> {
+    local: Conditional<L>,
     inner: C,
 }
 
-pub type Connection = BoxedIo;
+type Connect<F, I> = MapOk<F, fn(I) -> BoxedIo>;
+type Handshake = Pin<Box<dyn Future<Output = io::Result<BoxedIo>> + Send + 'static>>;
 
-/// A socket that is in the process of connecting.
-#[pin_project]
-pub struct ConnectFuture<L, F: TryFuture> {
-    #[pin]
-    state: ConnectState<L, F>,
-}
-#[pin_project(project = ConnectStateProj)]
-enum ConnectState<L, F: TryFuture> {
-    Init {
-        #[pin]
-        future: F,
-        tls: super::Conditional<(identity::Name, L)>,
-    },
-    Handshake(#[pin] tokio_rustls::Connect<F::Ok>),
-}
+// === impl Client ===
 
-// === impl ConnectLayer ===
-
-impl<L> ConnectLayer<L> {
-    pub fn new(l: super::Conditional<L>) -> ConnectLayer<L> {
-        ConnectLayer(l)
-    }
-}
-
-impl<L: Clone, C> tower::layer::Layer<C> for ConnectLayer<L> {
-    type Service = Connect<L, C>;
-
-    fn layer(&self, inner: C) -> Self::Service {
-        Connect {
-            local: self.0.clone(),
+impl<L: Clone, C> Client<L, C> {
+    pub fn layer(local: Conditional<L>) -> impl layer::Layer<C, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
             inner,
-        }
+            local: local.clone(),
+        })
     }
 }
 
-// === impl Connect ===
-
-/// impl MakeConnection
-impl<L, C, T> tower::Service<T> for Connect<L, C>
+impl<L, C, T> tower::Service<T> for Client<L, C>
 where
     T: super::HasPeerIdentity,
     L: HasConfig + Clone,
-    C: tower::Service<T, Response = TcpStream>,
+    C: tower::Service<T, Error = io::Error>,
+    C::Response: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     C::Future: Send + 'static,
-    C::Error: ::std::error::Error + Send + Sync + 'static,
-    C::Error: From<io::Error>,
 {
-    type Response = Connection;
-    type Error = C::Error;
-    type Future = ConnectFuture<L, C::Future>;
+    type Response = BoxedIo;
+    type Error = io::Error;
+    type Future = Either<Connect<C::Future, C::Response>, Handshake>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let peer_identity = target.peer_identity();
-        debug!(peer.identity = ?peer_identity);
-        let tls = self
-            .local
-            .clone()
-            .and_then(|l| peer_identity.map(|n| (n, l)));
-        ConnectFuture {
-            state: ConnectState::Init {
-                future: self.inner.call(target),
-                tls,
-            },
-        }
-    }
-}
+        let tls = match self.local.clone() {
+            Conditional::Some(l) => tokio_rustls::TlsConnector::from(l.tls_client_config()),
+            Conditional::None(reason) => {
+                trace!(%reason, "Local identity disabled");
+                return Either::Left(self.inner.call(target).map_ok(BoxedIo::new));
+            }
+        };
+        let peer_identity = match target.peer_identity() {
+            Conditional::Some(id) => id,
+            Conditional::None(reason) => {
+                debug!(%reason, "Peer does not support TLS");
+                return Either::Left(self.inner.call(target).map_ok(BoxedIo::new));
+            }
+        };
 
-// ===== impl ConnectFuture =====
-
-impl<L, F> Future for ConnectFuture<L, F>
-where
-    L: HasConfig,
-    F: TryFuture<Ok = TcpStream>,
-    F::Error: From<io::Error>,
-{
-    type Output = Result<Connection, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
-        loop {
-            match this.state.as_mut().project() {
-                ConnectStateProj::Init { future, tls } => {
-                    let io = futures::ready!(future.try_poll(cx))?;
-
-                    match tls {
-                        Conditional::Some((peer_identity, local_tls)) => {
-                            trace!(peer.id = %peer_identity, "initiating TLS");
-                            let handshake =
-                                tokio_rustls::TlsConnector::from(local_tls.tls_client_config())
-                                    .connect(peer_identity.as_dns_name_ref(), io);
-                            this.state.set(ConnectState::Handshake(handshake));
-                        }
-                        Conditional::None(reason) => {
-                            trace!(%reason, "skipping TLS");
-                            return Poll::Ready(Ok(Connection::new(io)));
-                        }
-                    }
-                }
-                ConnectStateProj::Handshake(fut) => {
-                    let io = futures::ready!(fut.poll(cx))?;
-                    trace!("established TLS");
-                    return Poll::Ready(Ok(Connection::new(io)));
-                }
-            };
-        }
+        debug!(peer.identity = ?peer_identity, "Initiating TLS connection");
+        let connect = self.inner.call(target);
+        Either::Right(Box::pin(async move {
+            let io = connect.await?;
+            let io = tls.connect(peer_identity.as_dns_name_ref(), io).await?;
+            Ok(BoxedIo::new(io))
+        }))
     }
 }
 

@@ -13,35 +13,23 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-/// A stack module that wraps services to record metrics.
-#[derive(Debug)]
-pub struct Layer<K, C>
-where
-    K: Hash + Eq,
-    C: ClassifyResponse,
-    C::Class: Hash + Eq,
-{
-    registry: SharedRegistry<K, C::Class>,
-    _p: PhantomData<fn() -> C>,
-}
-
 /// Wraps services to record metrics.
 #[derive(Debug)]
-pub struct MakeSvc<M, K, C>
+pub struct NewHttpMetrics<N, K, C>
 where
     K: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
     registry: SharedRegistry<K, C::Class>,
-    inner: M,
+    inner: N,
     _p: PhantomData<fn() -> C>,
 }
 
 /// A middleware that records HTTP metrics.
 #[pin_project]
 #[derive(Debug)]
-pub struct Service<S, C>
+pub struct HttpMetrics<S, C>
 where
     C: ClassifyResponse,
     C::Class: Hash + Eq,
@@ -94,58 +82,26 @@ where
     inner: B,
 }
 
-// === impl Layer ===
+// === impl NewHttpMetrics ===
 
-impl<K, C> Layer<K, C>
+impl<N, K, C> NewHttpMetrics<N, K, C>
 where
     K: Hash + Eq,
-    C: ClassifyResponse + Send + Sync + 'static,
+    C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    pub(super) fn new(registry: SharedRegistry<K, C::Class>) -> Self {
-        Layer {
+    pub(crate) fn new(registry: SharedRegistry<K, C::Class>, inner: N) -> Self {
+        Self {
+            inner,
             registry,
             _p: PhantomData,
         }
     }
 }
 
-impl<K, C> Clone for Layer<K, C>
+impl<N, K, C> Clone for NewHttpMetrics<N, K, C>
 where
-    K: Hash + Eq,
-    C: ClassifyResponse + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    fn clone(&self) -> Self {
-        Self {
-            registry: self.registry.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<M, K, C> tower::layer::Layer<M> for Layer<K, C>
-where
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    type Service = MakeSvc<M, K, C>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeSvc {
-            inner,
-            registry: self.registry.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-// === impl MakeSvc ===
-
-impl<M, K, C> Clone for MakeSvc<M, K, C>
-where
-    M: Clone,
+    N: Clone,
     K: Clone + Hash + Eq,
     C: ClassifyResponse + Send + Sync + 'static,
     C::Class: Hash + Eq,
@@ -159,15 +115,15 @@ where
     }
 }
 
-impl<T, M, K, C> NewService<T> for MakeSvc<M, K, C>
+impl<T, N, K, C> NewService<T> for NewHttpMetrics<N, K, C>
 where
     for<'t> &'t T: Into<K>,
     K: Hash + Eq,
-    M: NewService<T>,
+    N: NewService<T>,
     C: ClassifyResponse + Default + Send + Sync + 'static,
     C::Class: Hash + Eq,
 {
-    type Service = Service<M::Service, C>;
+    type Service = HttpMetrics<N::Service, C>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let metrics = match self.registry.lock() {
@@ -181,7 +137,7 @@ where
 
         let inner = self.inner.new_service(target);
 
-        Self::Service {
+        HttpMetrics {
             inner,
             metrics,
             _p: PhantomData,
@@ -189,61 +145,9 @@ where
     }
 }
 
-impl<T, M, K, C> tower::Service<T> for MakeSvc<M, K, C>
-where
-    for<'t> &'t T: Into<K>,
-    K: Hash + Eq,
-    M: tower::Service<T>,
-    C: ClassifyResponse + Default + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    type Response = Service<M::Response, C>;
-    type Error = M::Error;
-    type Future = Service<M::Future, C>;
+// === impl HttpMetrics ===
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(r.entry((&target).into()).or_default().clone()),
-            Err(_) => None,
-        };
-
-        let inner = self.inner.call(target);
-
-        Self::Future {
-            inner,
-            metrics,
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<F, C> std::future::Future for Service<F, C>
-where
-    F: TryFuture,
-    C: ClassifyResponse + Default + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    type Output = Result<Service<F::Ok, C>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let inner = ready!(this.inner.try_poll(cx))?;
-        let service = Service {
-            inner,
-            metrics: this.metrics.clone(),
-            _p: PhantomData,
-        };
-        Poll::Ready(Ok(service))
-    }
-}
-
-// === impl Metrics ===
-
-impl<S, C> Clone for Service<S, C>
+impl<S, C> Clone for HttpMetrics<S, C>
 where
     S: Clone,
     C: ClassifyResponse + Clone + Default + Send + Sync + 'static,
@@ -258,7 +162,7 @@ where
     }
 }
 
-impl<C, P, S, A, B> Proxy<http::Request<A>, S> for Service<P, C>
+impl<C, P, S, A, B> Proxy<http::Request<A>, S> for HttpMetrics<P, C>
 where
     P: Proxy<http::Request<RequestBody<A, C::Class>>, S, Response = http::Response<B>>,
     S: tower::Service<P::Request>,
@@ -305,7 +209,7 @@ where
     }
 }
 
-impl<C, S, A, B> tower::Service<http::Request<A>> for Service<S, C>
+impl<C, S, A, B> tower::Service<http::Request<A>> for HttpMetrics<S, C>
 where
     S: tower::Service<http::Request<RequestBody<A, C::Class>>, Response = http::Response<B>>,
     S::Error: Into<Error>,

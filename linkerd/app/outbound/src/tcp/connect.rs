@@ -27,7 +27,7 @@ pub fn stack<P>(
        + Send {
     svc::connect(config.keepalive)
         // Initiates mTLS if the target is configured with identity.
-        .push(tls::client::ConnectLayer::new(local_identity))
+        .push(tls::Client::layer(local_identity))
         // If the endpoint has an opaque transport hint, this layer ensures the
         // transport header is written on the connection as soon as the
         // connection is established.
@@ -59,7 +59,7 @@ where
 {
     svc::stack(connect)
         .push_make_thunk()
-        .push_on_response(svc::layer::mk(super::Forward::new))
+        .push_on_response(super::Forward::layer())
         .instrument(|_: &Endpoint<P>| debug_span!("tcp.forward"))
         .check_new_service::<Endpoint<P>, I>()
         .into_inner()
