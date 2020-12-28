@@ -109,7 +109,7 @@ impl Config {
             .push_make_thunk()
             .push_on_response(
                 svc::layers()
-                    .push(svc::layer::mk(tcp::Forward::new))
+                    .push(tcp::Forward::layer())
                     .push(drain::Retain::layer(drain.clone())),
             )
             .instrument(|_: &_| debug_span!("tcp"))
@@ -403,7 +403,7 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+            .push(http::NewNormalizeUri::layer())
             .push_map_target(|(_, accept): (_, TcpAccept)| accept)
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()

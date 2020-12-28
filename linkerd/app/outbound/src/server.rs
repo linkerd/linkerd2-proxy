@@ -176,7 +176,7 @@ where
 
     let tcp_forward = svc::stack(tcp_connect)
         .push_make_thunk()
-        .push_on_response(svc::layer::mk(tcp::Forward::new))
+        .push_on_response(tcp::Forward::layer())
         .into_new_service()
         .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
         .push_map_target(tcp::Endpoint::from_logical(
@@ -205,7 +205,7 @@ where
                 .push_spawn_buffer(buffer_capacity)
                 .box_http_response(),
         )
-        .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+        .push(http::NewNormalizeUri::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .push(http::NewServeHttp::layer(h2_settings, drain))
