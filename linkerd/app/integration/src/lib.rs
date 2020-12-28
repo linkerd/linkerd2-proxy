@@ -260,7 +260,7 @@ pub async fn cancelable<E: Send + 'static>(
 ) -> Result<(), E> {
     tokio::select! {
         res = f => res,
-        _ = drain.signal() => {
+        _ = drain.signaled() => {
             tracing::debug!("canceled!");
             Ok(())
         }

@@ -174,7 +174,7 @@ impl Config {
                             oc_span_sink.clone(),
                             drain_rx.clone(),
                         ),
-                        drain_rx.clone().signal(),
+                        drain_rx.clone().signaled(),
                     )
                     .map_err(|e| panic!("outbound failed: {}", e))
                     .instrument(span.clone()),
@@ -193,7 +193,7 @@ impl Config {
                             oc_span_sink.clone(),
                             drain_rx.clone(),
                         ),
-                        drain_rx.clone().signal(),
+                        drain_rx.clone().signaled(),
                     )
                     .map_err(|e| panic!("outbound failed: {}", e))
                     .instrument(span.clone()),
@@ -225,7 +225,7 @@ impl Config {
                         oc_span_sink,
                         drain_rx.clone(),
                     ),
-                    drain_rx.signal(),
+                    drain_rx.signaled(),
                 )
                 .map_err(|e| panic!("inbound failed: {}", e))
                 .instrument(span.clone()),

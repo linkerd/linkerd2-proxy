@@ -27,9 +27,8 @@ linkerd2-cache = { path = "../../cache" }
 linkerd2-buffer = { path = "../../buffer" }
 linkerd2-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd2-conditional = { path = "../../conditional" }
-linkerd2-opaque-transport = { path = "../../opaque-transport" }
 linkerd2-dns = { path = "../../dns" }
-linkerd2-drain = { path = "../../drain" }
+linkerd2-drain = { path = "../../drain", features = ["retain"] }
 linkerd2-duplex = { path = "../../duplex" }
 linkerd2-errno = { path = "../../errno" }
 linkerd2-error = { path = "../../error" }
@@ -39,6 +38,7 @@ linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-http-classify = { path = "../../http-classify" }
 linkerd2-http-metrics = { path = "../../http-metrics" }
 linkerd2-metrics = { path = "../../metrics" }
+linkerd2-opaque-transport = { path = "../../opaque-transport" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.16" }

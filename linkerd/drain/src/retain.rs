@@ -42,7 +42,7 @@ where
         Box::pin(
             self.drain
                 .clone()
-                .ignore_signal()
+                .ignore_signaled()
                 .release_after(self.inner.call(req)),
         )
     }

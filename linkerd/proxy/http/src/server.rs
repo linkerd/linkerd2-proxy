@@ -134,7 +134,7 @@ where
                             debug!(?res, "The client is shutting down the connection");
                             res?
                         }
-                        shutdown = drain.signal() => {
+                        shutdown = drain.signaled() => {
                             debug!("The process is shutting down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             shutdown.release_after(conn).await?;
@@ -155,7 +155,7 @@ where
                             debug!(?res, "The client is shutting down the connection");
                             res?
                         }
-                        shutdown = drain.signal() => {
+                        shutdown = drain.signaled() => {
                             debug!("The process is shutting down the connection");
                             Pin::new(&mut conn).graceful_shutdown();
                             shutdown.release_after(conn).await?;
