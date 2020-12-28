@@ -4,8 +4,8 @@ pub use crate::proxy::http;
 use crate::transport::Connect;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
-use linkerd2_concurrency_limit as concurrency_limit;
-pub use linkerd2_stack::{self as stack, layer, BoxNewService, NewService};
+pub use linkerd2_concurrency_limit::ConcurrencyLimit;
+pub use linkerd2_stack::{self as stack, layer,  BoxNewService, NewRouter, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout as timeout;
 use std::{
@@ -85,10 +85,6 @@ impl<L> Layers<L> {
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
-    }
-
-    pub fn push_concurrency_limit(self, max: usize) -> Layers<Pair<L, concurrency_limit::Layer>> {
-        self.push(concurrency_limit::Layer::new(max))
     }
 
     pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
@@ -197,13 +193,6 @@ impl<S> Stack<S> {
     /// `L`-typed layer on each service produced by `S`.
     pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
         self.push(stack::OnResponseLayer::new(layer))
-    }
-
-    pub fn push_concurrency_limit(
-        self,
-        max: usize,
-    ) -> Stack<concurrency_limit::ConcurrencyLimit<S>> {
-        self.push(concurrency_limit::Layer::new(max))
     }
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
@@ -395,84 +384,5 @@ where
 
     fn call(&mut self, t: T) -> Self::Future {
         self.0.call(t)
-    }
-}
-
-pub mod make_response {
-    use super::Oneshot;
-    use crate::Error;
-    use futures::TryFuture;
-    use pin_project::pin_project;
-    use std::future::Future;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-    #[derive(Copy, Clone, Debug)]
-    pub struct Layer;
-
-    #[derive(Clone, Debug)]
-    pub struct MakeResponse<M>(M);
-
-    #[pin_project]
-    pub struct ResponseFuture<F, S: tower::Service<()>> {
-        #[pin]
-        state: State<F, S>,
-    }
-
-    #[pin_project(project = StateProj)]
-    enum State<F, S: tower::Service<()>> {
-        Make(#[pin] F),
-        Respond(#[pin] Oneshot<S, ()>),
-    }
-
-    impl<S> super::Layer<S> for Layer {
-        type Service = MakeResponse<S>;
-
-        fn layer(&self, inner: S) -> Self::Service {
-            MakeResponse(inner)
-        }
-    }
-
-    impl<T, M> tower::Service<T> for MakeResponse<M>
-    where
-        M: tower::make::MakeService<T, ()>,
-        M::MakeError: Into<Error>,
-        M::Error: Into<Error>,
-    {
-        type Response = M::Response;
-        type Error = Error;
-        type Future = ResponseFuture<M::Future, M::Service>;
-
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            self.0.poll_ready(cx).map_err(Into::into)
-        }
-
-        fn call(&mut self, req: T) -> Self::Future {
-            ResponseFuture {
-                state: State::Make(self.0.make_service(req)),
-            }
-        }
-    }
-
-    impl<F, S> Future for ResponseFuture<F, S>
-    where
-        F: TryFuture<Ok = S>,
-        F::Error: Into<Error>,
-        S: tower::Service<()>,
-        S::Error: Into<Error>,
-    {
-        type Output = Result<S::Response, Error>;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let mut this = self.project();
-            loop {
-                match this.state.as_mut().project() {
-                    StateProj::Make(fut) => {
-                        let svc = futures::ready!(fut.try_poll(cx)).map_err(Into::into)?;
-                        this.state.set(State::Respond(Oneshot::new(svc, ())))
-                    }
-                    StateProj::Respond(fut) => return fut.poll(cx).map_err(Into::into),
-                }
-            }
-        }
     }
 }

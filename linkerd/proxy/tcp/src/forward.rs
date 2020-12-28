@@ -1,6 +1,7 @@
 use futures::prelude::*;
 use linkerd2_duplex::Duplex;
 use linkerd2_error::Error;
+use linkerd2_stack::layer;
 use std::{
     future::Future,
     pin::Pin,
@@ -14,9 +15,13 @@ pub struct Forward<C> {
     connect: C,
 }
 
-impl<M> Forward<M> {
-    pub fn new(connect: M) -> Self {
+impl<C> Forward<C> {
+    fn new(connect: C) -> Self {
         Self { connect }
+    }
+
+    pub fn layer() -> impl layer::Layer<C, Service = Self> + Clone + Copy {
+        layer::mk(Self::new)
     }
 }
 
