@@ -16,7 +16,7 @@ use tower::layer::util::{Identity, Stack as Pair};
 pub use tower::layer::Layer;
 pub use tower::make::MakeService;
 pub use tower::spawn_ready::SpawnReady;
-pub use tower::util::{Either, Oneshot};
+pub use tower::util::Either;
 pub use tower::{service_fn as mk, Service, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -91,10 +91,6 @@ impl<L> Layers<L> {
         map_response: R,
     ) -> Layers<Pair<L, stack::MapResponseLayer<R>>> {
         self.push(stack::MapResponseLayer::new(map_response))
-    }
-
-    pub fn push_oneshot(self) -> Layers<Pair<L, stack::OneshotLayer>> {
-        self.push(stack::OneshotLayer::new())
     }
 
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
@@ -181,10 +177,6 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
-    }
-
-    pub fn push_oneshot(self) -> Stack<stack::Oneshot<S>> {
-        self.push(stack::OneshotLayer::new())
     }
 
     pub fn push_map_response<R: Clone>(self, map_response: R) -> Stack<stack::MapResponse<S, R>> {
