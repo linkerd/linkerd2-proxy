@@ -82,10 +82,6 @@ impl<L> Layers<L> {
         self.push(stack::OnResponseLayer::new(layer))
     }
 
-    pub fn push_make_ready<Req>(self) -> Layers<Pair<L, stack::MakeReadyLayer<Req>>> {
-        self.push(stack::MakeReadyLayer::default())
-    }
-
     pub fn push_map_response<R: Clone>(
         self,
         map_response: R,
@@ -155,10 +151,6 @@ impl<S> Stack<S> {
         S: NewService<T>,
     {
         Stack(stack::new_service::IntoMakeService::new(self.0))
-    }
-
-    pub fn push_make_ready<Req>(self) -> Stack<stack::MakeReady<S, Req>> {
-        self.push(stack::MakeReadyLayer::default())
     }
 
     /// Buffer requests when when the next layer is out of capacity.
