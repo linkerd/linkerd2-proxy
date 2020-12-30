@@ -46,8 +46,8 @@ where
     C::Future: Unpin + Send,
     H: svc::NewService<http::Logical, Service = S> + Unpin + Clone + Send + Sync + 'static,
     S: tower::Service<
-            http::Request<http::boxed::BoxBody>,
-            Response = http::Response<http::boxed::BoxBody>,
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
             Error = Error,
         > + Send
         + 'static,
@@ -154,8 +154,8 @@ where
     <TSvc as tower::Service<transport::metrics::SensorIo<I>>>::Future: Unpin + Send + 'static,
     H: svc::NewService<http::Logical, Service = HSvc> + Unpin + Clone + Send + Sync + 'static,
     HSvc: tower::Service<
-            http::Request<http::boxed::BoxBody>,
-            Response = http::Response<http::boxed::BoxBody>,
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
             Error = Error,
         > + Send
         + 'static,
@@ -187,7 +187,7 @@ where
     svc::stack(http_router)
         .push_on_response(
             svc::layers()
-                .push(http::boxed::BoxRequest::layer())
+                .push(http::BoxRequest::layer())
                 // Limits the number of in-flight requests.
                 .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                 // Eagerly fail requests when the proxy is out of capacity for a
@@ -202,7 +202,7 @@ where
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push_spawn_buffer(buffer_capacity)
-                .push(http::boxed::BoxResponse::layer()),
+                .push(http::BoxResponse::layer()),
         )
         .push(http::NewNormalizeUri::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))

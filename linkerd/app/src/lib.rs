@@ -223,7 +223,7 @@ impl Config {
                         inbound_addr,
                         local_identity,
                         svc::stack(http_gateway)
-                            .push_on_response(http::boxed::BoxRequest::layer())
+                            .push_on_response(http::BoxRequest::layer())
                             .into_inner(),
                         dst.profiles,
                         tap_layer,

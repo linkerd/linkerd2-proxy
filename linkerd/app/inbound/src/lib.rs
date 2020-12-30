@@ -80,10 +80,8 @@ impl Config {
            + 'static
     where
         L: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
-        S: tower::Service<
-                http::Request<http::boxed::BoxBody>,
-                Response = http::Response<http::boxed::BoxBody>,
-            > + Unpin
+        S: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Unpin
             + Send
             + 'static,
         S::Error: Into<Error>,
@@ -167,8 +165,8 @@ impl Config {
     ) -> impl svc::NewService<
         Target,
         Service = impl tower::Service<
-            http::Request<http::boxed::BoxBody>,
-            Response = http::Response<http::boxed::BoxBody>,
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
             Error = Error,
             Future = impl Send,
         > + Clone
@@ -188,10 +186,8 @@ impl Config {
         P::Error: Send,
         // The loopback router processes requests sent to the inbound port.
         L: svc::NewService<Target, Service = S> + Unpin + Send + Clone + Sync + 'static,
-        S: tower::Service<
-                http::Request<http::boxed::BoxBody>,
-                Response = http::Response<http::boxed::BoxBody>,
-            > + Unpin
+        S: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Unpin
             + Send
             + 'static,
         S::Error: Into<Error>,
@@ -236,7 +232,7 @@ impl Config {
         let target = endpoint
             .push_map_target(HttpEndpoint::from)
             .push(observe)
-            .push_on_response(http::boxed::BoxResponse::layer())
+            .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
 
         // Attempts to discover a service profile for each logical target (as
@@ -244,8 +240,8 @@ impl Config {
         // request has not been received for `cache_max_idle_age`.
         let profile = target
             .clone()
-            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
-            .push_on_response(http::boxed::BoxRequest::layer())
+            .check_new_service::<Target, http::Request<http::BoxBody>>()
+            .push_on_response(http::BoxRequest::layer())
             // The target stack doesn't use the profile resolution, so drop it.
             .push_map_target(endpoint::Target::from)
             .push(profiles::http::route_request::layer(
@@ -267,17 +263,17 @@ impl Config {
                 profiles_client,
                 AllowProfile(allow_discovery),
             ))
-            .push_on_response(http::boxed::BoxResponse::layer())
+            .push_on_response(http::BoxResponse::layer())
             .instrument(|_: &Target| debug_span!("profile"))
             // Skip the profile stack if it takes too long to become ready.
             .push_when_unready(target.clone(), self.profile_idle_timeout)
-            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>();
+            .check_new_service::<Target, http::Request<http::BoxBody>>();
 
         // If the traffic is targeted at the inbound port, send it through
         // the loopback service (i.e. as a gateway).
         svc::stack(profile)
             .push_switch(prevent_loop, loopback)
-            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
+            .check_new_service::<Target, http::Request<http::BoxBody>>()
             .push_on_response(
                 svc::layers()
                     .push(svc::FailFast::layer("Logical", dispatch_timeout))
@@ -288,12 +284,12 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::Retain::layer())
-                    .push(http::boxed::BoxResponse::layer()),
+                    .push(http::BoxResponse::layer()),
             )
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .push(svc::BoxNewService::layer())
-            .check_new_service::<Target, http::Request<http::boxed::BoxBody>>()
+            .check_new_service::<Target, http::Request<http::BoxBody>>()
             .into_inner()
     }
 
@@ -332,8 +328,8 @@ impl Config {
         <A as tower::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Future: Send,
         H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
         S: tower::Service<
-                http::Request<http::boxed::BoxBody>,
-                Response = http::Response<http::boxed::BoxBody>,
+                http::Request<http::BoxBody>,
+                Response = http::Response<http::BoxBody>,
                 Error = Error,
             > + Clone
             + Send
@@ -398,8 +394,8 @@ impl Config {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
                     .push(metrics.stack.layer(stack_labels("http", "server")))
-                    .push(http::boxed::BoxRequest::layer())
-                    .push(http::boxed::BoxResponse::layer()),
+                    .push(http::BoxRequest::layer())
+                    .push(http::BoxResponse::layer()),
             )
             .push(http::NewNormalizeUri::layer())
             .push_map_target(|(_, accept): (_, TcpAccept)| accept)

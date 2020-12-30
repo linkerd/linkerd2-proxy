@@ -24,7 +24,7 @@ pub fn stack<B, C>(
     Endpoint,
     Service = impl tower::Service<
         http::Request<B>,
-        Response = http::Response<http::boxed::BoxBody>,
+        Response = http::Response<http::BoxBody>,
         Error = Error,
         Future = impl Send,
     > + Send,
@@ -65,7 +65,7 @@ where
             "host",
             CANONICAL_DST_HEADER,
         ]))
-        .push_on_response(http::boxed::BoxResponse::layer())
+        .push_on_response(http::BoxResponse::layer())
         .check_new::<Endpoint>()
         .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
         .into_inner()

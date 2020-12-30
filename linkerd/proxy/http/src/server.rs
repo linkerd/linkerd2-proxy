@@ -92,11 +92,8 @@ where
 impl<I, S> Service<PrefixedIo<I>> for ServeHttp<S>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
-    S: Service<
-            http::Request<UpgradeBody>,
-            Response = http::Response<http::boxed::BoxBody>,
-            Error = Error,
-        > + Clone
+    S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>
+        + Clone
         + Unpin
         + Send
         + 'static,

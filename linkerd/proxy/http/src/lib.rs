@@ -38,7 +38,7 @@ pub use self::{
 };
 pub use http::{header, uri, Request, Response, StatusCode};
 pub use hyper::body::HttpBody;
-pub use linkerd2_http_box as boxed;
+pub use linkerd2_http_box::{BoxBody, BoxRequest, BoxResponse};
 use std::str::FromStr;
 
 pub trait HasH2Reason {
