@@ -18,8 +18,8 @@ impl<T: std::fmt::Debug> svc::NewService<T> for NoHttp {
     }
 }
 
-impl svc::Service<http::Request<http::boxed::BoxBody>> for NoHttp {
-    type Response = http::Response<http::boxed::BoxBody>;
+impl svc::Service<http::Request<http::BoxBody>> for NoHttp {
+    type Response = http::Response<http::BoxBody>;
     type Error = Error;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
     fn poll_ready(
@@ -29,7 +29,7 @@ impl svc::Service<http::Request<http::boxed::BoxBody>> for NoHttp {
         panic!("http services should not be used in this test!")
     }
 
-    fn call(&mut self, _: http::Request<http::boxed::BoxBody>) -> Self::Future {
+    fn call(&mut self, _: http::Request<http::BoxBody>) -> Self::Future {
         panic!("http services should not be used in this test!")
     }
 }

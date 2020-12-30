@@ -23,8 +23,8 @@ impl Config {
     ) -> impl svc::NewService<
         inbound::Target,
         Service = impl tower::Service<
-            http::Request<http::boxed::BoxBody>,
-            Response = http::Response<http::boxed::BoxBody>,
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
             Error = impl Into<Error>,
             Future = impl Send,
         > + Send
@@ -36,21 +36,19 @@ impl Config {
         P::Future: Send + 'static,
         P::Error: Send,
         O: svc::NewService<outbound::http::Logical, Service = S> + Clone + Send + 'static,
-        S: tower::Service<
-                http::Request<http::boxed::BoxBody>,
-                Response = http::Response<http::boxed::BoxBody>,
-            > + Send
+        S: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Send
             + 'static,
         S::Error: Into<Error>,
         S::Future: Send + 'static,
     {
         svc::stack(MakeGateway::new(outbound, local_id))
-            .check_new_service::<super::make::Target, http::Request<http::boxed::BoxBody>>()
+            .check_new_service::<super::make::Target, http::Request<http::BoxBody>>()
             .push(profiles::discover::layer(
                 profiles,
                 Allow(self.allow_discovery),
             ))
-            .check_new_service::<inbound::Target, http::Request<http::boxed::BoxBody>>()
+            .check_new_service::<inbound::Target, http::Request<http::BoxBody>>()
             .instrument(|_: &inbound::Target| debug_span!("gateway"))
             .into_inner()
     }

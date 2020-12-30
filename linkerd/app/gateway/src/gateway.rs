@@ -46,7 +46,7 @@ type ResponseFuture<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 
 impl<B, O> tower::Service<http::Request<B>> for Gateway<O>
 where
     B: http::HttpBody + 'static,
-    O: tower::Service<http::Request<B>, Response = http::Response<http::boxed::BoxBody>>,
+    O: tower::Service<http::Request<B>, Response = http::Response<http::BoxBody>>,
     O::Error: Into<Error> + 'static,
     O::Future: Send + 'static,
 {

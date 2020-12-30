@@ -20,7 +20,7 @@ pub fn stack<B, E, S, R>(
     Logical,
     Service = impl tower::Service<
         http::Request<B>,
-        Response = http::Response<http::boxed::BoxBody>,
+        Response = http::Response<http::BoxBody>,
         Error = Error,
         Future = impl Send,
     > + Send,
@@ -32,8 +32,8 @@ where
     B::Data: Send + 'static,
     E: svc::NewService<Endpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
     S: tower::Service<
-            http::Request<http::boxed::BoxBody>,
-            Response = http::Response<http::boxed::BoxBody>,
+            http::Request<http::BoxBody>,
+            Response = http::Response<http::BoxBody>,
             Error = Error,
         > + Send
         + 'static,
@@ -51,7 +51,7 @@ where
     let watchdog = cache_max_idle_age * 2;
 
     svc::stack(endpoint.clone())
-        .check_new_service::<Endpoint, http::Request<http::boxed::BoxBody>>()
+        .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
         .push_on_response(
             svc::layers()
                 .push(svc::layer::mk(svc::SpawnReady::new))
@@ -60,7 +60,7 @@ where
                         .stack
                         .layer(stack_labels("http", "balance.endpoint")),
                 )
-                .push(http::boxed::BoxRequest::layer()),
+                .push(http::BoxRequest::layer()),
         )
         .check_new_service::<Endpoint, http::Request<_>>()
         .push(resolve::layer(resolve, watchdog))
@@ -124,14 +124,14 @@ where
             svc::layers()
                 // Strips headers that may be set by this proxy.
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                .push(http::boxed::BoxResponse::layer()),
+                .push(http::BoxResponse::layer()),
         )
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
         .check_new_service::<Logical, http::Request<_>>()
         .push_switch(
             Logical::should_resolve,
             svc::stack(endpoint)
-                .push_on_response(http::boxed::BoxRequest::layer())
+                .push_on_response(http::BoxRequest::layer())
                 .push_map_target(Endpoint::from_logical(
                     ReasonForNoPeerName::NotProvidedByServiceDiscovery,
                 ))
