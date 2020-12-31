@@ -10,7 +10,7 @@ pub trait OrigDstAddr: Clone {
 }
 
 #[derive(Clone, Debug)]
-pub struct Bind<O: OrigDstAddr = NoOrigDstAddr> {
+pub struct BindTcp<O: OrigDstAddr = NoOrigDstAddr> {
     bind_addr: SocketAddr,
     keepalive: Option<Duration>,
     orig_dst_addr: O,
@@ -37,7 +37,7 @@ pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 #[cfg(feature = "mock-orig-dst")]
 pub use self::mock::MockOrigDstAddr as DefaultOrigDstAddr;
 
-impl Bind {
+impl BindTcp {
     pub fn new(bind_addr: SocketAddr, keepalive: Option<Duration>) -> Self {
         Self {
             bind_addr,
@@ -47,9 +47,9 @@ impl Bind {
     }
 }
 
-impl<A: OrigDstAddr> Bind<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> Bind<B> {
-        Bind {
+impl<A: OrigDstAddr> BindTcp<A> {
+    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> BindTcp<B> {
+        BindTcp {
             orig_dst_addr,
             bind_addr: self.bind_addr,
             keepalive: self.keepalive,

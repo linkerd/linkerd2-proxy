@@ -10,9 +10,8 @@ use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
 use linkerd2_proxy_transport::tls::{self, Conditional};
 use linkerd2_proxy_transport::{
-    connect,
     io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    Bind,
+    BindTcp, ConnectTcp,
 };
 use linkerd2_stack::NewService;
 use std::future::Future;
@@ -143,7 +142,7 @@ where
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
 
-        let (listen_addr, listen) = Bind::new(addr, None).bind().expect("must bind");
+        let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
 
         let mut detect = tls::NewDetectTls::new(
             server_tls,
@@ -202,7 +201,7 @@ where
         let peer_identity = Some(client_target_name.clone());
         let client = async move {
             let conn = tls::Client::layer(client_tls)
-                .layer(connect::Connect::new(None))
+                .layer(ConnectTcp::new(None))
                 .oneshot(Target(server_addr, client_target_name))
                 .await;
             match conn {

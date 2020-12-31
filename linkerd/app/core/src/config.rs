@@ -1,11 +1,11 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::{h1, h2};
-pub use crate::transport::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr};
+pub use crate::transport::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig<A: OrigDstAddr = NoOrigDstAddr> {
-    pub bind: Bind<A>,
+    pub bind: BindTcp<A>,
     pub h2_settings: h2::Settings,
 }
 

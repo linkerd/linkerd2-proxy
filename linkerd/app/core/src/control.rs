@@ -3,7 +3,7 @@ use crate::{
     proxy::http,
     reconnect,
     svc::{self, NewService},
-    transport::tls,
+    transport::{tls, ConnectTcp},
     Addr, Error,
 };
 use std::fmt;
@@ -57,7 +57,7 @@ impl Config {
             let backoff = self.connect.backoff;
             move |_| Ok(backoff.stream())
         };
-        svc::connect(self.connect.keepalive)
+        svc::stack(ConnectTcp::new(self.connect.keepalive))
             .push(tls::Client::layer(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
