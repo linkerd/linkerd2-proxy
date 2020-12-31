@@ -15,12 +15,13 @@ use linkerd2_proxy_transport::tls::{
 };
 use linkerd2_proxy_transport::{
     connect,
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BoxedIo},
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     Bind,
 };
 use linkerd2_stack::NewService;
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
+use tokio::net::TcpStream;
 use tower::{
     layer::Layer,
     util::{service_fn, ServiceExt},
@@ -111,7 +112,7 @@ fn run_test<C, CF, CR, S, SF, SR>(
 ) -> (Transported<CR>, Transported<SR>)
 where
     // Client
-    C: FnOnce(BoxedIo) -> CF + Clone + Send + 'static,
+    C: FnOnce(tls::client::Io<TcpStream>) -> CF + Clone + Send + 'static,
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
@@ -154,7 +155,7 @@ where
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());
-                service_fn(move |conn: BoxedIo| {
+                service_fn(move |conn| {
                     let server = server.clone();
                     let sender = sender.clone();
                     let peer_identity = peer_identity.clone();

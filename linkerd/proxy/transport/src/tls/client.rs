@@ -30,6 +30,8 @@ type Connect<F, I> = MapOk<F, fn(I) -> io::EitherIo<I, TlsStream<I>>>;
 type Handshake<I> =
     Pin<Box<dyn Future<Output = io::Result<io::EitherIo<I, TlsStream<I>>>> + Send + 'static>>;
 
+pub type Io<T> = io::EitherIo<T, TlsStream<T>>;
+
 // === impl Client ===
 
 impl<L: Clone, C> Client<L, C> {
@@ -49,7 +51,7 @@ where
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
 {
-    type Response = io::EitherIo<C::Response, TlsStream<C::Response>>;
+    type Response = Io<C::Response>;
     type Error = io::Error;
     type Future = Either<Connect<C::Future, C::Response>, Handshake<C::Response>>;
 
