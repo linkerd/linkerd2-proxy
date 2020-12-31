@@ -5,7 +5,7 @@ use linkerd2_app_core::{
     metrics,
     proxy::identity,
     svc,
-    transport::{io, tls},
+    transport::{io, tls, ConnectTcp},
     Error,
 };
 use tracing::debug_span;
@@ -23,7 +23,7 @@ pub fn stack<P>(
     Error = Error,
     Future = impl Send,
 > + Clone {
-    svc::connect(config.keepalive)
+    svc::stack(ConnectTcp::new(config.keepalive))
         // Initiates mTLS if the target is configured with identity.
         .push(tls::Client::layer(local_identity))
         // If the endpoint has an opaque transport hint, this layer ensures the
