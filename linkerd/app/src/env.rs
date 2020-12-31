@@ -3,7 +3,7 @@ use crate::core::{
     config::*,
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
-    transport::{listen, tls},
+    transport::{tls, BindTcp},
     Addr, AddrMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
@@ -388,7 +388,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let outbound = {
         let keepalive = outbound_accept_keepalive?;
-        let bind = listen::Bind::new(
+        let bind = BindTcp::new(
             outbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
             keepalive,
@@ -449,7 +449,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let inbound = {
         let keepalive = inbound_accept_keepalive?;
-        let bind = listen::Bind::new(
+        let bind = BindTcp::new(
             inbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             keepalive,
@@ -561,7 +561,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
-            bind: listen::Bind::new(
+            bind: BindTcp::new(
                 admin_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
                 inbound.proxy.server.bind.keepalive(),
@@ -610,7 +610,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|(addr, ids)| super::tap::Config::Enabled {
             permitted_peer_identities: ids,
             config: ServerConfig {
-                bind: listen::Bind::new(addr, inbound.proxy.server.bind.keepalive()),
+                bind: BindTcp::new(addr, inbound.proxy.server.bind.keepalive()),
                 h2_settings,
             },
         })

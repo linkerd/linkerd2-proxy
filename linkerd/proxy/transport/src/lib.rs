@@ -12,10 +12,10 @@ pub mod metrics;
 pub mod tls;
 
 pub use self::{
-    connect::Connect,
+    connect::ConnectTcp,
     detect::{Detect, DetectService, NewDetectService},
     io::BoxedIo,
-    listen::{Bind, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
+    listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
 };
 
 // Misc.

@@ -4,17 +4,17 @@ use tokio::net::TcpStream;
 use tracing::debug;
 
 #[derive(Copy, Clone, Debug)]
-pub struct Connect {
+pub struct ConnectTcp {
     keepalive: Option<Duration>,
 }
 
-impl Connect {
+impl ConnectTcp {
     pub fn new(keepalive: Option<Duration>) -> Self {
-        Connect { keepalive }
+        Self { keepalive }
     }
 }
 
-impl<T: Into<SocketAddr>> tower::Service<T> for Connect {
+impl<T: Into<SocketAddr>> tower::Service<T> for ConnectTcp {
     type Response = TcpStream;
     type Error = io::Error;
     type Future =

@@ -137,7 +137,7 @@ impl Config {
     > + Clone {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
-        svc::connect(self.proxy.connect.keepalive)
+        svc::stack(transport::ConnectTcp::new(self.proxy.connect.keepalive))
             .push_map_response(io::BoxedIo::new) // Ensures the transport propagates shutdown properly.
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
