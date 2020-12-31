@@ -35,8 +35,8 @@ where
     for<'t> &'t T: Into<std::net::SocketAddr>,
     EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
     R: Resolve<Addr, Endpoint = Metadata>,
-    R::Future: Send + 'static,
-    R::Resolution: Send + 'static,
+    R::Future: Send,
+    R::Resolution: Send,
 {
     map_endpoint::Resolve::new(
         EndpointFromMetadata,
@@ -53,9 +53,9 @@ pub fn layer<T, E, R, N>(
 where
     T: Clone,
     for<'t> &'t T: Into<std::net::SocketAddr>,
-    R: Resolve<Addr, Error = Error, Endpoint = Metadata> + Clone,
-    R::Future: Send + 'static,
-    R::Resolution: Send + 'static,
+    R: Resolve<Addr, Endpoint = Metadata> + Clone,
+    R::Resolution: Send,
+    R::Future: Send,
     EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
     ResolveStack<R>: Resolve<T, Endpoint = E> + Clone,
     N: NewService<E>,
