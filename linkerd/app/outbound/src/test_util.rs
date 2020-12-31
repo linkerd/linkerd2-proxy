@@ -4,7 +4,7 @@ pub use ipnet::IpNet;
 use linkerd2_app_core::{
     config, exp_backoff,
     proxy::http::{h1, h2},
-    transport::listen,
+    transport::BindTcp,
     IpMatch,
 };
 pub use linkerd2_app_test as support;
@@ -17,7 +17,7 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                bind: listen::Bind::new(SocketAddr::new(LOCALHOST.into(), 0), None)
+                bind: BindTcp::new(SocketAddr::new(LOCALHOST.into(), 0), None)
                     .with_orig_dst_addr(orig_dst.into()),
                 h2_settings: h2::Settings::default(),
             },
