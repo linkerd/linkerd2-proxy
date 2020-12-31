@@ -9,10 +9,13 @@ use linkerd2_proxy_transport::{
     io,
     tls::{accept::Connection, Conditional, ReasonForNoPeerName},
 };
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::net::TcpStream;
 use tower::Service;
 
 #[derive(Clone, Debug)]
@@ -63,7 +66,7 @@ impl AcceptPermittedClients {
     }
 }
 
-impl Service<Connection> for AcceptPermittedClients {
+impl Service<Connection<TcpStream>> for AcceptPermittedClients {
     type Response = ServeFuture;
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
@@ -72,7 +75,7 @@ impl Service<Connection> for AcceptPermittedClients {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, (meta, io): Connection) -> Self::Future {
+    fn call(&mut self, (meta, io): Connection<TcpStream>) -> Self::Future {
         future::ok(match meta.peer_identity {
             Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {

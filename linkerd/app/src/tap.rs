@@ -53,7 +53,7 @@ impl Config {
 
                 let service =
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server);
-                let accept = tls::DetectTls::new(
+                let accept = tls::NewDetectTls::new(
                     identity,
                     move |meta: tls::accept::Meta| {
                         let service = service.clone();

@@ -384,7 +384,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_tls_accept<D, DSvc, F, FSvc>(
+    pub fn build_tls_accept<I, D, DSvc, F, FSvc>(
         self,
         detect: D,
         tcp_forward: F,
@@ -392,29 +392,27 @@ impl Config {
         metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,
-        Service = impl svc::Service<TcpStream, Response = (), Error = Error, Future = impl Send>,
+        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
+        I: tls::accept::Detectable + Send + 'static,
         D: svc::NewService<TcpAccept, Service = DSvc> + Clone + Send + 'static,
-        DSvc: svc::Service<SensorIo<tls::accept::Io>, Response = ()> + Send + 'static,
+        DSvc: svc::Service<SensorIo<tls::accept::Io<I>>, Response = ()> + Send + 'static,
         DSvc::Error: Into<Error>,
         DSvc::Future: Send,
         F: svc::NewService<TcpEndpoint, Service = FSvc> + Clone + 'static,
-        FSvc: svc::Service<SensorIo<TcpStream>, Response = ()> + 'static,
+        FSvc: svc::Service<SensorIo<I>, Response = ()> + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
-        let ProxyConfig {
-            detect_protocol_timeout,
-            ..
-        } = self.proxy;
-        let require_identity = self.require_identity_for_inbound_ports;
-
         svc::stack(detect)
-            .push_request_filter(require_identity)
+            .push_request_filter(self.require_identity_for_inbound_ports)
             .push(metrics.transport.layer_accept())
             .push_map_target(TcpAccept::from)
-            .push(tls::DetectTls::layer(identity, detect_protocol_timeout))
+            .push(tls::NewDetectTls::layer(
+                identity,
+                self.proxy.detect_protocol_timeout,
+            ))
             .push_switch(
                 self.disable_protocol_detection_for_ports,
                 svc::stack(tcp_forward)
