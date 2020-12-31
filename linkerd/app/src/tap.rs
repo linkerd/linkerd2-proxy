@@ -5,7 +5,7 @@ use linkerd2_app_core::{
     drain,
     proxy::{identity, tap},
     serve,
-    transport::{io, tls},
+    transport::tls,
     Error,
 };
 use std::net::SocketAddr;
@@ -57,7 +57,7 @@ impl Config {
                     identity,
                     move |meta: tls::accept::Meta| {
                         let service = service.clone();
-                        service_fn(move |io: io::BoxedIo| {
+                        service_fn(move |io| {
                             let fut = service.clone().oneshot((meta.clone(), io));
                             Box::pin(async move {
                                 fut.err_into::<Error>().await?.err_into::<Error>().await

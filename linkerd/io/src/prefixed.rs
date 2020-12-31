@@ -33,6 +33,7 @@ impl<S> From<S> for PrefixedIo<S> {
 }
 
 impl<S: PeerAddr> PeerAddr for PrefixedIo<S> {
+    #[inline]
     fn peer_addr(&self) -> Result<std::net::SocketAddr> {
         self.io.peer_addr()
     }
@@ -63,28 +64,34 @@ impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
 }
 
 impl<S: io::Write> io::Write for PrefixedIo<S> {
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.io.write(buf)
     }
 
+    #[inline]
     fn flush(&mut self) -> Result<()> {
         self.io.flush()
     }
 }
 
 impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
+    #[inline]
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         self.project().io.poll_shutdown(cx)
     }
 
+    #[inline]
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         self.project().io.poll_flush(cx)
     }
 
+    #[inline]
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
         self.project().io.poll_write(cx, buf)
     }
 
+    #[inline]
     fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -93,6 +100,7 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
         self.project().io.poll_write_vectored(cx, bufs)
     }
 
+    #[inline]
     fn is_write_vectored(&self) -> bool {
         self.io.is_write_vectored()
     }
