@@ -17,7 +17,7 @@ pub fn stack<P>(
     server_port: u16,
     local_identity: tls::Conditional<identity::Local>,
     metrics: &metrics::Proxy,
-) -> impl tower::Service<
+) -> impl svc::Service<
     Endpoint<P>,
     Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
     Error = Error,
@@ -41,12 +41,12 @@ pub fn forward<P, I, C>(
     connect: C,
 ) -> impl svc::NewService<
     Endpoint<P>,
-    Service = impl tower::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
 > + Clone
 where
     P: Clone + Send + 'static,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    C: tower::Service<Endpoint<P>> + Clone + Send + 'static,
+    C: svc::Service<Endpoint<P>> + Clone + Send + 'static,
     C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
     C::Error: Into<Error>,
     C::Future: Send,

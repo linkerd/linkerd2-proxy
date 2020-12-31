@@ -18,17 +18,12 @@ pub fn stack<I, C, R>(
     drain: drain::Watch,
 ) -> impl svc::NewService<
     Concrete,
-    Service = impl tower::Service<I, Response = (), Error = Error, Future = impl Send>
-                  + tower::Service<
-        io::PrefixedIo<I>,
-        Response = (),
-        Error = Error,
-        Future = impl Send,
-    >,
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>
+                  + svc::Service<io::PrefixedIo<I>, Response = (), Error = Error, Future = impl Send>,
 > + Clone
 where
     I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-    C: tower::Service<Endpoint> + Clone + Send + 'static,
+    C: svc::Service<Endpoint> + Clone + Send + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Error: Into<Error>,
     C::Future: Send,

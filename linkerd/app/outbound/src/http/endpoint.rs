@@ -22,7 +22,7 @@ pub fn stack<B, C>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl svc::NewService<
     Endpoint,
-    Service = impl tower::Service<
+    Service = impl svc::Service<
         http::Request<B>,
         Response = http::Response<http::BoxBody>,
         Error = Error,
@@ -32,7 +32,7 @@ pub fn stack<B, C>(
 where
     B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
     B::Data: Send + 'static,
-    C: tower::Service<Endpoint, Error = Error> + Clone + Send + Sync + Unpin + 'static,
+    C: svc::Service<Endpoint, Error = Error> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + Unpin,
 {

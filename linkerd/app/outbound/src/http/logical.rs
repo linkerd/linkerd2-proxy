@@ -18,7 +18,7 @@ pub fn stack<B, E, ESvc, R>(
     metrics: metrics::Proxy,
 ) -> impl svc::NewService<
     Logical,
-    Service = impl tower::Service<
+    Service = impl svc::Service<
         http::Request<B>,
         Response = http::Response<http::BoxBody>,
         Error = Error,
@@ -29,7 +29,7 @@ where
     B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
     B::Data: Send + 'static,
     E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + 'static,
-    ESvc: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+    ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
         + Send
         + 'static,
     ESvc::Error: Into<Error>,
