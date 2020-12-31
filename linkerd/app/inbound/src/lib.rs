@@ -67,12 +67,7 @@ impl Config {
         drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,
-        Service = impl svc::Service<
-            tokio::net::TcpStream,
-            Response = (),
-            Error = Error,
-            Future = impl Send,
-        >,
+        Service = impl svc::Service<TcpStream, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
         L: svc::NewService<Target, Service = LSvc> + Clone + Send + Sync + 'static,
@@ -126,19 +121,18 @@ impl Config {
         metrics: &metrics::Proxy,
     ) -> impl svc::Service<
         TcpEndpoint,
+        Response = impl io::AsyncRead + io::AsyncWrite + Send,
         Error = Error,
         Future = impl Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
     > + svc::Service<
         HttpEndpoint,
+        Response = impl io::AsyncRead + io::AsyncWrite + Send,
         Error = Error,
         Future = impl Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
     > + Clone {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
         svc::connect(self.proxy.connect.keepalive)
-            .push_map_response(io::BoxedIo::new) // Ensures the transport propagates shutdown properly.
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
             .push(metrics.transport.layer_connect())
@@ -166,7 +160,7 @@ impl Config {
     > + Clone
     where
         C: svc::Service<HttpEndpoint> + Clone + Send + Sync + Unpin + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Error: Into<Error>,
         C::Future: Send + Unpin,
         P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + 'static,
