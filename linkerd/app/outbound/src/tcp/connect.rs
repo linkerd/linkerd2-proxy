@@ -17,14 +17,12 @@ pub fn stack<P>(
     server_port: u16,
     local_identity: tls::Conditional<identity::Local>,
     metrics: &metrics::Proxy,
-) -> impl tower::Service<
+) -> impl svc::Service<
     Endpoint<P>,
+    Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
     Error = Error,
     Future = impl Send,
-    Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-> + Unpin
-       + Clone
-       + Send {
+> + Clone {
     svc::connect(config.keepalive)
         // Initiates mTLS if the target is configured with identity.
         .push(tls::Client::layer(local_identity))
@@ -43,19 +41,15 @@ pub fn forward<P, I, C>(
     connect: C,
 ) -> impl svc::NewService<
     Endpoint<P>,
-    Service = impl tower::Service<I, Response = (), Error = Error, Future = impl Send + 'static>
-                  + Clone
-                  + Send
-                  + 'static,
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
 > + Clone
-       + Send
-       + 'static
 where
     P: Clone + Send + 'static,
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
-    C: tower::Service<Endpoint<P>, Error = Error> + Unpin + Clone + Send + Sync + 'static,
-    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    C::Future: Unpin + Send,
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+    C: svc::Service<Endpoint<P>> + Clone + Send + 'static,
+    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+    C::Error: Into<Error>,
+    C::Future: Send,
 {
     svc::stack(connect)
         .push_make_thunk()

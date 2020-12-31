@@ -11,7 +11,6 @@ pub use self::endpoint::{
 };
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
-use futures::future;
 use linkerd2_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
@@ -56,7 +55,7 @@ type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
 
 #[allow(clippy::too_many_arguments)]
 impl Config {
-    pub fn build<L, S, P>(
+    pub fn build<L, LSvc, P>(
         self,
         listen_addr: std::net::SocketAddr,
         local_identity: tls::Conditional<identity::Local>,
@@ -68,27 +67,23 @@ impl Config {
         drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,
-        Service = impl tower::Service<
+        Service = impl svc::Service<
             tokio::net::TcpStream,
             Response = (),
-            Error = impl Into<Error>,
-            Future = impl Send + 'static,
-        > + Send
-                      + 'static,
+            Error = Error,
+            Future = impl Send,
+        >,
     > + Clone
-           + Send
-           + 'static
     where
-        L: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
-        S: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Unpin
+        L: svc::NewService<Target, Service = LSvc> + Clone + Send + Sync + 'static,
+        LSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
-        S::Error: Into<Error>,
-        S::Future: Unpin + Send,
-        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + Sync + 'static,
-        P::Future: Unpin + Send,
+        LSvc::Error: Into<Error>,
+        LSvc::Future: Send,
+        P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + 'static,
         P::Error: Send,
+        P::Future: Send,
     {
         let prevent_loop = PreventLoop::from(listen_addr.port());
         let tcp_connect = self.build_tcp_connect(prevent_loop, &metrics);
@@ -129,19 +124,17 @@ impl Config {
         &self,
         prevent_loop: PreventLoop,
         metrics: &metrics::Proxy,
-    ) -> impl tower::Service<
+    ) -> impl svc::Service<
         TcpEndpoint,
-        Error = impl Into<Error>,
-        Future = impl future::Future + Unpin + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    > + tower::Service<
+        Error = Error,
+        Future = impl Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+    > + svc::Service<
         HttpEndpoint,
-        Error = impl Into<Error>,
-        Future = impl future::Future + Unpin + Send,
-        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    > + Unpin
-           + Clone
-           + Send {
+        Error = Error,
+        Future = impl Send,
+        Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+    > + Clone {
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).
         svc::connect(self.proxy.connect.keepalive)
@@ -153,7 +146,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_http_router<C, P, L, S>(
+    pub fn build_http_router<C, P, L, LSvc>(
         &self,
         tcp_connect: C,
         prevent_loop: impl Into<PreventLoop>,
@@ -164,34 +157,28 @@ impl Config {
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl svc::NewService<
         Target,
-        Service = impl tower::Service<
+        Service = impl svc::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
             Error = Error,
             Future = impl Send,
-        > + Clone
-                      + Send
-                      + Sync
-                      + Unpin,
-    > + Unpin
-           + Clone
-           + Send
+        > + Clone,
+    > + Clone
     where
-        C: tower::Service<HttpEndpoint> + Unpin + Clone + Send + Sync + 'static,
+        C: svc::Service<HttpEndpoint> + Clone + Send + Sync + Unpin + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
         C::Error: Into<Error>,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-        C::Future: Unpin + Send,
-        P: profiles::GetProfile<NameAddr> + Unpin + Clone + Send + Sync + 'static,
-        P::Future: Unpin + Send,
+        C::Future: Send + Unpin,
+        P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + 'static,
+        P::Future: Send,
         P::Error: Send,
         // The loopback router processes requests sent to the inbound port.
-        L: svc::NewService<Target, Service = S> + Unpin + Send + Clone + Sync + 'static,
-        S: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Unpin
+        L: svc::NewService<Target, Service = LSvc> + Clone + Send + Sync + 'static,
+        LSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
-        S::Error: Into<Error>,
-        S::Future: Unpin + Send,
+        LSvc::Error: Into<Error>,
+        LSvc::Future: Send,
     {
         let Config {
             allow_discovery,
@@ -293,7 +280,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_accept<I, F, A, H, S>(
+    pub fn build_accept<I, F, FSvc, H, HSvc>(
         &self,
         prevent_loop: impl Into<PreventLoop>,
         tcp_forward: F,
@@ -303,38 +290,28 @@ impl Config {
         drain: drain::Watch,
     ) -> impl svc::NewService<
         TcpAccept,
-        Service = impl tower::Service<
-            I,
-            Response = (),
-            Error = impl Into<Error>,
-            Future = impl Send + 'static,
-        > + Send
-                      + 'static,
+        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
-           + Send
-           + 'static
     where
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Unpin + Send + 'static,
-        F: svc::NewService<TcpEndpoint, Service = A> + Unpin + Clone + Send + Sync + 'static,
-        A: tower::Service<io::PrefixedIo<I>, Response = ()> + Clone + Send + Sync + 'static,
-        <A as tower::Service<io::PrefixedIo<I>>>::Error: Into<Error>,
-        <A as tower::Service<io::PrefixedIo<I>>>::Future: Send,
-        A: tower::Service<io::PrefixedIo<io::PrefixedIo<I>>, Response = ()>
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+        F: svc::NewService<TcpEndpoint, Service = FSvc> + Clone + Send + Sync + 'static,
+        FSvc: svc::Service<io::PrefixedIo<I>, Response = ()>
+            + svc::Service<io::PrefixedIo<io::PrefixedIo<I>>, Response = ()>
             + Clone
             + Send
             + Sync
             + 'static,
-        <A as tower::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Error: Into<Error>,
-        <A as tower::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Future: Send,
-        H: svc::NewService<Target, Service = S> + Unpin + Clone + Send + Sync + 'static,
-        S: tower::Service<
-                http::Request<http::BoxBody>,
-                Response = http::Response<http::BoxBody>,
-                Error = Error,
-            > + Clone
+        <FSvc as svc::Service<io::PrefixedIo<I>>>::Error: Into<Error>,
+        <FSvc as svc::Service<io::PrefixedIo<I>>>::Future: Send,
+        <FSvc as svc::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Error: Into<Error>,
+        <FSvc as svc::Service<io::PrefixedIo<io::PrefixedIo<I>>>>::Future: Send,
+        H: svc::NewService<Target, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
+        HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+            + Clone
             + Send
             + 'static,
-        S::Future: Send,
+        HSvc::Error: Into<Error>,
+        HSvc::Future: Send,
     {
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
@@ -413,7 +390,7 @@ impl Config {
             .into_inner()
     }
 
-    pub fn build_tls_accept<D, A, F, B>(
+    pub fn build_tls_accept<D, DSvc, F, FSvc>(
         self,
         detect: D,
         tcp_forward: F,
@@ -421,25 +398,17 @@ impl Config {
         metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,
-        Service = impl tower::Service<
-            TcpStream,
-            Response = (),
-            Error = impl Into<Error>,
-            Future = impl Send + 'static,
-        > + Send
-                      + 'static,
+        Service = impl svc::Service<TcpStream, Response = (), Error = Error, Future = impl Send>,
     > + Clone
-           + Send
-           + 'static
     where
-        D: svc::NewService<TcpAccept, Service = A> + Unpin + Clone + Send + Sync + 'static,
-        A: tower::Service<SensorIo<io::BoxedIo>, Response = ()> + Unpin + Send + 'static,
-        A::Error: Into<Error>,
-        A::Future: Send,
-        F: svc::NewService<TcpEndpoint, Service = B> + Unpin + Clone + Send + Sync + 'static,
-        B: tower::Service<SensorIo<TcpStream>, Response = ()> + Unpin + Send + 'static,
-        B::Error: Into<Error>,
-        B::Future: Send,
+        D: svc::NewService<TcpAccept, Service = DSvc> + Clone + Send + 'static,
+        DSvc: svc::Service<SensorIo<io::BoxedIo>, Response = ()> + Send + 'static,
+        DSvc::Error: Into<Error>,
+        DSvc::Future: Send,
+        F: svc::NewService<TcpEndpoint, Service = FSvc> + Clone + 'static,
+        FSvc: svc::Service<SensorIo<TcpStream>, Response = ()> + 'static,
+        FSvc::Error: Into<Error>,
+        FSvc::Future: Send,
     {
         let ProxyConfig {
             detect_protocol_timeout,

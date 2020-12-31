@@ -20,7 +20,7 @@ pub struct OpaqueTransport<S> {
 }
 
 impl<S> OpaqueTransport<S> {
-    pub fn layer() -> impl layer::Layer<S, Service = Self> {
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy {
         layer::mk(|inner| OpaqueTransport { inner })
     }
 }
@@ -29,7 +29,7 @@ impl<S, P> svc::Service<Endpoint<P>> for OpaqueTransport<S>
 where
     S: svc::Service<Endpoint<P>> + Send + 'static,
     S::Error: Into<Error>,
-    S::Response: io::AsyncWrite + Unpin + Send + 'static,
+    S::Response: io::AsyncWrite + Send + Unpin,
     S::Future: Send + 'static,
 {
     type Response = S::Response;

@@ -18,31 +18,18 @@ pub fn stack<I, C, R>(
     drain: drain::Watch,
 ) -> impl svc::NewService<
     Concrete,
-    Service = impl tower::Service<
-        I,
-        Response = (),
-        Future = impl Unpin + Send + 'static,
-        Error = Error,
-    > + tower::Service<
-        io::PrefixedIo<I>,
-        Response = (),
-        Future = impl Unpin + Send + 'static,
-        Error = Error,
-    > + Unpin
-                  + Send
-                  + 'static,
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>
+                  + svc::Service<io::PrefixedIo<I>, Response = (), Error = Error, Future = impl Send>,
 > + Clone
-       + Unpin
-       + Send
-       + 'static
 where
-    C: tower::Service<Endpoint, Error = Error> + Unpin + Clone + Send + Sync + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Unpin + Send + 'static,
-    C::Future: Unpin + Send,
-    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
-    R::Future: Unpin + Send,
-    R::Resolution: Unpin + Send,
-    I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Unpin + Send + 'static,
+    I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
+    C: svc::Service<Endpoint> + Clone + Send + 'static,
+    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+    C::Error: Into<Error>,
+    C::Future: Send,
+    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + 'static,
+    R::Resolution: Send,
+    R::Future: Send,
 {
     svc::stack(connect)
         .push_make_thunk()

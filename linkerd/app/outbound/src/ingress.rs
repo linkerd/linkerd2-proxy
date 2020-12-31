@@ -28,38 +28,27 @@ pub fn stack<P, T, TSvc, H, HSvc, I>(
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
-    Service = impl tower::Service<
-        I,
-        Response = (),
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
-    > + Send
-                  + 'static,
-> + Send
-       + 'static
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+>
 where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
-    T: svc::NewService<tcp::Endpoint, Service = TSvc> + Unpin + Clone + Send + Sync + 'static,
-    TSvc: tower::Service<
-            io::PrefixedIo<transport::metrics::SensorIo<I>>,
-            Response = (),
-            Error = Error,
-        > + Clone
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+    T: svc::NewService<tcp::Endpoint, Service = TSvc> + Clone + Send + Sync + 'static,
+    TSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
+        + Clone
         + Send
         + Sync
         + 'static,
+    TSvc::Error: Into<Error>,
     TSvc::Future: Send,
-    H: svc::NewService<http::Logical, Service = HSvc> + Unpin + Clone + Send + Sync + 'static,
-    HSvc: tower::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        > + Send
+    H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + Sync + 'static,
+    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+        + Send
         + 'static,
+    HSvc::Error: Into<Error>,
     HSvc::Future: Send,
-    P: profiles::GetProfile<Addr> + Unpin + Clone + Send + Sync + 'static,
-    P::Future: Unpin + Send,
+    P: profiles::GetProfile<Addr> + Clone + Send + Sync + 'static,
     P::Error: Send,
+    P::Future: Send,
 {
     let Config {
         allow_discovery,

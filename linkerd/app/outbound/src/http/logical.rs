@@ -11,36 +11,32 @@ use linkerd2_app_core::{
 };
 use tracing::debug_span;
 
-pub fn stack<B, E, S, R>(
+pub fn stack<B, E, ESvc, R>(
     config: &ProxyConfig,
     endpoint: E,
     resolve: R,
     metrics: metrics::Proxy,
 ) -> impl svc::NewService<
     Logical,
-    Service = impl tower::Service<
+    Service = impl svc::Service<
         http::Request<B>,
         Response = http::Response<http::BoxBody>,
         Error = Error,
         Future = impl Send,
-    > + Send,
-> + Unpin
-       + Clone
-       + Send
+    >,
+> + Clone
 where
     B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
     B::Data: Send + 'static,
-    E: svc::NewService<Endpoint, Service = S> + Clone + Send + Sync + Unpin + 'static,
-    S: tower::Service<
-            http::Request<http::BoxBody>,
-            Response = http::Response<http::BoxBody>,
-            Error = Error,
-        > + Send
+    E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + 'static,
+    ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
+        + Send
         + 'static,
-    S::Future: Send,
-    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Unpin + Clone + Send + 'static,
-    R::Future: Unpin + Send,
-    R::Resolution: Unpin + Send,
+    ESvc::Error: Into<Error>,
+    ESvc::Future: Send,
+    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+    R::Resolution: Send,
+    R::Future: Send,
 {
     let ProxyConfig {
         buffer_capacity,
