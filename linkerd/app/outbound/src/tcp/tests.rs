@@ -73,7 +73,7 @@ async fn plaintext_tcp() {
     let forward = super::balance::stack(&cfg.proxy, connect, resolver, drain).new_service(concrete);
 
     forward
-        .oneshot(client_io.into())
+        .oneshot(client_io)
         .err_into::<Error>()
         .await
         .expect("conn should succeed");
@@ -157,11 +157,11 @@ async fn tls_when_hinted() {
 
     let plain = balance
         .new_service(plain_concrete)
-        .oneshot(client_io.build().into())
+        .oneshot(client_io.build())
         .err_into::<Error>();
     let tls = balance
         .new_service(tls_concrete)
-        .oneshot(client_io.build().into())
+        .oneshot(client_io.build())
         .err_into::<Error>();
 
     let res = tokio::try_join! { plain, tls };
