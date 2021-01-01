@@ -345,8 +345,7 @@ macro_rules! http1_tests {
             let _trace = trace_init();
 
             let srv = server::http1().route("/", "hello h1").run().await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             assert_eq!(client.get("/").await, "hello h1");
@@ -372,8 +371,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let res = client
@@ -417,8 +415,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, host);
 
             let res = client
@@ -453,8 +450,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1_absolute_uris(proxy.inbound, auth);
 
             let res = client
@@ -524,8 +520,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
@@ -566,8 +561,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
 
             let host = "transparency.test.svc.cluster.local";
             let client = client::http1(proxy.inbound, host);
@@ -603,8 +597,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
@@ -680,8 +673,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
 
             let client = client::tcp(proxy.inbound);
 
@@ -720,8 +712,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
 
             // A TCP client is used since the HTTP client would stop these requests
             // from ever touching the network.
@@ -790,8 +781,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -831,8 +821,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let req = client
@@ -877,8 +866,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
@@ -915,8 +903,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let methods = &["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"];
@@ -960,8 +947,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             // https://tools.ietf.org/html/rfc7230#section-3.3.3
@@ -1024,8 +1010,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
             let resp = client
@@ -1071,8 +1056,7 @@ macro_rules! http1_tests {
                 })
                 .run()
                 .await;
-            let fut = ($proxy)(srv);
-            let proxy = fut.await;
+            let proxy = ($proxy)(srv).await;
 
             let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
 
