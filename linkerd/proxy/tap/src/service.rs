@@ -12,8 +12,8 @@ use std::task::{Context, Poll};
 
 /// Makes wrapped Services to record taps.
 #[derive(Clone, Debug)]
-pub struct NewTapHttp<M, T> {
-    inner: M,
+pub struct NewTapHttp<N, T> {
+    inner: N,
     registry: Registry<T>,
 }
 
