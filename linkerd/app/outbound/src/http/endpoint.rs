@@ -17,7 +17,7 @@ use tracing::debug_span;
 pub fn stack<B, C>(
     config: &ConnectConfig,
     tcp_connect: C,
-    tap_layer: tap::Layer,
+    tap: tap::Registry,
     metrics: metrics::Proxy,
     span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl svc::NewService<
@@ -53,7 +53,7 @@ where
             }
         }))
         .check_new::<Endpoint>()
-        .push(tap_layer)
+        .push(tap::NewTapHttp::layer(tap))
         .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
         .push_on_response(TraceContext::layer(
             span_sink.map(|sink| SpanConverter::client(sink, crate::trace_labels())),

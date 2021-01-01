@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 use tracing::trace;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Registry<T> {
     inner: Arc<Mutex<Inner<T>>>,
     taps_recv: watch::Receiver<Vec<T>>,
@@ -57,6 +57,15 @@ where
                 inner.taps.retain(|tap| tap.can_tap_more());
                 trace!("retained {} of {} taps", inner.taps.len(), count);
             }
+        }
+    }
+}
+
+impl<T> Clone for Registry<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            taps_recv: self.taps_recv.clone(),
         }
     }
 }

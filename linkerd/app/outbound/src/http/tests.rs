@@ -86,7 +86,7 @@ where
 {
     let (drain_tx, drain) = drain::channel();
 
-    let (_, tap, _) = tap::new();
+    let (tap, _) = tap::new();
     let router = super::logical::stack(
         &cfg.proxy,
         super::endpoint::stack(
