@@ -12,7 +12,9 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd2_app_core::{self as core, metrics, trace};
-use linkerd2_app_core::{control::ControlAddr, dns, drain, proxy::http, serve, svc, Error};
+use linkerd2_app_core::{
+    control::ControlAddr, dns, drain, proxy::http, serve, svc, Error, Telemetry,
+};
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
@@ -129,15 +131,21 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
 
+        let local_identity = identity.local();
+
         let (inbound_addr, inbound_listen) = inbound.proxy.server.bind.bind()?;
-        let inbound_metrics = metrics.inbound;
+        let inbound_telemetry = Telemetry {
+            metrics: metrics.inbound,
+            tap: tap.registry(),
+            span_sink: oc_collector.span_sink(),
+        };
 
         let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
-        let outbound_metrics = metrics.outbound;
-
-        let local_identity = identity.local();
-        let tap_registry = tap.registry();
-        let oc_span_sink = oc_collector.span_sink();
+        let outbound_telemetry = Telemetry {
+            metrics: metrics.outbound,
+            tap: tap.registry(),
+            span_sink: oc_collector.span_sink(),
+        };
 
         let start_proxy = Box::pin(async move {
             let outbound_http = outbound::http::logical::stack(
@@ -148,14 +156,12 @@ impl Config {
                         &outbound.proxy.connect,
                         outbound_addr.port(),
                         local_identity.clone(),
-                        &outbound_metrics,
+                        &outbound_telemetry.metrics,
                     ),
-                    tap_registry.clone(),
-                    outbound_metrics.clone(),
-                    oc_span_sink.clone(),
+                    &outbound_telemetry,
                 ),
                 dst.resolve.clone(),
-                outbound_metrics.clone(),
+                &outbound_telemetry.metrics,
             );
 
             let span = info_span!("outbound");
@@ -165,7 +171,7 @@ impl Config {
                 &outbound.proxy.connect,
                 outbound_addr.port(),
                 local_identity.clone(),
-                &outbound_metrics,
+                &outbound_telemetry.metrics,
             );
             if ingress_mode {
                 tokio::spawn(
@@ -176,8 +182,7 @@ impl Config {
                             dst.profiles.clone(),
                             outbound::tcp::connect::forward(connect),
                             outbound_http.clone(),
-                            &outbound_metrics,
-                            oc_span_sink.clone(),
+                            &outbound_telemetry,
                             drain_rx.clone(),
                         ),
                         drain_rx.clone().signaled(),
@@ -195,8 +200,7 @@ impl Config {
                             dst.resolve,
                             connect,
                             outbound_http.clone(),
-                            outbound_metrics,
-                            oc_span_sink.clone(),
+                            &outbound_telemetry,
                             drain_rx.clone(),
                         ),
                         drain_rx.clone().signaled(),
@@ -226,9 +230,7 @@ impl Config {
                             .push_on_response(http::BoxRequest::layer())
                             .into_inner(),
                         dst.profiles,
-                        tap_registry,
-                        inbound_metrics,
-                        oc_span_sink,
+                        &inbound_telemetry,
                         drain_rx.clone(),
                     ),
                     drain_rx.signaled(),

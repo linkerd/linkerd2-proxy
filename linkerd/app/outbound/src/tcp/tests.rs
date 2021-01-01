@@ -11,7 +11,7 @@ use linkerd2_app_core::{
     drain, metrics, svc,
     svc::NewService,
     transport::{io, listen, tls},
-    Addr, Error, IpMatch,
+    Addr, Error, IpMatch, Telemetry,
 };
 use std::{
     future::Future,
@@ -838,8 +838,11 @@ where
         resolver,
         connect,
         support::service::no_http(),
-        metrics.outbound,
-        None,
+        &Telemetry {
+            tap: Default::default(),
+            metrics: metrics.outbound,
+            span_sink: None,
+        },
         drain,
     )
 }

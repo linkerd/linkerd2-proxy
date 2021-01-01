@@ -1,15 +1,12 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
-    discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, profiles,
     spans::SpanConverter,
     svc::{self},
     transport::{self, io, listen, tls},
-    Addr, AddrMatch, Error, TraceContext,
+    Addr, AddrMatch, Error, Telemetry, TraceContext,
 };
-use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
 /// Routes HTTP requests according to the l5d-dst-override header.
@@ -23,8 +20,7 @@ pub fn stack<P, T, TSvc, H, HSvc, I>(
     profiles: P,
     tcp: T,
     http: H,
-    metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    telemetry: &Telemetry,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -98,14 +94,22 @@ where
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push(svc::FailFast::layer("Server", dispatch_timeout))
-                .push(metrics.http_errors.clone())
+                .push(telemetry.metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                .push(TraceContext::layer(span_sink.map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
+                .push(TraceContext::layer(
+                    telemetry
+                        .span_sink
+                        .clone()
+                        .map(|k| SpanConverter::server(k, trace_labels())),
+                ))
+                .push(
+                    telemetry
+                        .metrics
+                        .stack
+                        .layer(stack_labels("http", "server")),
+                )
                 .push_spawn_buffer(buffer_capacity)
                 .push(http::BoxResponse::layer()),
         )
@@ -125,7 +129,7 @@ where
             ),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .push(metrics.transport.layer_accept())
+        .push(telemetry.metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)
         .check_new_service::<listen::Addrs, I>()
         // Boxing is necessary purely to limit the link-time overhead of

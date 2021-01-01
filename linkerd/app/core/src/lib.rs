@@ -52,6 +52,13 @@ pub const L5D_REQUIRE_ID: &str = "l5d-require-id";
 
 const DEFAULT_PORT: u16 = 80;
 
+#[derive(Clone)]
+pub struct Telemetry {
+    pub metrics: metrics::Proxy,
+    pub span_sink: Option<tokio::sync::mpsc::Sender<opencensus::proto::trace::v1::Span>>,
+    pub tap: proxy::tap::Registry,
+}
+
 pub fn discovery_rejected() -> tonic::Status {
     tonic::Status::new(tonic::Code::InvalidArgument, "Discovery rejected")
 }

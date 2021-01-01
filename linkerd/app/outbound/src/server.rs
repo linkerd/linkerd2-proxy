@@ -1,19 +1,14 @@
-#![allow(clippy::too_many_arguments)]
-
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
-    discovery_rejected, drain, errors, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    discovery_rejected, drain, errors, profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     spans::SpanConverter,
     svc,
     transport::{self, io, listen, metrics::SensorIo, tls},
-    Addr, Error, IpMatch, TraceContext,
+    Addr, Error, IpMatch, Telemetry, TraceContext,
 };
 use std::net::SocketAddr;
-use tokio::sync::mpsc;
 use tracing::debug_span;
 
 pub fn stack<R, P, C, H, HSvc, I>(
@@ -22,8 +17,7 @@ pub fn stack<R, P, C, H, HSvc, I>(
     resolve: R,
     tcp_connect: C,
     http_router: H,
-    metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    telemetry: &Telemetry,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -56,11 +50,10 @@ where
         tcp_connect,
         tcp_balance,
         http_router,
-        metrics.clone(),
-        span_sink,
+        &telemetry,
         drain,
     );
-    cache(&config.proxy, metrics, accept)
+    cache(&config.proxy, &telemetry.metrics.transport, accept)
 }
 
 /// Wraps an `N`-typed TCP stack with caching.
@@ -70,7 +63,7 @@ where
 /// `config.cache_max_idle_age` with no new acquisitions.
 pub fn cache<N, NSvc, I>(
     config: &ProxyConfig,
-    metrics: metrics::Proxy,
+    metrics: &transport::Metrics,
     stack: N,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -90,7 +83,7 @@ where
                 .push_spawn_buffer(config.buffer_capacity),
         )
         .push_cache(config.cache_max_idle_age)
-        .push(metrics.transport.layer_accept())
+        .push(metrics.layer_accept())
         .push_map_target(tcp::Accept::from)
         .into_inner()
 }
@@ -101,8 +94,7 @@ pub fn accept_stack<P, C, T, TSvc, H, HSvc, I>(
     tcp_connect: C,
     tcp_balance: T,
     http_router: H,
-    metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    telemetry: &Telemetry,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     tcp::Accept,
@@ -147,7 +139,12 @@ where
         .push_make_thunk()
         .push_on_response(tcp::Forward::layer())
         .into_new_service()
-        .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
+        .push_on_response(
+            telemetry
+                .metrics
+                .stack
+                .layer(stack_labels("tcp", "forward")),
+        )
         .push_map_target(tcp::Endpoint::from_logical(
             tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
         ))
@@ -162,14 +159,22 @@ where
                 // Eagerly fail requests when the proxy is out of capacity for a
                 // dispatch_timeout.
                 .push(svc::FailFast::layer("Server", dispatch_timeout))
-                .push(metrics.http_errors.clone())
+                .push(telemetry.metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                .push(TraceContext::layer(span_sink.map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
+                .push(TraceContext::layer(
+                    telemetry
+                        .span_sink
+                        .clone()
+                        .map(|k| SpanConverter::server(k, trace_labels())),
+                ))
+                .push(
+                    telemetry
+                        .metrics
+                        .stack
+                        .layer(stack_labels("http", "server")),
+                )
                 .push_spawn_buffer(buffer_capacity)
                 .push(http::BoxResponse::layer()),
         )
@@ -189,7 +194,12 @@ where
                     svc::layers()
                         .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity)
-                        .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
+                        .push(
+                            telemetry
+                                .metrics
+                                .stack
+                                .layer(stack_labels("tcp", "logical")),
+                        ),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
                 .into_inner(),
@@ -211,7 +221,7 @@ where
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
                 .push_switch(tcp::Logical::should_resolve, tcp_forward)
-                .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
+                .push_on_response(telemetry.metrics.stack.layer(stack_labels("tcp", "opaque")))
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )

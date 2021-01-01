@@ -15,7 +15,7 @@ pub fn stack<B, E, ESvc, R>(
     config: &ProxyConfig,
     endpoint: E,
     resolve: R,
-    metrics: metrics::Proxy,
+    metrics: &metrics::Proxy,
 ) -> impl svc::NewService<
     Logical,
     Service = impl svc::Service<
@@ -103,7 +103,7 @@ where
                         .to_layer::<classify::Response, _>(),
                 )
                 // Sets an optional retry policy.
-                .push(retry::layer(metrics.http_route_retry))
+                .push(retry::layer(metrics.http_route_retry.clone()))
                 // Sets an optional request timeout.
                 .push(http::MakeTimeoutLayer::default())
                 // Records per-route metrics.

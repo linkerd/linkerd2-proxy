@@ -16,7 +16,6 @@ use linkerd2_app_core::{
     config::{ProxyConfig, ServerConfig},
     drain, dst, errors, metrics,
     opaque_transport::DetectHeader,
-    opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
         http::{self, orig_proto, strip_header},
@@ -26,10 +25,10 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc,
     transport::{self, io, listen, tls},
-    Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
+    Error, NameAddr, NameMatch, Telemetry, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, time::Duration};
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::net::TcpStream;
 use tracing::debug_span;
 
 mod allow_discovery;
@@ -53,7 +52,6 @@ type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
 
 // === impl Config ===
 
-#[allow(clippy::too_many_arguments)]
 impl Config {
     pub fn build<L, LSvc, P>(
         self,
@@ -61,9 +59,7 @@ impl Config {
         local_identity: tls::Conditional<identity::Local>,
         http_loopback: L,
         profiles_client: P,
-        tap: tap::Registry,
-        metrics: metrics::Proxy,
-        span_sink: Option<mpsc::Sender<oc::Span>>,
+        telemetry: &Telemetry,
         drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,
@@ -81,15 +77,13 @@ impl Config {
         P::Future: Send,
     {
         let prevent_loop = PreventLoop::from(listen_addr.port());
-        let tcp_connect = self.build_tcp_connect(prevent_loop, &metrics);
+        let tcp_connect = self.build_tcp_connect(prevent_loop, &telemetry.metrics.transport);
         let http_router = self.build_http_router(
             tcp_connect.clone(),
             prevent_loop,
             http_loopback,
             profiles_client,
-            tap,
-            metrics.clone(),
-            span_sink.clone(),
+            telemetry,
         );
 
         // Forwards TCP streams that cannot be decoded as HTTP.
@@ -107,18 +101,17 @@ impl Config {
             prevent_loop,
             tcp_forward.clone(),
             http_router,
-            metrics.clone(),
-            span_sink,
+            telemetry,
             drain,
         );
 
-        self.build_tls_accept(accept, tcp_forward, local_identity, metrics)
+        self.build_tls_accept(accept, tcp_forward, local_identity, &telemetry.metrics)
     }
 
     pub fn build_tcp_connect(
         &self,
         prevent_loop: PreventLoop,
-        metrics: &metrics::Proxy,
+        metrics: &transport::Metrics,
     ) -> impl svc::Service<
         TcpEndpoint,
         Response = impl io::AsyncRead + io::AsyncWrite + Send,
@@ -135,7 +128,7 @@ impl Config {
         svc::stack(transport::ConnectTcp::new(self.proxy.connect.keepalive))
             // Limits the time we wait for a connection to be established.
             .push_timeout(self.proxy.connect.timeout)
-            .push(metrics.transport.layer_connect())
+            .push(metrics.layer_connect())
             .push_request_filter(prevent_loop)
             .into_inner()
     }
@@ -146,9 +139,7 @@ impl Config {
         prevent_loop: impl Into<PreventLoop>,
         loopback: L,
         profiles_client: P,
-        tap: tap::Registry,
-        metrics: metrics::Proxy,
-        span_sink: Option<mpsc::Sender<oc::Span>>,
+        telemetry: &Telemetry,
     ) -> impl svc::NewService<
         Target,
         Service = impl svc::Service<
@@ -203,11 +194,19 @@ impl Config {
 
         let observe = svc::layers()
             // Registers the stack to be tapped.
-            .push(tap::NewTapHttp::layer(tap))
+            .push(tap::NewTapHttp::layer(telemetry.tap.clone()))
             // Records metrics for each `Target`.
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
+            .push(
+                telemetry
+                    .metrics
+                    .http_endpoint
+                    .to_layer::<classify::Response, _>(),
+            )
             .push_on_response(TraceContext::layer(
-                span_sink.map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
+                telemetry
+                    .span_sink
+                    .clone()
+                    .map(|k| SpanConverter::client(k, trace_labels())),
             ));
 
         let target = endpoint
@@ -231,7 +230,12 @@ impl Config {
                     // by tap.
                     .push_http_insert_target()
                     // Records per-route metrics.
-                    .push(metrics.http_route.to_layer::<classify::Response, _>())
+                    .push(
+                        telemetry
+                            .metrics
+                            .http_route
+                            .to_layer::<classify::Response, _>(),
+                    )
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::NewClassify::layer())
@@ -259,7 +263,12 @@ impl Config {
                 svc::layers()
                     .push(svc::FailFast::layer("Logical", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity)
-                    .push(metrics.stack.layer(stack_labels("http", "logical"))),
+                    .push(
+                        telemetry
+                            .metrics
+                            .stack
+                            .layer(stack_labels("http", "logical")),
+                    ),
             )
             .push_cache(cache_max_idle_age)
             .push_on_response(
@@ -279,8 +288,7 @@ impl Config {
         prevent_loop: impl Into<PreventLoop>,
         tcp_forward: F,
         http_router: H,
-        metrics: metrics::Proxy,
-        span_sink: Option<mpsc::Sender<oc::Span>>,
+        telemetry: &Telemetry,
         drain: drain::Watch,
     ) -> impl svc::NewService<
         TcpAccept,
@@ -358,13 +366,21 @@ impl Config {
                     // Eagerly fail requests when the proxy is out of capacity for a
                     // dispatch_timeout.
                     .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                    .push(metrics.http_errors)
+                    .push(telemetry.metrics.http_errors.clone())
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
-                    .push(TraceContext::layer(span_sink.map(|span_sink| {
-                        SpanConverter::server(span_sink, trace_labels())
-                    })))
-                    .push(metrics.stack.layer(stack_labels("http", "server")))
+                    .push(TraceContext::layer(
+                        telemetry
+                            .span_sink
+                            .clone()
+                            .map(|k| SpanConverter::server(k, trace_labels())),
+                    ))
+                    .push(
+                        telemetry
+                            .metrics
+                            .stack
+                            .layer(stack_labels("http", "server")),
+                    )
                     .push(http::BoxRequest::layer())
                     .push(http::BoxResponse::layer()),
             )
@@ -389,7 +405,7 @@ impl Config {
         detect: D,
         tcp_forward: F,
         identity: tls::Conditional<identity::Local>,
-        metrics: metrics::Proxy,
+        metrics: &metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,
         Service = impl svc::Service<TcpStream, Response = (), Error = Error, Future = impl Send>,

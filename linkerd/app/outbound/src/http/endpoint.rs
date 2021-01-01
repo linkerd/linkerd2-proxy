@@ -4,22 +4,19 @@ use crate::tcp;
 use linkerd2_app_core::{
     classify,
     config::ConnectConfig,
-    metrics,
-    opencensus::proto::trace::v1 as oc,
     proxy::{http, tap},
     reconnect,
     spans::SpanConverter,
-    svc, Error, TraceContext, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
+    svc,
+    transport::io,
+    Error, Telemetry, TraceContext, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
-use tokio::{io, sync::mpsc};
 use tracing::debug_span;
 
 pub fn stack<B, C>(
     config: &ConnectConfig,
     tcp_connect: C,
-    tap: tap::Registry,
-    metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    telemetry: &Telemetry,
 ) -> impl svc::NewService<
     Endpoint,
     Service = impl svc::Service<
@@ -53,10 +50,18 @@ where
             }
         }))
         .check_new::<Endpoint>()
-        .push(tap::NewTapHttp::layer(tap))
-        .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
+        .push(tap::NewTapHttp::layer(telemetry.tap.clone()))
+        .push(
+            telemetry
+                .metrics
+                .http_endpoint
+                .to_layer::<classify::Response, _>(),
+        )
         .push_on_response(TraceContext::layer(
-            span_sink.map(|sink| SpanConverter::client(sink, crate::trace_labels())),
+            telemetry
+                .span_sink
+                .clone()
+                .map(|k| SpanConverter::client(k, crate::trace_labels())),
         ))
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
         .push(NewRequireIdentity::layer())
