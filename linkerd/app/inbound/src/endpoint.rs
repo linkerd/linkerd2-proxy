@@ -88,18 +88,6 @@ impl Into<transport::labels::Key> for &'_ TcpAccept {
 
 // === impl HttpEndpoint ===
 
-impl Into<SocketAddr> for HttpEndpoint {
-    fn into(self) -> SocketAddr {
-        (&self).into()
-    }
-}
-
-impl Into<SocketAddr> for &'_ HttpEndpoint {
-    fn into(self) -> SocketAddr {
-        ([127, 0, 0, 1], self.port).into()
-    }
-}
-
 impl Into<http::client::Settings> for &'_ HttpEndpoint {
     fn into(self) -> http::client::Settings {
         self.settings
@@ -115,23 +103,6 @@ impl From<Target> for HttpEndpoint {
     }
 }
 
-impl tls::HasPeerIdentity for HttpEndpoint {
-    fn peer_identity(&self) -> tls::PeerIdentity {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback)
-    }
-}
-
-impl Into<transport::labels::Key> for &'_ HttpEndpoint {
-    fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(transport::labels::EndpointLabels {
-            direction: transport::labels::Direction::In,
-            authority: None,
-            labels: None,
-            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback).into(),
-        })
-    }
-}
-
 // === TcpEndpoint ===
 
 impl From<TcpAccept> for TcpEndpoint {
@@ -142,30 +113,21 @@ impl From<TcpAccept> for TcpEndpoint {
     }
 }
 
-impl From<(Option<Header>, TcpAccept)> for TcpEndpoint {
-    fn from((hdr, tcp): (Option<Header>, TcpAccept)) -> Self {
-        match hdr {
-            Some(Header { port, .. }) => Self { port },
-            None => tcp.into(),
-        }
+impl From<Header> for TcpEndpoint {
+    fn from(Header { port, .. }: Header) -> Self {
+        Self { port }
     }
 }
 
-impl Into<SocketAddr> for TcpEndpoint {
-    fn into(self) -> SocketAddr {
-        (&self).into()
+impl From<HttpEndpoint> for TcpEndpoint {
+    fn from(HttpEndpoint { port, .. }: HttpEndpoint) -> Self {
+        Self { port }
     }
 }
 
-impl Into<SocketAddr> for &'_ TcpEndpoint {
-    fn into(self) -> SocketAddr {
-        ([127, 0, 0, 1], self.port).into()
-    }
-}
-
-impl tls::HasPeerIdentity for TcpEndpoint {
-    fn peer_identity(&self) -> tls::PeerIdentity {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback)
+impl Into<u16> for TcpEndpoint {
+    fn into(self) -> u16 {
+        self.port
     }
 }
 

@@ -13,9 +13,8 @@ use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
 use linkerd2_app_core::{
     classify,
-    config::{ProxyConfig, ServerConfig},
-    drain, dst, errors, metrics,
-    opaque_transport::DetectHeader,
+    config::{ConnectConfig, ProxyConfig, ServerConfig},
+    drain, dst, errors, metrics, opaque_transport,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -28,8 +27,8 @@ use linkerd2_app_core::{
     transport::{self, io, listen, tls},
     Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
-use std::{collections::HashMap, time::Duration};
-use tokio::{net::TcpStream, sync::mpsc};
+use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};
+use tokio::sync::mpsc;
 use tracing::debug_span;
 
 mod allow_discovery;
@@ -49,16 +48,37 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
+#[derive(Default)]
+struct NonOpaqueRefused(());
+
 type SensorIo<T> = io::SensorIo<T, transport::metrics::Sensor>;
 
 // === impl Config ===
 
+pub fn tcp_connect<T: Into<u16>>(
+    config: &ConnectConfig,
+) -> impl svc::Service<
+    T,
+    Response = impl io::AsyncRead + io::AsyncWrite + Send,
+    Error = Error,
+    Future = impl Send,
+> + Clone {
+    // Establishes connections to remote peers (for both TCP
+    // forwarding and HTTP proxying).
+    svc::stack(transport::ConnectTcp::new(config.keepalive))
+        .push_map_target(|t: T| ([127, 0, 0, 1], t.into()))
+        // Limits the time we wait for a connection to be established.
+        .push_timeout(config.timeout)
+        .into_inner()
+}
+
 #[allow(clippy::too_many_arguments)]
 impl Config {
-    pub fn build<L, LSvc, P>(
+    pub fn build<I, C, L, LSvc, P>(
         self,
-        listen_addr: std::net::SocketAddr,
+        listen_addr: SocketAddr,
         local_identity: tls::Conditional<identity::Local>,
+        connect: C,
         http_loopback: L,
         profiles_client: P,
         tap: tap::Registry,
@@ -67,9 +87,21 @@ impl Config {
         drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,
-        Service = impl svc::Service<TcpStream, Response = (), Error = Error, Future = impl Send>,
+        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
+        I: tls::accept::Detectable
+            + io::AsyncRead
+            + io::AsyncWrite
+            + io::PeerAddr
+            + Debug
+            + Send
+            + Unpin
+            + 'static,
+        C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C::Error: Into<Error>,
+        C::Future: Send + Unpin,
         L: svc::NewService<Target, Service = LSvc> + Clone + Send + Sync + 'static,
         LSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
@@ -81,9 +113,8 @@ impl Config {
         P::Future: Send,
     {
         let prevent_loop = PreventLoop::from(listen_addr.port());
-        let tcp_connect = self.build_tcp_connect(prevent_loop, &metrics);
         let http_router = self.build_http_router(
-            tcp_connect.clone(),
+            connect.clone(),
             prevent_loop,
             http_loopback,
             profiles_client,
@@ -93,7 +124,8 @@ impl Config {
         );
 
         // Forwards TCP streams that cannot be decoded as HTTP.
-        let tcp_forward = svc::stack(tcp_connect)
+        let tcp_forward = svc::stack(connect)
+            .push(metrics.transport.layer_connect())
             .push_make_thunk()
             .push_on_response(
                 svc::layers()
@@ -115,34 +147,9 @@ impl Config {
         self.build_tls_accept(accept, tcp_forward, local_identity, metrics)
     }
 
-    pub fn build_tcp_connect(
-        &self,
-        prevent_loop: PreventLoop,
-        metrics: &metrics::Proxy,
-    ) -> impl svc::Service<
-        TcpEndpoint,
-        Response = impl io::AsyncRead + io::AsyncWrite + Send,
-        Error = Error,
-        Future = impl Send,
-    > + svc::Service<
-        HttpEndpoint,
-        Response = impl io::AsyncRead + io::AsyncWrite + Send,
-        Error = Error,
-        Future = impl Send,
-    > + Clone {
-        // Establishes connections to remote peers (for both TCP
-        // forwarding and HTTP proxying).
-        svc::stack(transport::ConnectTcp::new(self.proxy.connect.keepalive))
-            // Limits the time we wait for a connection to be established.
-            .push_timeout(self.proxy.connect.timeout)
-            .push(metrics.transport.layer_connect())
-            .push_request_filter(prevent_loop)
-            .into_inner()
-    }
-
     pub fn build_http_router<C, P, L, LSvc>(
         &self,
-        tcp_connect: C,
+        connect: C,
         prevent_loop: impl Into<PreventLoop>,
         loopback: L,
         profiles_client: P,
@@ -159,7 +166,7 @@ impl Config {
         > + Clone,
     > + Clone
     where
-        C: svc::Service<HttpEndpoint> + Clone + Send + Sync + Unpin + 'static,
+        C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Error: Into<Error>,
         C::Future: Send + Unpin,
@@ -174,45 +181,31 @@ impl Config {
         LSvc::Error: Into<Error>,
         LSvc::Future: Send,
     {
-        let Config {
-            allow_discovery,
-            proxy:
-                ProxyConfig {
-                    connect,
-                    buffer_capacity,
-                    cache_max_idle_age,
-                    dispatch_timeout,
-                    ..
-                },
-            ..
-        } = self.clone();
-
         let prevent_loop = prevent_loop.into();
 
         // Creates HTTP clients for each inbound port & HTTP settings.
-        let endpoint = svc::stack(tcp_connect)
+        let endpoint = svc::stack(connect)
+            .push(metrics.transport.layer_connect())
+            .push_map_target(TcpEndpoint::from)
             .push(http::client::layer(
-                connect.h1_settings,
-                connect.h2_settings,
+                self.proxy.connect.h1_settings,
+                self.proxy.connect.h2_settings,
             ))
             .push(reconnect::layer({
-                let backoff = connect.backoff;
+                let backoff = self.proxy.connect.backoff;
                 move |_| Ok(backoff.stream())
             }))
             .check_new_service::<HttpEndpoint, http::Request<_>>();
 
-        let observe = svc::layers()
+        let target = endpoint
+            .push_map_target(HttpEndpoint::from)
             // Registers the stack to be tapped.
             .push(tap::NewTapHttp::layer(tap))
             // Records metrics for each `Target`.
             .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(TraceContext::layer(
                 span_sink.map(|span_sink| SpanConverter::client(span_sink, trace_labels())),
-            ));
-
-        let target = endpoint
-            .push_map_target(HttpEndpoint::from)
-            .push(observe)
+            ))
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
 
@@ -242,7 +235,7 @@ impl Config {
             .push_map_target(endpoint::Logical::from)
             .push(profiles::discover::layer(
                 profiles_client,
-                AllowProfile(allow_discovery),
+                AllowProfile(self.allow_discovery.clone()),
             ))
             .push_on_response(http::BoxResponse::layer())
             .instrument(|_: &Target| debug_span!("profile"))
@@ -257,11 +250,11 @@ impl Config {
             .check_new_service::<Target, http::Request<http::BoxBody>>()
             .push_on_response(
                 svc::layers()
-                    .push(svc::FailFast::layer("Logical", dispatch_timeout))
-                    .push_spawn_buffer(buffer_capacity)
+                    .push(svc::FailFast::layer("Logical", self.proxy.dispatch_timeout))
+                    .push_spawn_buffer(self.proxy.buffer_capacity)
                     .push(metrics.stack.layer(stack_labels("http", "logical"))),
             )
-            .push_cache(cache_max_idle_age)
+            .push_cache(self.proxy.cache_max_idle_age)
             .push_on_response(
                 svc::layers()
                     .push(http::Retain::layer())
@@ -324,15 +317,19 @@ impl Config {
                 prevent_loop.into(),
                 // If the connection targets the inbound port, try to detect an
                 // opaque transport header and rewrite the target port
-                // accordingly. If there was no opaque transport header, the
-                // forwarding will fail when the tcp connect stack applies loop
-                // prevention.
+                // accordingly. If there was no opaque transport header, fail
+                // the connection with a ConnectionRefused error.
                 svc::stack(tcp_forward)
-                    .push_map_target(TcpEndpoint::from)
+                    .push_map_target(|(h, _): (opaque_transport::Header, _)| TcpEndpoint::from(h))
+                    .push(svc::stack::NewOptional::layer(svc::Fail::<
+                        _,
+                        NonOpaqueRefused,
+                    >::default(
+                    )))
                     .push(transport::NewDetectService::layer(
                         transport::detect::DetectTimeout::new(
                             self.proxy.detect_protocol_timeout,
-                            DetectHeader::default(),
+                            opaque_transport::DetectHeader::default(),
                         ),
                     )),
             )
@@ -446,5 +443,16 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
 impl svc::stack::Switch<listen::Addrs> for SkipByPort {
     fn use_primary(&self, t: &listen::Addrs) -> bool {
         !self.0.contains(&t.target_addr().port())
+    }
+}
+
+// === impl NonOpaqueRefused ===
+
+impl Into<Error> for NonOpaqueRefused {
+    fn into(self) -> Error {
+        Error::from(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "Non-opaque-transport connection refused",
+        ))
     }
 }

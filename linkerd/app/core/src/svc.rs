@@ -4,19 +4,20 @@ pub use crate::proxy::http;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 pub use linkerd2_concurrency_limit::ConcurrencyLimit;
-pub use linkerd2_stack::{self as stack, layer, BoxNewService, NewRouter, NewService};
+pub use linkerd2_stack::{self as stack, layer, BoxNewService, Fail, NewRouter, NewService};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tower::layer::util::{Identity, Stack as Pair};
-pub use tower::layer::Layer;
-pub use tower::make::MakeService;
-pub use tower::spawn_ready::SpawnReady;
-pub use tower::util::Either;
-pub use tower::{service_fn as mk, Service, ServiceExt};
+use tower::{
+    layer::util::{Identity, Stack as Pair},
+    make::MakeService,
+};
+pub use tower::{
+    layer::Layer, service_fn as mk, spawn_ready::SpawnReady, util::Either, Service, ServiceExt,
+};
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
