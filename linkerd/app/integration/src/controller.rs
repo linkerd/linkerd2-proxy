@@ -66,9 +66,10 @@ impl Controller {
     }
 
     pub fn new_unordered() -> Self {
-        let mut ctrl = Self::default();
-        ctrl.unordered = true;
-        ctrl
+        Self {
+            unordered: true,
+            ..Self::default()
+        }
     }
 
     pub fn destination_tx(&self, dest: impl Into<String>) -> DstSender {

@@ -8,8 +8,7 @@ use linkerd2_app_core::{
     transport::tls,
     Error,
 };
-use std::net::SocketAddr;
-use std::pin::Pin;
+use std::{net::SocketAddr, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -23,11 +22,10 @@ pub enum Config {
 
 pub enum Tap {
     Disabled {
-        layer: tap::Layer,
+        registry: tap::Registry,
     },
     Enabled {
         listen_addr: SocketAddr,
-        layer: tap::Layer,
         registry: tap::Registry,
         serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
     },
@@ -39,11 +37,11 @@ impl Config {
         identity: tls::Conditional<identity::Local>,
         drain: drain::Watch,
     ) -> Result<Tap, Error> {
-        let (registry, layer, server) = tap::new();
+        let (registry, server) = tap::new();
         match self {
             Config::Disabled => {
-                drop((registry, server));
-                Ok(Tap::Disabled { layer })
+                drop(server);
+                Ok(Tap::Disabled { registry })
             }
             Config::Enabled {
                 config,
@@ -71,7 +69,6 @@ impl Config {
 
                 Ok(Tap::Enabled {
                     listen_addr,
-                    layer,
                     registry,
                     serve,
                 })
@@ -81,10 +78,10 @@ impl Config {
 }
 
 impl Tap {
-    pub fn layer(&self) -> tap::Layer {
+    pub fn registry(&self) -> tap::Registry {
         match self {
-            Tap::Disabled { ref layer } => layer.clone(),
-            Tap::Enabled { ref layer, .. } => layer.clone(),
+            Tap::Disabled { ref registry } => registry.clone(),
+            Tap::Enabled { ref registry, .. } => registry.clone(),
         }
     }
 }

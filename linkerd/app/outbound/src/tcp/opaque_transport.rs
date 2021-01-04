@@ -71,7 +71,7 @@ where
                                 name: Some(n),
                             })
                     })
-                    .unwrap_or_else(|| Header {
+                    .unwrap_or(Header {
                         port: orig_port,
                         name: None,
                     });

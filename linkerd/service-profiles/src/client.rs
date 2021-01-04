@@ -461,7 +461,7 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
         return None;
     };
     let retry_ratio = orig.retry_ratio;
-    if retry_ratio > 1000.0 || retry_ratio < 0.0 {
+    if !(0.0..=1000.0).contains(&retry_ratio) {
         warn!("retry_budget retry_ratio invalid: {:?}", retry_ratio);
         return None;
     }

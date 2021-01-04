@@ -167,11 +167,11 @@ impl classify::ClassifyEos for Eos {
             }
             Eos::Default(_) => trailers
                 .and_then(grpc_class)
-                .unwrap_or_else(|| Class::Default(SuccessOrFailure::Success)),
+                .unwrap_or(Class::Default(SuccessOrFailure::Success)),
             Eos::Grpc(GrpcEos::NoBody(class)) => class,
             Eos::Grpc(GrpcEos::Open) => trailers
                 .and_then(grpc_class)
-                .unwrap_or_else(|| Class::Grpc(SuccessOrFailure::Success, 0)),
+                .unwrap_or(Class::Grpc(SuccessOrFailure::Success, 0)),
             Eos::Profile(class) => class,
             Eos::Error(msg) => Class::Stream(SuccessOrFailure::Failure, msg.into()),
         }

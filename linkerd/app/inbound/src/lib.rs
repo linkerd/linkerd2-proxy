@@ -61,7 +61,7 @@ impl Config {
         local_identity: tls::Conditional<identity::Local>,
         http_loopback: L,
         profiles_client: P,
-        tap_layer: tap::Layer,
+        tap: tap::Registry,
         metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
@@ -87,7 +87,7 @@ impl Config {
             prevent_loop,
             http_loopback,
             profiles_client,
-            tap_layer,
+            tap,
             metrics.clone(),
             span_sink.clone(),
         );
@@ -146,7 +146,7 @@ impl Config {
         prevent_loop: impl Into<PreventLoop>,
         loopback: L,
         profiles_client: P,
-        tap_layer: tap::Layer,
+        tap: tap::Registry,
         metrics: metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl svc::NewService<
@@ -203,7 +203,7 @@ impl Config {
 
         let observe = svc::layers()
             // Registers the stack to be tapped.
-            .push(tap_layer)
+            .push(tap::NewTapHttp::layer(tap))
             // Records metrics for each `Target`.
             .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(TraceContext::layer(
