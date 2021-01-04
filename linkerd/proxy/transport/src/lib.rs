@@ -14,7 +14,6 @@ pub mod tls;
 pub use self::{
     connect::ConnectTcp,
     detect::{Detect, DetectService, NewDetectService},
-    io::BoxedIo,
     listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
 };
 

@@ -1,9 +1,11 @@
 mod boxed;
+mod either;
 mod prefixed;
 mod sensor;
 
 pub use self::{
     boxed::BoxedIo,
+    either::EitherIo,
     prefixed::PrefixedIo,
     sensor::{Sensor, SensorIo},
 };

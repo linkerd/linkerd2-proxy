@@ -1,5 +1,5 @@
 use super::Conditional;
-use crate::io::{self, BoxedIo};
+use crate::io;
 use futures::{
     future::{Either, MapOk},
     prelude::*,
@@ -13,6 +13,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
 
 pub trait HasConfig {
@@ -25,8 +26,11 @@ pub struct Client<L, C> {
     inner: C,
 }
 
-type Connect<F, I> = MapOk<F, fn(I) -> BoxedIo>;
-type Handshake = Pin<Box<dyn Future<Output = io::Result<BoxedIo>> + Send + 'static>>;
+type Connect<F, I> = MapOk<F, fn(I) -> io::EitherIo<I, TlsStream<I>>>;
+type Handshake<I> =
+    Pin<Box<dyn Future<Output = io::Result<io::EitherIo<I, TlsStream<I>>>> + Send + 'static>>;
+
+pub type Io<T> = io::EitherIo<T, TlsStream<T>>;
 
 // === impl Client ===
 
@@ -44,12 +48,12 @@ where
     T: super::HasPeerIdentity,
     L: HasConfig + Clone,
     C: tower::Service<T, Error = io::Error>,
-    C::Response: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
 {
-    type Response = BoxedIo;
+    type Response = Io<C::Response>;
     type Error = io::Error;
-    type Future = Either<Connect<C::Future, C::Response>, Handshake>;
+    type Future = Either<Connect<C::Future, C::Response>, Handshake<C::Response>>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -61,14 +65,14 @@ where
             Conditional::Some(l) => tokio_rustls::TlsConnector::from(l.tls_client_config()),
             Conditional::None(reason) => {
                 trace!(%reason, "Local identity disabled");
-                return Either::Left(self.inner.call(target).map_ok(BoxedIo::new));
+                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };
         let peer_identity = match target.peer_identity() {
             Conditional::Some(id) => id,
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
-                return Either::Left(self.inner.call(target).map_ok(BoxedIo::new));
+                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };
 
@@ -77,7 +81,7 @@ where
         Either::Right(Box::pin(async move {
             let io = connect.await?;
             let io = tls.connect(peer_identity.as_dns_name_ref(), io).await?;
-            Ok(BoxedIo::new(io))
+            Ok(io::EitherIo::Right(io))
         }))
     }
 }

@@ -396,7 +396,7 @@ impl Config {
     > + Clone
     where
         D: svc::NewService<TcpAccept, Service = DSvc> + Clone + Send + 'static,
-        DSvc: svc::Service<SensorIo<io::BoxedIo>, Response = ()> + Send + 'static,
+        DSvc: svc::Service<SensorIo<tls::accept::Io>, Response = ()> + Send + 'static,
         DSvc::Error: Into<Error>,
         DSvc::Future: Send,
         F: svc::NewService<TcpEndpoint, Service = FSvc> + Clone + 'static,
