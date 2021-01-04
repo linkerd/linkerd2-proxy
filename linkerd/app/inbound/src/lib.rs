@@ -373,7 +373,7 @@ impl Config {
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .push(http::NewServeHttp::layer(h2_settings, drain))
-            .push(svc::stack::NewOptional::layer(tcp))
+            .push(svc::NewUnwrapOr::layer(tcp))
             .push_cache(cache_max_idle_age)
             .push(transport::NewDetectService::layer(
                 transport::detect::DetectTimeout::new(
