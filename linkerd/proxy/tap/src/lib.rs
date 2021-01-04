@@ -12,10 +12,7 @@ mod grpc;
 mod registry;
 mod service;
 
-pub use self::accept::AcceptPermittedClients;
-
-/// Instruments service stacks so that requests may be tapped.
-pub type Layer = service::Layer<grpc::Tap>;
+pub use self::{accept::AcceptPermittedClients, service::NewTapHttp};
 
 /// A registry containing all the active taps that have registered with the
 /// gRPC server.
@@ -24,11 +21,10 @@ pub type Registry = registry::Registry<grpc::Tap>;
 // The number of events that may be buffered for a given response.
 const PER_RESPONSE_EVENT_BUFFER_CAPACITY: usize = 400;
 
-pub fn new() -> (Registry, Layer, grpc::Server) {
+pub fn new() -> (Registry, grpc::Server) {
     let registry = Registry::new();
-    let layer = Layer::new(registry.clone());
     let server = grpc::Server::new(registry.clone());
-    (registry, layer, server)
+    (registry, server)
 }
 
 /// Inspects a request for a `Stack`.

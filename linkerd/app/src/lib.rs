@@ -136,7 +136,7 @@ impl Config {
         let outbound_metrics = metrics.outbound;
 
         let local_identity = identity.local();
-        let tap_layer = tap.layer();
+        let tap_registry = tap.registry();
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
@@ -150,7 +150,7 @@ impl Config {
                         local_identity.clone(),
                         &outbound_metrics,
                     ),
-                    tap_layer.clone(),
+                    tap_registry.clone(),
                     outbound_metrics.clone(),
                     oc_span_sink.clone(),
                 ),
@@ -226,7 +226,7 @@ impl Config {
                             .push_on_response(http::BoxRequest::layer())
                             .into_inner(),
                         dst.profiles,
-                        tap_layer,
+                        tap_registry,
                         inbound_metrics,
                         oc_span_sink,
                         drain_rx.clone(),

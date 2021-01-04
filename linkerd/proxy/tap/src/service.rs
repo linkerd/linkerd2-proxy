@@ -1,50 +1,28 @@
 use super::iface::{Tap, TapPayload, TapResponse};
 use super::registry::Registry;
 use super::Inspect;
-use futures::{ready, TryFuture};
+use futures::ready;
 use hyper::body::HttpBody;
 use linkerd2_proxy_http::HasH2Reason;
-use linkerd2_stack::NewService;
+use linkerd2_stack::{layer, NewService};
 use pin_project::{pin_project, pinned_drop};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-/// A layer that wraps MakeServices to record taps.
-#[derive(Clone, Debug)]
-pub struct Layer<T> {
-    registry: Registry<T>,
-}
-
 /// Makes wrapped Services to record taps.
 #[derive(Clone, Debug)]
-pub struct MakeService<M, T> {
-    inner: M,
-    registry: Registry<T>,
-}
-
-/// Future returned by `MakeService`.
-#[pin_project]
-pub struct MakeFuture<F, I, T> {
-    #[pin]
-    inner: F,
-    inspect: I,
+pub struct NewTapHttp<N, T> {
+    inner: N,
     registry: Registry<T>,
 }
 
 /// A middleware that records HTTP taps.
 #[derive(Clone, Debug)]
-pub struct Service<S, I, T> {
+pub struct TapHttp<S, I, T> {
     inner: S,
     inspect: I,
     registry: Registry<T>,
-}
-
-#[pin_project]
-pub struct ResponseFuture<F, T> {
-    #[pin]
-    inner: F,
-    taps: Vec<T>,
 }
 
 // A `Body` instrumented with taps.
@@ -61,101 +39,44 @@ where
     taps: Vec<T>,
 }
 
-// === Layer ===
+// === NewTapHttp ===
 
-impl<T> Layer<T> {
-    pub(super) fn new(registry: Registry<T>) -> Self {
-        Self { registry }
-    }
-}
-
-impl<M, T> tower::layer::Layer<M> for Layer<T>
-where
-    T: Clone,
-{
-    type Service = MakeService<M, T>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeService {
+impl<N, T> NewTapHttp<N, T> {
+    pub fn layer(registry: Registry<T>) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
             inner,
-            registry: self.registry.clone(),
-        }
+            registry: registry.clone(),
+        })
     }
 }
 
-// === MakeService ===
-
-impl<M, I, T> NewService<I> for MakeService<M, T>
+impl<N, I, T> NewService<I> for NewTapHttp<N, T>
 where
-    M: NewService<I>,
+    N: NewService<I>,
     I: Inspect + Clone,
     T: Clone,
 {
-    type Service = Service<M::Service, I, T>;
+    type Service = TapHttp<N::Service, I, T>;
 
     fn new_service(&mut self, target: I) -> Self::Service {
-        let inspect = target.clone();
-        Service {
+        TapHttp {
+            inspect: target.clone(),
             inner: self.inner.new_service(target),
-            inspect,
             registry: self.registry.clone(),
         }
-    }
-}
-
-impl<M, I, T> tower::Service<I> for MakeService<M, T>
-where
-    M: tower::Service<I>,
-    I: Inspect + Clone,
-    T: Clone,
-{
-    type Response = Service<M::Response, I, T>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Future, I, T>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: I) -> Self::Future {
-        let inspect = target.clone();
-        MakeFuture {
-            inner: self.inner.call(target),
-            inspect,
-            registry: self.registry.clone(),
-        }
-    }
-}
-
-// === MakeFuture ===
-
-impl<F, I, T> Future for MakeFuture<F, I, T>
-where
-    F: TryFuture,
-    I: Clone,
-    T: Clone,
-{
-    type Output = Result<Service<F::Ok, I, T>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let inner = ready!(this.inner.try_poll(cx))?;
-        Poll::Ready(Ok(Service {
-            inner,
-            inspect: this.inspect.clone(),
-            registry: this.registry.clone(),
-        }))
     }
 }
 
 // === Service ===
 
-impl<S, I, T, A, B> tower::Service<http::Request<A>> for Service<S, I, T>
+impl<S, I, T, A, B> tower::Service<http::Request<A>> for TapHttp<S, I, T>
 where
     S: tower::Service<http::Request<Body<A, T::TapRequestPayload>>, Response = http::Response<B>>,
     S::Error: HasH2Reason,
+    S::Future: Send + 'static,
     I: Inspect,
     T: Tap,
+    T::TapResponse: Send + 'static,
     T::TapRequestPayload: Send + 'static,
     T::TapResponsePayload: Send + 'static,
     A: HttpBody,
@@ -165,8 +86,9 @@ where
 {
     type Response = http::Response<Body<B, T::TapResponsePayload>>;
     type Error = S::Error;
-    type Future = ResponseFuture<S::Future, T::TapResponse>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, S::Error>> + Send + 'static>>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
@@ -189,49 +111,30 @@ where
             taps: req_taps,
         });
 
-        let inner = self.inner.call(req);
-
-        ResponseFuture {
-            inner,
-            taps: rsp_taps,
-        }
-    }
-}
-
-impl<F, T, B> Future for ResponseFuture<F, T>
-where
-    F: TryFuture<Ok = http::Response<B>>,
-    F::Error: HasH2Reason,
-    T: TapResponse,
-    T::TapPayload: Send + 'static,
-    B: HttpBody,
-    B::Error: HasH2Reason,
-{
-    type Output = Result<http::Response<Body<B, T::TapPayload>>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        match ready!(this.inner.try_poll(cx)) {
-            Ok(rsp) => {
-                // Tap the response headers and use the response
-                // body taps to decorate the response body.
-                let taps = this.taps.drain(..).map(|t| t.tap(&rsp)).collect();
-                let rsp = rsp.map(move |inner| {
-                    let mut body = Body { inner, taps };
-                    if body.is_end_stream() {
-                        eos(&mut body.taps, None);
-                    }
-                    body
-                });
-                Poll::Ready(Ok(rsp))
-            }
-            Err(e) => {
-                for tap in this.taps.drain(..) {
-                    tap.fail(&e);
+        let call = self.inner.call(req);
+        Box::pin(async move {
+            match call.await {
+                Ok(rsp) => {
+                    // Tap the response headers and use the response
+                    // body taps to decorate the response body.
+                    let taps = rsp_taps.drain(..).map(|t| t.tap(&rsp)).collect();
+                    let rsp = rsp.map(move |inner| {
+                        let mut body = Body { inner, taps };
+                        if body.is_end_stream() {
+                            eos(&mut body.taps, None);
+                        }
+                        body
+                    });
+                    Ok(rsp)
                 }
-                Poll::Ready(Err(e))
+                Err(e) => {
+                    for tap in rsp_taps.drain(..) {
+                        tap.fail(&e);
+                    }
+                    Err(e)
+                }
             }
-        }
+        })
     }
 }
 
