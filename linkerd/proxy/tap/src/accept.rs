@@ -5,8 +5,10 @@ use linkerd2_error::Error;
 use linkerd2_identity as identity;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd2_proxy_http::{trace, HyperServerSvc};
-use linkerd2_proxy_transport::io::BoxedIo;
-use linkerd2_proxy_transport::tls::{accept::Connection, Conditional, ReasonForNoPeerName};
+use linkerd2_proxy_transport::{
+    io,
+    tls::{accept::Connection, Conditional, ReasonForNoPeerName},
+};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -29,8 +31,9 @@ impl AcceptPermittedClients {
         }
     }
 
-    fn serve<T>(&self, io: BoxedIo, tap: T) -> ServeFuture
+    fn serve<I, T>(&self, io: I, tap: T) -> ServeFuture
     where
+        I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         T: Tap + Send + 'static,
         T::ObserveStream: Send + 'static,
     {
@@ -45,11 +48,17 @@ impl AcceptPermittedClients {
         })
     }
 
-    fn serve_authenticated(&self, io: BoxedIo) -> ServeFuture {
+    fn serve_authenticated<I>(&self, io: I) -> ServeFuture
+    where
+        I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    {
         self.serve(io, self.server.clone())
     }
 
-    fn serve_unauthenticated(&self, io: BoxedIo, msg: impl Into<String>) -> ServeFuture {
+    fn serve_unauthenticated<I>(&self, io: I, msg: impl Into<String>) -> ServeFuture
+    where
+        I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    {
         self.serve(io, unauthenticated::new(msg))
     }
 }

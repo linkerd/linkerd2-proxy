@@ -36,7 +36,7 @@ pub struct Admin<M> {
 pub struct Accept<M>(Admin<M>, hyper::server::conn::Http);
 
 #[derive(Clone)]
-pub struct Serve<M: FmtMetrics>(tls::accept::Meta, Accept<M>);
+pub struct Serve<M>(tls::accept::Meta, Accept<M>);
 
 pub type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Response<Body>, Never>> + Send + 'static>>;
@@ -199,7 +199,7 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
     }
 }
 
-impl<M: FmtMetrics + Clone + Send + 'static> svc::NewService<tls::accept::Meta> for Accept<M> {
+impl<M: Clone> svc::NewService<tls::accept::Meta> for Accept<M> {
     type Service = Serve<M>;
 
     fn new_service(&mut self, meta: tls::accept::Meta) -> Self::Service {
@@ -207,7 +207,11 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::NewService<tls::accept::Meta> 
     }
 }
 
-impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve<M> {
+impl<I, M> svc::Service<I> for Serve<M>
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    M: FmtMetrics + Clone + Send + 'static,
+{
     type Response = ();
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
@@ -216,7 +220,7 @@ impl<M: FmtMetrics + Clone + Send + 'static> svc::Service<io::BoxedIo> for Serve
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, io: io::BoxedIo) -> Self::Future {
+    fn call(&mut self, io: I) -> Self::Future {
         let Self(ref meta, Accept(ref svc, ref server)) = self;
 
         // Since the `/proxy-log-level` controls access based on the

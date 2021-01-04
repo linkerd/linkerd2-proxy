@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-18.04
     container:
-      image: docker://rust:1.47.0-buster
+      image: docker://rust:1.49.0-buster
     steps:
       - uses: actions/checkout@v1
       - run: rustup component add rustfmt
@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-18.04
     container:
-      image: docker://rust:1.47.0-buster
+      image: docker://rust:1.49.0-buster
     steps:
       - uses: actions/checkout@v1
       - run: rustup component add clippy
@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 15
     runs-on: ubuntu-18.04
     container:
-      image: docker://rust:1.47.0-buster
+      image: docker://rust:1.49.0-buster
     steps:
       - uses: actions/checkout@v1
       # Iterate through all subcrates to ensure each compiles indpendently.
