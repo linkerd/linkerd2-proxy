@@ -42,6 +42,9 @@ struct State<T, E> {
 
 pub type DstReceiver<E> = mpsc::UnboundedReceiver<Result<Update<E>, Error>>;
 
+#[derive(Debug)]
+pub struct SendFailed(());
+
 impl<T, E> Default for Resolver<T, E>
 where
     T: Hash + Eq,
@@ -205,28 +208,37 @@ where
 // === impl Sender ===
 
 impl<E> DstSender<E> {
-    pub fn update(&mut self, up: Update<E>) -> Result<(), ()> {
-        self.0.send(Ok(up)).map_err(|_| ())
+    pub fn update(&mut self, up: Update<E>) -> Result<(), SendFailed> {
+        self.0.send(Ok(up)).map_err(|_| SendFailed(()))
     }
 
-    pub fn add(&mut self, addrs: impl IntoIterator<Item = (SocketAddr, E)>) -> Result<(), ()> {
+    pub fn add(
+        &mut self,
+        addrs: impl IntoIterator<Item = (SocketAddr, E)>,
+    ) -> Result<(), SendFailed> {
         self.update(Update::Add(addrs.into_iter().collect()))
     }
 
-    pub fn remove(&mut self, addrs: impl IntoIterator<Item = SocketAddr>) -> Result<(), ()> {
+    pub fn remove(
+        &mut self,
+        addrs: impl IntoIterator<Item = SocketAddr>,
+    ) -> Result<(), SendFailed> {
         self.update(Update::Remove(addrs.into_iter().collect()))
     }
 
-    pub fn reset(&mut self, addrs: impl IntoIterator<Item = (SocketAddr, E)>) -> Result<(), ()> {
+    pub fn reset(
+        &mut self,
+        addrs: impl IntoIterator<Item = (SocketAddr, E)>,
+    ) -> Result<(), SendFailed> {
         self.update(Update::Reset(addrs.into_iter().collect()))
     }
 
-    pub fn does_not_exist(&mut self) -> Result<(), ()> {
+    pub fn does_not_exist(&mut self) -> Result<(), SendFailed> {
         self.update(Update::DoesNotExist)
     }
 
-    pub fn err(&mut self, e: impl Into<Error>) -> Result<(), ()> {
-        self.0.send(Err(e.into())).map_err(|_| ())
+    pub fn err(&mut self, e: impl Into<Error>) -> Result<(), SendFailed> {
+        self.0.send(Err(e.into())).map_err(|_| SendFailed(()))
     }
 }
 

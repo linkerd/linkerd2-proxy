@@ -176,7 +176,7 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
         self.resolve
             .as_ref()
             .and_then(|a| a.socket_addr())
-            .unwrap_or_else(|| self.logical.orig_dst)
+            .unwrap_or(self.logical.orig_dst)
     }
 }
 
