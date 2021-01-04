@@ -27,8 +27,19 @@ pub trait HasConfig {
     fn tls_server_config(&self) -> Arc<Config>;
 }
 
+/// Must be implemented for I/O types like `TcpStream` on which TLS is
+/// transparently detected.
+///
+/// This is necessary so that we can be generic over the I/O type but still use
+/// `TcpStream::peek` to avoid allocating for mTLS SNI detection.
 #[async_trait::async_trait]
 pub trait Detectable {
+    /// Attempts to detect a `ClientHello` message from the underlying transport
+    /// and, if its SNI matches `local_name`, initiates a TLS server handshake to
+    /// decrypt the stream.
+    ///
+    /// Returns the client's identity, if one exists, and an optionally decrypted
+    /// transport.
     async fn detected(
         self,
         config: Arc<Config>,
