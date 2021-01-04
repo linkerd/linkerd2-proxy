@@ -8,11 +8,7 @@
 use futures::prelude::*;
 use linkerd2_error::Never;
 use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_transport::tls::{
-    self,
-    accept::{self, DetectTls},
-    Conditional,
-};
+use linkerd2_proxy_transport::tls::{self, Conditional};
 use linkerd2_proxy_transport::{
     io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     BindTcp, ConnectTcp,
@@ -115,7 +111,7 @@ where
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
-    S: Fn(accept::Connection) -> SF + Clone + Send + 'static,
+    S: Fn(tls::accept::Connection<TcpStream>) -> SF + Clone + Send + 'static,
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
@@ -148,9 +144,9 @@ where
 
         let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
 
-        let mut detect = DetectTls::new(
+        let mut detect = tls::NewDetectTls::new(
             server_tls,
-            move |meta: accept::Meta| {
+            move |meta: tls::accept::Meta| {
                 let server = server.clone();
                 let sender = sender.clone();
                 let peer_identity = Some(meta.peer_identity.clone());

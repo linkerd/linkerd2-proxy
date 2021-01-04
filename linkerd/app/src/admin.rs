@@ -33,7 +33,7 @@ impl Config {
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, shutdown, trace);
-        let accept = tls::DetectTls::new(
+        let accept = tls::NewDetectTls::new(
             identity,
             admin.into_accept(),
             std::time::Duration::from_secs(1),
