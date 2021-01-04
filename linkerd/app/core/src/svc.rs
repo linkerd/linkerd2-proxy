@@ -4,7 +4,9 @@ pub use crate::proxy::http;
 use crate::{cache, Error};
 pub use linkerd2_buffer as buffer;
 pub use linkerd2_concurrency_limit::ConcurrencyLimit;
-pub use linkerd2_stack::{self as stack, layer, BoxNewService, Fail, NewRouter, NewService};
+pub use linkerd2_stack::{
+    self as stack, layer, BoxNewService, Fail, NewRouter, NewService, NewUnwrapOr,
+};
 pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd2_timeout::{self as timeout, FailFast};
 use std::{
