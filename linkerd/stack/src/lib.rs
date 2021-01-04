@@ -11,27 +11,29 @@ pub mod map_response;
 pub mod map_target;
 pub mod new_service;
 pub mod on_response;
-mod optional;
 mod proxy;
 mod request_filter;
 mod result;
 pub mod router;
 mod switch;
 mod switch_ready;
+mod unwrap_or;
 
-pub use self::box_new_service::BoxNewService;
-pub use self::fail_on_error::FailOnError;
-pub use self::future_service::FutureService;
-pub use self::make_thunk::MakeThunk;
-pub use self::map_response::{MapResponse, MapResponseLayer};
-pub use self::map_target::{MapTarget, MapTargetLayer, MapTargetService};
-pub use self::new_service::NewService;
-pub use self::on_response::{OnResponse, OnResponseLayer};
-pub use self::optional::NewOptional;
-pub use self::proxy::{Proxy, ProxyService};
-pub use self::request_filter::{FilterRequest, RequestFilter};
-pub use self::result::ResultService;
-pub use self::router::{NewRouter, RecognizeRoute};
-pub use self::switch::{MakeSwitch, Switch};
-pub use self::switch_ready::{NewSwitchReady, SwitchReady};
+pub use self::{
+    box_new_service::BoxNewService,
+    fail_on_error::FailOnError,
+    future_service::FutureService,
+    make_thunk::MakeThunk,
+    map_response::{MapResponse, MapResponseLayer},
+    map_target::{MapTarget, MapTargetLayer, MapTargetService},
+    new_service::NewService,
+    on_response::{OnResponse, OnResponseLayer},
+    proxy::{Proxy, ProxyService},
+    request_filter::{FilterRequest, RequestFilter},
+    result::ResultService,
+    router::{NewRouter, RecognizeRoute},
+    switch::{MakeSwitch, Switch},
+    switch_ready::{NewSwitchReady, SwitchReady},
+    unwrap_or::NewUnwrapOr,
+};
 pub use tower::util::Either;

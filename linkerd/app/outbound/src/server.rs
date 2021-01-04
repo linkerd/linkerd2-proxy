@@ -177,7 +177,7 @@ where
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .push(http::NewServeHttp::layer(h2_settings, drain))
-        .push(svc::stack::NewOptional::layer(
+        .push(svc::NewUnwrapOr::layer(
             // When an HTTP version cannot be detected, we fallback to a logical
             // TCP stack. This service needs to be buffered so that it can be
             // cached and cloned per connection.
