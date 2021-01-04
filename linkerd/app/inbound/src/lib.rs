@@ -321,11 +321,9 @@ impl Config {
                 // the connection with a ConnectionRefused error.
                 svc::stack(tcp_forward)
                     .push_map_target(|(h, _): (opaque_transport::Header, _)| TcpEndpoint::from(h))
-                    .push(svc::stack::NewOptional::layer(svc::Fail::<
-                        _,
-                        NonOpaqueRefused,
-                    >::default(
-                    )))
+                    .push(svc::NewUnwrapOr::layer(
+                        svc::Fail::<_, NonOpaqueRefused>::default(),
+                    ))
                     .push(transport::NewDetectService::layer(
                         transport::detect::DetectTimeout::new(
                             self.proxy.detect_protocol_timeout,
