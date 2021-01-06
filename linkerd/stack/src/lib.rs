@@ -3,6 +3,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 mod box_new_service;
+mod fail;
 mod fail_on_error;
 mod future_service;
 pub mod layer;
@@ -21,6 +22,7 @@ mod unwrap_or;
 
 pub use self::{
     box_new_service::BoxNewService,
+    fail::Fail,
     fail_on_error::FailOnError,
     future_service::FutureService,
     make_thunk::MakeThunk,

@@ -140,6 +140,11 @@ impl Config {
         let oc_span_sink = oc_collector.span_sink();
 
         let start_proxy = Box::pin(async move {
+            let span = info_span!("outbound");
+            let _outbound = span.enter();
+
+            info!(listen.addr = %outbound_addr, ingress_mode);
+
             let outbound_http = outbound::http::logical::stack(
                 &outbound.proxy,
                 outbound::http::endpoint::stack(
@@ -158,9 +163,6 @@ impl Config {
                 outbound_metrics.clone(),
             );
 
-            let span = info_span!("outbound");
-            let _enter = span.enter();
-            info!(listen.addr = %outbound_addr, ingress_mode);
             let connect = outbound::tcp::connect::stack(
                 &outbound.proxy.connect,
                 outbound_addr.port(),
@@ -205,7 +207,11 @@ impl Config {
                     .instrument(span.clone()),
                 );
             }
-            drop(_enter);
+            drop(_outbound);
+
+            let span = info_span!("inbound");
+            let _inbound = span.enter();
+            info!(listen.addr = %inbound_addr);
 
             let http_gateway = gateway.build(
                 outbound_http,
@@ -213,15 +219,14 @@ impl Config {
                 local_identity.as_ref().map(|l| l.name().clone()),
             );
 
-            let span = info_span!("inbound");
-            let _enter = span.enter();
-            info!(listen.addr = %inbound_addr);
+            let connect = inbound::tcp_connect(&inbound.proxy.connect);
             tokio::spawn(
                 serve::serve(
                     inbound_listen,
                     inbound.build(
                         inbound_addr,
                         local_identity,
+                        connect,
                         svc::stack(http_gateway)
                             .push_on_response(http::BoxRequest::layer())
                             .into_inner(),
@@ -236,7 +241,7 @@ impl Config {
                 .map_err(|e| panic!("inbound failed: {}", e))
                 .instrument(span.clone()),
             );
-            drop(_enter);
+            drop(_inbound);
         });
 
         Ok(App {
