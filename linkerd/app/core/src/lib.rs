@@ -17,7 +17,6 @@ pub use linkerd2_drain as drain;
 pub use linkerd2_error::{Error, Never, Recover};
 pub use linkerd2_exp_backoff as exp_backoff;
 pub use linkerd2_http_metrics as http_metrics;
-pub use linkerd2_opaque_transport as opaque_transport;
 pub use linkerd2_opencensus as opencensus;
 pub use linkerd2_reconnect as reconnect;
 pub use linkerd2_service_profiles as profiles;
@@ -25,6 +24,7 @@ pub use linkerd2_stack_metrics as stack_metrics;
 pub use linkerd2_stack_tracing as stack_tracing;
 pub use linkerd2_trace_context::TraceContext;
 pub use linkerd2_tracing as trace;
+pub use linkerd2_transport_header as transport_header;
 
 mod addr_match;
 pub mod admin;

@@ -1,5 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let files = &["proto/opaque.proto"];
+    let files = &["proto/header.proto"];
     let dirs = &["proto"];
 
     prost_build::compile_protos(files, dirs)?;

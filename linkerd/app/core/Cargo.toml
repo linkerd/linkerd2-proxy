@@ -38,7 +38,7 @@ linkerd2-exp-backoff = { path = "../../exp-backoff" }
 linkerd2-http-classify = { path = "../../http-classify" }
 linkerd2-http-metrics = { path = "../../http-metrics" }
 linkerd2-metrics = { path = "../../metrics" }
-linkerd2-opaque-transport = { path = "../../opaque-transport" }
+linkerd2-transport-header = { path = "../../transport-header" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.16" }

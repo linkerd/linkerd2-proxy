@@ -14,7 +14,7 @@ use self::require_identity_for_ports::RequireIdentityForPorts;
 use linkerd2_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
-    drain, dst, errors, metrics, opaque_transport,
+    drain, dst, errors, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -25,7 +25,7 @@ use linkerd2_app_core::{
     spans::SpanConverter,
     svc,
     transport::{self, io, listen, tls},
-    Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
+    transport_header, Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
@@ -320,14 +320,16 @@ impl Config {
                 // accordingly. If there was no opaque transport header, fail
                 // the connection with a ConnectionRefused error.
                 svc::stack(tcp_forward)
-                    .push_map_target(|(h, _): (opaque_transport::Header, _)| TcpEndpoint::from(h))
+                    .push_map_target(|(h, _): (transport_header::TransportHeader, _)| {
+                        TcpEndpoint::from(h)
+                    })
                     .push(svc::NewUnwrapOr::layer(
                         svc::Fail::<_, NonOpaqueRefused>::default(),
                     ))
                     .push(transport::NewDetectService::layer(
                         transport::detect::DetectTimeout::new(
                             self.proxy.detect_protocol_timeout,
-                            opaque_transport::DetectHeader::default(),
+                            transport_header::DetectHeader::default(),
                         ),
                     )),
             )
@@ -450,7 +452,7 @@ impl Into<Error> for NonOpaqueRefused {
     fn into(self) -> Error {
         Error::from(io::Error::new(
             io::ErrorKind::ConnectionRefused,
-            "Non-opaque-transport connection refused",
+            "Non-transport-header connection refused",
         ))
     }
 }
