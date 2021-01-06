@@ -355,7 +355,7 @@ macro_rules! http1_tests {
         }
 
         #[tokio::test]
-        async fn http1_removes_transport_headers() {
+        async fn http1_removes_connection_headers() {
             let _trace = trace_init();
 
             let srv = server::http1()
