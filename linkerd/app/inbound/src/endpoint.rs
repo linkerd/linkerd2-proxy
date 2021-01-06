@@ -1,12 +1,11 @@
 use indexmap::IndexMap;
 use linkerd2_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, metrics,
-    opaque_transport::Header,
-    profiles,
+    http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, identity, tap},
     stack_tracing, svc,
     transport::{self, listen, tls},
+    transport_header::TransportHeader,
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
@@ -113,8 +112,8 @@ impl From<TcpAccept> for TcpEndpoint {
     }
 }
 
-impl From<Header> for TcpEndpoint {
-    fn from(Header { port, .. }: Header) -> Self {
+impl From<TransportHeader> for TcpEndpoint {
+    fn from(TransportHeader { port, .. }: TransportHeader) -> Self {
         Self { port }
     }
 }

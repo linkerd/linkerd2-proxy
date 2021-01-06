@@ -1,9 +1,9 @@
 use crate::target::Endpoint;
 use linkerd2_app_core::{
     dns::Name,
-    opaque_transport::Header,
     svc::{self, layer},
     transport::io,
+    transport_header::TransportHeader,
     Error,
 };
 use std::{
@@ -66,12 +66,12 @@ where
                         Name::from_str(auth.host())
                             .map_err(|error| warn!(%error, "Invalid name"))
                             .ok()
-                            .map(|n| Header {
+                            .map(|n| TransportHeader {
                                 port,
                                 name: Some(n),
                             })
                     })
-                    .unwrap_or(Header {
+                    .unwrap_or(TransportHeader {
                         port: orig_port,
                         name: None,
                     });
@@ -103,12 +103,12 @@ mod test {
     use crate::target::{Concrete, Endpoint, Logical};
     use futures::future;
     use linkerd2_app_core::{
-        opaque_transport::Header,
         proxy::api_resolve::{Metadata, ProtocolHint},
         transport::{
             io::{self, AsyncWriteExt},
             tls,
         },
+        transport_header::TransportHeader,
     };
     use tower::util::{service_fn, ServiceExt};
 
@@ -156,7 +156,7 @@ mod test {
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
                 assert_eq!(ep.addr.port(), 4143);
-                let hdr = Header {
+                let hdr = TransportHeader {
                     port: ep.concrete.logical.orig_dst.port(),
                     name: None,
                 };
@@ -188,7 +188,7 @@ mod test {
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
                 assert_eq!(ep.addr.port(), 4143);
-                let hdr = Header {
+                let hdr = TransportHeader {
                     port: 5555,
                     name: Some(Name::from_str("foo.bar.example.com").unwrap()),
                 };
@@ -220,7 +220,7 @@ mod test {
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
                 assert_eq!(ep.addr.port(), 4143);
-                let hdr = Header {
+                let hdr = TransportHeader {
                     port: ep.concrete.logical.orig_dst.port(),
                     name: None,
                 };

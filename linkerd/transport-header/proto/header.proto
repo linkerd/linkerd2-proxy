@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package opaque.proxy.l5d.io;
+package transport.l5d.io;
 
 message Header {
   // The target port.

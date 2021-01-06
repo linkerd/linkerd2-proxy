@@ -11,11 +11,11 @@ use std::str::FromStr;
 use tracing::trace;
 
 mod proto {
-    include!(concat!(env!("OUT_DIR"), "/opaque.proxy.l5d.io.rs"));
+    include!(concat!(env!("OUT_DIR"), "/transport.l5d.io.rs"));
 }
 
 #[derive(Clone, Debug)]
-pub struct Header {
+pub struct TransportHeader {
     /// The target port.
     pub port: u16,
 
@@ -26,24 +26,26 @@ pub struct Header {
 #[derive(Clone, Debug, Default)]
 pub struct DetectHeader(());
 
-const PREFACE: &[u8] = b"proxy.l5d.io/opaque\r\n\r\n";
+const PREFACE: &[u8] = b"transport.l5d.io/v1\r\n\r\n";
 const PREFACE_AND_SIZE_LEN: usize = PREFACE.len() + 4;
 
 #[async_trait::async_trait]
 impl Detect for DetectHeader {
-    type Protocol = Header;
+    type Protocol = TransportHeader;
 
     #[inline]
     async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
         &self,
         io: &mut I,
         buf: &mut BytesMut,
-    ) -> Result<Option<Header>, Error> {
-        Header::read_prefaced(io, buf).await.map_err(Into::into)
+    ) -> Result<Option<TransportHeader>, Error> {
+        TransportHeader::read_prefaced(io, buf)
+            .await
+            .map_err(Into::into)
     }
 }
 
-impl Header {
+impl TransportHeader {
     pub async fn write(&self, io: &mut (impl io::AsyncWrite + Unpin)) -> Result<usize, Error> {
         let mut buf = self.encode_prefaced_buf()?;
         let mut sz = 0usize;
@@ -181,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn roundtrip_prefaced() {
-        let header = Header {
+        let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
         };
@@ -192,7 +194,7 @@ mod tests {
             std::io::Cursor::new(buf.freeze())
         };
         let mut buf = BytesMut::new();
-        let h = Header::read_prefaced(&mut rx, &mut buf)
+        let h = TransportHeader::read_prefaced(&mut rx, &mut buf)
             .await
             .expect("decodes")
             .expect("decodes");
@@ -203,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn detect_prefaced() {
-        let header = Header {
+        let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
         };
@@ -239,7 +241,7 @@ mod tests {
 
     #[tokio::test]
     async fn many_reads() {
-        let header = Header {
+        let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
         };
@@ -255,8 +257,8 @@ mod tests {
                 buf.freeze()
             };
             tokio_test::io::Builder::new()
-                .read(b"proxy.l5d")
-                .read(b".io/opaque")
+                .read(b"transport.l5d")
+                .read(b".io/v1")
                 .read(b"\r\n\r\n")
                 .read(len.as_ref())
                 .read(msg.as_ref())
@@ -264,7 +266,7 @@ mod tests {
                 .build()
         };
         let mut buf = BytesMut::new();
-        let h = Header::read_prefaced(&mut rx, &mut buf)
+        let h = TransportHeader::read_prefaced(&mut rx, &mut buf)
             .await
             .expect("I/O must not error")
             .expect("header must be present");
