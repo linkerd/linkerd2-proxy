@@ -2,7 +2,7 @@ use futures::{future, ready, Stream};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::{fmt, future::Future, mem, pin::Pin};
-use tokio::sync::{mpsc, OwnedSemaphorePermit as Permit, Semaphore, AcquireError};
+use tokio::sync::{mpsc, AcquireError, OwnedSemaphorePermit as Permit, Semaphore};
 
 use self::error::{SendError, TrySendError};
 pub use tokio::sync::mpsc::error;
@@ -18,7 +18,6 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     let rx = Receiver {
         rx,
         semaphore: Arc::downgrade(&semaphore),
-        buffer,
     };
     let tx = Sender {
         tx,
@@ -45,11 +44,10 @@ pub struct Sender<T> {
 pub struct Receiver<T> {
     rx: mpsc::UnboundedReceiver<(T, Permit)>,
     semaphore: Weak<Semaphore>,
-    buffer: usize,
 }
 
 enum State {
-    Waiting(Pin<Box<dyn Future<Output = Result<Permit, AcquireError> + Send + Sync>>),
+    Waiting(Pin<Box<dyn Future<Output = Result<Permit, AcquireError>> + Send + Sync>>),
     Acquired(Permit),
     Empty,
 }
@@ -59,7 +57,9 @@ impl<T> Sender<T> {
         loop {
             self.state = match self.state {
                 State::Empty => State::Waiting(Box::pin(self.semaphore.clone().acquire_owned())),
-                State::Waiting(ref mut f) => State::Acquired(ready!(Pin::new(f).poll(cx))),
+                State::Waiting(ref mut f) => {
+                    State::Acquired(ready!(Pin::new(f).poll(cx).map_err(|_| SendError(())))?)
+                }
                 State::Acquired(_) if self.tx.is_closed() => {
                     return Poll::Ready(Err(SendError(())))
                 }
