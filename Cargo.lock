@@ -1175,6 +1175,7 @@ dependencies = [
  "bytes 1.0.0",
  "futures 0.3.5",
  "http",
+ "http-body",
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
