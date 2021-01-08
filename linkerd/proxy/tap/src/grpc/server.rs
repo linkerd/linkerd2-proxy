@@ -1,6 +1,7 @@
 use super::match_::Match;
 use crate::{iface, Inspect, Registry};
 use futures::ready;
+use futures::stream::Stream;
 use hyper::body::{Buf, HttpBody};
 use linkerd2_conditional::Conditional;
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
@@ -13,7 +14,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::time::Instant;
-use tokio::stream::Stream;
 use tokio::sync::mpsc;
 use tonic::{self as grpc, Response};
 use tracing::{debug, trace, warn};
@@ -191,7 +191,7 @@ impl Stream for ResponseStream {
     type Item = Result<api::TapEvent, grpc::Status>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.project();
+        let mut this = self.project();
         // Drop the Shared handle once at our limit so that services do not do
         // any more matching against this tap.
         //
@@ -207,7 +207,7 @@ impl Stream for ResponseStream {
 
         // Read events from taps. The receiver can't actually error, but we need
         // to satisfy the type signature, so we coerce errors into EOS.
-        Poll::Ready(ready!(this.events_rx.poll_next(cx)).map(Ok))
+        Poll::Ready(ready!(this.events_rx.poll_recv(cx)).map(Ok))
     }
 }
 

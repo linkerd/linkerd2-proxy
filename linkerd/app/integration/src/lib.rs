@@ -34,7 +34,7 @@ use std::task::{Context, Poll};
 pub use std::time::Duration;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpListener;
-pub use tokio::stream::{Stream, StreamExt};
+pub use futures::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
 pub use tonic as grpc;
 pub use tower::Service;

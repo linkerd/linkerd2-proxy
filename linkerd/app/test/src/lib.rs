@@ -7,7 +7,7 @@ pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 pub use linkerd2_app_core::{self as app_core, Addr, Error};
 pub use std::net::SocketAddr;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-pub use tokio::stream::{Stream, StreamExt};
+pub use futures::stream::{Stream, StreamExt};
 pub use tokio::sync::oneshot;
 pub use tower::Service;
 pub use tracing::*;
