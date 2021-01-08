@@ -1643,8 +1643,8 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-io",
  "linkerd2-proxy-transport",
- "prost 0.6.1",
- "prost-build 0.6.1",
+ "prost 0.7.0",
+ "prost-build",
  "tokio 1.0.1",
  "tokio-test 0.4.0",
  "tracing",
@@ -2030,23 +2030,6 @@ checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
 dependencies = [
  "bytes 1.0.0",
  "prost-derive 0.7.0",
-]
-
-[[package]]
-name = "prost-build"
-version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
-dependencies = [
- "bytes 0.6.0",
- "heck",
- "itertools",
- "log",
- "multimap",
- "petgraph",
- "prost 0.6.1",
- "prost-types 0.6.1",
- "tempfile",
- "which",
 ]
 
 [[package]]
@@ -2879,7 +2862,7 @@ version = "0.3.1"
 source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#329fe32643662834d0d95af483bf9f44c57c3dca"
 dependencies = [
  "proc-macro2",
- "prost-build 0.7.0",
+ "prost-build",
  "quote",
  "syn",
 ]
@@ -3310,6 +3293,11 @@ name = "wyz"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85e60b0d1b5f99db2556934e21937020776a5d31520bf169e851ac44e6420214"
+
+[[patch.unused]]
+name = "prost-build"
+version = "0.6.1"
+source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
 
 [[patch.unused]]
 name = "tokio-rustls"
