@@ -1,8 +1,4 @@
 #![deny(warnings, rust_2018_idioms)]
-use futures::{
-    compat::{Compat, Compat01As03, Future01CompatExt},
-    TryFutureExt,
-};
 use linkerd2_error::Error;
 use linkerd2_stack::Proxy;
 use pin_project::pin_project;
@@ -11,7 +7,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::time;
-use tokio_connect::Connect;
 
 pub mod error;
 mod failfast;
@@ -88,25 +83,6 @@ where
             None => TimeoutFuture::Passthru(inner),
             Some(t) => TimeoutFuture::Timeout(time::timeout(t, inner), t),
         }
-    }
-}
-
-impl<C> Connect for Timeout<C>
-where
-    C: Connect,
-    C::Error: Into<Error>,
-{
-    type Connected = C::Connected;
-    type Error = Error;
-    type Future = Compat<TimeoutFuture<Compat01As03<C::Future>>>;
-
-    fn connect(&self) -> Self::Future {
-        let inner = self.inner.connect();
-        match self.duration {
-            None => TimeoutFuture::Passthru(inner.compat()),
-            Some(t) => TimeoutFuture::Timeout(time::timeout(t, inner.compat()), t),
-        }
-        .compat()
     }
 }
 
