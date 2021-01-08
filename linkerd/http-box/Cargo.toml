@@ -6,10 +6,9 @@ edition = "2018"
 publish = false
 
 [dependencies]
-bytes = "0.6"
+bytes = "1"
 futures = "0.3"
 http = "0.2"
-http-body = "0.4"
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tower = {version = "0.4", default-features = false }

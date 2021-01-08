@@ -205,7 +205,7 @@ unsafe impl BufMut for CopyBuf {
         self.buf.len() - self.write_pos
     }
 
-    fn bytes_mut(&mut self) -> &mut bytes::buf::UninitSlice {
+    fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
         unsafe {
             // this is, in fact, _totally fine and safe_: all the memory is
             // initialized.

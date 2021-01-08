@@ -639,9 +639,9 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "0.4.0"
-source = "git+https://github.com/hyperium/http-body?branch=master#5e434739e747c0b6611ec41020740b17f735d25a"
+source = "git+https://github.com/hyperium/http-body?branch=master#da3247764717020abb78d7d32f9f4cc09e680ef1"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "http",
 ]
 
@@ -851,7 +851,7 @@ dependencies = [
 name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -932,7 +932,7 @@ dependencies = [
 name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "http",
  "indexmap",
@@ -946,7 +946,7 @@ dependencies = [
 name = "linkerd2-app-integration"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "flate2",
  "futures 0.3.5",
  "h2 0.3.0",
@@ -975,7 +975,7 @@ dependencies = [
 name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "http",
  "hyper",
@@ -1117,7 +1117,7 @@ dependencies = [
 name = "linkerd2-duplex"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "linkerd2-io",
  "pin-project 0.4.22",
@@ -1172,10 +1172,9 @@ dependencies = [
 name = "linkerd2-http-box"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "http",
- "http-body",
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
@@ -1196,7 +1195,7 @@ dependencies = [
 name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1227,7 +1226,7 @@ dependencies = [
 name = "linkerd2-io"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "linkerd2-errno",
  "pin-project 0.4.22",
@@ -1363,7 +1362,7 @@ name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "h2 0.3.0",
  "http",
@@ -1467,7 +1466,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream 0.2.1",
  "async-trait",
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "indexmap",
  "libc",
@@ -1521,7 +1520,7 @@ name = "linkerd2-service-profiles"
 version = "0.1.0"
 dependencies = [
  "async-stream 0.3.0",
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1610,7 +1609,7 @@ name = "linkerd2-trace-context"
 version = "0.1.0"
 dependencies = [
  "base64 0.10.1",
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "futures 0.3.5",
  "hex",
  "http",
@@ -1626,7 +1625,7 @@ dependencies = [
 name = "linkerd2-tracing"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "html-escape",
  "http",
  "hyper",
@@ -1644,7 +1643,7 @@ name = "linkerd2-transport-header"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "linkerd2-dns-name",
  "linkerd2-error",
  "linkerd2-io",
@@ -1873,7 +1872,7 @@ checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
 name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes 1.0.0",
  "prost",
  "prost-types",
  "tonic",

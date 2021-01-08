@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 async-trait = "0.1"
-bytes = "0.6"
+bytes = "1"
 linkerd2-dns-name = { path = "../dns/name" }
 linkerd2-error = { path = "../error" }
 linkerd2-io = { path = "../io" }

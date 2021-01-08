@@ -9,7 +9,7 @@ Configures and runs the outbound proxy
 """
 
 [dependencies]
-bytes = "0.6"
+bytes = "1"
 http = "0.2"
 futures = "0.3"
 indexmap = "1.0"

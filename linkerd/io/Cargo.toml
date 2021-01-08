@@ -13,7 +13,7 @@ default = []
 
 [dependencies]
 futures = "0.3"
-bytes = "0.6"
+bytes = "1"
 linkerd2-errno = { path = "../errno" }
 tokio = { version = "1", features = ["io-util", "net"] }
 tokio-rustls = "0.20"
