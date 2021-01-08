@@ -127,12 +127,6 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
-
-[[package]]
-name = "base64"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
@@ -959,7 +953,7 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-proxy-api",
  "regex 0.1.80",
- "rustls 0.19.0",
+ "rustls",
  "socket2",
  "tokio 1.0.1",
  "tokio-rustls",
@@ -1217,7 +1211,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd2-dns-name",
  "ring",
- "rustls 0.19.0",
+ "rustls",
  "tracing",
  "untrusted",
  "webpki",
@@ -1456,7 +1450,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "rand 0.7.2",
+ "rand 0.8.1",
  "tokio 1.0.1",
  "tower",
 ]
@@ -1480,7 +1474,7 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "rustls 0.18.1",
+ "rustls",
  "socket2",
  "tokio 1.0.1",
  "tokio-rustls",
@@ -2453,19 +2447,6 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d1126dcf58e93cee7d098dbda643b5f92ed724f1f6a63007c1116eed6700c81"
-dependencies = [
- "base64 0.12.3",
- "log",
- "ring",
- "sct",
- "webpki",
-]
-
-[[package]]
-name = "rustls"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "064fd21ff87c6e87ed4506e68beb42459caa4a0e2eb144932e6776768556980b"
@@ -2774,7 +2755,7 @@ version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc6844de72e57df1980054b38be3a9f4702aba4858be64dd700181a8a6d0e1b6"
 dependencies = [
- "rustls 0.19.0",
+ "rustls",
  "tokio 1.0.1",
  "webpki",
 ]
