@@ -899,7 +899,7 @@ dependencies = [
  "linkerd2-transport-header",
  "pin-project 0.4.22",
  "procinfo",
- "prost-types",
+ "prost-types 0.6.1",
  "regex 1.3.9",
  "tokio 1.0.1",
  "tokio-timer",
@@ -1288,8 +1288,8 @@ source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.16#5d606505
 dependencies = [
  "h2 0.2.6",
  "http",
- "prost",
- "prost-types",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
  "quickcheck",
  "rand 0.7.2",
  "tonic",
@@ -1309,7 +1309,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "linkerd2-proxy-core",
  "pin-project 0.4.22",
- "prost",
+ "prost 0.6.1",
  "tonic",
  "tower",
  "tracing",
@@ -1437,7 +1437,7 @@ dependencies = [
  "linkerd2-proxy-transport",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "prost-types",
+ "prost-types 0.6.1",
  "rand 0.7.2",
  "tokio 1.0.1",
  "tonic",
@@ -1532,7 +1532,7 @@ dependencies = [
  "linkerd2-proxy-api-resolve",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "prost-types",
+ "prost-types 0.6.1",
  "quickcheck",
  "rand 0.7.2",
  "regex 1.3.9",
@@ -1648,8 +1648,8 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-io",
  "linkerd2-proxy-transport",
- "prost",
- "prost-build",
+ "prost 0.6.1",
+ "prost-build 0.6.1",
  "tokio 1.0.1",
  "tokio-test 0.4.0",
  "tracing",
@@ -1873,8 +1873,8 @@ name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
  "bytes 1.0.0",
- "prost",
- "prost-types",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
  "tonic",
  "tonic-build",
 ]
@@ -2024,7 +2024,17 @@ version = "0.6.1"
 source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
 dependencies = [
  "bytes 0.6.0",
- "prost-derive",
+ "prost-derive 0.6.1",
+]
+
+[[package]]
+name = "prost"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
+dependencies = [
+ "bytes 1.0.0",
+ "prost-derive 0.7.0",
 ]
 
 [[package]]
@@ -2038,8 +2048,26 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prost",
- "prost-types",
+ "prost 0.6.1",
+ "prost-types 0.6.1",
+ "tempfile",
+ "which",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32d3ebd75ac2679c2af3a92246639f9fcc8a442ee420719cc4fe195b98dd5fa3"
+dependencies = [
+ "bytes 1.0.0",
+ "heck",
+ "itertools",
+ "log",
+ "multimap",
+ "petgraph",
+ "prost 0.7.0",
+ "prost-types 0.7.0",
  "tempfile",
  "which",
 ]
@@ -2057,12 +2085,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "169a15f3008ecb5160cba7d37bcd690a7601b6d30cfb87a117d45e59d52af5d4"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.6.1"
 source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
 dependencies = [
  "bytes 0.6.0",
- "prost",
+ "prost 0.6.1",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b518d7cdd93dab1d1122cf07fa9a60771836c668dde9d9e2a139f957f0d9f1bb"
+dependencies = [
+ "bytes 1.0.0",
+ "prost 0.7.0",
 ]
 
 [[package]]
@@ -2653,7 +2704,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a12a3eb39ee2c231be64487f1fcbe726c8f2514876a55480a5ab8559fc374252"
 dependencies = [
  "autocfg 1.0.0",
- "futures-core",
  "lazy_static",
  "libc",
  "mio",
@@ -2789,20 +2839,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3137de2b078e95274b696cc522e87f22c9a753fe3ef3344116ffb94f104f10a3"
-dependencies = [
- "bytes 0.6.0",
- "futures-core",
- "futures-sink",
- "log",
- "pin-project-lite 0.2.0",
- "tokio 0.3.5",
-]
-
-[[package]]
-name = "tokio-util"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36135b7e7da911f5f8b9331209f7fab4cc13498f3fff52f72a710c78187e3148"
@@ -2820,21 +2856,23 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.3.1"
-source = "git+https://github.com/hawkw/tonic?branch=eliza/tokio-0.3#30526bc9dfd4c02cce48ac92804204fd9178cb59"
+source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#329fe32643662834d0d95af483bf9f44c57c3dca"
 dependencies = [
- "async-stream 0.2.1",
+ "async-stream 0.3.0",
  "async-trait",
- "base64 0.12.3",
- "bytes 0.6.0",
+ "base64 0.13.0",
+ "bytes 1.0.0",
  "futures-core",
  "futures-util",
  "http",
  "http-body",
  "percent-encoding",
- "pin-project 0.4.22",
- "prost",
- "prost-derive",
- "tokio-util 0.5.1",
+ "pin-project 1.0.2",
+ "prost 0.7.0",
+ "prost-derive 0.7.0",
+ "tokio-stream",
+ "tokio-util 0.6.0",
+ "tower-make",
  "tower-service",
  "tracing",
 ]
@@ -2842,10 +2880,10 @@ dependencies = [
 [[package]]
 name = "tonic-build"
 version = "0.3.1"
-source = "git+https://github.com/hawkw/tonic?branch=eliza/tokio-0.3#30526bc9dfd4c02cce48ac92804204fd9178cb59"
+source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#329fe32643662834d0d95af483bf9f44c57c3dca"
 dependencies = [
  "proc-macro2",
- "prost-build",
+ "prost-build 0.7.0",
  "quote",
  "syn",
 ]
@@ -2874,6 +2912,16 @@ name = "tower-layer"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
+
+[[package]]
+name = "tower-make"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
+dependencies = [
+ "tokio 0.2.23",
+ "tower-service",
+]
 
 [[package]]
 name = "tower-request-modifier"

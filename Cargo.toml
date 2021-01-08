@@ -71,8 +71,13 @@ h2 = { git = "https://github.com/hyperium/h2" }
 # dep (which is `branch = "master"`).
 http-body = { git = "https://github.com/hyperium/http-body", branch = "master" }
 tokio-rustls = { git = "https://github.com/tokio-rs/tls", rev = "e6ef54641b911cfcf23b77a8c4826ae0f8e9870e" }
-tonic = { git = "https://github.com/hawkw/tonic", branch = "eliza/tokio-0.3" }
-tonic-build = { git = "https://github.com/hawkw/tonic", branch = "eliza/tokio-0.3" }
+tonic = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
+tonic-build = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
 prost = { git = "https://github.com/danburkert/prost" }
 prost-build = { git = "https://github.com/danburkert/prost" }
 prost-types = { git = "https://github.com/danburkert/prost" }
+
+[patch.'https://github.com/hawkw/tonic']
+# TODO: remove this patch section when proxy-api is updated
+tonic = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
+tonic-build = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
