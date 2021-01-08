@@ -141,7 +141,7 @@ impl<T> Receiver<T> {
     }
 
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
-        let res = ready!(Pin::new(&mut self.rx).poll_next(cx));
+        let res = ready!(Pin::new(&mut self.rx).poll_recv(cx));
         Poll::Ready(res.map(|(t, _)| t))
     }
 }
@@ -149,8 +149,7 @@ impl<T> Receiver<T> {
 impl<T> Stream for Receiver<T> {
     type Item = T;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let res = ready!(Pin::new(&mut self.as_mut().rx).poll_next(cx));
-        Poll::Ready(res.map(|(t, _)| t))
+        self.as_mut().poll_recv(cx)
     }
 }
 

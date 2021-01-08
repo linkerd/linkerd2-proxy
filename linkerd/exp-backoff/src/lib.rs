@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
+use futures::Stream;
 use pin_project::pin_project;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::fmt;
@@ -8,7 +9,7 @@ use std::ops::Mul;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::{stream::Stream, time};
+use tokio::time;
 
 /// A jittered exponential backoff strategy.
 // The raw fields are exposed so this type can be constructed statically.
