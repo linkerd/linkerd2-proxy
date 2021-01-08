@@ -11,7 +11,7 @@ test-util = []
 [dependencies]
 linkerd2-dns-name = { path = "../dns/name" }
 ring = "0.16.19"
-rustls = "0.18"
+rustls = "0.19"
 tracing = "0.1.2"
 untrusted = "0.7"
 webpki = "=0.21.3"
