@@ -9,13 +9,13 @@ publish = false
 futures = "0.3"
 linkerd2-channel = { path = "../channel" }
 linkerd2-error = { path = "../error" }
-tokio = { version = "0.3", features = ["sync", "stream", "time", "macros"] }
-tower = { version = "0.4", default_features = false, features = ["util"] }
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+tower = { version = "0.4.1", default_features = false, features = ["util"] }
 tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
 
 [dev-dependencies]
-tokio = { version = "0.3", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
 tower-test = "0.3"
-tokio-test = "0.3"
+tokio-test = "0.4"

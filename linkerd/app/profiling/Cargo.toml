@@ -13,4 +13,4 @@ for profiling and benchmarking.
 
 [dependencies]
 linkerd2-app-integration = { path = "../integration" }
-tokio = { version = "0.3", features = ["rt", "net", "macros"]}
+tokio = { version = "1", features = ["rt", "net", "macros"]}

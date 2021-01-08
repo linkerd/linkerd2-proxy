@@ -13,7 +13,7 @@ dyn-clone = "1.0.3"
 futures = "0.3"
 linkerd2-error = { path = "../error" }
 pin-project = "0.4"
-tokio = { version = "0.3", features = ["time"] }
+tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 
 [dependencies.tower]
@@ -27,6 +27,6 @@ features = [
 
 [dev-dependencies]
 tower-test = "0.3"
-tokio-test = "0.3"
+tokio-test = "0.4"
 tracing-subscriber = "0.2.14"
-tokio = { version = "0.3", features = ["rt-multi-thread", "time", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }

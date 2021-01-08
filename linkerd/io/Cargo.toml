@@ -15,11 +15,11 @@ default = []
 futures = "0.3"
 bytes = "0.6"
 linkerd2-errno = { path = "../errno" }
-tokio = { version = "0.3", features = ["io-util", "net"] }
+tokio = { version = "1", features = ["io-util", "net"] }
 tokio-rustls = "0.20"
-tokio-test = { version = "0.3", optional = true }
-tokio-util = { version = "0.5.1", features = ["io"] }
+tokio-test = { version = "0.4", optional = true }
+tokio-util = { version = "0.6", features = ["io"] }
 pin-project = "0.4"
 
 [dev-dependencies]
-tokio = { version = "0.3", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "macros"] }

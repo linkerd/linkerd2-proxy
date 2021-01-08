@@ -28,9 +28,9 @@ linkerd2-io = { path = "../../io" }
 linkerd2-metrics = { path = "../../metrics" }
 linkerd2-stack = { path = "../../stack" }
 rustls = "0.18"
-tokio = { version = "0.3", features = ["io-util", "macros", "net", "time"]}
+tokio = { version = "1", features = ["io-util", "macros", "net", "time"]}
 tokio-rustls = "0.20"
-tokio-util = { version = "0.5", features = ["compat"]}
+tokio-util = { version = "0.6", features = ["compat"]}
 tracing = "0.1.22"
 webpki = "0.21"
 untrusted = "0.7"
@@ -51,6 +51,6 @@ libc = "0.2"
 [dev-dependencies]
 linkerd2-identity = { path = "../../identity", features = ["test-util"] }
 tracing-subscriber = "0.2.14"
-tokio = { version = "0.3", features = ["rt-multi-thread"] }
-tower = { version = "0.4", default-features = false, features = ["util"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+tower = { version = "0.4.1", default-features = false, features = ["util"] }
 tracing-futures = { version = "0.2", features = ["std-future"] }

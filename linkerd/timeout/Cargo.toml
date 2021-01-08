@@ -12,7 +12,7 @@ linkerd2-stack = { path = "../stack" }
 tokio-connect = { git = "https://github.com/carllerche/tokio-connect" }
 tracing = "0.1.22"
 pin-project = "0.4"
-tokio = { version = "0.3", features = ["time"] }
+tokio = { version = "1", features = ["time"] }
 
 [dependencies.tower]
 version = "0.4"
@@ -26,5 +26,5 @@ features = [
 
 [dev-dependencies]
 tower-test = "0.3"
-tokio-test = "0.3"
-tokio = { version = "0.3", features = ["macros", "rt-multi-thread"] }
+tokio-test = "0.4"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

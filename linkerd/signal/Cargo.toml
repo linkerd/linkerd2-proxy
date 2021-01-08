@@ -6,5 +6,5 @@ edition = "2018"
 publish = false
 
 [dependencies]
-tokio = { version = "0.3", features = ["macros", "signal"] }
+tokio = { version = "1", features = ["macros", "signal"] }
 tracing = "0.1.22"

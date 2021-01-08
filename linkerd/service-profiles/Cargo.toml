@@ -22,7 +22,7 @@ linkerd2-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd2-stack = { path  = "../stack" }
 rand = { version = "0.7", features = ["small_rng"] }
 regex = "1.0.0"
-tokio = { version = "0.3", features = ["macros", "rt", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 async-stream = "0.3"
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.22"

@@ -64,10 +64,6 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21", rev = "b2c3bb3" }
-# TODO(eliza): when the Tokio 0.3 versions of our various dependencies are
-# published, remove these patches...
-tower = { version = "0.4", git = "https://github.com/tower-rs/tower", rev = "450fa3d2be2b43850ceb125009d636d1d8629ad7" }
-hyper = { git = "https://github.com/hyperium/hyper", rev = "d6aadb830072959497f414c01bcdba4c8e681088" }
 # this isn't pinned to a rev because it needs to be consistent with Hyper's git
 # dep (which is not pinned).
 h2 = { git = "https://github.com/hyperium/h2" }
