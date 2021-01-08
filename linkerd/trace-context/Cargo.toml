@@ -14,6 +14,6 @@ http = "0.2"
 linkerd2-channel = { path = "../channel" }
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
-rand = "0.7"
+rand = "0.8"
 tower = { version = "0.4.1", default-features = false, features = ["util"] }
 tracing = "0.1.2"
