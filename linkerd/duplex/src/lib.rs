@@ -190,7 +190,7 @@ impl Buf for CopyBuf {
         self.write_pos - self.read_pos
     }
 
-    fn bytes(&self) -> &[u8] {
+    fn chunk(&self) -> &[u8] {
         &self.buf[self.read_pos..self.write_pos]
     }
 
