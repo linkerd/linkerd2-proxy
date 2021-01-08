@@ -16,7 +16,7 @@ futures = "0.3"
 bytes = "1"
 linkerd2-errno = { path = "../errno" }
 tokio = { version = "1", features = ["io-util", "net"] }
-tokio-rustls = "0.20"
+tokio-rustls = "0.22"
 tokio-test = { version = "0.4", optional = true }
 tokio-util = { version = "0.6", features = ["io"] }
 pin-project = "0.4"
