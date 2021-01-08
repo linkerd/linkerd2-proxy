@@ -2,7 +2,7 @@ use futures::{future, ready, Stream};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::{fmt, future::Future, mem, pin::Pin};
-use tokio::sync::{mpsc, OwnedSemaphorePermit as Permit, Semaphore};
+use tokio::sync::{mpsc, OwnedSemaphorePermit as Permit, Semaphore, AcquireError};
 
 use self::error::{SendError, TrySendError};
 pub use tokio::sync::mpsc::error;
@@ -49,7 +49,7 @@ pub struct Receiver<T> {
 }
 
 enum State {
-    Waiting(Pin<Box<dyn Future<Output = Permit> + Send + Sync>>),
+    Waiting(Pin<Box<dyn Future<Output = Result<Permit, AcquireError> + Send + Sync>>),
     Acquired(Permit),
     Empty,
 }
@@ -156,11 +156,7 @@ impl<T> Stream for Receiver<T> {
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         if let Some(semaphore) = self.semaphore.upgrade() {
-            // Close the buffer by releasing any senders waiting on channel capacity.
-            // If more than `usize::MAX >> 3` permits are added to the semaphore, it
-            // will panic.
-            const MAX: usize = std::usize::MAX >> 4;
-            semaphore.add_permits(MAX - self.buffer - semaphore.available_permits());
+            semaphore.close();
         }
     }
 }
