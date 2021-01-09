@@ -997,14 +997,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-app-profiling"
-version = "0.1.0"
-dependencies = [
- "linkerd2-app-integration",
- "tokio 0.3.5",
-]
-
-[[package]]
 name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [

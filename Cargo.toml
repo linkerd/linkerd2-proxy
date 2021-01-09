@@ -7,7 +7,6 @@ members = [
     "linkerd/app/inbound",
     "linkerd/app/integration",
     "linkerd/app/outbound",
-    "linkerd/app/profiling",
     "linkerd/app/test",
     "linkerd/app",
     "linkerd/buffer",
