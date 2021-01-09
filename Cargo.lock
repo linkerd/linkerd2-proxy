@@ -520,6 +520,26 @@ dependencies = [
 [[package]]
 name = "h2"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b67e66362108efccd8ac053abafc8b7a8d86a37e6e48fc4f6f7485eb5e9e6a5"
+dependencies = [
+ "bytes 1.0.0",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "futures-util",
+ "http",
+ "indexmap",
+ "slab",
+ "tokio 1.0.1",
+ "tokio-util",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "h2"
+version = "0.3.0"
 source = "git+https://github.com/hyperium/h2#eec547d0dd76612b8743fbfbb28afa09df58ebdd"
 dependencies = [
  "bytes 1.0.0",
@@ -608,7 +628,8 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "0.4.0"
-source = "git+https://github.com/hyperium/http-body?branch=master#da3247764717020abb78d7d32f9f4cc09e680ef1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2861bd27ee074e5ee891e8b539837a9430012e249d7f0ca2d795650f579c1994"
 dependencies = [
  "bytes 1.0.0",
  "http",
@@ -636,7 +657,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2",
+ "h2 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "http",
  "http-body",
  "httparse",
@@ -928,7 +949,7 @@ dependencies = [
  "bytes 1.0.0",
  "flate2",
  "futures 0.3.5",
- "h2",
+ "h2 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "http",
  "http-body",
  "hyper",
@@ -988,7 +1009,7 @@ name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
- "h2",
+ "h2 0.3.0 (git+https://github.com/hyperium/h2)",
  "http",
  "http-body",
  "hyper",
@@ -1268,7 +1289,7 @@ name = "linkerd2-proxy-api"
 version = "0.1.16"
 source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tokio-1.0#07127e6621a9d294f432aa0012635d9014f95004"
 dependencies = [
- "h2",
+ "h2 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "http",
  "prost 0.7.0",
  "prost-types",
@@ -1347,7 +1368,7 @@ dependencies = [
  "async-trait",
  "bytes 1.0.0",
  "futures 0.3.5",
- "h2",
+ "h2 0.3.0 (git+https://github.com/hyperium/h2)",
  "http",
  "http-body",
  "httparse",
@@ -3259,8 +3280,3 @@ name = "wyz"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85e60b0d1b5f99db2556934e21937020776a5d31520bf169e851ac44e6420214"
-
-[[patch.unused]]
-name = "tokio-rustls"
-version = "0.20.0"
-source = "git+https://github.com/tokio-rs/tls?rev=e6ef54641b911cfcf23b77a8c4826ae0f8e9870e#e6ef54641b911cfcf23b77a8c4826ae0f8e9870e"

@@ -64,22 +64,5 @@ debug = false
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21", rev = "b2c3bb3" }
-# this isn't pinned to a rev because it needs to be consistent with Hyper's git
-# dep (which is not pinned).
-h2 = { git = "https://github.com/hyperium/h2" }
-# this isn't pinned to a rev because it needs to be consistent with Hyper's git
-# dep (which is `branch = "master"`).
-http-body = { git = "https://github.com/hyperium/http-body", branch = "master" }
-tokio-rustls = { git = "https://github.com/tokio-rs/tls", rev = "e6ef54641b911cfcf23b77a8c4826ae0f8e9870e" }
 tonic = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
 tonic-build = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
-
-[patch.'https://github.com/hawkw/tonic']
-# TODO: remove this patch section when proxy-api is updated
-tonic = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
-tonic-build = { git = "https://github.com/QuentinPerez/tonic", branch = "qperez/upgrade-to-tokio-1" }
-
-[patch.'https://github.com/danburkert/prost']
-prost = "0.7"
-prost-build = "0.7"
-prost-types = "0.7"
