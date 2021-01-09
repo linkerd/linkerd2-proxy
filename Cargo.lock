@@ -519,25 +519,6 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "993f9e0baeed60001cf565546b0d3dbe6a6ad23f2bd31644a133c641eccf6d53"
-dependencies = [
- "bytes 0.5.4",
- "fnv",
- "futures-core",
- "futures-sink",
- "futures-util",
- "http",
- "indexmap",
- "slab",
- "tokio 0.2.23",
- "tokio-util 0.3.1",
- "tracing",
-]
-
-[[package]]
-name = "h2"
 version = "0.3.0"
 source = "git+https://github.com/hyperium/h2#eec547d0dd76612b8743fbfbb28afa09df58ebdd"
 dependencies = [
@@ -550,7 +531,7 @@ dependencies = [
  "indexmap",
  "slab",
  "tokio 1.0.1",
- "tokio-util 0.6.0",
+ "tokio-util",
  "tracing",
  "tracing-futures",
 ]
@@ -655,7 +636,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "httparse",
@@ -947,7 +928,7 @@ dependencies = [
  "bytes 1.0.0",
  "flate2",
  "futures 0.3.5",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "hyper",
@@ -1007,7 +988,7 @@ name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "hyper",
@@ -1234,7 +1215,7 @@ dependencies = [
  "tokio 1.0.1",
  "tokio-rustls",
  "tokio-test 0.4.0",
- "tokio-util 0.6.0",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1285,14 +1266,14 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.16"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.16#5d60650505652c804b589e575a9302e75e772ef1"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tokio-1.0#07127e6621a9d294f432aa0012635d9014f95004"
 dependencies = [
- "h2 0.2.6",
+ "h2",
  "http",
  "prost 0.7.0",
  "prost-types",
  "quickcheck",
- "rand 0.7.2",
+ "rand 0.8.1",
  "tonic",
  "tonic-build",
 ]
@@ -1366,7 +1347,7 @@ dependencies = [
  "async-trait",
  "bytes 1.0.0",
  "futures 0.3.5",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "httparse",
@@ -1485,7 +1466,7 @@ dependencies = [
  "socket2",
  "tokio 1.0.1",
  "tokio-rustls",
- "tokio-util 0.6.0",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-futures",
@@ -2670,7 +2651,6 @@ dependencies = [
  "bytes 0.5.4",
  "fnv",
  "futures-core",
- "memchr 2.3.3",
  "pin-project-lite 0.1.4",
  "slab",
 ]
@@ -2804,20 +2784,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be8242891f2b6cbef26a2d7e8605133c2c554cd35b3e4948ea892d6d68436499"
-dependencies = [
- "bytes 0.5.4",
- "futures-core",
- "futures-sink",
- "log",
- "pin-project-lite 0.1.4",
- "tokio 0.2.23",
-]
-
-[[package]]
-name = "tokio-util"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36135b7e7da911f5f8b9331209f7fab4cc13498f3fff52f72a710c78187e3148"
@@ -2850,7 +2816,7 @@ dependencies = [
  "prost 0.7.0",
  "prost-derive 0.7.0",
  "tokio-stream",
- "tokio-util 0.6.0",
+ "tokio-util",
  "tower-make",
  "tower-service",
  "tracing",

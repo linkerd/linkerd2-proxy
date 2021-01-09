@@ -10,7 +10,7 @@ futures = "0.3"
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-metrics = { path = "../../metrics" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.16" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0" }
 linkerd2-proxy-transport = { path = "../transport" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { version = "0.3", default-features = false }
