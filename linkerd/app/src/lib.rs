@@ -16,6 +16,7 @@ use linkerd2_app_core::{control::ControlAddr, dns, drain, proxy::http, serve, sv
 use linkerd2_app_gateway as gateway;
 use linkerd2_app_inbound as inbound;
 use linkerd2_app_outbound as outbound;
+use linkerd2_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
 
@@ -368,7 +369,10 @@ impl App {
                         {
                             tokio::spawn(
                                 registry
-                                    .clean(tokio::time::interval(Duration::from_secs(60)))
+                                    .clean(
+                                        tokio::time::interval(Duration::from_secs(60))
+                                            .into_stream(),
+                                    )
                                     .instrument(info_span!("tap_clean")),
                             );
                             tokio::spawn(

@@ -7,6 +7,8 @@ use tokio::sync::{mpsc, AcquireError, OwnedSemaphorePermit as Permit, Semaphore}
 use self::error::{SendError, TrySendError};
 pub use tokio::sync::mpsc::error;
 
+pub mod into_stream;
+
 /// Returns a new pollable, bounded MPSC channel.
 ///
 /// Unlike `tokio::sync`'s `MPSC` channel, this channel exposes a `poll_ready`

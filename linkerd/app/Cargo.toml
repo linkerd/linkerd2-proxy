@@ -21,6 +21,7 @@ linkerd2-app-core = { path = "./core" }
 linkerd2-app-gateway = { path = "./gateway" }
 linkerd2-app-inbound = { path = "./inbound" }
 linkerd2-app-outbound = { path = "./outbound" }
+linkerd2-channel = { path = "../channel" }
 linkerd2-opencensus = { path = "../opencensus" }
 linkerd2-error = { path = "../error" }
 regex = "1.0.0"

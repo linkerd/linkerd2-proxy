@@ -61,14 +61,7 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
 }
 
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
-    struct RxStream<T>(mpsc::Receiver<T>);
-
-    impl<T> Stream for RxStream<T> {
-        type Item = T;
-        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            self.as_mut().0.poll_recv(cx)
-        }
-    }
+    use linkerd2_channel::into_stream::IntoStream;
 
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.
@@ -108,5 +101,5 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
         .in_current_span(),
     );
 
-    Ok(Box::pin(RxStream(rx)))
+    Ok(Box::pin(rx.into_stream()))
 }

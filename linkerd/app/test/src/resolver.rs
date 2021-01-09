@@ -8,6 +8,7 @@ use linkerd2_app_core::{
     profiles::{self, Profile},
     Error,
 };
+use linkerd2_channel::into_stream::{IntoStream, Streaming};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::SocketAddr;
@@ -40,7 +41,7 @@ struct State<T, E> {
     only: AtomicBool,
 }
 
-pub type DstReceiver<E> = mpsc::UnboundedReceiver<Result<Update<E>, Error>>;
+pub type DstReceiver<E> = Streaming<mpsc::UnboundedReceiver<Result<Update<E>, Error>>>;
 
 #[derive(Debug)]
 pub struct SendFailed(());
@@ -90,7 +91,11 @@ where
 {
     pub fn endpoint_tx(&self, t: impl Into<T>) -> DstSender<E> {
         let (tx, rx) = mpsc::unbounded_channel();
-        self.state.endpoints.lock().unwrap().insert(t.into(), rx);
+        self.state
+            .endpoints
+            .lock()
+            .unwrap()
+            .insert(t.into(), rx.into_stream());
         DstSender(tx)
     }
 
@@ -135,7 +140,7 @@ where
                     .compare_and_swap(true, false, Ordering::Release);
                 let (tx, rx) = mpsc::unbounded_channel();
                 let _ = tx.send(Ok(Update::DoesNotExist));
-                rx
+                rx.into_stream()
             });
 
         future::ok(res)

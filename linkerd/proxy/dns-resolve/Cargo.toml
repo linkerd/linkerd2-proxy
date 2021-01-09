@@ -10,6 +10,7 @@ Service Dns Resolutions for the proxy
 
 [dependencies]
 futures = "0.3"
+linkerd2-channel = { path = "../../channel" }
 linkerd2-error = { path  = "../../error" }
 linkerd2-addr = { path = "../../addr" }
 linkerd2-dns = { path = "../../dns" }
