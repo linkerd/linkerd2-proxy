@@ -14,7 +14,7 @@ This should probably be decomposed into smaller, decoupled crates.
 async-trait = "0.1"
 bytes = "1"
 futures = { package = "futures", version = "0.3" }
-h2 = { git = "https://github.com/hyperium/h2" }
+h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 httparse = "1.2"
