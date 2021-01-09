@@ -1,6 +1,7 @@
 use super::*;
 
 use linkerd2_app_core::proxy::http::trace;
+use linkerd2_channel::into_stream::{IntoStream, Streaming};
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use std::collections::{HashMap, VecDeque};
@@ -25,12 +26,13 @@ pub fn identity() -> identity::Controller {
 
 pub type Labels = HashMap<String, String>;
 
-pub type DstReceiver = mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>;
+pub type DstReceiver = Streaming<mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>>;
 
 #[derive(Clone, Debug)]
 pub struct DstSender(mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
 
-pub type ProfileReceiver = mpsc::UnboundedReceiver<Result<pb::DestinationProfile, grpc::Status>>;
+pub type ProfileReceiver =
+    Streaming<mpsc::UnboundedReceiver<Result<pb::DestinationProfile, grpc::Status>>>;
 
 #[derive(Clone, Debug)]
 pub struct ProfileSender(mpsc::UnboundedSender<Result<pb::DestinationProfile, grpc::Status>>);
@@ -85,7 +87,7 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back(Dst::Call(dst, Ok(rx)));
+            .push_back(Dst::Call(dst, Ok(rx.into_stream())));
         DstSender(tx)
     }
 
@@ -148,7 +150,7 @@ impl Controller {
         self.expect_profile_calls
             .lock()
             .unwrap()
-            .push_back((dst, rx));
+            .push_back((dst, rx.into_stream()));
         ProfileSender(tx)
     }
 
