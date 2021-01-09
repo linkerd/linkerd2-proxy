@@ -9,7 +9,7 @@ A bounded MPSC channel where senders expose a `poll_ready` method.
 """
 
 [dependencies]
-tokio = { version = "1", features = ["sync",] }
+tokio = { version = "1", features = ["sync", "time"] }
 futures = "0.3"
 
 [dev-dependencies]
