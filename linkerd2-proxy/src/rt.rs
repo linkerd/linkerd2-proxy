@@ -48,7 +48,7 @@ pub(crate) fn build() -> Runtime {
                 .enable_all()
                 .thread_name("proxy")
                 .worker_threads(num_cpus)
-                .max_threads(num_cpus)
+                .max_blocking_threads(num_cpus)
                 .build()
                 .expect("failed to build threaded runtime!")
         }
