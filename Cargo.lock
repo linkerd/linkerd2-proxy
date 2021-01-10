@@ -295,12 +295,6 @@ checksum = "0ba62103ce691c2fd80fbae2213dfdda9ce60804973ac6b6e97de818ea7f52c8"
 
 [[package]]
 name = "futures"
-version = "0.1.30"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c7e4c2612746b0df8fed4ce0c69156021b704c9aefa360311c04e6e9e002eed"
-
-[[package]]
-name = "futures"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e05b85ec287aac0dc34db7d4a569323df697f9c55b99b15d6b4ef8cde49f613"
@@ -380,7 +374,6 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8764574ff08b701a084482c3c7031349104b07ac897393010494beaa18ce32c6"
 dependencies = [
- "futures 0.1.30",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -579,7 +572,7 @@ dependencies = [
 name = "hyper-balance"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "http",
  "hyper",
  "pin-project 0.4.22",
@@ -714,7 +707,7 @@ dependencies = [
 name = "linkerd2-app"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "indexmap",
  "ipnet 1.0.0",
  "linkerd2-app-core",
@@ -737,7 +730,7 @@ name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "http",
  "http-body",
  "hyper",
@@ -798,7 +791,7 @@ dependencies = [
 name = "linkerd2-app-gateway"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "http",
  "indexmap",
  "linkerd2-app-core",
@@ -817,7 +810,7 @@ name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "http",
  "indexmap",
  "linkerd2-app-core",
@@ -832,7 +825,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "flate2",
- "futures 0.3.5",
+ "futures",
  "h2",
  "http",
  "http-body",
@@ -861,7 +854,7 @@ name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "http",
  "hyper",
  "indexmap",
@@ -884,7 +877,7 @@ dependencies = [
 name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "h2",
  "http",
  "http-body",
@@ -906,7 +899,7 @@ dependencies = [
 name = "linkerd2-buffer"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-channel",
  "linkerd2-error",
  "pin-project 0.4.22",
@@ -922,7 +915,7 @@ dependencies = [
 name = "linkerd2-cache"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "linkerd2-stack",
  "parking_lot",
@@ -937,7 +930,7 @@ dependencies = [
 name = "linkerd2-channel"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "tokio 1.0.1",
  "tokio-test",
 ]
@@ -946,7 +939,7 @@ dependencies = [
 name = "linkerd2-concurrency-limit"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-stack",
  "pin-project 0.4.22",
  "tokio 1.0.1",
@@ -962,7 +955,7 @@ version = "0.1.0"
 name = "linkerd2-dns"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-dns-name",
  "linkerd2-error",
  "pin-project 0.4.22",
@@ -983,7 +976,7 @@ dependencies = [
 name = "linkerd2-drain"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-stack",
  "pin-project 0.4.22",
  "tokio 1.0.1",
@@ -996,7 +989,7 @@ name = "linkerd2-duplex"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "linkerd2-io",
  "pin-project 0.4.22",
  "tokio 1.0.1",
@@ -1011,14 +1004,14 @@ version = "0.1.0"
 name = "linkerd2-error"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
 ]
 
 [[package]]
 name = "linkerd2-error-metrics"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "indexmap",
  "linkerd2-metrics",
  "pin-project 0.4.22",
@@ -1029,7 +1022,7 @@ dependencies = [
 name = "linkerd2-error-respond"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "pin-project 0.4.22",
  "tower",
@@ -1039,7 +1032,7 @@ dependencies = [
 name = "linkerd2-exp-backoff"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "pin-project 0.4.22",
  "quickcheck 1.0.1",
  "rand 0.8.1",
@@ -1051,7 +1044,7 @@ name = "linkerd2-http-box"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "http",
  "http-body",
  "linkerd2-error",
@@ -1075,7 +1068,7 @@ name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "http",
  "http-body",
  "hyper",
@@ -1106,7 +1099,7 @@ name = "linkerd2-io"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures 0.3.5",
+ "futures",
  "linkerd2-errno",
  "pin-project 0.4.22",
  "tokio 1.0.1",
@@ -1134,7 +1127,7 @@ dependencies = [
 name = "linkerd2-opencensus"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "http",
  "http-body",
  "linkerd2-channel",
@@ -1151,7 +1144,7 @@ dependencies = [
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-app",
  "linkerd2-signal",
  "mimalloc",
@@ -1180,7 +1173,7 @@ name = "linkerd2-proxy-api-resolve"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "futures 0.3.5",
+ "futures",
  "http",
  "http-body",
  "indexmap",
@@ -1198,7 +1191,7 @@ dependencies = [
 name = "linkerd2-proxy-core"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "pin-project 0.4.22",
  "tower",
@@ -1209,7 +1202,7 @@ name = "linkerd2-proxy-discover"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "futures 0.3.5",
+ "futures",
  "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-proxy-core",
@@ -1225,7 +1218,7 @@ dependencies = [
 name = "linkerd2-proxy-dns-resolve"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-addr",
  "linkerd2-channel",
  "linkerd2-dns",
@@ -1243,7 +1236,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "futures 0.3.5",
+ "futures",
  "h2",
  "http",
  "http-body",
@@ -1275,7 +1268,7 @@ dependencies = [
 name = "linkerd2-proxy-identity"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "http-body",
  "linkerd2-error",
  "linkerd2-identity",
@@ -1292,7 +1285,7 @@ dependencies = [
 name = "linkerd2-proxy-resolve"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "linkerd2-proxy-core",
  "pin-project 0.4.22",
@@ -1304,7 +1297,7 @@ dependencies = [
 name = "linkerd2-proxy-tap"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "http",
  "hyper",
  "indexmap",
@@ -1330,7 +1323,7 @@ dependencies = [
 name = "linkerd2-proxy-tcp"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-duplex",
  "linkerd2-error",
  "linkerd2-stack",
@@ -1347,7 +1340,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bytes",
- "futures 0.3.5",
+ "futures",
  "indexmap",
  "libc",
  "linkerd2-conditional",
@@ -1376,7 +1369,7 @@ dependencies = [
 name = "linkerd2-reconnect"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
@@ -1401,7 +1394,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "bytes",
- "futures 0.3.5",
+ "futures",
  "http",
  "http-body",
  "indexmap",
@@ -1436,7 +1429,7 @@ name = "linkerd2-stack"
 version = "0.1.0"
 dependencies = [
  "dyn-clone",
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "pin-project 0.4.22",
  "tokio 1.0.1",
@@ -1460,7 +1453,7 @@ dependencies = [
 name = "linkerd2-stack-tracing"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
@@ -1473,7 +1466,7 @@ dependencies = [
 name = "linkerd2-timeout"
 version = "0.1.0"
 dependencies = [
- "futures 0.3.5",
+ "futures",
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
@@ -1490,7 +1483,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "bytes",
- "futures 0.3.5",
+ "futures",
  "hex",
  "http",
  "linkerd2-channel",
@@ -2444,7 +2437,6 @@ checksum = "36135b7e7da911f5f8b9331209f7fab4cc13498f3fff52f72a710c78187e3148"
 dependencies = [
  "bytes",
  "futures-core",
- "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",

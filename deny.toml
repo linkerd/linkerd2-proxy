@@ -173,10 +173,9 @@ skip = [
     #{ name = "ansi_term", version = "=0.11.0" },
     { name = "autocfg" },
     { name = "cfg-if" },
-    { name = "futures", version = "0.1" },
 ]
-# Similarly to `skip` allows you to skip certain crates during duplicate 
-# detection. Unlike skip, it also includes the entire tree of transitive 
+# Similarly to `skip` allows you to skip certain crates during duplicate
+# detection. Unlike skip, it also includes the entire tree of transitive
 # dependencies starting at the specified crate, up to a certain depth, which is
 # by default infinite
 skip-tree = [
