@@ -2,6 +2,7 @@
 name = "linkerd2-app-core"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
 edition = "2018"
 publish = false
 description = """
@@ -21,7 +22,7 @@ http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
 futures = "0.3"
 indexmap = "1.0"
-ipnet = "1.0"
+ipnet = "2.0"
 linkerd2-addr = { path = "../../addr" }
 linkerd2-cache = { path = "../../cache" }
 linkerd2-buffer = { path = "../../buffer" }
@@ -41,7 +42,7 @@ linkerd2-metrics = { path = "../../metrics" }
 linkerd2-transport-header = { path = "../../transport-header" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17" }
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
 linkerd2-proxy-identity = { path = "../../proxy/identity" }
@@ -85,5 +86,5 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17", features = ["arbitrary"] }
 prost-types = "0.7.0"

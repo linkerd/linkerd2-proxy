@@ -621,12 +621,6 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51268c3a27ad46afd1cca0bbf423a5be2e9fd3e6a7534736c195f0f834b763ef"
-
-[[package]]
-name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
@@ -709,7 +703,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "linkerd2-app-core",
  "linkerd2-app-gateway",
  "linkerd2-app-inbound",
@@ -735,7 +729,7 @@ dependencies = [
  "http-body",
  "hyper",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "libc",
  "linkerd2-addr",
  "linkerd2-buffer",
@@ -858,7 +852,7 @@ dependencies = [
  "http",
  "hyper",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "linkerd2-app-core",
  "linkerd2-app-test",
  "linkerd2-identity",
@@ -1034,7 +1028,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "pin-project 0.4.22",
- "quickcheck 1.0.1",
+ "quickcheck",
  "rand 0.8.1",
  "tokio 1.0.1",
 ]
@@ -1118,7 +1112,7 @@ dependencies = [
  "hyper",
  "indexmap",
  "parking_lot",
- "quickcheck 1.0.1",
+ "quickcheck",
  "tokio 1.0.1",
  "tracing",
 ]
@@ -1155,14 +1149,14 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.16"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tokio-1.0#07127e6621a9d294f432aa0012635d9014f95004"
+version = "0.1.17"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.17#8462184bb70ef455d0df418aed26c5f2e5d51130"
 dependencies = [
  "h2",
  "http",
  "prost",
  "prost-types",
- "quickcheck 0.9.0",
+ "quickcheck",
  "rand 0.8.1",
  "tonic",
  "tonic-build",
@@ -1301,7 +1295,7 @@ dependencies = [
  "http",
  "hyper",
  "indexmap",
- "ipnet 2.3.0",
+ "ipnet",
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
@@ -1406,7 +1400,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.22",
  "prost-types",
- "quickcheck 1.0.1",
+ "quickcheck",
  "rand 0.8.1",
  "regex",
  "tokio 1.0.1",
@@ -1932,16 +1926,6 @@ name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
-
-[[package]]
-name = "quickcheck"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5ca504a2fdaa08d3517f442fbbba91ac24d1ec4c51ea68688a038765e3b2662"
-dependencies = [
- "rand 0.7.2",
- "rand_core 0.5.1",
-]
 
 [[package]]
 name = "quickcheck"
@@ -2633,7 +2617,7 @@ dependencies = [
  "futures-io",
  "futures-util",
  "idna",
- "ipnet 2.3.0",
+ "ipnet",
  "lazy_static",
  "log",
  "rand 0.8.1",
