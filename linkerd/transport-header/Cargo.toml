@@ -9,10 +9,10 @@ publish = false
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-linkerd2-dns-name = { path = "../dns/name" }
-linkerd2-error = { path = "../error" }
-linkerd2-io = { path = "../io" }
-linkerd2-proxy-transport = { path = "../proxy/transport" }
+linkerd2-dns-name = { version = "0.1", path = "../dns/name" }
+linkerd2-error = { version = "0.1", path = "../error" }
+linkerd2-io = { version = "0.1", path = "../io" }
+linkerd2-proxy-transport = { version = "0.1", path = "../proxy/transport" }
 prost = "0.7"
 tracing = "0.1"
 

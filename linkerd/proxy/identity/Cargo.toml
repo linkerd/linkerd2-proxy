@@ -8,11 +8,11 @@ publish = false
 
 [dependencies]
 futures = "0.3"
-linkerd2-error = { path = "../../error" }
-linkerd2-identity = { path = "../../identity" }
-linkerd2-metrics = { path = "../../metrics" }
+linkerd2-error = { version = "0.1", path = "../../error" }
+linkerd2-identity = { version = "0.1", path = "../../identity" }
+linkerd2-metrics = { version = "0.1", path = "../../metrics" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17" }
-linkerd2-proxy-transport = { path = "../transport" }
+linkerd2-proxy-transport = { version = "0.1", path = "../transport" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.22"

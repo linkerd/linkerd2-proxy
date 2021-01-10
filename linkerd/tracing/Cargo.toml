@@ -11,7 +11,7 @@ bytes = "1"
 html-escape = "0.2.5"
 http = "0.2"
 hyper = { version = "0.14.2", features = ["http1"] }
-linkerd2-error = { path = "../error" }
+linkerd2-error = { version = "0.1", path = "../error" }
 serde_json = "1"
 tokio = { version = "1", features = ["time"] }
 tokio-trace = { git = "https://github.com/hawkw/tokio-trace", rev = "8bba933f49349cc14665bee7b102f013119c74fa", features = ["serde"] }

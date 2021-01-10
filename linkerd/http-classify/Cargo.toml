@@ -8,6 +8,6 @@ publish = false
 
 [dependencies]
 http = "0.2"
-linkerd2-error = { path  = "../error" }
-linkerd2-stack = { path  = "../stack" }
+linkerd2-error = { version = "0.1", path  = "../error" }
+linkerd2-stack = { version = "0.1", path  = "../stack" }
 tower = { version = "0.4.1", default-features = false }

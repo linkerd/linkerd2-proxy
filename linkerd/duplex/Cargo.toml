@@ -12,4 +12,4 @@ futures = "0.3"
 tokio = { version = "1", features = ["io-util"] }
 pin-project = "0.4"
 tracing = "0.1.22"
-linkerd2-io = { path = "../io" }
+linkerd2-io = { version = "0.1", path = "../io" }

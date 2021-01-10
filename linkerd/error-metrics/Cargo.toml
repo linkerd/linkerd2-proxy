@@ -10,6 +10,6 @@ publish = false
 [dependencies]
 futures = "0.3"
 indexmap = "1.0"
-linkerd2-metrics = { path = "../metrics" }
+linkerd2-metrics = { version = "0.1", path = "../metrics" }
 tower = { version = "0.4.1", default-features = false }
 pin-project = "0.4"

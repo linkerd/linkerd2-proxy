@@ -11,11 +11,11 @@ Service Dns Resolutions for the proxy
 
 [dependencies]
 futures = "0.3"
-linkerd2-channel = { path = "../../channel" }
-linkerd2-error = { path  = "../../error" }
-linkerd2-addr = { path = "../../addr" }
-linkerd2-dns = { path = "../../dns" }
-linkerd2-proxy-core = { path = "../core" }
+linkerd2-channel = { version = "0.1", path = "../../channel" }
+linkerd2-error = { version = "0.1", path  = "../../error" }
+linkerd2-addr = { version = "0.1", path = "../../addr" }
+linkerd2-dns = { version = "0.1", path = "../../dns" }
+linkerd2-proxy-core = { version = "0.1", path = "../core" }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1.9"
 tracing-futures = "0.2"

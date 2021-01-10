@@ -20,17 +20,17 @@ http = "0.2"
 http-body = "0.4"
 httparse = "1.2"
 hyper = { version ="0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
-hyper-balance = { path  = "../../../hyper-balance" }
+hyper-balance = { version = "0.1", path  = "../../../hyper-balance" }
 indexmap = "1.0"
-linkerd2-drain = { path  = "../../drain" }
-linkerd2-duplex = { path  = "../../duplex" }
-linkerd2-error = { path  = "../../error" }
-linkerd2-http-box = { path  = "../../http-box" }
-linkerd2-identity = { path  = "../../identity" }
-linkerd2-io = { path  = "../../io" }
-linkerd2-proxy-transport = { path  = "../transport" }
-linkerd2-stack = { path  = "../../stack" }
-linkerd2-timeout = { path  = "../../timeout" }
+linkerd2-drain = { version = "0.1", path  = "../../drain" }
+linkerd2-duplex = { version = "0.1", path  = "../../duplex" }
+linkerd2-error = { version = "0.1", path  = "../../error" }
+linkerd2-http-box = { version = "0.1", path  = "../../http-box" }
+linkerd2-identity = { version = "0.1", path  = "../../identity" }
+linkerd2-io = { version = "0.1", path  = "../../io" }
+linkerd2-proxy-transport = { version = "0.1", path  = "../transport" }
+linkerd2-stack = { version = "0.1", path  = "../../stack" }
+linkerd2-timeout = { version = "0.1", path  = "../../timeout" }
 rand = "0.8"
 tokio = { version = "1", features = ["time", "rt"] }
 tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }

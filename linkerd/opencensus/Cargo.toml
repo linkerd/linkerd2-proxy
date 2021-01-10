@@ -10,10 +10,10 @@ publish = false
 futures = "0.3"
 http = "0.2"
 http-body = "0.4"
-linkerd2-channel = { path = "../channel" }
-linkerd2-error = { path = "../error" }
-linkerd2-metrics = { path = "../metrics" }
-opencensus-proto = { path = "../../opencensus-proto" }
+linkerd2-channel = { version = "0.1", path = "../channel" }
+linkerd2-error = { version = "0.1", path = "../error" }
+linkerd2-metrics = { version = "0.1", path = "../metrics" }
+opencensus-proto = { version = "0.1", path = "../../opencensus-proto" }
 pin-project = "0.4"
 tonic = { version = "0.3", default-features = false, features = ["prost", "codegen"] }
 tower = { version = "0.4.1", default-features = false }

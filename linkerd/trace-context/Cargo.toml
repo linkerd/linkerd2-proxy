@@ -12,9 +12,9 @@ bytes = "1"
 futures = "0.3"
 hex = "0.3.2"
 http = "0.2"
-linkerd2-channel = { path = "../channel" }
-linkerd2-error = { path = "../error" }
-linkerd2-stack = { path = "../stack" }
+linkerd2-channel = { version = "0.1", path = "../channel" }
+linkerd2-error = { version = "0.1", path = "../error" }
+linkerd2-stack = { version = "0.1", path = "../stack" }
 rand = "0.8"
 tower = { version = "0.4.1", default-features = false, features = ["util"] }
 tracing = "0.1.2"

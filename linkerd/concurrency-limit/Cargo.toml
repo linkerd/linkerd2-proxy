@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 futures = "0.3"
-linkerd2-stack = { path = "../stack" }
+linkerd2-stack = { version = "0.1", path = "../stack" }
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.1", default-features = false }
 tracing = "0.1.22"

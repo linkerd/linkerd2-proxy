@@ -9,9 +9,9 @@ publish = false
 
 [dependencies]
 futures = "0.3"
-linkerd2-duplex = { path = "../../duplex" }
-linkerd2-error = { path = "../../error" }
-linkerd2-stack = { path = "../../stack" }
+linkerd2-duplex = { version = "0.1", path = "../../duplex" }
+linkerd2-error = { version = "0.1", path = "../../error" }
+linkerd2-stack = { version = "0.1", path = "../../stack" }
 rand = "0.8"
 tokio = { version = "1" }
 tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }

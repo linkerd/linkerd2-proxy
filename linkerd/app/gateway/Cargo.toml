@@ -10,9 +10,9 @@ publish = false
 http = "0.2"
 futures = "0.3"
 indexmap = "1.0"
-linkerd2-app-core = { path = "../core" }
-linkerd2-app-inbound = { path = "../inbound" }
-linkerd2-app-outbound = { path = "../outbound" }
+linkerd2-app-core = { version = "0.1", path = "../core" }
+linkerd2-app-inbound = { version = "0.1", path = "../inbound" }
+linkerd2-app-outbound = { version = "0.1", path = "../outbound" }
 tower = { version = "0.4.1", default-features = false }
 tracing = "0.1.22"
 
@@ -21,4 +21,4 @@ tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
 tower = { version = "0.4.1", default-features = false, features = ["util"] }
 tower-test = "0.4"
-linkerd2-app-test = { path = "../test" }
+linkerd2-app-test = { version = "0.1", path = "../test" }
