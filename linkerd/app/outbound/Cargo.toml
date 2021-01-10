@@ -31,7 +31,7 @@ features = [
 
 [dev-dependencies]
 hyper = "0.14.0-dev"
-ipnet = "1.0"
+ipnet = "2.0"
 linkerd2-app-test = { path = "../test" }
 linkerd2-io = { path = "../../io", features = ["tokio-test"] }
 tokio = { version = "0.3", features = ["full", "macros"]}

@@ -21,7 +21,7 @@ http-body = "0.4"
 hyper = "0.14.0-dev"
 futures = "0.3"
 indexmap = "1.0"
-ipnet = "1.0"
+ipnet = "2.0"
 linkerd2-addr = { path = "../../addr" }
 linkerd2-cache = { path = "../../cache" }
 linkerd2-buffer = { path = "../../buffer" }

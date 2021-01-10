@@ -16,7 +16,7 @@ mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
 [dependencies]
 futures = "0.3"
 indexmap = "1.0"
-ipnet = "1.0"
+ipnet = "2.0"
 linkerd2-app-core = { path = "./core" }
 linkerd2-app-gateway = { path = "./gateway" }
 linkerd2-app-inbound = { path = "./inbound" }
