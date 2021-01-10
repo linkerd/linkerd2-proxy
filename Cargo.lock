@@ -661,7 +661,7 @@ dependencies = [
  "hyper",
  "pin-project 0.4.22",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
 ]
 
@@ -903,7 +903,7 @@ dependencies = [
  "linkerd2-app-outbound",
  "linkerd2-app-test",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -970,7 +970,7 @@ dependencies = [
  "linkerd2-retry",
  "pin-project 0.4.22",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -992,7 +992,7 @@ dependencies = [
  "linkerd2-io",
  "regex 0.1.80",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1008,7 +1008,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.22",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -1036,7 +1036,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
 ]
 
 [[package]]
@@ -1084,7 +1084,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.22",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
 ]
 
@@ -1208,7 +1208,7 @@ dependencies = [
  "pin-project 0.4.22",
  "tokio 1.0.1",
  "tokio-rustls",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tokio-util",
 ]
 
@@ -1360,7 +1360,7 @@ dependencies = [
  "pin-project 1.0.2",
  "rand 0.8.1",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1537,7 +1537,7 @@ dependencies = [
  "linkerd2-error",
  "pin-project 0.4.22",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -1575,7 +1575,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.22",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -1628,7 +1628,7 @@ dependencies = [
  "prost 0.7.0",
  "prost-build",
  "tokio 1.0.1",
- "tokio-test 0.4.0",
+ "tokio-test",
  "tracing",
 ]
 
@@ -2644,9 +2644,7 @@ checksum = "a6d7ad61edd59bfcc7e80dababf0f4aed2e6d5e0ba1659356ae889752dfc12ff"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
- "futures-core",
  "pin-project-lite 0.1.4",
- "slab",
 ]
 
 [[package]]
@@ -2721,17 +2719,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite 0.2.0",
  "tokio 1.0.1",
-]
-
-[[package]]
-name = "tokio-test"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed0049c119b6d505c4447f5c64873636c7af6c75ab0d45fd9f618d82acb8016d"
-dependencies = [
- "bytes 0.5.4",
- "futures-core",
- "tokio 0.2.23",
 ]
 
 [[package]]
@@ -2874,14 +2861,14 @@ checksum = "e987b6bf443f4b5b3b6f38704195592cca41c5bb7aedd3c3693c7081f8289860"
 
 [[package]]
 name = "tower-test"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ba4bbc2c1e4a8543c30d4c13a4c8314ed72d6e07581910f665aa13fde0153c8"
+checksum = "a4546773ffeab9e4ea02b8872faa49bb616a80a7da66afc2f32688943f97efa7"
 dependencies = [
  "futures-util",
- "pin-project 0.4.22",
- "tokio 0.2.23",
- "tokio-test 0.2.1",
+ "pin-project 1.0.2",
+ "tokio 1.0.1",
+ "tokio-test",
  "tower-layer",
  "tower-service",
 ]

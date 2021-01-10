@@ -17,5 +17,5 @@ pin-project = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
-tower-test = "0.3"
+tower-test = "0.4"
 tokio-test = "0.4"
