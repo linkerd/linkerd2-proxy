@@ -1940,12 +1940,6 @@ dependencies = [
 
 [[package]]
 name = "pin-project-lite"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "237844750cfbb86f67afe27eee600dfbbcb6188d734139b534cbfbf4f96792ae"
-
-[[package]]
-name = "pin-project-lite"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b063f57ec186e6140e2b8b6921e5f1bd89c7356dda5b33acc5401203ca6131c"
@@ -2638,22 +2632,12 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6d7ad61edd59bfcc7e80dababf0f4aed2e6d5e0ba1659356ae889752dfc12ff"
-dependencies = [
- "bytes 0.5.4",
- "pin-project-lite 0.1.4",
-]
-
-[[package]]
-name = "tokio"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a12a3eb39ee2c231be64487f1fcbe726c8f2514876a55480a5ab8559fc374252"
 dependencies = [
  "autocfg 1.0.0",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "tracing",
 ]
 
@@ -2671,7 +2655,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "parking_lot",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "signal-hook-registry",
  "tokio-macros",
  "winapi 0.3.8",
@@ -2716,7 +2700,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4cdeb73537e63f98adcd73138af75e3f368ccaecffaa29d7eb61b9f5a440457"
 dependencies = [
  "futures-core",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "tokio 1.0.1",
 ]
 
@@ -2768,7 +2752,7 @@ dependencies = [
  "futures-io",
  "futures-sink",
  "log",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "tokio 1.0.1",
  "tokio-stream",
 ]
@@ -2776,7 +2760,7 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.3.1"
-source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#329fe32643662834d0d95af483bf9f44c57c3dca"
+source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#b607851280a7fafeaa36848f69153811f4edc68c"
 dependencies = [
  "async-stream 0.3.0",
  "async-trait",
@@ -2792,7 +2776,6 @@ dependencies = [
  "prost-derive 0.7.0",
  "tokio-stream",
  "tokio-util",
- "tower-make",
  "tower-service",
  "tracing",
 ]
@@ -2800,7 +2783,7 @@ dependencies = [
 [[package]]
 name = "tonic-build"
 version = "0.3.1"
-source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#329fe32643662834d0d95af483bf9f44c57c3dca"
+source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#b607851280a7fafeaa36848f69153811f4edc68c"
 dependencies = [
  "proc-macro2",
  "prost-build",
@@ -2832,16 +2815,6 @@ name = "tower-layer"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
-
-[[package]]
-name = "tower-make"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce50370d644a0364bf4877ffd4f76404156a248d104e2cc234cd391ea5cdc965"
-dependencies = [
- "tokio 0.2.23",
- "tower-service",
-]
 
 [[package]]
 name = "tower-request-modifier"
@@ -2880,7 +2853,7 @@ checksum = "9f47026cdc4080c07e49b37087de021820269d996f581aac150ef9e5583eefe3"
 dependencies = [
  "cfg-if 1.0.0",
  "log",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
 ]
