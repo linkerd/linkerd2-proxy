@@ -18,7 +18,7 @@ mock-orig-dst  = []
 async-stream = "0.3"
 async-trait = "0.1"
 bytes = "1"
-futures = "0.3"
+futures = "0.3.9"
 indexmap = "1.0.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns-name = { path = "../../dns/name" }
