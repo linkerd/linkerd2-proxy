@@ -41,7 +41,7 @@ linkerd2-metrics = { path = "../../metrics" }
 linkerd2-transport-header = { path = "../../transport-header" }
 linkerd2-opencensus = { path = "../../opencensus" }
 linkerd2-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17" }
 linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd2-proxy-discover = { path = "../../proxy/discover" }
 linkerd2-proxy-identity = { path = "../../proxy/identity" }
@@ -86,5 +86,5 @@ libc = "0.2"
 procinfo = "0.4.2"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17", features = ["arbitrary"] }
 prost-types = "0.7.0"

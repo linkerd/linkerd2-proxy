@@ -1123,7 +1123,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "pin-project 0.4.22",
- "quickcheck",
+ "quickcheck 0.9.0",
  "rand 0.8.1",
  "tokio 1.0.1",
 ]
@@ -1207,7 +1207,7 @@ dependencies = [
  "hyper",
  "indexmap",
  "parking_lot",
- "quickcheck",
+ "quickcheck 0.9.0",
  "tokio 1.0.1",
  "tracing",
 ]
@@ -1244,14 +1244,14 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.16"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tokio-1.0#07127e6621a9d294f432aa0012635d9014f95004"
+version = "0.1.17"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.17#8462184bb70ef455d0df418aed26c5f2e5d51130"
 dependencies = [
  "h2",
  "http",
  "prost",
  "prost-types",
- "quickcheck",
+ "quickcheck 1.0.1",
  "rand 0.8.1",
  "tonic",
  "tonic-build",
@@ -1495,7 +1495,7 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.22",
  "prost-types",
- "quickcheck",
+ "quickcheck 0.9.0",
  "rand 0.7.2",
  "regex 1.3.9",
  "tokio 1.0.1",
@@ -2039,6 +2039,15 @@ checksum = "d5ca504a2fdaa08d3517f442fbbba91ac24d1ec4c51ea68688a038765e3b2662"
 dependencies = [
  "rand 0.7.2",
  "rand_core 0.5.1",
+]
+
+[[package]]
+name = "quickcheck"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efc008b226fa5bdeabfc788d6679692223e940da371a95e26d87678333dac7c8"
+dependencies = [
+ "rand 0.8.1",
 ]
 
 [[package]]
