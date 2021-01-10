@@ -14,9 +14,6 @@ tokio = { version = "1", features = ["rt", "sync", "time"] }
 pin-project = "0.4"
 
 [dependencies.trust-dns-resolver]
-version = "0.20.0-alpha.3"
+version = "0.20.0"
 default-features = false
 features = ["system-config", "tokio-runtime"]
-# TODO(eliza): when 0.20 is published, depend on it from crates.io.
-git = "https://github.com/bluejekyll/trust-dns"
-rev = "028ac68ee016c1b5d92366ee5fe6661f6132de4d"
