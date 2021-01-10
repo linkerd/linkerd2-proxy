@@ -14,9 +14,9 @@ bytes = "1"
 http = "0.2"
 futures = "0.3"
 indexmap = "1.0"
-linkerd2-app-core = { version = "0.1", path = "../core" }
-linkerd2-identity = { version = "0.1", path = "../../identity" }
-linkerd2-retry = { version = "0.1", path = "../../retry" }
+linkerd2-app-core = { path = "../core" }
+linkerd2-identity = { path = "../../identity" }
+linkerd2-retry = { path = "../../retry" }
 tokio = { version = "1", features = ["sync"]}
 tracing = "0.1.22"
 pin-project = "0.4"
@@ -33,8 +33,8 @@ features = [
 [dev-dependencies]
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
 ipnet = "2.0"
-linkerd2-app-test = { version = "0.1", path = "../test" }
-linkerd2-io = { version = "0.1", path = "../../io", features = ["tokio-test"] }
+linkerd2-app-test = { path = "../test" }
+linkerd2-io = { path = "../../io", features = ["tokio-test"] }
 tokio = { version = "1", features = ["full", "macros"]}
 tokio-test = "0.4"
 tracing-futures = "0.2"

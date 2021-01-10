@@ -65,13 +65,14 @@ ignore = [
 # https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
 [licenses]
 # The lint level for crates which do not have a detectable license
-unlicensed = "deny"
+unlicensed = "warn"
 # List of explictly allowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
 # [possible values: any SPDX 3.7 short identifier (+ optional exception)].
 allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
+    "ISC",
     "MIT",
     "Apache-2.0",
     #"Apache-2.0 WITH LLVM-exception",
@@ -106,28 +107,25 @@ confidence-threshold = 0.8
 exceptions = [
     # Each entry is the crate and version constraint, and its specific allow
     # list
-    #{ allow = ["Zlib"], name = "adler32", version = "*" },
+    { allow = ["Zlib"], name = "adler32", version = "*" },
+    { allow = ["ISC", "MIT", "OpenSSL"], name = "ring", version = "*" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
 # licensing information
+[[licenses.clarify]]
+name = "ring"
+version = "*"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [
+    { path = "LICENSE", hash = 0xbd0eed23 }
+]
+
 #[[licenses.clarify]]
-# The name of the crate the clarification applies to
-#name = "ring"
-# The optional version constraint for the crate
-#version = "*"
-# The SPDX expression for the license requirements of the crate
-#expression = "MIT AND ISC AND OpenSSL"
-# One or more files in the crate's source used as the "source of truth" for
-# the license expression. If the contents match, the clarification will be used
-# when running the license check, otherwise the clarification will be ignored
-# and the crate will be checked normally, which may produce warnings or errors
-# depending on the rest of your configuration
-#license-files = [
-    # Each entry is a crate relative path, and the (opaque) hash of its contents
-    #{ version = "0.1", path = "LICENSE", hash = 0xbd0eed23 }
-#]
+#name = "tokio-trace"
+#version = "0.1.0"
+#expression = "MIT"
 
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
@@ -147,7 +145,7 @@ registries = [
 # Lint level for when multiple versions of the same crate are detected
 multiple-versions = "warn"
 # Lint level for when a crate version requirement is `*`
-wildcards = "deny"
+wildcards = "allow"
 # The graph highlighting used when creating dotgraphs for crates
 # with multiple versions
 # * lowest-version - The path to the lowest versioned duplicate is highlighted
@@ -173,6 +171,8 @@ skip = [
     #{ name = "ansi_term", version = "=0.11.0" },
     { name = "autocfg" },
     { name = "cfg-if" },
+    { name = "pin-project", version = "0.4.27" },
+    { name = "pin-project-internal", version = "0.4.27" },
 ]
 # Similarly to `skip` allows you to skip certain crates during duplicate
 # detection. Unlike skip, it also includes the entire tree of transitive
@@ -180,6 +180,8 @@ skip = [
 # by default infinite
 skip-tree = [
     #{ name = "ansi_term", version = "=0.11.0", depth = 20 },
+    { name = "tempfile", version = "=3.1.0" },
+    { name = "tokio-trace" },
 ]
 
 # This section is considered when running `cargo deny check sources`.
@@ -196,12 +198,10 @@ unknown-git = "warn"
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
-allow-git = []
+allow-git = [
+    "https://github.com/hawkw/tokio-trace",
+    "https://github.com/QuentinPerez/tonic",
+]
 
 [sources.allow-org]
-# 1 or more github.com organizations to allow git sources for
 github = ["linkerd"]
-# 1 or more gitlab.com organizations to allow git sources for
-gitlab = [""]
-# 1 or more bitbucket.org organizations to allow git sources for
-bitbucket = [""]

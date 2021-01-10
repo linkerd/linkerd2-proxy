@@ -7,8 +7,8 @@ edition = "2018"
 publish = false
 
 [dependencies]
-linkerd2-error = { version = "0.1", path = "../error" }
-linkerd2-stack = { version = "0.1", path = "../stack" }
+linkerd2-error = { path = "../error" }
+linkerd2-stack = { path = "../stack" }
 futures = "0.3"
 tower = { version = "0.4.1", default-features = false }
 tracing = "0.1.22"

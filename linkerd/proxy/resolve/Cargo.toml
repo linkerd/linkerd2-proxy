@@ -11,8 +11,8 @@ Utilities for working with `Resolve` implementations
 
 [dependencies]
 futures = "0.3"
-linkerd2-error = { version = "0.1", path = "../../error" }
-linkerd2-proxy-core = { version = "0.1", path = "../core" }
+linkerd2-error = { path = "../../error" }
+linkerd2-proxy-core = { path = "../core" }
 tracing = "0.1"
 pin-project = "0.4"
 

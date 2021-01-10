@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 futures = "0.3"
-linkerd2-channel = { version = "0.1", path = "../channel" }
-linkerd2-error = { version = "0.1", path = "../error" }
+linkerd2-channel = { path = "../channel" }
+linkerd2-error = { path = "../error" }
 tokio = { version = "1", features = ["sync", "time", "macros"] }
 tower = { version = "0.4.1", default_features = false, features = ["util"] }
 tracing = "0.1.22"

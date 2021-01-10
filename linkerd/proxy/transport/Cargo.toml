@@ -20,14 +20,14 @@ async-trait = "0.1"
 bytes = "1"
 futures = "0.3"
 indexmap = "1.0.0"
-linkerd2-conditional = { version = "0.1", path = "../../conditional" }
-linkerd2-dns-name = { version = "0.1", path = "../../dns/name" }
-linkerd2-errno = { version = "0.1", path = "../../errno" }
-linkerd2-error = { version = "0.1", path = "../../error" }
-linkerd2-identity = { version = "0.1", path = "../../identity" }
-linkerd2-io = { version = "0.1", path = "../../io" }
-linkerd2-metrics = { version = "0.1", path = "../../metrics" }
-linkerd2-stack = { version = "0.1", path = "../../stack" }
+linkerd2-conditional = { path = "../../conditional" }
+linkerd2-dns-name = { path = "../../dns/name" }
+linkerd2-errno = { path = "../../errno" }
+linkerd2-error = { path = "../../error" }
+linkerd2-identity = { path = "../../identity" }
+linkerd2-io = { path = "../../io" }
+linkerd2-metrics = { path = "../../metrics" }
+linkerd2-stack = { path = "../../stack" }
 rustls = "0.19"
 tokio = { version = "1", features = ["io-util", "macros", "net", "time"]}
 tokio-rustls = "0.22"
@@ -50,7 +50,7 @@ features = ["make"]
 libc = "0.2"
 
 [dev-dependencies]
-linkerd2-identity = { version = "0.1", path = "../../identity", features = ["test-util"] }
+linkerd2-identity = { path = "../../identity", features = ["test-util"] }
 tracing-subscriber = "0.2.14"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tower = { version = "0.4.1", default-features = false, features = ["util"] }

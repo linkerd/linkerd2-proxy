@@ -10,7 +10,7 @@ default = []
 test-util = []
 
 [dependencies]
-linkerd2-dns-name = { version = "0.1", path = "../dns/name" }
+linkerd2-dns-name = { path = "../dns/name" }
 ring = "0.16.19"
 rustls = "0.19"
 tracing = "0.1.2"

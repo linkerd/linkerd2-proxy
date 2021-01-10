@@ -8,4 +8,4 @@ publish = false
 
 [dependencies]
 http = "0.2"
-linkerd2-dns-name = { version = "0.1", path = "../dns/name" }
+linkerd2-dns-name = { path = "../dns/name" }

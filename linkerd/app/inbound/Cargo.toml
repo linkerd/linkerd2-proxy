@@ -14,7 +14,7 @@ bytes = "1"
 http = "0.2"
 futures = "0.3"
 indexmap = "1.0"
-linkerd2-app-core = { version = "0.1", path = "../core" }
+linkerd2-app-core = { path = "../core" }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1.22"
 

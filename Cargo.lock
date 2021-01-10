@@ -2,9 +2,9 @@
 # It is not intended for manual editing.
 [[package]]
 name = "adler32"
-version = "1.0.2"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cbd0b9af8587c72beadc9f72d35b9fbb070982c9e6203e46e93f10df25f8f45"
+checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
 
 [[package]]
 name = "aho-corasick"
@@ -32,9 +32,9 @@ checksum = "85bb70cc08ec97ca5450e6eba421deeea5f172c0fc61f78b5357b2a8e8be195f"
 
 [[package]]
 name = "arc-swap"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d25d88fd6b8041580a654f9d0c581a047baee2b3efee13275f2fc392fc75034"
+checksum = "dabe5a181f83789739c194cbe5a897dde195078fac08568d09221fd6137a7ba8"
 
 [[package]]
 name = "arrayvec"
@@ -162,7 +162,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31850b4a4d6bae316f7a09e691c944c28299298837edc0a03f755618c23cbc01"
 dependencies = [
  "num-integer",
- "num-traits 0.2.6",
+ "num-traits",
  "time",
 ]
 
@@ -194,6 +194,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32fast"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81156fece84ab6a9f2afdb109ce3ae577e42b1228441eded99bd77f627953b1a"
+dependencies = [
+ "cfg-if 1.0.0",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -222,9 +231,9 @@ checksum = "993a608597367c6377b258c25d7120740f00ed23a2252b729b1932dd7866f908"
 
 [[package]]
 name = "deflate"
-version = "0.7.18"
+version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32c8120d981901a9970a3a1c97cf8b630e0fa8c3ca31e75b6fd6fd5f9f427b31"
+checksum = "707b6a7b384888a70c8d2e8650b3e60170dfc6a67bb4aa67b6dfca57af4bedb4"
 dependencies = [
  "adler32",
  "byteorder",
@@ -253,15 +262,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "enum_primitive"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be4551092f4d519593039259a9ed8daedf0da12e5109c5280338073eaeb81180"
-dependencies = [
- "num-traits 0.1.43",
 ]
 
 [[package]]
@@ -361,9 +361,9 @@ checksum = "3f2032893cb734c7a05d85ce0cc8b8c4075278e93b24b66f9de99d6eb0fa8acc"
 
 [[package]]
 name = "futures-task"
-version = "0.3.5"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdb66b5f09e22019b1ab0830f7785bcea8e7a42148683f99214f73f8ec21a626"
+checksum = "a92a0843a2ff66823a8f7c77bffe9a09be2b64e533562c412d63075643ec0038"
 dependencies = [
  "once_cell",
 ]
@@ -381,7 +381,7 @@ dependencies = [
  "futures-sink",
  "futures-task",
  "memchr",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "pin-utils",
  "proc-macro-hack",
  "proc-macro-nested",
@@ -425,12 +425,11 @@ dependencies = [
 
 [[package]]
 name = "gzip-header"
-version = "0.1.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a9fcfe1c9ee125342355b2467bc29b9dfcb2124fcae27edb9cee6f4cc5ecd40"
+checksum = "0131feb3d3bb2a5a238d8a4d09f6353b7ebfdc52e77bccbf4ea6eaa751dde639"
 dependencies = [
- "crc",
- "enum_primitive",
+ "crc32fast",
 ]
 
 [[package]]
@@ -464,7 +463,7 @@ dependencies = [
  "crossbeam-channel",
  "flate2",
  "nom 6.0.1",
- "num-traits 0.2.6",
+ "num-traits",
 ]
 
 [[package]]
@@ -575,7 +574,7 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -769,7 +768,7 @@ dependencies = [
  "linkerd2-trace-context",
  "linkerd2-tracing",
  "linkerd2-transport-header",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "procinfo",
  "prost-types",
  "regex",
@@ -857,7 +856,7 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-io",
  "linkerd2-retry",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -895,7 +894,7 @@ dependencies = [
  "futures",
  "linkerd2-channel",
  "linkerd2-error",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -934,7 +933,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tower",
  "tracing",
@@ -951,7 +950,7 @@ dependencies = [
  "futures",
  "linkerd2-dns-name",
  "linkerd2-error",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tracing",
  "trust-dns-resolver",
@@ -971,7 +970,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -984,7 +983,7 @@ dependencies = [
  "bytes",
  "futures",
  "linkerd2-io",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tracing",
 ]
@@ -1007,7 +1006,7 @@ dependencies = [
  "futures",
  "indexmap",
  "linkerd2-metrics",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
 ]
 
@@ -1017,7 +1016,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-error",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
 ]
 
@@ -1026,7 +1025,7 @@ name = "linkerd2-exp-backoff"
 version = "0.1.0"
 dependencies = [
  "futures",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "quickcheck",
  "rand 0.8.1",
  "tokio 1.0.1",
@@ -1042,7 +1041,7 @@ dependencies = [
  "http-body",
  "linkerd2-error",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
 ]
 
@@ -1070,7 +1069,7 @@ dependencies = [
  "linkerd2-http-classify",
  "linkerd2-metrics",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
  "tracing",
 ]
@@ -1094,7 +1093,7 @@ dependencies = [
  "bytes",
  "futures",
  "linkerd2-errno",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-rustls",
  "tokio-test",
@@ -1127,7 +1126,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-metrics",
  "opencensus-proto",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tonic",
  "tower",
  "tracing",
@@ -1173,7 +1172,7 @@ dependencies = [
  "linkerd2-identity",
  "linkerd2-proxy-api",
  "linkerd2-proxy-core",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "prost",
  "tonic",
  "tower",
@@ -1186,7 +1185,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd2-error",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
 ]
 
@@ -1200,7 +1199,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-proxy-core",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tower",
  "tracing",
@@ -1268,7 +1267,7 @@ dependencies = [
  "linkerd2-metrics",
  "linkerd2-proxy-api",
  "linkerd2-proxy-transport",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tonic",
  "tracing",
@@ -1281,7 +1280,7 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "linkerd2-proxy-core",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
  "tracing",
 ]
@@ -1302,7 +1301,7 @@ dependencies = [
  "linkerd2-proxy-http",
  "linkerd2-proxy-transport",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "prost-types",
  "rand 0.8.1",
  "tokio 1.0.1",
@@ -1320,7 +1319,7 @@ dependencies = [
  "linkerd2-duplex",
  "linkerd2-error",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "rand 0.8.1",
  "tokio 1.0.1",
  "tower",
@@ -1344,7 +1343,7 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-metrics",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "rustls",
  "socket2",
  "tokio 1.0.1",
@@ -1365,7 +1364,7 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
  "tracing",
 ]
@@ -1376,7 +1375,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
  "tracing",
 ]
@@ -1397,7 +1396,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "linkerd2-proxy-api-resolve",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "prost-types",
  "quickcheck",
  "rand 0.8.1",
@@ -1424,7 +1423,7 @@ dependencies = [
  "dyn-clone",
  "futures",
  "linkerd2-error",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -1449,7 +1448,7 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1462,7 +1461,7 @@ dependencies = [
  "futures",
  "linkerd2-error",
  "linkerd2-stack",
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -1523,9 +1522,9 @@ dependencies = [
 
 [[package]]
 name = "lock_api"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28247cc5a5be2f05fbcd76dd0cf2c7d3b5400cb978a28042abcd4fa0b3f8261c"
+checksum = "dd96ffd135b2fd7b973ac026d28085defbe8983df057ced3eb4f2130b0831312"
 dependencies = [
  "scopeguard",
 ]
@@ -1691,16 +1690,7 @@ version = "0.1.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e83d528d2677f0518c570baf2b7abdcf0cd2d248860b68507bdcb3e91d4c0cea"
 dependencies = [
- "num-traits 0.2.6",
-]
-
-[[package]]
-name = "num-traits"
-version = "0.1.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92e5113e9fd4cc14ded8e499429f396a20f98c772a47cc8622a736e1ec843c31"
-dependencies = [
- "num-traits 0.2.6",
+ "num-traits",
 ]
 
 [[package]]
@@ -1780,11 +1770,11 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "0.4.22"
+version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12e3a6cdbfe94a5e4572812a0201f8c0ed98c1c452c7b8563ce2276988ef9c17"
+checksum = "2ffbc8e94b38ea3d2d8ba92aea2983b503cd75d0888d75b86bb37970b5698e15"
 dependencies = [
- "pin-project-internal 0.4.22",
+ "pin-project-internal 0.4.27",
 ]
 
 [[package]]
@@ -1798,9 +1788,9 @@ dependencies = [
 
 [[package]]
 name = "pin-project-internal"
-version = "0.4.22"
+version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a0ffd45cf79d88737d7cc85bfd5d2894bee1139b356e616fe85dc389c61aaf7"
+checksum = "65ad2ae56b6abe3a1ee25f15ee605bacadb9a764edaba9c2bf4103800d4a1895"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1937,9 +1927,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.2"
+version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053a8c8bcc71fcce321828dc897a98ab9760bef03a4fc36693c231e5b3216cfe"
+checksum = "991431c3519a3f36861882da93630ce66b52918dcf1b8e2fd66b397fc96f28df"
 dependencies = [
  "proc-macro2",
 ]
@@ -2224,9 +2214,9 @@ checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
 
 [[package]]
 name = "smallvec"
-version = "1.5.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7acad6f34eb9e8a259d3283d1e8c1d34d7415943d4895f65cc73813c7396fc85"
+checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 
 [[package]]
 name = "socket2"
@@ -2325,9 +2315,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12a3eb39ee2c231be64487f1fcbe726c8f2514876a55480a5ab8559fc374252"
+checksum = "720ba21c25078711bf456d607987d95bce90f7c3bea5abe1db587862e7a1e87c"
 dependencies = [
  "autocfg",
  "pin-project-lite",
@@ -2407,7 +2397,7 @@ source = "git+https://github.com/hawkw/tokio-trace?rev=8bba933f49349cc14665bee7b
 dependencies = [
  "num_cpus",
  "serde",
- "tokio 0.3.5",
+ "tokio 0.3.6",
  "tracing-core",
  "tracing-subscriber",
 ]
@@ -2521,9 +2511,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fe233f4227389ab7df5b32649239da7ebe0b281824b4e84b342d04d3fd8c25e"
+checksum = "80e0ccfc3378da0cce270c946b676a376943f5cd16aeba64568e7939806f4ada"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2545,7 +2535,7 @@ version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab7bb6f14721aa00656086e9335d363c5c8747bae02ebe32ea2c7dece5689b4c"
 dependencies = [
- "pin-project 0.4.22",
+ "pin-project 0.4.27",
  "tracing",
 ]
 

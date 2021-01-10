@@ -15,12 +15,12 @@ futures = "0.3"
 http = "0.2"
 http-body = "0.4"
 indexmap = "1.0"
-linkerd2-addr = { version = "0.1", path  = "../addr" }
-linkerd2-dns-name = { version = "0.1", path  = "../dns/name" }
-linkerd2-error = { version = "0.1", path  = "../error" }
+linkerd2-addr = { path = "../addr" }
+linkerd2-dns-name = { path = "../dns/name" }
+linkerd2-error = { path = "../error" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17"  }
-linkerd2-proxy-api-resolve = { version = "0.1", path = "../proxy/api-resolve" }
-linkerd2-stack = { version = "0.1", path  = "../stack" }
+linkerd2-proxy-api-resolve = { path = "../proxy/api-resolve" }
+linkerd2-stack = { path = "../stack" }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
