@@ -1046,7 +1046,7 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "tokio 0.2.23",
+ "tokio 1.0.1",
  "tower",
  "tracing",
 ]
@@ -2643,7 +2643,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6d7ad61edd59bfcc7e80dababf0f4aed2e6d5e0ba1659356ae889752dfc12ff"
 dependencies = [
  "bytes 0.5.4",
- "fnv",
  "pin-project-lite 0.1.4",
 ]
 
