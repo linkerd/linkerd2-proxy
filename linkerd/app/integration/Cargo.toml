@@ -15,8 +15,6 @@ a dedicated crate to help the compiler cache dependencies properly.
 [features]
 # Disable to skip certain tests that should not be run on CI.
 flaky_tests = []
-# Enable to run tests for functionality that hasn't been ported to Tokio 0.2
-nyi = []
 
 [dependencies]
 bytes = "1"
