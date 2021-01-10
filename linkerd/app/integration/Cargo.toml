@@ -14,8 +14,6 @@ a dedicated crate to help the compiler cache dependencies properly.
 [features]
 # Disable to skip certain tests that should not be run on CI.
 flaky_tests = []
-# Enable to run tests for functionality that hasn't been ported to Tokio 0.2
-nyi = []
 
 [dependencies]
 bytes = "1"
@@ -28,7 +26,7 @@ linkerd2-channel = { path = "../../channel" }
 linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17", features = ["arbitrary"] }
 linkerd2-app-test = { path = "../test" }
 regex = "0.1"
 socket2 = "0.3.12"
