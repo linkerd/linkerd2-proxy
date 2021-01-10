@@ -27,7 +27,7 @@ linkerd2-channel = { path = "../../channel" }
 linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
 linkerd2-identity = { path = "../../identity" }
 linkerd2-io = { path = "../../io", features = ["tokio-test"] }
-regex = "0.1"
+regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"]}
 tokio-test = "0.4"
 tower = { version = "0.4.1", default-features = false}
