@@ -31,7 +31,7 @@ linkerd2-stack = { path = "../../stack" }
 rustls = "0.19"
 tokio = { version = "1", features = ["io-util", "macros", "net", "time"]}
 tokio-rustls = "0.22"
-tokio-util = { version = "0.6", features = ["compat"]}
+tokio-util = { version = "0.6" }
 tracing = "0.1.22"
 webpki = "0.21"
 untrusted = "0.7"

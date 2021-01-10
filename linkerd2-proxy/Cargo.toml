@@ -13,7 +13,7 @@ mock-orig-dst  = ["linkerd2-app/mock-orig-dst"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
 
 [dependencies]
-futures = { version = "0.3", features = ["compat"] }
+futures = "0.3"
 mimalloc = { version = "0.1.19", optional = true }
 num_cpus = { version = "1", optional = true }
 linkerd2-app = { path = "../linkerd/app" }
