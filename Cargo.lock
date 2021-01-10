@@ -906,7 +906,6 @@ dependencies = [
  "tokio-timer",
  "tonic",
  "tower",
- "tower-request-modifier",
  "tracing",
  "tracing-futures",
 ]
@@ -2818,15 +2817,6 @@ checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
 name = "tower-layer"
 version = "0.3.0"
 source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
-
-[[package]]
-name = "tower-request-modifier"
-version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-http?rev=bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea#bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea"
-dependencies = [
- "http",
- "tower-service",
-]
 
 [[package]]
 name = "tower-service"

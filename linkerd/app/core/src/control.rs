@@ -75,59 +75,57 @@ impl Config {
 /// Sets the request's URI from `Config`.
 mod add_origin {
     use super::ControlAddr;
-    use linkerd2_stack::{layer, NewService, ResultService};
-    use std::marker::PhantomData;
-    use tower_request_modifier::{Builder, RequestModifier};
+    use linkerd2_stack::{layer, NewService};
+    use std::task::{Context, Poll};
 
-    pub fn layer<M, B>() -> impl layer::Layer<M, Service = NewAddOrigin<M, B>> + Clone {
-        layer::mk(|inner| NewAddOrigin {
-            inner,
-            _marker: PhantomData,
-        })
+    pub fn layer<M>() -> impl layer::Layer<M, Service = NewAddOrigin<M>> + Clone {
+        layer::mk(|inner| NewAddOrigin { inner })
     }
 
-    #[derive(Debug)]
-    pub struct NewAddOrigin<M, B> {
-        inner: M,
-        _marker: PhantomData<fn(B)>,
+    #[derive(Clone, Debug)]
+    pub struct NewAddOrigin<N> {
+        inner: N,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct AddOrigin<S> {
+        authority: http::uri::Authority,
+        inner: S,
     }
 
     // === impl NewAddOrigin ===
 
-    impl<M: Clone, B> Clone for NewAddOrigin<M, B> {
-        fn clone(&self) -> Self {
-            Self {
-                inner: self.inner.clone(),
-                _marker: self._marker,
+    impl<N: NewService<ControlAddr>> NewService<ControlAddr> for NewAddOrigin<N> {
+        type Service = AddOrigin<N::Service>;
+
+        fn new_service(&mut self, target: ControlAddr) -> Self::Service {
+            AddOrigin {
+                authority: target.addr.to_http_authority(),
+                inner: self.inner.new_service(target),
             }
         }
     }
 
-    impl<M, B> NewService<ControlAddr> for NewAddOrigin<M, B>
-    where
-        M: NewService<ControlAddr>,
-    {
-        type Service = ResultService<RequestModifier<M::Service, B>, BuildError>;
+    // === AddOrigin ===
 
-        fn new_service(&mut self, target: ControlAddr) -> Self::Service {
-            let authority = target.addr.to_http_authority();
-            ResultService::from(
-                Builder::new()
-                    .set_origin(format!("http://{}", authority))
-                    .build(self.inner.new_service(target))
-                    .map_err(|_| BuildError(())),
-            )
+    impl<B, S: tower::Service<http::Request<B>>> tower::Service<http::Request<B>> for AddOrigin<S> {
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = S::Future;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
         }
-    }
 
-    // XXX the request_modifier build error does not implement Error...
-    #[derive(Debug)]
-    pub struct BuildError(());
-
-    impl std::error::Error for BuildError {}
-    impl std::fmt::Display for BuildError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "failed to build the add-origin request modifier")
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            let (mut parts, body) = req.into_parts();
+            parts.uri = {
+                let mut uri = parts.uri.into_parts();
+                uri.scheme = Some(http::uri::Scheme::HTTP);
+                uri.authority = Some(self.authority.clone());
+                http::Uri::from_parts(uri).expect("URI must be valid")
+            };
+            self.inner.call(http::Request::from_parts(parts, body))
         }
     }
 }
