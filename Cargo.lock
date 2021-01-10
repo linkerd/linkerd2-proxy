@@ -169,12 +169,6 @@ checksum = "a019b10a2a7cdeb292db131fc8113e57ea2a908f6e7894b0c3c671893b65dbeb"
 
 [[package]]
 name = "bytes"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "130aac562c0dd69c56b3b1cc8ffd2e17be31d0b6c25b61c96b76231aa23e39e1"
-
-[[package]]
-name = "bytes"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad1f8e949d755f9d79112b5bb46938e0ef9d3804a0b16dfab13aafcaa5f0fa72"
@@ -523,7 +517,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b67e66362108efccd8ac053abafc8b7a8d86a37e6e48fc4f6f7485eb5e9e6a5"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "fnv",
  "futures-core",
  "futures-sink",
@@ -597,11 +591,11 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d569972648b2c512421b5f2a405ad6ac9666547189d0c5477a3f200f3e02f9"
+checksum = "7245cd7449cc792608c3c8a9eaf69bd4eabbabf802713748fd739c98b82f0747"
 dependencies = [
- "bytes 0.5.4",
+ "bytes",
  "fnv",
  "itoa",
 ]
@@ -612,7 +606,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2861bd27ee074e5ee891e8b539837a9430012e249d7f0ca2d795650f579c1994"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "http",
 ]
 
@@ -634,7 +628,7 @@ version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12219dc884514cb4a6a03737f4413c0e01c23a1b059b0156004b23f1e19dccbe"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -714,15 +708,6 @@ name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
-
-[[package]]
-name = "itertools"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56a2d0bc861f9165be4eb3442afd3c236d8a98afd426f65d92324ae1091a484"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itertools"
@@ -832,7 +817,7 @@ dependencies = [
 name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -913,7 +898,7 @@ dependencies = [
 name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "indexmap",
@@ -927,7 +912,7 @@ dependencies = [
 name = "linkerd2-app-integration"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "flate2",
  "futures 0.3.5",
  "h2",
@@ -957,7 +942,7 @@ dependencies = [
 name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "hyper",
@@ -1092,7 +1077,7 @@ dependencies = [
 name = "linkerd2-duplex"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "linkerd2-io",
  "pin-project 0.4.22",
@@ -1147,7 +1132,7 @@ dependencies = [
 name = "linkerd2-http-box"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1171,7 +1156,7 @@ dependencies = [
 name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1202,7 +1187,7 @@ dependencies = [
 name = "linkerd2-io"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "linkerd2-errno",
  "pin-project 0.4.22",
@@ -1264,7 +1249,7 @@ source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=eliza/tokio-1
 dependencies = [
  "h2",
  "http",
- "prost 0.7.0",
+ "prost",
  "prost-types",
  "quickcheck",
  "rand 0.8.1",
@@ -1285,7 +1270,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "linkerd2-proxy-core",
  "pin-project 0.4.22",
- "prost 0.6.1",
+ "prost",
  "tonic",
  "tower",
  "tracing",
@@ -1339,7 +1324,7 @@ name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "h2",
  "http",
@@ -1443,7 +1428,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream 0.2.1",
  "async-trait",
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "indexmap",
  "libc",
@@ -1497,7 +1482,7 @@ name = "linkerd2-service-profiles"
 version = "0.1.0"
 dependencies = [
  "async-stream 0.3.0",
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1586,7 +1571,7 @@ name = "linkerd2-trace-context"
 version = "0.1.0"
 dependencies = [
  "base64 0.10.1",
- "bytes 1.0.0",
+ "bytes",
  "futures 0.3.5",
  "hex",
  "http",
@@ -1602,7 +1587,7 @@ dependencies = [
 name = "linkerd2-tracing"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "html-escape",
  "http",
  "hyper",
@@ -1620,12 +1605,12 @@ name = "linkerd2-transport-header"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes 1.0.0",
+ "bytes",
  "linkerd2-dns-name",
  "linkerd2-error",
  "linkerd2-io",
  "linkerd2-proxy-transport",
- "prost 0.7.0",
+ "prost",
  "prost-build",
  "tokio 1.0.1",
  "tokio-test",
@@ -1849,8 +1834,8 @@ checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
 name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
- "bytes 1.0.0",
- "prost 0.7.0",
+ "bytes",
+ "prost",
  "prost-types",
  "tonic",
  "tonic-build",
@@ -1991,22 +1976,12 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce49aefe0a6144a45de32927c77bd2859a5f7677b55f220ae5b744e87389c212"
-dependencies = [
- "bytes 0.5.4",
- "prost-derive 0.6.1",
-]
-
-[[package]]
-name = "prost"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
 dependencies = [
- "bytes 1.0.0",
- "prost-derive 0.7.0",
+ "bytes",
+ "prost-derive",
 ]
 
 [[package]]
@@ -2015,29 +1990,16 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32d3ebd75ac2679c2af3a92246639f9fcc8a442ee420719cc4fe195b98dd5fa3"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "heck",
- "itertools 0.9.0",
+ "itertools",
  "log",
  "multimap",
  "petgraph",
- "prost 0.7.0",
+ "prost",
  "prost-types",
  "tempfile",
  "which",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "537aa19b95acde10a12fec4301466386f757403de4cd4e5b4fa78fb5ecb18f72"
-dependencies = [
- "anyhow",
- "itertools 0.8.2",
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -2047,7 +2009,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "169a15f3008ecb5160cba7d37bcd690a7601b6d30cfb87a117d45e59d52af5d4"
 dependencies = [
  "anyhow",
- "itertools 0.9.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn",
@@ -2059,8 +2021,8 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b518d7cdd93dab1d1122cf07fa9a60771836c668dde9d9e2a139f957f0d9f1bb"
 dependencies = [
- "bytes 1.0.0",
- "prost 0.7.0",
+ "bytes",
+ "prost",
 ]
 
 [[package]]
@@ -2648,7 +2610,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d258221f566b6c803c7b4714abadc080172b272090cdc5e244a6d4dd13c3a6bd"
 dependencies = [
  "autocfg 1.0.0",
- "bytes 1.0.0",
+ "bytes",
  "libc",
  "memchr 2.3.3",
  "mio",
@@ -2711,7 +2673,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c7d205f6f59b03f9e824ac86eaba635a98395f287756ecc8a06464779c399bf"
 dependencies = [
  "async-stream 0.3.0",
- "bytes 1.0.0",
+ "bytes",
  "futures-core",
  "tokio 1.0.1",
  "tokio-stream",
@@ -2747,7 +2709,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36135b7e7da911f5f8b9331209f7fab4cc13498f3fff52f72a710c78187e3148"
 dependencies = [
- "bytes 1.0.0",
+ "bytes",
  "futures-core",
  "futures-io",
  "futures-sink",
@@ -2765,15 +2727,15 @@ dependencies = [
  "async-stream 0.3.0",
  "async-trait",
  "base64 0.13.0",
- "bytes 1.0.0",
+ "bytes",
  "futures-core",
  "futures-util",
  "http",
  "http-body",
  "percent-encoding",
  "pin-project 1.0.2",
- "prost 0.7.0",
- "prost-derive 0.7.0",
+ "prost",
+ "prost-derive",
  "tokio-stream",
  "tokio-util",
  "tower-service",
