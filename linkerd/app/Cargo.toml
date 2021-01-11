@@ -2,6 +2,7 @@
 name = "linkerd2-app"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
 edition = "2018"
 publish = false
 description = """
@@ -16,7 +17,7 @@ mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
 [dependencies]
 futures = "0.3"
 indexmap = "1.0"
-ipnet = "1.0"
+ipnet = "2.0"
 linkerd2-app-core = { path = "./core" }
 linkerd2-app-gateway = { path = "./gateway" }
 linkerd2-app-inbound = { path = "./inbound" }

@@ -735,12 +735,6 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51268c3a27ad46afd1cca0bbf423a5be2e9fd3e6a7534736c195f0f834b763ef"
-
-[[package]]
-name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
@@ -833,7 +827,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "linkerd2-app-core",
  "linkerd2-app-gateway",
  "linkerd2-app-inbound",
@@ -858,7 +852,7 @@ dependencies = [
  "http-body",
  "hyper",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "libc",
  "linkerd2-addr",
  "linkerd2-buffer",
@@ -906,7 +900,6 @@ dependencies = [
  "tokio-timer",
  "tonic",
  "tower",
- "tower-request-modifier",
  "tracing",
  "tracing-futures",
 ]
@@ -981,7 +974,7 @@ dependencies = [
  "http",
  "hyper",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "linkerd2-app-core",
  "linkerd2-app-test",
  "linkerd2-identity",
@@ -1422,7 +1415,7 @@ dependencies = [
  "http",
  "hyper",
  "indexmap",
- "ipnet 2.3.0",
+ "ipnet",
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
@@ -2812,15 +2805,6 @@ version = "0.3.0"
 source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
 
 [[package]]
-name = "tower-request-modifier"
-version = "0.1.0"
-source = "git+https://github.com/tower-rs/tower-http?rev=bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea#bd7a4654bdc4e2b5363572e9f66b4dbbc7c0e1ea"
-dependencies = [
- "http",
- "tower-service",
-]
-
-[[package]]
 name = "tower-service"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2940,7 +2924,7 @@ dependencies = [
  "futures-io",
  "futures-util",
  "idna",
- "ipnet 2.3.0",
+ "ipnet",
  "lazy_static",
  "log",
  "rand 0.7.2",
