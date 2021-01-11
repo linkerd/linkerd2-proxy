@@ -2340,9 +2340,8 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ebe6c299e025c20c08a730be54f816b90089d153a58b8648adea98eee85c82a"
+version = "0.4.2"
+source = "git+https://github.com/tower-rs/tower?branch=eliza/filter-inner#13397ce3f8a1ae46f5d70eebcb09245043956f70"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2352,7 +2351,7 @@ dependencies = [
  "slab",
  "tokio",
  "tokio-stream",
- "tower-layer",
+ "tower-layer 0.3.1 (git+https://github.com/tower-rs/tower?branch=eliza/filter-inner)",
  "tower-service",
  "tracing",
 ]
@@ -2362,6 +2361,11 @@ name = "tower-layer"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
+
+[[package]]
+name = "tower-layer"
+version = "0.3.1"
+source = "git+https://github.com/tower-rs/tower?branch=eliza/filter-inner#13397ce3f8a1ae46f5d70eebcb09245043956f70"
 
 [[package]]
 name = "tower-service"
@@ -2379,7 +2383,7 @@ dependencies = [
  "pin-project 1.0.2",
  "tokio",
  "tokio-test",
- "tower-layer",
+ "tower-layer 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tower-service",
 ]
 
