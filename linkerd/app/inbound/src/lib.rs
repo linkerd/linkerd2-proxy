@@ -69,7 +69,7 @@ pub fn tcp_connect<T: Into<u16>>(
         .push_map_target(|t: T| ([127, 0, 0, 1], t.into()))
         // Limits the time we wait for a connection to be established.
         .push_timeout(config.timeout)
-        .push(svc::stack::BoxResponse::layer())
+        .push(svc::stack::BoxFuture::layer())
         .into_inner()
 }
 

@@ -10,9 +10,9 @@ use std::{
 /// This is primarily useful when a service's `Future` type is not `Unpin` and
 /// must be boxed.
 #[derive(Clone, Debug)]
-pub struct BoxResponse<T>(T);
+pub struct BoxFuture<T>(T);
 
-impl<T> BoxResponse<T> {
+impl<T> BoxFuture<T> {
     pub fn new(inner: T) -> Self {
         Self(inner)
     }
@@ -22,7 +22,7 @@ impl<T> BoxResponse<T> {
     }
 }
 
-impl<T, R> tower::Service<R> for BoxResponse<T>
+impl<T, R> tower::Service<R> for BoxFuture<T>
 where
     T: tower::Service<R>,
     T::Future: Send + 'static,
