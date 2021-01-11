@@ -5,7 +5,6 @@ use pin_project::pin_project;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::fmt;
 use std::future::Future;
-use std::ops::Mul;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -64,6 +63,12 @@ impl ExponentialBackoff {
         if jitter < 0.0 {
             return Err(InvalidBackoff("jitter must not be negative"));
         }
+        if jitter > 100.0 {
+            return Err(InvalidBackoff("jitter must not be greater than 100"));
+        }
+        if !jitter.is_finite() {
+            return Err(InvalidBackoff("jitter must be finite"));
+        }
         Ok(ExponentialBackoff { min, max, jitter })
     }
 
@@ -76,7 +81,10 @@ impl ExponentialBackoff {
             self.max > Duration::from_millis(0),
             "Maximum backoff must be non-zero"
         );
-        self.min.mul(2_u32.saturating_pow(iterations)).min(self.max)
+        self.min
+            .checked_mul(2_u32.saturating_pow(iterations))
+            .unwrap_or(self.max)
+            .min(self.max)
     }
 
     /// Returns a random, uniform duration on `[0, base*self.jitter]` no greater

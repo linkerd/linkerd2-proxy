@@ -8,10 +8,10 @@ publish = false
 
 [dependencies]
 bytes = "1"
-futures = "0.3"
+futures = "0.3.9"
 http = "0.2"
 http-body = "0.4"
 linkerd2-error = { path = "../error" }
 linkerd2-stack = { path = "../stack" }
 tower = {version = "0.4", default-features = false }
-pin-project = "0.4"
+pin-project = "1"

@@ -15,10 +15,10 @@ This should probably be decomposed into smaller, decoupled crates.
 mock-orig-dst  = []
 
 [dependencies]
-async-stream = "0.2.1"
+async-stream = "0.3"
 async-trait = "0.1"
 bytes = "1"
-futures = "0.3"
+futures = "0.3.9"
 indexmap = "1.0.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-dns-name = { path = "../../dns/name" }
@@ -31,11 +31,11 @@ linkerd2-stack = { path = "../../stack" }
 rustls = "0.19"
 tokio = { version = "1", features = ["io-util", "macros", "net", "time"]}
 tokio-rustls = "0.22"
-tokio-util = { version = "0.6" }
+tokio-util = { version = "0.6"}
 tracing = "0.1.22"
 webpki = "0.21"
 untrusted = "0.7"
-pin-project = "0.4"
+pin-project = "1"
 socket2 = "0.3"
 
 [dependencies.tower]
@@ -54,4 +54,4 @@ linkerd2-identity = { path = "../../identity", features = ["test-util"] }
 tracing-subscriber = "0.2.14"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tower = { version = "0.4.1", default-features = false, features = ["util"] }
-tracing-futures = { version = "0.2", features = ["std-future"] }
+tracing-futures = "0.2"
