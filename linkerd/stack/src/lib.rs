@@ -4,6 +4,7 @@
 
 mod box_future;
 mod box_new_service;
+mod box_response;
 mod fail;
 mod fail_on_error;
 mod future_service;
@@ -24,6 +25,7 @@ mod unwrap_or;
 pub use self::{
     box_future::BoxFuture,
     box_new_service::BoxNewService,
+    box_response::BoxResponse,
     fail::Fail,
     fail_on_error::FailOnError,
     future_service::FutureService,

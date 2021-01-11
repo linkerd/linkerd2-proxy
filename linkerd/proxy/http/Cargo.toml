@@ -14,28 +14,28 @@ This should probably be decomposed into smaller, decoupled crates.
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-futures = { package = "futures", version = "0.3" }
+futures = "0.3.9"
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 httparse = "1.2"
 hyper = { version ="0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
-hyper-balance = { path  = "../../../hyper-balance" }
+hyper-balance = { path = "../../../hyper-balance" }
 indexmap = "1.0"
-linkerd2-drain = { path  = "../../drain" }
-linkerd2-duplex = { path  = "../../duplex" }
-linkerd2-error = { path  = "../../error" }
-linkerd2-http-box = { path  = "../../http-box" }
-linkerd2-identity = { path  = "../../identity" }
-linkerd2-io = { path  = "../../io" }
-linkerd2-proxy-transport = { path  = "../transport" }
-linkerd2-stack = { path  = "../../stack" }
-linkerd2-timeout = { path  = "../../timeout" }
+linkerd2-drain = { path = "../../drain" }
+linkerd2-duplex = { path = "../../duplex" }
+linkerd2-error = { path = "../../error" }
+linkerd2-http-box = { path = "../../http-box" }
+linkerd2-identity = { path = "../../identity" }
+linkerd2-io = { path = "../../io" }
+linkerd2-proxy-transport = { path = "../transport" }
+linkerd2-stack = { path = "../../stack" }
+linkerd2-timeout = { path = "../../timeout" }
 rand = "0.8"
 tokio = { version = "1", features = ["time", "rt"] }
 tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }
 tracing = "0.1.22"
-tracing-futures = { version = "0.2", features = ["std-future"] }
+tracing-futures = "0.2"
 try-lock = "0.2"
 pin-project = "1"
 

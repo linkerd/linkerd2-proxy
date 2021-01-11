@@ -1,8 +1,5 @@
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
-use tokio_timer::clock;
+use std::fmt;
+use tokio::time::{Duration, Instant};
 
 pub(crate) struct Uptime {
     start_time: Instant,
@@ -11,7 +8,7 @@ pub(crate) struct Uptime {
 impl Uptime {
     pub(crate) fn starting_now() -> Self {
         Self {
-            start_time: clock::now(),
+            start_time: Instant::now(),
         }
     }
 
@@ -23,7 +20,7 @@ impl Uptime {
 
 impl tracing_subscriber::fmt::time::FormatTime for Uptime {
     fn format_time(&self, w: &mut dyn fmt::Write) -> fmt::Result {
-        Self::format(clock::now() - self.start_time, w)
+        Self::format(Instant::now() - self.start_time, w)
     }
 }
 
