@@ -16,7 +16,7 @@ pub struct SwitchReady<A, B> {
     primary: A,
     secondary: B,
     switch_after: Duration,
-    delay: Pin<Box<Sleep>>,
+    sleep: Pin<Box<Sleep>>,
     state: State,
 }
 
@@ -81,10 +81,10 @@ impl<A, B> SwitchReady<A, B> {
             primary,
             secondary,
             switch_after,
-            // the delay is reset whenever the service becomes unready; this
+            // the sleep is reset whenever the service becomes unready; this
             // initial one will never actually be used, so it's okay to start it
             // now.
-            delay: Box::pin(sleep(switch_after)),
+            sleep: Box::pin(sleep(Duration::default())),
             state: State::Primary,
         }
     }
@@ -109,7 +109,7 @@ where
                     Poll::Ready(x) => return Poll::Ready(x.map_err(Into::into)),
                     Poll::Pending => {
                         tracing::trace!("primary service pending");
-                        self.delay
+                        self.sleep
                             .as_mut()
                             .reset(Instant::now() + self.switch_after);
                         self.state = State::Waiting;
@@ -125,7 +125,7 @@ where
                         Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
                         Poll::Pending => {}
                     };
-                    if let Poll::Pending = self.delay.as_mut().poll(cx) {
+                    if let Poll::Pending = self.sleep.as_mut().poll(cx) {
                         return Poll::Pending;
                     }
                     tracing::trace!("delay expired, switching to secondary");
@@ -162,9 +162,9 @@ impl<A: Clone, B: Clone> Clone for SwitchReady<A, B> {
             primary: self.primary.clone(),
             secondary: self.secondary.clone(),
             switch_after: self.switch_after,
-            // Reset the state and delay; each clone of the underlying services
+            // Reset the state and the sleep; each clone of the underlying services
             // may become ready independently (e.g. semaphore).
-            delay: Box::pin(sleep(self.switch_after)),
+            sleep: Box::pin(sleep(Duration::default())),
             state: State::Primary,
         }
     }
