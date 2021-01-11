@@ -1,5 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
+use futures::Stream;
 use pin_project::pin_project;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::fmt;
@@ -8,7 +9,7 @@ use std::ops::Mul;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::{stream::Stream, time};
+use tokio::time;
 
 /// A jittered exponential backoff strategy.
 // The raw fields are exposed so this type can be constructed statically.
@@ -33,8 +34,8 @@ pub struct ExponentialBackoffStream {
     backoff: ExponentialBackoff,
     rng: SmallRng,
     iterations: u32,
-    #[pin]
-    delay: Option<time::Sleep>,
+    sleep: Pin<Box<time::Sleep>>,
+    sleeping: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -46,7 +47,8 @@ impl ExponentialBackoff {
             backoff: *self,
             rng: SmallRng::from_rng(&mut thread_rng()).expect("RNG must be valid"),
             iterations: 0,
-            delay: None,
+            sleep: Box::pin(time::sleep(Duration::from_secs(0))),
+            sleeping: false,
         }
     }
 }
@@ -105,10 +107,10 @@ impl Stream for ExponentialBackoffStream {
         loop {
             // If there's an active delay, wait until it's done and then
             // update the state.
-            if let Some(delay) = this.delay.as_mut().as_pin_mut() {
-                futures::ready!(delay.poll(cx));
+            if *this.sleeping {
+                futures::ready!(this.sleep.as_mut().poll(cx));
 
-                this.delay.as_mut().set(None);
+                *this.sleeping = false;
                 *this.iterations += 1;
                 return Poll::Ready(Some(()));
             }
@@ -120,7 +122,8 @@ impl Stream for ExponentialBackoffStream {
                 let base = this.backoff.base(*this.iterations);
                 base + this.backoff.jitter(base, &mut this.rng)
             };
-            this.delay.as_mut().set(Some(time::sleep(backoff)));
+            this.sleep.as_mut().reset(time::Instant::now() + backoff);
+            *this.sleeping = true;
         }
     }
 }

@@ -1,12 +1,11 @@
 use super::Endpoint;
 use crate::test_util::{
-    support::{connect::Connect, profile, resolver, track},
+    support::{connect::Connect, http_util, profile, resolver, track},
     *,
 };
 use crate::Config;
 use bytes::Bytes;
 use hyper::{
-    body::Buf,
     client::conn::{Builder as ClientBuilder, SendRequest},
     Body, Request, Response,
 };
@@ -297,12 +296,8 @@ async fn meshed_hello_world() {
 
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let mut body = hyper::body::aggregate(rsp.into_body())
-        .await
-        .expect("body shouldn't error");
-    let mut buf = vec![0u8; body.remaining()];
-    body.copy_to_slice(&mut buf[..]);
-    assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+    let body = http_util::body_to_string(rsp.into_body()).await;
+    assert_eq!(body, "Hello world!");
 
     drop(client);
     bg.await;
@@ -364,12 +359,8 @@ async fn stacks_idle_out() {
     let (mut client, bg) = connect_and_accept(&mut ClientBuilder::new(), server).await;
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let mut body = hyper::body::aggregate(rsp.into_body())
-        .await
-        .expect("body shouldn't error");
-    let mut buf = vec![0u8; body.remaining()];
-    body.copy_to_slice(&mut buf[..]);
-    assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+    let body = http_util::body_to_string(rsp.into_body()).await;
+    assert_eq!(body, "Hello world!");
 
     drop(client);
     bg.await;
@@ -444,12 +435,10 @@ async fn active_stacks_dont_idle_out() {
     let (mut client, client_bg) = connect_client(&mut ClientBuilder::new(), client_io).await;
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let body = hyper::body::aggregate(rsp.into_body());
+    let body = http_util::body_to_string(rsp.into_body());
     let body_task = tokio::spawn(async move {
-        let mut body = body.await.expect("body shouldn't error");
-        let mut buf = vec![0u8; body.remaining()];
-        body.copy_to_slice(&mut buf[..]);
-        assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+        let body = body.await;
+        assert_eq!(body, "Hello world!");
     });
 
     body_tx.send_data(Bytes::from("Hello ")).await.unwrap();
@@ -598,12 +587,8 @@ async fn unmeshed_hello_world(
 
     let rsp = http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let mut body = hyper::body::aggregate(rsp.into_body())
-        .await
-        .expect("body shouldn't error");
-    let mut buf = vec![0u8; body.remaining()];
-    body.copy_to_slice(&mut buf[..]);
-    assert_eq!(std::str::from_utf8(&buf[..]), Ok("Hello world!"));
+    let body = http_util::body_to_string(rsp.into_body()).await;
+    assert_eq!(body, "Hello world!");
 
     drop(client);
     bg.await;

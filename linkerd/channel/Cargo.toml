@@ -10,9 +10,9 @@ A bounded MPSC channel where senders expose a `poll_ready` method.
 """
 
 [dependencies]
-tokio = { version = "0.3", features = ["sync", "stream"] }
+tokio = { version = "1", features = ["sync", "time"] }
 futures = "0.3"
 
 [dev-dependencies]
-tokio = { version = "0.3", features = ["sync", "stream", "macros"] }
-tokio-test = "0.3"
+tokio = { version = "1", features = ["sync", "macros"] }
+tokio-test = "0.4"

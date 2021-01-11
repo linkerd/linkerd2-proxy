@@ -805,12 +805,7 @@ macro_rules! http1_tests {
             let srv = server::http1()
                 .route_async("/", |req| async move {
                     assert_eq!(req.headers()["transfer-encoding"], "chunked");
-                    let body = req
-                        .into_body()
-                        .fold(String::new(), |s, chunk| {
-                            s + std::str::from_utf8(chunk.bytes()).expect("req is utf8")
-                        })
-                        .await;
+                    let body = http_util::body_to_string(req.into_body()).await;
                     assert_eq!(body, "hello");
                     Ok::<_, std::io::Error>(
                         Response::builder()
@@ -835,12 +830,7 @@ macro_rules! http1_tests {
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["transfer-encoding"], "chunked");
-            let body = hyper::body::aggregate(resp.into_body())
-                .await
-                .expect("rsp aggregate");
-            let body = std::str::from_utf8(body.bytes())
-                .expect("rsp is utf8")
-                .to_owned();
+            let body = http_util::body_to_string(resp.into_body()).await;
             assert_eq!(body, "world");
 
             // ensure panics from the server are propagated
@@ -1021,12 +1011,7 @@ macro_rules! http1_tests {
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["content-length"], "55");
 
-            let body = hyper::body::aggregate(resp.into_body())
-                .await
-                .expect("response body aggregate");
-            let body = std::str::from_utf8(body.bytes())
-                .expect("empty body is utf8")
-                .to_owned();
+            let body = http_util::body_to_string(resp.into_body()).await;
 
             assert_eq!(body, "");
 
@@ -1091,12 +1076,7 @@ macro_rules! http1_tests {
                     v
                 );
 
-                let body = hyper::body::aggregate(resp.into_body())
-                    .await
-                    .expect("aggregate response body");
-                let body = std::str::from_utf8(body.bytes())
-                    .expect("body is utf8")
-                    .to_owned();
+                let body = http_util::body_to_string(resp.into_body()).await;
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }

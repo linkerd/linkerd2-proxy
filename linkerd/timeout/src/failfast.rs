@@ -10,7 +10,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tokio::time::{self, Duration, Sleep};
+use tokio::time::{self, Duration, Instant, Sleep};
 use tracing::{debug, trace};
 
 #[derive(Debug)]
@@ -18,6 +18,7 @@ pub struct FailFast<S> {
     scope: &'static str,
     inner: S,
     max_unavailable: Duration,
+    wait: Pin<Box<Sleep>>,
     state: State,
 }
 
@@ -30,7 +31,7 @@ pub struct FailFastError {
 #[derive(Debug)]
 enum State {
     Open,
-    Waiting(Sleep),
+    Waiting,
     FailFast,
 }
 
@@ -51,6 +52,10 @@ impl<S> FailFast<S> {
             scope,
             inner,
             max_unavailable,
+            // the sleep is reset whenever the service becomes unavailable; this
+            // initial one will never actually be used, so it's okay to start it
+            // now.
+            wait: Box::pin(time::sleep(Duration::default())),
             state: State::Open,
         })
     }
@@ -69,6 +74,10 @@ where
             scope: self.scope,
             inner: self.inner.clone(),
             max_unavailable: self.max_unavailable,
+
+            // Reset the state and sleep; each clone of the underlying services
+            // may become ready independently (e.g. semaphore).
+            wait: Box::pin(time::sleep(Duration::default())),
             state: State::Open,
         }
     }
@@ -89,12 +98,16 @@ where
             Poll::Pending => loop {
                 self.state = match self.state {
                     // The inner service just transitioned to NotReady, so initiate a new timeout.
-                    State::Open => State::Waiting(time::sleep(self.max_unavailable)),
+                    State::Open => {
+                        self.wait
+                            .as_mut()
+                            .reset(Instant::now() + self.max_unavailable);
+                        State::Waiting
+                    }
 
                     // A timeout has been set, so wait for it to complete.
-                    State::Waiting(ref mut fut) => {
-                        tokio::pin!(fut);
-                        let poll = fut.poll(cx);
+                    State::Waiting => {
+                        let poll = self.wait.as_mut().poll(cx);
                         if poll.is_pending() {
                             trace!("Pending");
                             return Poll::Pending;
@@ -115,7 +128,7 @@ where
             ret => {
                 match self.state {
                     State::Open => {}
-                    State::Waiting(_) => trace!("Ready"),
+                    State::Waiting => trace!("Ready"),
                     State::FailFast => debug!("Recovered"),
                 }
                 self.state = State::Open;
@@ -128,7 +141,7 @@ where
         match self.state {
             State::Open => ResponseFuture::Inner(self.inner.call(req)),
             State::FailFast => ResponseFuture::FailFast(self.scope),
-            State::Waiting(_) => panic!("poll_ready must be called"),
+            State::Waiting => panic!("poll_ready must be called"),
         }
     }
 }

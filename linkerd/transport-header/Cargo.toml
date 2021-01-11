@@ -8,17 +8,17 @@ publish = false
 
 [dependencies]
 async-trait = "0.1"
-bytes = "0.6"
+bytes = "1"
 linkerd2-dns-name = { path = "../dns/name" }
 linkerd2-error = { path = "../error" }
 linkerd2-io = { path = "../io" }
 linkerd2-proxy-transport = { path = "../proxy/transport" }
-prost = "0.6"
+prost = "0.7"
 tracing = "0.1"
 
 [build-dependencies]
-prost-build = { version = "0.6", default-features = false }
+prost-build = { version = "0.7", default-features = false }
 
 [dev-dependencies]
-tokio = { version = "0.3", features = ["macros"] }
-tokio-test = "0.3"
+tokio = { version = "1", features = ["macros"] }
+tokio-test = "0.4"

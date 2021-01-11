@@ -133,7 +133,7 @@ impl Server {
     /// to send back.
     pub fn route_fn<F>(self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<ReqBody>) -> Response<Bytes> + Send + Sync + 'static,
+        F: Fn(Request<hyper::Body>) -> Response<Bytes> + Send + Sync + 'static,
     {
         self.route_async(path, move |req| {
             let res = cb(req);
@@ -145,7 +145,7 @@ impl Server {
     /// a response to send back.
     pub fn route_async<F, U>(mut self, path: &str, cb: F) -> Self
     where
-        F: Fn(Request<ReqBody>) -> U + Send + Sync + 'static,
+        F: Fn(Request<hyper::Body>) -> U + Send + Sync + 'static,
         U: TryFuture<Ok = Response<Bytes>> + Send + Sync + 'static,
         U::Error: Into<BoxError> + Send + 'static,
     {
@@ -278,7 +278,7 @@ enum Run {
     Http2,
 }
 
-struct Route(Box<dyn Fn(Request<ReqBody>) -> RspFuture + Send + Sync>);
+struct Route(Box<dyn Fn(Request<hyper::Body>) -> RspFuture + Send + Sync>);
 
 type RspFuture =
     Pin<Box<dyn Future<Output = Result<http::Response<Bytes>, BoxError>> + Send + Sync + 'static>>;
@@ -303,7 +303,6 @@ impl std::fmt::Debug for Route {
     }
 }
 
-type ReqBody = Pin<Box<dyn Stream<Item = Bytes> + Send + Sync>>;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
@@ -312,7 +311,7 @@ struct Svc(Arc<HashMap<String, Route>>);
 impl Svc {
     fn route(
         &mut self,
-        req: Request<ReqBody>,
+        req: Request<hyper::Body>,
     ) -> Pin<Box<dyn Future<Output = Result<Response<Bytes>, BoxError>> + Send + Sync + 'static>>
     {
         match self.0.get(req.uri().path()) {
@@ -345,8 +344,6 @@ impl tower::Service<Request<hyper::Body>> for Svc {
     }
 
     fn call(&mut self, req: hyper::Request<hyper::Body>) -> Self::Future {
-        let req =
-            req.map(|body| Box::pin(body.map(|chunk| chunk.expect("body error!"))) as ReqBody);
         Box::pin(self.route(req).map_ok(|res| res.map(hyper::Body::from)))
     }
 }

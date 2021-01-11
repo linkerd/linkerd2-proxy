@@ -127,12 +127,6 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
-
-[[package]]
-name = "base64"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
@@ -175,25 +169,9 @@ checksum = "a019b10a2a7cdeb292db131fc8113e57ea2a908f6e7894b0c3c671893b65dbeb"
 
 [[package]]
 name = "bytes"
-version = "0.4.11"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40ade3d27603c2cb345eb0912aec461a6dec7e06a4ae48589904e808335c7afa"
-dependencies = [
- "byteorder",
- "iovec",
-]
-
-[[package]]
-name = "bytes"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "130aac562c0dd69c56b3b1cc8ffd2e17be31d0b6c25b61c96b76231aa23e39e1"
-
-[[package]]
-name = "bytes"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0dcbc35f504eb6fc275a6d20e4ebcda18cf50d40ba6fabff8c711fa16cb3b16"
+checksum = "ad1f8e949d755f9d79112b5bb46938e0ef9d3804a0b16dfab13aafcaa5f0fa72"
 
 [[package]]
 name = "c2-chacha"
@@ -473,7 +451,6 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8764574ff08b701a084482c3c7031349104b07ac897393010494beaa18ce32c6"
 dependencies = [
- "futures 0.1.26",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -509,7 +486,18 @@ checksum = "e7db7ca94ed4cd01190ceee0d8a8052f08a247aa1b469a7f68c6a3b71afcf407"
 dependencies = [
  "cfg-if 0.1.10",
  "libc",
- "wasi",
+ "wasi 0.7.0",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4060f4657be78b8e766215b02b18a2e862d83745545de804638e2b545e81aee6"
+dependencies = [
+ "cfg-if 1.0.0",
+ "libc",
+ "wasi 0.10.1+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -524,29 +512,11 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "993f9e0baeed60001cf565546b0d3dbe6a6ad23f2bd31644a133c641eccf6d53"
-dependencies = [
- "bytes 0.5.4",
- "fnv",
- "futures-core",
- "futures-sink",
- "futures-util",
- "http",
- "indexmap",
- "slab",
- "tokio 0.2.23",
- "tokio-util 0.3.1",
- "tracing",
-]
-
-[[package]]
-name = "h2"
 version = "0.3.0"
-source = "git+https://github.com/hyperium/h2#dc3079ab89ca9fa7b79e014f5b2a835f30f4916b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b67e66362108efccd8ac053abafc8b7a8d86a37e6e48fc4f6f7485eb5e9e6a5"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "fnv",
  "futures-core",
  "futures-sink",
@@ -554,8 +524,8 @@ dependencies = [
  "http",
  "indexmap",
  "slab",
- "tokio 0.3.5",
- "tokio-util 0.5.1",
+ "tokio",
+ "tokio-util",
  "tracing",
  "tracing-futures",
 ]
@@ -620,11 +590,11 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d569972648b2c512421b5f2a405ad6ac9666547189d0c5477a3f200f3e02f9"
+checksum = "7245cd7449cc792608c3c8a9eaf69bd4eabbabf802713748fd739c98b82f0747"
 dependencies = [
- "bytes 0.5.4",
+ "bytes",
  "fnv",
  "itoa",
 ]
@@ -632,9 +602,10 @@ dependencies = [
 [[package]]
 name = "http-body"
 version = "0.4.0"
-source = "git+https://github.com/hyperium/http-body#5e434739e747c0b6611ec41020740b17f735d25a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2861bd27ee074e5ee891e8b539837a9430012e249d7f0ca2d795650f579c1994"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "http",
 ]
 
@@ -652,14 +623,15 @@ checksum = "494b4d60369511e7dea41cf646832512a94e542f68bb9c49e54518e0f468eb47"
 
 [[package]]
 name = "hyper"
-version = "0.14.0-dev"
-source = "git+https://github.com/hyperium/hyper?rev=d6aadb830072959497f414c01bcdba4c8e681088#d6aadb830072959497f414c01bcdba4c8e681088"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12219dc884514cb4a6a03737f4413c0e01c23a1b059b0156004b23f1e19dccbe"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "httparse",
@@ -667,7 +639,7 @@ dependencies = [
  "itoa",
  "pin-project 1.0.2",
  "socket2",
- "tokio 0.3.5",
+ "tokio",
  "tower-service",
  "tracing",
  "want",
@@ -681,8 +653,8 @@ dependencies = [
  "http",
  "hyper",
  "pin-project 0.4.22",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
 ]
 
@@ -710,15 +682,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb1fc4429a33e1f80d41dc9fea4d108a88bec1de8053878898ae448a0b52f613"
 dependencies = [
  "cfg-if 1.0.0",
-]
-
-[[package]]
-name = "iovec"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2b3ea6ff95e175473f8ffe6a7eb7c00d054240321b84c57051175fe3c1e075e"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -832,10 +795,11 @@ dependencies = [
  "linkerd2-app-gateway",
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
+ "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-opencensus",
  "regex 1.3.9",
- "tokio 0.3.5",
+ "tokio",
  "tonic",
  "tower",
  "tracing",
@@ -846,7 +810,7 @@ dependencies = [
 name = "linkerd2-app-core"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -896,7 +860,7 @@ dependencies = [
  "procinfo",
  "prost-types",
  "regex 1.3.9",
- "tokio 0.3.5",
+ "tokio",
  "tokio-timer",
  "tonic",
  "tower",
@@ -915,8 +879,8 @@ dependencies = [
  "linkerd2-app-inbound",
  "linkerd2-app-outbound",
  "linkerd2-app-test",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -926,12 +890,12 @@ dependencies = [
 name = "linkerd2-app-inbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "indexmap",
  "linkerd2-app-core",
- "tokio 0.3.5",
+ "tokio",
  "tower",
  "tracing",
 ]
@@ -940,22 +904,23 @@ dependencies = [
 name = "linkerd2-app-integration"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "flate2",
  "futures 0.3.5",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "hyper",
  "linkerd2-app",
  "linkerd2-app-core",
  "linkerd2-app-test",
+ "linkerd2-channel",
  "linkerd2-metrics",
  "linkerd2-proxy-api",
  "regex 0.1.80",
  "rustls",
  "socket2",
- "tokio 0.3.5",
+ "tokio",
  "tokio-rustls",
  "tonic",
  "tower",
@@ -969,7 +934,7 @@ dependencies = [
 name = "linkerd2-app-outbound"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "hyper",
@@ -981,8 +946,8 @@ dependencies = [
  "linkerd2-io",
  "linkerd2-retry",
  "pin-project 0.4.22",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -994,16 +959,17 @@ name = "linkerd2-app-test"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "hyper",
  "linkerd2-app-core",
+ "linkerd2-channel",
  "linkerd2-identity",
  "linkerd2-io",
  "regex 0.1.80",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1018,8 +984,8 @@ dependencies = [
  "linkerd2-channel",
  "linkerd2-error",
  "pin-project 0.4.22",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -1034,7 +1000,7 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "parking_lot",
- "tokio 0.3.5",
+ "tokio",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1046,8 +1012,8 @@ name = "linkerd2-channel"
 version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
 ]
 
 [[package]]
@@ -1057,7 +1023,7 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "tokio 0.2.23",
+ "tokio",
  "tower",
  "tracing",
 ]
@@ -1074,7 +1040,7 @@ dependencies = [
  "linkerd2-dns-name",
  "linkerd2-error",
  "pin-project 0.4.22",
- "tokio 0.3.5",
+ "tokio",
  "tracing",
  "trust-dns-resolver",
 ]
@@ -1094,8 +1060,8 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
 ]
 
@@ -1103,11 +1069,11 @@ dependencies = [
 name = "linkerd2-duplex"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "linkerd2-io",
  "pin-project 0.4.22",
- "tokio 0.3.5",
+ "tokio",
  "tracing",
 ]
 
@@ -1149,16 +1115,16 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "pin-project 0.4.22",
- "quickcheck",
- "rand 0.7.2",
- "tokio 0.3.5",
+ "quickcheck 0.9.0",
+ "rand 0.8.1",
+ "tokio",
 ]
 
 [[package]]
 name = "linkerd2-http-box"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1182,7 +1148,7 @@ dependencies = [
 name = "linkerd2-http-metrics"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1213,14 +1179,14 @@ dependencies = [
 name = "linkerd2-io"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "linkerd2-errno",
  "pin-project 0.4.22",
- "tokio 0.3.5",
+ "tokio",
  "tokio-rustls",
- "tokio-test 0.3.0",
- "tokio-util 0.5.1",
+ "tokio-test",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1233,8 +1199,8 @@ dependencies = [
  "hyper",
  "indexmap",
  "parking_lot",
- "quickcheck",
- "tokio 0.3.5",
+ "quickcheck 0.9.0",
+ "tokio",
  "tracing",
 ]
 
@@ -1264,21 +1230,21 @@ dependencies = [
  "linkerd2-signal",
  "mimalloc",
  "num_cpus",
- "tokio 0.3.5",
+ "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.16"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.16#5d60650505652c804b589e575a9302e75e772ef1"
+version = "0.1.17"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/tonic-git#473a4d365977c4d2b7e7932a06339d5bc327a1b9"
 dependencies = [
- "h2 0.2.6",
+ "h2",
  "http",
  "prost",
  "prost-types",
- "quickcheck",
- "rand 0.7.2",
+ "quickcheck 1.0.1",
+ "rand 0.8.1",
  "tonic",
  "tonic-build",
 ]
@@ -1323,7 +1289,7 @@ dependencies = [
  "linkerd2-proxy-core",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "tokio 0.3.5",
+ "tokio",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1335,10 +1301,11 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "linkerd2-addr",
+ "linkerd2-channel",
  "linkerd2-dns",
  "linkerd2-error",
  "linkerd2-proxy-core",
- "tokio 0.3.5",
+ "tokio",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1349,9 +1316,9 @@ name = "linkerd2-proxy-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
- "h2 0.3.0",
+ "h2",
  "http",
  "http-body",
  "httparse",
@@ -1368,9 +1335,9 @@ dependencies = [
  "linkerd2-stack",
  "linkerd2-timeout",
  "pin-project 1.0.2",
- "rand 0.7.2",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "rand 0.8.1",
+ "tokio",
+ "tokio-test",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1390,7 +1357,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "linkerd2-proxy-transport",
  "pin-project 0.4.22",
- "tokio 0.3.5",
+ "tokio",
  "tonic",
  "tracing",
 ]
@@ -1425,8 +1392,8 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.22",
  "prost-types",
- "rand 0.7.2",
- "tokio 0.3.5",
+ "rand 0.8.1",
+ "tokio",
  "tonic",
  "tower",
  "tracing",
@@ -1442,8 +1409,8 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "rand 0.7.2",
- "tokio 0.3.5",
+ "rand 0.8.1",
+ "tokio",
  "tower",
 ]
 
@@ -1453,7 +1420,7 @@ version = "0.1.0"
 dependencies = [
  "async-stream 0.2.1",
  "async-trait",
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "indexmap",
  "libc",
@@ -1468,9 +1435,9 @@ dependencies = [
  "pin-project 0.4.22",
  "rustls",
  "socket2",
- "tokio 0.3.5",
+ "tokio",
  "tokio-rustls",
- "tokio-util 0.5.1",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-futures",
@@ -1507,7 +1474,7 @@ name = "linkerd2-service-profiles"
 version = "0.1.0"
 dependencies = [
  "async-stream 0.3.0",
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "http",
  "http-body",
@@ -1520,10 +1487,10 @@ dependencies = [
  "linkerd2-stack",
  "pin-project 0.4.22",
  "prost-types",
- "quickcheck",
- "rand 0.7.2",
+ "quickcheck 0.9.0",
+ "rand 0.8.1",
  "regex 1.3.9",
- "tokio 0.3.5",
+ "tokio",
  "tonic",
  "tower",
  "tracing",
@@ -1534,7 +1501,7 @@ dependencies = [
 name = "linkerd2-signal"
 version = "0.1.0"
 dependencies = [
- "tokio 0.3.5",
+ "tokio",
  "tracing",
 ]
 
@@ -1546,8 +1513,8 @@ dependencies = [
  "futures 0.3.5",
  "linkerd2-error",
  "pin-project 0.4.22",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -1584,9 +1551,8 @@ dependencies = [
  "linkerd2-error",
  "linkerd2-stack",
  "pin-project 0.4.22",
- "tokio 0.3.5",
- "tokio-connect",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tower",
  "tower-test",
  "tracing",
@@ -1597,14 +1563,14 @@ name = "linkerd2-trace-context"
 version = "0.1.0"
 dependencies = [
  "base64 0.10.1",
- "bytes 0.6.0",
+ "bytes",
  "futures 0.3.5",
  "hex",
  "http",
  "linkerd2-channel",
  "linkerd2-error",
  "linkerd2-stack",
- "rand 0.7.2",
+ "rand 0.8.1",
  "tower",
  "tracing",
 ]
@@ -1613,7 +1579,7 @@ dependencies = [
 name = "linkerd2-tracing"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "html-escape",
  "http",
  "hyper",
@@ -1631,15 +1597,15 @@ name = "linkerd2-transport-header"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bytes 0.6.0",
+ "bytes",
  "linkerd2-dns-name",
  "linkerd2-error",
  "linkerd2-io",
  "linkerd2-proxy-transport",
  "prost",
  "prost-build",
- "tokio 0.3.5",
- "tokio-test 0.3.0",
+ "tokio",
+ "tokio-test",
  "tracing",
 ]
 
@@ -1860,7 +1826,7 @@ checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
 name = "opencensus-proto"
 version = "0.1.0"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "prost",
  "prost-types",
  "tonic",
@@ -1951,12 +1917,6 @@ dependencies = [
 
 [[package]]
 name = "pin-project-lite"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "237844750cfbb86f67afe27eee600dfbbcb6188d734139b534cbfbf4f96792ae"
-
-[[package]]
-name = "pin-project-lite"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b063f57ec186e6140e2b8b6921e5f1bd89c7356dda5b33acc5401203ca6131c"
@@ -1969,9 +1929,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "ppv-lite86"
-version = "0.2.6"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74490b50b9fbe561ac330df47c08f3f33073d2d00c150f719147d7c54522fa1b"
+checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
 
 [[package]]
 name = "proc-macro-hack"
@@ -2008,19 +1968,21 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "prost-derive",
 ]
 
 [[package]]
 name = "prost-build"
-version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32d3ebd75ac2679c2af3a92246639f9fcc8a442ee420719cc4fe195b98dd5fa3"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "heck",
  "itertools",
  "log",
@@ -2034,8 +1996,9 @@ dependencies = [
 
 [[package]]
 name = "prost-derive"
-version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#423f5ec5bd165a7007a388edfb2b485d5bbf40c7"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "169a15f3008ecb5160cba7d37bcd690a7601b6d30cfb87a117d45e59d52af5d4"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2046,10 +2009,11 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.6.1"
-source = "git+https://github.com/danburkert/prost#278e8ab695f4acb415ab6f780a5c85f0a1a3b0ec"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b518d7cdd93dab1d1122cf07fa9a60771836c668dde9d9e2a139f957f0d9f1bb"
 dependencies = [
- "bytes 0.6.0",
+ "bytes",
  "prost",
 ]
 
@@ -2067,6 +2031,15 @@ checksum = "d5ca504a2fdaa08d3517f442fbbba91ac24d1ec4c51ea68688a038765e3b2662"
 dependencies = [
  "rand 0.7.2",
  "rand_core 0.5.1",
+]
+
+[[package]]
+name = "quickcheck"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efc008b226fa5bdeabfc788d6679692223e940da371a95e26d87678333dac7c8"
+dependencies = [
+ "rand 0.8.1",
 ]
 
 [[package]]
@@ -2098,7 +2071,7 @@ dependencies = [
  "rand_isaac",
  "rand_jitter",
  "rand_os",
- "rand_pcg 0.1.2",
+ "rand_pcg",
  "rand_xorshift",
  "winapi 0.3.8",
 ]
@@ -2109,12 +2082,23 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ae1b169243eaf61759b8475a998f0a385e42042370f3a7dbaf35246eacc8412"
 dependencies = [
- "getrandom",
+ "getrandom 0.1.13",
  "libc",
  "rand_chacha 0.2.1",
  "rand_core 0.5.1",
  "rand_hc 0.2.0",
- "rand_pcg 0.2.1",
+]
+
+[[package]]
+name = "rand"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c24fcd450d3fa2b592732565aa4f17a27a61c65ece4726353e000939b0edee34"
+dependencies = [
+ "libc",
+ "rand_chacha 0.3.0",
+ "rand_core 0.6.1",
+ "rand_hc 0.3.0",
 ]
 
 [[package]]
@@ -2138,6 +2122,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_chacha"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e12735cf05c9e10bf21534da50a147b924d555dc7a547c42e6bb2d5b6017ae0d"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.1",
+]
+
+[[package]]
 name = "rand_core"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2158,7 +2152,16 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
 dependencies = [
- "getrandom",
+ "getrandom 0.1.13",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c026d7df8b298d90ccbbc5190bd04d85e159eaf5576caeacf8741da93ccbd2e5"
+dependencies = [
+ "getrandom 0.2.1",
 ]
 
 [[package]]
@@ -2177,6 +2180,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
  "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_hc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3190ef7066a446f2e7f42e239d161e905420ccab01eb967c9eb27d21b2322a73"
+dependencies = [
+ "rand_core 0.6.1",
 ]
 
 [[package]]
@@ -2221,15 +2233,6 @@ checksum = "abf9b09b01790cfe0364f52bf32995ea3c39f4d2dd011eac241d2914146d0b44"
 dependencies = [
  "autocfg 0.1.1",
  "rand_core 0.4.0",
-]
-
-[[package]]
-name = "rand_pcg"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16abd0c1b639e9eb4d7c50c0b8100b0d0f849be2349829c740fe8e6eb4816429"
-dependencies = [
- "rand_core 0.5.1",
 ]
 
 [[package]]
@@ -2349,11 +2352,11 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.18.1"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d1126dcf58e93cee7d098dbda643b5f92ed724f1f6a63007c1116eed6700c81"
+checksum = "064fd21ff87c6e87ed4506e68beb42459caa4a0e2eb144932e6776768556980b"
 dependencies = [
- "base64 0.12.3",
+ "base64 0.13.0",
  "log",
  "ring",
  "sct",
@@ -2582,48 +2585,23 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.23"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6d7ad61edd59bfcc7e80dababf0f4aed2e6d5e0ba1659356ae889752dfc12ff"
-dependencies = [
- "bytes 0.5.4",
- "fnv",
- "futures-core",
- "memchr 2.3.3",
- "pin-project-lite 0.1.4",
- "slab",
-]
-
-[[package]]
-name = "tokio"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a12a3eb39ee2c231be64487f1fcbe726c8f2514876a55480a5ab8559fc374252"
+checksum = "d258221f566b6c803c7b4714abadc080172b272090cdc5e244a6d4dd13c3a6bd"
 dependencies = [
  "autocfg 1.0.0",
- "bytes 0.6.0",
- "futures-core",
- "lazy_static",
+ "bytes",
  "libc",
  "memchr 2.3.3",
  "mio",
  "num_cpus",
+ "once_cell",
  "parking_lot",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "signal-hook-registry",
- "slab",
  "tokio-macros",
  "tracing",
  "winapi 0.3.8",
-]
-
-[[package]]
-name = "tokio-connect"
-version = "0.1.0"
-source = "git+https://github.com/carllerche/tokio-connect#f7ad1ca437973d6e24037ac6f7d5ef1013833c0b"
-dependencies = [
- "futures 0.1.26",
- "tokio-io",
 ]
 
 [[package]]
@@ -2637,21 +2615,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-io"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57fc868aae093479e3131e3d165c93b1c7474109d13c90ec0dda2a1bbfff0674"
-dependencies = [
- "bytes 0.4.11",
- "futures 0.1.26",
- "log",
-]
-
-[[package]]
 name = "tokio-macros"
-version = "0.3.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d30fdbb5dc2d8f91049691aa1a9d4d4ae422a21c334ce8936e5886d30c5c45"
+checksum = "42517d2975ca3114b22a16192634e8241dc5cc1f130be194645970cc1c371494"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2660,34 +2627,37 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.20.0"
-source = "git+https://github.com/tokio-rs/tls?rev=e6ef54641b911cfcf23b77a8c4826ae0f8e9870e#e6ef54641b911cfcf23b77a8c4826ae0f8e9870e"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc6844de72e57df1980054b38be3a9f4702aba4858be64dd700181a8a6d0e1b6"
 dependencies = [
  "rustls",
- "tokio 0.3.5",
+ "tokio",
  "webpki",
 ]
 
 [[package]]
-name = "tokio-test"
-version = "0.2.1"
+name = "tokio-stream"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed0049c119b6d505c4447f5c64873636c7af6c75ab0d45fd9f618d82acb8016d"
+checksum = "e4cdeb73537e63f98adcd73138af75e3f368ccaecffaa29d7eb61b9f5a440457"
 dependencies = [
- "bytes 0.5.4",
  "futures-core",
- "tokio 0.2.23",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
 name = "tokio-test"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7edc5a2b13a713b9134debc9aa1265b0a1ccf6a81fa05af2ba26e4aee56cdf1a"
+checksum = "7c7d205f6f59b03f9e824ac86eaba635a98395f287756ecc8a06464779c399bf"
 dependencies = [
- "bytes 0.5.4",
+ "async-stream 0.3.0",
+ "bytes",
  "futures-core",
- "tokio 0.3.5",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -2705,62 +2675,49 @@ dependencies = [
 [[package]]
 name = "tokio-trace"
 version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace?rev=8bba933f49349cc14665bee7b102f013119c74fa#8bba933f49349cc14665bee7b102f013119c74fa"
+source = "git+https://github.com/hawkw/tokio-trace?rev=7d5998e7cb3beb06ada5983675319dc4853576c5#7d5998e7cb3beb06ada5983675319dc4853576c5"
 dependencies = [
  "num_cpus",
  "serde",
- "tokio 0.3.5",
+ "tokio",
  "tracing-core",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "tokio-util"
-version = "0.3.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be8242891f2b6cbef26a2d7e8605133c2c554cd35b3e4948ea892d6d68436499"
+checksum = "36135b7e7da911f5f8b9331209f7fab4cc13498f3fff52f72a710c78187e3148"
 dependencies = [
- "bytes 0.5.4",
+ "bytes",
  "futures-core",
  "futures-sink",
  "log",
- "pin-project-lite 0.1.4",
- "tokio 0.2.23",
-]
-
-[[package]]
-name = "tokio-util"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3137de2b078e95274b696cc522e87f22c9a753fe3ef3344116ffb94f104f10a3"
-dependencies = [
- "bytes 0.6.0",
- "futures-core",
- "futures-io",
- "futures-sink",
- "log",
- "pin-project-lite 0.2.0",
- "tokio 0.3.5",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
 name = "tonic"
 version = "0.3.1"
-source = "git+https://github.com/hawkw/tonic?branch=eliza/tokio-0.3#30526bc9dfd4c02cce48ac92804204fd9178cb59"
+source = "git+https://github.com/hyperium/tonic#fdda5ae26ace4706cb8faf56ccd35513b5de26c5"
 dependencies = [
- "async-stream 0.2.1",
+ "async-stream 0.3.0",
  "async-trait",
- "base64 0.12.3",
- "bytes 0.6.0",
+ "base64 0.13.0",
+ "bytes",
  "futures-core",
  "futures-util",
  "http",
  "http-body",
  "percent-encoding",
- "pin-project 0.4.22",
+ "pin-project 1.0.2",
  "prost",
  "prost-derive",
- "tokio-util 0.5.1",
+ "tokio-stream",
+ "tokio-util",
  "tower-service",
  "tracing",
 ]
@@ -2768,7 +2725,7 @@ dependencies = [
 [[package]]
 name = "tonic-build"
 version = "0.3.1"
-source = "git+https://github.com/hawkw/tonic?branch=eliza/tokio-0.3#30526bc9dfd4c02cce48ac92804204fd9178cb59"
+source = "git+https://github.com/hyperium/tonic#fdda5ae26ace4706cb8faf56ccd35513b5de26c5"
 dependencies = [
  "proc-macro2",
  "prost-build",
@@ -2778,31 +2735,28 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.0"
-source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ebe6c299e025c20c08a730be54f816b90089d153a58b8648adea98eee85c82a"
 dependencies = [
  "futures-core",
  "futures-util",
  "indexmap",
  "pin-project 1.0.2",
- "rand 0.7.2",
+ "rand 0.8.1",
  "slab",
- "tokio 0.3.5",
- "tower-layer 0.3.0 (git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7)",
+ "tokio",
+ "tokio-stream",
+ "tower-layer",
  "tower-service",
  "tracing",
 ]
 
 [[package]]
 name = "tower-layer"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a35d656f2638b288b33495d1053ea74c40dc05ec0b92084dd71ca5566c4ed1dc"
-
-[[package]]
-name = "tower-layer"
-version = "0.3.0"
-source = "git+https://github.com/tower-rs/tower?rev=450fa3d2be2b43850ceb125009d636d1d8629ad7#450fa3d2be2b43850ceb125009d636d1d8629ad7"
+checksum = "343bc9466d3fe6b0f960ef45960509f84480bf4fd96f92901afe7ff3df9d3a62"
 
 [[package]]
 name = "tower-service"
@@ -2812,15 +2766,15 @@ checksum = "e987b6bf443f4b5b3b6f38704195592cca41c5bb7aedd3c3693c7081f8289860"
 
 [[package]]
 name = "tower-test"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ba4bbc2c1e4a8543c30d4c13a4c8314ed72d6e07581910f665aa13fde0153c8"
+checksum = "a4546773ffeab9e4ea02b8872faa49bb616a80a7da66afc2f32688943f97efa7"
 dependencies = [
  "futures-util",
- "pin-project 0.4.22",
- "tokio 0.2.23",
- "tokio-test 0.2.1",
- "tower-layer 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pin-project 1.0.2",
+ "tokio",
+ "tokio-test",
+ "tower-layer",
  "tower-service",
 ]
 
@@ -2832,7 +2786,7 @@ checksum = "9f47026cdc4080c07e49b37087de021820269d996f581aac150ef9e5583eefe3"
 dependencies = [
  "cfg-if 1.0.0",
  "log",
- "pin-project-lite 0.2.0",
+ "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
 ]
@@ -2913,8 +2867,9 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.20.0-alpha.3"
-source = "git+https://github.com/bluejekyll/trust-dns?rev=028ac68ee016c1b5d92366ee5fe6661f6132de4d#028ac68ee016c1b5d92366ee5fe6661f6132de4d"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98a0381b2864c2978db7f8e17c7b23cca5a3a5f99241076e13002261a8ecbabd"
 dependencies = [
  "async-trait",
  "cfg-if 1.0.0",
@@ -2927,17 +2882,18 @@ dependencies = [
  "ipnet",
  "lazy_static",
  "log",
- "rand 0.7.2",
+ "rand 0.8.1",
  "smallvec",
  "thiserror",
- "tokio 0.3.5",
+ "tokio",
  "url",
 ]
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.20.0-alpha.3"
-source = "git+https://github.com/bluejekyll/trust-dns?rev=028ac68ee016c1b5d92366ee5fe6661f6132de4d#028ac68ee016c1b5d92366ee5fe6661f6132de4d"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3072d18c10bd621cb00507d59cfab5517862285c353160366e37fbf4c74856e4"
 dependencies = [
  "cfg-if 1.0.0",
  "futures-util",
@@ -2949,7 +2905,7 @@ dependencies = [
  "resolv-conf",
  "smallvec",
  "thiserror",
- "tokio 0.3.5",
+ "tokio",
  "trust-dns-proto",
 ]
 
@@ -3042,6 +2998,12 @@ name = "wasi"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b89c3ce4ce14bdc6fb6beaf9ec7928ca331de5df7e5ea278375642a2f478570d"
+
+[[package]]
+name = "wasi"
+version = "0.10.1+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93c6c3420963c5c64bca373b25e77acb562081b9bb4dd5bb864187742186cea9"
 
 [[package]]
 name = "wasm-bindgen"

@@ -81,7 +81,15 @@ where
                     let permit = futures::ready!(fut.poll(cx));
                     State::Ready(permit)
                 }
-                State::Empty => State::Waiting(Box::pin(self.semaphore.clone().acquire_owned())),
+                State::Empty => {
+                    let semaphore = self.semaphore.clone();
+                    State::Waiting(Box::pin(async move {
+                        semaphore
+                            .acquire_owned()
+                            .await
+                            .expect("Semaphore cannot close")
+                    }))
+                }
             };
         }
     }

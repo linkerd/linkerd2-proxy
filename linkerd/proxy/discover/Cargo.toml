@@ -16,7 +16,7 @@ linkerd2-channel = { path = "../../channel" }
 linkerd2-error = { path = "../../error" }
 linkerd2-proxy-core = { path = "../core" }
 linkerd2-stack = { path = "../../stack" }
-tokio = { version = "0.3", features = ["sync", "time", "stream"] }
+tokio = { version = "1", features = ["sync", "time"] }
 tracing = "0.1.22"
 tracing-futures = { version = "0.2", features = ["std-future"] }
 pin-project = "0.4"
@@ -30,5 +30,5 @@ features = ["discover"]
 
 [dev-dependencies]
 async-stream = "0.2"
-tokio = { version = "0.3", features = ["macros", "rt"] }
-tower = { version = "0.4", default-features = false, features = ["discover", "util"]}
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.4.1", default-features = false, features = ["discover", "util"]}

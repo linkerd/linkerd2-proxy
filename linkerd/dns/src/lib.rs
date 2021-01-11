@@ -6,8 +6,7 @@ use std::{fmt, net};
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 use trust_dns_resolver::{
-    config::ResolverConfig, proto::error, proto::rr::rdata, system_conf, AsyncResolver,
-    TokioAsyncResolver,
+    config::ResolverConfig, proto::rr::rdata, system_conf, AsyncResolver, TokioAsyncResolver,
 };
 pub use trust_dns_resolver::{
     config::ResolverOpts,
@@ -118,21 +117,7 @@ impl Resolver {
                     .unwrap_or(Self::DEFAULT_TTL);
                 Ok((vec![], time::sleep(expiry)))
             }
-            ResolveErrorKind::Proto(pe) if Self::is_nx_domain(&pe) => {
-                Ok((vec![], time::sleep(Self::DEFAULT_TTL)))
-            }
             _ => Err(e),
-        }
-    }
-
-    // XXX This is a workaround for
-    // https://github.com/bluejekyll/trust-dns/issues/1171.
-    //
-    // It should be removed once this bug is fixed upstream.
-    fn is_nx_domain(pe: &error::ProtoError) -> bool {
-        match pe.kind() {
-            error::ProtoErrorKind::Message(msg) => *msg == "Nameserver responded with NXDomain",
-            _ => false,
         }
     }
 

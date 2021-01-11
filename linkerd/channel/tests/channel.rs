@@ -71,7 +71,7 @@ async fn ready_disarm() {
 
 #[tokio::test]
 async fn send_recv_stream_with_buffer() {
-    use tokio::stream::StreamExt;
+    use futures::stream::StreamExt;
 
     let (mut tx, mut rx) = channel::<i32>(16);
 

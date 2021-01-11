@@ -2,6 +2,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+mod box_future;
 mod box_new_service;
 mod fail;
 mod fail_on_error;
@@ -21,6 +22,7 @@ mod switch_ready;
 mod unwrap_or;
 
 pub use self::{
+    box_future::BoxFuture,
     box_new_service::BoxNewService,
     fail::Fail,
     fail_on_error::FailOnError,

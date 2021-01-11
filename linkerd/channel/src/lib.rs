@@ -2,10 +2,12 @@ use futures::{future, ready, Stream};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 use std::{fmt, future::Future, mem, pin::Pin};
-use tokio::sync::{mpsc, OwnedSemaphorePermit as Permit, Semaphore};
+use tokio::sync::{mpsc, AcquireError, OwnedSemaphorePermit as Permit, Semaphore};
 
 use self::error::{SendError, TrySendError};
 pub use tokio::sync::mpsc::error;
+
+pub mod into_stream;
 
 /// Returns a new pollable, bounded MPSC channel.
 ///
@@ -18,7 +20,6 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     let rx = Receiver {
         rx,
         semaphore: Arc::downgrade(&semaphore),
-        buffer,
     };
     let tx = Sender {
         tx,
@@ -45,11 +46,10 @@ pub struct Sender<T> {
 pub struct Receiver<T> {
     rx: mpsc::UnboundedReceiver<(T, Permit)>,
     semaphore: Weak<Semaphore>,
-    buffer: usize,
 }
 
 enum State {
-    Waiting(Pin<Box<dyn Future<Output = Permit> + Send + Sync>>),
+    Waiting(Pin<Box<dyn Future<Output = Result<Permit, AcquireError>> + Send + Sync>>),
     Acquired(Permit),
     Empty,
 }
@@ -59,7 +59,9 @@ impl<T> Sender<T> {
         loop {
             self.state = match self.state {
                 State::Empty => State::Waiting(Box::pin(self.semaphore.clone().acquire_owned())),
-                State::Waiting(ref mut f) => State::Acquired(ready!(Pin::new(f).poll(cx))),
+                State::Waiting(ref mut f) => {
+                    State::Acquired(ready!(Pin::new(f).poll(cx).map_err(|_| SendError(())))?)
+                }
                 State::Acquired(_) if self.tx.is_closed() => {
                     return Poll::Ready(Err(SendError(())))
                 }
@@ -141,7 +143,7 @@ impl<T> Receiver<T> {
     }
 
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
-        let res = ready!(Pin::new(&mut self.rx).poll_next(cx));
+        let res = ready!(Pin::new(&mut self.rx).poll_recv(cx));
         Poll::Ready(res.map(|(t, _)| t))
     }
 }
@@ -149,19 +151,14 @@ impl<T> Receiver<T> {
 impl<T> Stream for Receiver<T> {
     type Item = T;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let res = ready!(Pin::new(&mut self.as_mut().rx).poll_next(cx));
-        Poll::Ready(res.map(|(t, _)| t))
+        self.as_mut().poll_recv(cx)
     }
 }
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         if let Some(semaphore) = self.semaphore.upgrade() {
-            // Close the buffer by releasing any senders waiting on channel capacity.
-            // If more than `usize::MAX >> 3` permits are added to the semaphore, it
-            // will panic.
-            const MAX: usize = std::usize::MAX >> 4;
-            semaphore.add_permits(MAX - self.buffer - semaphore.available_permits());
+            semaphore.close();
         }
     }
 }

@@ -73,16 +73,16 @@ impl bytes::Buf for Data {
         self.inner.remaining()
     }
 
-    fn bytes(&self) -> &[u8] {
-        self.inner.bytes()
+    fn chunk(&self) -> &[u8] {
+        self.inner.chunk()
     }
 
     fn advance(&mut self, n: usize) {
         self.inner.advance(n)
     }
 
-    fn bytes_vectored<'a>(&'a self, dst: &mut [std::io::IoSlice<'a>]) -> usize {
-        self.inner.bytes_vectored(dst)
+    fn chunks_vectored<'a>(&'a self, dst: &mut [std::io::IoSlice<'a>]) -> usize {
+        self.inner.chunks_vectored(dst)
     }
 }
 

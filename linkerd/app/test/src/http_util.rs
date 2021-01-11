@@ -5,9 +5,12 @@ use crate::app_core::{
     },
     Conditional, Error,
 };
-use hyper::{Body, Request, Response};
+use hyper::{body::HttpBody, Body, Request, Response};
 use linkerd2_identity::Name;
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 use tracing::Instrument;
 
 pub struct Server {
@@ -31,6 +34,19 @@ impl Default for Server {
             }),
         }
     }
+}
+
+pub async fn body_to_string<T>(body: T) -> String
+where
+    T: HttpBody,
+    T::Error: fmt::Debug,
+{
+    let body = hyper::body::to_bytes(body)
+        .await
+        .expect("body stream completes successfully");
+    std::str::from_utf8(&body[..])
+        .expect("body is utf-8")
+        .to_owned()
 }
 
 impl Server {

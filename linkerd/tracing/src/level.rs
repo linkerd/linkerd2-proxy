@@ -26,7 +26,7 @@ impl Handle {
                 let body = hyper::body::aggregate(req.into_body())
                     .await
                     .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                match self.set_from(body.bytes()) {
+                match self.set_from(body.chunk()) {
                     Err(error) => {
                         warn!(message = "setting log level failed", %error);
                         Self::rsp(http::StatusCode::BAD_REQUEST, error)

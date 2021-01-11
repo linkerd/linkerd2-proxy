@@ -117,7 +117,7 @@ impl TransportHeader {
         }
 
         // Advance the buffer past the preface if it matches.
-        if &buf.bytes()[..PREFACE.len()] != PREFACE {
+        if &buf.chunk()[..PREFACE.len()] != PREFACE {
             return Ok(None);
         }
         buf.advance(PREFACE.len());
