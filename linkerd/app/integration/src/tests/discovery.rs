@@ -1,6 +1,6 @@
 macro_rules! generate_tests {
     (server: $make_server:path, client: $make_client:path) => {
-        use linkerd_proxy_api as pb;
+        use linkerd2_proxy_api as pb;
 
         #[tokio::test]
         async fn outbound_asks_controller_api() {
