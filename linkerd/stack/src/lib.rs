@@ -14,7 +14,7 @@ pub mod map_target;
 pub mod new_service;
 pub mod on_response;
 mod proxy;
-mod request_filter;
+pub mod request_filter;
 mod result;
 pub mod router;
 mod switch;
@@ -33,7 +33,7 @@ pub use self::{
     new_service::NewService,
     on_response::{OnResponse, OnResponseLayer},
     proxy::{Proxy, ProxyService},
-    request_filter::{FilterRequest, RequestFilter},
+    request_filter::Filter,
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch::{MakeSwitch, Switch},
