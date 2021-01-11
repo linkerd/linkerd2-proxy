@@ -5,7 +5,7 @@
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
 pub use futures::stream::{Stream, StreamExt};
-pub use linkerd2_app_core::{self as app_core, Addr, Error};
+pub use linkerd_app_core::{self as app_core, Addr, Error};
 pub use std::net::SocketAddr;
 pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 pub use tokio::sync::oneshot;
@@ -51,8 +51,8 @@ pub fn io() -> io::Builder {
 /// By default, disable logging in modules that are expected to error in tests.
 const DEFAULT_LOG: &str = "warn,\
                            linkerd=debug,\
-                           linkerd2_proxy_http=error,\
-                           linkerd2_proxy_transport=error";
+                           linkerd_proxy_http=error,\
+                           linkerd_proxy_transport=error";
 
 pub fn trace_subscriber(default_filter: &str) -> (Dispatch, app_core::trace::Handle) {
     use std::env;

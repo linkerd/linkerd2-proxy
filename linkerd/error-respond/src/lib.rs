@@ -2,7 +2,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 use futures::{ready, TryFuture};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;

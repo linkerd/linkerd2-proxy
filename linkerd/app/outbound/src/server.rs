@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::{http, stack_labels, tcp, trace_labels, Config};
-use linkerd2_app_core::{
+use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     discovery_rejected, drain, errors, metrics,
     opencensus::proto::trace::v1 as oc,

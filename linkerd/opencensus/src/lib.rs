@@ -1,8 +1,8 @@
 #![deny(warnings, rust_2018_idioms)]
 use futures::{ready, FutureExt, Stream};
 use http_body::Body as HttpBody;
-use linkerd2_channel as mpsc;
-use linkerd2_error::Error;
+use linkerd_channel as mpsc;
+use linkerd_error::Error;
 use metrics::Registry;
 pub use opencensus_proto as proto;
 use opencensus_proto::agent::common::v1::Node;

@@ -4,7 +4,7 @@ use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
 };
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::time::Duration;
 use std::{
     future::Future,

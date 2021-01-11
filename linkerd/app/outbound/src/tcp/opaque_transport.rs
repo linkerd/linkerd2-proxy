@@ -1,5 +1,5 @@
 use crate::target::Endpoint;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     dns::Name,
     svc::{self, layer},
     transport::io,
@@ -102,7 +102,7 @@ mod test {
     use super::*;
     use crate::target::{Concrete, Endpoint, Logical};
     use futures::future;
-    use linkerd2_app_core::{
+    use linkerd_app_core::{
         proxy::api_resolve::{Metadata, ProtocolHint},
         transport::{
             io::{self, AsyncWriteExt},

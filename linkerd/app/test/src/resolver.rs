@@ -1,14 +1,14 @@
 pub use crate::profile::Sender as ProfileSender;
 use futures::future;
-pub use linkerd2_app_core::proxy::{
+pub use linkerd_app_core::proxy::{
     api_resolve::{Metadata, ProtocolHint},
     core::resolve::{Resolve, Update},
 };
-use linkerd2_app_core::{
+use linkerd_app_core::{
     profiles::{self, Profile},
     Error,
 };
-use linkerd2_channel::into_stream::{IntoStream, Streaming};
+use linkerd_channel::into_stream::{IntoStream, Streaming};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::SocketAddr;

@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-trace-context"
+name = "linkerd-trace-context"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -12,9 +12,9 @@ bytes = "1"
 futures = "0.3.9"
 hex = "0.3.2"
 http = "0.2"
-linkerd2-channel = { path = "../channel" }
-linkerd2-error = { path = "../error" }
-linkerd2-stack = { path = "../stack" }
+linkerd-channel = { path = "../channel" }
+linkerd-error = { path = "../error" }
+linkerd-stack = { path = "../stack" }
 rand = "0.8"
 tower = { version = "0.4.1", default-features = false, features = ["util"] }
 tracing = "0.1.2"

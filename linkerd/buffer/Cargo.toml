@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-buffer"
+name = "linkerd-buffer"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 futures = "0.3.9"
-linkerd2-channel = { path = "../channel" }
-linkerd2-error = { path = "../error" }
+linkerd-channel = { path = "../channel" }
+linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["sync", "time", "macros"] }
 tower = { version = "0.4.1", default_features = false, features = ["util"] }
 tracing = "0.1.22"

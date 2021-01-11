@@ -1,8 +1,8 @@
 use super::{glue::UpgradeBody, h1, h2, upgrade};
 use futures::{future, prelude::*};
 use http::header::{HeaderValue, TRANSFER_ENCODING};
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use std::{
     future::Future,
     pin::Pin,

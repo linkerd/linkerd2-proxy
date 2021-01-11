@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-http-classify"
+name = "linkerd-http-classify"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -8,6 +8,6 @@ publish = false
 
 [dependencies]
 http = "0.2"
-linkerd2-error = { path = "../error" }
-linkerd2-stack = { path = "../stack" }
+linkerd-error = { path = "../error" }
+linkerd-stack = { path = "../stack" }
 tower = { version = "0.4.1", default-features = false }

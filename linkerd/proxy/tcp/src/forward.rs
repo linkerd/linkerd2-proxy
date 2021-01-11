@@ -1,7 +1,7 @@
 use futures::prelude::*;
-use linkerd2_duplex::Duplex;
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_duplex::Duplex;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use std::{
     future::Future,
     pin::Pin,

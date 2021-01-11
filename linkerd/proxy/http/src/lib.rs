@@ -1,8 +1,8 @@
 #![deny(warnings, rust_2018_idioms)]
 use http::header::AsHeaderName;
 use http::uri::Authority;
-use linkerd2_error::Error;
-use linkerd2_identity as identity;
+use linkerd_error::Error;
+use linkerd_identity as identity;
 
 pub mod balance;
 pub mod client;
@@ -38,7 +38,7 @@ pub use self::{
 };
 pub use http::{header, uri, Request, Response, StatusCode};
 pub use hyper::body::HttpBody;
-pub use linkerd2_http_box::{BoxBody, BoxRequest, BoxResponse};
+pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
 use std::str::FromStr;
 
 pub trait HasH2Reason {

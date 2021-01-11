@@ -1,6 +1,6 @@
 use super::{Concrete, Endpoint, Logical};
 use crate::{resolve, stack_labels};
-use linkerd2_app_core::{
+use linkerd_app_core::{
     classify,
     config::ProxyConfig,
     metrics, profiles,

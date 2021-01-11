@@ -1,7 +1,7 @@
 use crate::LabelError;
 use futures::TryFuture;
 use indexmap::IndexMap;
-use linkerd2_metrics::{Counter, FmtLabels};
+use linkerd_metrics::{Counter, FmtLabels};
 use pin_project::pin_project;
 use std::future::Future;
 use std::hash::Hash;

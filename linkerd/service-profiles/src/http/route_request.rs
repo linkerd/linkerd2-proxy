@@ -1,8 +1,8 @@
 use super::{Receiver, RequestMatch, Route};
 use crate::Profile;
 use futures::{future::ErrInto, prelude::*, ready, Stream};
-use linkerd2_error::Error;
-use linkerd2_stack::{layer, NewService, Proxy};
+use linkerd_error::Error;
+use linkerd_stack::{layer, NewService, Proxy};
 use std::{
     collections::HashMap,
     marker::PhantomData,

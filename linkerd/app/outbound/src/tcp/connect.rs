@@ -1,6 +1,6 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::target::Endpoint;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     config::ConnectConfig,
     metrics,
     proxy::identity,

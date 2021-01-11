@@ -18,7 +18,7 @@ impl<H: Clone, S: Clone, R> Clone for StripHeader<H, S, R> {
 
 pub mod request {
     use http::header::AsHeaderName;
-    use linkerd2_stack::{layer, Proxy};
+    use linkerd_stack::{layer, Proxy};
     use std::{
         marker::PhantomData,
         task::{Context, Poll},
@@ -81,8 +81,8 @@ pub mod request {
 pub mod response {
     use futures::{ready, Future, TryFuture};
     use http::header::AsHeaderName;
-    use linkerd2_error::Error;
-    use linkerd2_stack::layer;
+    use linkerd_error::Error;
+    use linkerd_stack::layer;
     use pin_project::pin_project;
     use std::{
         marker::PhantomData,

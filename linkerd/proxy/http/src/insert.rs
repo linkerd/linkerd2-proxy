@@ -1,5 +1,5 @@
 use futures::{ready, TryFuture};
-use linkerd2_stack::{layer, Proxy};
+use linkerd_stack::{layer, Proxy};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -146,7 +146,7 @@ where
 
 pub mod target {
     use super::*;
-    use linkerd2_stack as stack;
+    use linkerd_stack as stack;
     use pin_project::pin_project;
 
     /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into

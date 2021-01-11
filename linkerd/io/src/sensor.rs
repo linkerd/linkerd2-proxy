@@ -1,6 +1,6 @@
 use crate::{IoSlice, PeerAddr, Poll};
 use futures::ready;
-use linkerd2_errno::Errno;
+use linkerd_errno::Errno;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::Context;

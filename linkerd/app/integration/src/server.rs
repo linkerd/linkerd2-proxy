@@ -1,7 +1,7 @@
 use super::*;
 use futures::TryFuture;
 use http::Response;
-use linkerd2_app_core::proxy::http::trace;
+use linkerd_app_core::proxy::http::trace;
 use rustls::ServerConfig;
 use std::collections::HashMap;
 use std::future::Future;

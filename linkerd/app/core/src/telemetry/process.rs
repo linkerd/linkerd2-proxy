@@ -1,5 +1,5 @@
 use self::system::System;
-use linkerd2_metrics::{metrics, FmtMetrics, Gauge};
+use linkerd_metrics::{metrics, FmtMetrics, Gauge};
 use std::fmt;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,7 +54,7 @@ impl FmtMetrics for Report {
 #[cfg(target_os = "linux")]
 mod system {
     use libc::{self, pid_t};
-    use linkerd2_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
+    use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge, MillisAsSeconds};
     use procinfo::pid;
     use std::fmt;
     use std::{fs, io};

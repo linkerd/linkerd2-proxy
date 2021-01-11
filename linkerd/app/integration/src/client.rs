@@ -1,5 +1,5 @@
 use super::*;
-use linkerd2_app_core::proxy::http::trace;
+use linkerd_app_core::proxy::http::trace;
 use rustls::ClientConfig;
 use std::io;
 use std::sync::{Arc, Mutex};

@@ -1,9 +1,9 @@
 use super::*;
 
-use linkerd2_app_core::proxy::http::trace;
-use linkerd2_channel::into_stream::{IntoStream, Streaming};
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
+use linkerd_app_core::proxy::http::trace;
+use linkerd_channel::into_stream::{IntoStream, Streaming};
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::{Bound, RangeBounds};

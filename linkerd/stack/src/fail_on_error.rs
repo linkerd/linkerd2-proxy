@@ -1,4 +1,4 @@
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::{
     future::Future,
     pin::Pin,

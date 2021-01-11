@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-app-integration"
+name = "linkerd-app-integration"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -23,12 +23,12 @@ h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2", "stream", "client", "server"] }
-linkerd2-channel = { path = "../../channel" }
-linkerd2-app = { path = "..", features = ["mock-orig-dst"] }
-linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
-linkerd2-metrics = { path = "../../metrics", features = ["test_util"] }
+linkerd-channel = { path = "../../channel" }
+linkerd-app = { path = "..", features = ["mock-orig-dst"] }
+linkerd-app-core = { path = "../core", features = ["mock-orig-dst"] }
+linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git", features = ["arbitrary"] }
-linkerd2-app-test = { path = "../test" }
+linkerd-app-test = { path = "../test" }
 regex = "1"
 socket2 = "0.3.12"
 rustls = "0.19"

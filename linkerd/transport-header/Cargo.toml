@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-transport-header"
+name = "linkerd-transport-header"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -9,10 +9,10 @@ publish = false
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-linkerd2-dns-name = { path = "../dns/name" }
-linkerd2-error = { path = "../error" }
-linkerd2-io = { path = "../io" }
-linkerd2-proxy-transport = { path = "../proxy/transport" }
+linkerd-dns-name = { path = "../dns/name" }
+linkerd-error = { path = "../error" }
+linkerd-io = { path = "../io" }
+linkerd-proxy-transport = { path = "../proxy/transport" }
 prost = "0.7"
 tracing = "0.1"
 

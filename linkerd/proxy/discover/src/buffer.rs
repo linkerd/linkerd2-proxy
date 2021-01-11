@@ -1,6 +1,6 @@
 use futures::{ready, Stream, TryFuture};
-use linkerd2_channel as mpsc;
-use linkerd2_error::{Error, Never};
+use linkerd_channel as mpsc;
+use linkerd_error::{Error, Never};
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;

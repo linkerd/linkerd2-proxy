@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, identity, tap},

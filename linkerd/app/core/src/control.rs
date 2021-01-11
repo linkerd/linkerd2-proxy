@@ -36,9 +36,9 @@ impl fmt::Display for ControlAddr {
 type BalanceBody =
     http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
 
-type RspBody = linkerd2_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
+type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
-pub type Client<B> = linkerd2_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
+pub type Client<B> = linkerd_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
 
 impl Config {
     pub fn build<B, I>(
@@ -75,7 +75,7 @@ impl Config {
 /// Sets the request's URI from `Config`.
 mod add_origin {
     use super::ControlAddr;
-    use linkerd2_stack::{layer, NewService};
+    use linkerd_stack::{layer, NewService};
     use std::task::{Context, Poll};
 
     pub fn layer<M>() -> impl layer::Layer<M, Service = NewAddOrigin<M>> + Clone {
@@ -141,7 +141,7 @@ mod resolve {
         },
         svc,
     };
-    use linkerd2_error::Recover;
+    use linkerd_error::Recover;
     use std::net::SocketAddr;
 
     pub fn layer<M, R>(
@@ -199,7 +199,7 @@ mod balance {
 mod client {
     use crate::transport::tls;
     use crate::{proxy::http, svc};
-    use linkerd2_proxy_http::h2::Settings as H2Settings;
+    use linkerd_proxy_http::h2::Settings as H2Settings;
     use std::{
         net::SocketAddr,
         task::{Context, Poll},

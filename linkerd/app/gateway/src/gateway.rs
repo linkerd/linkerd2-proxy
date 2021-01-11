@@ -1,6 +1,6 @@
 use futures::{future, ready, TryFutureExt};
-use linkerd2_app_core::proxy::{http, identity};
-use linkerd2_app_core::{dns, errors::HttpError, Error, NameAddr};
+use linkerd_app_core::proxy::{http, identity};
+use linkerd_app_core::{dns, errors::HttpError, Error, NameAddr};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};

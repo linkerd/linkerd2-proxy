@@ -1,6 +1,6 @@
 use super::h1;
 use http::{self, header::AsHeaderName, uri::Authority};
-use linkerd2_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService};
 use std::{
     fmt,
     sync::Arc,

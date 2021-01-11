@@ -6,14 +6,14 @@
 // by these tests.
 
 use futures::prelude::*;
-use linkerd2_error::Never;
-use linkerd2_identity::{test_util, CrtKey, Name};
-use linkerd2_proxy_transport::tls::{self, Conditional};
-use linkerd2_proxy_transport::{
+use linkerd_error::Never;
+use linkerd_identity::{test_util, CrtKey, Name};
+use linkerd_proxy_transport::tls::{self, Conditional};
+use linkerd_proxy_transport::{
     io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     BindTcp, ConnectTcp,
 };
-use linkerd2_stack::NewService;
+use linkerd_stack::NewService;
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::net::TcpStream;

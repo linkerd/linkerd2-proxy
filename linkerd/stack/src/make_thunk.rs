@@ -1,5 +1,5 @@
 use futures::future;
-use linkerd2_error::Never;
+use linkerd_error::Never;
 use std::task::{Context, Poll};
 
 /// Wraps a `Service<T>` as a `Service<()>`.

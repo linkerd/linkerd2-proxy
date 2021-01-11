@@ -2,8 +2,8 @@
 
 pub use self::layer::TraceContext;
 use bytes::Bytes;
-use linkerd2_channel as mpsc;
-use linkerd2_error::Error;
+use linkerd_channel as mpsc;
+use linkerd_error::Error;
 use rand::Rng;
 use std::collections::HashMap;
 use std::convert::TryFrom;

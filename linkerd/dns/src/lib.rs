@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
-pub use linkerd2_dns_name::{InvalidName, Name, Suffix};
-use linkerd2_error::Error;
+pub use linkerd_dns_name::{InvalidName, Name, Suffix};
+use linkerd_error::Error;
 use std::{fmt, net};
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};

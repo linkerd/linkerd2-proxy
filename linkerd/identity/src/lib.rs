@@ -9,7 +9,7 @@ use tracing::{debug, warn};
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
 
-pub use linkerd2_dns_name::InvalidName;
+pub use linkerd_dns_name::InvalidName;
 
 /// A DER-encoded X.509 certificate signing request.
 #[derive(Clone, Debug)]
@@ -17,7 +17,7 @@ pub struct Csr(Arc<Vec<u8>>);
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Name(Arc<linkerd2_dns_name::Name>);
+pub struct Name(Arc<linkerd_dns_name::Name>);
 
 #[derive(Clone, Debug)]
 pub struct Key(Arc<EcdsaKeyPair>);
@@ -120,8 +120,8 @@ impl rustls::sign::Signer for Signer {
 
 // === impl Name ===
 
-impl From<linkerd2_dns_name::Name> for Name {
-    fn from(n: linkerd2_dns_name::Name) -> Self {
+impl From<linkerd_dns_name::Name> for Name {
+    fn from(n: linkerd_dns_name::Name) -> Self {
         Name(Arc::new(n))
     }
 }
@@ -140,7 +140,7 @@ impl FromStr for Name {
             return Err(InvalidName); // SNI hostnames are implicitly absolute.
         }
 
-        linkerd2_dns_name::Name::from_str(s).map(|n| Name(Arc::new(n)))
+        linkerd_dns_name::Name::from_str(s).map(|n| Name(Arc::new(n)))
     }
 }
 
@@ -152,7 +152,7 @@ impl TryFrom<&[u8]> for Name {
             return Err(InvalidName); // SNI hostnames are implicitly absolute.
         }
 
-        linkerd2_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
+        linkerd_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
     }
 }
 

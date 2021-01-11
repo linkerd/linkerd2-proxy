@@ -14,7 +14,7 @@ pub mod tcp;
 #[cfg(test)]
 mod test_util;
 
-use linkerd2_app_core::{config::ProxyConfig, metrics, AddrMatch};
+use linkerd_app_core::{config::ProxyConfig, metrics, AddrMatch};
 use std::{collections::HashMap, time::Duration};
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);

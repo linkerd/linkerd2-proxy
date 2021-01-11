@@ -1,5 +1,5 @@
 use futures::prelude::*;
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::task::{Context, Poll};

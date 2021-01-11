@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-stack-metrics"
+name = "linkerd-stack-metrics"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -8,5 +8,5 @@ publish = false
 
 [dependencies]
 indexmap = "1.0"
-linkerd2-metrics = { path = "../../metrics" }
+linkerd-metrics = { path = "../../metrics" }
 tower = { version = "0.4.1", default-features = false }

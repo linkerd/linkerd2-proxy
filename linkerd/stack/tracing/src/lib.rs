@@ -1,5 +1,5 @@
 use futures::TryFuture;
-use linkerd2_stack::{NewService, Proxy};
+use linkerd_stack::{NewService, Proxy};
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;

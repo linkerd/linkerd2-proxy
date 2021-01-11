@@ -5,9 +5,9 @@ pub use crate::{
     stack_metrics, telemetry,
     transport::{self, labels::TlsStatus},
 };
-use linkerd2_addr::Addr;
-use linkerd2_metrics::FmtLabels;
-pub use linkerd2_metrics::*;
+use linkerd_addr::Addr;
+use linkerd_metrics::FmtLabels;
+pub use linkerd_metrics::*;
 use std::fmt::{self, Write};
 use std::time::{Duration, SystemTime};
 

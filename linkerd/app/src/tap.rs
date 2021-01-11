@@ -1,6 +1,6 @@
 use futures::prelude::*;
 use indexmap::IndexSet;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     config::ServerConfig,
     drain,
     proxy::{identity, tap},

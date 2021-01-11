@@ -1,8 +1,8 @@
 use crate::error::{IdleError, ServiceError};
 use crate::InFlight;
 use futures::{prelude::*, select_biased};
-use linkerd2_channel as mpsc;
-use linkerd2_error::Error;
+use linkerd_channel as mpsc;
+use linkerd_error::Error;
 use std::sync::Arc;
 use tower::util::ServiceExt;
 use tracing::trace;

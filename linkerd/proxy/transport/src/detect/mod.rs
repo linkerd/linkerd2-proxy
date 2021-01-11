@@ -4,8 +4,8 @@ pub use self::timeout::{DetectTimeout, DetectTimeoutError};
 use crate::io;
 use bytes::BytesMut;
 use futures::prelude::*;
-use linkerd2_error::Error;
-use linkerd2_stack::{layer, NewService};
+use linkerd_error::Error;
+use linkerd_stack::{layer, NewService};
 use std::{
     future::Future,
     pin::Pin,

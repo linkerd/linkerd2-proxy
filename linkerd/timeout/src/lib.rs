@@ -1,7 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-
-use linkerd2_error::Error;
-use linkerd2_stack::Proxy;
+use linkerd_error::Error;
+use linkerd_stack::Proxy;
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
@@ -27,7 +26,7 @@ pub enum TimeoutFuture<F> {
     Timeout(#[pin] time::Timeout<F>, Duration),
 }
 
-//===== impl Timeout =====
+// === impl Timeout ===
 
 impl<T> Timeout<T> {
     /// Construct a new `Timeout` wrapping `inner`.

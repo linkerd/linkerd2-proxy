@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::prelude::*;
-use linkerd2_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService};
 use parking_lot::RwLock;
 use std::{
     collections::{hash_map::Entry, HashMap},

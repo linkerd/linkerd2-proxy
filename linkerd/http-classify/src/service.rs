@@ -1,4 +1,4 @@
-use linkerd2_stack::{layer, NewService, Proxy};
+use linkerd_stack::{layer, NewService, Proxy};
 
 #[derive(Clone, Debug)]
 pub struct NewClassify<N> {

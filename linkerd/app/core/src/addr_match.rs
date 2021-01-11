@@ -1,6 +1,6 @@
 use ipnet::IpNet;
-use linkerd2_addr::Addr;
-use linkerd2_dns::{Name, Suffix};
+use linkerd_addr::Addr;
+use linkerd_dns::{Name, Suffix};
 use std::{net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug, Default)]
