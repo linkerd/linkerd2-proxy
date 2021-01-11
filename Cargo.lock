@@ -698,12 +698,6 @@ dependencies = [
 
 [[package]]
 name = "ipnet"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51268c3a27ad46afd1cca0bbf423a5be2e9fd3e6a7534736c195f0f834b763ef"
-
-[[package]]
-name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
@@ -796,7 +790,7 @@ version = "0.1.0"
 dependencies = [
  "futures 0.3.5",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "linkerd2-app-core",
  "linkerd2-app-gateway",
  "linkerd2-app-inbound",
@@ -822,7 +816,7 @@ dependencies = [
  "http-body",
  "hyper",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "libc",
  "linkerd2-addr",
  "linkerd2-buffer",
@@ -945,7 +939,7 @@ dependencies = [
  "http",
  "hyper",
  "indexmap",
- "ipnet 1.0.0",
+ "ipnet",
  "linkerd2-app-core",
  "linkerd2-app-test",
  "linkerd2-identity",
@@ -1388,7 +1382,7 @@ dependencies = [
  "http",
  "hyper",
  "indexmap",
- "ipnet 2.3.0",
+ "ipnet",
  "linkerd2-conditional",
  "linkerd2-error",
  "linkerd2-identity",
@@ -2905,7 +2899,7 @@ dependencies = [
  "futures-io",
  "futures-util",
  "idna",
- "ipnet 2.3.0",
+ "ipnet",
  "lazy_static",
  "log",
  "rand 0.8.1",
