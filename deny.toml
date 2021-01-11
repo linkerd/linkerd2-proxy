@@ -1,14 +1,3 @@
-# This template contains all of the possible sections and their default values
-
-# Note that all fields that take a lint level have these possible values:
-# * deny - An error will be produced and the check will fail
-# * warn - A warning will be produced, but the check will not fail
-# * allow - No warning or error will be produced, though in some cases a note
-# will be
-
-# The values provided in this template are the default values that will be used
-# when any section or field is not specified in your own configuration
-
 # If 1 or more target triples (and optionally, target_features) are specified,
 # only the specified targets will be checked when running `cargo deny check`.
 # This means, if a particular package is only ever used as a target specific
@@ -40,7 +29,7 @@ vulnerability = "deny"
 # The lint level for unmaintained crates
 unmaintained = "warn"
 # The lint level for crates that have been yanked from their source registry
-yanked = "warn"
+yanked = "deny"
 # The lint level for crates with security notices. Note that as of
 # 2019-12-17 there are no security notice advisories in
 # https://github.com/rustsec/advisory-db
@@ -60,60 +49,25 @@ ignore = [
 # * Critical - CVSS Score 9.0 - 10.0
 #severity-threshold =
 
-# This section is considered when running `cargo deny check licenses`
-# More documentation for the licenses section can be found here:
-# https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
 [licenses]
-# The lint level for crates which do not have a detectable license
-unlicensed = "warn"
-# List of explictly allowed licenses
-# See https://spdx.org/licenses/ for list of possible licenses
-# [possible values: any SPDX 3.7 short identifier (+ optional exception)].
+unlicensed = "deny"
 allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "MIT",
     "Apache-2.0",
-    #"Apache-2.0 WITH LLVM-exception",
 ]
-# List of explictly disallowed licenses
-# See https://spdx.org/licenses/ for list of possible licenses
-# [possible values: any SPDX 3.7 short identifier (+ optional exception)].
-deny = [
-    #"Nokia",
-]
-# Lint level for licenses considered copyleft
-copyleft = "warn"
-# Blanket approval or denial for OSI-approved or FSF Free/Libre licenses
-# * both - The license will be approved if it is both OSI-approved *AND* FSF
-# * either - The license will be approved if it is either OSI-approved *OR* FSF
-# * osi-only - The license will be approved if is OSI-approved *AND NOT* FSF
-# * fsf-only - The license will be approved if is FSF *AND NOT* OSI-approved
-# * neither - This predicate is ignored and the default lint level is used
+deny = []
+copyleft = "deny"
 allow-osi-fsf-free = "neither"
-# Lint level used when no other predicates are matched
-# 1. License isn't in the allow or deny lists
-# 2. License isn't copyleft
-# 3. License isn't OSI/FSF, or allow-osi-fsf-free = "neither"
 default = "deny"
-# The confidence threshold for detecting a license from license text.
-# The higher the value, the more closely the license text must be to the
-# canonical license text of a valid SPDX license file.
-# [possible values: any between 0.0 and 1.0].
 confidence-threshold = 0.8
-# Allow 1 or more licenses on a per-crate basis, so that particular licenses
-# aren't accepted for every possible crate as with the normal allow list
 exceptions = [
-    # Each entry is the crate and version constraint, and its specific allow
-    # list
     { allow = ["Zlib"], name = "adler32", version = "*" },
     { allow = ["ISC", "MIT", "OpenSSL"], name = "ring", version = "*" },
 ]
 
-# Some crates don't have (easily) machine readable licensing information,
-# adding a clarification entry for it allows you to manually specify the
-# licensing information
 [[licenses.clarify]]
 name = "ring"
 version = "*"
@@ -122,51 +76,12 @@ license-files = [
     { path = "LICENSE", hash = 0xbd0eed23 }
 ]
 
-#[[licenses.clarify]]
-#name = "tokio-trace"
-#version = "0.1.0"
-#expression = "MIT"
-
-[licenses.private]
-# If true, ignores workspace crates that aren't published, or are only
-# published to private registries
-ignore = false
-# One or more private registries that you might publish crates to, if a crate
-# is only published to private registries, and ignore is true, the crate will
-# not have its license(s) checked
-registries = [
-    #"https://sekretz.com/registry
-]
-
-# This section is considered when running `cargo deny check bans`.
-# More documentation about the 'bans' section can be found here:
-# https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
 [bans]
-# Lint level for when multiple versions of the same crate are detected
-multiple-versions = "warn"
-# Lint level for when a crate version requirement is `*`
+multiple-versions = "deny"
+# Wildcard dependencies are used for all workspace-local crates.
 wildcards = "allow"
-# The graph highlighting used when creating dotgraphs for crates
-# with multiple versions
-# * lowest-version - The path to the lowest versioned duplicate is highlighted
-# * simplest-path - The path to the version with the fewest edges is highlighted
-# * all - Both lowest-version and simplest-path are used
 highlight = "all"
-# List of crates that are allowed. Use with care!
-allow = [
-    #{ name = "ansi_term", version = "=0.11.0" },
-]
-# List of crates to deny
-deny = [
-    # Each entry the name of a crate and a version range. If version is
-    # not specified, all versions will be matched.
-    #{ name = "ansi_term", version = "=0.11.0" },
-    #
-    # Wrapper crates can optionally be specified to allow the crate when it
-    # is a direct dependency of the otherwise banned crate
-    #{ name = "ansi_term", version = "=0.11.0", wrappers = [] },
-]
-# Certain crates/versions that will be skipped when doing duplicate detection.
+deny = []
 skip = [
     #{ name = "ansi_term", version = "=0.11.0" },
     { name = "autocfg" },
@@ -174,34 +89,22 @@ skip = [
     { name = "pin-project", version = "0.4.27" },
     { name = "pin-project-internal", version = "0.4.27" },
 ]
-# Similarly to `skip` allows you to skip certain crates during duplicate
-# detection. Unlike skip, it also includes the entire tree of transitive
-# dependencies starting at the specified crate, up to a certain depth, which is
-# by default infinite
 skip-tree = [
     #{ name = "ansi_term", version = "=0.11.0", depth = 20 },
     { name = "tempfile", version = "=3.1.0" },
     { name = "tokio-trace" },
 ]
 
-# This section is considered when running `cargo deny check sources`.
-# More documentation about the 'sources' section can be found here:
-# https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
 [sources]
-# Lint level for what to happen when a crate from a crate registry that is not
-# in the allow list is encountered
-unknown-registry = "warn"
-# Lint level for what to happen when a crate from a git repository that is not
-# in the allow list is encountered
-unknown-git = "warn"
-# List of URLs for allowed crate registries. Defaults to the crates.io index
-# if not specified. If it is specified but empty, no registries are allowed.
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# List of URLs for allowed Git repositories
 allow-git = [
     "https://github.com/hawkw/tokio-trace",
     "https://github.com/QuentinPerez/tonic",
 ]
 
 [sources.allow-org]
-github = ["linkerd"]
+github = [
+    "linkerd",
+]
