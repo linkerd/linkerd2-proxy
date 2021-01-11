@@ -67,7 +67,7 @@ impl ExponentialBackoff {
             return Err(InvalidBackoff("jitter must not be greater than 100"));
         }
         if !jitter.is_finite() {
-            return Err(InvalidBackoff("jitter must not be finite"));
+            return Err(InvalidBackoff("jitter must be finite"));
         }
         Ok(ExponentialBackoff { min, max, jitter })
     }
