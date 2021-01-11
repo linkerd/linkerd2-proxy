@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["io-util", "net"] }
 tokio-rustls = "0.22"
 tokio-test = { version = "0.4", optional = true }
 tokio-util = { version = "0.6", features = ["io"] }
-pin-project = "0.4"
+pin-project = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

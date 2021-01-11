@@ -52,10 +52,10 @@ impl<S> FailFast<S> {
             scope,
             inner,
             max_unavailable,
-            // the delay is reset whenever the service becomes unavailable; this
+            // The sleep is reset whenever the service becomes unavailable; this
             // initial one will never actually be used, so it's okay to start it
             // now.
-            wait: Box::pin(time::sleep(max_unavailable)),
+            wait: Box::pin(time::sleep(Duration::default())),
             state: State::Open,
         })
     }
@@ -75,9 +75,9 @@ where
             inner: self.inner.clone(),
             max_unavailable: self.max_unavailable,
 
-            // Reset the state and delay; each clone of the underlying services
+            // Reset the state and sleep; each clone of the underlying services
             // may become ready independently (e.g. semaphore).
-            wait: Box::pin(time::sleep(self.max_unavailable)),
+            wait: Box::pin(time::sleep(Duration::default())),
             state: State::Open,
         }
     }

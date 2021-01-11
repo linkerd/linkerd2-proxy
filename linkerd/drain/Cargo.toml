@@ -17,6 +17,6 @@ linkerd-stack = { path = "../stack", optional = true }
 tower = { version = "0.4.1", default-features = false, optional = true }
 
 [dev-dependencies]
-pin-project = "0.4"
+pin-project = "1"
 tokio = { version = "1", features = ["time"] }
 tokio-test = "0.4"

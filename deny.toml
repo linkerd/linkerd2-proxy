@@ -16,10 +16,10 @@ ignore = []
 [licenses]
 unlicensed = "deny"
 allow = [
+    "Apache-2.0",
     "BSD-3-Clause",
     "ISC",
     "MIT",
-    "Apache-2.0",
 ]
 deny = []
 copyleft = "deny"
@@ -46,13 +46,13 @@ wildcards = "allow"
 highlight = "all"
 deny = []
 skip = [
-    #{ name = "ansi_term", version = "=0.11.0" },
-    { name = "autocfg" },
-    { name = "cfg-if" },
+    # Pulled in by tracing-futures 0.2
     { name = "pin-project", version = "0.4.27" },
     { name = "pin-project-internal", version = "0.4.27" },
 ]
 skip-tree = [
+    # `prost-build` uses a version of tempfile that pulls in older versions of
+    # `rand`, etc; and these are only used at build-time, anyway.
     { name = "tempfile", version = "=3.1.0", depth = 4 },
 ]
 
@@ -62,7 +62,7 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/hawkw/tokio-trace",
-    "https://github.com/QuentinPerez/tonic",
+    "https://github.com/hyperium/tonic",
 ]
 
 [sources.allow-org]

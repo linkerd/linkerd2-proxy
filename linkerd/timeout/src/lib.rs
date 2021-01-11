@@ -26,7 +26,7 @@ pub enum TimeoutFuture<F> {
     Timeout(#[pin] time::Timeout<F>, Duration),
 }
 
-//===== impl Timeout =====
+// === impl Timeout ===
 
 impl<T> Timeout<T> {
     /// Construct a new `Timeout` wrapping `inner`.

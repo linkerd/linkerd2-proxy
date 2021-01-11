@@ -13,8 +13,8 @@ linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["sync", "time", "macros"] }
 tower = { version = "0.4.1", default_features = false, features = ["util"] }
 tracing = "0.1.22"
-tracing-futures = { version = "0.2", features = ["std-future"] }
-pin-project = "0.4"
+tracing-futures = "0.2"
+pin-project = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }

@@ -35,7 +35,7 @@ tokio-util = { version = "0.6"}
 tracing = "0.1.22"
 webpki = "0.21"
 untrusted = "0.7"
-pin-project = "0.4"
+pin-project = "1"
 socket2 = "0.3"
 
 [dependencies.tower]

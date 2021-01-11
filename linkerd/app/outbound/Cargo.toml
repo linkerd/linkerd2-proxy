@@ -19,7 +19,7 @@ linkerd-identity = { path = "../../identity" }
 linkerd-retry = { path = "../../retry" }
 tokio = { version = "1", features = ["sync"]}
 tracing = "0.1.22"
-pin-project = "0.4"
+pin-project = "1"
 
 [dependencies.tower]
 version = "0.4"

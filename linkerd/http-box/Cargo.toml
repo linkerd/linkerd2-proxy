@@ -14,4 +14,4 @@ http-body = "0.4"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 tower = {version = "0.4", default-features = false }
-pin-project = "0.4"
+pin-project = "1"

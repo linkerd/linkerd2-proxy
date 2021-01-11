@@ -18,8 +18,8 @@ linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync", "time"] }
 tracing = "0.1.22"
-tracing-futures = { version = "0.2", features = ["std-future"] }
-pin-project = "0.4"
+tracing-futures = "0.2"
+pin-project = "1"
 
 [dependencies.tower]
 version = "0.4"

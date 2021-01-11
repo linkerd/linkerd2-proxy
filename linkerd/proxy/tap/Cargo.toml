@@ -15,7 +15,7 @@ ipnet = "2.0"
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git" }
 linkerd-proxy-http = { path = "../http" }
 linkerd-proxy-transport = { path = "../transport" }
 linkerd-stack = { path = "../../stack" }
@@ -25,8 +25,8 @@ tower = { version = "0.4.1", default-features = false }
 tonic = { version = "0.3", default-features = false }
 tracing = "0.1.22"
 tracing-futures = "0.2"
-pin-project = "0.4"
+pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.17", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git", features = ["arbitrary"] }
 prost-types = "0.7.0"

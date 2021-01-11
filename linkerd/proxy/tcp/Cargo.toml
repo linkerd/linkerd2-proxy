@@ -15,4 +15,4 @@ linkerd-stack = { path = "../../stack" }
 rand = "0.8"
 tokio = { version = "1" }
 tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }
-pin-project = "0.4"
+pin-project = "1"
