@@ -2,6 +2,7 @@
 name = "linkerd2-service-profiles"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
 edition = "2018"
 publish = false
 description = """
@@ -17,10 +18,10 @@ indexmap = "1.0"
 linkerd2-addr = { path  = "../addr" }
 linkerd2-dns-name = { path  = "../dns/name" }
 linkerd2-error = { path  = "../error" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0"  }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git"  }
 linkerd2-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd2-stack = { path  = "../stack" }
-rand = { version = "0.7", features = ["small_rng"] }
+rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 async-stream = "0.3"
@@ -41,6 +42,6 @@ features = [
 ]
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git", features = ["arbitrary"] }
 prost-types = "0.7.0"
 quickcheck = { version = "0.9", default-features = false }

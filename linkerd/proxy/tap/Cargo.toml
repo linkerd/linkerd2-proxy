@@ -2,6 +2,7 @@
 name = "linkerd2-proxy-tap"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
 edition = "2018"
 publish = false
 
@@ -14,7 +15,7 @@ ipnet = "2.0"
 linkerd2-conditional = { path = "../../conditional" }
 linkerd2-error = { path = "../../error" }
 linkerd2-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git" }
 linkerd2-proxy-http = { path = "../http" }
 linkerd2-proxy-transport = { path = "../transport" }
 linkerd2-stack = { path = "../../stack" }
@@ -27,5 +28,5 @@ tracing-futures = "0.2"
 pin-project = "0.4"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "eliza/tokio-1.0", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git", features = ["arbitrary"] }
 prost-types = "0.7.0"

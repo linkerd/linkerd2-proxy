@@ -2,6 +2,7 @@
 name = "linkerd2-buffer"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
 edition = "2018"
 publish = false
 
@@ -17,5 +18,5 @@ pin-project = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread"] }
-tower-test = "0.3"
+tower-test = "0.4"
 tokio-test = "0.4"
