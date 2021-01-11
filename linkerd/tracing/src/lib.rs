@@ -14,7 +14,7 @@ use tracing_subscriber::{fmt::format, prelude::*};
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 
-const DEFAULT_LOG_LEVEL: &str = "warn,linkerd_proxy=info";
+const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
