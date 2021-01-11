@@ -1237,7 +1237,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.17"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.17#8462184bb70ef455d0df418aed26c5f2e5d51130"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/tonic-git#473a4d365977c4d2b7e7932a06339d5bc327a1b9"
 dependencies = [
  "h2",
  "http",
@@ -2722,7 +2722,7 @@ dependencies = [
 [[package]]
 name = "tonic"
 version = "0.3.1"
-source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#b607851280a7fafeaa36848f69153811f4edc68c"
+source = "git+https://github.com/hyperium/tonic#fdda5ae26ace4706cb8faf56ccd35513b5de26c5"
 dependencies = [
  "async-stream 0.3.0",
  "async-trait",
@@ -2745,7 +2745,7 @@ dependencies = [
 [[package]]
 name = "tonic-build"
 version = "0.3.1"
-source = "git+https://github.com/QuentinPerez/tonic?branch=qperez/upgrade-to-tokio-1#b607851280a7fafeaa36848f69153811f4edc68c"
+source = "git+https://github.com/hyperium/tonic#fdda5ae26ace4706cb8faf56ccd35513b5de26c5"
 dependencies = [
  "proc-macro2",
  "prost-build",
