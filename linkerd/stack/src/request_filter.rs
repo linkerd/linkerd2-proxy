@@ -2,7 +2,7 @@
 //! target before it is issued to an inner service.
 
 use futures::{future, prelude::*};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::task::{Context, Poll};
 
 pub trait FilterRequest<Req> {

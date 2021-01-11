@@ -7,7 +7,7 @@ use http::{
     header::{CONNECTION, HOST, UPGRADE},
     uri::{Authority, Parts, Scheme, Uri},
 };
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::{future::Future, mem, pin::Pin, time::Duration};
 use tracing::{debug, trace};
 

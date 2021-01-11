@@ -3,8 +3,8 @@
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "16289823"]
 
-use linkerd2_app::{trace, Config};
-use linkerd2_signal as signal;
+use linkerd_app::{trace, Config};
+use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
 

@@ -1,4 +1,4 @@
-use linkerd2_app_core::{
+use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     is_discovery_rejected, metrics, profiles,

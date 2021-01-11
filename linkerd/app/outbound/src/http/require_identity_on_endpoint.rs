@@ -3,7 +3,7 @@ use futures::{
     future::{self, Either},
     TryFutureExt,
 };
-use linkerd2_app_core::{
+use linkerd_app_core::{
     errors::IdentityRequired,
     proxy::http::identity_from_header,
     svc::{layer, NewService, Service},

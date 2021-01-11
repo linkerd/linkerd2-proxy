@@ -185,8 +185,8 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     // TODO(eliza): when we're on Rust 1.49.0+, libtest *will* capture these
     // logs, so we can use the same default filter as other test code.
     const DEFAULT_LOG: &str = "error,\
-                               linkerd2_proxy_http=off,\
-                               linkerd2_proxy_transport=off";
+                               linkerd_proxy_http=off,\
+                               linkerd_proxy_transport=off";
 
     use app::env::Strings;
 

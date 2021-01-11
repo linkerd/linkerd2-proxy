@@ -2,11 +2,11 @@ use crate::{http, Profile, Receiver, Target};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
-use linkerd2_addr::Addr;
-use linkerd2_dns_name::Name;
-use linkerd2_error::{Error, Recover};
 use linkerd2_proxy_api::destination as api;
-use linkerd2_proxy_api_resolve::pb as resolve;
+use linkerd_addr::Addr;
+use linkerd_dns_name::Name;
+use linkerd_error::{Error, Recover};
+use linkerd_proxy_api_resolve::pb as resolve;
 use pin_project::pin_project;
 use regex::Regex;
 use std::{

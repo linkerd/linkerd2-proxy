@@ -11,7 +11,7 @@ pub use self::endpoint::{
 };
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
     drain, dst, errors, metrics,

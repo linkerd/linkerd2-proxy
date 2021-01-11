@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 pub use self::{requests::Requests, retries::Retries};
-use linkerd2_metrics::{LastUpdate, Store};
+use linkerd_metrics::{LastUpdate, Store};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};

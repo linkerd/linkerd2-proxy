@@ -1,6 +1,6 @@
 use crate::{GetProfile, Receiver};
 use futures::{future, prelude::*};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::task::{Context, Poll};
 use tracing::debug;
 

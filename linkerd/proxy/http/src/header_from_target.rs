@@ -1,5 +1,5 @@
 use http::header::{HeaderValue, IntoHeaderName};
-use linkerd2_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService};
 use std::task::{Context, Poll};
 
 /// Wraps an HTTP `Service` so that the Stack's `T -typed target` is cloned into

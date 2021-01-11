@@ -1,4 +1,4 @@
-pub use linkerd2_dns::*;
+pub use linkerd_dns::*;
 use std::path::PathBuf;
 use std::time::Duration;
 

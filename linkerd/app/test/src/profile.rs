@@ -1,4 +1,4 @@
-pub use linkerd2_app_core::{dns, profiles::*};
+pub use linkerd_app_core::{dns, profiles::*};
 pub use tokio::sync::watch;
 pub use watch::channel;
 

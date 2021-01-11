@@ -1,6 +1,6 @@
 use super::{ClassMetrics, Metrics, StatusMetrics};
 use crate::{Prefixed, Registry, Report};
-use linkerd2_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
+use linkerd_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
 use std::{fmt, hash::Hash, time::Instant};
 use tracing::trace;
 

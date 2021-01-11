@@ -2,8 +2,8 @@
 //! before requests are failed.
 
 use futures::TryFuture;
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use pin_project::pin_project;
 use std::{
     future::Future,

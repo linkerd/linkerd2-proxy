@@ -1,11 +1,11 @@
 use crate::grpc::Server;
 use futures::future;
 use indexmap::IndexSet;
-use linkerd2_error::Error;
-use linkerd2_identity as identity;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
-use linkerd2_proxy_http::{trace, HyperServerSvc};
-use linkerd2_proxy_transport::{
+use linkerd_error::Error;
+use linkerd_identity as identity;
+use linkerd_proxy_http::{trace, HyperServerSvc};
+use linkerd_proxy_transport::{
     io,
     tls::{accept::Connection, Conditional, ReasonForNoPeerName},
 };

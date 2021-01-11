@@ -3,10 +3,10 @@ use crate::io::{EitherIo, PrefixedIo};
 use crate::listen::Addrs;
 use bytes::BytesMut;
 use futures::prelude::*;
-use linkerd2_dns_name as dns;
-use linkerd2_error::Error;
-use linkerd2_identity as identity;
-use linkerd2_stack::{layer, NewService};
+use linkerd_dns_name as dns;
+use linkerd_error::Error;
+use linkerd_identity as identity;
+use linkerd_stack::{layer, NewService};
 pub use rustls::ServerConfig as Config;
 use std::{
     pin::Pin,

@@ -1,7 +1,7 @@
 use crate::{dns, identity::LocalIdentity};
-use linkerd2_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
-use linkerd2_channel::into_stream::IntoStream;
-use linkerd2_opencensus::{metrics, proto, SpanExporter};
+use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
+use linkerd_channel::into_stream::IntoStream;
+use linkerd_opencensus::{metrics, proto, SpanExporter};
 use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};

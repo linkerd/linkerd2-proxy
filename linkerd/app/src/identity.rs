@@ -1,7 +1,7 @@
-pub use linkerd2_app_core::proxy::identity::{
+pub use linkerd_app_core::proxy::identity::{
     certify, metrics, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
 };
-use linkerd2_app_core::{
+use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     metrics::ControlHttp as Metrics,
@@ -92,7 +92,7 @@ impl Identity {
     }
 }
 
-impl<E: Into<Error>> linkerd2_error::Recover<E> for Recover {
+impl<E: Into<Error>> linkerd_error::Recover<E> for Recover {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {

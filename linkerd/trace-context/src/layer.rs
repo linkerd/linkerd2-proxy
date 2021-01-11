@@ -1,6 +1,6 @@
 use crate::{propagation, Span, SpanSink};
 use futures::{future::Either, prelude::*};
-use linkerd2_stack::layer;
+use linkerd_stack::layer;
 use std::{
     collections::HashMap,
     future::Future,

@@ -6,7 +6,7 @@ use crate::app_core::{
     Conditional, Error,
 };
 use hyper::{body::HttpBody, Body, Request, Response};
-use linkerd2_identity::Name;
+use linkerd_identity::Name;
 use std::{
     fmt,
     sync::{Arc, Mutex},

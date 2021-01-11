@@ -4,8 +4,8 @@ use futures::{
     future::{Either, MapOk},
     prelude::*,
 };
-use linkerd2_identity as identity;
-use linkerd2_stack::layer;
+use linkerd_identity as identity;
+use linkerd_stack::layer;
 pub use rustls::ClientConfig as Config;
 use std::{
     future::Future,

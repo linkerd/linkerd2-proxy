@@ -1,13 +1,13 @@
 use crate::Config;
 pub use futures::prelude::*;
 pub use ipnet::IpNet;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     config, exp_backoff,
     proxy::http::{h1, h2},
     transport::BindTcp,
     IpMatch,
 };
-pub use linkerd2_app_test as support;
+pub use linkerd_app_test as support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];

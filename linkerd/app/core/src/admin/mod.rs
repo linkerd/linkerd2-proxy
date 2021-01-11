@@ -11,8 +11,8 @@ use crate::{
 use futures::future;
 use http::StatusCode;
 use hyper::{Body, Request, Response};
-use linkerd2_error::{Error, Never};
-use linkerd2_metrics::{self as metrics, FmtMetrics};
+use linkerd_error::{Error, Never};
+use linkerd_metrics::{self as metrics, FmtMetrics};
 use std::{
     future::Future,
     pin::Pin,

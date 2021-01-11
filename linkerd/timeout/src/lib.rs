@@ -1,6 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
-use linkerd2_error::Error;
-use linkerd2_stack::Proxy;
+use linkerd_error::Error;
+use linkerd_stack::Proxy;
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;

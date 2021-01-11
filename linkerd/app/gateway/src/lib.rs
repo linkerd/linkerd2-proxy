@@ -9,7 +9,7 @@ pub use self::config::Config;
 #[cfg(test)]
 mod test {
     use super::*;
-    use linkerd2_app_core::{
+    use linkerd_app_core::{
         dns,
         errors::HttpError,
         profiles,
@@ -18,8 +18,8 @@ mod test {
         transport::tls,
         Error, NameAddr, NameMatch, Never,
     };
-    use linkerd2_app_inbound::endpoint as inbound;
-    use linkerd2_app_test as support;
+    use linkerd_app_inbound::endpoint as inbound;
+    use linkerd_app_test as support;
     use std::{net::SocketAddr, str::FromStr};
     use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;

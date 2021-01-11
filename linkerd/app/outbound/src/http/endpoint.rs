@@ -1,7 +1,7 @@
 use super::require_identity_on_endpoint::NewRequireIdentity;
 use super::Endpoint;
 use crate::tcp;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     classify,
     config::ConnectConfig,
     metrics,

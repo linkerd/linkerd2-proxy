@@ -1,5 +1,5 @@
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use rand::thread_rng;
 use std::{hash::Hash, time::Duration};
 pub use tower::{

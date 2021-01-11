@@ -2,8 +2,8 @@
 
 use crate::BoxBody;
 use futures::{future, TryFutureExt};
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]

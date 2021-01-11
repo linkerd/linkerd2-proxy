@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-error-respond"
+name = "linkerd-error-respond"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -9,6 +9,6 @@ publish = false
 
 [dependencies]
 futures = "0.3.9"
-linkerd2-error = { path = "../error" }
+linkerd-error = { path = "../error" }
 tower = { version = "0.4.1", default-features = false }
 pin-project = "0.4"

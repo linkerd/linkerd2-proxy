@@ -1,8 +1,8 @@
 #![allow(clippy::new_without_default)]
 
 use super::metrics::Direction;
-use linkerd2_metrics::{latency, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
-use linkerd2_proxy_http::insert;
+use linkerd_metrics::{latency, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
+use linkerd_proxy_http::insert;
 use std::fmt;
 use std::sync::atomic::{self, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};

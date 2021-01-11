@@ -1,6 +1,6 @@
 use super::{default::RecoverDefault, GetProfile, GetProfileService, Receiver};
 use futures::prelude::*;
-use linkerd2_stack::{layer, FilterRequest, FutureService, NewService, RequestFilter};
+use linkerd_stack::{layer, FilterRequest, FutureService, NewService, RequestFilter};
 use std::{future::Future, pin::Pin};
 
 type Service<F, G, M> = Discover<RecoverDefault<RequestFilter<F, GetProfileService<G>>>, M>;

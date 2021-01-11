@@ -1,5 +1,5 @@
 use crate::identity::LocalIdentity;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, trace, transport::tls, Error,
 };
 use std::{net::SocketAddr, pin::Pin, time::Duration};

@@ -1,6 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_proxy_core::Resolve;
+use linkerd_proxy_core::Resolve;
 
 pub mod buffer;
 pub mod from_resolve;

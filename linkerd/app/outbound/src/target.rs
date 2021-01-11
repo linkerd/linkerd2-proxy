@@ -1,4 +1,4 @@
-use linkerd2_app_core::{
+use linkerd_app_core::{
     metrics, profiles,
     proxy::{api_resolve::Metadata, identity, resolve::map_endpoint::MapEndpoint},
     transport::{self, listen, tls},

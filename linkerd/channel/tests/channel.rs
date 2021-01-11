@@ -1,5 +1,5 @@
 #![warn(rust_2018_idioms)]
-use linkerd2_channel::{channel, error::TrySendError, Receiver, Sender};
+use linkerd_channel::{channel, error::TrySendError, Receiver, Sender};
 
 use std::sync::Arc;
 use tokio_test::task;

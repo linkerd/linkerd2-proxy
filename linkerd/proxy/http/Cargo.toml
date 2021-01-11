@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-proxy-http"
+name = "linkerd-proxy-http"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -22,15 +22,15 @@ httparse = "1.2"
 hyper = { version ="0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
 hyper-balance = { path = "../../../hyper-balance" }
 indexmap = "1.0"
-linkerd2-drain = { path = "../../drain" }
-linkerd2-duplex = { path = "../../duplex" }
-linkerd2-error = { path = "../../error" }
-linkerd2-http-box = { path = "../../http-box" }
-linkerd2-identity = { path = "../../identity" }
-linkerd2-io = { path = "../../io" }
-linkerd2-proxy-transport = { path = "../transport" }
-linkerd2-stack = { path = "../../stack" }
-linkerd2-timeout = { path = "../../timeout" }
+linkerd-drain = { path = "../../drain" }
+linkerd-duplex = { path = "../../duplex" }
+linkerd-error = { path = "../../error" }
+linkerd-http-box = { path = "../../http-box" }
+linkerd-identity = { path = "../../identity" }
+linkerd-io = { path = "../../io" }
+linkerd-proxy-transport = { path = "../transport" }
+linkerd-stack = { path = "../../stack" }
+linkerd-timeout = { path = "../../timeout" }
 rand = "0.8"
 tokio = { version = "1", features = ["time", "rt"] }
 tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }

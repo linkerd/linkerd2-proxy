@@ -30,7 +30,7 @@ mod imp {
             .await;
         info!(
             // use target to remove 'imp' from output
-            target: "linkerd2_proxy::signal",
+            target: "linkerd_proxy::signal",
             "received {}, starting shutdown",
             name,
         );
@@ -50,7 +50,7 @@ mod imp {
         tokio::signal::ctrl_c().recv().await;
         info!(
             // use target to remove 'imp' from output
-            target: "linkerd2_proxy::signal",
+            target: "linkerd_proxy::signal",
             "received Ctrl-C, starting shutdown",
         );
     }

@@ -2,8 +2,8 @@
 
 use futures::stream::TryStream;
 use futures::{prelude::*, ready, FutureExt, Stream};
-use linkerd2_error::{Error, Recover};
-use linkerd2_proxy_core::resolve::{self, Update};
+use linkerd_error::{Error, Recover};
+use linkerd_proxy_core::resolve::{self, Update};
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;

@@ -1,7 +1,7 @@
 use futures::{ready, Stream, TryFuture};
 
-use linkerd2_error::Error;
-use linkerd2_stack::NewService;
+use linkerd_error::Error;
+use linkerd_stack::NewService;
 use pin_project::pin_project;
 use std::future::Future;
 use std::hash::Hash;

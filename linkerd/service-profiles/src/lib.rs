@@ -1,10 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::stream::Stream;
-use linkerd2_addr::Addr;
-pub use linkerd2_dns_name::Name;
-use linkerd2_error::Error;
-use linkerd2_proxy_api_resolve::Metadata;
+use linkerd_addr::Addr;
+pub use linkerd_dns_name::Name;
+use linkerd_error::Error;
+use linkerd_proxy_api_resolve::Metadata;
 use std::{
     future::Future,
     net::SocketAddr,

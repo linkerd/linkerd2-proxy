@@ -7,8 +7,8 @@
 
 use crate::{glue::UpgradeBody, h1, h2, orig_proto};
 use futures::prelude::*;
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use std::{
     marker::PhantomData,
     pin::Pin,

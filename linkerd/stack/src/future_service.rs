@@ -1,5 +1,5 @@
 use futures::{ready, TryFuture, TryFutureExt};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

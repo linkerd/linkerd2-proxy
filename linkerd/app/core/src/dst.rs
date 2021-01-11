@@ -1,8 +1,8 @@
 use super::classify;
 use crate::profiles;
-use linkerd2_addr::Addr;
-use linkerd2_http_classify::CanClassify;
-use linkerd2_proxy_http::timeout;
+use linkerd_addr::Addr;
+use linkerd_http_classify::CanClassify;
+use linkerd_proxy_http::timeout;
 use std::fmt;
 use std::time::Duration;
 

@@ -626,27 +626,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8dd5a6d5999d9907cda8ed67bbd137d3af8085216c2ac62de5be860bd41f304a"
 
 [[package]]
-name = "linkerd2-addr"
+name = "linkerd-addr"
 version = "0.1.0"
 dependencies = [
  "http",
- "linkerd2-dns-name",
+ "linkerd-dns-name",
 ]
 
 [[package]]
-name = "linkerd2-app"
+name = "linkerd-app"
 version = "0.1.0"
 dependencies = [
  "futures",
  "indexmap",
  "ipnet",
- "linkerd2-app-core",
- "linkerd2-app-gateway",
- "linkerd2-app-inbound",
- "linkerd2-app-outbound",
- "linkerd2-channel",
- "linkerd2-error",
- "linkerd2-opencensus",
+ "linkerd-app-core",
+ "linkerd-app-gateway",
+ "linkerd-app-inbound",
+ "linkerd-app-outbound",
+ "linkerd-channel",
+ "linkerd-error",
+ "linkerd-opencensus",
  "regex",
  "tokio 1.0.1",
  "tonic",
@@ -656,7 +656,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-app-core"
+name = "linkerd-app-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -667,44 +667,44 @@ dependencies = [
  "indexmap",
  "ipnet",
  "libc",
- "linkerd2-addr",
- "linkerd2-buffer",
- "linkerd2-cache",
- "linkerd2-concurrency-limit",
- "linkerd2-conditional",
- "linkerd2-dns",
- "linkerd2-drain",
- "linkerd2-duplex",
- "linkerd2-errno",
- "linkerd2-error",
- "linkerd2-error-metrics",
- "linkerd2-error-respond",
- "linkerd2-exp-backoff",
- "linkerd2-http-classify",
- "linkerd2-http-metrics",
- "linkerd2-metrics",
- "linkerd2-opencensus",
+ "linkerd-addr",
+ "linkerd-buffer",
+ "linkerd-cache",
+ "linkerd-concurrency-limit",
+ "linkerd-conditional",
+ "linkerd-dns",
+ "linkerd-drain",
+ "linkerd-duplex",
+ "linkerd-errno",
+ "linkerd-error",
+ "linkerd-error-metrics",
+ "linkerd-error-respond",
+ "linkerd-exp-backoff",
+ "linkerd-http-classify",
+ "linkerd-http-metrics",
+ "linkerd-metrics",
+ "linkerd-opencensus",
+ "linkerd-proxy-api-resolve",
+ "linkerd-proxy-core",
+ "linkerd-proxy-discover",
+ "linkerd-proxy-dns-resolve",
+ "linkerd-proxy-http",
+ "linkerd-proxy-identity",
+ "linkerd-proxy-resolve",
+ "linkerd-proxy-tap",
+ "linkerd-proxy-tcp",
+ "linkerd-proxy-transport",
+ "linkerd-reconnect",
+ "linkerd-retry",
+ "linkerd-service-profiles",
+ "linkerd-stack",
+ "linkerd-stack-metrics",
+ "linkerd-stack-tracing",
+ "linkerd-timeout",
+ "linkerd-trace-context",
+ "linkerd-tracing",
+ "linkerd-transport-header",
  "linkerd2-proxy-api",
- "linkerd2-proxy-api-resolve",
- "linkerd2-proxy-core",
- "linkerd2-proxy-discover",
- "linkerd2-proxy-dns-resolve",
- "linkerd2-proxy-http",
- "linkerd2-proxy-identity",
- "linkerd2-proxy-resolve",
- "linkerd2-proxy-tap",
- "linkerd2-proxy-tcp",
- "linkerd2-proxy-transport",
- "linkerd2-reconnect",
- "linkerd2-retry",
- "linkerd2-service-profiles",
- "linkerd2-stack",
- "linkerd2-stack-metrics",
- "linkerd2-stack-tracing",
- "linkerd2-timeout",
- "linkerd2-trace-context",
- "linkerd2-tracing",
- "linkerd2-transport-header",
  "pin-project 0.4.27",
  "procinfo",
  "prost-types",
@@ -717,16 +717,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-app-gateway"
+name = "linkerd-app-gateway"
 version = "0.1.0"
 dependencies = [
  "futures",
  "http",
  "indexmap",
- "linkerd2-app-core",
- "linkerd2-app-inbound",
- "linkerd2-app-outbound",
- "linkerd2-app-test",
+ "linkerd-app-core",
+ "linkerd-app-inbound",
+ "linkerd-app-outbound",
+ "linkerd-app-test",
  "tokio 1.0.1",
  "tokio-test",
  "tower",
@@ -735,21 +735,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-app-inbound"
+name = "linkerd-app-inbound"
 version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
  "http",
  "indexmap",
- "linkerd2-app-core",
+ "linkerd-app-core",
  "tokio 1.0.1",
  "tower",
  "tracing",
 ]
 
 [[package]]
-name = "linkerd2-app-integration"
+name = "linkerd-app-integration"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -759,11 +759,11 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "linkerd2-app",
- "linkerd2-app-core",
- "linkerd2-app-test",
- "linkerd2-channel",
- "linkerd2-metrics",
+ "linkerd-app",
+ "linkerd-app-core",
+ "linkerd-app-test",
+ "linkerd-channel",
+ "linkerd-metrics",
  "linkerd2-proxy-api",
  "regex",
  "rustls",
@@ -779,7 +779,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-app-outbound"
+name = "linkerd-app-outbound"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -788,11 +788,11 @@ dependencies = [
  "hyper",
  "indexmap",
  "ipnet",
- "linkerd2-app-core",
- "linkerd2-app-test",
- "linkerd2-identity",
- "linkerd2-io",
- "linkerd2-retry",
+ "linkerd-app-core",
+ "linkerd-app-test",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-retry",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
@@ -803,7 +803,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-app-test"
+name = "linkerd-app-test"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -811,10 +811,10 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "linkerd2-app-core",
- "linkerd2-channel",
- "linkerd2-identity",
- "linkerd2-io",
+ "linkerd-app-core",
+ "linkerd-channel",
+ "linkerd-identity",
+ "linkerd-io",
  "regex",
  "tokio 1.0.1",
  "tokio-test",
@@ -825,12 +825,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-buffer"
+name = "linkerd-buffer"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-channel",
- "linkerd2-error",
+ "linkerd-channel",
+ "linkerd-error",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
@@ -841,12 +841,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-cache"
+name = "linkerd-cache"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-error",
- "linkerd2-stack",
+ "linkerd-error",
+ "linkerd-stack",
  "parking_lot",
  "tokio 1.0.1",
  "tower",
@@ -856,7 +856,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-channel"
+name = "linkerd-channel"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -865,11 +865,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-concurrency-limit"
+name = "linkerd-concurrency-limit"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-stack",
+ "linkerd-stack",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tower",
@@ -877,16 +877,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-conditional"
+name = "linkerd-conditional"
 version = "0.1.0"
 
 [[package]]
-name = "linkerd2-dns"
+name = "linkerd-dns"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-dns-name",
- "linkerd2-error",
+ "linkerd-dns-name",
+ "linkerd-error",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tracing",
@@ -894,7 +894,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-dns-name"
+name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
  "untrusted",
@@ -902,11 +902,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-drain"
+name = "linkerd-drain"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-stack",
+ "linkerd-stack",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-test",
@@ -914,51 +914,51 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-duplex"
+name = "linkerd-duplex"
 version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
- "linkerd2-io",
+ "linkerd-io",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tracing",
 ]
 
 [[package]]
-name = "linkerd2-errno"
+name = "linkerd-errno"
 version = "0.1.0"
 
 [[package]]
-name = "linkerd2-error"
+name = "linkerd-error"
 version = "0.1.0"
 dependencies = [
  "futures",
 ]
 
 [[package]]
-name = "linkerd2-error-metrics"
+name = "linkerd-error-metrics"
 version = "0.1.0"
 dependencies = [
  "futures",
  "indexmap",
- "linkerd2-metrics",
+ "linkerd-metrics",
  "pin-project 0.4.27",
  "tower",
 ]
 
 [[package]]
-name = "linkerd2-error-respond"
+name = "linkerd-error-respond"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-error",
+ "linkerd-error",
  "pin-project 0.4.27",
  "tower",
 ]
 
 [[package]]
-name = "linkerd2-exp-backoff"
+name = "linkerd-exp-backoff"
 version = "0.1.0"
 dependencies = [
  "futures",
@@ -969,31 +969,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-http-box"
+name = "linkerd-http-box"
 version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
  "http",
  "http-body",
- "linkerd2-error",
- "linkerd2-stack",
+ "linkerd-error",
+ "linkerd-stack",
  "pin-project 0.4.27",
  "tower",
 ]
 
 [[package]]
-name = "linkerd2-http-classify"
+name = "linkerd-http-classify"
 version = "0.1.0"
 dependencies = [
  "http",
- "linkerd2-error",
- "linkerd2-stack",
+ "linkerd-error",
+ "linkerd-stack",
  "tower",
 ]
 
 [[package]]
-name = "linkerd2-http-metrics"
+name = "linkerd-http-metrics"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -1002,20 +1002,20 @@ dependencies = [
  "http-body",
  "hyper",
  "indexmap",
- "linkerd2-error",
- "linkerd2-http-classify",
- "linkerd2-metrics",
- "linkerd2-stack",
+ "linkerd-error",
+ "linkerd-http-classify",
+ "linkerd-metrics",
+ "linkerd-stack",
  "pin-project 0.4.27",
  "tower",
  "tracing",
 ]
 
 [[package]]
-name = "linkerd2-identity"
+name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
- "linkerd2-dns-name",
+ "linkerd-dns-name",
  "ring",
  "rustls",
  "tracing",
@@ -1024,12 +1024,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-io"
+name = "linkerd-io"
 version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
- "linkerd2-errno",
+ "linkerd-errno",
  "pin-project 0.4.27",
  "tokio 1.0.1",
  "tokio-rustls",
@@ -1038,7 +1038,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-metrics"
+name = "linkerd-metrics"
 version = "0.1.0"
 dependencies = [
  "deflate",
@@ -1053,15 +1053,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd2-opencensus"
+name = "linkerd-opencensus"
 version = "0.1.0"
 dependencies = [
  "futures",
  "http",
  "http-body",
- "linkerd2-channel",
- "linkerd2-error",
- "linkerd2-metrics",
+ "linkerd-channel",
+ "linkerd-error",
+ "linkerd-metrics",
  "opencensus-proto",
  "pin-project 0.4.27",
  "tonic",
@@ -1070,12 +1070,372 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-api-resolve"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "futures",
+ "http",
+ "http-body",
+ "indexmap",
+ "linkerd-identity",
+ "linkerd-proxy-core",
+ "linkerd2-proxy-api",
+ "pin-project 0.4.27",
+ "prost",
+ "tonic",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-core"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "pin-project 0.4.27",
+ "tower",
+]
+
+[[package]]
+name = "linkerd-proxy-discover"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "futures",
+ "linkerd-channel",
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "tokio 1.0.1",
+ "tower",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "linkerd-proxy-dns-resolve"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-addr",
+ "linkerd-channel",
+ "linkerd-dns",
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "tokio 1.0.1",
+ "tower",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "linkerd-proxy-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "h2",
+ "http",
+ "http-body",
+ "httparse",
+ "hyper",
+ "hyper-balance",
+ "indexmap",
+ "linkerd-drain",
+ "linkerd-duplex",
+ "linkerd-error",
+ "linkerd-http-box",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "linkerd-timeout",
+ "pin-project 1.0.2",
+ "rand 0.8.1",
+ "tokio 1.0.1",
+ "tokio-test",
+ "tower",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+ "try-lock",
+]
+
+[[package]]
+name = "linkerd-proxy-identity"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http-body",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-metrics",
+ "linkerd-proxy-transport",
+ "linkerd2-proxy-api",
+ "pin-project 0.4.27",
+ "tokio 1.0.1",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-resolve"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-proxy-core",
+ "pin-project 0.4.27",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-proxy-tap"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "http",
+ "hyper",
+ "indexmap",
+ "ipnet",
+ "linkerd-conditional",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-proxy-http",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "linkerd2-proxy-api",
+ "pin-project 0.4.27",
+ "prost-types",
+ "rand 0.8.1",
+ "tokio 1.0.1",
+ "tonic",
+ "tower",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "linkerd-proxy-tcp"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-duplex",
+ "linkerd-error",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "rand 0.8.1",
+ "tokio 1.0.1",
+ "tower",
+]
+
+[[package]]
+name = "linkerd-proxy-transport"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "bytes",
+ "futures",
+ "indexmap",
+ "libc",
+ "linkerd-conditional",
+ "linkerd-dns-name",
+ "linkerd-errno",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-metrics",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "rustls",
+ "socket2",
+ "tokio 1.0.1",
+ "tokio-rustls",
+ "tokio-util",
+ "tower",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+ "untrusted",
+ "webpki",
+]
+
+[[package]]
+name = "linkerd-reconnect"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-retry"
+version = "0.1.0"
+dependencies = [
+ "linkerd-error",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-service-profiles"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "indexmap",
+ "linkerd-addr",
+ "linkerd-dns-name",
+ "linkerd-error",
+ "linkerd-proxy-api-resolve",
+ "linkerd-stack",
+ "linkerd2-proxy-api",
+ "pin-project 0.4.27",
+ "prost-types",
+ "quickcheck",
+ "rand 0.8.1",
+ "regex",
+ "tokio 1.0.1",
+ "tonic",
+ "tower",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "linkerd-signal"
+version = "0.1.0"
+dependencies = [
+ "tokio 1.0.1",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-stack"
+version = "0.1.0"
+dependencies = [
+ "dyn-clone",
+ "futures",
+ "linkerd-error",
+ "pin-project 0.4.27",
+ "tokio 1.0.1",
+ "tokio-test",
+ "tower",
+ "tower-test",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "linkerd-stack-metrics"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "linkerd-metrics",
+ "tower",
+]
+
+[[package]]
+name = "linkerd-stack-tracing"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "tower",
+ "tracing",
+ "tracing-futures",
+]
+
+[[package]]
+name = "linkerd-timeout"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "pin-project 0.4.27",
+ "tokio 1.0.1",
+ "tokio-test",
+ "tower",
+ "tower-test",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-trace-context"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bytes",
+ "futures",
+ "hex",
+ "http",
+ "linkerd-channel",
+ "linkerd-error",
+ "linkerd-stack",
+ "rand 0.8.1",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-tracing"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "html-escape",
+ "http",
+ "hyper",
+ "linkerd-error",
+ "serde_json",
+ "tokio 1.0.1",
+ "tokio-trace",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "linkerd-transport-header"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "linkerd-dns-name",
+ "linkerd-error",
+ "linkerd-io",
+ "linkerd-proxy-transport",
+ "prost",
+ "prost-build",
+ "tokio 1.0.1",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd2-proxy"
 version = "0.1.0"
 dependencies = [
  "futures",
- "linkerd2-app",
- "linkerd2-signal",
+ "linkerd-app",
+ "linkerd-signal",
  "mimalloc",
  "num_cpus",
  "tokio 1.0.1",
@@ -1095,366 +1455,6 @@ dependencies = [
  "rand 0.8.1",
  "tonic",
  "tonic-build",
-]
-
-[[package]]
-name = "linkerd2-proxy-api-resolve"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "futures",
- "http",
- "http-body",
- "indexmap",
- "linkerd2-identity",
- "linkerd2-proxy-api",
- "linkerd2-proxy-core",
- "pin-project 0.4.27",
- "prost",
- "tonic",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-proxy-core"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-error",
- "pin-project 0.4.27",
- "tower",
-]
-
-[[package]]
-name = "linkerd2-proxy-discover"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "futures",
- "linkerd2-channel",
- "linkerd2-error",
- "linkerd2-proxy-core",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "tokio 1.0.1",
- "tower",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "linkerd2-proxy-dns-resolve"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-addr",
- "linkerd2-channel",
- "linkerd2-dns",
- "linkerd2-error",
- "linkerd2-proxy-core",
- "tokio 1.0.1",
- "tower",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "linkerd2-proxy-http"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "futures",
- "h2",
- "http",
- "http-body",
- "httparse",
- "hyper",
- "hyper-balance",
- "indexmap",
- "linkerd2-drain",
- "linkerd2-duplex",
- "linkerd2-error",
- "linkerd2-http-box",
- "linkerd2-identity",
- "linkerd2-io",
- "linkerd2-proxy-transport",
- "linkerd2-stack",
- "linkerd2-timeout",
- "pin-project 1.0.2",
- "rand 0.8.1",
- "tokio 1.0.1",
- "tokio-test",
- "tower",
- "tracing",
- "tracing-futures",
- "tracing-subscriber",
- "try-lock",
-]
-
-[[package]]
-name = "linkerd2-proxy-identity"
-version = "0.1.0"
-dependencies = [
- "futures",
- "http-body",
- "linkerd2-error",
- "linkerd2-identity",
- "linkerd2-metrics",
- "linkerd2-proxy-api",
- "linkerd2-proxy-transport",
- "pin-project 0.4.27",
- "tokio 1.0.1",
- "tonic",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-proxy-resolve"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-error",
- "linkerd2-proxy-core",
- "pin-project 0.4.27",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-proxy-tap"
-version = "0.1.0"
-dependencies = [
- "futures",
- "http",
- "hyper",
- "indexmap",
- "ipnet",
- "linkerd2-conditional",
- "linkerd2-error",
- "linkerd2-identity",
- "linkerd2-proxy-api",
- "linkerd2-proxy-http",
- "linkerd2-proxy-transport",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "prost-types",
- "rand 0.8.1",
- "tokio 1.0.1",
- "tonic",
- "tower",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "linkerd2-proxy-tcp"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-duplex",
- "linkerd2-error",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "rand 0.8.1",
- "tokio 1.0.1",
- "tower",
-]
-
-[[package]]
-name = "linkerd2-proxy-transport"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "async-trait",
- "bytes",
- "futures",
- "indexmap",
- "libc",
- "linkerd2-conditional",
- "linkerd2-dns-name",
- "linkerd2-errno",
- "linkerd2-error",
- "linkerd2-identity",
- "linkerd2-io",
- "linkerd2-metrics",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "rustls",
- "socket2",
- "tokio 1.0.1",
- "tokio-rustls",
- "tokio-util",
- "tower",
- "tracing",
- "tracing-futures",
- "tracing-subscriber",
- "untrusted",
- "webpki",
-]
-
-[[package]]
-name = "linkerd2-reconnect"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-error",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-retry"
-version = "0.1.0"
-dependencies = [
- "linkerd2-error",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-service-profiles"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "bytes",
- "futures",
- "http",
- "http-body",
- "indexmap",
- "linkerd2-addr",
- "linkerd2-dns-name",
- "linkerd2-error",
- "linkerd2-proxy-api",
- "linkerd2-proxy-api-resolve",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "prost-types",
- "quickcheck",
- "rand 0.8.1",
- "regex",
- "tokio 1.0.1",
- "tonic",
- "tower",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "linkerd2-signal"
-version = "0.1.0"
-dependencies = [
- "tokio 1.0.1",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-stack"
-version = "0.1.0"
-dependencies = [
- "dyn-clone",
- "futures",
- "linkerd2-error",
- "pin-project 0.4.27",
- "tokio 1.0.1",
- "tokio-test",
- "tower",
- "tower-test",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "linkerd2-stack-metrics"
-version = "0.1.0"
-dependencies = [
- "indexmap",
- "linkerd2-metrics",
- "tower",
-]
-
-[[package]]
-name = "linkerd2-stack-tracing"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-error",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "tower",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "linkerd2-timeout"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd2-error",
- "linkerd2-stack",
- "pin-project 0.4.27",
- "tokio 1.0.1",
- "tokio-test",
- "tower",
- "tower-test",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-trace-context"
-version = "0.1.0"
-dependencies = [
- "base64",
- "bytes",
- "futures",
- "hex",
- "http",
- "linkerd2-channel",
- "linkerd2-error",
- "linkerd2-stack",
- "rand 0.8.1",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd2-tracing"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "html-escape",
- "http",
- "hyper",
- "linkerd2-error",
- "serde_json",
- "tokio 1.0.1",
- "tokio-trace",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "linkerd2-transport-header"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "linkerd2-dns-name",
- "linkerd2-error",
- "linkerd2-io",
- "linkerd2-proxy-transport",
- "prost",
- "prost-build",
- "tokio 1.0.1",
- "tokio-test",
- "tracing",
 ]
 
 [[package]]

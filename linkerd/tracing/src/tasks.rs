@@ -1,5 +1,5 @@
 use hyper::Body;
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::fmt::Write;
 use tokio_trace::tasks::TaskList;
 
