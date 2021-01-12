@@ -45,7 +45,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: tls::Conditional<I>,
+        identity: Option<I>,
     ) -> Client<B>
     where
         B: http::HttpBody + Send + 'static,

@@ -3,7 +3,6 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     is_discovery_rejected, metrics, profiles,
     proxy::{api_resolve as api, identity, resolve::recover},
-    transport::tls,
     Error, Recover,
 };
 use tonic::body::BoxBody;
@@ -37,7 +36,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: tls::Conditional<identity::Local>,
+        identity: Option<identity::Local>,
     ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();
         let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);

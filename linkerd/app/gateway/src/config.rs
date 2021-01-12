@@ -1,6 +1,6 @@
 use super::make::MakeGateway;
 use linkerd_app_core::{
-    discovery_rejected, profiles, proxy::http, svc, transport::tls, Error, NameAddr, NameMatch,
+    discovery_rejected, identity, profiles, proxy::http, svc, Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::endpoint as inbound;
 use linkerd_app_outbound as outbound;
@@ -19,7 +19,7 @@ impl Config {
         self,
         outbound: O,
         profiles: P,
-        local_id: tls::PeerIdentity,
+        local_id: Option<identity::Name>,
     ) -> impl svc::NewService<
         inbound::Target,
         Service = impl tower::Service<

@@ -34,7 +34,7 @@ pub enum Tap {
 impl Config {
     pub fn build(
         self,
-        identity: tls::Conditional<identity::Local>,
+        identity: Option<identity::Local>,
         drain: drain::Watch,
     ) -> Result<Tap, Error> {
         let (registry, server) = tap::new();

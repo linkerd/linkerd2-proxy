@@ -78,7 +78,7 @@ impl Config {
     pub fn build<I, C, L, LSvc, P>(
         self,
         listen_addr: SocketAddr,
-        local_identity: tls::Conditional<identity::Local>,
+        local_identity: Option<identity::Local>,
         connect: C,
         http_loopback: L,
         profiles_client: P,
@@ -386,7 +386,7 @@ impl Config {
         self,
         detect: D,
         tcp_forward: F,
-        identity: tls::Conditional<identity::Local>,
+        identity: Option<identity::Local>,
         metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,
