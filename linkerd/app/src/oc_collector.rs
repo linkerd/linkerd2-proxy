@@ -1,4 +1,4 @@
-use crate::{dns, identity::LocalIdentity};
+use crate::{dns, identity};
 use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
 use linkerd_channel::into_stream::IntoStream;
 use linkerd_opencensus::{metrics, proto, SpanExporter};
@@ -42,7 +42,7 @@ impl Config {
 
     pub fn build(
         self,
-        identity: LocalIdentity,
+        identity: Option<identity::Local>,
         dns: dns::Resolver,
         metrics: metrics::Registry,
         client_metrics: HttpMetrics,

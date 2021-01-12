@@ -1,10 +1,10 @@
 mod timeout;
 
 pub use self::timeout::{DetectTimeout, DetectTimeoutError};
-use crate::io;
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_error::Error;
+use linkerd_io as io;
 use linkerd_stack::{layer, NewService};
 use std::{
     future::Future,

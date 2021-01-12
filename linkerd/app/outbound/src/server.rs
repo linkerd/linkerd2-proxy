@@ -3,13 +3,13 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    discovery_rejected, drain, errors, metrics,
+    discovery_rejected, drain, errors, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     spans::SpanConverter,
-    svc,
-    transport::{self, io, listen, metrics::SensorIo, tls},
+    svc, tls,
+    transport::{self, listen, metrics::SensorIo},
     Addr, Error, IpMatch, TraceContext,
 };
 use std::net::SocketAddr;

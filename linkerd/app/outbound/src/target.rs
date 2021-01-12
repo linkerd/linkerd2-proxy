@@ -1,7 +1,8 @@
 use linkerd_app_core::{
     metrics, profiles,
     proxy::{api_resolve::Metadata, identity, resolve::map_endpoint::MapEndpoint},
-    transport::{self, listen, tls},
+    tls,
+    transport::{self, listen},
     Addr, Conditional,
 };
 use std::net::SocketAddr;

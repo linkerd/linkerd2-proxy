@@ -14,7 +14,7 @@ use self::require_identity_for_ports::RequireIdentityForPorts;
 use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
-    drain, dst, errors, metrics,
+    drain, dst, errors, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -23,8 +23,8 @@ use linkerd_app_core::{
     },
     reconnect,
     spans::SpanConverter,
-    svc,
-    transport::{self, io, listen, tls},
+    svc, tls,
+    transport::{self, listen},
     transport_header, Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};
@@ -78,7 +78,7 @@ impl Config {
     pub fn build<I, C, L, LSvc, P>(
         self,
         listen_addr: SocketAddr,
-        local_identity: tls::Conditional<identity::Local>,
+        local_identity: Option<identity::Local>,
         connect: C,
         http_loopback: L,
         profiles_client: P,
@@ -386,7 +386,7 @@ impl Config {
         self,
         detect: D,
         tcp_forward: F,
-        identity: tls::Conditional<identity::Local>,
+        identity: Option<identity::Local>,
         metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,

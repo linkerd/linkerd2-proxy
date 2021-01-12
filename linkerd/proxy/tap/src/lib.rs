@@ -3,9 +3,8 @@
 use indexmap::IndexMap;
 use linkerd_conditional::Conditional;
 use linkerd_identity as identity;
-use linkerd_proxy_transport::tls::ReasonForNoPeerName;
-use std::net;
-use std::sync::Arc;
+use linkerd_tls::ReasonForNoPeerName;
+use std::{net, sync::Arc};
 
 mod accept;
 mod grpc;

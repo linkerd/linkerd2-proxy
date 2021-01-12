@@ -1,6 +1,6 @@
-use crate::identity::LocalIdentity;
+use crate::identity;
 use linkerd_app_core::{
-    admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, trace, transport::tls, Error,
+    admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, tls, trace, Error,
 };
 use std::{net::SocketAddr, pin::Pin, time::Duration};
 use tokio::sync::mpsc;
@@ -20,7 +20,7 @@ pub struct Admin {
 impl Config {
     pub fn build<R>(
         self,
-        identity: LocalIdentity,
+        identity: Option<identity::Local>,
         report: R,
         trace: trace::Handle,
         drain: drain::Watch,

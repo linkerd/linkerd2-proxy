@@ -3,7 +3,8 @@ use crate::core::{
     config::*,
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
-    transport::{tls, BindTcp},
+    tls,
+    transport::BindTcp,
     Addr, AddrMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};

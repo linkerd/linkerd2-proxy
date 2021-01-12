@@ -1,10 +1,10 @@
 use super::Conditional;
-use crate::io;
 use futures::{
     future::{Either, MapOk},
     prelude::*,
 };
 use linkerd_identity as identity;
+use linkerd_io as io;
 use linkerd_stack::layer;
 pub use rustls::ClientConfig as Config;
 use std::{
@@ -22,7 +22,7 @@ pub trait HasConfig {
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
-    local: Conditional<L>,
+    local: Option<L>,
     inner: C,
 }
 
@@ -35,7 +35,7 @@ pub type Io<T> = io::EitherIo<T, TlsStream<T>>;
 // === impl Client ===
 
 impl<L: Clone, C> Client<L, C> {
-    pub fn layer(local: Conditional<L>) -> impl layer::Layer<C, Service = Self> + Clone {
+    pub fn layer(local: Option<L>) -> impl layer::Layer<C, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             local: local.clone(),
@@ -61,10 +61,10 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let tls = match self.local.clone() {
-            Conditional::Some(l) => tokio_rustls::TlsConnector::from(l.tls_client_config()),
-            Conditional::None(reason) => {
-                trace!(%reason, "Local identity disabled");
+        let tls = match self.local.as_ref() {
+            Some(l) => tokio_rustls::TlsConnector::from(l.tls_client_config()),
+            None => {
+                trace!("Local identity disabled");
                 return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };

@@ -1,8 +1,8 @@
 use crate::target::Endpoint;
 use linkerd_app_core::{
     dns::Name,
+    io,
     svc::{self, layer},
-    transport::io,
     transport_header::TransportHeader,
     Error,
 };
@@ -103,11 +103,9 @@ mod test {
     use crate::target::{Concrete, Endpoint, Logical};
     use futures::future;
     use linkerd_app_core::{
+        io::{self, AsyncWriteExt},
         proxy::api_resolve::{Metadata, ProtocolHint},
-        transport::{
-            io::{self, AsyncWriteExt},
-            tls,
-        },
+        tls,
         transport_header::TransportHeader,
     };
     use tower::util::{service_fn, ServiceExt};
