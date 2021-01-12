@@ -146,6 +146,7 @@ where
     let tcp_forward = svc::stack(tcp_connect)
         .push_make_thunk()
         .push_on_response(tcp::Forward::layer())
+        .push(svc::MapErrLayer::new(Into::into))
         .into_new_service()
         .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
         .push_map_target(tcp::Endpoint::from_logical(

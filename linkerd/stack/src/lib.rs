@@ -6,7 +6,6 @@ mod box_future;
 mod box_new_service;
 mod fail;
 mod fail_on_error;
-mod future_service;
 pub mod layer;
 pub mod make_thunk;
 pub mod map_response;
@@ -26,7 +25,6 @@ pub use self::{
     box_new_service::BoxNewService,
     fail::Fail,
     fail_on_error::FailOnError,
-    future_service::FutureService,
     make_thunk::MakeThunk,
     map_response::{MapResponse, MapResponseLayer},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
@@ -41,3 +39,4 @@ pub use self::{
     unwrap_or::NewUnwrapOr,
 };
 pub use tower::util::Either;
+pub use tower::util::{future_service, FutureService};

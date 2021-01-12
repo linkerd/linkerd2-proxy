@@ -73,6 +73,7 @@ where
                 .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                 .push(metrics.stack.layer(stack_labels("http", "concrete"))),
         )
+        .push(svc::MapErrLayer::new(Into::into))
         .into_new_service()
         .check_new_service::<Concrete, http::Request<_>>()
         .instrument(|c: &Concrete| match c.resolve.as_ref() {
