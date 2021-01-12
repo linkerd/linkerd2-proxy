@@ -8,12 +8,10 @@
 use futures::prelude::*;
 use linkerd_error::Never;
 use linkerd_identity::{test_util, CrtKey, Name};
-use linkerd_proxy_transport::tls::{self, Conditional};
-use linkerd_proxy_transport::{
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    BindTcp, ConnectTcp,
-};
+use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectTcp};
 use linkerd_stack::NewService;
+use linkerd_tls::{self as tls, Conditional};
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::net::TcpStream;
@@ -111,7 +109,7 @@ where
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
-    S: Fn(tls::accept::Connection<TcpStream>) -> SF + Clone + Send + 'static,
+    S: Fn(tls::accept::Connection<Addrs, TcpStream>) -> SF + Clone + Send + 'static,
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
@@ -143,10 +141,10 @@ where
 
         let mut detect = tls::NewDetectTls::new(
             server_tls,
-            move |meta: tls::accept::Meta| {
+            move |meta: tls::accept::Meta<Addrs>| {
                 let server = server.clone();
                 let sender = sender.clone();
-                let peer_identity = Some(meta.peer_identity.clone());
+                let peer_identity = Some(meta.0.clone());
                 service_fn(move |conn| {
                     let server = server.clone();
                     let sender = sender.clone();

@@ -3,7 +3,8 @@ use crate::{
     proxy::http,
     reconnect,
     svc::{self, NewService},
-    transport::{tls, ConnectTcp},
+    tls,
+    transport::ConnectTcp,
     Addr, Error,
 };
 use std::fmt;
@@ -197,8 +198,7 @@ mod balance {
 
 /// Creates a client suitable for gRPC.
 mod client {
-    use crate::transport::tls;
-    use crate::{proxy::http, svc};
+    use crate::{proxy::http, svc, tls};
     use linkerd_proxy_http::h2::Settings as H2Settings;
     use std::{
         net::SocketAddr,

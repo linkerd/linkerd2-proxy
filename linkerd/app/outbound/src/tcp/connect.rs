@@ -1,12 +1,7 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::target::Endpoint;
 use linkerd_app_core::{
-    config::ConnectConfig,
-    metrics,
-    proxy::identity,
-    svc,
-    transport::{io, tls, ConnectTcp},
-    Error,
+    config::ConnectConfig, io, metrics, proxy::identity, svc, tls, transport::ConnectTcp, Error,
 };
 use tracing::debug_span;
 

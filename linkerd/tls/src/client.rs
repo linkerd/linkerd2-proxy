@@ -1,10 +1,10 @@
 use super::Conditional;
-use crate::io;
 use futures::{
     future::{Either, MapOk},
     prelude::*,
 };
 use linkerd_identity as identity;
+use linkerd_io as io;
 use linkerd_stack::layer;
 pub use rustls::ClientConfig as Config;
 use std::{

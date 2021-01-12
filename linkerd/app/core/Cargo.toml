@@ -39,6 +39,7 @@ linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-identity = { path = "../../identity" }
+linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-opencensus = { path = "../../opencensus" }
@@ -61,6 +62,7 @@ linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }
 linkerd-stack-tracing = { path = "../../stack/tracing" }
+linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}

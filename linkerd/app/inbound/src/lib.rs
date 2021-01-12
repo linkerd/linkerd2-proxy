@@ -14,7 +14,7 @@ use self::require_identity_for_ports::RequireIdentityForPorts;
 use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
-    drain, dst, errors, metrics,
+    drain, dst, errors, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -23,8 +23,8 @@ use linkerd_app_core::{
     },
     reconnect,
     spans::SpanConverter,
-    svc,
-    transport::{self, io, listen, tls},
+    svc, tls,
+    transport::{self, listen},
     transport_header, Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};

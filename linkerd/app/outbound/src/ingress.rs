@@ -1,12 +1,13 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, metrics,
+    discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     spans::SpanConverter,
     svc::{self},
-    transport::{self, io, listen, tls},
+    tls,
+    transport::{self, listen},
     Addr, AddrMatch, Error, TraceContext,
 };
 use tokio::sync::mpsc;

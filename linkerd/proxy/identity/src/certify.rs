@@ -3,7 +3,7 @@ use http_body::Body as HttpBody;
 use linkerd2_proxy_api::identity as api;
 use linkerd_error::Error;
 use linkerd_metrics::Counter;
-use linkerd_proxy_transport::tls;
+use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::convert::TryFrom;
 use std::sync::Arc;

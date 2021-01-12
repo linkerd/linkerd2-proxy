@@ -6,7 +6,7 @@ use linkerd_app_core::{
     metrics, profiles,
     proxy::{api_resolve::Metadata, core::Resolve, http},
     retry, svc,
-    transport::tls::ReasonForNoPeerName,
+    tls::ReasonForNoPeerName,
     Addr, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;

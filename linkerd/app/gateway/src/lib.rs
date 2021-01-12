@@ -15,8 +15,7 @@ mod test {
         profiles,
         proxy::{http, identity},
         svc::NewService,
-        transport::tls,
-        Error, NameAddr, NameMatch, Never,
+        tls, Error, NameAddr, NameMatch, Never,
     };
     use linkerd_app_inbound::endpoint as inbound;
     use linkerd_app_test as support;

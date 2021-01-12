@@ -7,7 +7,7 @@ use linkerd_app_core::{
     errors::IdentityRequired,
     proxy::http::identity_from_header,
     svc::{layer, NewService, Service},
-    transport::tls::{self, HasPeerIdentity},
+    tls::{self, HasPeerIdentity},
     Conditional, Error, L5D_REQUIRE_ID,
 };
 use std::task::{Context, Poll};

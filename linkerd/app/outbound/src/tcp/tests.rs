@@ -8,10 +8,7 @@ use crate::test_util::{
 };
 use crate::Config;
 use linkerd_app_core::{
-    drain, metrics, svc,
-    svc::NewService,
-    transport::{io, listen, tls},
-    Addr, Error, IpMatch,
+    drain, io, metrics, svc, svc::NewService, tls, transport::listen, Addr, Error, IpMatch,
 };
 use std::{
     future::Future,

@@ -1,8 +1,8 @@
 use super::Detect;
-use crate::io;
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_error::Error;
+use linkerd_io as io;
 use tokio::time;
 
 #[derive(Copy, Clone, Debug)]

@@ -4,11 +4,9 @@ use indexmap::IndexSet;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd_error::Error;
 use linkerd_identity as identity;
+use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_proxy_transport::{
-    io,
-    tls::{accept::Connection, Conditional, ReasonForNoPeerName},
-};
+use linkerd_tls::{accept::Connection, Conditional, ReasonForNoPeerName};
 use std::{
     future::Future,
     pin::Pin,
@@ -66,7 +64,7 @@ impl AcceptPermittedClients {
     }
 }
 
-impl Service<Connection<TcpStream>> for AcceptPermittedClients {
+impl<T> Service<Connection<T, TcpStream>> for AcceptPermittedClients {
     type Response = ServeFuture;
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
@@ -75,8 +73,8 @@ impl Service<Connection<TcpStream>> for AcceptPermittedClients {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, (meta, io): Connection<TcpStream>) -> Self::Future {
-        future::ok(match meta.peer_identity {
+    fn call(&mut self, ((peer_id, _), io): Connection<T, TcpStream>) -> Self::Future {
+        future::ok(match peer_id {
             Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {
                     Box::pin(self.serve_authenticated(io))
