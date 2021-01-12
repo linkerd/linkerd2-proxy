@@ -701,24 +701,18 @@ impl Env {
 
 // ===== Parsing =====
 
-/// There is a dependency on identity being enabled for tap to properly work.
-/// Depending on the setting of both, a user could end up in an improperly
-/// configured proxy environment.
+/// There is a dependency on identity being enabled for tap to work. However,
+/// tap is an extension of Linkerd and therefore the proxy cannot error if the
+/// status of tap is not specified; the extension may just not be enabled.
 ///
-/// ```plain
-///     E = Enabled; D = Disabled
-///     +----------+-----+--------------+
-///     | Identity | Tap | Result       |
-///     +----------+-----+--------------+
-///     | E        | E   | Ok(Some(..)) |
-///     +----------+-----+--------------+
-///     | E        | D   | Ok(None)     |
-///     +----------+-----+--------------+
-///     | D        | E   | Err(..)      |
-///     +----------+-----+--------------+
-///     | D        | D   | Ok(None)     |
-///     +----------+-----+--------------+
-/// ```
+/// The status of tap is determined by the ENV_TAP_SVC_NAME and
+/// ENV_TAP_DISABLED env variables.
+///
+/// - If tap is explicitly disabled, identity can be enabled or disabled.
+/// - If tap is not explicitly disabled and identity is disabled, the tap
+///   service name cannot be set.
+/// - If tap is not explicitly disabled and identity is enabled, the tap
+///   service name can be set.
 fn parse_tap_config(
     strings: &dyn Strings,
     id_disabled: bool,
@@ -730,20 +724,25 @@ fn parse_tap_config(
     match (id_disabled, tap_disabled) {
         (_, true) => Ok(None),
         (true, false) => {
-            error!("{} must be set if identity is disabled", ENV_TAP_DISABLED);
-            Err(EnvError::InvalidEnvVar)
+            let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
+            match tap_identity? {
+                Some(_) => {
+                    error!(
+                        "{} must not be set if identity is disabled",
+                        ENV_TAP_SVC_NAME
+                    );
+                    Err(EnvError::InvalidEnvVar)
+                }
+                None => Ok(None),
+            }
         }
         (false, false) => {
             let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
             let peer_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
-
             match peer_identity? {
                 Some(peer_identity) => Ok(Some((addr, vec![peer_identity].into_iter().collect()))),
-                None => {
-                    error!("{} must be set or tap must be disabled", ENV_TAP_SVC_NAME);
-                    Err(EnvError::InvalidEnvVar)
-                }
+                None => Ok(None),
             }
         }
     }
