@@ -17,6 +17,7 @@ pub use linkerd_drain as drain;
 pub use linkerd_error::{Error, Never, Recover};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
+pub use linkerd_identity as identity;
 pub use linkerd_opencensus as opencensus;
 pub use linkerd_reconnect as reconnect;
 pub use linkerd_service_profiles as profiles;

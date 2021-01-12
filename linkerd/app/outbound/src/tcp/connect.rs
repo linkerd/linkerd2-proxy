@@ -15,7 +15,7 @@ use tracing::debug_span;
 pub fn stack<P>(
     config: &ConnectConfig,
     server_port: u16,
-    local_identity: tls::Conditional<identity::Local>,
+    local_identity: Option<identity::Local>,
     metrics: &metrics::Proxy,
 ) -> impl svc::Service<
     Endpoint<P>,
