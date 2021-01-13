@@ -3,7 +3,8 @@ use crate::core::{
     config::*,
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
-    transport::{tls, BindTcp},
+    tls,
+    transport::BindTcp,
     Addr, AddrMatch, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
@@ -147,7 +148,6 @@ pub const ENV_DESTINATION_CONTEXT: &str = "LINKERD2_PROXY_DESTINATION_CONTEXT";
 pub const ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT: &str =
     "LINKERD2_PROXY_DESTINATION_PROFILE_INITIAL_TIMEOUT";
 
-pub const ENV_TAP_DISABLED: &str = "LINKERD2_PROXY_TAP_DISABLED";
 pub const ENV_TAP_SVC_NAME: &str = "LINKERD2_PROXY_TAP_SVC_NAME";
 const ENV_RESOLV_CONF: &str = "LINKERD2_PROXY_RESOLV_CONF";
 
@@ -701,52 +701,34 @@ impl Env {
 
 // ===== Parsing =====
 
-/// There is a dependency on identity being enabled for tap to properly work.
-/// Depending on the setting of both, a user could end up in an improperly
-/// configured proxy environment.
+/// There is a dependency on identity being enabled for tap to work. The
+/// status of tap is determined by the ENV_TAP_SVC_NAME env variable being set
+/// or not set.
 ///
-/// ```plain
-///     E = Enabled; D = Disabled
-///     +----------+-----+--------------+
-///     | Identity | Tap | Result       |
-///     +----------+-----+--------------+
-///     | E        | E   | Ok(Some(..)) |
-///     +----------+-----+--------------+
-///     | E        | D   | Ok(None)     |
-///     +----------+-----+--------------+
-///     | D        | E   | Err(..)      |
-///     +----------+-----+--------------+
-///     | D        | D   | Ok(None)     |
-///     +----------+-----+--------------+
-/// ```
+/// - If identity is disabled, tap is disabled, but a warning is issued if
+///   ENV_TAP_SVC_NAME is set.
+/// - If identity is enabled, the status of tap is determined by
+///   ENV_TAP_SVC_NAME.
 fn parse_tap_config(
     strings: &dyn Strings,
     id_disabled: bool,
 ) -> Result<Option<(SocketAddr, IndexSet<identity::Name>)>, EnvError> {
-    let tap_disabled = strings
-        .get(ENV_TAP_DISABLED)?
-        .map(|d| !d.is_empty())
-        .unwrap_or(false);
-    match (id_disabled, tap_disabled) {
-        (_, true) => Ok(None),
-        (true, false) => {
-            error!("{} must be set if identity is disabled", ENV_TAP_DISABLED);
-            Err(EnvError::InvalidEnvVar)
+    let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
+    if id_disabled {
+        if tap_identity.is_some() {
+            warn!(
+                "{} should not be set if identity is disabled; continuing with tap disabled",
+                ENV_TAP_SVC_NAME
+            );
         }
-        (false, false) => {
-            let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
-                .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
-            let peer_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity);
-
-            match peer_identity? {
-                Some(peer_identity) => Ok(Some((addr, vec![peer_identity].into_iter().collect()))),
-                None => {
-                    error!("{} must be set or tap must be disabled", ENV_TAP_SVC_NAME);
-                    Err(EnvError::InvalidEnvVar)
-                }
-            }
+    } else {
+        let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+            .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+        if let Some(id) = tap_identity {
+            return Ok(Some((addr, vec![id].into_iter().collect())));
         }
-    }
+    };
+    Ok(None)
 }
 
 fn parse_bool(s: &str) -> Result<bool, ParseError> {

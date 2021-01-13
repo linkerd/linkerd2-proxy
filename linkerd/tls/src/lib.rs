@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 use linkerd_identity as identity;
 pub use rustls::TLSError as Error;
 use std::fmt;

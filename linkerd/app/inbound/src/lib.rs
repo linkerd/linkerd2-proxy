@@ -14,7 +14,7 @@ use self::require_identity_for_ports::RequireIdentityForPorts;
 use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
-    drain, dst, errors, metrics,
+    detect, drain, dst, errors, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -23,8 +23,8 @@ use linkerd_app_core::{
     },
     reconnect,
     spans::SpanConverter,
-    svc,
-    transport::{self, io, listen, tls},
+    svc, tls,
+    transport::{self, listen},
     transport_header, Error, NameAddr, NameMatch, TraceContext, DST_OVERRIDE_HEADER,
 };
 use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};
@@ -78,7 +78,7 @@ impl Config {
     pub fn build<I, C, L, LSvc, P>(
         self,
         listen_addr: SocketAddr,
-        local_identity: tls::Conditional<identity::Local>,
+        local_identity: Option<identity::Local>,
         connect: C,
         http_loopback: L,
         profiles_client: P,
@@ -327,11 +327,9 @@ impl Config {
                     .push(svc::NewUnwrapOr::layer(
                         svc::Fail::<_, NonOpaqueRefused>::default(),
                     ))
-                    .push(transport::NewDetectService::layer(
-                        transport::detect::DetectTimeout::new(
-                            self.proxy.detect_protocol_timeout,
-                            transport_header::DetectHeader::default(),
-                        ),
+                    .push(detect::NewDetectService::timeout(
+                        self.proxy.detect_protocol_timeout,
+                        transport_header::DetectHeader::default(),
                     )),
             )
             .into_inner();
@@ -373,11 +371,9 @@ impl Config {
             .push(http::NewServeHttp::layer(h2_settings, drain))
             .push(svc::NewUnwrapOr::layer(tcp))
             .push_cache(cache_max_idle_age)
-            .push(transport::NewDetectService::layer(
-                transport::detect::DetectTimeout::new(
-                    detect_protocol_timeout,
-                    http::DetectHttp::default(),
-                ),
+            .push(detect::NewDetectService::timeout(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
             ))
             .into_inner()
     }
@@ -386,7 +382,7 @@ impl Config {
         self,
         detect: D,
         tcp_forward: F,
-        identity: tls::Conditional<identity::Local>,
+        identity: Option<identity::Local>,
         metrics: metrics::Proxy,
     ) -> impl svc::NewService<
         listen::Addrs,

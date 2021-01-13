@@ -3,13 +3,13 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    discovery_rejected, drain, errors, metrics,
+    detect, discovery_rejected, drain, errors, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     spans::SpanConverter,
-    svc,
-    transport::{self, io, listen, metrics::SensorIo, tls},
+    svc, tls,
+    transport::{listen, metrics::SensorIo},
     Addr, Error, IpMatch, TraceContext,
 };
 use std::net::SocketAddr;
@@ -196,11 +196,9 @@ where
                 .into_inner(),
         ))
         .push_cache(cache_max_idle_age)
-        .push(transport::NewDetectService::layer(
-            transport::detect::DetectTimeout::new(
-                detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ),
+        .push(detect::NewDetectService::timeout(
+            detect_protocol_timeout,
+            http::DetectHttp::default(),
         ))
         .push_switch(
             SkipByProfile,

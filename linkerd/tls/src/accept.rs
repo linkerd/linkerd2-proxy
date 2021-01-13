@@ -1,11 +1,10 @@
 use super::{conditional_accept, Conditional, PeerIdentity, ReasonForNoPeerName};
-use crate::io::{EitherIo, PrefixedIo};
-use crate::listen::Addrs;
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_dns_name as dns;
 use linkerd_error::Error;
 use linkerd_identity as identity;
+use linkerd_io::{EitherIo, PrefixedIo};
 use linkerd_stack::{layer, NewService};
 pub use rustls::ServerConfig as Config;
 use std::{
@@ -55,20 +54,16 @@ pub fn empty_config() -> Arc<Config> {
     Arc::new(Config::new(verifier))
 }
 
-#[derive(Clone, Debug)]
-pub struct Meta {
-    // TODO sni name
-    pub peer_identity: PeerIdentity,
-    pub addrs: Addrs,
-}
+// TODO sni name
+pub type Meta<T> = (PeerIdentity, T);
 
 pub type Io<T> = EitherIo<PrefixedIo<T>, TlsStream<PrefixedIo<T>>>;
 
-pub type Connection<T> = (Meta, Io<T>);
+pub type Connection<T, I> = (Meta<T>, Io<I>);
 
 #[derive(Clone, Debug)]
-pub struct NewDetectTls<I, A> {
-    local_identity: Conditional<I>,
+pub struct NewDetectTls<L, A> {
+    local_identity: Option<L>,
     inner: A,
     timeout: Duration,
 }
@@ -77,9 +72,9 @@ pub struct NewDetectTls<I, A> {
 pub struct DetectTimeout(());
 
 #[derive(Clone, Debug)]
-pub struct DetectTls<I, N> {
-    addrs: Addrs,
-    local_identity: Conditional<I>,
+pub struct DetectTls<T, L, N> {
+    target: T,
+    local_identity: Option<L>,
     inner: N,
     timeout: Duration,
 }
@@ -93,7 +88,7 @@ const PEEK_CAPACITY: usize = 512;
 const BUFFER_CAPACITY: usize = 8192;
 
 impl<I: HasConfig, N> NewDetectTls<I, N> {
-    pub fn new(local_identity: Conditional<I>, inner: N, timeout: Duration) -> Self {
+    pub fn new(local_identity: Option<I>, inner: N, timeout: Duration) -> Self {
         Self {
             local_identity,
             inner,
@@ -102,7 +97,7 @@ impl<I: HasConfig, N> NewDetectTls<I, N> {
     }
 
     pub fn layer(
-        local_identity: Conditional<I>,
+        local_identity: Option<I>,
         timeout: Duration,
     ) -> impl layer::Layer<N, Service = Self> + Clone
     where
@@ -112,16 +107,16 @@ impl<I: HasConfig, N> NewDetectTls<I, N> {
     }
 }
 
-impl<I, N> NewService<Addrs> for NewDetectTls<I, N>
+impl<T, L, N> NewService<T> for NewDetectTls<L, N>
 where
-    I: HasConfig + Clone,
-    N: NewService<Meta> + Clone,
+    L: HasConfig + Clone,
+    N: NewService<Meta<T>> + Clone,
 {
-    type Service = DetectTls<I, N>;
+    type Service = DetectTls<T, L, N>;
 
-    fn new_service(&mut self, addrs: Addrs) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         DetectTls {
-            addrs,
+            target,
             local_identity: self.local_identity.clone(),
             inner: self.inner.clone(),
             timeout: self.timeout,
@@ -129,14 +124,15 @@ where
     }
 }
 
-impl<T, I, N, NSvc> tower::Service<T> for DetectTls<I, N>
+impl<I, L, N, NSvc, T> tower::Service<I> for DetectTls<T, L, N>
 where
-    T: Detectable + Send + 'static,
-    I: HasConfig,
-    N: NewService<Meta, Service = NSvc> + Clone + Send + 'static,
-    NSvc: tower::Service<Io<T>, Response = ()> + Send + 'static,
+    I: Detectable + Send + 'static,
+    L: HasConfig,
+    N: NewService<Meta<T>, Service = NSvc> + Clone + Send + 'static,
+    NSvc: tower::Service<Io<I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
+    T: Clone + Send + 'static,
 {
     type Response = ();
     type Error = Error;
@@ -146,41 +142,34 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, tcp: T) -> Self::Future {
-        let addrs = self.addrs.clone();
+    fn call(&mut self, tcp: I) -> Self::Future {
+        let target = self.target.clone();
         let mut new_accept = self.inner.clone();
 
         match self.local_identity.as_ref() {
-            Conditional::Some(local) => {
+            Some(local) => {
                 let config = local.tls_server_config();
                 let name = local.tls_server_name();
                 let timeout = tokio::time::sleep(self.timeout);
 
                 Box::pin(async move {
-                    let (peer_identity, io) = tokio::select! {
+                    let (peer, io) = tokio::select! {
                         res = tcp.detected(config, name) => { res? }
                         () = timeout => {
                             return Err(DetectTimeout(()).into());
                         }
                     };
-                    let meta = Meta {
-                        peer_identity,
-                        addrs,
-                    };
                     new_accept
-                        .new_service(meta)
+                        .new_service((peer, target))
                         .oneshot(io)
                         .err_into::<Error>()
                         .await
                 })
             }
 
-            Conditional::None(reason) => {
-                let meta = Meta {
-                    peer_identity: Conditional::None(reason),
-                    addrs,
-                };
-                let svc = new_accept.new_service(meta);
+            None => {
+                let peer = Conditional::None(ReasonForNoPeerName::LocalIdentityDisabled);
+                let svc = new_accept.new_service((peer, target));
                 Box::pin(svc.oneshot(EitherIo::Left(tcp.into())).err_into::<Error>())
             }
         }
@@ -313,9 +302,3 @@ impl std::fmt::Display for DetectTimeout {
 }
 
 impl std::error::Error for DetectTimeout {}
-
-impl Into<std::net::SocketAddr> for &'_ Meta {
-    fn into(self) -> std::net::SocketAddr {
-        (&self.addrs).into()
-    }
-}

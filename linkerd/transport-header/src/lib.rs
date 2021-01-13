@@ -2,10 +2,10 @@ use bytes::{
     buf::{Buf, BufMut},
     Bytes, BytesMut,
 };
+use linkerd_detect::Detect;
 use linkerd_dns_name::Name;
 use linkerd_error::Error;
 use linkerd_io::{self as io, AsyncReadExt, AsyncWriteExt};
-use linkerd_proxy_transport::Detect;
 use prost::Message;
 use std::str::FromStr;
 use tracing::trace;
