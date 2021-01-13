@@ -3,7 +3,7 @@ use futures::prelude::*;
 use linkerd_stack::{layer, Filter, FutureService, NewService, Predicate};
 use std::{future::Future, pin::Pin};
 
-type Service<F, G, M> = Discover<RecoverDefault<Filter<F, GetProfileService<G>>>, M>;
+type Service<F, G, M> = Discover<RecoverDefault<Filter<GetProfileService<G>, F>>, M>;
 
 pub fn layer<T, G, F, M>(
     get_profile: G,
@@ -13,7 +13,7 @@ where
     F: Predicate<T> + Clone,
     G: GetProfile<F::Request> + Clone,
 {
-    let get_profile = RecoverDefault::new(Filter::new(filter, get_profile.into_service()));
+    let get_profile = RecoverDefault::new(Filter::new(get_profile.into_service(), filter));
     layer::mk(move |inner| Discover {
         get_profile: get_profile.clone(),
         inner,

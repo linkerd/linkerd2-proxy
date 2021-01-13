@@ -26,7 +26,7 @@ use std::{
 
 type ResolveStack<R> = map_endpoint::Resolve<
     EndpointFromMetadata,
-    RecoverDefault<Filter<AllowResolve, ResolveService<R>>>,
+    RecoverDefault<Filter<ResolveService<R>, AllowResolve>>,
 >;
 
 fn new_resolve<T, R>(resolve: R) -> ResolveStack<R>
@@ -40,7 +40,7 @@ where
 {
     map_endpoint::Resolve::new(
         EndpointFromMetadata,
-        RecoverDefault(Filter::new(AllowResolve, resolve.into_service())),
+        RecoverDefault(Filter::new(resolve.into_service(), AllowResolve)),
     )
 }
 
