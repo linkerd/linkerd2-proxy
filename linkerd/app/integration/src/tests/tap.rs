@@ -3,11 +3,14 @@ use crate::*;
 use std::time::SystemTime;
 
 #[tokio::test]
-async fn tap_enabled_when_identity_enabled() {
+async fn tap_enabled_when_tap_svc_name_set() {
     let _trace = trace_init();
 
     let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-    let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
+    let mut identity_env = identity::Identity::new("foo-ns1", identity.to_string());
+    identity_env
+        .env
+        .put("LINKERD2_PROXY_TAP_SVC_NAME", "test-identity".to_string());
 
     let proxy = proxy::new()
         .identity(identity_env.service().run().await)
@@ -26,13 +29,14 @@ async fn tap_disabled_when_identity_disabled() {
 }
 
 #[tokio::test]
-async fn can_disable_tap() {
+async fn tap_disabled_when_tap_svc_name_not_set() {
     let _trace = trace_init();
-    let mut env = TestEnv::default();
-    env.put(app::env::ENV_TAP_DISABLED, "true".to_owned());
-
-    let proxy = proxy::new().run_with_test_env(env).await;
-
+    let identity = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let identity_env = identity::Identity::new("foo-ns1", identity.to_string());
+    let proxy = proxy::new()
+        .identity(identity_env.service().run().await)
+        .run_with_test_env(identity_env.env)
+        .await;
     assert!(proxy.tap.is_none())
 }
 
