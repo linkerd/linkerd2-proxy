@@ -10,14 +10,12 @@ use hyper::{
     Body, Request, Response,
 };
 use linkerd_app_core::{
-    drain, metrics,
+    drain,
+    io::{self, BoxedIo},
+    metrics,
     proxy::{identity::Name, tap},
     svc::{self, NewService},
-    transport::{
-        self,
-        io::{self, BoxedIo},
-        listen,
-    },
+    transport::{self, listen},
     Addr, Error,
 };
 use std::{

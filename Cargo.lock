@@ -672,6 +672,7 @@ dependencies = [
  "linkerd-cache",
  "linkerd-concurrency-limit",
  "linkerd-conditional",
+ "linkerd-detect",
  "linkerd-dns",
  "linkerd-drain",
  "linkerd-duplex",
@@ -682,6 +683,8 @@ dependencies = [
  "linkerd-exp-backoff",
  "linkerd-http-classify",
  "linkerd-http-metrics",
+ "linkerd-identity",
+ "linkerd-io",
  "linkerd-metrics",
  "linkerd-opencensus",
  "linkerd-proxy-api-resolve",
@@ -701,6 +704,7 @@ dependencies = [
  "linkerd-stack-metrics",
  "linkerd-stack-tracing",
  "linkerd-timeout",
+ "linkerd-tls",
  "linkerd-trace-context",
  "linkerd-tracing",
  "linkerd-transport-header",
@@ -879,6 +883,21 @@ dependencies = [
 [[package]]
 name = "linkerd-conditional"
 version = "0.1.0"
+
+[[package]]
+name = "linkerd-detect"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "linkerd-error",
+ "linkerd-io",
+ "linkerd-stack",
+ "tokio",
+ "tower",
+ "tracing",
+]
 
 [[package]]
 name = "linkerd-dns"
@@ -1145,6 +1164,7 @@ dependencies = [
  "hyper",
  "hyper-balance",
  "indexmap",
+ "linkerd-detect",
  "linkerd-drain",
  "linkerd-duplex",
  "linkerd-error",
@@ -1174,7 +1194,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-identity",
  "linkerd-metrics",
- "linkerd-proxy-transport",
+ "linkerd-tls",
  "linkerd2-proxy-api",
  "pin-project 1.0.2",
  "tokio",
@@ -1206,9 +1226,11 @@ dependencies = [
  "linkerd-conditional",
  "linkerd-error",
  "linkerd-identity",
+ "linkerd-io",
  "linkerd-proxy-http",
  "linkerd-proxy-transport",
  "linkerd-stack",
+ "linkerd-tls",
  "linkerd2-proxy-api",
  "pin-project 1.0.2",
  "prost-types",
@@ -1239,31 +1261,19 @@ name = "linkerd-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "async-trait",
  "bytes",
  "futures",
- "indexmap",
  "libc",
- "linkerd-conditional",
- "linkerd-dns-name",
  "linkerd-errno",
  "linkerd-error",
- "linkerd-identity",
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
  "pin-project 1.0.2",
- "rustls",
  "socket2",
  "tokio",
- "tokio-rustls",
- "tokio-util",
  "tower",
  "tracing",
- "tracing-futures",
- "tracing-subscriber",
- "untrusted",
- "webpki",
 ]
 
 [[package]]
@@ -1379,6 +1389,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-tls"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "linkerd-conditional",
+ "linkerd-dns-name",
+ "linkerd-error",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "rustls",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+ "untrusted",
+ "webpki",
+]
+
+[[package]]
 name = "linkerd-trace-context"
 version = "0.1.0"
 dependencies = [
@@ -1418,10 +1453,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "linkerd-detect",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-io",
- "linkerd-proxy-transport",
  "prost",
  "prost-build",
  "tokio",

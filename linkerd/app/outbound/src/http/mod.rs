@@ -15,8 +15,7 @@ use linkerd_app_core::{
         http::{self, CanOverrideAuthority, ClientHandle},
         identity, tap,
     },
-    transport::tls,
-    Conditional,
+    tls, Conditional,
 };
 use std::{net::SocketAddr, sync::Arc};
 
