@@ -25,7 +25,7 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 pin-project = "1"
 socket2 = "0.3"
-tokio = { version = "1", features = ["net", "time"] }
+tokio = { version = "1", features = ["macros", "net"] }
 tower = { version = "0.4", features = ["make"] }
 tracing = "0.1.22"
 
