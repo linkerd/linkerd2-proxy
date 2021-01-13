@@ -12,13 +12,15 @@ hyper = { version = "0.14.2", features = ["http1", "http2"] }
 futures = "0.3.9"
 indexmap = "1.0"
 ipnet = "2.0"
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git" }
+linkerd-io = { path = "../../io" }
 linkerd-proxy-http = { path = "../http" }
 linkerd-proxy-transport = { path = "../transport" }
 linkerd-stack = { path = "../../stack" }
+linkerd-tls = { path = "../../tls" }
 rand = { version = "0.8" }
 tokio = { version = "1", features = ["time"]}
 tower = { version = "0.4.1", default-features = false }

@@ -2,11 +2,9 @@ use super::{Concrete, Endpoint};
 use crate::resolve;
 use linkerd_app_core::{
     config::ProxyConfig,
-    drain,
+    drain, io,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
-    svc,
-    transport::io,
-    Addr, Error,
+    svc, Addr, Error,
 };
 use tracing::debug_span;
 

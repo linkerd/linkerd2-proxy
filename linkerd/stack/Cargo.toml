@@ -15,15 +15,8 @@ futures = "0.3.9"
 linkerd-error = { path = "../error" }
 pin-project = "1"
 tokio = { version = "1", features = ["time"] }
+tower = { version = "0.4.2", features = ["util", "filter"] }
 tracing = "0.1"
-
-[dependencies.tower]
-version = "0.4"
-default-features = false
-features = [
-    "util",
-    "filter",
-]
 
 [dev-dependencies]
 tower-test = "0.4"

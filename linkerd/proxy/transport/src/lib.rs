@@ -1,19 +1,14 @@
 #![deny(warnings, rust_2018_idioms)]
-#![recursion_limit = "256"]
 
 use std::time::Duration;
 use tokio::net::TcpStream;
 
 pub mod connect;
-pub mod detect;
-pub use linkerd_io as io;
 pub mod listen;
 pub mod metrics;
-pub mod tls;
 
 pub use self::{
     connect::ConnectTcp,
-    detect::{Detect, DetectService, NewDetectService},
     listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
 };
 

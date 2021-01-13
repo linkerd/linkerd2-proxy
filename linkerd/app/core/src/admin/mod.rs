@@ -4,9 +4,10 @@
 //! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
 
 use crate::{
+    io,
     proxy::http::{ClientHandle, SetClientHandle},
-    svc, trace,
-    transport::{io, tls},
+    svc, tls, trace,
+    transport::listen::Addrs,
 };
 use futures::future;
 use http::StatusCode;
@@ -15,6 +16,7 @@ use linkerd_error::{Error, Never};
 use linkerd_metrics::{self as metrics, FmtMetrics};
 use std::{
     future::Future,
+    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -33,10 +35,16 @@ pub struct Admin<M> {
 }
 
 #[derive(Clone)]
-pub struct Accept<M>(Admin<M>, hyper::server::conn::Http);
+pub struct Accept<M> {
+    service: Admin<M>,
+    server: hyper::server::conn::Http,
+}
 
 #[derive(Clone)]
-pub struct Serve<M>(tls::accept::Meta, Accept<M>);
+pub struct Serve<M> {
+    client_addr: SocketAddr,
+    inner: Accept<M>,
+}
 
 pub type ResponseFuture =
     Pin<Box<dyn Future<Output = Result<Response<Body>, Never>> + Send + 'static>>;
@@ -57,7 +65,10 @@ impl<M> Admin<M> {
     }
 
     pub fn into_accept(self) -> Accept<M> {
-        Accept(self, hyper::server::conn::Http::new())
+        Accept {
+            service: self,
+            server: hyper::server::conn::Http::new(),
+        }
     }
 
     fn ready_rsp(&self) -> Response<Body> {
@@ -199,11 +210,14 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
     }
 }
 
-impl<M: Clone> svc::NewService<tls::accept::Meta> for Accept<M> {
+impl<M: Clone> svc::NewService<tls::accept::Meta<Addrs>> for Accept<M> {
     type Service = Serve<M>;
 
-    fn new_service(&mut self, meta: tls::accept::Meta) -> Self::Service {
-        Serve(meta, self.clone())
+    fn new_service(&mut self, (_, addrs): tls::accept::Meta<Addrs>) -> Self::Service {
+        Serve {
+            client_addr: addrs.peer(),
+            inner: self.clone(),
+        }
     }
 }
 
@@ -221,13 +235,11 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        let Self(ref meta, Accept(ref svc, ref server)) = self;
-
         // Since the `/proxy-log-level` controls access based on the
         // client's IP address, we wrap the service with a new service
         // that adds the remote IP as a request extension.
-        let (svc, closed) = SetClientHandle::new(meta.addrs.peer(), svc.clone());
-        let mut conn = server.serve_connection(io, svc);
+        let (svc, closed) = SetClientHandle::new(self.client_addr, self.inner.service.clone());
+        let mut conn = self.inner.server.serve_connection(io, svc);
 
         Box::pin(async move {
             tokio::select! {

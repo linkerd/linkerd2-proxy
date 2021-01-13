@@ -80,13 +80,6 @@ impl<L> Layers<L> {
         self.push(stack::OnResponseLayer::new(layer))
     }
 
-    pub fn push_map_response<R: Clone>(
-        self,
-        map_response: R,
-    ) -> Layers<Pair<L, stack::MapResponseLayer<R>>> {
-        self.push(stack::MapResponseLayer::new(map_response))
-    }
-
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
         self.push(InstrumentMakeLayer::new(get_span))
     }
@@ -165,10 +158,6 @@ impl<S> Stack<S> {
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
-    }
-
-    pub fn push_map_response<R: Clone>(self, map_response: R) -> Stack<stack::MapResponse<S, R>> {
-        self.push(stack::MapResponseLayer::new(map_response))
     }
 
     pub fn push_http_insert_target(self) -> Stack<http::insert::target::NewService<S>> {

@@ -1,4 +1,4 @@
-use linkerd_app_core::{transport::io::BoxedIo, Error};
+use linkerd_app_core::{io::BoxedIo, Error};
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;

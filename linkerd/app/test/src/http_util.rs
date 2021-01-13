@@ -1,8 +1,6 @@
 use crate::app_core::{
-    transport::{
-        io::BoxedIo,
-        tls::{HasPeerIdentity, PeerIdentity, ReasonForNoPeerName},
-    },
+    io::BoxedIo,
+    tls::{HasPeerIdentity, PeerIdentity, ReasonForNoPeerName},
     Conditional, Error,
 };
 use hyper::{body::HttpBody, Body, Request, Response};
