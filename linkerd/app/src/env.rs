@@ -714,7 +714,7 @@ fn parse_tap_config(
 ) -> Result<Option<(SocketAddr, IndexSet<identity::Name>)>, EnvError> {
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
     if id_disabled {
-        if let Some(_) = tap_identity {
+        if tap_identity.is_some() {
             warn!(
                 "{} should not be set if identity is disabled; continuing with tap disabled",
                 ENV_TAP_SVC_NAME
@@ -727,7 +727,7 @@ fn parse_tap_config(
             return Ok(Some((addr, vec![id].into_iter().collect())));
         }
     };
-    return Ok(None);
+    Ok(None)
 }
 
 fn parse_bool(s: &str) -> Result<bool, ParseError> {
