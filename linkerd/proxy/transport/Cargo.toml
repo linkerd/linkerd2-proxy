@@ -16,7 +16,6 @@ mock-orig-dst  = []
 
 [dependencies]
 async-stream = "0.3"
-async-trait = "0.1"
 bytes = "1"
 futures = "0.3.9"
 linkerd-errno = { path = "../../errno" }
@@ -24,10 +23,9 @@ linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
-linkerd-tls = { path = "../../tls" } # XXX for metric labels. Should be decoupled
 pin-project = "1"
 socket2 = "0.3"
-tokio = { version = "1", features = ["net", "time"]}
+tokio = { version = "1", features = ["macros", "net"] }
 tower = { version = "0.4", features = ["make"] }
 tracing = "0.1.22"
 

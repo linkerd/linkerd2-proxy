@@ -672,6 +672,7 @@ dependencies = [
  "linkerd-cache",
  "linkerd-concurrency-limit",
  "linkerd-conditional",
+ "linkerd-detect",
  "linkerd-dns",
  "linkerd-drain",
  "linkerd-duplex",
@@ -882,6 +883,21 @@ dependencies = [
 [[package]]
 name = "linkerd-conditional"
 version = "0.1.0"
+
+[[package]]
+name = "linkerd-detect"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "linkerd-error",
+ "linkerd-io",
+ "linkerd-stack",
+ "tokio",
+ "tower",
+ "tracing",
+]
 
 [[package]]
 name = "linkerd-dns"
@@ -1148,6 +1164,7 @@ dependencies = [
  "hyper",
  "hyper-balance",
  "indexmap",
+ "linkerd-detect",
  "linkerd-drain",
  "linkerd-duplex",
  "linkerd-error",
@@ -1244,7 +1261,6 @@ name = "linkerd-proxy-transport"
 version = "0.1.0"
 dependencies = [
  "async-stream",
- "async-trait",
  "bytes",
  "futures",
  "libc",
@@ -1253,7 +1269,6 @@ dependencies = [
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
- "linkerd-tls",
  "pin-project 1.0.2",
  "socket2",
  "tokio",
@@ -1438,10 +1453,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "linkerd-detect",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-io",
- "linkerd-proxy-transport",
  "prost",
  "prost-build",
  "tokio",

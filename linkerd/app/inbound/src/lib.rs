@@ -14,7 +14,7 @@ use self::require_identity_for_ports::RequireIdentityForPorts;
 use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
-    drain, dst, errors, io, metrics,
+    detect, drain, dst, errors, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{
@@ -327,11 +327,9 @@ impl Config {
                     .push(svc::NewUnwrapOr::layer(
                         svc::Fail::<_, NonOpaqueRefused>::default(),
                     ))
-                    .push(transport::NewDetectService::layer(
-                        transport::detect::DetectTimeout::new(
-                            self.proxy.detect_protocol_timeout,
-                            transport_header::DetectHeader::default(),
-                        ),
+                    .push(detect::NewDetectService::timeout(
+                        self.proxy.detect_protocol_timeout,
+                        transport_header::DetectHeader::default(),
                     )),
             )
             .into_inner();
@@ -373,11 +371,9 @@ impl Config {
             .push(http::NewServeHttp::layer(h2_settings, drain))
             .push(svc::NewUnwrapOr::layer(tcp))
             .push_cache(cache_max_idle_age)
-            .push(transport::NewDetectService::layer(
-                transport::detect::DetectTimeout::new(
-                    detect_protocol_timeout,
-                    http::DetectHttp::default(),
-                ),
+            .push(detect::NewDetectService::timeout(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
             ))
             .into_inner()
     }

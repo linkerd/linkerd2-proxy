@@ -30,6 +30,7 @@ linkerd-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
 linkerd-drain = { path = "../../drain", features = ["retain"] }
+linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }
