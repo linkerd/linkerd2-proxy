@@ -28,64 +28,70 @@ pub trait Detect: Clone + Send + Sync + 'static {
     ) -> Result<Option<Self::Protocol>, Error>;
 }
 
-#[derive(Copy, Clone)]
-pub struct NewDetectService<N, D> {
-    new_accept: N,
+#[derive(Copy, Clone, Debug)]
+pub struct NewDetectService<D, N> {
+    inner: N,
     detect: D,
     capacity: usize,
 }
 
-#[derive(Copy, Clone)]
-pub struct DetectService<N, D, T> {
+#[derive(Copy, Clone, Debug)]
+pub struct DetectService<T, D, N> {
     target: T,
-    new_accept: N,
+    inner: N,
     detect: D,
     capacity: usize,
 }
+
+const BUFFER_CAPACITY: usize = 1024;
 
 // === impl NewDetectService ===
 
-impl<N, D: Clone> NewDetectService<N, D> {
-    const BUFFER_CAPACITY: usize = 1024;
-
-    pub fn new(new_accept: N, detect: D) -> Self {
+impl<D: Clone, N> NewDetectService<D, N> {
+    pub fn new(detect: D, inner: N) -> Self {
         Self {
             detect,
-            new_accept,
-            capacity: Self::BUFFER_CAPACITY,
+            inner,
+            capacity: BUFFER_CAPACITY,
         }
     }
 
     pub fn layer(detect: D) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |new| Self::new(new, detect.clone()))
+        layer::mk(move |inner| Self::new(detect.clone(), inner))
     }
 }
 
-impl<N, D: Clone> NewDetectService<N, DetectTimeout<D>> {
+impl<D: Clone, N> NewDetectService<DetectTimeout<D>, N> {
     pub fn timeout(
         timeout: time::Duration,
         detect: D,
-    ) -> impl layer::Layer<N, Service = NewDetectService<N, DetectTimeout<D>>> + Clone {
+    ) -> impl layer::Layer<N, Service = NewDetectService<DetectTimeout<D>, N>> + Clone {
         Self::layer(DetectTimeout::new(timeout, detect))
     }
 }
 
-impl<N: Clone, D: Clone, T> NewService<T> for NewDetectService<N, D> {
-    type Service = DetectService<N, D, T>;
+impl<D: Clone, N: Clone, T> NewService<T> for NewDetectService<D, N> {
+    type Service = DetectService<T, D, N>;
 
-    fn new_service(&mut self, target: T) -> DetectService<N, D, T> {
-        DetectService {
-            target,
-            new_accept: self.new_accept.clone(),
-            detect: self.detect.clone(),
-            capacity: self.capacity,
-        }
+    fn new_service(&mut self, target: T) -> DetectService<T, D, N> {
+        DetectService::new(target, self.detect.clone(), self.inner.clone())
     }
 }
 
 // === impl DetectService ===
 
-impl<N, S, D, T, I> tower::Service<I> for DetectService<N, D, T>
+impl<T, D: Clone, N: Clone> DetectService<T, D, N> {
+    pub fn new(target: T, detect: D, inner: N) -> Self {
+        DetectService {
+            target,
+            detect,
+            inner,
+            capacity: BUFFER_CAPACITY,
+        }
+    }
+}
+
+impl<S, T, D, N, I> tower::Service<I> for DetectService<T, D, N>
 where
     T: Clone + Send + 'static,
     I: io::AsyncRead + Send + Unpin + 'static,
@@ -105,7 +111,7 @@ where
     }
 
     fn call(&mut self, mut io: I) -> Self::Future {
-        let mut new_accept = self.new_accept.clone();
+        let mut inner = self.inner.clone();
         let mut buf = BytesMut::with_capacity(self.capacity);
         let detect = self.detect.clone();
         let target = self.target.clone();
@@ -119,7 +125,7 @@ where
                 "Detected"
             );
 
-            let mut accept = new_accept
+            let mut accept = inner
                 .new_service((protocol, target))
                 .ready_oneshot()
                 .err_into::<Error>()
