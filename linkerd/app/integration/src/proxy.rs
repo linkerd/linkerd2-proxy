@@ -247,14 +247,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         None
     };
 
-    // If identity is enabled but the test is not concerned with tap, ensure
-    // there is a tap service name set
-    // if !env.contains_key(app::env::ENV_TAP_DISABLED)
-    //     && !env.contains_key(app::env::ENV_TAP_SVC_NAME)
-    // {
-    //     env.put(app::env::ENV_TAP_SVC_NAME, "test-identity".to_owned())
-    // }
-
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
             .into_iter()
