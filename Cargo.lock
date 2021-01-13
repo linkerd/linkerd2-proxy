@@ -2360,9 +2360,9 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ebe6c299e025c20c08a730be54f816b90089d153a58b8648adea98eee85c82a"
+checksum = "5ed5c471f00236abe8c633860d8234646cb4993eaad7720844f79bb1b94e949b"
 dependencies = [
  "futures-core",
  "futures-util",
