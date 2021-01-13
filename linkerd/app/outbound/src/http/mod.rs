@@ -7,8 +7,8 @@ mod tests;
 
 use crate::tcp;
 use indexmap::IndexMap;
-pub use linkerd2_app_core::proxy::http::*;
-use linkerd2_app_core::{
+pub use linkerd_app_core::proxy::http::*;
+use linkerd_app_core::{
     dst, profiles,
     proxy::{
         api_resolve::ProtocolHint,
@@ -37,7 +37,7 @@ impl From<(http::Version, tcp::Logical)> for Logical {
 
 impl Logical {
     pub fn mk_route((route, logical): (profiles::http::Route, Self)) -> dst::Route {
-        use linkerd2_app_core::metrics::Direction;
+        use linkerd_app_core::metrics::Direction;
         dst::Route {
             route,
             target: logical.addr(),

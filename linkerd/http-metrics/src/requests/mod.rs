@@ -3,9 +3,9 @@ mod service;
 
 use super::{LastUpdate, Registry, Report};
 use indexmap::IndexMap;
-use linkerd2_http_classify::ClassifyResponse;
-use linkerd2_metrics::{latency, Counter, FmtMetrics, Histogram};
-use linkerd2_stack::layer;
+use linkerd_http_classify::ClassifyResponse;
+use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram};
+use linkerd_stack::layer;
 use std::{
     fmt::Debug,
     hash::Hash,
@@ -112,7 +112,7 @@ where
 mod tests {
     #[test]
     fn expiry() {
-        use linkerd2_metrics::FmtLabels;
+        use linkerd_metrics::FmtLabels;
         use std::fmt;
         use std::time::{Duration, Instant};
 

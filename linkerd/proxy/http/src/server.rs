@@ -5,10 +5,10 @@ use crate::{
     h2::Settings as H2Settings,
     trace, upgrade, Version,
 };
-use linkerd2_drain as drain;
-use linkerd2_error::Error;
-use linkerd2_io::{self as io, PeerAddr, PrefixedIo};
-use linkerd2_stack::{layer, NewService};
+use linkerd_drain as drain;
+use linkerd_error::Error;
+use linkerd_io::{self as io, PeerAddr, PrefixedIo};
+use linkerd_stack::{layer, NewService};
 use std::{
     future::Future,
     pin::Pin,

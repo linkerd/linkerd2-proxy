@@ -1,8 +1,8 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_error::Recover;
-use linkerd2_stack::{layer, NewService};
+use linkerd_error::Recover;
+use linkerd_stack::{layer, NewService};
 
 mod service;
 

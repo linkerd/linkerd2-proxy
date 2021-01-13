@@ -2,13 +2,13 @@
 
 pub use crate::proxy::http;
 use crate::{cache, Error};
-pub use linkerd2_buffer as buffer;
-pub use linkerd2_concurrency_limit::ConcurrencyLimit;
-pub use linkerd2_stack::{
+pub use linkerd_buffer as buffer;
+pub use linkerd_concurrency_limit::ConcurrencyLimit;
+pub use linkerd_stack::{
     self as stack, layer, BoxNewService, Fail, NewRouter, NewService, NewUnwrapOr,
 };
-pub use linkerd2_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
-pub use linkerd2_timeout::{self as timeout, FailFast};
+pub use linkerd_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
+pub use linkerd_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,

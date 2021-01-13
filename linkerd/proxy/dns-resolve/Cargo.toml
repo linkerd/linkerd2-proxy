@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-proxy-dns-resolve"
+name = "linkerd-proxy-dns-resolve"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -11,11 +11,11 @@ Service Dns Resolutions for the proxy
 
 [dependencies]
 futures = "0.3.9"
-linkerd2-channel = { path = "../../channel" }
-linkerd2-error = { path = "../../error" }
-linkerd2-addr = { path = "../../addr" }
-linkerd2-dns = { path = "../../dns" }
-linkerd2-proxy-core = { path = "../core" }
+linkerd-channel = { path = "../../channel" }
+linkerd-error = { path = "../../error" }
+linkerd-addr = { path = "../../addr" }
+linkerd-dns = { path = "../../dns" }
+linkerd-proxy-core = { path = "../core" }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1.9"
 tracing-futures = "0.2"

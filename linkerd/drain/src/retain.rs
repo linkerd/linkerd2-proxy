@@ -1,5 +1,5 @@
 use crate::Watch;
-use linkerd2_stack::layer;
+use linkerd_stack::layer;
 use std::{
     future::Future,
     pin::Pin,

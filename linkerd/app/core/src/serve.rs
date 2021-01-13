@@ -1,7 +1,7 @@
 use crate::svc;
 use futures::prelude::*;
-use linkerd2_error::Error;
-use linkerd2_proxy_transport::listen::Addrs;
+use linkerd_error::Error;
+use linkerd_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
 use tracing::{debug, info, info_span, warn};
 use tracing_futures::Instrument;

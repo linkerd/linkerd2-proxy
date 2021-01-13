@@ -1,5 +1,5 @@
 use super::NewService;
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::{
     future::Future,
     pin::Pin,
@@ -81,7 +81,7 @@ impl<A, B> SwitchReady<A, B> {
             primary,
             secondary,
             switch_after,
-            // the sleep is reset whenever the service becomes unready; this
+            // The sleep is reset whenever the service becomes unready; this
             // initial one will never actually be used, so it's okay to start it
             // now.
             sleep: Box::pin(sleep(Duration::default())),

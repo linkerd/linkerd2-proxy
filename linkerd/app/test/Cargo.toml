@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-app-test"
+name = "linkerd-app-test"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -22,14 +22,14 @@ h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
-linkerd2-channel = { path = "../../channel" }
-linkerd2-app-core = { path = "../core", features = ["mock-orig-dst"] }
-linkerd2-identity = { path = "../../identity" }
-linkerd2-io = { path = "../../io", features = ["tokio-test"] }
+linkerd-channel = { path = "../../channel" }
+linkerd-app-core = { path = "../core", features = ["mock-orig-dst"] }
+linkerd-identity = { path = "../../identity" }
+linkerd-io = { path = "../../io", features = ["tokio-test"] }
 regex = "1"
-tokio = { version = "1", features = ["io-util", "net", "rt", "sync"] }
+tokio = { version = "1", features = ["io-util", "net", "rt", "sync"]}
 tokio-test = "0.4"
-tower = { version = "0.4.1", default-features = false }
+tower = { version = "0.4.1", default-features = false}
 tracing = "0.1.22"
 tracing-futures = "0.2"
 tracing-subscriber = "0.2.11"

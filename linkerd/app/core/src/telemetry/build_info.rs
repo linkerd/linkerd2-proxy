@@ -1,4 +1,4 @@
-use linkerd2_metrics::{metrics, FmtLabels, FmtMetric, FmtMetrics, Gauge};
+use linkerd_metrics::{metrics, FmtLabels, FmtMetric, FmtMetrics, Gauge};
 use std::env;
 use std::fmt;
 use std::string::String;

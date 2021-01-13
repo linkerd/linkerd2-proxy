@@ -6,7 +6,7 @@ mod service;
 pub use self::layer::TrackServiceLayer;
 pub use self::service::TrackService;
 use indexmap::IndexMap;
-use linkerd2_metrics::{metrics, Counter, FmtLabels, FmtMetrics};
+use linkerd_metrics::{metrics, Counter, FmtLabels, FmtMetrics};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};

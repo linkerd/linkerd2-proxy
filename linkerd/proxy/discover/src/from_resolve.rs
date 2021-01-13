@@ -1,5 +1,5 @@
 use futures::{prelude::*, ready};
-use linkerd2_proxy_core::resolve::{Resolve, Update};
+use linkerd_proxy_core::resolve::{Resolve, Update};
 use pin_project::pin_project;
 use std::{
     collections::{HashSet, VecDeque},
@@ -154,8 +154,8 @@ mod tests {
     use super::Discover;
     use async_stream::stream;
     use futures::prelude::*;
-    use linkerd2_error::Never;
-    use linkerd2_proxy_core::resolve::Update;
+    use linkerd_error::Never;
+    use linkerd_proxy_core::resolve::Update;
     use std::net::SocketAddr;
     use tower::discover::Change;
 

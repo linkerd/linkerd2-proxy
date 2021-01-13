@@ -1,7 +1,7 @@
 //! A `Service` middleware that applies arbitrary-user provided logic to each
 //! target before it is issued to an inner service.
 
-use linkerd2_error::Error;
+use linkerd_error::Error;
 pub use tower::filter::{Filter, FilterLayer, Predicate};
 
 impl<T, F, S> super::NewService<T> for Filter<S, F>

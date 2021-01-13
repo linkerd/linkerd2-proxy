@@ -1,5 +1,5 @@
 use super::{LastUpdate, Prefixed, Registry, Report};
-use linkerd2_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, Metric};
+use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, Metric};
 use std::fmt;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};

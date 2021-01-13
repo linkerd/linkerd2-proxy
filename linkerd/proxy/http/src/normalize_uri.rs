@@ -15,7 +15,7 @@
 //! * Otherwise, the target's address is used (as provided by the target).
 
 use super::h1;
-use linkerd2_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService};
 use std::{
     future::Future,
     net::SocketAddr,

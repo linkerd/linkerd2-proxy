@@ -1,5 +1,5 @@
 //use futures::future;
-use linkerd2_app_core::{svc::stack::Predicate, svc::stack::Switch, Error};
+use linkerd_app_core::{svc::stack::Predicate, svc::stack::Switch, Error};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]

@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-identity"
+name = "linkerd-identity"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -10,7 +10,7 @@ default = []
 test-util = []
 
 [dependencies]
-linkerd2-dns-name = { path = "../dns/name" }
+linkerd-dns-name = { path = "../dns/name" }
 ring = "0.16.19"
 rustls = "0.19"
 tracing = "0.1.2"

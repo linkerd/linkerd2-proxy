@@ -5,7 +5,7 @@ pub mod opaque_transport;
 mod tests;
 
 use crate::target;
-pub use linkerd2_app_core::proxy::tcp::Forward;
+pub use linkerd_app_core::proxy::tcp::Forward;
 
 pub type Accept = target::Accept<()>;
 pub type Logical = target::Logical<()>;

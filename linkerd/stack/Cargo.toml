@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-stack"
+name = "linkerd-stack"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -12,7 +12,7 @@ Utilities for composing Tower services.
 [dependencies]
 dyn-clone = "1.0.3"
 futures = "0.3.9"
-linkerd2-error = { path = "../error" }
+linkerd-error = { path = "../error" }
 pin-project = "1"
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1"

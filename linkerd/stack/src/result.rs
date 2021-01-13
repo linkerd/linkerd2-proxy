@@ -1,5 +1,5 @@
 use futures::{future, prelude::*, ready};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::task::{Context, Poll};
 
 #[derive(Copy, Clone, Debug)]

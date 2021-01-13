@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-app-core"
+name = "linkerd-app-core"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -13,54 +13,54 @@ independently of the inbound and outbound proxy logic.
 """
 
 [features]
-mock-orig-dst  = ["linkerd2-proxy-transport/mock-orig-dst"]
+mock-orig-dst  = ["linkerd-proxy-transport/mock-orig-dst"]
 
 [dependencies]
 bytes = "1"
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
-futures = "0.3"
+futures = "0.3.9"
 indexmap = "1.0"
 ipnet = "2.0"
-linkerd2-addr = { path = "../../addr" }
-linkerd2-cache = { path = "../../cache" }
-linkerd2-buffer = { path = "../../buffer" }
-linkerd2-concurrency-limit = { path = "../../concurrency-limit" }
-linkerd2-conditional = { path = "../../conditional" }
-linkerd2-dns = { path = "../../dns" }
-linkerd2-drain = { path = "../../drain", features = ["retain"] }
-linkerd2-duplex = { path = "../../duplex" }
-linkerd2-errno = { path = "../../errno" }
-linkerd2-error = { path = "../../error" }
-linkerd2-error-metrics = { path = "../../error-metrics" }
-linkerd2-error-respond = { path = "../../error-respond" }
-linkerd2-exp-backoff = { path = "../../exp-backoff" }
-linkerd2-http-classify = { path = "../../http-classify" }
-linkerd2-http-metrics = { path = "../../http-metrics" }
-linkerd2-metrics = { path = "../../metrics" }
-linkerd2-transport-header = { path = "../../transport-header" }
-linkerd2-opencensus = { path = "../../opencensus" }
-linkerd2-proxy-core = { path = "../../proxy/core" }
+linkerd-addr = { path = "../../addr" }
+linkerd-cache = { path = "../../cache" }
+linkerd-buffer = { path = "../../buffer" }
+linkerd-concurrency-limit = { path = "../../concurrency-limit" }
+linkerd-conditional = { path = "../../conditional" }
+linkerd-dns = { path = "../../dns" }
+linkerd-drain = { path = "../../drain", features = ["retain"] }
+linkerd-duplex = { path = "../../duplex" }
+linkerd-errno = { path = "../../errno" }
+linkerd-error = { path = "../../error" }
+linkerd-error-metrics = { path = "../../error-metrics" }
+linkerd-error-respond = { path = "../../error-respond" }
+linkerd-exp-backoff = { path = "../../exp-backoff" }
+linkerd-http-classify = { path = "../../http-classify" }
+linkerd-http-metrics = { path = "../../http-metrics" }
+linkerd-metrics = { path = "../../metrics" }
+linkerd-transport-header = { path = "../../transport-header" }
+linkerd-opencensus = { path = "../../opencensus" }
+linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git" }
-linkerd2-proxy-api-resolve = { path = "../../proxy/api-resolve" }
-linkerd2-proxy-discover = { path = "../../proxy/discover" }
-linkerd2-proxy-identity = { path = "../../proxy/identity" }
-linkerd2-proxy-http = { path = "../../proxy/http" }
-linkerd2-proxy-resolve = { path = "../../proxy/resolve" }
-linkerd2-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
-linkerd2-proxy-tap = { path = "../../proxy/tap" }
-linkerd2-proxy-tcp = { path = "../../proxy/tcp" }
-linkerd2-proxy-transport = { path = "../../proxy/transport" }
-linkerd2-reconnect = { path = "../../reconnect" }
-linkerd2-retry = { path = "../../retry" }
-linkerd2-timeout = { path = "../../timeout" }
-linkerd2-tracing = { path = "../../tracing" }
-linkerd2-service-profiles = { path = "../../service-profiles" }
-linkerd2-stack = { path = "../../stack" }
-linkerd2-stack-metrics = { path = "../../stack/metrics" }
-linkerd2-stack-tracing = { path = "../../stack/tracing" }
-linkerd2-trace-context = { path = "../../trace-context" }
+linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
+linkerd-proxy-discover = { path = "../../proxy/discover" }
+linkerd-proxy-identity = { path = "../../proxy/identity" }
+linkerd-proxy-http = { path = "../../proxy/http" }
+linkerd-proxy-resolve = { path = "../../proxy/resolve" }
+linkerd-proxy-dns-resolve = { path = "../../proxy/dns-resolve" }
+linkerd-proxy-tap = { path = "../../proxy/tap" }
+linkerd-proxy-tcp = { path = "../../proxy/tcp" }
+linkerd-proxy-transport = { path = "../../proxy/transport" }
+linkerd-reconnect = { path = "../../reconnect" }
+linkerd-retry = { path = "../../retry" }
+linkerd-timeout = { path = "../../timeout" }
+linkerd-tracing = { path = "../../tracing" }
+linkerd-service-profiles = { path = "../../service-profiles" }
+linkerd-stack = { path = "../../stack" }
+linkerd-stack-metrics = { path = "../../stack/metrics" }
+linkerd-stack-tracing = { path = "../../stack/tracing" }
+linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
 tonic = { version = "0.3", default-features = false, features = ["prost"] }

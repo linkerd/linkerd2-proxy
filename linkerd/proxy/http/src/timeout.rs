@@ -1,6 +1,6 @@
 use futures::{ready, TryFuture};
-use linkerd2_stack::NewService;
-use linkerd2_timeout::Timeout;
+use linkerd_stack::NewService;
+use linkerd_timeout::Timeout;
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;

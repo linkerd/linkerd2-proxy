@@ -1,4 +1,4 @@
-use linkerd2_identity as identity;
+use linkerd_identity as identity;
 use std::convert::TryFrom;
 use tracing::trace;
 

@@ -2,7 +2,7 @@
 //! target type.
 
 use futures::{future, prelude::*};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::task::{Context, Poll};
 use tower::util::ServiceExt;
 

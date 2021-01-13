@@ -7,7 +7,7 @@ use crate::test_util::{
     *,
 };
 use crate::Config;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     drain, metrics, svc,
     svc::NewService,
     transport::{io, listen, tls},
@@ -105,7 +105,7 @@ async fn tls_when_hinted() {
 
     let cfg = default_config(plain_addr);
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is valid");
     let mut srv_io = support::io();
     srv_io.write(b"hello").read(b"world");
@@ -176,7 +176,7 @@ async fn resolutions_are_reused() {
     let cfg = default_config(addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -263,7 +263,7 @@ async fn load_balances() {
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO
@@ -360,7 +360,7 @@ async fn load_balancer_add_endpoints() {
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is valid");
 
     let mut connect = support::connect();
@@ -475,7 +475,7 @@ async fn load_balancer_remove_endpoints() {
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is valid");
 
     let mut connect = support::connect();
@@ -571,7 +571,7 @@ async fn no_profiles_when_outside_search_nets() {
     };
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is invalid");
     let id_name2 = id_name.clone();
 
@@ -652,7 +652,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let cfg = default_config(ep);
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
@@ -706,7 +706,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 
     let cfg = default_config(ep1);
     let id_name =
-        linkerd2_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
             .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
@@ -774,7 +774,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 }
 
 struct Connection {
-    identity: tls::Conditional<linkerd2_identity::Name>,
+    identity: tls::Conditional<linkerd_identity::Name>,
     count: Arc<AtomicUsize>,
     enabled: Arc<AtomicBool>,
 }

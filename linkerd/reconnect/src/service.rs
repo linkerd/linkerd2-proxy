@@ -1,5 +1,5 @@
 use futures::{future, prelude::*, ready};
-use linkerd2_error::{Error, Recover};
+use linkerd_error::{Error, Recover};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

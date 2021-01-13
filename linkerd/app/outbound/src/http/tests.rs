@@ -9,7 +9,7 @@ use hyper::{
     client::conn::{Builder as ClientBuilder, SendRequest},
     Body, Request, Response,
 };
-use linkerd2_app_core::{
+use linkerd_app_core::{
     drain, metrics,
     proxy::{identity::Name, tap},
     svc::{self, NewService},
@@ -42,7 +42,7 @@ fn build_server<I>(
             Service = impl tower::Service<
                 I,
                 Response = (),
-                Error = impl Into<linkerd2_app_core::Error>,
+                Error = impl Into<linkerd_app_core::Error>,
                 Future = impl Send + 'static,
             > + Send
                           + 'static,

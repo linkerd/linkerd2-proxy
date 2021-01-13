@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-app"
+name = "linkerd-app"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -12,19 +12,19 @@ This is used by tests and the executable.
 """
 
 [features]
-mock-orig-dst  = ["linkerd2-app-core/mock-orig-dst"]
+mock-orig-dst  = ["linkerd-app-core/mock-orig-dst"]
 
 [dependencies]
 futures = "0.3.9"
 indexmap = "1.0"
 ipnet = "2.0"
-linkerd2-app-core = { path = "./core" }
-linkerd2-app-gateway = { path = "./gateway" }
-linkerd2-app-inbound = { path = "./inbound" }
-linkerd2-app-outbound = { path = "./outbound" }
-linkerd2-channel = { path = "../channel" }
-linkerd2-opencensus = { path = "../opencensus" }
-linkerd2-error = { path = "../error" }
+linkerd-app-core = { path = "./core" }
+linkerd-app-gateway = { path = "./gateway" }
+linkerd-app-inbound = { path = "./inbound" }
+linkerd-app-outbound = { path = "./outbound" }
+linkerd-channel = { path = "../channel" }
+linkerd-opencensus = { path = "../opencensus" }
+linkerd-error = { path = "../error" }
 regex = "1.0.0"
 tokio = { version = "1", features = ["rt"] }
 tonic = { version = "0.3", default-features = false, features = ["prost"] }

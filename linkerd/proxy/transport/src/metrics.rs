@@ -1,11 +1,11 @@
 use futures::{ready, TryFuture};
-use linkerd2_errno::Errno;
-use linkerd2_io as io;
-use linkerd2_metrics::{
+use linkerd_errno::Errno;
+use linkerd_io as io;
+use linkerd_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, LastUpdate,
     Metric, Store,
 };
-use linkerd2_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService};
 use pin_project::pin_project;
 use std::collections::HashMap;
 use std::fmt;
@@ -471,7 +471,7 @@ impl Default for ByEos {
 mod tests {
     #[test]
     fn expiry() {
-        use linkerd2_metrics::FmtLabels;
+        use linkerd_metrics::FmtLabels;
         use std::fmt;
         use std::time::{Duration, Instant};
 

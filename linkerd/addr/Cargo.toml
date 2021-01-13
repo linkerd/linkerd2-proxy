@@ -1,5 +1,5 @@
 [package]
-name = "linkerd2-addr"
+name = "linkerd-addr"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -8,4 +8,4 @@ publish = false
 
 [dependencies]
 http = "0.2"
-linkerd2-dns-name = { path = "../dns/name" }
+linkerd-dns-name = { path = "../dns/name" }

@@ -1,6 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_dns_name::Name;
+use linkerd_dns_name::Name;
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},

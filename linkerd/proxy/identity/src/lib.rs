@@ -4,4 +4,4 @@ pub mod certify;
 pub mod metrics;
 
 pub use self::certify::{AwaitCrt, CrtKeySender, Local};
-pub use linkerd2_identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};
+pub use linkerd_identity::{Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors};

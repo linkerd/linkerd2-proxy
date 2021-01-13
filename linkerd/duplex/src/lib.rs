@@ -3,7 +3,7 @@
 use bytes::{Buf, BufMut};
 use futures::ready;
 use io::{AsyncRead, AsyncWrite};
-use linkerd2_io as io;
+use linkerd_io as io;
 use pin_project::pin_project;
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin};

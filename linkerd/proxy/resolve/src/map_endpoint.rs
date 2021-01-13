@@ -3,8 +3,8 @@
 use futures::stream::Stream;
 use futures::stream::TryStream;
 use futures::{ready, TryFuture};
-use linkerd2_error::Error;
-use linkerd2_proxy_core::resolve;
+use linkerd_error::Error;
+use linkerd_proxy_core::resolve;
 use pin_project::pin_project;
 use std::future::Future;
 use std::net::SocketAddr;

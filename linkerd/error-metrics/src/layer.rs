@@ -1,6 +1,6 @@
 use crate::RecordError;
 use indexmap::IndexMap;
-use linkerd2_metrics::Counter;
+use linkerd_metrics::Counter;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 

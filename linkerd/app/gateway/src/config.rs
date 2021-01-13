@@ -1,9 +1,9 @@
 use super::make::MakeGateway;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     discovery_rejected, profiles, proxy::http, svc, transport::tls, Error, NameAddr, NameMatch,
 };
-use linkerd2_app_inbound::endpoint as inbound;
-use linkerd2_app_outbound as outbound;
+use linkerd_app_inbound::endpoint as inbound;
+use linkerd_app_outbound as outbound;
 use tracing::debug_span;
 
 #[derive(Clone, Debug, Default)]

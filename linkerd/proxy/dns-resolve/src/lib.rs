@@ -1,10 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::{future, prelude::*, stream};
-use linkerd2_addr::{Addr, NameAddr};
-use linkerd2_dns as dns;
-use linkerd2_error::Error;
-use linkerd2_proxy_core::resolve::Update;
+use linkerd_addr::{Addr, NameAddr};
+use linkerd_dns as dns;
+use linkerd_error::Error;
+use linkerd_proxy_core::resolve::Update;
 use std::{
     net::SocketAddr,
     pin::Pin,
@@ -19,7 +19,7 @@ use tracing_futures::Instrument;
 /// SRV records are checked first, A records are used as a fallback.
 #[derive(Clone)]
 pub struct DnsResolve {
-    dns: linkerd2_dns::Resolver,
+    dns: linkerd_dns::Resolver,
 }
 
 impl DnsResolve {
@@ -61,7 +61,7 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
 }
 
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
-    use linkerd2_channel::into_stream::IntoStream;
+    use linkerd_channel::into_stream::IntoStream;
 
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.

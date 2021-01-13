@@ -2,7 +2,7 @@
 
 use crate::target::{Concrete, EndpointFromMetadata};
 use futures::{future, prelude::*, stream};
-use linkerd2_app_core::{
+use linkerd_app_core::{
     discovery_rejected, is_discovery_rejected,
     proxy::{
         api_resolve::Metadata,

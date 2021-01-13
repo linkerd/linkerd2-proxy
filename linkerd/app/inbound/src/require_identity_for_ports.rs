@@ -1,6 +1,6 @@
 use crate::endpoint::TcpAccept;
 use indexmap::IndexSet;
-use linkerd2_app_core::{svc::stack::Predicate, Error};
+use linkerd_app_core::{svc::stack::Predicate, Error};
 use std::sync::Arc;
 
 /// A connection policy that drops

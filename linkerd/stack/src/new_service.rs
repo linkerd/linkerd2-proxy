@@ -1,6 +1,6 @@
 use crate::FutureService;
 use futures::future;
-use linkerd2_error::Never;
+use linkerd_error::Never;
 use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 

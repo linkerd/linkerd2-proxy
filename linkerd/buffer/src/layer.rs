@@ -1,5 +1,5 @@
 use crate::Buffer;
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::time::Duration;
 use tracing_futures::Instrument;
 

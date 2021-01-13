@@ -1,4 +1,4 @@
-pub use linkerd2_proxy_transport::*;
+pub use linkerd_proxy_transport::*;
 
 pub mod labels;
 

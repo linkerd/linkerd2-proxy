@@ -1,7 +1,7 @@
 #![recursion_limit = "256"]
 
-use linkerd2_channel as mpsc;
-use linkerd2_error::Error;
+use linkerd_channel as mpsc;
+use linkerd_error::Error;
 use std::{fmt, future::Future, pin::Pin, time::Duration};
 use tokio::sync::oneshot;
 

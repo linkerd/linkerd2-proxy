@@ -1,5 +1,5 @@
 use hyper::{body::Buf, Body};
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use std::{io, str};
 use tracing::{trace, warn};
 use tracing_subscriber::{reload, EnvFilter, Registry};

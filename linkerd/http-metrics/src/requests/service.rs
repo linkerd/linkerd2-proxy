@@ -1,9 +1,9 @@
 use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
 use futures::{ready, TryFuture};
 use http_body::Body;
-use linkerd2_error::Error;
-use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
-use linkerd2_stack::{NewService, Proxy};
+use linkerd_error::Error;
+use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
+use linkerd_stack::{NewService, Proxy};
 use pin_project::{pin_project, pinned_drop};
 use std::fmt::Debug;
 use std::hash::Hash;

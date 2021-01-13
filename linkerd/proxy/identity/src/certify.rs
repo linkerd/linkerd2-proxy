@@ -1,9 +1,9 @@
 use crate::{Crt, CrtKey, Csr, Key, Name, TokenSource, TrustAnchors};
 use http_body::Body as HttpBody;
-use linkerd2_error::Error;
-use linkerd2_metrics::Counter;
 use linkerd2_proxy_api::identity as api;
-use linkerd2_proxy_transport::tls;
+use linkerd_error::Error;
+use linkerd_metrics::Counter;
+use linkerd_proxy_transport::tls;
 use pin_project::pin_project;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -53,7 +53,7 @@ pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
 #[derive(Debug)]
 pub struct Daemon {
     crt_key_watch: CrtKeySender,
-    refreshes: Arc<linkerd2_metrics::Counter>,
+    refreshes: Arc<linkerd_metrics::Counter>,
     config: Config,
 }
 

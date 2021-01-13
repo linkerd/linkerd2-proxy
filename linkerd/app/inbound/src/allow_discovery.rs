@@ -1,5 +1,5 @@
 use crate::endpoint::Target;
-use linkerd2_app_core::{discovery_rejected, svc::stack::Predicate, Error, NameAddr, NameMatch};
+use linkerd_app_core::{discovery_rejected, svc::stack::Predicate, Error, NameAddr, NameMatch};
 
 #[derive(Clone, Debug)]
 pub struct AllowProfile(pub NameMatch);

@@ -1,8 +1,8 @@
 //! A middleware that boxes HTTP request bodies.
 
 use crate::BoxBody;
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use std::{
     marker::PhantomData,
     task::{Context, Poll},

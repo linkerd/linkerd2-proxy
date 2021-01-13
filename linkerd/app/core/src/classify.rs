@@ -1,9 +1,9 @@
 use crate::profiles;
-use linkerd2_error::Error;
-use linkerd2_http_classify as classify;
-pub use linkerd2_http_classify::{CanClassify, NewClassify};
-use linkerd2_proxy_http::HasH2Reason;
-use linkerd2_timeout::error::ResponseTimeout;
+use linkerd_error::Error;
+use linkerd_http_classify as classify;
+pub use linkerd_http_classify::{CanClassify, NewClassify};
+use linkerd_proxy_http::HasH2Reason;
+use linkerd_timeout::error::ResponseTimeout;
 use std::borrow::Cow;
 use tonic as grpc;
 use tracing::trace;
@@ -226,7 +226,7 @@ impl Class {
 mod tests {
     use super::{Class, SuccessOrFailure};
     use http::{HeaderMap, Response, StatusCode};
-    use linkerd2_http_classify::{ClassifyEos, ClassifyResponse};
+    use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
 
     #[test]
     fn http_response_status_ok() {

@@ -9,22 +9,22 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub use linkerd2_addr::{self as addr, Addr, NameAddr};
-pub use linkerd2_cache as cache;
-pub use linkerd2_conditional::Conditional;
-pub use linkerd2_dns;
-pub use linkerd2_drain as drain;
-pub use linkerd2_error::{Error, Never, Recover};
-pub use linkerd2_exp_backoff as exp_backoff;
-pub use linkerd2_http_metrics as http_metrics;
-pub use linkerd2_opencensus as opencensus;
-pub use linkerd2_reconnect as reconnect;
-pub use linkerd2_service_profiles as profiles;
-pub use linkerd2_stack_metrics as stack_metrics;
-pub use linkerd2_stack_tracing as stack_tracing;
-pub use linkerd2_trace_context::TraceContext;
-pub use linkerd2_tracing as trace;
-pub use linkerd2_transport_header as transport_header;
+pub use linkerd_addr::{self as addr, Addr, NameAddr};
+pub use linkerd_cache as cache;
+pub use linkerd_conditional::Conditional;
+pub use linkerd_dns;
+pub use linkerd_drain as drain;
+pub use linkerd_error::{Error, Never, Recover};
+pub use linkerd_exp_backoff as exp_backoff;
+pub use linkerd_http_metrics as http_metrics;
+pub use linkerd_opencensus as opencensus;
+pub use linkerd_reconnect as reconnect;
+pub use linkerd_service_profiles as profiles;
+pub use linkerd_stack_metrics as stack_metrics;
+pub use linkerd_stack_tracing as stack_tracing;
+pub use linkerd_trace_context::TraceContext;
+pub use linkerd_tracing as trace;
+pub use linkerd_transport_header as transport_header;
 
 mod addr_match;
 pub mod admin;

@@ -1,6 +1,6 @@
 use http::{HeaderMap, HeaderValue};
 use http_body::Body;
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};

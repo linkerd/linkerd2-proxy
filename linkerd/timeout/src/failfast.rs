@@ -2,8 +2,8 @@
 //! before requests are failed.
 
 use futures::TryFuture;
-use linkerd2_error::Error;
-use linkerd2_stack::layer;
+use linkerd_error::Error;
+use linkerd_stack::layer;
 use pin_project::pin_project;
 use std::{
     future::Future,
@@ -52,7 +52,7 @@ impl<S> FailFast<S> {
             scope,
             inner,
             max_unavailable,
-            // the sleep is reset whenever the service becomes unavailable; this
+            // The sleep is reset whenever the service becomes unavailable; this
             // initial one will never actually be used, so it's okay to start it
             // now.
             wait: Box::pin(time::sleep(Duration::default())),

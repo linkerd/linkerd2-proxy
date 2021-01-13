@@ -1,9 +1,9 @@
 use crate::{Profile, Receiver, Target};
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
-use linkerd2_addr::Addr;
-use linkerd2_error::Error;
-use linkerd2_stack::{layer, NewService};
+use linkerd_addr::Addr;
+use linkerd_error::Error;
+use linkerd_stack::{layer, NewService};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::{

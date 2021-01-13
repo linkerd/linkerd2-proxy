@@ -1,9 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use indexmap::IndexMap;
-use linkerd2_conditional::Conditional;
-use linkerd2_identity as identity;
-use linkerd2_proxy_transport::tls::ReasonForNoPeerName;
+use linkerd_conditional::Conditional;
+use linkerd_identity as identity;
+use linkerd_proxy_transport::tls::ReasonForNoPeerName;
 use std::net;
 use std::sync::Arc;
 
@@ -79,7 +79,7 @@ pub trait Inspect {
 /// module.
 mod iface {
     use hyper::body::{Buf, HttpBody};
-    use linkerd2_proxy_http::HasH2Reason;
+    use linkerd_proxy_http::HasH2Reason;
 
     pub trait Tap: Clone {
         type TapRequestPayload: TapPayload;

@@ -1,6 +1,6 @@
 use super::{Concrete, Endpoint};
 use crate::resolve;
-use linkerd2_app_core::{
+use linkerd_app_core::{
     config::ProxyConfig,
     drain,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},

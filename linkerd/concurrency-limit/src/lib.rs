@@ -6,7 +6,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd2_stack::layer;
+use linkerd_stack::layer;
 use pin_project::pin_project;
 use std::{
     fmt,

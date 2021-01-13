@@ -1,7 +1,7 @@
 use crate::{Flags, Id, InsufficientBytes};
 use bytes::Bytes;
 use http::header::HeaderValue;
-use linkerd2_error::Error;
+use linkerd_error::Error;
 use rand::thread_rng;
 use std::convert::TryInto;
 use std::fmt;
