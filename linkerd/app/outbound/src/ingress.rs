@@ -1,7 +1,7 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, io, metrics,
+    detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, io, metrics,
     opencensus::proto::trace::v1 as oc,
     profiles,
     spans::SpanConverter,
@@ -119,11 +119,9 @@ where
         .push(http::NewServeHttp::layer(h2_settings, drain))
         .push(svc::NewUnwrapOr::layer(tcp))
         .push_cache(cache_max_idle_age)
-        .push(transport::NewDetectService::layer(
-            transport::detect::DetectTimeout::new(
-                detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ),
+        .push(detect::NewDetectService::timeout(
+            detect_protocol_timeout,
+            http::DetectHttp::default(),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
         .push(metrics.transport.layer_accept())

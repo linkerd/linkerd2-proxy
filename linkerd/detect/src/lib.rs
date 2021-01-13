@@ -1,3 +1,5 @@
+#![deny(warnings, rust_2018_idioms)]
+
 mod timeout;
 
 pub use self::timeout::{DetectTimeout, DetectTimeoutError};
@@ -56,6 +58,15 @@ impl<N, D: Clone> NewDetectService<N, D> {
 
     pub fn layer(detect: D) -> impl layer::Layer<N, Service = Self> + Clone {
         layer::mk(move |new| Self::new(new, detect.clone()))
+    }
+}
+
+impl<N, D: Clone> NewDetectService<N, DetectTimeout<D>> {
+    pub fn timeout(
+        timeout: time::Duration,
+        detect: D,
+    ) -> impl layer::Layer<N, Service = NewDetectService<N, DetectTimeout<D>>> + Clone {
+        Self::layer(DetectTimeout::new(timeout, detect))
     }
 }
 

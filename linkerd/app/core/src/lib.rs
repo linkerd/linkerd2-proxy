@@ -12,6 +12,7 @@
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
 pub use linkerd_conditional::Conditional;
+pub use linkerd_detect as detect;
 pub use linkerd_dns;
 pub use linkerd_drain as drain;
 pub use linkerd_error::{Error, Never, Recover};

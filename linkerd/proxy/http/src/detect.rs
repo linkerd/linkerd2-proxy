@@ -1,8 +1,8 @@
 use crate::Version;
 use bytes::BytesMut;
+use linkerd_detect::Detect;
 use linkerd_error::Error;
 use linkerd_io::{self as io, AsyncReadExt};
-use linkerd_proxy_transport::Detect;
 use tracing::{debug, trace};
 
 const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
