@@ -180,14 +180,6 @@ impl Listening {
 }
 
 async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
-    // Logs from spawned threads will not be captured, so use a filter that
-    // disables most of the proxy's logs by default.
-    // TODO(eliza): when we're on Rust 1.49.0+, libtest *will* capture these
-    // logs, so we can use the same default filter as other test code.
-    const DEFAULT_LOG: &str = "error,\
-                               linkerd_proxy_http=off,\
-                               linkerd_proxy_transport=off";
-
     use app::env::Strings;
 
     let controller = if let Some(controller) = proxy.controller {
@@ -272,7 +264,17 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     }
 
     let config = app::env::parse_config(&env).unwrap();
-    let (trace, trace_handle) = super::trace_subscriber(DEFAULT_LOG);
+    let dispatch = tracing::Dispatch::default();
+    let (trace, trace_handle) = if dispatch
+        .downcast_ref::<tracing_subscriber::fmt::TestWriter>()
+        .is_some()
+    {
+        // A dispatcher was set by the test...
+        (dispatch, app_core::trace::Handle::disabled())
+    } else {
+        eprintln!("test did not set a tracing dispatcher, creating a new one for the proxy");
+        super::trace_subscriber()
+    };
 
     let (running_tx, running_rx) = oneshot::channel();
     let (term_tx, term_rx) = oneshot::channel();
