@@ -5,7 +5,6 @@ use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     metrics::ControlHttp as Metrics,
-    transport::tls,
     Error,
 };
 use std::future::Future;
@@ -39,8 +38,6 @@ struct Recover(ExponentialBackoff);
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
-pub type LocalIdentity = tls::Conditional<Local>;
-
 impl Config {
     pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Result<Identity, Error> {
         match self {
@@ -49,8 +46,7 @@ impl Config {
                 let (local, daemon) = Local::new(&certify);
 
                 let addr = control.addr.clone();
-                let svc =
-                    control.build(dns, metrics, tls::Conditional::Some(certify.trust_anchors));
+                let svc = control.build(dns, metrics, Some(certify.trust_anchors));
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {
@@ -68,12 +64,10 @@ impl Config {
 }
 
 impl Identity {
-    pub fn local(&self) -> LocalIdentity {
+    pub fn local(&self) -> Option<Local> {
         match self {
-            Identity::Disabled => {
-                tls::Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled)
-            }
-            Identity::Enabled { ref local, .. } => tls::Conditional::Some(local.clone()),
+            Identity::Disabled => None,
+            Identity::Enabled { ref local, .. } => Some(local.clone()),
         }
     }
 

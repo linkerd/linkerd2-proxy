@@ -4,8 +4,8 @@ use linkerd_app_core::{
     config::ServerConfig,
     drain,
     proxy::{identity, tap},
-    serve,
-    transport::tls,
+    serve, tls,
+    transport::listen::Addrs,
     Error,
 };
 use std::{net::SocketAddr, pin::Pin};
@@ -34,7 +34,7 @@ pub enum Tap {
 impl Config {
     pub fn build(
         self,
-        identity: tls::Conditional<identity::Local>,
+        identity: Option<identity::Local>,
         drain: drain::Watch,
     ) -> Result<Tap, Error> {
         let (registry, server) = tap::new();
@@ -53,7 +53,7 @@ impl Config {
                     tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server);
                 let accept = tls::NewDetectTls::new(
                     identity,
-                    move |meta: tls::accept::Meta| {
+                    move |meta: tls::accept::Meta<Addrs>| {
                         let service = service.clone();
                         service_fn(move |io| {
                             let fut = service.clone().oneshot((meta.clone(), io));

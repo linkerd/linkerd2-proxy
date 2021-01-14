@@ -8,7 +8,6 @@ mod fail;
 mod fail_on_error;
 pub mod layer;
 pub mod make_thunk;
-pub mod map_response;
 pub mod map_target;
 pub mod new_service;
 pub mod on_response;
@@ -26,7 +25,6 @@ pub use self::{
     fail::Fail,
     fail_on_error::FailOnError,
     make_thunk::MakeThunk,
-    map_response::{MapResponse, MapResponseLayer},
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     new_service::NewService,
     on_response::{OnResponse, OnResponseLayer},

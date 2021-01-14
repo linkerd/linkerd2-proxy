@@ -8,12 +8,10 @@
 use futures::prelude::*;
 use linkerd_error::Never;
 use linkerd_identity::{test_util, CrtKey, Name};
-use linkerd_proxy_transport::tls::{self, Conditional};
-use linkerd_proxy_transport::{
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    BindTcp, ConnectTcp,
-};
+use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectTcp};
 use linkerd_stack::NewService;
+use linkerd_tls::{self as tls, Conditional};
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::net::TcpStream;
@@ -26,9 +24,9 @@ use tracing_futures::Instrument;
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
-        Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled),
+        Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery),
         |conn| write_then_read(conn, PING),
-        Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled),
+        None,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), false);
@@ -44,7 +42,7 @@ fn proxy_to_proxy_tls_works() {
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, server_tls.tls_server_name())),
         |conn| write_then_read(conn, PING),
-        Conditional::Some(server_tls),
+        Some(server_tls),
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
     assert_eq!(client_result.is_tls(), true);
@@ -65,7 +63,7 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let (client_result, server_result) = run_test(
         Conditional::Some((client_tls, client_target)),
         |conn| write_then_read(conn, PING),
-        Conditional::Some(server_tls),
+        Some(server_tls),
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
     );
 
@@ -102,7 +100,7 @@ impl<R> Transported<R> {
 fn run_test<C, CF, CR, S, SF, SR>(
     client_tls: tls::Conditional<(CrtKey, Name)>,
     client: C,
-    server_tls: tls::Conditional<CrtKey>,
+    server_tls: Option<CrtKey>,
     server: S,
 ) -> (Transported<CR>, Transported<SR>)
 where
@@ -111,7 +109,7 @@ where
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
-    S: Fn(tls::accept::Connection<TcpStream>) -> SF + Clone + Send + 'static,
+    S: Fn(tls::accept::Connection<Addrs, TcpStream>) -> SF + Clone + Send + 'static,
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
@@ -124,11 +122,8 @@ where
     }
 
     let (client_tls, client_target_name) = match client_tls {
-        Conditional::Some((crtkey, name)) => (
-            Conditional::Some(ClientTls(crtkey)),
-            Conditional::Some(name),
-        ),
-        Conditional::None(reason) => (Conditional::None(reason), Conditional::None(reason)),
+        Conditional::Some((crtkey, name)) => (Some(ClientTls(crtkey)), Conditional::Some(name)),
+        Conditional::None(reason) => (None, Conditional::None(reason)),
     };
 
     // A future that will receive a single connection.
@@ -146,10 +141,10 @@ where
 
         let mut detect = tls::NewDetectTls::new(
             server_tls,
-            move |meta: tls::accept::Meta| {
+            move |meta: tls::accept::Meta<Addrs>| {
                 let server = server.clone();
                 let sender = sender.clone();
-                let peer_identity = Some(meta.peer_identity.clone());
+                let peer_identity = Some(meta.0.clone());
                 service_fn(move |conn| {
                     let server = server.clone();
                     let sender = sender.clone();

@@ -15,8 +15,7 @@ mod test {
         profiles,
         proxy::{http, identity},
         svc::NewService,
-        transport::tls,
-        Error, NameAddr, NameMatch, Never,
+        tls, Error, NameAddr, NameMatch, Never,
     };
     use linkerd_app_inbound::endpoint as inbound;
     use linkerd_app_test as support;
@@ -142,7 +141,7 @@ mod test {
                 Config { allow_discovery }.build(
                     move |_: _| outbound.clone(),
                     profiles,
-                    tls::PeerIdentity::Some(identity::Name::from(
+                    Some(identity::Name::from(
                         dns::Name::from_str("gateway.id.test").unwrap(),
                     )),
                 )

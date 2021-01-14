@@ -3,7 +3,6 @@ use super::dst::Route;
 // use super::handle_time;
 use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
-use super::transport::tls;
 use crate::profiles;
 use futures::future;
 use hyper::body::HttpBody;
@@ -127,10 +126,6 @@ impl<B: Default + HttpBody> CloneRequest<http::Request<B>> for () {
         *clone.uri_mut() = req.uri().clone();
         *clone.headers_mut() = req.headers().clone();
         *clone.version_mut() = req.version();
-
-        if let Some(ext) = req.extensions().get::<tls::accept::Meta>() {
-            clone.extensions_mut().insert(ext.clone());
-        }
 
         // // Count retries toward the request's total handle time.
         // if let Some(ext) = req.extensions().get::<handle_time::Tracker>() {

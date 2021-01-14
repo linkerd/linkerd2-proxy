@@ -1,7 +1,7 @@
-use super::tls;
 pub use crate::metrics::{Direction, EndpointLabels, TlsId};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
+use linkerd_tls as tls;
 use std::fmt;
 
 /// Describes a class of transport.
