@@ -137,7 +137,7 @@ impl Config {
         // When HTTP detection fails, forward the connection to the application
         // as an opaque TCP stream.
         let tcp = svc::stack(tcp_forward.clone())
-            .push_map_target(|t: TcpAccept| TcpEndpoint::from(t))
+            .push_map_target(TcpEndpoint::from)
             .push_switch(
                 prevent_loop,
                 // If the connection targets the inbound port, try to detect an
