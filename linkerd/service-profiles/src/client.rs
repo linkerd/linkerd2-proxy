@@ -460,25 +460,33 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
         );
         return None;
     };
+
     let retry_ratio = orig.retry_ratio;
     if !(0.0..=1000.0).contains(&retry_ratio) {
         warn!("retry_budget retry_ratio invalid: {:?}", retry_ratio);
         return None;
     }
+
     let ttl = match orig.ttl {
-        Some(pb_dur) => match pb_dur.try_into() {
-            Ok(dur) => {
-                if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
-                    warn!("retry_budget ttl invalid: {:?}", dur);
-                    return None;
-                }
-                dur
-            }
-            Err(negative) => {
-                warn!("retry_budget ttl negative: {:?}", negative);
+        Some(pb_dur) => {
+            if pb_dur.seconds < 0 || pb_dur.nanos < 0 {
+                warn!("retry_budget ttl negative");
                 return None;
             }
-        },
+            match pb_dur.try_into() {
+                Ok(dur) => {
+                    if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
+                        warn!("retry_budget ttl invalid: {:?}", dur);
+                        return None;
+                    }
+                    dur
+                }
+                Err(negative) => {
+                    warn!("retry_budget ttl negative: {:?}", negative);
+                    return None;
+                }
+            }
+        }
         None => {
             warn!("retry_budget ttl missing");
             return None;
@@ -499,18 +507,21 @@ mod tests {
             retry_ratio: f32,
             seconds: i64,
             nanos: i32
-        ) -> bool {
+        ) -> TestResult {
+            // if seconds < 0 || nanos < 0 || nanos > 1_000_000_000 {
+            //     return TestResult::discard();
+            // }
             let proto = api::RetryBudget {
                 min_retries_per_second,
                 retry_ratio,
                 ttl: Some(prost_types::Duration {
                     seconds,
-                    nanos,
+                    nanos: 0,
                 }),
             };
+            // Ensure we don't panic.
             convert_retry_budget(proto);
-            // simply not panicking is good enough
-            true
+            TestResult::passed()
         }
     }
 }
