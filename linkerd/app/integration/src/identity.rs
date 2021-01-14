@@ -202,7 +202,7 @@ impl Controller {
     }
 
     pub async fn run(self) -> controller::Listening {
-        println!("running support identity service");
+        tracing::debug!("running support identity service");
         controller::run(
             pb::identity_server::IdentityServer::new(self),
             "support identity service",

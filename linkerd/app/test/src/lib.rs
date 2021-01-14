@@ -54,11 +54,11 @@ const DEFAULT_LOG: &str = "warn,\
                            linkerd_proxy_http=error,\
                            linkerd_proxy_transport=error";
 
-pub fn trace_subscriber(default_filter: &str) -> (Dispatch, app_core::trace::Handle) {
+pub fn trace_subscriber() -> (Dispatch, app_core::trace::Handle) {
     use std::env;
     let log_level = env::var("LINKERD2_PROXY_LOG")
         .or_else(|_| env::var("RUST_LOG"))
-        .unwrap_or_else(|_| default_filter.to_owned());
+        .unwrap_or_else(|_| DEFAULT_LOG.to_string());
     let log_format = env::var("LINKERD2_PROXY_LOG_FORMAT").unwrap_or_else(|_| "PLAIN".to_string());
     env::set_var("LINKERD2_PROXY_LOG_FORMAT", &log_format);
     // This may fail, since the global log compat layer may have been
@@ -72,6 +72,6 @@ pub fn trace_subscriber(default_filter: &str) -> (Dispatch, app_core::trace::Han
 }
 
 pub fn trace_init() -> tracing::dispatcher::DefaultGuard {
-    let (d, _) = trace_subscriber(DEFAULT_LOG);
+    let (d, _) = trace_subscriber();
     tracing::dispatcher::set_default(&d)
 }

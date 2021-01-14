@@ -158,6 +158,11 @@ enum Inner {
 // === impl Handle ===
 
 impl Handle {
+    /// Returns a new `handle` with tracing disabled.
+    pub fn disabled() -> Self {
+        Self(Inner::Disabled)
+    }
+
     /// Serve requests that controls the log level. The request is expected to be either a GET or PUT
     /// request. PUT requests must have a body that describes the new log level.
     pub async fn serve_level(

@@ -232,8 +232,7 @@ async fn run_server(tcp: TcpServer) -> server::Listening {
 
     started_rx.await.expect("support tcp server started");
 
-    // printlns will show if the test fails...
-    println!("tcp server (addr={}): running", addr);
+    tracing::info!(%addr, "tcp server running");
 
     server::Listening {
         addr,

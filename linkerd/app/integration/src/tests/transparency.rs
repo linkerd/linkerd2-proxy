@@ -1379,7 +1379,7 @@ async fn http2_request_without_authority() {
         .await
         .expect("handshake error");
 
-    tokio::spawn(conn.map_err(|e| println!("conn error: {:?}", e)));
+    tokio::spawn(conn.map_err(|e| tracing::info!("conn error: {:?}", e)));
 
     let req = Request::new(hyper::Body::empty());
     // these properties are specifically what we want, and set by default

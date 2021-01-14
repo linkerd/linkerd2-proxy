@@ -61,7 +61,7 @@ macro_rules! generate_tls_accept_test {
             .run_with_test_env(id_svc.env)
             .await;
 
-        println!("non-tls request to {}", proxy.metrics);
+        tracing::info!("non-tls request to {}", proxy.metrics);
         let non_tls_client = $make_client_non_tls(proxy.metrics, "localhost");
         assert_eventually!(
             non_tls_client
@@ -72,7 +72,7 @@ macro_rules! generate_tls_accept_test {
                 == http::StatusCode::OK
         );
 
-        println!("tls request to {}", proxy.metrics);
+        tracing::info!("tls request to {}", proxy.metrics);
         let tls_client = $make_client_tls(
             proxy.metrics,
             "localhost",

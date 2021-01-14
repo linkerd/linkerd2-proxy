@@ -243,12 +243,13 @@ impl Server {
                         let svc = svc.await;
                         tracing::trace!("service acquired");
                         srv_conn_count.fetch_add(1, Ordering::Release);
-                        let svc =
-                            svc.map_err(|e| println!("support/server new_service error: {}", e))?;
+                        let svc = svc.map_err(|e| {
+                            tracing::error!("support/server new_service error: {}", e)
+                        })?;
                         let result = http
                             .serve_connection(sock, svc)
                             .await
-                            .map_err(|e| println!("support/server error: {}", e));
+                            .map_err(|e| tracing::error!("support/server error: {}", e));
                         tracing::trace!(?result, "serve done");
                         result
                     };
@@ -260,8 +261,7 @@ impl Server {
 
         listening_rx.await.expect("listening_rx");
 
-        // printlns will show if the test fails...
-        println!("{:?} server running; addr={}", version, addr,);
+        tracing::info!(?version, %addr, "server running");
 
         Listening {
             addr,
@@ -320,7 +320,7 @@ impl Svc {
                 func(req)
             }
             None => {
-                println!("server 404: {:?}", req.uri().path());
+                tracing::warn!("server 404: {:?}", req.uri().path());
                 let res = http::Response::builder()
                     .status(404)
                     .body(Default::default())
