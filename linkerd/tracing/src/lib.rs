@@ -98,8 +98,20 @@ impl Settings {
         let (dispatch, tasks) = match format.to_uppercase().as_ref() {
             "JSON" => {
                 let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
-                let fmt =
-                    tracing_subscriber::fmt::layer().event_format(fmt.json().with_span_list(true));
+                let fmt = fmt
+                    // Configure the formatter to output JSON logs.
+                    .json()
+                    // Output the current span context as a JSON list.
+                    .with_span_list(true)
+                    // Don't output a field for the current span, since this
+                    // would duplicate information already in the span list.
+                    .with_current_span(false);
+                let fmt = tracing_subscriber::fmt::layer()
+                    // Use the JSON event formatter.
+                    .event_format(fmt)
+                    // Since we're using the JSON event formatter, we must also
+                    // use the JSON field formatter.
+                    .fmt_fields(format::JsonFields::default());
                 let registry = registry.with(tasks_layer);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()

@@ -12,7 +12,7 @@ use linkerd_app_core::{
     },
     svc::{
         layer,
-        stack::{FilterRequest, RequestFilter},
+        stack::{Filter, Predicate},
         NewService,
     },
     Addr, Error,
@@ -26,7 +26,7 @@ use std::{
 
 type ResolveStack<R> = map_endpoint::Resolve<
     EndpointFromMetadata,
-    RecoverDefault<RequestFilter<AllowResolve, ResolveService<R>>>,
+    RecoverDefault<Filter<ResolveService<R>, AllowResolve>>,
 >;
 
 fn new_resolve<T, R>(resolve: R) -> ResolveStack<R>
@@ -40,7 +40,7 @@ where
 {
     map_endpoint::Resolve::new(
         EndpointFromMetadata,
-        RecoverDefault(RequestFilter::new(AllowResolve, resolve.into_service())),
+        RecoverDefault(Filter::new(resolve.into_service(), AllowResolve)),
     )
 }
 
@@ -79,10 +79,10 @@ pub struct RecoverDefault<S>(S);
 
 // === impl AllowResolve ===
 
-impl<P> FilterRequest<Concrete<P>> for AllowResolve {
+impl<P> Predicate<Concrete<P>> for AllowResolve {
     type Request = Addr;
 
-    fn filter(&self, target: Concrete<P>) -> Result<Addr, Error> {
+    fn check(&mut self, target: Concrete<P>) -> Result<Addr, Error> {
         target.resolve.ok_or_else(|| discovery_rejected().into())
     }
 }

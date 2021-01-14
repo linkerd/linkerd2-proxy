@@ -29,7 +29,7 @@ pub use self::{
     new_service::NewService,
     on_response::{OnResponse, OnResponseLayer},
     proxy::{Proxy, ProxyService},
-    request_filter::{FilterRequest, RequestFilter},
+    request_filter::{Filter, FilterLayer, Predicate},
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch::{MakeSwitch, Switch},

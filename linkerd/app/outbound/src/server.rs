@@ -227,10 +227,10 @@ pub struct AllowProfile(pub IpMatch);
 
 // === impl AllowProfile ===
 
-impl svc::stack::FilterRequest<tcp::Accept> for AllowProfile {
+impl svc::stack::Predicate<tcp::Accept> for AllowProfile {
     type Request = std::net::SocketAddr;
 
-    fn filter(&self, a: tcp::Accept) -> Result<std::net::SocketAddr, Error> {
+    fn check(&mut self, a: tcp::Accept) -> Result<std::net::SocketAddr, Error> {
         if self.0.matches(a.orig_dst.ip()) {
             Ok(a.orig_dst)
         } else {

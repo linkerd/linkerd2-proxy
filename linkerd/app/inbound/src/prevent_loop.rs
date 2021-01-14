@@ -1,5 +1,5 @@
 //use futures::future;
-use linkerd_app_core::{svc::stack::FilterRequest, svc::stack::Switch, Error};
+use linkerd_app_core::{svc::stack::Predicate, svc::stack::Switch, Error};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -18,13 +18,13 @@ impl From<u16> for PreventLoop {
     }
 }
 
-impl<T> FilterRequest<T> for PreventLoop
+impl<T> Predicate<T> for PreventLoop
 where
     for<'t> &'t T: Into<std::net::SocketAddr>,
 {
     type Request = T;
 
-    fn filter(&self, t: T) -> Result<T, Error> {
+    fn check(&mut self, t: T) -> Result<T, Error> {
         let addr = (&t).into();
         tracing::debug!(%addr, self.port);
         if addr.port() == self.port {
