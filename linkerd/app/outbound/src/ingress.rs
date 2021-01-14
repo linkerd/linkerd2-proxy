@@ -73,6 +73,7 @@ where
         .into_inner();
 
     svc::stack(http)
+        .push_on_response(svc::MapErrLayer::new(Into::into))
         .check_new_service::<http::Logical, http::Request<_>>()
         .push_map_target(http::Logical::from)
         .push(profiles::discover::layer(

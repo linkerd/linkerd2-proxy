@@ -18,7 +18,11 @@ use tower::{
     make::MakeService,
 };
 pub use tower::{
-    layer::Layer, service_fn as mk, spawn_ready::SpawnReady, util::Either, Service, ServiceExt,
+    layer::Layer,
+    service_fn as mk,
+    spawn_ready::SpawnReady,
+    util::{Either, MapErrLayer},
+    Service, ServiceExt,
 };
 
 #[derive(Clone, Debug)]
