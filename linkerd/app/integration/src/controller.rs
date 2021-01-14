@@ -392,11 +392,11 @@ where
                 tokio::spawn(cancelable(drain.clone(), f).instrument(span));
             }
         })
-        .instrument(tracing::info_span!("controller", %name, %addr)),
+        .instrument(tracing::info_span!("controller", message = %name, %addr)),
     );
 
     listening_rx.await.expect("listening_rx");
-    println!("{} listening; addr={:?}", name, addr);
+    tracing::info!(%addr, "{} listening", name);
 
     Listening {
         addr,

@@ -350,25 +350,15 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let (tap_addr, identity_addr, inbound_addr, outbound_addr, metrics_addr) =
         running_rx.await.unwrap();
 
-    // printlns will show if the test fails...
-    println!(
-        "proxy running; tap={}, identity={:?}, inbound={}{}, outbound={}{}, metrics={}",
-        tap_addr
-            .as_ref()
-            .map(SocketAddr::to_string)
-            .unwrap_or_default(),
-        identity_addr,
-        inbound_addr,
-        inbound
-            .as_ref()
-            .map(|i| format!(" (SO_ORIGINAL_DST={})", i))
-            .unwrap_or_default(),
-        outbound_addr,
-        outbound
-            .as_ref()
-            .map(|o| format!(" (SO_ORIGINAL_DST={})", o))
-            .unwrap_or_default(),
-        metrics_addr,
+    tracing::info!(
+        tap.addr = ?tap_addr,
+        identity.addr = ?identity_addr,
+        inbound.addr = ?inbound_addr,
+        inbound.orig_dst = ?inbound.as_ref(),
+        outbound.addr = ?outbound_addr,
+        outbound.orig_dst = ?outbound.as_ref(),
+        metrics.addr = ?metrics_addr,
+        "proxy running",
     );
 
     Listening {
