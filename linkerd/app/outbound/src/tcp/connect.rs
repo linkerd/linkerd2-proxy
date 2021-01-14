@@ -68,10 +68,10 @@ struct LoopPrevented {
 
 // === impl PreventLoop ===
 
-impl<P> svc::stack::FilterRequest<Endpoint<P>> for PreventLoop {
+impl<P> svc::stack::Predicate<Endpoint<P>> for PreventLoop {
     type Request = Endpoint<P>;
 
-    fn filter(&self, ep: Endpoint<P>) -> Result<Endpoint<P>, Error> {
+    fn check(&mut self, ep: Endpoint<P>) -> Result<Endpoint<P>, Error> {
         let addr = ep.addr;
 
         tracing::trace!(%addr, self.port, "PreventLoop");

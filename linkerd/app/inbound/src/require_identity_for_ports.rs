@@ -1,6 +1,6 @@
 use crate::endpoint::TcpAccept;
 use indexmap::IndexSet;
-use linkerd_app_core::{svc::stack::FilterRequest, Error};
+use linkerd_app_core::{svc::stack::Predicate, Error};
 use std::sync::Arc;
 
 /// A connection policy that drops
@@ -20,10 +20,10 @@ impl<T: IntoIterator<Item = u16>> From<T> for RequireIdentityForPorts {
     }
 }
 
-impl FilterRequest<TcpAccept> for RequireIdentityForPorts {
+impl Predicate<TcpAccept> for RequireIdentityForPorts {
     type Request = TcpAccept;
 
-    fn filter(&self, meta: TcpAccept) -> Result<TcpAccept, Error> {
+    fn check(&mut self, meta: TcpAccept) -> Result<TcpAccept, Error> {
         let port = meta.target_addr.port();
         let id_required = self.ports.contains(&port);
 

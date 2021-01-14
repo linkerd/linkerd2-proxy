@@ -54,10 +54,10 @@ impl Config {
     }
 }
 
-impl svc::stack::FilterRequest<inbound::Target> for Allow {
+impl svc::stack::Predicate<inbound::Target> for Allow {
     type Request = NameAddr;
 
-    fn filter(&self, target: inbound::Target) -> Result<NameAddr, Error> {
+    fn check(&mut self, target: inbound::Target) -> Result<NameAddr, Error> {
         // Skip discovery when the client does not have an identity.
         if target.tls_client_id.is_some() {
             // Discovery needs to have resolved a service name.

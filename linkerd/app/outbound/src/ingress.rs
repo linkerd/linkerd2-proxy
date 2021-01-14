@@ -147,10 +147,10 @@ struct TargetPerRequest(http::Accept);
 
 // === AllowHttpProfile ===
 
-impl svc::stack::FilterRequest<Target> for AllowHttpProfile {
+impl svc::stack::Predicate<Target> for AllowHttpProfile {
     type Request = Addr;
 
-    fn filter(&self, Target { dst, .. }: Target) -> Result<Addr, Error> {
+    fn check(&mut self, Target { dst, .. }: Target) -> Result<Addr, Error> {
         if self.0.matches(&dst) {
             Ok(dst)
         } else {
