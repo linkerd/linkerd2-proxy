@@ -460,25 +460,37 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
         );
         return None;
     };
+
     let retry_ratio = orig.retry_ratio;
     if !(0.0..=1000.0).contains(&retry_ratio) {
         warn!("retry_budget retry_ratio invalid: {:?}", retry_ratio);
         return None;
     }
+
     let ttl = match orig.ttl {
-        Some(pb_dur) => match pb_dur.try_into() {
-            Ok(dur) => {
-                if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
-                    warn!("retry_budget ttl invalid: {:?}", dur);
-                    return None;
-                }
-                dur
-            }
-            Err(negative) => {
-                warn!("retry_budget ttl negative: {:?}", negative);
+        Some(pb_dur) => {
+            if pb_dur.nanos > 1_000_000_000 {
+                warn!("retry_budget nanos must not exceed 1s");
                 return None;
             }
-        },
+            if pb_dur.seconds < 0 || pb_dur.nanos < 0 {
+                warn!("retry_budget ttl negative");
+                return None;
+            }
+            match pb_dur.try_into() {
+                Ok(dur) => {
+                    if dur > Duration::from_secs(60) || dur < Duration::from_secs(1) {
+                        warn!("retry_budget ttl invalid: {:?}", dur);
+                        return None;
+                    }
+                    dur
+                }
+                Err(negative) => {
+                    warn!("retry_budget ttl negative: {:?}", negative);
+                    return None;
+                }
+            }
+        }
         None => {
             warn!("retry_budget ttl missing");
             return None;
@@ -508,8 +520,8 @@ mod tests {
                     nanos,
                 }),
             };
+            // Ensure we don't panic.
             convert_retry_budget(proto);
-            // simply not panicking is good enough
             true
         }
     }
