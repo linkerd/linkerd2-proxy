@@ -7,7 +7,7 @@ use crate::{
 };
 use linkerd_drain as drain;
 use linkerd_error::Error;
-use linkerd_io::{self as io, PeerAddr, PrefixedIo};
+use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, NewService};
 use std::{
     future::Future,
@@ -89,7 +89,7 @@ where
 
 // === impl ServeHttp ===
 
-impl<I, S> Service<PrefixedIo<I>> for ServeHttp<S>
+impl<I, S> Service<I> for ServeHttp<S>
 where
     I: io::AsyncRead + io::AsyncWrite + PeerAddr + Send + Unpin + 'static,
     S: Service<http::Request<UpgradeBody>, Response = http::Response<http::BoxBody>, Error = Error>
@@ -107,7 +107,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, io: PrefixedIo<I>) -> Self::Future {
+    fn call(&mut self, io: I) -> Self::Future {
         let Self {
             version,
             inner,
