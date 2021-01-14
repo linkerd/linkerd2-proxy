@@ -469,6 +469,10 @@ fn convert_retry_budget(orig: api::RetryBudget) -> Option<Arc<Budget>> {
 
     let ttl = match orig.ttl {
         Some(pb_dur) => {
+            if pb_dur.nanos > 1_000_000_000 {
+                warn!("retry_budget nanos must not exceed 1s");
+                return None;
+            }
             if pb_dur.seconds < 0 || pb_dur.nanos < 0 {
                 warn!("retry_budget ttl negative");
                 return None;
@@ -507,21 +511,18 @@ mod tests {
             retry_ratio: f32,
             seconds: i64,
             nanos: i32
-        ) -> TestResult {
-            // if seconds < 0 || nanos < 0 || nanos > 1_000_000_000 {
-            //     return TestResult::discard();
-            // }
+        ) -> bool {
             let proto = api::RetryBudget {
                 min_retries_per_second,
                 retry_ratio,
                 ttl: Some(prost_types::Duration {
                     seconds,
-                    nanos: 0,
+                    nanos,
                 }),
             };
             // Ensure we don't panic.
             convert_retry_budget(proto);
-            TestResult::passed()
+            true
         }
     }
 }
