@@ -18,14 +18,14 @@ indexmap = "1.0"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git"  }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18"  }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 async-stream = "0.3"
-tonic = { version = "0.3", default-features = false }
+tonic = { version = "0.4", default-features = false }
 tracing = "0.1.22"
 tracing-futures = "0.2"
 pin-project = "1"
@@ -42,6 +42,6 @@ features = [
 ]
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "ver/tonic-git", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18", features = ["arbitrary"] }
 prost-types = "0.7.0"
 quickcheck = { version = "1", default-features = false }

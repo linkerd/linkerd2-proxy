@@ -1479,8 +1479,8 @@ dependencies = [
 
 [[package]]
 name = "linkerd2-proxy-api"
-version = "0.1.17"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=ver/tonic-git#473a4d365977c4d2b7e7932a06339d5bc327a1b9"
+version = "0.1.18"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.18#4c424593d934a22635c06706a3c399d0875a49a1"
 dependencies = [
  "h2",
  "http",
@@ -2341,8 +2341,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.3.1"
-source = "git+https://github.com/hyperium/tonic#fdda5ae26ace4706cb8faf56ccd35513b5de26c5"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ba8f479158947373b6df40cf48f4779bb25c99ca3c661bd95e0ab1963ad8b0e"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2364,8 +2365,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.3.1"
-source = "git+https://github.com/hyperium/tonic#fdda5ae26ace4706cb8faf56ccd35513b5de26c5"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1e8546fd40d56d28089835c0a81bb396848103b00f888aea42d46eb5974df07"
 dependencies = [
  "proc-macro2",
  "prost-build",
