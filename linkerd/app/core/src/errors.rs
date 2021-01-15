@@ -265,12 +265,15 @@ fn set_grpc_status(
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
         code
-    } else if error.is::<FailFastError>() {
+    } else if let Some(e) = error.downcast_ref::<FailFastError>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(
             GRPC_MESSAGE,
-            HeaderValue::from_static("proxy max-concurrency exhausted"),
+            HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
+                warn!(%error, "Failed to encode fail-fast error message");
+                HeaderValue::from_static("Service in fail-fast")
+            }),
         );
         code
     } else if error.is::<tower::timeout::error::Elapsed>() {
