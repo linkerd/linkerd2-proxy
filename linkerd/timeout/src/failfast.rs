@@ -11,7 +11,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time::{self, Duration, Instant, Sleep};
-use tracing::{debug, trace};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
 pub struct FailFast<S> {
@@ -102,6 +102,7 @@ where
                         self.wait
                             .as_mut()
                             .reset(Instant::now() + self.max_unavailable);
+                        debug!("{} service has become unavailable", self.scope);
                         State::Waiting
                     }
 
@@ -112,12 +113,16 @@ where
                             trace!("Pending");
                             return Poll::Pending;
                         }
+                        warn!(
+                            "{} entering failfast after {:?}",
+                            self.scope, self.max_unavailable
+                        );
                         State::FailFast
                     }
 
                     // Admit requests and fail them immediately.
                     State::FailFast => {
-                        debug!("Failing");
+                        debug!("{} in failfast", self.scope);
                         return Poll::Ready(Ok(()));
                     }
                 };
@@ -128,8 +133,8 @@ where
             ret => {
                 match self.state {
                     State::Open => {}
-                    State::Waiting => trace!("Ready"),
-                    State::FailFast => debug!("Recovered"),
+                    State::Waiting => trace!("{} has become ready", self.scope),
+                    State::FailFast => info!("{} service has recovered", self.scope),
                 }
                 self.state = State::Open;
                 ret.map_err(Into::into)
