@@ -62,7 +62,6 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/hawkw/tokio-trace",
-    "https://github.com/hyperium/tonic",
 ]
 
 [sources.allow-org]
