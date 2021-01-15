@@ -13,6 +13,7 @@ pub struct EndpointFromMetadata;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept<P> {
     pub orig_dst: SocketAddr,
+    pub local_addr: SocketAddr,
     pub protocol: P,
 }
 
@@ -43,14 +44,28 @@ impl From<listen::Addrs> for Accept<()> {
     fn from(addrs: listen::Addrs) -> Self {
         Self {
             orig_dst: addrs.target_addr(),
+            local_addr: addrs.local(),
             protocol: (),
         }
     }
 }
 
 impl<P> From<(P, Accept<()>)> for Accept<P> {
-    fn from((protocol, Accept { orig_dst, .. }): (P, Accept<()>)) -> Self {
-        Self { orig_dst, protocol }
+    fn from(
+        (
+            protocol,
+            Accept {
+                orig_dst,
+                local_addr,
+                ..
+            },
+        ): (P, Accept<()>),
+    ) -> Self {
+        Self {
+            orig_dst,
+            protocol,
+            local_addr,
+        }
     }
 }
 
@@ -70,7 +85,7 @@ impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
         const NO_TLS: tls::Conditional<identity::Name> =
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS)
+        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.local_addr)
     }
 }
 
@@ -78,7 +93,12 @@ impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
 
 impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
     fn from(
-        (profile, Accept { orig_dst, protocol }): (Option<profiles::Receiver>, Accept<P>),
+        (
+            profile,
+            Accept {
+                orig_dst, protocol, ..
+            },
+        ): (Option<profiles::Receiver>, Accept<P>),
     ) -> Self {
         Self {
             profile,

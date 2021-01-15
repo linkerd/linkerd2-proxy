@@ -15,6 +15,7 @@ use tracing::debug;
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
     pub peer_addr: SocketAddr,
+    pub local_addr: SocketAddr,
     pub peer_id: tls::PeerIdentity,
 }
 
@@ -58,6 +59,7 @@ impl From<listen::Addrs> for TcpAccept {
         Self {
             target_addr: tcp.target_addr(),
             peer_addr: tcp.peer(),
+            local_addr: tcp.local(),
             peer_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
         }
     }
@@ -68,6 +70,7 @@ impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
         Self {
             target_addr: addrs.target_addr(),
             peer_addr: addrs.peer(),
+            local_addr: addrs.local(),
             peer_id,
         }
     }
@@ -81,7 +84,11 @@ impl Into<SocketAddr> for &'_ TcpAccept {
 
 impl Into<transport::labels::Key> for &'_ TcpAccept {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::accept(transport::labels::Direction::In, self.peer_id.clone())
+        transport::labels::Key::accept(
+            transport::labels::Direction::In,
+            self.peer_id.clone(),
+            self.local_addr,
+        )
     }
 }
 

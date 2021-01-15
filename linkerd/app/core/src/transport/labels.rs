@@ -2,7 +2,7 @@ pub use crate::metrics::{Direction, EndpointLabels, TlsId};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
-use std::fmt;
+use std::{fmt, net::SocketAddr};
 
 /// Describes a class of transport.
 ///
@@ -11,7 +11,11 @@ use std::fmt;
 /// Implements `FmtLabels`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Key {
-    Accept(Direction, TlsStatus),
+    Accept {
+        direction: Direction,
+        identity: TlsStatus,
+        local_addr: SocketAddr,
+    },
     Connect(EndpointLabels),
 }
 
@@ -21,16 +25,24 @@ pub struct TlsStatus(tls::Conditional<TlsId>);
 // === impl Key ===
 
 impl Key {
-    pub fn accept(direction: Direction, id: tls::PeerIdentity) -> Self {
-        Self::Accept(direction, TlsStatus::client(id))
+    pub fn accept(direction: Direction, id: tls::PeerIdentity, local_addr: SocketAddr) -> Self {
+        Self::Accept {
+            direction,
+            identity: TlsStatus::client(id),
+            local_addr,
+        }
     }
 }
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Accept(direction, identity) => {
-                write!(f, "peer=\"src\",")?;
+            Self::Accept {
+                direction,
+                identity,
+                local_addr,
+            } => {
+                write!(f, "peer=\"src\",local_port=\"{}\",", local_addr.port())?;
                 (direction, identity).fmt_labels(f)
             }
             Self::Connect(labels) => {
