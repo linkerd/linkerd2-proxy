@@ -122,7 +122,7 @@ where
 
                     // Admit requests and fail them immediately.
                     State::FailFast => {
-                        trace!("{} in failfast", self.scope);
+                        debug!("{} in failfast", self.scope);
                         return Poll::Ready(Ok(()));
                     }
                 };
