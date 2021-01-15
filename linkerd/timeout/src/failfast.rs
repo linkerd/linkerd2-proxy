@@ -11,7 +11,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time::{self, Duration, Instant, Sleep};
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 #[derive(Debug)]
 pub struct FailFast<S> {
@@ -134,7 +134,7 @@ where
                 match self.state {
                     State::Open => {}
                     State::Waiting => trace!("{} has become ready", self.scope),
-                    State::FailFast => debug!("{} service has recovered", self.scope),
+                    State::FailFast => info!("{} service has recovered", self.scope),
                 }
                 self.state = State::Open;
                 ret.map_err(Into::into)
