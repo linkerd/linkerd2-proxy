@@ -64,7 +64,7 @@ impl AcceptPermittedClients {
     }
 }
 
-impl<T> Service<Connection<T, TcpStream>> for AcceptPermittedClients {
+impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClients {
     type Response = ServeFuture;
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
@@ -73,7 +73,7 @@ impl<T> Service<Connection<T, TcpStream>> for AcceptPermittedClients {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, ((peer_id, _), io): Connection<T, TcpStream>) -> Self::Future {
+    fn call(&mut self, ((peer_id, _), io): Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
         future::ok(match peer_id {
             Conditional::Some(ref peer) => {
                 if self.permitted_client_ids.contains(peer) {

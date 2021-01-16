@@ -105,7 +105,7 @@ fn run_test<C, CF, CR, S, SF, SR>(
 ) -> (Transported<CR>, Transported<SR>)
 where
     // Client
-    C: FnOnce(tls::client::Io<TcpStream>) -> CF + Clone + Send + 'static,
+    C: FnOnce(tls::client::Io<io::ScopedIo<TcpStream>>) -> CF + Clone + Send + 'static,
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server

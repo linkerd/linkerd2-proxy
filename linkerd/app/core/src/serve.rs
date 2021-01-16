@@ -1,3 +1,4 @@
+use crate::io;
 use crate::svc;
 use futures::prelude::*;
 use linkerd_error::Error;
@@ -18,7 +19,7 @@ pub async fn serve<M, A, I>(
 where
     I: Send + 'static,
     M: svc::NewService<Addrs, Service = A>,
-    A: tower::Service<I, Response = ()> + Send + 'static,
+    A: tower::Service<io::ScopedIo<I>, Response = ()> + Send + 'static,
     A::Error: Into<Error>,
     A::Future: Send + 'static,
 {
@@ -45,7 +46,11 @@ where
                         async move {
                             match accept.ready_oneshot().err_into::<Error>().await {
                                 Ok(mut accept) => {
-                                    match accept.call(io).err_into::<Error>().await {
+                                    match accept
+                                        .call(io::ScopedIo::server(io))
+                                        .err_into::<Error>()
+                                        .await
+                                    {
                                         Ok(()) => debug!("Connection closed"),
                                         Err(error) => info!(%error, "Connection closed"),
                                     }

@@ -106,7 +106,7 @@ pub fn accept_stack<P, C, T, TSvc, H, HSvc, I>(
     drain: drain::Watch,
 ) -> impl svc::NewService<
     tcp::Accept,
-    Service = impl svc::Service<SensorIo<I>, Response = (), Error = Error, Future = impl Send>,
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
 > + Clone
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
@@ -115,14 +115,14 @@ where
     C::Error: Into<Error>,
     C::Future: Send,
     T: svc::NewService<tcp::Concrete, Service = TSvc> + Clone + Send + 'static,
-    TSvc: svc::Service<io::PrefixedIo<SensorIo<I>>, Response = ()>
-        + svc::Service<SensorIo<I>, Response = ()>
+    TSvc: svc::Service<io::PrefixedIo<I>, Response = ()>
+        + svc::Service<I, Response = ()>
         + Send
         + 'static,
-    <TSvc as svc::Service<SensorIo<I>>>::Error: Into<Error>,
-    <TSvc as svc::Service<SensorIo<I>>>::Future: Send,
-    <TSvc as svc::Service<io::PrefixedIo<SensorIo<I>>>>::Error: Into<Error>,
-    <TSvc as svc::Service<io::PrefixedIo<SensorIo<I>>>>::Future: Send,
+    <TSvc as svc::Service<I>>::Error: Into<Error>,
+    <TSvc as svc::Service<I>>::Future: Send,
+    <TSvc as svc::Service<io::PrefixedIo<I>>>::Error: Into<Error>,
+    <TSvc as svc::Service<io::PrefixedIo<I>>>::Future: Send,
     H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
         + Send
