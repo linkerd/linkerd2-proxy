@@ -89,12 +89,13 @@ impl Config {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        I: tls::accept::Detectable
+        I: io::Peek
             + io::AsyncRead
             + io::AsyncWrite
             + io::PeerAddr
             + Debug
             + Send
+            + Sync
             + Unpin
             + 'static,
         C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
