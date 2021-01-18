@@ -1,27 +1,34 @@
-use futures::{future, prelude::*, ready};
+use futures::{future, prelude::*};
 use linkerd_error::Error;
-use std::task::{Context, Poll};
+use std::{
+    fmt,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
-#[derive(Copy, Clone, Debug)]
-pub struct ResultService<S, E>(Inner<S, E>);
+#[derive(Clone, Debug)]
+pub struct ResultService<S>(Inner<S>);
 
-#[derive(Copy, Clone, Debug)]
-enum Inner<S, E> {
+#[derive(Clone, Debug)]
+struct SharedError(Arc<Error>);
+
+#[derive(Clone, Debug)]
+enum Inner<S> {
     Ok(S),
-    Err(Option<E>),
+    Err(SharedError),
 }
 
-impl<S, E> ResultService<S, E> {
+impl<S> ResultService<S> {
     pub fn ok(svc: S) -> Self {
         ResultService(Inner::Ok(svc))
     }
 
-    pub fn err(err: E) -> Self {
-        ResultService(Inner::Err(Some(err)))
+    pub fn err<E: Into<Error>>(err: E) -> Self {
+        ResultService(Inner::Err(SharedError(Arc::new(err.into()))))
     }
 }
 
-impl<S, E> From<Result<S, E>> for ResultService<S, E> {
+impl<S, E: Into<Error>> From<Result<S, E>> for ResultService<S> {
     fn from(res: Result<S, E>) -> Self {
         match res {
             Ok(s) => Self::ok(s),
@@ -30,22 +37,20 @@ impl<S, E> From<Result<S, E>> for ResultService<S, E> {
     }
 }
 
-impl<T, S, E> tower::Service<T> for ResultService<S, E>
+impl<T, S> tower::Service<T> for ResultService<S>
 where
     S: tower::Service<T>,
     S::Error: Into<Error>,
-    E: Into<Error>,
 {
     type Response = S::Response;
     type Error = Error;
     type Future = future::ErrInto<S::Future, Error>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let res = match self.0 {
-            Inner::Ok(ref mut svc) => ready!(svc.poll_ready(cx)).map_err(Into::into),
-            Inner::Err(ref mut err) => Err(err.take().expect("polled after failure").into()),
-        };
-        Poll::Ready(res)
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        match self.0 {
+            Inner::Ok(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
+            Inner::Err(ref err) => Poll::Ready(Err(err.clone().into())),
+        }
     }
 
     fn call(&mut self, t: T) -> Self::Future {
@@ -53,5 +58,17 @@ where
             Inner::Ok(ref mut svc) => svc.call(t).err_into::<Error>(),
             Inner::Err(_) => panic!("poll_ready not called"),
         }
+    }
+}
+
+impl fmt::Display for SharedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::error::Error for SharedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&**self.0)
     }
 }
