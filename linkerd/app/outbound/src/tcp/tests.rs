@@ -20,7 +20,6 @@ use std::{
     },
     time::Duration,
 };
-use tls::HasPeerIdentity;
 use tower::ServiceExt;
 use tracing_futures::Instrument;
 
@@ -50,7 +49,7 @@ async fn plaintext_tcp() {
     srv_io.read(b"hello").write(b"world");
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn(target_addr, move |endpoint: Endpoint| {
-        assert!(endpoint.peer_identity().is_none());
+        assert!(endpoint.identity.is_none());
         Ok(srv_io.build())
     });
 
@@ -101,9 +100,8 @@ async fn tls_when_hinted() {
     };
 
     let cfg = default_config(plain_addr);
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is valid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is valid");
     let mut srv_io = support::io();
     srv_io.write(b"hello").read(b"world");
     let id_name2 = id_name.clone();
@@ -113,15 +111,12 @@ async fn tls_when_hinted() {
     let connect = support::connect()
         // The plaintext endpoint should use plaintext...
         .endpoint_fn(plain_addr, move |endpoint: Endpoint| {
-            assert!(endpoint.peer_identity().is_none());
+            assert!(endpoint.identity.is_none());
             let io = tls_srv_io.build();
             Ok(io)
         })
         .endpoint_fn(tls_addr, move |endpoint: Endpoint| {
-            assert_eq!(
-                endpoint.peer_identity(),
-                tls::Conditional::Some(id_name2.clone())
-            );
+            assert_eq!(endpoint.identity, tls::Conditional::Some(id_name2.clone()));
             let io = srv_io.build();
             Ok(io)
         });
@@ -172,15 +167,14 @@ async fn resolutions_are_reused() {
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let cfg = default_config(addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is valid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint(
         addr,
         Connection {
-            identity: tls::Conditional::Some(id_name.clone()),
+            server_id: tls::Conditional::Some(id_name.clone()),
             ..Connection::default()
         },
     );
@@ -259,9 +253,8 @@ async fn load_balances() {
 
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is valid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO
     let mut connect = support::connect();
@@ -269,7 +262,7 @@ async fn load_balances() {
         connect = connect.endpoint(
             addr,
             Connection {
-                identity: tls::Conditional::Some(id_name.clone()),
+                server_id: tls::Conditional::Some(id_name.clone()),
                 count: conns.clone(),
                 ..Connection::default()
             },
@@ -356,16 +349,15 @@ async fn load_balancer_add_endpoints() {
 
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is valid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is valid");
 
     let mut connect = support::connect();
     for &(addr, ref conns) in endpoints {
         connect = connect.endpoint(
             addr,
             Connection {
-                identity: tls::Conditional::Some(id_name.clone()),
+                server_id: tls::Conditional::Some(id_name.clone()),
                 count: conns.clone(),
                 ..Connection::default()
             },
@@ -471,16 +463,15 @@ async fn load_balancer_remove_endpoints() {
 
     let cfg = default_config(svc_addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is valid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is valid");
 
     let mut connect = support::connect();
     for &(addr, ref enabled) in endpoints {
         connect = connect.endpoint(
             addr,
             Connection {
-                identity: tls::Conditional::Some(id_name.clone()),
+                server_id: tls::Conditional::Some(id_name.clone()),
                 enabled: enabled.clone(),
                 ..Default::default()
             },
@@ -567,18 +558,14 @@ async fn no_profiles_when_outside_search_nets() {
         ..default_config(profile_addr)
     };
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is invalid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
     let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect()
         .endpoint_fn(profile_addr, move |endpoint: Endpoint| {
-            assert_eq!(
-                endpoint.peer_identity(),
-                tls::Conditional::Some(id_name2.clone())
-            );
+            assert_eq!(endpoint.identity, tls::Conditional::Some(id_name2.clone()));
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")
@@ -587,7 +574,7 @@ async fn no_profiles_when_outside_search_nets() {
             Ok(io)
         })
         .endpoint_fn(no_profile_addr, move |endpoint: Endpoint| {
-            assert!(endpoint.peer_identity().is_none());
+            assert!(endpoint.identity.is_none());
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")
@@ -648,9 +635,8 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let cfg = default_config(ep);
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is invalid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
@@ -663,7 +649,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     let connect = support::connect().endpoint(
         ep,
         Connection {
-            identity: tls::Conditional::Some(id_name.clone()),
+            server_id: tls::Conditional::Some(id_name.clone()),
             ..Connection::default()
         },
     );
@@ -702,9 +688,8 @@ async fn profile_endpoint_propagates_conn_errors() {
     let ep2 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
 
     let cfg = default_config(ep1);
-    let id_name =
-        linkerd_identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-            .expect("hostname is invalid");
+    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
@@ -724,7 +709,7 @@ async fn profile_endpoint_propagates_conn_errors() {
         .endpoint(
             ep2,
             Connection {
-                identity: tls::Conditional::Some(id_name.clone()),
+                server_id: tls::Conditional::Some(id_name.clone()),
                 ..Connection::default()
             },
         );
@@ -771,7 +756,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 }
 
 struct Connection {
-    identity: tls::Conditional<linkerd_identity::Name>,
+    server_id: tls::Conditional<tls::ServerId>,
     count: Arc<AtomicUsize>,
     enabled: Arc<AtomicBool>,
 }
@@ -779,7 +764,7 @@ struct Connection {
 impl Default for Connection {
     fn default() -> Self {
         Self {
-            identity: tls::Conditional::None(
+            server_id: tls::Conditional::None(
                 tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
             ),
             count: Arc::new(AtomicUsize::new(0)),
@@ -797,7 +782,7 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
             );
             let num = self.count.fetch_add(1, Ordering::Release) + 1;
             tracing::info!(?endpoint, num, "connecting");
-            assert_eq!(endpoint.peer_identity(), self.identity);
+            assert_eq!(endpoint.identity, self.server_id);
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")

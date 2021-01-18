@@ -1,7 +1,7 @@
-use crate::{Crt, CrtKey, Csr, Key, Name, TokenSource, TrustAnchors};
 use http_body::Body as HttpBody;
 use linkerd2_proxy_api::identity as api;
 use linkerd_error::Error;
+use linkerd_identity as id;
 use linkerd_metrics::Counter;
 use linkerd_tls as tls;
 use pin_project::pin_project;
@@ -20,11 +20,11 @@ use tracing::{debug, error, trace};
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub trust_anchors: TrustAnchors,
-    pub key: Key,
-    pub csr: Csr,
-    pub token: TokenSource,
-    pub local_name: Name,
+    pub trust_anchors: id::TrustAnchors,
+    pub key: id::Key,
+    pub csr: id::Csr,
+    pub token: id::TokenSource,
+    pub local_id: id::LocalId,
     pub min_refresh: Duration,
     pub max_refresh: Duration,
 }
@@ -35,9 +35,9 @@ pub struct Config {
 #[pin_project]
 #[derive(Clone, Debug)]
 pub struct Local {
-    trust_anchors: TrustAnchors,
-    name: Name,
-    crt_key: watch::Receiver<Option<CrtKey>>,
+    trust_anchors: id::TrustAnchors,
+    id: id::LocalId,
+    crt_key: watch::Receiver<Option<id::CrtKey>>,
     refreshes: Arc<Counter>,
 }
 
@@ -48,7 +48,7 @@ pub struct AwaitCrt(Option<Local>);
 #[derive(Copy, Clone, Debug)]
 pub struct LostDaemon;
 
-pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
+pub type CrtKeySender = watch::Sender<Option<id::CrtKey>>;
 
 #[derive(Debug)]
 pub struct Daemon {
@@ -91,10 +91,11 @@ impl Daemon {
         <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     {
         let Self {
-            config,
             crt_key_watch,
             refreshes,
+            config,
         } = self;
+
         let mut curr_expiry = UNIX_EPOCH;
         let mut client = api::identity_client::IdentityClient::new(client);
 
@@ -103,7 +104,7 @@ impl Daemon {
                 Ok(token) => {
                     let req = grpc::Request::new(api::CertifyRequest {
                         token,
-                        identity: config.local_name.as_ref().to_owned(),
+                        identity: config.local_id.to_string(),
                         certificate_signing_request: config.csr.to_vec(),
                     });
                     trace!("daemon certifying");
@@ -122,8 +123,8 @@ impl Daemon {
                                 ),
                                 Some(expiry) => {
                                     let key = config.key.clone();
-                                    let crt = Crt::new(
-                                        config.local_name.clone(),
+                                    let crt = id::Crt::new(
+                                        config.local_id.clone(),
                                         leaf_certificate,
                                         intermediate_certificates,
                                         expiry,
@@ -164,7 +165,7 @@ impl Local {
         let (s, w) = watch::channel(None);
         let refreshes = Arc::new(Counter::new());
         let l = Local {
-            name: config.local_name.clone(),
+            id: config.local_id.clone(),
             trust_anchors: config.trust_anchors.clone(),
             crt_key: w,
             refreshes: refreshes.clone(),
@@ -175,10 +176,6 @@ impl Local {
             crt_key_watch: s,
         };
         (l, daemon)
-    }
-
-    pub fn name(&self) -> &Name {
-        &self.name
     }
 
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
@@ -194,26 +191,32 @@ impl Local {
     pub fn metrics(&self) -> crate::metrics::Report {
         crate::metrics::Report::new(self.crt_key.clone(), self.refreshes.clone())
     }
+
+    pub fn name(&self) -> &id::Name {
+        self.id.as_ref()
+    }
 }
 
-impl tls::client::HasConfig for Local {
-    fn tls_client_config(&self) -> Arc<tls::client::Config> {
+impl Into<tls::client::Config> for &'_ Local {
+    fn into(self) -> tls::client::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
-            return c.tls_client_config();
+            return c.into();
         }
 
-        self.trust_anchors.tls_client_config()
+        (&self.trust_anchors).into()
     }
 }
 
-impl tls::accept::HasConfig for Local {
-    fn tls_server_name(&self) -> Name {
-        self.name.clone()
+impl Into<id::LocalId> for &'_ Local {
+    fn into(self) -> id::LocalId {
+        id::LocalId(self.name().clone())
     }
+}
 
-    fn tls_server_config(&self) -> Arc<tls::accept::Config> {
+impl Into<tls::accept::Config> for &'_ Local {
+    fn into(self) -> tls::accept::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
-            return c.tls_server_config();
+            return c.into();
         }
 
         tls::accept::empty_config()

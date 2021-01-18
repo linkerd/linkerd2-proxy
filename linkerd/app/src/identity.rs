@@ -1,6 +1,7 @@
-pub use linkerd_app_core::proxy::identity::{
-    certify, metrics, Crt, CrtKey, Csr, InvalidName, Key, Local, Name, TokenSource, TrustAnchors,
+pub use linkerd_app_core::identity::{
+    Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors,
 };
+pub use linkerd_app_core::proxy::identity::{certify, metrics, Local};
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},

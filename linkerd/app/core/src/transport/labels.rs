@@ -1,5 +1,6 @@
 pub use crate::metrics::{Direction, EndpointLabels, TlsId};
 use linkerd_conditional::Conditional;
+use linkerd_identity as id;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
 use std::fmt;
@@ -21,8 +22,8 @@ pub struct TlsStatus(tls::Conditional<TlsId>);
 // === impl Key ===
 
 impl Key {
-    pub fn accept(direction: Direction, id: tls::PeerIdentity) -> Self {
-        Self::Accept(direction, TlsStatus::client(id))
+    pub fn accept(direction: Direction, id: tls::Conditional<tls::ClientId>) -> Self {
+        Self::Accept(direction, id.into())
     }
 }
 
@@ -44,11 +45,17 @@ impl FmtLabels for Key {
 // === impl TlsStatus ===
 
 impl TlsStatus {
-    pub fn client(id: tls::PeerIdentity) -> Self {
+    pub const LOOPBACK: Self = Self(Conditional::None(tls::ReasonForNoPeerName::Loopback));
+}
+
+impl From<tls::Conditional<tls::ClientId>> for TlsStatus {
+    fn from(id: tls::Conditional<tls::ClientId>) -> Self {
         Self(id.map(TlsId::ClientId))
     }
+}
 
-    pub fn server(id: tls::PeerIdentity) -> Self {
+impl From<tls::Conditional<tls::ServerId>> for TlsStatus {
+    fn from(id: tls::Conditional<tls::ServerId>) -> Self {
         Self(id.map(TlsId::ServerId))
     }
 }
@@ -59,11 +66,11 @@ impl From<tls::Conditional<TlsId>> for TlsStatus {
     }
 }
 
-impl Into<tls::PeerIdentity> for TlsStatus {
-    fn into(self) -> tls::PeerIdentity {
+impl Into<tls::Conditional<id::Name>> for TlsStatus {
+    fn into(self) -> tls::Conditional<id::Name> {
         self.0.map(|id| match id {
-            TlsId::ClientId(id) => id,
-            TlsId::ServerId(id) => id,
+            TlsId::ClientId(tls::ClientId(id)) => id,
+            TlsId::ServerId(tls::ServerId(id)) => id,
         })
     }
 }

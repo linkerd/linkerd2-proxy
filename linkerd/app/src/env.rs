@@ -608,7 +608,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let tap = tap?
         .map(|(addr, ids)| super::tap::Config::Enabled {
-            permitted_peer_identities: ids,
+            permitted_client_ids: ids,
             config: ServerConfig {
                 bind: BindTcp::new(addr, inbound.proxy.server.bind.keepalive()),
                 h2_settings,
@@ -712,7 +712,7 @@ impl Env {
 fn parse_tap_config(
     strings: &dyn Strings,
     id_disabled: bool,
-) -> Result<Option<(SocketAddr, IndexSet<identity::Name>)>, EnvError> {
+) -> Result<Option<(SocketAddr, IndexSet<tls::accept::ClientId>)>, EnvError> {
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
     if id_disabled {
         if tap_identity.is_some() {
@@ -725,7 +725,10 @@ fn parse_tap_config(
         let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
             .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
         if let Some(id) = tap_identity {
-            return Ok(Some((addr, vec![id].into_iter().collect())));
+            return Ok(Some((
+                addr,
+                vec![id].into_iter().map(tls::ClientId).collect(),
+            )));
         }
     };
     Ok(None)
@@ -915,7 +918,7 @@ pub fn parse_control_addr<S: Strings>(
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
-            identity: tls::Conditional::Some(name),
+            identity: tls::Conditional::Some(tls::ServerId(name)),
         })),
         (Some(_), None) => {
             error!("{} must be specified when {} is set", n_env, a_env);
@@ -1030,7 +1033,7 @@ pub fn parse_identity_config<S: Strings>(
             Ok(Some((
                 control,
                 identity::certify::Config {
-                    local_name,
+                    local_id: tls::LocalId(local_name),
                     token,
                     trust_anchors,
                     csr: csr?,

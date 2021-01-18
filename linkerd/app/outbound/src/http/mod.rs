@@ -9,11 +9,11 @@ use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    dst, profiles,
+    dst, identity as id, profiles,
     proxy::{
         api_resolve::ProtocolHint,
         http::{self, CanOverrideAuthority, ClientHandle},
-        identity, tap,
+        tap,
     },
     tls, Conditional,
 };
@@ -79,7 +79,7 @@ impl tap::Inspect for Endpoint {
     fn src_tls<'a, B>(
         &self,
         _: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
+    ) -> Conditional<&'a id::Name, tls::ReasonForNoPeerName> {
         Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 
@@ -91,11 +91,8 @@ impl tap::Inspect for Endpoint {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(
-        &self,
-        _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
-        self.identity.as_ref()
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&id::Name, tls::ReasonForNoPeerName> {
+        self.identity.as_ref().map(|i| i.as_ref())
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {

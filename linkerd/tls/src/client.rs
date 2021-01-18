@@ -1,24 +1,28 @@
-use super::Conditional;
+use crate::ReasonForNoPeerName;
 use futures::{
     future::{Either, MapOk},
     prelude::*,
 };
-use linkerd_identity as identity;
+use linkerd_conditional::Conditional;
+use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::layer;
-pub use rustls::ClientConfig as Config;
 use std::{
+    fmt,
     future::Future,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
 };
 use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
 
-pub trait HasConfig {
-    fn tls_client_config(&self) -> Arc<Config>;
-}
+/// A marker type for target server identities.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ServerId(pub id::Name);
+
+pub type Config = Arc<rustls::ClientConfig>;
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
@@ -45,8 +49,9 @@ impl<L: Clone, C> Client<L, C> {
 
 impl<L, C, T> tower::Service<T> for Client<L, C>
 where
-    T: super::HasPeerIdentity,
-    L: HasConfig + Clone,
+    L: Clone,
+    for<'l> &'l L: Into<Config>,
+    for<'t> &'t T: Into<Conditional<ServerId, ReasonForNoPeerName>>,
     C: tower::Service<T, Error = io::Error>,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
@@ -62,38 +67,59 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let tls = match self.local.as_ref() {
-            Some(l) => tokio_rustls::TlsConnector::from(l.tls_client_config()),
+            Some(l) => tokio_rustls::TlsConnector::from(l.into()),
             None => {
                 trace!("Local identity disabled");
                 return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };
-        let peer_identity = match target.peer_identity() {
-            Conditional::Some(id) => id,
+        let server_id = match (&target).into() {
+            Conditional::Some(ServerId(id)) => id,
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
                 return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };
 
-        debug!(peer.identity = ?peer_identity, "Initiating TLS connection");
+        debug!(target.id = ?server_id, "Initiating TLS connection");
         let connect = self.inner.call(target);
         Either::Right(Box::pin(async move {
             let io = connect.await?;
-            let io = tls.connect(peer_identity.as_dns_name_ref(), io).await?;
+            let io = tls.connect((&server_id).into(), io).await?;
             Ok(io::EitherIo::Right(io))
         }))
     }
 }
 
-impl HasConfig for identity::CrtKey {
-    fn tls_client_config(&self) -> Arc<Config> {
-        identity::CrtKey::tls_client_config(self)
+// === impl ServerId ===
+
+impl From<id::Name> for ServerId {
+    fn from(n: id::Name) -> Self {
+        Self(n)
     }
 }
 
-impl HasConfig for identity::TrustAnchors {
-    fn tls_client_config(&self) -> Arc<Config> {
-        identity::TrustAnchors::tls_client_config(self)
+impl Into<id::Name> for ServerId {
+    fn into(self) -> id::Name {
+        self.0
+    }
+}
+
+impl AsRef<id::Name> for ServerId {
+    fn as_ref(&self) -> &id::Name {
+        &self.0
+    }
+}
+
+impl FromStr for ServerId {
+    type Err = id::InvalidName;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        id::Name::from_str(s).map(ServerId)
+    }
+}
+
+impl fmt::Display for ServerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }

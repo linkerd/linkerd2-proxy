@@ -1,6 +1,6 @@
 use linkerd_app_core::{
     metrics, profiles,
-    proxy::{api_resolve::Metadata, identity, resolve::map_endpoint::MapEndpoint},
+    proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
     tls,
     transport::{self, listen},
     Addr, Conditional,
@@ -32,7 +32,7 @@ pub struct Concrete<P> {
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
     pub addr: SocketAddr,
-    pub identity: tls::PeerIdentity,
+    pub identity: tls::Conditional<tls::client::ServerId>,
     pub metadata: Metadata,
     pub concrete: Concrete<P>,
 }
@@ -68,7 +68,7 @@ impl<P> Into<Addr> for &'_ Accept<P> {
 
 impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
-        const NO_TLS: tls::Conditional<identity::Name> =
+        const NO_TLS: tls::Conditional<tls::ClientId> =
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
         transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS)
     }
@@ -193,7 +193,7 @@ impl<P> Endpoint<P> {
             None => Self {
                 addr: (&logical).into(),
                 metadata: Metadata::default(),
-                identity: tls::PeerIdentity::None(reason),
+                identity: tls::Conditional::None(reason),
                 concrete: Concrete {
                     logical,
                     resolve: None,
@@ -234,8 +234,8 @@ impl<P> Into<SocketAddr> for &'_ Endpoint<P> {
     }
 }
 
-impl<P> tls::HasPeerIdentity for Endpoint<P> {
-    fn peer_identity(&self) -> tls::PeerIdentity {
+impl<P> Into<tls::Conditional<tls::client::ServerId>> for &'_ Endpoint<P> {
+    fn into(self) -> tls::Conditional<tls::client::ServerId> {
         self.identity.clone()
     }
 }
@@ -252,7 +252,7 @@ impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
             direction: metrics::Direction::Out,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
-            tls_id: metrics::TlsStatus::server(self.identity.clone()),
+            tls_id: self.identity.clone().into(),
         }
     }
 }

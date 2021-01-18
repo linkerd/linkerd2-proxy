@@ -1,8 +1,4 @@
-use crate::app_core::{
-    io::BoxedIo,
-    tls::{HasPeerIdentity, PeerIdentity, ReasonForNoPeerName},
-    Conditional, Error,
-};
+use crate::app_core::{io::BoxedIo, tls, Conditional, Error};
 use hyper::{body::HttpBody, Body, Request, Response};
 use linkerd_identity::Name;
 use std::{
@@ -13,7 +9,7 @@ use tracing::Instrument;
 
 pub struct Server {
     settings: hyper::server::conn::Http,
-    identity: Option<PeerIdentity>,
+    identity: Option<tls::Conditional<tls::client::ServerId>>,
     f: HandleFuture,
 }
 
@@ -59,11 +55,11 @@ impl Server {
     }
 
     pub fn expect_identity(mut self, id: impl Into<Name>) -> Self {
-        self.identity = Some(Conditional::Some(id.into()));
+        self.identity = Some(Conditional::Some(tls::client::ServerId(id.into())));
         self
     }
 
-    pub fn no_identity(mut self, reason: ReasonForNoPeerName) -> Self {
+    pub fn no_identity(mut self, reason: tls::ReasonForNoPeerName) -> Self {
         self.identity = Some(Conditional::None(reason));
         self
     }
@@ -75,9 +71,11 @@ impl Server {
         }
     }
 
-    pub fn run<E: HasPeerIdentity + std::fmt::Debug>(
-        self,
-    ) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static {
+    pub fn run<E>(self) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static
+    where
+        E: std::fmt::Debug,
+        for<'e> &'e E: Into<tls::Conditional<tls::client::ServerId>>,
+    {
         let Self {
             f,
             settings,
@@ -87,8 +85,8 @@ impl Server {
         move |endpoint| {
             let span = tracing::debug_span!("server::run", ?endpoint);
             let _e = span.enter();
-            if let Some(ref id) = identity {
-                assert_eq!(&endpoint.peer_identity(), id)
+            if let Some(id) = identity.as_ref() {
+                assert_eq!((&endpoint).into(), *id)
             }
             let f = f.clone();
             let (client_io, server_io) = crate::io::duplex(4096);

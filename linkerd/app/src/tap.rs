@@ -1,11 +1,7 @@
 use futures::prelude::*;
 use indexmap::IndexSet;
 use linkerd_app_core::{
-    config::ServerConfig,
-    drain,
-    proxy::{identity, tap},
-    serve, tls,
-    transport::listen::Addrs,
+    config::ServerConfig, drain, proxy::identity, proxy::tap, serve, tls, transport::listen::Addrs,
     Error,
 };
 use std::{net::SocketAddr, pin::Pin};
@@ -16,7 +12,7 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
-        permitted_peer_identities: IndexSet<identity::Name>,
+        permitted_client_ids: IndexSet<tls::accept::ClientId>,
     },
 }
 
@@ -45,12 +41,11 @@ impl Config {
             }
             Config::Enabled {
                 config,
-                permitted_peer_identities,
+                permitted_client_ids,
             } => {
                 let (listen_addr, listen) = config.bind.bind()?;
 
-                let service =
-                    tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server);
+                let service = tap::AcceptPermittedClients::new(permitted_client_ids.into(), server);
                 let accept = tls::NewDetectTls::new(
                     identity,
                     move |meta: tls::accept::Meta<Addrs>| {

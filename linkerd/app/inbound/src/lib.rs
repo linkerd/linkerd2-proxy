@@ -5,12 +5,17 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+mod allow_discovery;
+mod prevent_loop;
+mod require_identity_for_ports;
+pub mod target;
+
 use self::allow_discovery::AllowProfile;
-pub use self::endpoint::{
-    HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpAccept, TcpEndpoint,
-};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
+pub use self::target::{
+    HttpEndpoint, Logical, ProfileTarget, RequestTarget, Target, TcpAccept, TcpEndpoint,
+};
 use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
@@ -30,11 +35,6 @@ use linkerd_app_core::{
 use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::debug_span;
-
-mod allow_discovery;
-pub mod endpoint;
-mod prevent_loop;
-mod require_identity_for_ports;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -247,7 +247,7 @@ impl Config {
             .check_new_service::<Target, http::Request<http::BoxBody>>()
             .push_on_response(http::BoxRequest::layer())
             // The target stack doesn't use the profile resolution, so drop it.
-            .push_map_target(endpoint::Target::from)
+            .push_map_target(Target::from)
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     // Sets the route as a request extension so that it can be used
@@ -259,10 +259,10 @@ impl Config {
                     // extension.
                     .push(classify::NewClassify::layer())
                     .check_new_clone::<dst::Route>()
-                    .push_map_target(endpoint::route)
+                    .push_map_target(target::route)
                     .into_inner(),
             ))
-            .push_map_target(endpoint::Logical::from)
+            .push_map_target(Logical::from)
             .push(profiles::discover::layer(
                 profiles_client,
                 AllowProfile(self.allow_discovery.clone()),

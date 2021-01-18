@@ -19,10 +19,6 @@ impl Name {
     pub fn without_trailing_dot(&self) -> &str {
         self.as_ref().trim_end_matches('.')
     }
-
-    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
-        self.0.as_ref()
-    }
 }
 
 impl fmt::Debug for Name {
@@ -64,6 +60,12 @@ impl<'a> std::str::FromStr for Name {
 impl Into<webpki::DNSName> for Name {
     fn into(self) -> webpki::DNSName {
         self.0
+    }
+}
+
+impl<'t> Into<webpki::DNSNameRef<'t>> for &'t Name {
+    fn into(self) -> webpki::DNSNameRef<'t> {
+        self.0.as_ref()
     }
 }
 

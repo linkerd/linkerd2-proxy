@@ -217,7 +217,7 @@ impl Config {
             let http_gateway = gateway.build(
                 outbound_http,
                 dst.profiles.clone(),
-                local_identity.as_ref().map(|l| l.name().clone()),
+                local_identity.as_ref().map(|l| l.into()),
             );
 
             let connect = inbound::tcp_connect(&inbound.proxy.connect);

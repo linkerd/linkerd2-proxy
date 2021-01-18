@@ -1,8 +1,8 @@
 use indexmap::IndexMap;
 use linkerd_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, metrics, profiles,
-    proxy::{http, identity, tap},
+    http_request_l5d_override_dst_addr, identity as id, metrics, profiles,
+    proxy::{http, tap},
     stack_tracing, svc, tls,
     transport::{self, listen},
     transport_header::TransportHeader,
@@ -14,16 +14,16 @@ use tracing::debug;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
-    pub peer_addr: SocketAddr,
-    pub peer_id: tls::PeerIdentity,
+    pub client_addr: SocketAddr,
+    pub client_id: tls::Conditional<tls::accept::ClientId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
     pub dst: Addr,
-    pub socket_addr: SocketAddr,
+    pub target_addr: SocketAddr,
     pub http_version: http::Version,
-    pub tls_client_id: tls::PeerIdentity,
+    pub client_id: tls::Conditional<tls::accept::ClientId>,
 }
 
 #[derive(Clone, Debug)]
@@ -57,18 +57,18 @@ impl From<listen::Addrs> for TcpAccept {
     fn from(tcp: listen::Addrs) -> Self {
         Self {
             target_addr: tcp.target_addr(),
-            peer_addr: tcp.peer(),
-            peer_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
+            client_addr: tcp.peer(),
+            client_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
         }
     }
 }
 
 impl From<tls::accept::Meta<listen::Addrs>> for TcpAccept {
-    fn from((peer_id, addrs): tls::accept::Meta<listen::Addrs>) -> Self {
+    fn from((client_id, addrs): tls::accept::Meta<listen::Addrs>) -> Self {
         Self {
             target_addr: addrs.target_addr(),
-            peer_addr: addrs.peer(),
-            peer_id,
+            client_addr: addrs.peer(),
+            client_id,
         }
     }
 }
@@ -81,7 +81,7 @@ impl Into<SocketAddr> for &'_ TcpAccept {
 
 impl Into<transport::labels::Key> for &'_ TcpAccept {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::accept(transport::labels::Direction::In, self.peer_id.clone())
+        transport::labels::Key::accept(transport::labels::Direction::In, self.client_id.clone())
     }
 }
 
@@ -96,7 +96,7 @@ impl Into<http::client::Settings> for &'_ HttpEndpoint {
 impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
-            port: target.socket_addr.port(),
+            port: target.target_addr.port(),
             settings: target.http_version.into(),
         }
     }
@@ -136,7 +136,7 @@ impl Into<transport::labels::Key> for &'_ TcpEndpoint {
             direction: transport::labels::Direction::In,
             authority: None,
             labels: None,
-            tls_id: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback).into(),
+            tls_id: transport::labels::TlsStatus::LOOPBACK,
         })
     }
 }
@@ -163,12 +163,12 @@ impl Into<Addr> for &'_ Target {
 /// Used for profile discovery.
 impl Into<SocketAddr> for &'_ Target {
     fn into(self) -> SocketAddr {
-        self.socket_addr
+        self.target_addr
     }
 }
 
-impl tls::HasPeerIdentity for Target {
-    fn peer_identity(&self) -> tls::PeerIdentity {
+impl Into<tls::Conditional<tls::client::ServerId>> for &'_ Target {
+    fn into(self) -> tls::Conditional<tls::client::ServerId> {
         Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 }
@@ -184,11 +184,7 @@ impl Into<metrics::EndpointLabels> for &'_ Target {
         metrics::EndpointLabels {
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
             direction: metrics::Direction::In,
-            tls_id: self
-                .tls_client_id
-                .clone()
-                .map(metrics::TlsId::ClientId)
-                .into(),
+            tls_id: self.client_id.clone().map(metrics::TlsId::ClientId).into(),
             labels: None,
         }
     }
@@ -204,31 +200,28 @@ impl classify::CanClassify for Target {
 
 impl tap::Inspect for Target {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<TcpAccept>().map(|s| s.peer_addr)
+        req.extensions().get::<TcpAccept>().map(|s| s.client_addr)
     }
 
     fn src_tls<'a, B>(
         &self,
         req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
+    ) -> Conditional<&'a id::Name, tls::ReasonForNoPeerName> {
         req.extensions()
             .get::<TcpAccept>()
-            .map(|s| s.peer_id.as_ref())
+            .map(|s| s.client_id.as_ref().map(|c| c.as_ref()))
             .unwrap_or_else(|| Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        Some(self.socket_addr)
+        Some(self.target_addr)
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
         None
     }
 
-    fn dst_tls<B>(
-        &self,
-        _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&id::Name, tls::ReasonForNoPeerName> {
         Conditional::None(tls::ReasonForNoPeerName::Loopback)
     }
 
@@ -297,8 +290,8 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
 
         Target {
             dst,
-            socket_addr: self.accept.target_addr,
-            tls_client_id: self.accept.peer_id.clone(),
+            target_addr: self.accept.target_addr,
+            client_id: self.accept.client_id.clone(),
             http_version: req
                 .version()
                 .try_into()

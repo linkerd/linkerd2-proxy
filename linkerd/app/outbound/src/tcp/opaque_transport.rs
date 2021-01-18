@@ -113,7 +113,7 @@ mod test {
     fn ep(metadata: Metadata) -> Endpoint<()> {
         Endpoint {
             addr: ([127, 0, 0, 2], 4321).into(),
-            identity: tls::PeerIdentity::None(
+            identity: tls::Conditional::None(
                 tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
             ),
             metadata,

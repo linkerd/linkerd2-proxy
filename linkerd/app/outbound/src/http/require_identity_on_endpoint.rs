@@ -7,8 +7,7 @@ use linkerd_app_core::{
     errors::IdentityRequired,
     proxy::http::identity_from_header,
     svc::{layer, NewService, Service},
-    tls::{self, HasPeerIdentity},
-    Conditional, Error, L5D_REQUIRE_ID,
+    tls, Conditional, Error, L5D_REQUIRE_ID,
 };
 use std::task::{Context, Poll};
 use tracing::debug;
@@ -20,7 +19,7 @@ pub(super) struct NewRequireIdentity<N> {
 
 #[derive(Clone, Debug)]
 pub(super) struct RequireIdentity<N> {
-    peer_identity: tls::PeerIdentity,
+    server_id: tls::Conditional<tls::client::ServerId>,
     inner: N,
 }
 
@@ -43,12 +42,9 @@ where
     type Service = RequireIdentity<N::Service>;
 
     fn new_service(&mut self, target: Endpoint) -> Self::Service {
-        let peer_identity = target.peer_identity();
+        let server_id = target.identity.clone();
         let inner = self.inner.new_service(target);
-        RequireIdentity {
-            peer_identity,
-            inner,
-        }
+        RequireIdentity { server_id, inner }
     }
 }
 
@@ -74,21 +70,21 @@ where
         // If the `l5d-require-id` header is present, then we should expect
         // the target's `peer_identity` to match; if the two values do not
         // match or there is no `peer_identity`, then we fail the request
-        if let Some(require_identity) = identity_from_header(&request, L5D_REQUIRE_ID) {
-            debug!("found l5d-require-id={:?}", require_identity.as_ref());
-            match self.peer_identity {
-                Conditional::Some(ref peer_identity) => {
-                    if require_identity != *peer_identity {
+        if let Some(require_id) = identity_from_header(&request, L5D_REQUIRE_ID) {
+            debug!("found l5d-require-id={:?}", require_id.as_ref());
+            match self.server_id.as_ref() {
+                Conditional::Some(server_id) => {
+                    if require_id != *server_id.as_ref() {
                         let e = IdentityRequired {
-                            required: require_identity,
-                            found: Some(peer_identity.clone()),
+                            required: require_id.into(),
+                            found: Some(server_id.clone()),
                         };
                         return Either::Left(future::err(e.into()));
                     }
                 }
                 Conditional::None(_) => {
                     let e = IdentityRequired {
-                        required: require_identity,
+                        required: require_id.into(),
                         found: None,
                     };
                     return Either::Left(future::err(e.into()));

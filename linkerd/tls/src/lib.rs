@@ -1,6 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use linkerd_identity as identity;
+use linkerd_identity as id;
+pub use linkerd_identity::LocalId;
 pub use rustls::TLSError as Error;
 use std::fmt;
 
@@ -8,18 +9,16 @@ pub mod accept;
 pub mod client;
 mod conditional_accept;
 
-pub use self::accept::NewDetectTls;
-pub use self::client::Client;
+pub use self::accept::{ClientId, NewDetectTls};
+pub use self::client::{Client, ServerId};
 
 /// Describes whether or not a connection was secured with TLS and, if it was
 /// not, the reason why.
 pub type Conditional<T> = linkerd_conditional::Conditional<T, ReasonForNoPeerName>;
 
-pub type PeerIdentity = Conditional<identity::Name>;
+pub type PeerIdentity = Conditional<id::Name>;
 
-pub trait HasPeerIdentity {
-    fn peer_identity(&self) -> PeerIdentity;
-}
+// === imp ReasonForNoPeerName ===
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReasonForNoPeerName {

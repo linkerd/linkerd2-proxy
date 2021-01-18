@@ -10,14 +10,10 @@ pub use self::config::Config;
 mod test {
     use super::*;
     use linkerd_app_core::{
-        dns,
-        errors::HttpError,
-        profiles,
-        proxy::{http, identity},
-        svc::NewService,
-        tls, Error, NameAddr, NameMatch, Never,
+        dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
+        NameAddr, NameMatch, Never,
     };
-    use linkerd_app_inbound::endpoint as inbound;
+    use linkerd_app_inbound::target as inbound;
     use linkerd_app_test as support;
     use std::{net::SocketAddr, str::FromStr};
     use tower::util::{service_fn, ServiceExt};
@@ -65,9 +61,9 @@ mod test {
 
     #[tokio::test]
     async fn no_identity() {
-        let peer_id = tls::PeerIdentity::None(tls::ReasonForNoPeerName::NoPeerIdFromRemote);
+        let client_id = tls::Conditional::None(tls::ReasonForNoPeerName::NoPeerIdFromRemote);
         let test = Test {
-            peer_id,
+            client_id,
             ..Default::default()
         };
         let status = test
@@ -101,7 +97,7 @@ mod test {
     struct Test {
         suffix: &'static str,
         dst_name: Option<&'static str>,
-        peer_id: tls::PeerIdentity,
+        client_id: tls::Conditional<tls::ClientId>,
         orig_fwd: Option<&'static str>,
     }
 
@@ -110,9 +106,9 @@ mod test {
             Self {
                 suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
-                peer_id: tls::PeerIdentity::Some(identity::Name::from(
-                    dns::Name::from_str("client.id.test").unwrap(),
-                )),
+                client_id: tls::Conditional::Some(
+                    id::Name::from(dns::Name::from_str("client.id.test").unwrap()).into(),
+                ),
                 orig_fwd: None,
             }
         }
@@ -123,7 +119,7 @@ mod test {
             let Self {
                 suffix,
                 dst_name,
-                peer_id,
+                client_id,
                 orig_fwd,
             } = self;
 
@@ -141,20 +137,18 @@ mod test {
                 Config { allow_discovery }.build(
                     move |_: _| outbound.clone(),
                     profiles,
-                    Some(identity::Name::from(
-                        dns::Name::from_str("gateway.id.test").unwrap(),
-                    )),
+                    Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
                 )
             };
 
-            let socket_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
+            let target_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
             let target = inbound::Target {
-                socket_addr,
+                target_addr,
+                client_id,
                 dst: dst_name
                     .map(|n| NameAddr::from_str(n).unwrap().into())
-                    .unwrap_or_else(|| socket_addr.into()),
+                    .unwrap_or_else(|| target_addr.into()),
                 http_version: http::Version::Http1,
-                tls_client_id: peer_id,
             };
             let gateway = make_gateway.new_service(target);
 

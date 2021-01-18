@@ -2,7 +2,7 @@ pub use crate::{
     classify::{Class, SuccessOrFailure},
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
     proxy::identity,
-    stack_metrics, telemetry,
+    stack_metrics, telemetry, tls,
     transport::{self, labels::TlsStatus},
 };
 use linkerd_addr::Addr;
@@ -75,8 +75,8 @@ pub enum Direction {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TlsId {
-    ClientId(identity::Name),
-    ServerId(identity::Name),
+    ClientId(tls::ClientId),
+    ServerId(tls::ServerId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
