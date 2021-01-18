@@ -6,7 +6,7 @@ use linkerd_error::Error;
 use linkerd_identity as identity;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_tls::{accept::Connection, Conditional, ReasonForNoPeerName};
+use linkerd_tls::{server::Connection, Conditional, ReasonForNoPeerName};
 use std::{
     future::Future,
     pin::Pin,
