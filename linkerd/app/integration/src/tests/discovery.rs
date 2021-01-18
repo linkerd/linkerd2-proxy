@@ -386,7 +386,7 @@ mod http2 {
         assert_eventually_contains!(
             metrics.get("/metrics").await,
             &format!(
-                "tcp_close_total{{peer=\"dst\",authority=\"disco.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"}} 1",
+                "tcp_close_total{{peer=\"dst\",direction=\"outbound\",authority=\"disco.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"}} 1",
                 port
             )
         );

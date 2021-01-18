@@ -153,13 +153,13 @@ async fn metrics_endpoint_inbound_request_count() {
 
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics").await
-        .contains("request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\"}"));
+        .contains("request_total{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\"}"));
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics").await, "request_total{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\"} 1");
+    assert_eventually_contains!(metrics.get("/metrics").await, "request_total{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\"} 1");
 }
 
 #[tokio::test]
@@ -174,7 +174,7 @@ async fn metrics_endpoint_outbound_request_count() {
     } = Fixture::outbound().await;
 
     let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
-    let expected = format!("request_total{{authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}}", srv_port);
+    let expected = format!("request_total{{direction=\"outbound\",authority=\"tele.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}}", srv_port);
     // prior to seeing any requests, request count should be empty.
     assert!(!metrics.get("/metrics").await.contains(&expected[..]));
 
@@ -182,7 +182,7 @@ async fn metrics_endpoint_outbound_request_count() {
     assert_eq!(client.get("/").await, "hello");
 
     // after seeing a request, the request count should be 1.
-    let expected = format!("request_total{{authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1", srv_port);
+    let expected = format!("request_total{{direction=\"outbound\",authority=\"tele.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1", srv_port);
     assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 }
 
@@ -216,9 +216,9 @@ mod response_classification {
             String::new()
         };
         format!(
-            "response_total{{authority=\"tele.test.svc.cluster.local{}\",direction=\"{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
-            port,
+            "response_total{{direction=\"{}\",authority=\"tele.test.svc.cluster.local{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
             direction,
+            port,
             tls,
             if let Some(reason) = no_tls_reason {
                 format!("no_tls_reason=\"{}\",", reason)
@@ -364,10 +364,10 @@ async fn metrics_endpoint_inbound_response_latency() {
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 1");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 1");
     // the histogram's count should be 1.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 1");
+        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 1");
     // TODO: we're not going to make any assertions about the
     // response_latency_ms_sum stat, since its granularity depends on the actual
     // observed latencies, which may vary a bit. we could make more reliable
@@ -379,41 +379,41 @@ async fn metrics_endpoint_inbound_response_latency() {
 
     // request with 40ms extra latency should fall into the 50ms bucket.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 1");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 1");
     // 1000ms bucket should be incremented as well, since it counts *all*
     // observations less than or equal to 1000ms, even if they also increment
     // other buckets.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 2");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 2");
     // the histogram's total count should be 2.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 2");
+        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 2");
 
     info!("client.get(/hi)");
     assert_eq!(client.get("/hi").await, "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 2");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 2");
     // 1000ms bucket should be incremented as well.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 3");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 3");
     // the histogram's total count should be 3.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 3");
+        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 3");
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
 
     // 50ms bucket should be un-changed by the request with 500ms latency.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 2");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 2");
     // 1000ms bucket should be incremented.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 4");
+        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 4");
     // the histogram's total count should be 4.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 4");
+        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 4");
 }
 
 // Ignore this test on CI, because our method of adding latency to requests
@@ -446,10 +446,10 @@ async fn metrics_endpoint_outbound_response_latency() {
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 1");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 1");
     // the histogram's count should be 1.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
     // TODO: we're not going to make any assertions about the
     // response_latency_ms_sum stat, since its granularity depends on the actual
     // observed latencies, which may vary a bit. we could make more reliable
@@ -461,41 +461,41 @@ async fn metrics_endpoint_outbound_response_latency() {
 
     // request with 40ms extra latency should fall into the 50ms bucket.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 1");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 1");
     // 1000ms bucket should be incremented as well, since it counts *all*
     // bservations less than or equal to 1000ms, even if they also increment
     // other buckets.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 2");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 2");
     // the histogram's total count should be 2.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 2");
+        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 2");
 
     info!("client.get(/hi)");
     assert_eq!(client.get("/hi").await, "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 2");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 2");
     // 1000ms bucket should be incremented as well.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 3");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 3");
     // the histogram's total count should be 3.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 3");
+        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 3");
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
 
     // 50ms bucket should be un-changed by the request with 500ms latency.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 2");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 2");
     // 1000ms bucket should be incremented.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 4");
+        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 4");
     // the histogram's total count should be 4.
     assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 4");
+        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 4");
 }
 
 // Tests for destination labels provided by control plane service discovery.
@@ -629,19 +629,19 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
         let expected = format!(
-            "response_latency_ms_count{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"}} 1",
+            "response_latency_ms_count{{direction=\"outbound\",authority=\"{}\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"}} 1",
             auth
         );
         assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 
         let expected =             format!(
-            "request_total{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            "request_total{{direction=\"outbound\",authority=\"{}\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
             auth
         );
         assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 
         let expected = format!(
-            "response_total{{authority=\"{}\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"}} 1",
+            "response_total{{direction=\"outbound\",authority=\"{}\",dst_addr_label=\"foo\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"}} 1",
             auth
         );
         assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
@@ -680,11 +680,11 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/").await, "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
 
         {
             let mut alabels = HashMap::new();
@@ -698,18 +698,18 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/").await, "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
         // stats recorded from the first request should still be present.
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -743,11 +743,11 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/").await, "hello");
         // the first request should be labeled with `dst_addr_label="foo"`
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
 
         {
             let alabels = HashMap::new();
@@ -760,18 +760,18 @@ mod outbound_dst_labels {
         assert_eq!(client.get("/").await, "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
         // stats recorded from the first request should still be present.
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
+            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
         assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{authority=\"labeled.test.svc.cluster.local\",direction=\"outbound\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
     }
 }
 
@@ -964,7 +964,7 @@ mod transport {
             dst_tx: _dst_tx,
         } = Fixture::outbound().await;
         let expected = format!(
-            "tcp_open_total{{peer=\"dst\",authority=\"tele.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            "tcp_open_total{{peer=\"dst\",direction=\"outbound\",authority=\"tele.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
             proxy.outbound_server.as_ref().unwrap().addr.port(),
         );
         info!("client.get(/)");
@@ -1221,7 +1221,7 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         let expected = format!(
-            "tcp_open_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
+            "tcp_open_total{{peer=\"dst\",direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
             proxy.outbound_server.as_ref().unwrap().addr,
         );
         assert_eventually_contains!(metrics.get("/metrics").await, &expected);
@@ -1323,7 +1323,7 @@ mod transport {
             TcpFixture::BYE_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_write_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
+            "tcp_write_bytes_total{{peer=\"dst\",direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
             proxy.outbound_server.as_ref().unwrap().addr,
             TcpFixture::HELLO_MSG.len()
         );
@@ -1355,7 +1355,7 @@ mod transport {
             TcpFixture::HELLO_MSG.len()
         );
         let dst_expected = format!(
-            "tcp_read_bytes_total{{peer=\"dst\",authority=\"{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
+            "tcp_read_bytes_total{{peer=\"dst\",direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
             proxy.outbound_server.as_ref().unwrap().addr,
             TcpFixture::BYE_MSG.len()
         );
@@ -1517,7 +1517,7 @@ async fn metrics_compression() {
 
     for &encoding in encodings {
         assert_eventually_contains!(do_scrape(encoding).await,
-            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 1");
+            "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 1");
     }
 
     info!("client.get(/)");
@@ -1525,6 +1525,6 @@ async fn metrics_compression() {
 
     for &encoding in encodings {
         assert_eventually_contains!(do_scrape(encoding).await,
-            "response_latency_ms_count{authority=\"tele.test.svc.cluster.local\",direction=\"inbound\",tls=\"disabled\",status_code=\"200\"} 2");
+            "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 2");
     }
 }
