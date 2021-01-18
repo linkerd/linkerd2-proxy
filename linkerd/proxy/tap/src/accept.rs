@@ -5,7 +5,7 @@ use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_tls::{self as tls, accept::Connection};
+use linkerd_tls as tls;
 use std::{
     future::Future,
     pin::Pin,
@@ -63,7 +63,7 @@ impl AcceptPermittedClients {
     }
 }
 
-impl<T> Service<Connection<T, TcpStream>> for AcceptPermittedClients {
+impl<T> Service<tls::server::Connection<T, TcpStream>> for AcceptPermittedClients {
     type Response = ServeFuture;
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
@@ -72,7 +72,10 @@ impl<T> Service<Connection<T, TcpStream>> for AcceptPermittedClients {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, ((client_id, _), io): Connection<T, TcpStream>) -> Self::Future {
+    fn call(
+        &mut self,
+        ((client_id, _), io): tls::server::Connection<T, TcpStream>,
+    ) -> Self::Future {
         future::ok(match client_id {
             tls::Conditional::Some(id) => {
                 if self.permitted_client_ids.contains(&id) {

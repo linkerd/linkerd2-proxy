@@ -210,10 +210,10 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
     }
 }
 
-impl<M: Clone> svc::NewService<tls::accept::Meta<Addrs>> for Accept<M> {
+impl<M: Clone> svc::NewService<tls::server::Meta<Addrs>> for Accept<M> {
     type Service = Serve<M>;
 
-    fn new_service(&mut self, (_, addrs): tls::accept::Meta<Addrs>) -> Self::Service {
+    fn new_service(&mut self, (_, addrs): tls::server::Meta<Addrs>) -> Self::Service {
         Serve {
             client_addr: addrs.peer(),
             inner: self.clone(),

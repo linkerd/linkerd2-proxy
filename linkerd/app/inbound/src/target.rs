@@ -15,7 +15,7 @@ use tracing::debug;
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
     pub client_addr: SocketAddr,
-    pub client_id: tls::Conditional<tls::accept::ClientId>,
+    pub client_id: tls::Conditional<tls::server::ClientId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,7 +23,7 @@ pub struct Target {
     pub dst: Addr,
     pub target_addr: SocketAddr,
     pub http_version: http::Version,
-    pub client_id: tls::Conditional<tls::accept::ClientId>,
+    pub client_id: tls::Conditional<tls::server::ClientId>,
 }
 
 #[derive(Clone, Debug)]
@@ -63,8 +63,8 @@ impl From<listen::Addrs> for TcpAccept {
     }
 }
 
-impl From<tls::accept::Meta<listen::Addrs>> for TcpAccept {
-    fn from((client_id, addrs): tls::accept::Meta<listen::Addrs>) -> Self {
+impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
+    fn from((client_id, addrs): tls::server::Meta<listen::Addrs>) -> Self {
         Self {
             target_addr: addrs.target_addr(),
             client_addr: addrs.peer(),

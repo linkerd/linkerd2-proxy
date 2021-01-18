@@ -712,7 +712,7 @@ impl Env {
 fn parse_tap_config(
     strings: &dyn Strings,
     id_disabled: bool,
-) -> Result<Option<(SocketAddr, IndexSet<tls::accept::ClientId>)>, EnvError> {
+) -> Result<Option<(SocketAddr, IndexSet<tls::server::ClientId>)>, EnvError> {
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
     if id_disabled {
         if tap_identity.is_some() {

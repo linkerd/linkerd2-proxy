@@ -12,7 +12,7 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
-        permitted_client_ids: IndexSet<tls::accept::ClientId>,
+        permitted_client_ids: IndexSet<tls::server::ClientId>,
     },
 }
 
@@ -48,7 +48,7 @@ impl Config {
                 let service = tap::AcceptPermittedClients::new(permitted_client_ids.into(), server);
                 let accept = tls::NewDetectTls::new(
                     identity,
-                    move |meta: tls::accept::Meta<Addrs>| {
+                    move |meta: tls::server::Meta<Addrs>| {
                         let service = service.clone();
                         service_fn(move |io| {
                             let fut = service.clone().oneshot((meta.clone(), io));

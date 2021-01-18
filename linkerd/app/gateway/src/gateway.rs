@@ -21,7 +21,7 @@ impl<O> Gateway<O> {
     pub fn new(
         outbound: O,
         dst: NameAddr,
-        source_identity: tls::accept::ClientId,
+        source_identity: tls::server::ClientId,
         local_identity: tls::LocalId,
     ) -> Self {
         let host = dst.as_http_authority().to_string();

@@ -213,12 +213,12 @@ impl Into<id::LocalId> for &'_ Local {
     }
 }
 
-impl Into<tls::accept::Config> for &'_ Local {
-    fn into(self) -> tls::accept::Config {
+impl Into<tls::server::Config> for &'_ Local {
+    fn into(self) -> tls::server::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.into();
         }
 
-        tls::accept::empty_config()
+        tls::server::empty_config()
     }
 }
