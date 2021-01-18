@@ -101,7 +101,7 @@ fn run_test<C, CF, CR, S, SF, SR>(
     server: S,
 ) -> (
     Transported<tls::ConditionalServerId, CR>,
-    Transported<tls::ConditionalClientId, SR>,
+    Transported<tls::server::ConditionalTls, SR>,
 )
 where
     // Client
@@ -129,7 +129,7 @@ where
     // A future that will receive a single connection.
     let (server, server_addr, server_result) = {
         // Saves the result of every connection.
-        let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientId, SR>>();
+        let (sender, receiver) = mpsc::channel::<Transported<tls::server::ConditionalTls, SR>>();
 
         // Let the OS decide the port number and then return the resulting
         // `SocketAddr` so the client can connect to it. This allows multiple

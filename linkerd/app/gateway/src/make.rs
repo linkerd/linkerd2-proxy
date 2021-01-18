@@ -33,7 +33,7 @@ where
         } = target;
 
         let (source_id, local_id) = match (client_id, self.local_id.clone()) {
-            (Conditional::Some(src), Some(local)) => (src, local),
+            (Conditional::Some(Some(src)), Some(local)) => (src, local),
             _ => return Gateway::NoIdentity,
         };
 

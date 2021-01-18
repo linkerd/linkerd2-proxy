@@ -11,12 +11,12 @@ use std::fmt;
 /// Implements `FmtLabels`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Key {
-    Accept(Direction, tls::ConditionalClientId),
+    Accept(Direction, tls::server::ConditionalTls),
     Connect(EndpointLabels),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsAccept<'t>(&'t tls::ConditionalClientId);
+pub struct TlsAccept<'t>(&'t tls::server::ConditionalTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsConnect<'t>(&'t tls::ConditionalServerId);
@@ -24,7 +24,7 @@ pub struct TlsConnect<'t>(&'t tls::ConditionalServerId);
 // === impl Key ===
 
 impl Key {
-    pub fn accept(direction: Direction, id: tls::ConditionalClientId) -> Self {
+    pub fn accept(direction: Direction, id: tls::server::ConditionalTls) -> Self {
         Self::Accept(direction, id)
     }
 
@@ -50,8 +50,8 @@ impl FmtLabels for Key {
 
 // === impl TlsAccept ===
 
-impl<'t> From<&'t tls::ConditionalClientId> for TlsAccept<'t> {
-    fn from(c: &'t tls::ConditionalClientId) -> Self {
+impl<'t> From<&'t tls::server::ConditionalTls> for TlsAccept<'t> {
+    fn from(c: &'t tls::server::ConditionalTls) -> Self {
         TlsAccept(c)
     }
 }
@@ -59,17 +59,17 @@ impl<'t> From<&'t tls::ConditionalClientId> for TlsAccept<'t> {
 impl<'t> FmtLabels for TlsAccept<'t> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Conditional::None(tls::NoClientId::Disabled) => {
+            Conditional::None(tls::server::NoTls::Disabled) => {
                 write!(f, "tls=\"disabled\"")
-            }
-            Conditional::None(tls::NoClientId::NoClientIdFromRemote) => {
-                write!(f, "tls=\"true\",client_id=\"\"")
             }
             Conditional::None(why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
-            Conditional::Some(id) => {
+            Conditional::Some(Some(id)) => {
                 write!(f, "tls=\"true\",client_id=\"{}\"", id)
+            }
+            Conditional::Some(None) => {
+                write!(f, "tls=\"true\",client_id=\"\"")
             }
         }
     }

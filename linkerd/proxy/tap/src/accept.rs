@@ -79,13 +79,19 @@ impl<T> Service<tls::server::Connection<T, TcpStream>> for AcceptPermittedClient
     ) -> Self::Future {
         future::ok(match client_id {
             Conditional::Some(id) => {
-                if self.permitted_client_ids.contains(&id) {
-                    Box::pin(self.serve_authenticated(io))
+                if let Some(id) = id {
+                    if self.permitted_client_ids.contains(&id) {
+                        Box::pin(self.serve_authenticated(io))
+                    } else {
+                        Box::pin(
+                            self.serve_unauthenticated(io, format!("Unauthorized client: {}", id)),
+                        )
+                    }
                 } else {
-                    Box::pin(self.serve_unauthenticated(io, format!("Unauthorized peer: {}", id)))
+                    Box::pin(self.serve_unauthenticated(io, "Unauthenticated client"))
                 }
             }
-            Conditional::None(tls::server::NoClientId::Loopback) => {
+            Conditional::None(tls::server::NoTls::Loopback) => {
                 Box::pin(self.serve_authenticated(io))
             }
             Conditional::None(reason) => {

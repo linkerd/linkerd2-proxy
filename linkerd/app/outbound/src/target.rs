@@ -68,7 +68,7 @@ impl<P> Into<Addr> for &'_ Accept<P> {
 
 impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
-        const NO_TLS: tls::ConditionalClientId = Conditional::None(tls::NoClientId::Loopback);
+        const NO_TLS: tls::server::ConditionalTls = Conditional::None(tls::server::NoTls::Loopback);
         transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS)
     }
 }

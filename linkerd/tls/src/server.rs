@@ -32,7 +32,7 @@ pub fn empty_config() -> Config {
 pub struct ClientId(pub id::Name);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum NoClientId {
+pub enum NoTls {
     /// Identity is administratively disabled.
     Disabled,
 
@@ -46,15 +46,12 @@ pub enum NoClientId {
 
     // TLS not established by the remote client.
     NoTlsFromRemote,
-
-    // Identity was not provided by the remote client.
-    NoClientIdFromRemote,
 }
 
-pub type ConditionalClientId = Conditional<ClientId, NoClientId>;
+pub type ConditionalTls = Conditional<Option<ClientId>, NoTls>;
 
 // TODO sni name
-pub type Meta<T> = (ConditionalClientId, T);
+pub type Meta<T> = (ConditionalTls, T);
 
 pub type Io<T> = EitherIo<PrefixedIo<T>, TlsStream<PrefixedIo<T>>>;
 
@@ -168,7 +165,7 @@ where
             }
 
             None => {
-                let peer = Conditional::None(NoClientId::Disabled);
+                let peer = Conditional::None(NoTls::Disabled);
                 let svc = new_accept.new_service((peer, target));
                 Box::pin(svc.oneshot(EitherIo::Left(io.into())).err_into::<Error>())
             }
@@ -180,11 +177,11 @@ async fn detect<I>(
     mut io: I,
     tls_config: Config,
     local_id: id::Name,
-) -> io::Result<(ConditionalClientId, Io<I>)>
+) -> io::Result<(ConditionalTls, Io<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {
-    const NO_TLS_META: ConditionalClientId = Conditional::None(NoClientId::NoTlsFromRemote);
+    const NO_TLS_META: ConditionalTls = Conditional::None(NoTls::NoTlsFromRemote);
 
     // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello.
     // Because peeked data does not need to be retained, we use a static
@@ -249,7 +246,7 @@ where
 async fn handshake<T>(
     tls_config: Config,
     io: T,
-) -> io::Result<(ConditionalClientId, tokio_rustls::server::TlsStream<T>)>
+) -> io::Result<(ConditionalTls, tokio_rustls::server::TlsStream<T>)>
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
@@ -258,12 +255,10 @@ where
         .await?;
 
     // Determine the peer's identity, if it exist.
-    let client_id = client_identity(&tls)
-        .map(Conditional::Some)
-        .unwrap_or_else(|| Conditional::None(NoClientId::NoClientIdFromRemote));
+    let client_id = client_identity(&tls);
 
     trace!(client.id = ?client_id, "Accepted TLS connection");
-    Ok((client_id, tls))
+    Ok((Conditional::Some(client_id), tls))
 }
 
 fn client_identity<S>(tls: &tokio_rustls::server::TlsStream<S>) -> Option<ClientId> {
@@ -330,14 +325,13 @@ impl FromStr for ClientId {
 
 // === impl NoClientId ===
 
-impl fmt::Display for NoClientId {
+impl fmt::Display for NoTls {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disabled => write!(f, "disabled"),
             Self::Loopback => write!(f, "loopback"),
             Self::PortSkipped => write!(f, "port_skipped"),
             Self::NoTlsFromRemote => write!(f, "no_tls_from_remote"),
-            Self::NoClientIdFromRemote => write!(f, "no_client_id_from_remote"),
         }
     }
 }

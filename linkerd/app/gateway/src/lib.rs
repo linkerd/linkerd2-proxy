@@ -61,7 +61,7 @@ mod test {
 
     #[tokio::test]
     async fn no_identity() {
-        let client_id = Conditional::None(tls::NoClientId::NoClientIdFromRemote);
+        let client_id = Conditional::Some(None);
         let test = Test {
             client_id,
             ..Default::default()
@@ -97,7 +97,7 @@ mod test {
     struct Test {
         suffix: &'static str,
         dst_name: Option<&'static str>,
-        client_id: tls::ConditionalClientId,
+        client_id: tls::server::ConditionalTls,
         orig_fwd: Option<&'static str>,
     }
 
@@ -106,7 +106,9 @@ mod test {
             Self {
                 suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
-                client_id: Conditional::Some(tls::ClientId::from_str("client.id.test").unwrap()),
+                client_id: Conditional::Some(Some(
+                    tls::ClientId::from_str("client.id.test").unwrap(),
+                )),
                 orig_fwd: None,
             }
         }

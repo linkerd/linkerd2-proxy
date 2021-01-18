@@ -30,7 +30,7 @@ pub fn new() -> (Registry, grpc::Server) {
 pub trait Inspect {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
 
-    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalClientId;
+    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::server::ConditionalTls;
 
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
 
