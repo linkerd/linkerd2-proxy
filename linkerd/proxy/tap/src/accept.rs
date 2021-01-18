@@ -2,6 +2,7 @@ use crate::grpc::Server;
 use futures::future;
 use indexmap::IndexSet;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
+use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
@@ -77,17 +78,17 @@ impl<T> Service<tls::server::Connection<T, TcpStream>> for AcceptPermittedClient
         ((client_id, _), io): tls::server::Connection<T, TcpStream>,
     ) -> Self::Future {
         future::ok(match client_id {
-            tls::Conditional::Some(id) => {
+            Conditional::Some(id) => {
                 if self.permitted_client_ids.contains(&id) {
                     Box::pin(self.serve_authenticated(io))
                 } else {
                     Box::pin(self.serve_unauthenticated(io, format!("Unauthorized peer: {}", id)))
                 }
             }
-            tls::Conditional::None(tls::ReasonForNoPeerName::Loopback) => {
+            Conditional::None(tls::server::NoClientId::Loopback) => {
                 Box::pin(self.serve_authenticated(io))
             }
-            tls::Conditional::None(reason) => {
+            Conditional::None(reason) => {
                 Box::pin(self.serve_unauthenticated(io, reason.to_string()))
             }
         })

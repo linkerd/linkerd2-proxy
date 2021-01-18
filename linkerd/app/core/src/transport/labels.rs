@@ -1,6 +1,5 @@
-pub use crate::metrics::{Direction, EndpointLabels, TlsId};
+pub use crate::metrics::{Direction, EndpointLabels};
 use linkerd_conditional::Conditional;
-use linkerd_identity as id;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
 use std::fmt;
@@ -12,18 +11,25 @@ use std::fmt;
 /// Implements `FmtLabels`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Key {
-    Accept(Direction, TlsStatus),
+    Accept(Direction, tls::ConditionalClientId),
     Connect(EndpointLabels),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsStatus(tls::Conditional<TlsId>);
+pub struct TlsAccept<'t>(&'t tls::ConditionalClientId);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TlsConnect<'t>(&'t tls::ConditionalServerId);
 
 // === impl Key ===
 
 impl Key {
-    pub fn accept(direction: Direction, id: tls::Conditional<tls::ClientId>) -> Self {
-        Self::Accept(direction, id.into())
+    pub fn accept(direction: Direction, id: tls::ConditionalClientId) -> Self {
+        Self::Accept(direction, id)
+    }
+
+    pub fn connect(ep: impl Into<EndpointLabels>) -> Self {
+        Self::Connect(ep.into())
     }
 }
 
@@ -32,7 +38,7 @@ impl FmtLabels for Key {
         match self {
             Self::Accept(direction, identity) => {
                 write!(f, "peer=\"src\",")?;
-                (direction, identity).fmt_labels(f)
+                (direction, TlsAccept::from(identity)).fmt_labels(f)
             }
             Self::Connect(labels) => {
                 write!(f, "peer=\"dst\",")?;
@@ -42,60 +48,52 @@ impl FmtLabels for Key {
     }
 }
 
-// === impl TlsStatus ===
+// === impl TlsAccept ===
 
-impl TlsStatus {
-    pub const LOOPBACK: Self = Self(Conditional::None(tls::ReasonForNoPeerName::Loopback));
-}
-
-impl From<tls::Conditional<tls::ClientId>> for TlsStatus {
-    fn from(id: tls::Conditional<tls::ClientId>) -> Self {
-        Self(id.map(TlsId::ClientId))
+impl<'t> From<&'t tls::ConditionalClientId> for TlsAccept<'t> {
+    fn from(c: &'t tls::ConditionalClientId) -> Self {
+        TlsAccept(c)
     }
 }
 
-impl From<tls::Conditional<tls::ServerId>> for TlsStatus {
-    fn from(id: tls::Conditional<tls::ServerId>) -> Self {
-        Self(id.map(TlsId::ServerId))
-    }
-}
-
-impl From<tls::Conditional<TlsId>> for TlsStatus {
-    fn from(inner: tls::Conditional<TlsId>) -> Self {
-        TlsStatus(inner)
-    }
-}
-
-impl Into<tls::Conditional<id::Name>> for TlsStatus {
-    fn into(self) -> tls::Conditional<id::Name> {
-        self.0.map(|id| match id {
-            TlsId::ClientId(tls::ClientId(id)) => id,
-            TlsId::ServerId(tls::ServerId(id)) => id,
-        })
-    }
-}
-
-impl fmt::Display for TlsStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'t> FmtLabels for TlsAccept<'t> {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Conditional::Some(_) => write!(f, "true"),
-            Conditional::None(ref r) => fmt::Display::fmt(&r, f),
+            Conditional::None(tls::NoClientId::Disabled) => {
+                write!(f, "tls=\"disabled\"")
+            }
+            Conditional::None(tls::NoClientId::NoClientIdFromRemote) => {
+                write!(f, "tls=\"true\",client_id=\"\"")
+            }
+            Conditional::None(why) => {
+                write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
+            }
+            Conditional::Some(id) => {
+                write!(f, "tls=\"true\",client_id=\"{}\"", id)
+            }
         }
     }
 }
 
-impl FmtLabels for TlsStatus {
+// === impl TlsConnect ===
+
+impl<'t> From<&'t tls::ConditionalServerId> for TlsConnect<'t> {
+    fn from(s: &'t tls::ConditionalServerId) -> Self {
+        TlsConnect(s)
+    }
+}
+
+impl<'t> FmtLabels for TlsConnect<'t> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled) => {
+            Conditional::None(tls::NoServerId::Disabled) => {
                 write!(f, "tls=\"disabled\"")
             }
-            Conditional::None(ref why) => {
+            Conditional::None(why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
-            Conditional::Some(ref id) => {
-                write!(f, "tls=\"true\",")?;
-                id.fmt_labels(f)
+            Conditional::Some(id) => {
+                write!(f, "tls=\"true\",server_id=\"{}\"", id)
             }
         }
     }

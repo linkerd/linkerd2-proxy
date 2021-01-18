@@ -10,8 +10,8 @@ pub use self::config::Config;
 mod test {
     use super::*;
     use linkerd_app_core::{
-        dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
-        NameAddr, NameMatch, Never,
+        dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls,
+        Conditional, Error, NameAddr, NameMatch, Never,
     };
     use linkerd_app_inbound::target as inbound;
     use linkerd_app_test as support;
@@ -61,7 +61,7 @@ mod test {
 
     #[tokio::test]
     async fn no_identity() {
-        let client_id = tls::Conditional::None(tls::ReasonForNoPeerName::NoPeerIdFromRemote);
+        let client_id = Conditional::None(tls::NoClientId::NoClientIdFromRemote);
         let test = Test {
             client_id,
             ..Default::default()
@@ -97,7 +97,7 @@ mod test {
     struct Test {
         suffix: &'static str,
         dst_name: Option<&'static str>,
-        client_id: tls::Conditional<tls::ClientId>,
+        client_id: tls::ConditionalClientId,
         orig_fwd: Option<&'static str>,
     }
 
@@ -106,9 +106,7 @@ mod test {
             Self {
                 suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
-                client_id: tls::Conditional::Some(
-                    id::Name::from(dns::Name::from_str("client.id.test").unwrap()).into(),
-                ),
+                client_id: Conditional::Some(tls::ClientId::from_str("client.id.test").unwrap()),
                 orig_fwd: None,
             }
         }

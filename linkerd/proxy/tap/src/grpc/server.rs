@@ -531,8 +531,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
                 }
                 Conditional::Some(id) => {
                     m.labels.insert("tls".to_owned(), "true".to_owned());
-                    m.labels
-                        .insert("client_id".to_owned(), id.as_ref().to_owned());
+                    m.labels.insert("client_id".to_owned(), id.to_string());
                 }
             }
             Some(m)
@@ -548,8 +547,7 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
                 }
                 Conditional::Some(id) => {
                     m.labels.insert("tls".to_owned(), "true".to_owned());
-                    m.labels
-                        .insert("server_id".to_owned(), id.as_ref().to_owned());
+                    m.labels.insert("server_id".to_owned(), id.to_string());
                 }
             }
             m

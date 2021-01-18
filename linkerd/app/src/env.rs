@@ -5,7 +5,7 @@ use crate::core::{
     proxy::http::{h1, h2},
     tls,
     transport::BindTcp,
-    Addr, AddrMatch, NameMatch,
+    Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
@@ -914,11 +914,11 @@ pub fn parse_control_addr<S: Strings>(
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
-            identity: tls::Conditional::None(tls::ReasonForNoPeerName::Loopback),
+            identity: Conditional::None(tls::NoServerId::Loopback),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
-            identity: tls::Conditional::Some(tls::ServerId(name)),
+            identity: Conditional::Some(tls::ServerId(name)),
         })),
         (Some(_), None) => {
             error!("{} must be specified when {} is set", n_env, a_env);
@@ -936,7 +936,7 @@ pub fn parse_control_addr_disable_identity<S: Strings>(
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let identity = tls::Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled);
+    let identity = Conditional::None(tls::NoServerId::Disabled);
     Ok(a.map(|addr| ControlAddr { addr, identity }))
 }
 

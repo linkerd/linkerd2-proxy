@@ -6,12 +6,13 @@
 // by these tests.
 
 use futures::prelude::*;
+use linkerd_conditional::Conditional;
 use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectTcp};
 use linkerd_stack::NewService;
-use linkerd_tls::{self as tls, Conditional};
+use linkerd_tls as tls;
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::net::TcpStream;
@@ -24,7 +25,7 @@ use tracing_futures::Instrument;
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
-        Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery),
+        Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery),
         |conn| write_then_read(conn, PING),
         None,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
@@ -77,17 +78,14 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
 }
 
-struct Transported<R> {
-    /// The value of `Connection::peer_identity()` for the established connection.
-    ///
-    /// This will be `None` if we never even get a `Connection`.
-    peer_id: Option<tls::Conditional<id::Name>>,
+struct Transported<I, R> {
+    peer_id: Option<I>,
 
     /// The connection's result.
     result: Result<R, io::Error>,
 }
 
-impl<R> Transported<R> {
+impl<T, N, R> Transported<Conditional<T, N>, R> {
     fn is_tls(&self) -> bool {
         self.peer_id.as_ref().map(|i| i.is_some()).unwrap_or(false)
     }
@@ -97,11 +95,14 @@ impl<R> Transported<R> {
 /// on the client side and `server` processes the connection on the server
 /// side.
 fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: tls::Conditional<(id::CrtKey, tls::ServerId)>,
+    client_tls: Conditional<(id::CrtKey, tls::ServerId), tls::NoServerId>,
     client: C,
     server_tls: Option<id::CrtKey>,
     server: S,
-) -> (Transported<CR>, Transported<SR>)
+) -> (
+    Transported<tls::ConditionalServerId, CR>,
+    Transported<tls::ConditionalClientId, SR>,
+)
 where
     // Client
     C: FnOnce(tls::client::Io<TcpStream>) -> CF + Clone + Send + 'static,
@@ -128,7 +129,7 @@ where
     // A future that will receive a single connection.
     let (server, server_addr, server_result) = {
         // Saves the result of every connection.
-        let (sender, receiver) = mpsc::channel::<Transported<SR>>();
+        let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientId, SR>>();
 
         // Let the OS decide the port number and then return the resulting
         // `SocketAddr` so the client can connect to it. This allows multiple
@@ -186,7 +187,7 @@ where
         // Saves the result of the single connection. This could be a simpler
         // type, e.g. `Arc<Mutex>`, but using a channel simplifies the code and
         // parallels the server side.
-        let (sender, receiver) = mpsc::channel::<Transported<CR>>();
+        let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerId, CR>>();
         let sender_clone = sender.clone();
 
         let peer_id = Some(client_server_id.clone().map(Into::into));
@@ -282,7 +283,7 @@ const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
 #[derive(Clone)]
-struct Target(SocketAddr, Conditional<tls::ServerId>);
+struct Target(SocketAddr, tls::ConditionalServerId);
 
 #[derive(Clone)]
 struct ClientTls(id::CrtKey);
@@ -293,8 +294,8 @@ impl Into<SocketAddr> for Target {
     }
 }
 
-impl Into<Conditional<tls::client::ServerId>> for &'_ Target {
-    fn into(self) -> Conditional<tls::ServerId> {
+impl Into<tls::ConditionalServerId> for &'_ Target {
+    fn into(self) -> tls::ConditionalServerId {
         self.1.clone()
     }
 }

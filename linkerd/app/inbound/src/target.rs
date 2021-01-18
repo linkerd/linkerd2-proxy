@@ -1,13 +1,14 @@
 use indexmap::IndexMap;
 use linkerd_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, identity as id, metrics, profiles,
+    http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, tap},
     stack_tracing, svc, tls,
     transport::{self, listen},
     transport_header::TransportHeader,
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
+use metrics::InboundEndpointLabels;
 use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
 
@@ -15,7 +16,7 @@ use tracing::debug;
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
     pub client_addr: SocketAddr,
-    pub client_id: tls::Conditional<tls::server::ClientId>,
+    pub client_id: tls::ConditionalClientId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,7 +24,7 @@ pub struct Target {
     pub dst: Addr,
     pub target_addr: SocketAddr,
     pub http_version: http::Version,
-    pub client_id: tls::Conditional<tls::server::ClientId>,
+    pub client_id: tls::ConditionalClientId,
 }
 
 #[derive(Clone, Debug)]
@@ -36,11 +37,13 @@ pub struct Logical {
 pub struct HttpEndpoint {
     pub port: u16,
     pub settings: http::client::Settings,
+    pub client_id: tls::ConditionalClientId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpEndpoint {
     pub port: u16,
+    pub client_id: tls::ConditionalClientId,
 }
 
 #[derive(Clone, Debug)]
@@ -53,12 +56,12 @@ pub struct ProfileTarget;
 
 // === impl TcpAccept ===
 
-impl From<listen::Addrs> for TcpAccept {
-    fn from(tcp: listen::Addrs) -> Self {
+impl TcpAccept {
+    pub fn port_skipped(tcp: listen::Addrs) -> Self {
         Self {
             target_addr: tcp.target_addr(),
             client_addr: tcp.peer(),
-            client_id: tls::Conditional::None(tls::ReasonForNoPeerName::PortSkipped),
+            client_id: Conditional::None(tls::NoClientId::PortSkipped),
         }
     }
 }
@@ -98,6 +101,7 @@ impl From<Target> for HttpEndpoint {
         Self {
             port: target.target_addr.port(),
             settings: target.http_version.into(),
+            client_id: target.client_id,
         }
     }
 }
@@ -108,19 +112,26 @@ impl From<TcpAccept> for TcpEndpoint {
     fn from(tcp: TcpAccept) -> Self {
         Self {
             port: tcp.target_addr.port(),
+            client_id: tcp.client_id,
         }
     }
 }
 
-impl From<TransportHeader> for TcpEndpoint {
-    fn from(TransportHeader { port, .. }: TransportHeader) -> Self {
-        Self { port }
+impl From<(TransportHeader, TcpAccept)> for TcpEndpoint {
+    fn from((header, accept): (TransportHeader, TcpAccept)) -> Self {
+        Self {
+            port: header.port,
+            client_id: accept.client_id,
+        }
     }
 }
 
 impl From<HttpEndpoint> for TcpEndpoint {
-    fn from(HttpEndpoint { port, .. }: HttpEndpoint) -> Self {
-        Self { port }
+    fn from(h: HttpEndpoint) -> Self {
+        Self {
+            port: h.port,
+            client_id: h.client_id,
+        }
     }
 }
 
@@ -132,11 +143,9 @@ impl Into<u16> for TcpEndpoint {
 
 impl Into<transport::labels::Key> for &'_ TcpEndpoint {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(transport::labels::EndpointLabels {
-            direction: transport::labels::Direction::In,
+        transport::labels::Key::connect(InboundEndpointLabels {
             authority: None,
-            labels: None,
-            tls_id: transport::labels::TlsStatus::LOOPBACK,
+            client_id: self.client_id.clone(),
         })
     }
 }
@@ -167,9 +176,9 @@ impl Into<SocketAddr> for &'_ Target {
     }
 }
 
-impl Into<tls::Conditional<tls::client::ServerId>> for &'_ Target {
-    fn into(self) -> tls::Conditional<tls::client::ServerId> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback)
+impl Into<tls::ConditionalServerId> for &'_ Target {
+    fn into(self) -> tls::ConditionalServerId {
+        Conditional::None(tls::NoServerId::Loopback)
     }
 }
 
@@ -181,12 +190,11 @@ impl Into<transport::labels::Key> for &'_ Target {
 
 impl Into<metrics::EndpointLabels> for &'_ Target {
     fn into(self) -> metrics::EndpointLabels {
-        metrics::EndpointLabels {
+        metrics::InboundEndpointLabels {
+            client_id: self.client_id.clone(),
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
-            direction: metrics::Direction::In,
-            tls_id: self.client_id.clone().map(metrics::TlsId::ClientId).into(),
-            labels: None,
         }
+        .into()
     }
 }
 
@@ -203,14 +211,11 @@ impl tap::Inspect for Target {
         req.extensions().get::<TcpAccept>().map(|s| s.client_addr)
     }
 
-    fn src_tls<'a, B>(
-        &self,
-        req: &'a http::Request<B>,
-    ) -> Conditional<&'a id::Name, tls::ReasonForNoPeerName> {
+    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalClientId {
         req.extensions()
             .get::<TcpAccept>()
-            .map(|s| s.client_id.as_ref().map(|c| c.as_ref()))
-            .unwrap_or_else(|| Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled))
+            .map(|s| s.client_id.clone())
+            .unwrap_or_else(|| Conditional::None(tls::NoClientId::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -221,8 +226,8 @@ impl tap::Inspect for Target {
         None
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> Conditional<&id::Name, tls::ReasonForNoPeerName> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback)
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerId {
+        Conditional::None(tls::NoServerId::Loopback)
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {

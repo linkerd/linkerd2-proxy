@@ -139,9 +139,7 @@ impl Config {
                 // accordingly. If there was no opaque transport header, fail
                 // the connection with a ConnectionRefused error.
                 svc::stack(tcp_forward.clone())
-                    .push_map_target(|(h, _): (transport_header::TransportHeader, _)| {
-                        TcpEndpoint::from(h)
-                    })
+                    .push_map_target(TcpEndpoint::from)
                     .push(svc::NewUnwrapOr::layer(
                         svc::Fail::<_, NonOpaqueRefused>::default(),
                     ))
@@ -171,7 +169,7 @@ impl Config {
                 svc::stack(tcp_forward)
                     .push_map_target(TcpEndpoint::from)
                     .push(metrics.transport.layer_accept())
-                    .push_map_target(TcpAccept::from)
+                    .push_map_target(TcpAccept::port_skipped)
                     .into_inner(),
             )
             .into_inner()

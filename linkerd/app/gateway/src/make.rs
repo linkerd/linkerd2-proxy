@@ -1,5 +1,5 @@
 use super::gateway::Gateway;
-use linkerd_app_core::{profiles, svc, tls, NameAddr};
+use linkerd_app_core::{profiles, svc, tls, Conditional, NameAddr};
 use linkerd_app_inbound::target as inbound;
 use linkerd_app_outbound as outbound;
 use tracing::debug;
@@ -33,7 +33,7 @@ where
         } = target;
 
         let (source_id, local_id) = match (client_id, self.local_id.clone()) {
-            (tls::Conditional::Some(src), Some(local)) => (src, local),
+            (Conditional::Some(src), Some(local)) => (src, local),
             _ => return Gateway::NoIdentity,
         };
 

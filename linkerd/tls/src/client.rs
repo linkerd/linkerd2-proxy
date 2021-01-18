@@ -1,4 +1,3 @@
-use crate::ReasonForNoPeerName;
 use futures::{
     future::{Either, MapOk},
     prelude::*,
@@ -21,6 +20,25 @@ use tracing::{debug, trace};
 /// A marker type for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum NoServerId {
+    /// Identity is administratively disabled.
+    Disabled,
+
+    /// No TLS is wanted because the connection is a loopback connection which
+    /// doesn't need or support TLS.
+    Loopback,
+
+    // Discovery is not performed for non-HTTP connections when in "ingress mode".
+    IngressNonHttp,
+
+    /// The destination service didn't give us the identity, which is its way
+    /// of telling us that we shouldn't do TLS for this endpoint.
+    NotProvidedByServiceDiscovery,
+}
+
+pub type ConditionalServerId = Conditional<ServerId, NoServerId>;
 
 pub type Config = Arc<rustls::ClientConfig>;
 
@@ -51,7 +69,7 @@ impl<L, C, T> tower::Service<T> for Client<L, C>
 where
     L: Clone,
     for<'l> &'l L: Into<Config>,
-    for<'t> &'t T: Into<Conditional<ServerId, ReasonForNoPeerName>>,
+    for<'t> &'t T: Into<ConditionalServerId>,
     C: tower::Service<T, Error = io::Error>,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
@@ -121,5 +139,20 @@ impl FromStr for ServerId {
 impl fmt::Display for ServerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+// === impl NoServerId ===
+
+impl fmt::Display for NoServerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Disabled => write!(f, "disabled"),
+            Self::Loopback => write!(f, "loopback"),
+            Self::NotProvidedByServiceDiscovery => {
+                write!(f, "not_provided_by_service_discovery")
+            }
+            Self::IngressNonHttp => write!(f, "ingress_non_http"),
+        }
     }
 }

@@ -150,7 +150,7 @@ where
         .into_new_service()
         .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
         .push_map_target(tcp::Endpoint::from_logical(
-            tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+            tls::NoServerId::NotProvidedByServiceDiscovery,
         ))
         .into_inner();
 
