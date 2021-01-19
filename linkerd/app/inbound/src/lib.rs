@@ -278,7 +278,11 @@ impl Config {
             .check_new_service::<Target, http::Request<http::BoxBody>>()
             .push_on_response(
                 svc::layers()
-                    .push(svc::FailFast::layer("Logical", self.proxy.dispatch_timeout))
+                    .push(svc::layer::mk(svc::SpawnReady::new))
+                    .push(svc::FailFast::layer(
+                        "HTTP Logical",
+                        self.proxy.dispatch_timeout,
+                    ))
                     .push_spawn_buffer(self.proxy.buffer_capacity)
                     .push(metrics.stack.layer(stack_labels("http", "logical"))),
             )
@@ -337,10 +341,13 @@ impl Config {
                 svc::layers()
                     // Downgrades the protocol if upgraded by an outbound proxy.
                     .push(orig_proto::Downgrade::layer())
-                    // Limits the number of in-flight requests.
+                    // Limit the number of in-flight requests. When the proxy is
+                    // at capacity, go into failfast after a dispatch timeout.
+                    // Note that the inner service _always_ returns ready (due
+                    // to `NewRouter`) and the concurrency limit need not be
+                    // driven outside of the request path, so there's no need
+                    // for SpawnReady
                     .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
-                    // Eagerly fail requests when the proxy is out of capacity for a
-                    // dispatch_timeout.
                     .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                     .push(metrics.http_errors.clone())
                     // Synthesizes responses for proxy errors.

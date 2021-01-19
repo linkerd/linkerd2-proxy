@@ -152,17 +152,18 @@ async fn metrics_endpoint_inbound_request_count() {
     } = Fixture::inbound().await;
 
     // prior to seeing any requests, request count should be empty.
-    assert!(!metrics.get("/metrics").await
-        .contains("request_total{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\"}"));
+    let metric = metrics::metric("request_total")
+        .label("authority", "tele.test.svc.cluster.local")
+        .label("direction", "inbound")
+        .label("tls", "disabled");
+
+    assert!(metric.is_not_in(metrics.get("/metrics").await));
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
     // after seeing a request, the request count should be 1.
-    assert_eventually_contains!(
-        metrics.get("/metrics").await,
-        "request_total{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\"} 1"
-    );
+    metric.value(1u64).assert_in(&metrics).await;
 }
 
 #[tokio::test]
@@ -177,16 +178,21 @@ async fn metrics_endpoint_outbound_request_count() {
     } = Fixture::outbound().await;
 
     let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
-    let expected = format!("request_total{{direction=\"outbound\",authority=\"tele.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}}", srv_port);
-    // prior to seeing any requests, request count should be empty.
-    assert!(!metrics.get("/metrics").await.contains(&expected[..]));
+    let metric = metrics::metric("request_total")
+        .label("direction", "outbound")
+        .label("tls", "no_identity")
+        .label("no_tls_reason", "not_provided_by_service_discovery")
+        .label(
+            "authority",
+            format_args!("tele.test.svc.cluster.local:{}", srv_port),
+        );
+    assert!(metric.is_not_in(metrics.get("/metrics").await));
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
     // after seeing a request, the request count should be 1.
-    let expected = format!("request_total{{direction=\"outbound\",authority=\"tele.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1", srv_port);
-    assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+    metric.value(1u64).assert_in(&metrics).await;
 }
 
 mod response_classification {
@@ -212,25 +218,30 @@ mod response_classification {
         tls: &str,
         no_tls_reason: Option<&str>,
         port: Option<u16>,
-    ) -> String {
-        let port = if let Some(port) = port {
-            format!(":{}", port)
+    ) -> metrics::MetricMatch {
+        let addr = if let Some(port) = port {
+            format!("tele.test.svc.cluster.local:{}", port)
         } else {
-            String::new()
+            String::from("tele.test.svc.cluster.local")
         };
-        format!(
-            "response_total{{direction=\"{}\",authority=\"tele.test.svc.cluster.local{}\",tls=\"{}\",{}status_code=\"{}\",classification=\"{}\"}} 1",
-            direction,
-            port,
-            tls,
-            if let Some(reason) = no_tls_reason {
-                format!("no_tls_reason=\"{}\",", reason)
-            } else {
-                String::new()
-            },
-            status.as_u16(),
-            if status.is_server_error() { "failure" } else { "success" },
-        )
+        let mut metric = metrics::metric("response_total")
+            .label("authority", addr)
+            .label("direction", direction)
+            .label("tls", tls)
+            .label("status_code", status.as_u16())
+            .label(
+                "classification",
+                if status.is_server_error() {
+                    "failure"
+                } else {
+                    "success"
+                },
+            )
+            .value(1u64);
+        if let Some(reason) = no_tls_reason {
+            metric = metric.label("no_tls_reason", reason);
+        }
+        metric
     }
 
     async fn make_test_server() -> server::Listening {
@@ -288,10 +299,9 @@ mod response_classification {
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
                 // all previous requests are *not* incremented.
-                assert_eventually_contains!(
-                    metrics.get("/metrics").await,
-                    &expected_metric(status, "inbound", "disabled", None, None)
-                )
+                expected_metric(status, "inbound", "disabled", None, None)
+                    .assert_in(&metrics)
+                    .await;
             }
         }
     }
@@ -321,17 +331,15 @@ mod response_classification {
 
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
-                // all previous requests are *not* incremented.
-                assert_eventually_contains!(
-                    metrics.get("/metrics").await,
-                    &expected_metric(
-                        status,
-                        "outbound",
-                        "no_identity",
-                        Some("not_provided_by_service_discovery"),
-                        Some(port)
-                    )
+                expected_metric(
+                    status,
+                    "outbound",
+                    "no_identity",
+                    Some("not_provided_by_service_discovery"),
+                    Some(port),
                 )
+                .assert_in(&metrics)
+                .await;
             }
         }
     }
@@ -366,11 +374,22 @@ async fn metrics_endpoint_inbound_response_latency() {
 
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 1");
+    let labels = metrics::labels()
+        .label("authority", "tele.test.svc.cluster.local")
+        .label("direction", "inbound")
+        .label("tls", "disabled")
+        .label("status_code", 200);
+    let mut bucket_1000 = labels
+        .clone()
+        .metric("response_latency_ms_bucket")
+        .label("le", 1000)
+        .value(1u64);
+    let mut bucket_50 = labels.metric("response_latency_ms_bucket").label("le", 40);
+    let mut count = labels.metric("response_latency_ms_count").value(1u64);
+
+    bucket_1000.assert_in(&metrics).await;
     // the histogram's count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 1");
+    count.assert_in(&metrics).await;
     // TODO: we're not going to make any assertions about the
     // response_latency_ms_sum stat, since its granularity depends on the actual
     // observed latencies, which may vary a bit. we could make more reliable
@@ -381,42 +400,33 @@ async fn metrics_endpoint_inbound_response_latency() {
     assert_eq!(client.get("/hi").await, "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 1");
+    bucket_50.set_value(1u64).assert_in(&metrics).await;
     // 1000ms bucket should be incremented as well, since it counts *all*
     // observations less than or equal to 1000ms, even if they also increment
     // other buckets.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 2");
+    bucket_1000.set_value(2u64).assert_in(&metrics).await;
     // the histogram's total count should be 2.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 2");
+    count.set_value(2u64).assert_in(&metrics).await;
 
     info!("client.get(/hi)");
     assert_eq!(client.get("/hi").await, "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 2");
+    bucket_50.set_value(2u64).assert_in(&metrics).await;
     // 1000ms bucket should be incremented as well.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 3");
+    bucket_1000.set_value(3).assert_in(&metrics).await;
     // the histogram's total count should be 3.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 3");
+    count.set_value(3).assert_in(&metrics).await;
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
 
     // 50ms bucket should be un-changed by the request with 500ms latency.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"50\"} 2");
+    bucket_50.assert_in(&metrics).await;
     // 1000ms bucket should be incremented.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\",le=\"1000\"} 4");
+    bucket_1000.set_value(4).assert_in(&metrics).await;
     // the histogram's total count should be 4.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 4");
+    count.set_value(4).assert_in(&metrics).await;
 }
 
 // Ignore this test on CI, because our method of adding latency to requests
@@ -448,11 +458,23 @@ async fn metrics_endpoint_outbound_response_latency() {
 
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 1");
+    let labels = metrics::labels()
+        .label("authority", "tele.test.svc.cluster.local")
+        .label("direction", "outbound")
+        .label("tls", "no_identity")
+        .label("no_tls_reason", "not_provided_by_service_discovery")
+        .label("status_code", 200);
+    let mut bucket_1000 = labels
+        .clone()
+        .metric("response_latency_ms_bucket")
+        .label("le", 1000)
+        .value(1u64);
+    let mut bucket_50 = labels.metric("response_latency_ms_bucket").label("le", 40);
+    let mut count = labels.metric("response_latency_ms_count").value(1u64);
+
+    bucket_1000.assert_in(&metrics).await;
     // the histogram's count should be 1.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
+    count.assert_in(&metrics).await;
     // TODO: we're not going to make any assertions about the
     // response_latency_ms_sum stat, since its granularity depends on the actual
     // observed latencies, which may vary a bit. we could make more reliable
@@ -463,42 +485,33 @@ async fn metrics_endpoint_outbound_response_latency() {
     assert_eq!(client.get("/hi").await, "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 1");
+    bucket_50.set_value(1u64).assert_in(&metrics).await;
     // 1000ms bucket should be incremented as well, since it counts *all*
-    // bservations less than or equal to 1000ms, even if they also increment
+    // observations less than or equal to 1000ms, even if they also increment
     // other buckets.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 2");
+    bucket_1000.set_value(2u64).assert_in(&metrics).await;
     // the histogram's total count should be 2.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 2");
+    count.set_value(2u64).assert_in(&metrics).await;
 
     info!("client.get(/hi)");
     assert_eq!(client.get("/hi").await, "good morning");
 
     // request with 40ms extra latency should fall into the 50ms bucket.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 2");
+    bucket_50.set_value(2u64).assert_in(&metrics).await;
     // 1000ms bucket should be incremented as well.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 3");
+    bucket_1000.set_value(3).assert_in(&metrics).await;
     // the histogram's total count should be 3.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 3");
+    count.set_value(3).assert_in(&metrics).await;
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
 
     // 50ms bucket should be un-changed by the request with 500ms latency.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"50\"} 2");
+    bucket_50.assert_in(&metrics).await;
     // 1000ms bucket should be incremented.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_bucket{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",le=\"1000\"} 4");
+    bucket_1000.set_value(4).assert_in(&metrics).await;
     // the histogram's total count should be 4.
-    assert_eventually_contains!(metrics.get("/metrics").await,
-        "response_latency_ms_count{direction=\"outbound\",authority=\"tele.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 4");
+    count.set_value(4).assert_in(&metrics).await;
 }
 
 // Tests for destination labels provided by control plane service discovery.
@@ -560,13 +573,18 @@ mod outbound_dst_labels {
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        // We can't make more specific assertions about the metrics
-        // besides asserting that both labels are present somewhere in the
-        // scrape, because testing for whole metric lines would depend on
-        // the order in which the labels occur, and we can't depend on hash
-        // map ordering.
-        assert_eventually_contains!(metrics.get("/metrics").await, "dst_addr_label1=\"foo\"");
-        assert_eventually_contains!(metrics.get("/metrics").await, "dst_addr_label2=\"bar\"");
+
+        let labels = metrics::labels()
+            .label("dst_addr_label1", "foo")
+            .label("dst_addr_label2", "bar");
+
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels.metric(metric).assert_in(&metrics).await;
+        }
     }
 
     #[tokio::test]
@@ -593,13 +611,18 @@ mod outbound_dst_labels {
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        // We can't make more specific assertions about the metrics
-        // besides asserting that both labels are present somewhere in the
-        // scrape, because testing for whole metric lines would depend on
-        // the order in which the labels occur, and we can't depend on hash
-        // map ordering.
-        assert_eventually_contains!(metrics.get("/metrics").await, "dst_set_label1=\"foo\"");
-        assert_eventually_contains!(metrics.get("/metrics").await, "dst_set_label2=\"bar\"");
+
+        let labels = metrics::labels()
+            .label("dst_set_label1", "foo")
+            .label("dst_set_label2", "bar");
+
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels.metric(metric).assert_in(&metrics).await;
+        }
     }
 
     #[tokio::test]
@@ -609,17 +632,13 @@ mod outbound_dst_labels {
             Fixture {
                 client,
                 metrics,
-                proxy,
+                proxy: _proxy,
                 _profile,
                 dst_tx,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
         let dst_tx = dst_tx.unwrap();
-        let auth = format!(
-            "labeled.test.svc.cluster.local:{}",
-            proxy.outbound_server.as_ref().unwrap().addr.port()
-        );
 
         {
             let mut alabels = HashMap::new();
@@ -631,23 +650,18 @@ mod outbound_dst_labels {
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        let expected = format!(
-            "response_latency_ms_count{{direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",dst_addr_label=\"foo\",dst_set_label=\"bar\",status_code=\"200\"}} 1",
-            auth
-        );
-        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
 
-        let expected =             format!(
-            "request_total{{direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",dst_addr_label=\"foo\",dst_set_label=\"bar\"}} 1",
-            auth
-        );
-        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+        let labels = metrics::labels()
+            .label("dst_addr_label", "foo")
+            .label("dst_set_label", "bar");
 
-        let expected = format!(
-            "response_total{{direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",dst_addr_label=\"foo\",dst_set_label=\"bar\",status_code=\"200\",classification=\"success\"}} 1",
-            auth
-        );
-        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels.metric(metric).assert_in(&metrics).await;
+        }
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -679,15 +693,26 @@ mod outbound_dst_labels {
             dst_tx.send_labeled(addr, alabels, slabels);
         }
 
+        let labels = metrics::labels()
+            .label("dst_addr_label", "foo")
+            .label("dst_set_label", "unchanged");
+
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
+
         // the first request should be labeled with `dst_addr_label="foo"`
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels
+                .clone()
+                .metric(metric)
+                .value(1u64)
+                .assert_in(&metrics)
+                .await;
+        }
 
         {
             let mut alabels = HashMap::new();
@@ -697,22 +722,42 @@ mod outbound_dst_labels {
             dst_tx.send_labeled(addr, alabels, slabels);
         }
 
+        let labels2 = metrics::labels()
+            .label("dst_addr_label", "bar")
+            .label("dst_set_label", "unchanged");
+
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
+
         // the second request should increment stats labeled with `dst_addr_label="bar"`
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"bar\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        // the first request should be labeled with `dst_addr_label="foo"`
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels2
+                .clone()
+                .metric(metric)
+                .value(1u64)
+                .assert_in(&metrics)
+                .await;
+        }
+
         // stats recorded from the first request should still be present.
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_addr_label=\"foo\",dst_set_label=\"unchanged\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        // the first request should be labeled with `dst_addr_label="foo"`
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels
+                .clone()
+                .metric(metric)
+                .value(1u64)
+                .assert_in(&metrics)
+                .await;
+        }
     }
 
     // Ignore this test on CI, as it may fail due to the reduced concurrency
@@ -741,16 +786,23 @@ mod outbound_dst_labels {
             slabels.insert("set_label".to_owned(), "foo".to_owned());
             dst_tx.send_labeled(addr, alabels, slabels);
         }
+        let labels1 = metrics::labels().label("dst_set_label", "foo");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        // the first request should be labeled with `dst_addr_label="foo"`
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        // the first request should be labeled with `dst_addr_label="foo"
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels1
+                .clone()
+                .metric(metric)
+                .value(1u64)
+                .assert_in(&client)
+                .await;
+        }
 
         {
             let alabels = HashMap::new();
@@ -758,23 +810,26 @@ mod outbound_dst_labels {
             slabels.insert("set_label".to_owned(), "bar".to_owned());
             dst_tx.send_labeled(addr, alabels, slabels);
         }
+        let labels2 = metrics::labels().label("dst_set_label", "bar");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
         // the second request should increment stats labeled with `dst_addr_label="bar"`
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"bar\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels2.metric(metric).value(1u64).assert_in(&metrics).await;
+        }
         // stats recorded from the first request should still be present.
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_latency_ms_count{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "request_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"} 1");
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "response_total{direction=\"outbound\",authority=\"labeled.test.svc.cluster.local\",dst_set_label=\"foo\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",status_code=\"200\",classification=\"success\"} 1");
+        for &metric in &[
+            "request_total",
+            "response_total",
+            "response_latency_ms_count",
+        ] {
+            labels1.metric(metric).value(1u64).assert_in(&metrics).await;
+        }
     }
 }
 
@@ -857,34 +912,33 @@ mod transport {
             dst_tx: _dst_tx,
         } = Fixture::inbound().await;
 
+        let labels = metrics::labels()
+            .label("peer", "src")
+            .label("direction", "inbound")
+            .label("tls", "disabled");
+
+        let mut opens = labels.metric("tcp_open_total").value(1u64);
+        let mut closes = labels
+            .clone()
+            .metric("tcp_close_total")
+            .label("errno", "")
+            .value(1u64);
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\"} 1"
-        );
+        opens.assert_in(&metrics).await;
         // Shut down the client to force the connection to close.
         client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 1"
-        );
+        closes.assert_in(&metrics).await;
 
         // create a new client to force a new connection
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\"} 2"
-        );
+        opens.set_value(2u64).assert_in(&metrics).await;
         // Shut down the client to force the connection to close.
         client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 2"
-        );
+        closes.set_value(2u64).assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -898,12 +952,16 @@ mod transport {
             dst_tx: _dst_tx,
         } = Fixture::inbound().await;
 
+        let metric = metrics::metric("tcp_open_total")
+            .label("peer", "dst")
+            .label("direction", "inbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .value(1u64);
+
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",direction=\"inbound\",tls=\"disabled\"} 1"
-        );
+        metric.assert_in(&metrics).await;
 
         // create a new client to force a new connection
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
@@ -911,10 +969,7 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
         // server connection should be pooled
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",direction=\"inbound\",tls=\"disabled\"} 1"
-        );
+        metric.assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -928,32 +983,33 @@ mod transport {
             dst_tx: _dst_tx,
         } = Fixture::outbound().await;
 
+        let labels = metrics::labels()
+            .label("peer", "src")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback");
+        let mut opens = labels.metric("tcp_open_total").value(1u64);
+        let mut closes = labels
+            .metric("tcp_close_total")
+            .label("errno", "")
+            .value(1u64);
+
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
+        opens.assert_in(&metrics).await;
         // Shut down the client to force the connection to close.
         client.shutdown().await;
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1"
-        );
+        closes.assert_in(&metrics).await;
 
         // create a new client to force a new connection
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 2"
-        );
+        opens.set_value(2u64).assert_in(&metrics).await;
         // Shut down the client to force the connection to close.
         client.shutdown().await;
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2"
-        );
+        closes.set_value(2u64).assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -966,13 +1022,23 @@ mod transport {
             _profile,
             dst_tx: _dst_tx,
         } = Fixture::outbound().await;
-        let expected = format!(
-            "tcp_open_total{{peer=\"dst\",direction=\"outbound\",authority=\"tele.test.svc.cluster.local:{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
-            proxy.outbound_server.as_ref().unwrap().addr.port(),
-        );
+        let metric = metrics::metric("tcp_open_total")
+            .label("peer", "dst")
+            .label(
+                "authority",
+                format_args!(
+                    "tele.test.svc.cluster.local:{}",
+                    proxy.outbound_server.as_ref().unwrap().addr.port()
+                ),
+            )
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .value(1u64);
+
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+        metric.assert_in(&metrics).await;
 
         // create a new client to force a new connection
         let client2 = client::new(proxy.outbound, "tele.test.svc.cluster.local");
@@ -980,7 +1046,7 @@ mod transport {
         info!("client.get(/)");
         assert_eq!(client2.get("/").await, "hello");
         // server connection should be pooled
-        assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+        metric.assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -998,10 +1064,14 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"dst\",direction=\"inbound\",tls=\"disabled\"} 1"
-        );
+        metrics::metric("tcp_open_total")
+            .label("peer", "dst")
+            .label("direction", "inbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
     }
 
     #[tokio::test]
@@ -1025,14 +1095,25 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, &[]);
         // Connection to the server should be a failure with the EXFULL error
-        // code.
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"EXFULL\"} 1");
+        metrics::metric("tcp_close_total")
+            .label("peer", "dst")
+            .label("direction", "inbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("errno", "EXFULL")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
+
         // Connection from the client should have closed cleanly.
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 1"
-        );
+        metrics::metric("tcp_close_total")
+            .label("peer", "src")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+            .label("errno", "")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
     }
 
     #[test]
@@ -1056,12 +1137,25 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, &[]);
         // Connection to the server should be a failure with the EXFULL error
-        // code.
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"EXFULL\"} 1");
+        metrics::metric("tcp_close_total")
+            .label("peer", "dst")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("errno", "EXFULL")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
+
         // Connection from the client should have closed cleanly.
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
+        metrics::metric("tcp_close_total")
+            .label("peer", "src")
+            .label("direction", "outbound")
+            .label("tls", "disabled")
+            .label("errno", "")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
     }
 
     #[tokio::test]
@@ -1080,31 +1174,28 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\"} 1"
-        );
+        let labels = metrics::labels()
+            .label("peer", "src")
+            .label("direction", "inbound")
+            .label("tls", "disabled");
+        let mut opens = labels.metric("tcp_open_total").value(1u64);
+        let mut closes = labels
+            .metric("tcp_close_total")
+            .label("errno", "")
+            .value(1u64);
+        opens.assert_in(&metrics).await;
 
         tcp_client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 1"
-        );
+        closes.assert_in(&metrics).await;
 
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        opens.set_value(2u64).assert_in(&metrics).await;
 
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\"} 2"
-        );
         tcp_client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 2"
-        );
+        closes.set_value(2u64).assert_in(&metrics).await;
     }
 
     // linkerd/linkerd2#831
@@ -1122,32 +1213,37 @@ mod transport {
 
         let tcp_client = client.connect().await;
 
+        let mut src_count = metrics::metric("tcp_connection_duration_count")
+            .label("peer", "src")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+            .label("errno", "")
+            .value(1u64);
+
+        let mut dst_count = metrics::metric("tcp_connection_duration_count")
+            .label("peer", "dst")
+            .label("direction", "inbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .label("errno", "")
+            .value(1u64);
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         tcp_client.shutdown().await;
         // TODO: make assertions about buckets
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 1");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
+        src_count.assert_in(&metrics).await;
+        dst_count.assert_in(&metrics).await;
 
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 1");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
+        src_count.assert_in(&metrics).await;
+        dst_count.assert_in(&metrics).await;
 
         tcp_client.shutdown().await;
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"src\",direction=\"inbound\",tls=\"disabled\",errno=\"\"} 2");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"inbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
+        src_count.set_value(2u64).assert_in(&metrics).await;
+        dst_count.set_value(2u64).assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1160,14 +1256,18 @@ mod transport {
             dst: _dst,
             profile: _profile,
         } = TcpFixture::inbound().await;
-        let src_expected = format!(
-            "tcp_write_bytes_total{{peer=\"src\",direction=\"inbound\",tls=\"disabled\"}} {}",
-            TcpFixture::BYE_MSG.len()
-        );
-        let dst_expected = format!(
-            "tcp_write_bytes_total{{peer=\"dst\",direction=\"inbound\",tls=\"disabled\"}} {}",
-            TcpFixture::HELLO_MSG.len()
-        );
+        let src = metrics::metric("tcp_write_bytes_total")
+            .label("peer", "src")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+            .value(TcpFixture::BYE_MSG.len());
+
+        let dst = metrics::metric("tcp_write_bytes_total")
+            .label("peer", "dst")
+            .label("direction", "inbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .value(TcpFixture::HELLO_MSG.len());
 
         let tcp_client = client.connect().await;
 
@@ -1175,9 +1275,8 @@ mod transport {
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         tcp_client.shutdown().await;
 
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        src.assert_in(&metrics).await;
+        dst.assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1190,14 +1289,18 @@ mod transport {
             dst: _dst,
             profile: _profile,
         } = TcpFixture::inbound().await;
-        let src_expected = format!(
-            "tcp_read_bytes_total{{peer=\"src\",direction=\"inbound\",tls=\"disabled\"}} {}",
-            TcpFixture::HELLO_MSG.len()
-        );
-        let dst_expected = format!(
-            "tcp_read_bytes_total{{peer=\"dst\",direction=\"inbound\",tls=\"disabled\"}} {}",
-            TcpFixture::BYE_MSG.len()
-        );
+        let src = metrics::metric("tcp_read_bytes_total")
+            .label("peer", "src")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+            .value(TcpFixture::HELLO_MSG.len());
+
+        let dst = metrics::metric("tcp_read_bytes_total")
+            .label("peer", "dst")
+            .label("direction", "inbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .value(TcpFixture::BYE_MSG.len());
 
         let tcp_client = client.connect().await;
 
@@ -1205,9 +1308,8 @@ mod transport {
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         tcp_client.shutdown().await;
 
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        src.assert_in(&metrics).await;
+        dst.assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1225,11 +1327,15 @@ mod transport {
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        let expected = format!(
-            "tcp_open_total{{peer=\"dst\",direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} 1",
-            proxy.outbound_server.as_ref().unwrap().addr,
-        );
-        assert_eventually_contains!(metrics.get("/metrics").await, &expected);
+        metrics::metric("tcp_open_total")
+            .label("peer", "dst")
+            .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
     }
 
     #[tokio::test]
@@ -1243,32 +1349,34 @@ mod transport {
             profile: _profile,
         } = TcpFixture::outbound().await;
 
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
-
-        tcp_client.shutdown().await;
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
+        let labels = metrics::labels()
+            .label("peer", "src")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback");
+        let mut opens = labels.metric("tcp_open_total").value(1u64);
+        let mut closes = labels
+            .metric("tcp_close_total")
+            .label("errno", "")
+            .value(1u64);
 
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        opens.assert_in(&metrics).await;
 
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 2"
-        );
         tcp_client.shutdown().await;
-        assert_eventually_contains!(metrics.get("/metrics").await,
-            "tcp_close_total{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
+        closes.assert_in(&metrics).await;
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        opens.set_value(2u64).assert_in(&metrics).await;
+
+        tcp_client.shutdown().await;
+        closes.set_value(2u64).assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1283,34 +1391,41 @@ mod transport {
             profile: _profile,
         } = TcpFixture::outbound().await;
 
+        let mut src_count = metrics::metric("tcp_connection_duration_count")
+            .label("peer", "src")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .label("errno", "")
+            .value(1u64);
+
+        let mut dst_count = metrics::metric("tcp_connection_duration_count")
+            .label("peer", "dst")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("errno", "")
+            .value(1u64);
+
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         tcp_client.shutdown().await;
         // TODO: make assertions about buckets
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1");
+        src_count.assert_in(&metrics).await;
+        dst_count.assert_in(&metrics).await;
 
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 1");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 1");
+        src_count.assert_in(&metrics).await;
+        dst_count.assert_in(&metrics).await;
 
         tcp_client.shutdown().await;
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\",errno=\"\"} 2");
-        assert_eventually_contains!(out,
-            "tcp_connection_duration_ms_count{peer=\"dst\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"} 2");
+        src_count.set_value(2u64).assert_in(&metrics).await;
+        dst_count.set_value(2u64).assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1323,15 +1438,20 @@ mod transport {
             dst: _dst,
             profile: _profile,
         } = TcpFixture::outbound().await;
-        let src_expected = format!(
-            "tcp_write_bytes_total{{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
-            TcpFixture::BYE_MSG.len()
-        );
-        let dst_expected = format!(
-            "tcp_write_bytes_total{{peer=\"dst\",direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
-            proxy.outbound_server.as_ref().unwrap().addr,
-            TcpFixture::HELLO_MSG.len()
-        );
+        let src = metrics::metric("tcp_write_bytes_total")
+            .label("peer", "src")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .value(TcpFixture::BYE_MSG.len());
+
+        let dst = metrics::metric("tcp_write_bytes_total")
+            .label("peer", "dst")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
+            .value(TcpFixture::HELLO_MSG.len());
 
         let tcp_client = client.connect().await;
 
@@ -1339,9 +1459,8 @@ mod transport {
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         tcp_client.shutdown().await;
 
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        src.assert_in(&metrics).await;
+        dst.assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1355,15 +1474,20 @@ mod transport {
             profile: _profile,
         } = TcpFixture::outbound().await;
 
-        let src_expected = format!(
-            "tcp_read_bytes_total{{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"}} {}",
-            TcpFixture::HELLO_MSG.len()
-        );
-        let dst_expected = format!(
-            "tcp_read_bytes_total{{peer=\"dst\",direction=\"outbound\",authority=\"{}\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\"}} {}",
-            proxy.outbound_server.as_ref().unwrap().addr,
-            TcpFixture::BYE_MSG.len()
-        );
+        let src = metrics::metric("tcp_read_bytes_total")
+            .label("peer", "src")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback")
+            .value(TcpFixture::HELLO_MSG.len());
+
+        let dst = metrics::metric("tcp_read_bytes_total")
+            .label("peer", "dst")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
+            .value(TcpFixture::BYE_MSG.len());
 
         let tcp_client = client.connect().await;
 
@@ -1371,9 +1495,8 @@ mod transport {
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
         tcp_client.shutdown().await;
 
-        let out = metrics.get("/metrics").await;
-        assert_eventually_contains!(out, &src_expected);
-        assert_eventually_contains!(out, &dst_expected);
+        src.assert_in(&metrics).await;
+        dst.assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1382,34 +1505,29 @@ mod transport {
         let fixture = TcpFixture::outbound().await;
         let client = fixture.client;
         let metrics = fixture.metrics;
+        let mut open_conns = metrics::metric("tcp_open_connections")
+            .label("direction", "outbound")
+            .label("peer", "src")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback");
 
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
+        open_conns.set_value(1).assert_in(&metrics).await;
+
         tcp_client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
+        open_conns.set_value(0).assert_in(&metrics).await;
+
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
+        open_conns.set_value(1).assert_in(&metrics).await;
 
         tcp_client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
+        open_conns.set_value(0).assert_in(&metrics).await;
     }
 
     #[tokio::test]
@@ -1423,35 +1541,30 @@ mod transport {
             dst_tx: _dst_tx,
         } = Fixture::outbound().await;
 
+        let mut open_conns = metrics::metric("tcp_open_connections")
+            .label("direction", "outbound")
+            .label("peer", "src")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "loopback");
+
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
 
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
+        open_conns.set_value(1).assert_in(&metrics).await;
         // Shut down the client to force the connection to close.
         client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
+        open_conns.set_value(0).assert_in(&metrics).await;
 
         // create a new client to force a new connection
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 1"
-        );
+        open_conns.set_value(1).assert_in(&metrics).await;
+
         // Shut down the client to force the connection to close.
         client.shutdown().await;
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            "tcp_open_connections{peer=\"src\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"loopback\"} 0"
-        );
+        open_conns.set_value(0).assert_in(&metrics).await;
     }
 }
 
@@ -1520,16 +1633,21 @@ async fn metrics_compression() {
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
+    let mut metric = metrics::metric("response_latency_ms_count")
+        .label("authority", "tele.test.svc.cluster.local")
+        .label("direction", "inbound")
+        .label("tls", "disabled")
+        .label("status_code", 200)
+        .value(1u64);
+
     for &encoding in encodings {
-        assert_eventually_contains!(do_scrape(encoding).await,
-            "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 1");
+        assert_eventually_contains!(do_scrape(encoding).await, &metric);
     }
 
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
     for &encoding in encodings {
-        assert_eventually_contains!(do_scrape(encoding).await,
-            "response_latency_ms_count{direction=\"inbound\",authority=\"tele.test.svc.cluster.local\",tls=\"disabled\",status_code=\"200\"} 2");
+        assert_eventually_contains!(do_scrape(encoding).await, &metric.set_value(2u64));
     }
 }

@@ -45,20 +45,24 @@ where
     let watchdog = cache_max_idle_age * 2;
 
     svc::stack(endpoint.clone())
-        .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
         .push_on_response(
             svc::layers()
-                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(http::BoxRequest::layer())
                 .push(
                     metrics
                         .stack
                         .layer(stack_labels("http", "balance.endpoint")),
                 )
-                .push(http::BoxRequest::layer()),
+                // Ensure individual endpoints are driven to readiness so that
+                // the balancer need not drive them all directly.
+                .push(svc::layer::mk(svc::SpawnReady::new)),
         )
-        .check_new_service::<Endpoint, http::Request<_>>()
+        // Resolve the service to its endponts and balance requests over them.
+        //
+        // If the balancer has been empty/unavailable, eagerly fail requests.
+        // When the balancer is in failfast, spawn the service in a background
+        // task so it becomes ready without new requests.
         .push(resolve::layer(resolve, watchdog))
-        .check_service::<Concrete>()
         .push_on_response(
             svc::layers()
                 .push(http::balance::layer(
@@ -66,34 +70,35 @@ where
                     crate::EWMA_DECAY,
                 ))
                 .push(svc::layer::mk(svc::SpawnReady::new))
-                // If the balancer has been empty/unavailable for 10s, eagerly fail
-                // requests.
                 .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                 .push(metrics.stack.layer(stack_labels("http", "concrete"))),
         )
         .push(svc::MapErrLayer::new(Into::into))
+        // Drives the initial resolution via the service's readiness.
         .into_new_service()
-        .check_new_service::<Concrete, http::Request<_>>()
+        // The concrete address is only set when the profile could be
+        // resolved. Endpoint resolution is skipped when there is no
+        // concrete address.
         .instrument(|c: &Concrete| match c.resolve.as_ref() {
             None => debug_span!("concrete"),
             Some(addr) => debug_span!("concrete", %addr),
         })
-        .check_new_service::<Concrete, http::Request<_>>()
-        // The concrete address is only set when the profile could be
-        // resolved. Endpoint resolution is skipped when there is no
-        // concrete address.
         .push_map_target(Concrete::from)
-        .check_new_service::<(Option<Addr>, Logical), http::Request<_>>()
+        // Distribute requests over a distribution of balancers via a traffic
+        // split.
+        //
+        // If the traffic split is empty/unavailable, eagerly fail
+        // requests requests. When the split is in failfast, spawn
+        // the service in a background task so it becomes ready without
+        // new requests.
         .push(profiles::split::layer())
-        .check_new_service::<Logical, http::Request<_>>()
-        // Drives concrete stacks to readiness and makes the split
-        // cloneable, as required by the retry middleware.
         .push_on_response(
             svc::layers()
+                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
-        .check_new_service::<Logical, http::Request<_>>()
+        // Note: routes can't exert backpressure.
         .push(profiles::http::route_request::layer(
             svc::proxies()
                 .push(
@@ -113,16 +118,16 @@ where
                 .push_map_target(Logical::mk_route)
                 .into_inner(),
         ))
-        .check_new_service::<Logical, http::Request<_>>()
+        // Strips headers that may be set by this proxy and add an outbound
+        // canonical-dst-header. The response body is boxed unify the profile
+        // stack's response type. withthat of to endpoint stack.
         .push(http::NewHeaderFromTarget::layer(CANONICAL_DST_HEADER))
         .push_on_response(
             svc::layers()
-                // Strips headers that may be set by this proxy.
                 .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                 .push(http::BoxResponse::layer()),
         )
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
-        .check_new_service::<Logical, http::Request<_>>()
         .push_switch(
             Logical::should_resolve,
             svc::stack(endpoint)

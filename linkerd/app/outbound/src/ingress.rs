@@ -41,13 +41,13 @@ where
         + 'static,
     TSvc::Error: Into<Error>,
     TSvc::Future: Send,
-    H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + Sync + 'static,
+    H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
         + Send
         + 'static,
     HSvc::Error: Into<Error>,
     HSvc::Future: Send,
-    P: profiles::GetProfile<Addr> + Clone + Send + Sync + 'static,
+    P: profiles::GetProfile<Addr> + Clone + Send + Sync + Unpin + 'static,
     P::Error: Send,
     P::Future: Send,
 {
@@ -71,42 +71,48 @@ where
         .into_inner();
 
     svc::stack(http)
-        .push_on_response(svc::MapErrLayer::new(Into::into))
-        .check_new_service::<http::Logical, http::Request<_>>()
+        .push_on_response(
+            svc::layers()
+                .push(http::BoxRequest::layer())
+                .push(svc::MapErrLayer::new(Into::into)),
+        )
+        // Lookup the profile for the outbound HTTP target, if appropriate.
+        //
+        // This service is buffered because it needs to initialize the profile
+        // resolution and a failfast is instrumented in case it becomes
+        // unavailable
+        // When this service is in failfast, ensure that we drive the
+        // inner service to readiness even if new requests aren't
+        // received.
         .push_map_target(http::Logical::from)
         .push(profiles::discover::layer(
             profiles,
             AllowHttpProfile(allow_discovery),
         ))
-        .check_new_service::<Target, http::Request<_>>()
         .push_on_response(
             svc::layers()
-                .push(svc::FailFast::layer("Logical", dispatch_timeout))
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
         .push_cache(cache_max_idle_age)
         .push_on_response(http::Retain::layer())
-        .check_new_service::<Target, http::Request<_>>()
         .instrument(|t: &Target| info_span!("target", dst = %t.dst))
+        // Obtain a new inner service for each request (fom the above cache).
+        //
+        // Note that the router service is always ready, so the `FailFast` layer
+        // need not use a `SpawnReady` to drive the service to ready.
         .push(svc::NewRouter::layer(TargetPerRequest::accept))
-        .check_new_service::<http::Accept, http::Request<_>>()
         .push_on_response(
             svc::layers()
-                .push(http::BoxRequest::layer())
-                // Limits the number of in-flight requests.
                 .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
-                // Eagerly fail requests when the proxy is out of capacity for a
-                // dispatch_timeout.
-                .push(svc::FailFast::layer("Server", dispatch_timeout))
+                .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                 .push(metrics.http_errors.clone())
-                // Synthesizes responses for proxy errors.
                 .push(errors::layer())
-                // Initiates OpenCensus tracing.
                 .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
-                .push_spawn_buffer(buffer_capacity)
                 .push(http::BoxResponse::layer()),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
