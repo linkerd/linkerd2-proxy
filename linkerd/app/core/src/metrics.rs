@@ -295,12 +295,18 @@ impl FmtLabels for OutboundEndpointLabels {
     }
 }
 
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::In => write!(f, "inbound"),
+            Self::Out => write!(f, "outbound"),
+        }
+    }
+}
+
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Direction::In => write!(f, "direction=\"inbound\""),
-            Direction::Out => write!(f, "direction=\"outbound\""),
-        }
+        write!(f, "direction=\"{}\"", self)
     }
 }
 

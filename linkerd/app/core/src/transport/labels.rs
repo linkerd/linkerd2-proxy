@@ -1,4 +1,4 @@
-pub use crate::metrics::{Direction, EndpointLabels};
+pub use crate::metrics::{Direction, OutboundEndpointLabels};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
@@ -12,7 +12,8 @@ use std::fmt;
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Key {
     Accept(Direction, tls::server::ConditionalTls),
-    Connect(EndpointLabels),
+    OutboundConnect(OutboundEndpointLabels),
+    InboundConnect,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -27,22 +28,28 @@ impl Key {
     pub fn accept(direction: Direction, id: tls::server::ConditionalTls) -> Self {
         Self::Accept(direction, id)
     }
-
-    pub fn connect(ep: impl Into<EndpointLabels>) -> Self {
-        Self::Connect(ep.into())
-    }
 }
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Accept(direction, identity) => {
-                write!(f, "peer=\"src\",")?;
-                (direction, TlsAccept::from(identity)).fmt_labels(f)
+                direction.fmt_labels(f)?;
+                write!(f, ",peer=\"src\",")?;
+                TlsAccept::from(identity).fmt_labels(f)
             }
-            Self::Connect(labels) => {
-                write!(f, "peer=\"dst\",")?;
-                labels.fmt_labels(f)
+            Self::OutboundConnect(endpoint) => {
+                Direction::Out.fmt_labels(f)?;
+                write!(f, ",peer=\"dst\",")?;
+                endpoint.fmt_labels(f)
+            }
+            Self::InboundConnect => {
+                const NO_TLS: tls::client::ConditionalServerId =
+                    Conditional::None(tls::client::NoServerId::Loopback);
+
+                Direction::In.fmt_labels(f)?;
+                write!(f, ",peer=\"dst\",")?;
+                TlsConnect(&NO_TLS).fmt_labels(f)
             }
         }
     }

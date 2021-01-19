@@ -241,18 +241,24 @@ impl<P> Into<tls::ConditionalServerId> for &'_ Endpoint<P> {
 
 impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(self.into())
+        transport::labels::Key::OutboundConnect(self.into())
     }
 }
 
-impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
-    fn into(self) -> metrics::EndpointLabels {
+impl<P> Into<metrics::OutboundEndpointLabels> for &'_ Endpoint<P> {
+    fn into(self) -> metrics::OutboundEndpointLabels {
         metrics::OutboundEndpointLabels {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.identity.clone(),
         }
-        .into()
+    }
+}
+
+impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
+    fn into(self) -> metrics::EndpointLabels {
+        let ep: metrics::OutboundEndpointLabels = self.into();
+        ep.into()
     }
 }
 

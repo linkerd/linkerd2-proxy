@@ -8,7 +8,6 @@ use linkerd_app_core::{
     transport_header::TransportHeader,
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use metrics::InboundEndpointLabels;
 use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
 
@@ -143,10 +142,7 @@ impl Into<u16> for TcpEndpoint {
 
 impl Into<transport::labels::Key> for &'_ TcpEndpoint {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::connect(InboundEndpointLabels {
-            authority: None,
-            client_id: self.client_id.clone(),
-        })
+        transport::labels::Key::InboundConnect
     }
 }
 
@@ -184,7 +180,7 @@ impl Into<tls::ConditionalServerId> for &'_ Target {
 
 impl Into<transport::labels::Key> for &'_ Target {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(self.into())
+        transport::labels::Key::InboundConnect
     }
 }
 
