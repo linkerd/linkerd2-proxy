@@ -22,6 +22,13 @@ pub type Poll<T> = std::task::Poll<Result<T>>;
 
 #[async_trait::async_trait]
 pub trait Peek {
+    /// Receives data on the socket from the remote address to which it is
+    /// connected, without removing that data from the queue. On success,
+    /// returns the number of bytes peeked. A return value of zero bytes does not
+    /// necessarily indicate that the underlying socket has closed.
+    ///
+    /// Successive calls return the same data. This is accomplished by passing
+    /// `MSG_PEEK` as a flag to the underlying recv system call.
     async fn peek(&self, buf: &mut [u8]) -> Result<usize>;
 }
 

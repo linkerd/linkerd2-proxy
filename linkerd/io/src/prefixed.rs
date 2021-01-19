@@ -31,11 +31,11 @@ impl<I> From<I> for PrefixedIo<I> {
 }
 
 #[async_trait::async_trait]
-impl<I: io::Peek + Send + Sync> io::Peek for PrefixedIo<I> {
+impl<I: Send + Sync> io::Peek for PrefixedIo<I> {
     async fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
         let sz = self.prefix.len().min(buf.len());
         if sz == 0 {
-            return self.io.peek(buf).await;
+            return Ok(0);
         }
 
         (&mut buf[..sz]).clone_from_slice(&self.prefix[..sz]);

@@ -136,19 +136,24 @@ macro_rules! assert_contains {
 
 #[macro_export]
 macro_rules! assert_eventually_contains {
-    ($scrape:expr, $contains:expr) => {
+    ($scrape:expr, $contains:expr) => {{
+        let mut res: Result<(), crate::metrics::MatchErr> = Ok(());
+        let res_ref = &mut res;
         assert_eventually!(
-            $scrape.contains($contains),
-            "metrics scrape:\n{}\ndid not contain:\n{}",
-            $scrape,
-            $contains
+            {
+                *res_ref = $contains.is_in($scrape);
+                res_ref.is_ok()
+            },
+            "{}",
+            std::mem::replace(res_ref, Ok(())).unwrap_err(),
         )
-    };
+    }};
 }
 
 pub mod client;
 pub mod controller;
 pub mod identity;
+pub mod metrics;
 pub mod proxy;
 pub mod server;
 pub mod tap;
