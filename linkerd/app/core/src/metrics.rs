@@ -262,11 +262,10 @@ impl FmtLabels for EndpointLabels {
 impl FmtLabels for InboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(a) = self.authority.as_ref() {
-            write!(f, ",")?;
             Authority(a).fmt_labels(f)?;
+            write!(f, ",")?;
         }
 
-        write!(f, ",")?;
         TlsAccept::from(&self.client_id).fmt_labels(f)?;
 
         Ok(())
@@ -276,11 +275,10 @@ impl FmtLabels for InboundEndpointLabels {
 impl FmtLabels for OutboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(a) = self.authority.as_ref() {
-            write!(f, ",")?;
             Authority(a).fmt_labels(f)?;
+            write!(f, ",")?;
         }
 
-        write!(f, ",")?;
         TlsConnect::from(&self.server_id).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
