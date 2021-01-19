@@ -138,13 +138,14 @@ macro_rules! assert_contains {
 macro_rules! assert_eventually_contains {
     ($scrape:expr, $contains:expr) => {{
         let mut res: Result<(), crate::metrics::MatchErr> = Ok(());
+        let res_ref = &mut res;
         assert_eventually!(
             {
-                res = $contains.is_in($scrape);
-                res.is_ok()
+                *res_ref = $contains.is_in($scrape);
+                res_ref.is_ok()
             },
             "{}",
-            res.unwrap_err(),
+            std::mem::replace(res_ref, Ok(())).unwrap_err(),
         )
     }};
 }

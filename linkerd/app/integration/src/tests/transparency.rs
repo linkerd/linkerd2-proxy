@@ -1338,12 +1338,13 @@ async fn retry_reconnect_errors() {
 
     // wait until metrics has seen our connection, this can be flaky depending on
     // all the other threads currently running...
-    let metric = metrics::metric("tcp_open_total")
-        .with_label("peer", "src")
-        .with_label("direction", "inbound")
-        .with_label("tls", "disabled")
-        .with_value(1);
-    assert_eventually_contains!(metrics.get("/metrics").await, metric);
+    metrics::metric("tcp_open_total")
+        .label("peer", "src")
+        .label("direction", "inbound")
+        .label("tls", "disabled")
+        .value(1u64)
+        .assert_in(&metrics)
+        .await;
 
     drop(tx); // start `listen` now
               // This may be flaky on CI.
