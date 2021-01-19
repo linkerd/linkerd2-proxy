@@ -233,7 +233,7 @@ impl FmtLabels for RouteLabels {
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let authority = self.authority.as_ref().map(Authority);
-        (authority, &self.direction).fmt_labels(f)?;
+        (&self.direction, authority).fmt_labels(f)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;
