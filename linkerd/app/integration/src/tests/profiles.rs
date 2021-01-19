@@ -163,11 +163,13 @@ async fn retry_uses_budget() {
             assert_eq!(res.status(), 533);
         },
         with_metrics: |metrics: client::Client, port| async move {
-            let expected = format!(
-                "route_retryable_total{{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:{}\",skipped=\"no_budget\"}} 1",
-                port
-            );
-            assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+            metrics::metric("route_retryable_total")
+                .label("direction", "outbound")
+                .label("dst", format_args!("profiles.test.svc.cluster.local:{}", port))
+                .label("skipped", "no_budget")
+                .value(1u64)
+                .assert_in(&metrics)
+                .await;
         }
     }
 }
@@ -332,11 +334,14 @@ async fn timeout() {
             assert_eq!(res.status(), 504);
         },
         with_metrics: |metrics: client::Client, port| async move {
-            let expected = format!(
-                "route_response_total{{direction=\"outbound\",dst=\"profiles.test.svc.cluster.local:{}\",classification=\"failure\",error=\"timeout\"}} 1",
-                port
-            );
-            assert_eventually_contains!(metrics.get("/metrics").await, &expected[..]);
+            metrics::metric("route_response_total")
+                .label("direction", "outbound")
+                .label("dst", format_args!("profiles.test.svc.cluster.local:{}", port))
+                .label("classification", "failure")
+                .label("error", "timeout")
+                .value(1u64)
+                .assert_in(&metrics)
+                .await;
         }
     }
 }

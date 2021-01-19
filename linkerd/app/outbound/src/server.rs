@@ -86,7 +86,12 @@ where
     svc::stack(stack)
         .push_on_response(
             svc::layers()
-                .push(svc::FailFast::layer("Accept", config.dispatch_timeout))
+                // If the traffic split is empty/unavailable, eagerly fail
+                // requests requests. When the split is in failfast, spawn
+                // the service in a background task so it becomes ready without
+                // new requests.
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(svc::FailFast::layer("TCP Server", config.dispatch_timeout))
                 .push_spawn_buffer(config.buffer_capacity),
         )
         .push_cache(config.cache_max_idle_age)
@@ -158,11 +163,15 @@ where
         .push_on_response(
             svc::layers()
                 .push(http::BoxRequest::layer())
-                // Limits the number of in-flight requests.
+                // Limit the number of in-flight requests. When the proxy is
+                // at capacity, go into failfast after a dispatch timeout. If
+                // the router is unavailable, then spawn the service on a
+                // background task to ensure it becomes ready without new
+                // requests being processed.
+                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
-                // Eagerly fail requests when the proxy is out of capacity for a
-                // dispatch_timeout.
-                .push(svc::FailFast::layer("Server", dispatch_timeout))
+                .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
+                .push_spawn_buffer(buffer_capacity)
                 .push(metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
@@ -171,7 +180,6 @@ where
                     SpanConverter::server(span_sink, trace_labels())
                 })))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
-                .push_spawn_buffer(buffer_capacity)
                 .push(http::BoxResponse::layer()),
         )
         .push(http::NewNormalizeUri::layer())
@@ -188,6 +196,7 @@ where
                 .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
                 .push_on_response(
                     svc::layers()
+                        .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity)
                         .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
