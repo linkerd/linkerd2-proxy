@@ -83,6 +83,9 @@ impl FmtLabels for TlsStatus {
             Conditional::None(tls::ReasonForNoPeerName::LocalIdentityDisabled) => {
                 write!(f, "tls=\"disabled\"")
             }
+            Conditional::None(tls::ReasonForNoPeerName::NoPeerIdFromRemote) => {
+                write!(f, "tls=\"true\",client_id=\"\"")
+            }
             Conditional::None(ref why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }

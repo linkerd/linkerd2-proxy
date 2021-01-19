@@ -383,13 +383,18 @@ mod http2 {
         tokio::task::yield_now().await;
 
         // Wait until the proxy has seen the `srv1` disconnect...
-        assert_eventually_contains!(
-            metrics.get("/metrics").await,
-            &format!(
-                "tcp_close_total{{peer=\"dst\",authority=\"disco.test.svc.cluster.local:{}\",direction=\"outbound\",tls=\"no_identity\",no_tls_reason=\"not_provided_by_service_discovery\",errno=\"\"}} 1",
-                port
+        metrics::metric("tcp_close_total")
+            .label("peer", "dst")
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label(
+                "authority",
+                format_args!("disco.test.svc.cluster.local:{}", port),
             )
-        );
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
 
         // Start a new request to the destination, now that the server is dead.
         // This request should be waiting at the balancer for a ready endpoint.
