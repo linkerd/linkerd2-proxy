@@ -6,7 +6,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_tls as tls;
+use linkerd_tls::{self as tls, server::Connection};
 use std::{
     future::Future,
     pin::Pin,
@@ -64,7 +64,7 @@ impl AcceptPermittedClients {
     }
 }
 
-impl<T> Service<tls::server::Connection<T, TcpStream>> for AcceptPermittedClients {
+impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClients {
     type Response = ServeFuture;
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
@@ -73,28 +73,22 @@ impl<T> Service<tls::server::Connection<T, TcpStream>> for AcceptPermittedClient
         Poll::Ready(Ok(()))
     }
 
-    fn call(
-        &mut self,
-        ((client_id, _), io): tls::server::Connection<T, TcpStream>,
-    ) -> Self::Future {
-        future::ok(match client_id {
-            Conditional::Some(id) => {
-                if let Some(id) = id {
-                    if self.permitted_client_ids.contains(&id) {
-                        Box::pin(self.serve_authenticated(io))
-                    } else {
-                        Box::pin(
-                            self.serve_unauthenticated(io, format!("Unauthorized client: {}", id)),
-                        )
-                    }
+    fn call(&mut self, conn: Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
+        future::ok(match conn {
+            ((Conditional::Some(Some(id)), _), io) => {
+                if self.permitted_client_ids.contains(&id) {
+                    Box::pin(self.serve_authenticated(io))
                 } else {
-                    Box::pin(self.serve_unauthenticated(io, "Unauthenticated client"))
+                    Box::pin(self.serve_unauthenticated(io, "Unauthorized client"))
                 }
             }
-            Conditional::None(tls::server::NoTls::Loopback) => {
+            ((Conditional::Some(None), _), io) => {
+                Box::pin(self.serve_unauthenticated(io, "Unauthenticated client"))
+            }
+            ((Conditional::None(tls::server::NoTls::Loopback), _), io) => {
                 Box::pin(self.serve_authenticated(io))
             }
-            Conditional::None(reason) => {
+            ((Conditional::None(reason), _), io) => {
                 Box::pin(self.serve_unauthenticated(io, reason.to_string()))
             }
         })

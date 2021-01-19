@@ -1,12 +1,14 @@
 mod boxed;
 mod either;
 mod prefixed;
+mod scoped;
 mod sensor;
 
 pub use self::{
     boxed::BoxedIo,
     either::EitherIo,
     prefixed::PrefixedIo,
+    scoped::ScopedIo,
     sensor::{Sensor, SensorIo},
 };
 pub use std::io::*;

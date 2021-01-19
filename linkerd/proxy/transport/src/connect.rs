@@ -1,5 +1,6 @@
+use linkerd_io as io;
 use std::task::{Context, Poll};
-use std::{future::Future, io, net::SocketAddr, pin::Pin, time::Duration};
+use std::{future::Future, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::net::TcpStream;
 use tracing::debug;
 
@@ -15,10 +16,10 @@ impl ConnectTcp {
 }
 
 impl<T: Into<SocketAddr>> tower::Service<T> for ConnectTcp {
-    type Response = TcpStream;
+    type Response = io::ScopedIo<TcpStream>;
     type Error = io::Error;
     type Future =
-        Pin<Box<dyn Future<Output = Result<TcpStream, io::Error>> + Send + Sync + 'static>>;
+        Pin<Box<dyn Future<Output = io::Result<io::ScopedIo<TcpStream>>> + Send + Sync + 'static>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -37,7 +38,7 @@ impl<T: Into<SocketAddr>> tower::Service<T> for ConnectTcp {
                 ?keepalive,
                 "Connected",
             );
-            Ok(io)
+            Ok(io::ScopedIo::client(io))
         })
     }
 }
