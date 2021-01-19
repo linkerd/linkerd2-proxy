@@ -206,16 +206,16 @@ impl tls::client::HasConfig for Local {
     }
 }
 
-impl tls::accept::HasConfig for Local {
+impl tls::server::HasConfig for Local {
     fn tls_server_name(&self) -> Name {
         self.name.clone()
     }
 
-    fn tls_server_config(&self) -> Arc<tls::accept::Config> {
+    fn tls_server_config(&self) -> Arc<tls::server::Config> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.tls_server_config();
         }
 
-        tls::accept::empty_config()
+        tls::server::empty_config()
     }
 }
