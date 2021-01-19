@@ -61,10 +61,9 @@ impl MetricMatch {
         let mut candidates = Vec::new();
         'lines: for &line in &lines {
             if let Some(labels) = line
-                .split("{")
-                .skip(1)
-                .next()
-                .and_then(|line| line.split("}").next())
+                .split('{')
+                .nth(1)
+                .and_then(|line| line.split('}').next())
             {
                 for label in &self.labels {
                     if !labels.contains(&label[..]) {
@@ -84,7 +83,7 @@ impl MetricMatch {
 
         if let Some(ref expected_value) = self.value {
             for &line in &candidates {
-                if let Some(value) = line.split("}").skip(1).next() {
+                if let Some(value) = line.split('}').nth(1) {
                     let value = value.trim();
                     if value == expected_value {
                         return Ok(());
