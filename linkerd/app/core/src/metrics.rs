@@ -253,16 +253,14 @@ impl From<OutboundEndpointLabels> for EndpointLabels {
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Inbound(i) => i.fmt_labels(f),
-            Self::Outbound(o) => o.fmt_labels(f),
+            Self::Inbound(i) => (Direction::In, i).fmt_labels(f),
+            Self::Outbound(o) => (Direction::Out, o).fmt_labels(f),
         }
     }
 }
 
 impl FmtLabels for InboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "direction=\"inbound\"")?;
-
         if let Some(a) = self.authority.as_ref() {
             write!(f, ",")?;
             Authority(a).fmt_labels(f)?;
@@ -277,8 +275,6 @@ impl FmtLabels for InboundEndpointLabels {
 
 impl FmtLabels for OutboundEndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "direction=\"outbound\"")?;
-
         if let Some(a) = self.authority.as_ref() {
             write!(f, ",")?;
             Authority(a).fmt_labels(f)?;
