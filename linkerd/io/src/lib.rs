@@ -16,6 +16,30 @@ pub use tokio_util::io::{poll_read_buf, poll_write_buf};
 
 pub type Poll<T> = std::task::Poll<Result<T>>;
 
+// === Peek ===
+
+#[async_trait::async_trait]
+pub trait Peek {
+    /// Receives data on the socket from the remote address to which it is
+    /// connected, without removing that data from the queue. On success,
+    /// returns the number of bytes peeked. A return value of zero bytes does not
+    /// necessarily indicate that the underlying socket has closed.
+    ///
+    /// Successive calls return the same data. This is accomplished by passing
+    /// `MSG_PEEK` as a flag to the underlying recv system call.
+    async fn peek(&self, buf: &mut [u8]) -> Result<usize>;
+}
+
+// Special-case a wrapper for TcpStream::peek.
+#[async_trait::async_trait]
+impl Peek for tokio::net::TcpStream {
+    async fn peek(&self, buf: &mut [u8]) -> Result<usize> {
+        tokio::net::TcpStream::peek(self, buf).await
+    }
+}
+
+// === PeerAddr ===
+
 pub trait PeerAddr {
     fn peer_addr(&self) -> Result<SocketAddr>;
 }

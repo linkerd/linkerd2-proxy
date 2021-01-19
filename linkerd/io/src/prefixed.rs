@@ -1,22 +1,20 @@
-use crate::{IoSlice, PeerAddr, Poll};
+use crate::{self as io};
 use bytes::{Buf, Bytes};
 use pin_project::pin_project;
-use std::{cmp, io};
-use std::{pin::Pin, task::Context};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, Result};
+use std::{cmp, pin::Pin, task::Context};
 
 /// A TcpStream where the initial reads will be served from `prefix`.
 #[pin_project]
 #[derive(Debug)]
-pub struct PrefixedIo<S> {
+pub struct PrefixedIo<I> {
     prefix: Bytes,
 
     #[pin]
-    io: S,
+    io: I,
 }
 
-impl<S> PrefixedIo<S> {
-    pub fn new(prefix: impl Into<Bytes>, io: S) -> Self {
+impl<I> PrefixedIo<I> {
+    pub fn new(prefix: impl Into<Bytes>, io: I) -> Self {
         let prefix = prefix.into();
         Self { prefix, io }
     }
@@ -26,21 +24,38 @@ impl<S> PrefixedIo<S> {
     }
 }
 
-impl<S> From<S> for PrefixedIo<S> {
-    fn from(io: S) -> Self {
+impl<I> From<I> for PrefixedIo<I> {
+    fn from(io: I) -> Self {
         Self::new(Bytes::default(), io)
     }
 }
 
-impl<S: PeerAddr> PeerAddr for PrefixedIo<S> {
+#[async_trait::async_trait]
+impl<I: Send + Sync> io::Peek for PrefixedIo<I> {
+    async fn peek(&self, buf: &mut [u8]) -> io::Result<usize> {
+        let sz = self.prefix.len().min(buf.len());
+        if sz == 0 {
+            return Ok(0);
+        }
+
+        (&mut buf[..sz]).clone_from_slice(&self.prefix[..sz]);
+        Ok(sz)
+    }
+}
+
+impl<I: io::PeerAddr> io::PeerAddr for PrefixedIo<I> {
     #[inline]
-    fn peer_addr(&self) -> Result<std::net::SocketAddr> {
+    fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
         self.io.peer_addr()
     }
 }
 
-impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<()> {
+impl<I: io::AsyncRead> io::AsyncRead for PrefixedIo<I> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut io::ReadBuf<'_>,
+    ) -> io::Poll<()> {
         let this = self.project();
         // Check the length only once, since looking as the length
         // of a Bytes isn't as cheap as the length of a &[u8].
@@ -58,36 +73,36 @@ impl<S: AsyncRead> AsyncRead for PrefixedIo<S> {
             if peeked_len == len {
                 *this.prefix = Bytes::new();
             }
-            Poll::Ready(Ok(()))
+            io::Poll::Ready(Ok(()))
         }
     }
 }
 
-impl<S: io::Write> io::Write for PrefixedIo<S> {
+impl<I: io::Write> io::Write for PrefixedIo<I> {
     #[inline]
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.io.write(buf)
     }
 
     #[inline]
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         self.io.flush()
     }
 }
 
-impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
+impl<I: io::AsyncWrite> io::AsyncWrite for PrefixedIo<I> {
     #[inline]
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         self.project().io.poll_shutdown(cx)
     }
 
     #[inline]
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         self.project().io.poll_flush(cx)
     }
 
     #[inline]
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
         self.project().io.poll_write(cx, buf)
     }
 
@@ -95,8 +110,8 @@ impl<S: AsyncWrite> AsyncWrite for PrefixedIo<S> {
     fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        bufs: &[IoSlice<'_>],
-    ) -> Poll<usize> {
+        bufs: &[io::IoSlice<'_>],
+    ) -> io::Poll<usize> {
         self.project().io.poll_write_vectored(cx, bufs)
     }
 
