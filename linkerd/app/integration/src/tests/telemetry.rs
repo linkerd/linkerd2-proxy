@@ -939,7 +939,7 @@ mod transport {
 
         let labels = labels
             .label("peer", "src")
-            .label("local_port", tcp_client.target_addr().port());
+            .label("target_addr", tcp_client.target_addr().port());
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
             .metric("tcp_close_total")
@@ -1094,7 +1094,7 @@ mod transport {
             metrics::labels()
                 .label("direction", "inbound")
                 .label("tls", "disabled")
-                .label("local_port", proxy.inbound.port())
+                .label("target_addr", proxy.inbound)
         })
         .await;
     }
@@ -1117,7 +1117,7 @@ mod transport {
                 .label("direction", "outbound")
                 .label("tls", "no_identity")
                 .label("no_tls_reason", "loopback")
-                .label("local_port", proxy.outbound.port())
+                .label("target_addr", proxy.outbound)
         })
         .await;
     }

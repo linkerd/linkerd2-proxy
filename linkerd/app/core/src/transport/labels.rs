@@ -14,7 +14,7 @@ pub enum Key {
     Accept {
         direction: Direction,
         identity: TlsStatus,
-        local_addr: SocketAddr,
+        target_addr: SocketAddr,
     },
     Connect(EndpointLabels),
 }
@@ -25,11 +25,11 @@ pub struct TlsStatus(tls::Conditional<TlsId>);
 // === impl Key ===
 
 impl Key {
-    pub fn accept(direction: Direction, id: tls::PeerIdentity, local_addr: SocketAddr) -> Self {
+    pub fn accept(direction: Direction, id: tls::PeerIdentity, target_addr: SocketAddr) -> Self {
         Self::Accept {
             direction,
             identity: TlsStatus::client(id),
-            local_addr,
+            target_addr,
         }
     }
 }
@@ -40,9 +40,9 @@ impl FmtLabels for Key {
             Self::Accept {
                 direction,
                 identity,
-                local_addr,
+                target_addr,
             } => {
-                write!(f, "peer=\"src\",local_port=\"{}\",", local_addr.port())?;
+                write!(f, "peer=\"src\",target_addr=\"{}\",", target_addr)?;
                 (direction, identity).fmt_labels(f)
             }
             Self::Connect(labels) => {
