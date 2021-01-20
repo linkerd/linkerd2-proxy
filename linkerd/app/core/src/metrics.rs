@@ -2,8 +2,11 @@ pub use crate::{
     classify::{Class, SuccessOrFailure},
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
     proxy::identity,
-    stack_metrics, telemetry,
-    transport::{self, labels::TlsStatus},
+    stack_metrics, telemetry, tls,
+    transport::{
+        self,
+        labels::{TlsAccept, TlsConnect},
+    },
 };
 use linkerd_addr::Addr;
 use linkerd_metrics::FmtLabels;
@@ -42,13 +45,24 @@ pub struct Metrics {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
     addr: Addr,
-    tls_status: TlsStatus,
+    server_id: tls::ConditionalServerId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EndpointLabels {
-    pub direction: Direction,
-    pub tls_id: TlsStatus,
+pub enum EndpointLabels {
+    Inbound(InboundEndpointLabels),
+    Outbound(OutboundEndpointLabels),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InboundEndpointLabels {
+    pub client_id: tls::server::ConditionalTls,
+    pub authority: Option<http::uri::Authority>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct OutboundEndpointLabels {
+    pub server_id: tls::ConditionalServerId,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
 }
@@ -71,12 +85,6 @@ pub struct RouteLabels {
 pub enum Direction {
     In,
     Out,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum TlsId {
-    ClientId(identity::Name),
-    ServerId(identity::Name),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -189,7 +197,7 @@ impl From<&'_ control::ControlAddr> for ControlLabels {
     fn from(c: &'_ control::ControlAddr) -> Self {
         ControlLabels {
             addr: c.addr.clone(),
-            tls_status: c.identity.clone().map(TlsId::ServerId).into(),
+            server_id: c.identity.clone(),
         }
     }
 }
@@ -197,7 +205,7 @@ impl From<&'_ control::ControlAddr> for ControlLabels {
 impl FmtLabels for ControlLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "addr=\"{}\",", self.addr)?;
-        self.tls_status.fmt_labels(f)?;
+        TlsConnect::from(&self.server_id).fmt_labels(f)?;
 
         Ok(())
     }
@@ -230,28 +238,69 @@ impl FmtLabels for RouteLabels {
 
 // === impl EndpointLabels ===
 
+impl From<InboundEndpointLabels> for EndpointLabels {
+    fn from(i: InboundEndpointLabels) -> Self {
+        Self::Inbound(i)
+    }
+}
+
+impl From<OutboundEndpointLabels> for EndpointLabels {
+    fn from(i: OutboundEndpointLabels) -> Self {
+        Self::Outbound(i)
+    }
+}
+
 impl FmtLabels for EndpointLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let authority = self.authority.as_ref().map(Authority);
-        (&self.direction, authority).fmt_labels(f)?;
+        match self {
+            Self::Inbound(i) => (Direction::In, i).fmt_labels(f),
+            Self::Outbound(o) => (Direction::Out, o).fmt_labels(f),
+        }
+    }
+}
 
-        if let Some(labels) = self.labels.as_ref() {
-            write!(f, ",{}", labels)?;
+impl FmtLabels for InboundEndpointLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(a) = self.authority.as_ref() {
+            Authority(a).fmt_labels(f)?;
+            write!(f, ",")?;
         }
 
-        write!(f, ",")?;
-        self.tls_id.fmt_labels(f)?;
+        TlsAccept::from(&self.client_id).fmt_labels(f)?;
 
         Ok(())
     }
 }
 
+impl FmtLabels for OutboundEndpointLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(a) = self.authority.as_ref() {
+            Authority(a).fmt_labels(f)?;
+            write!(f, ",")?;
+        }
+
+        TlsConnect::from(&self.server_id).fmt_labels(f)?;
+
+        if let Some(labels) = self.labels.as_ref() {
+            write!(f, ",{}", labels)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::In => write!(f, "inbound"),
+            Self::Out => write!(f, "outbound"),
+        }
+    }
+}
+
 impl FmtLabels for Direction {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Direction::In => write!(f, "direction=\"inbound\""),
-            Direction::Out => write!(f, "direction=\"outbound\""),
-        }
+        write!(f, "direction=\"{}\"", self)
     }
 }
 
@@ -282,15 +331,6 @@ impl fmt::Display for SuccessOrFailure {
         match self {
             SuccessOrFailure::Success => write!(f, "success"),
             SuccessOrFailure::Failure => write!(f, "failure"),
-        }
-    }
-}
-
-impl FmtLabels for TlsId {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TlsId::ClientId(ref id) => write!(f, "client_id=\"{}\"", id.as_ref()),
-            TlsId::ServerId(ref id) => write!(f, "server_id=\"{}\"", id.as_ref()),
         }
     }
 }

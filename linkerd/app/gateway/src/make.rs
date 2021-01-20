@@ -1,17 +1,17 @@
 use super::gateway::Gateway;
-use linkerd_app_core::{identity, profiles, svc, tls, NameAddr};
-use linkerd_app_inbound::endpoint as inbound;
+use linkerd_app_core::{profiles, svc, tls, Conditional, NameAddr};
+use linkerd_app_inbound::target as inbound;
 use linkerd_app_outbound as outbound;
 use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub(crate) struct MakeGateway<O> {
     outbound: O,
-    local_id: Option<identity::Name>,
+    local_id: Option<tls::LocalId>,
 }
 
 impl<O> MakeGateway<O> {
-    pub fn new(outbound: O, local_id: Option<identity::Name>) -> Self {
+    pub fn new(outbound: O, local_id: Option<tls::LocalId>) -> Self {
         Self { outbound, local_id }
     }
 }
@@ -27,13 +27,13 @@ where
     fn new_service(&mut self, (profile, target): Target) -> Self::Service {
         let inbound::Target {
             dst,
-            tls_client_id,
+            client_id,
             http_version,
-            socket_addr: _,
+            target_addr: _,
         } = target;
 
-        let (source_id, local_id) = match (tls_client_id, self.local_id.clone()) {
-            (tls::Conditional::Some(src), Some(local)) => (src, local),
+        let (source_id, local_id) = match (client_id, self.local_id.clone()) {
+            (Conditional::Some(Some(src)), Some(local)) => (src, local),
             _ => return Gateway::NoIdentity,
         };
 

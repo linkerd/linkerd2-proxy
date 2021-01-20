@@ -1,4 +1,4 @@
-use crate::CrtKey;
+use linkerd_identity::CrtKey;
 use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge};
 use std::{fmt, sync::Arc, time::UNIX_EPOCH};
 use tokio::sync::watch;

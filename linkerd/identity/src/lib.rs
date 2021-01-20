@@ -33,14 +33,14 @@ pub struct TokenSource(Arc<String>);
 
 #[derive(Clone, Debug)]
 pub struct Crt {
-    name: Name,
+    id: LocalId,
     expiry: SystemTime,
     chain: Vec<rustls::Certificate>,
 }
 
 #[derive(Clone)]
 pub struct CrtKey {
-    name: Name,
+    id: LocalId,
     expiry: SystemTime,
     client_config: Arc<rustls::ClientConfig>,
     server_config: Arc<rustls::ServerConfig>,
@@ -50,6 +50,10 @@ struct CertResolver(rustls::sign::CertifiedKey);
 
 #[derive(Clone, Debug)]
 pub struct InvalidCrt(rustls::TLSError);
+
+/// A newtype for local server identities.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct LocalId(pub Name);
 
 // These must be kept in sync:
 static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
@@ -126,9 +130,9 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl Name {
-    pub fn as_dns_name_ref(&self) -> webpki::DNSNameRef<'_> {
-        self.0.as_dns_name_ref()
+impl<'t> Into<webpki::DNSNameRef<'t>> for &'t LocalId {
+    fn into(self) -> webpki::DNSNameRef<'t> {
+        (&self.0).into()
     }
 }
 
@@ -153,6 +157,12 @@ impl TryFrom<&[u8]> for Name {
         }
 
         linkerd_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
+    }
+}
+
+impl<'t> Into<webpki::DNSNameRef<'t>> for &'t Name {
+    fn into(self) -> webpki::DNSNameRef<'t> {
+        self.0.as_ref().into()
     }
 }
 
@@ -247,14 +257,9 @@ impl TrustAnchors {
         static NO_OCSP: &[u8] = &[];
         client
             .get_verifier()
-            .verify_server_cert(
-                &client.root_store,
-                &crt.chain,
-                crt.name.as_dns_name_ref(),
-                NO_OCSP,
-            )
+            .verify_server_cert(&client.root_store, &crt.chain, (&crt.id).into(), NO_OCSP)
             .map_err(InvalidCrt)?;
-        debug!("certified {}", crt.name.as_ref());
+        debug!("certified {}", crt.id);
 
         let k = SigningKey(key.0);
         let key = rustls::sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k)));
@@ -279,14 +284,16 @@ impl TrustAnchors {
         server.cert_resolver = resolver;
 
         Ok(CrtKey {
-            name: crt.name,
+            id: crt.id,
             expiry: crt.expiry,
             client_config: Arc::new(client),
             server_config: Arc::new(server),
         })
     }
+}
 
-    pub fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
+impl Into<Arc<rustls::ClientConfig>> for &'_ TrustAnchors {
+    fn into(self) -> Arc<rustls::ClientConfig> {
         self.0.clone()
     }
 }
@@ -300,36 +307,35 @@ impl fmt::Debug for TrustAnchors {
 // === Crt ===
 
 impl Crt {
-    pub fn new(name: Name, leaf: Vec<u8>, intermediates: Vec<Vec<u8>>, expiry: SystemTime) -> Self {
+    pub fn new(
+        id: LocalId,
+        leaf: Vec<u8>,
+        intermediates: Vec<Vec<u8>>,
+        expiry: SystemTime,
+    ) -> Self {
         let mut chain = Vec::with_capacity(intermediates.len() + 1);
         chain.push(rustls::Certificate(leaf));
         chain.extend(intermediates.into_iter().map(rustls::Certificate));
 
-        Self {
-            name,
-            chain,
-            expiry,
-        }
+        Self { id, chain, expiry }
     }
 
     pub fn name(&self) -> &Name {
-        &self.name
+        self.id.as_ref()
+    }
+}
+
+impl Into<LocalId> for &'_ Crt {
+    fn into(self) -> LocalId {
+        self.id.clone()
     }
 }
 
 // === CrtKey ===
 
 impl CrtKey {
-    pub fn tls_client_config(&self) -> Arc<rustls::ClientConfig> {
-        self.client_config.clone()
-    }
-
-    pub fn tls_server_name(&self) -> Name {
-        self.name.clone()
-    }
-
-    pub fn tls_server_config(&self) -> Arc<rustls::ServerConfig> {
-        self.server_config.clone()
+    pub fn name(&self) -> &Name {
+        self.id.as_ref()
     }
 
     pub fn expiry(&self) -> SystemTime {
@@ -337,10 +343,28 @@ impl CrtKey {
     }
 }
 
+impl Into<LocalId> for &'_ CrtKey {
+    fn into(self) -> LocalId {
+        self.id.clone()
+    }
+}
+
+impl Into<Arc<rustls::ClientConfig>> for &'_ CrtKey {
+    fn into(self) -> Arc<rustls::ClientConfig> {
+        self.client_config.clone()
+    }
+}
+
+impl Into<Arc<rustls::ServerConfig>> for &'_ CrtKey {
+    fn into(self) -> Arc<rustls::ServerConfig> {
+        self.server_config.clone()
+    }
+}
+
 impl fmt::Debug for CrtKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         f.debug_struct("CrtKey")
-            .field("name", &self.name)
+            .field("id", &self.id)
             .field("expiry", &self.expiry)
             .finish()
     }
@@ -405,11 +429,37 @@ impl rustls::ResolvesServerCert for CertResolver {
     }
 }
 
+// === impl LocalId ===
+
+impl From<Name> for LocalId {
+    fn from(n: Name) -> Self {
+        Self(n)
+    }
+}
+
+impl Into<Name> for LocalId {
+    fn into(self) -> Name {
+        self.0
+    }
+}
+
+impl AsRef<Name> for LocalId {
+    fn as_ref(&self) -> &Name {
+        &self.0
+    }
+}
+
+impl fmt::Display for LocalId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 // === impl InvalidCrt ===
 
 impl fmt::Display for InvalidCrt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
+        self.0.fmt(f)
     }
 }
 

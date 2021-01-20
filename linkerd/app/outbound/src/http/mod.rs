@@ -13,7 +13,7 @@ use linkerd_app_core::{
     proxy::{
         api_resolve::ProtocolHint,
         http::{self, CanOverrideAuthority, ClientHandle},
-        identity, tap,
+        tap,
     },
     tls, Conditional,
 };
@@ -76,11 +76,8 @@ impl tap::Inspect for Endpoint {
         req.extensions().get::<ClientHandle>().map(|c| c.addr)
     }
 
-    fn src_tls<'a, B>(
-        &self,
-        _: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, tls::ReasonForNoPeerName> {
-        Conditional::None(tls::ReasonForNoPeerName::Loopback)
+    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::server::ConditionalTls {
+        Conditional::None(tls::server::NoTls::Loopback)
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -91,11 +88,8 @@ impl tap::Inspect for Endpoint {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(
-        &self,
-        _: &http::Request<B>,
-    ) -> Conditional<&identity::Name, tls::ReasonForNoPeerName> {
-        self.identity.as_ref()
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerId {
+        self.identity.clone()
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {

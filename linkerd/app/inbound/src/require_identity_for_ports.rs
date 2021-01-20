@@ -1,4 +1,4 @@
-use crate::endpoint::TcpAccept;
+use crate::target::TcpAccept;
 use indexmap::IndexSet;
 use linkerd_app_core::{svc::stack::Predicate, Error};
 use std::sync::Arc;
@@ -27,8 +27,8 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
         let port = meta.target_addr.port();
         let id_required = self.ports.contains(&port);
 
-        tracing::debug!(%port, peer.id = ?meta.peer_id, %id_required);
-        if id_required && meta.peer_id.is_none() {
+        tracing::debug!(%port, peer.id = ?meta.client_id, %id_required);
+        if id_required && meta.client_id.is_none() {
             return Err(IdentityRequired(()).into());
         }
 

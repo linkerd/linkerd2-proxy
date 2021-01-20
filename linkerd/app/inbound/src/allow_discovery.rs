@@ -1,4 +1,4 @@
-use crate::endpoint::Target;
+use crate::target::Target;
 use linkerd_app_core::{discovery_rejected, svc::stack::Predicate, Error, NameAddr, NameMatch};
 
 #[derive(Clone, Debug)]

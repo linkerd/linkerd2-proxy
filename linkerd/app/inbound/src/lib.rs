@@ -5,12 +5,17 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
+mod allow_discovery;
+mod prevent_loop;
+mod require_identity_for_ports;
+pub mod target;
+
 use self::allow_discovery::AllowProfile;
-pub use self::endpoint::{
-    HttpEndpoint, ProfileTarget, RequestTarget, Target, TcpAccept, TcpEndpoint,
-};
 use self::prevent_loop::PreventLoop;
 use self::require_identity_for_ports::RequireIdentityForPorts;
+pub use self::target::{
+    HttpEndpoint, Logical, ProfileTarget, RequestTarget, Target, TcpAccept, TcpEndpoint,
+};
 use linkerd_app_core::{
     classify,
     config::{ConnectConfig, ProxyConfig, ServerConfig},
@@ -19,7 +24,8 @@ use linkerd_app_core::{
     profiles,
     proxy::{
         http::{self, orig_proto, strip_header},
-        identity, tap, tcp,
+        identity::LocalCrtKey,
+        tap, tcp,
     },
     reconnect,
     spans::SpanConverter,
@@ -30,11 +36,6 @@ use linkerd_app_core::{
 use std::{collections::HashMap, fmt::Debug, net::SocketAddr, time::Duration};
 use tokio::sync::mpsc;
 use tracing::debug_span;
-
-mod allow_discovery;
-pub mod endpoint;
-mod prevent_loop;
-mod require_identity_for_ports;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -76,7 +77,7 @@ impl Config {
     pub fn build<I, C, L, LSvc, P>(
         self,
         listen_addr: SocketAddr,
-        local_identity: Option<identity::Local>,
+        local_identity: Option<LocalCrtKey>,
         connect: C,
         http_loopback: L,
         profiles_client: P,
@@ -139,9 +140,7 @@ impl Config {
                 // accordingly. If there was no opaque transport header, fail
                 // the connection with a ConnectionRefused error.
                 svc::stack(tcp_forward.clone())
-                    .push_map_target(|(h, _): (transport_header::TransportHeader, _)| {
-                        TcpEndpoint::from(h)
-                    })
+                    .push_map_target(TcpEndpoint::from)
                     .push(svc::NewUnwrapOr::layer(
                         svc::Fail::<_, NonOpaqueRefused>::default(),
                     ))
@@ -171,7 +170,7 @@ impl Config {
                 svc::stack(tcp_forward)
                     .push_map_target(TcpEndpoint::from)
                     .push(metrics.transport.layer_accept())
-                    .push_map_target(TcpAccept::from)
+                    .push_map_target(TcpAccept::port_skipped)
                     .into_inner(),
             )
             .into_inner()
@@ -247,7 +246,7 @@ impl Config {
             .check_new_service::<Target, http::Request<http::BoxBody>>()
             .push_on_response(http::BoxRequest::layer())
             // The target stack doesn't use the profile resolution, so drop it.
-            .push_map_target(endpoint::Target::from)
+            .push_map_target(Target::from)
             .push(profiles::http::route_request::layer(
                 svc::proxies()
                     // Sets the route as a request extension so that it can be used
@@ -259,10 +258,10 @@ impl Config {
                     // extension.
                     .push(classify::NewClassify::layer())
                     .check_new_clone::<dst::Route>()
-                    .push_map_target(endpoint::route)
+                    .push_map_target(target::route)
                     .into_inner(),
             ))
-            .push_map_target(endpoint::Logical::from)
+            .push_map_target(Logical::from)
             .push(profiles::discover::layer(
                 profiles_client,
                 AllowProfile(self.allow_discovery.clone()),

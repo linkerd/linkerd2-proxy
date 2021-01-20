@@ -2,7 +2,6 @@
 #![recursion_limit = "512"]
 
 use linkerd2_proxy_api as api;
-use linkerd_identity as identity;
 use linkerd_proxy_core as core;
 
 mod metadata;

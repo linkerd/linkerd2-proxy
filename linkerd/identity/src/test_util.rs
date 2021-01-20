@@ -37,7 +37,7 @@ impl Identity {
 
         let n = Name::from_str(&self.name).expect("name must be valid");
         let der = self.crt.iter().copied().collect();
-        Crt::new(n, der, vec![], SystemTime::now() + HOUR)
+        Crt::new(LocalId(n), der, vec![], SystemTime::now() + HOUR)
     }
 
     pub fn validate(&self) -> Result<CrtKey, InvalidCrt> {

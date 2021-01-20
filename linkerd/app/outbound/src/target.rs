@@ -1,6 +1,6 @@
 use linkerd_app_core::{
     metrics, profiles,
-    proxy::{api_resolve::Metadata, identity, resolve::map_endpoint::MapEndpoint},
+    proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
     tls,
     transport::{self, listen},
     Addr, Conditional,
@@ -33,7 +33,7 @@ pub struct Concrete<P> {
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
     pub addr: SocketAddr,
-    pub identity: tls::PeerIdentity,
+    pub identity: tls::ConditionalServerId,
     pub metadata: Metadata,
     pub concrete: Concrete<P>,
 }
@@ -83,8 +83,7 @@ impl<P> Into<Addr> for &'_ Accept<P> {
 
 impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
-        const NO_TLS: tls::Conditional<identity::Name> =
-            Conditional::None(tls::ReasonForNoPeerName::Loopback);
+        const NO_TLS: tls::server::ConditionalTls = Conditional::None(tls::server::NoTls::Loopback);
         transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.orig_dst)
     }
 }
@@ -204,7 +203,7 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 // === impl Endpoint ===
 
 impl<P> Endpoint<P> {
-    pub fn from_logical(reason: tls::ReasonForNoPeerName) -> impl (Fn(Logical<P>) -> Self) + Clone {
+    pub fn from_logical(reason: tls::NoServerId) -> impl (Fn(Logical<P>) -> Self) + Clone {
         move |logical| match logical
             .profile
             .as_ref()
@@ -213,7 +212,7 @@ impl<P> Endpoint<P> {
             None => Self {
                 addr: (&logical).into(),
                 metadata: Metadata::default(),
-                identity: tls::PeerIdentity::None(reason),
+                identity: Conditional::None(reason),
                 concrete: Concrete {
                     logical,
                     resolve: None,
@@ -224,9 +223,9 @@ impl<P> Endpoint<P> {
                 identity: metadata
                     .identity()
                     .cloned()
-                    .map(tls::Conditional::Some)
-                    .unwrap_or(tls::Conditional::None(
-                        tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
+                    .map(Conditional::Some)
+                    .unwrap_or(Conditional::None(
+                        tls::NoServerId::NotProvidedByServiceDiscovery,
                     )),
                 metadata,
                 concrete: Concrete {
@@ -237,7 +236,7 @@ impl<P> Endpoint<P> {
         }
     }
 
-    pub fn from_accept(reason: tls::ReasonForNoPeerName) -> impl (Fn(Accept<P>) -> Self) + Clone {
+    pub fn from_accept(reason: tls::NoServerId) -> impl (Fn(Accept<P>) -> Self) + Clone {
         move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
     }
 }
@@ -254,26 +253,32 @@ impl<P> Into<SocketAddr> for &'_ Endpoint<P> {
     }
 }
 
-impl<P> tls::HasPeerIdentity for Endpoint<P> {
-    fn peer_identity(&self) -> tls::PeerIdentity {
+impl<P> Into<tls::ConditionalServerId> for &'_ Endpoint<P> {
+    fn into(self) -> tls::ConditionalServerId {
         self.identity.clone()
     }
 }
 
 impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::Connect(self.into())
+        transport::labels::Key::OutboundConnect(self.into())
+    }
+}
+
+impl<P> Into<metrics::OutboundEndpointLabels> for &'_ Endpoint<P> {
+    fn into(self) -> metrics::OutboundEndpointLabels {
+        metrics::OutboundEndpointLabels {
+            authority: Some(self.concrete.logical.addr().to_http_authority()),
+            labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
+            server_id: self.identity.clone(),
+        }
     }
 }
 
 impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
     fn into(self) -> metrics::EndpointLabels {
-        metrics::EndpointLabels {
-            authority: Some(self.concrete.logical.addr().to_http_authority()),
-            direction: metrics::Direction::Out,
-            labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
-            tls_id: metrics::TlsStatus::server(self.identity.clone()),
-        }
+        let ep: metrics::OutboundEndpointLabels = self.into();
+        ep.into()
     }
 }
 
@@ -301,9 +306,7 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             .identity()
             .cloned()
             .map(Conditional::Some)
-            .unwrap_or_else(|| {
-                Conditional::None(tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery)
-            });
+            .unwrap_or_else(|| Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery));
 
         Endpoint {
             addr,
