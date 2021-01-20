@@ -153,6 +153,10 @@ impl TcpServer {
 }
 
 impl TcpConn {
+    pub fn target_addr(&self) -> SocketAddr {
+        self.addr
+    }
+
     pub async fn read(&self) -> Vec<u8> {
         self.try_read()
             .await

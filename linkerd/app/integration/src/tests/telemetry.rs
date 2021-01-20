@@ -937,7 +937,9 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
-        let labels = labels.label("peer", "src");
+        let labels = labels
+            .label("peer", "src")
+            .label("local_port", tcp_client.target_addr().port());
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
             .metric("tcp_close_total")
@@ -1088,10 +1090,11 @@ mod transport {
 
     #[tokio::test]
     async fn inbound_http_accept() {
-        test_http_accept(Fixture::inbound(), |_| {
+        test_http_accept(Fixture::inbound(), |proxy| {
             metrics::labels()
                 .label("direction", "inbound")
                 .label("tls", "disabled")
+                .label("local_port", proxy.inbound.port())
         })
         .await;
     }
@@ -1109,11 +1112,12 @@ mod transport {
 
     #[tokio::test]
     async fn outbound_http_accept() {
-        test_http_accept(Fixture::outbound(), |_| {
+        test_http_accept(Fixture::outbound(), |proxy| {
             metrics::labels()
                 .label("direction", "outbound")
                 .label("tls", "no_identity")
                 .label("no_tls_reason", "loopback")
+                .label("local_port", proxy.outbound.port())
         })
         .await;
     }
