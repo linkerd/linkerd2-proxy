@@ -69,7 +69,7 @@ impl<P> Into<Addr> for &'_ Accept<P> {
 impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
         const NO_TLS: tls::server::ConditionalTls = Conditional::None(tls::server::NoTls::Loopback);
-        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS)
+        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.orig_dst)
     }
 }
 
@@ -77,7 +77,12 @@ impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
 
 impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
     fn from(
-        (profile, Accept { orig_dst, protocol }): (Option<profiles::Receiver>, Accept<P>),
+        (
+            profile,
+            Accept {
+                orig_dst, protocol, ..
+            },
+        ): (Option<profiles::Receiver>, Accept<P>),
     ) -> Self {
         Self {
             profile,

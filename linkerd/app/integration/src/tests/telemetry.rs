@@ -922,12 +922,15 @@ mod transport {
             .await;
     }
 
-    async fn test_tcp_accept(fixture: impl Future<Output = TcpFixture>, labels: metrics::Labels) {
+    async fn test_tcp_accept(
+        fixture: impl Future<Output = TcpFixture>,
+        labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+    ) {
         let _trace = trace_init();
         let TcpFixture {
             client,
             metrics,
-            proxy: _proxy,
+            proxy,
             dst: _dst,
             profile: _profile,
         } = fixture.await;
@@ -937,7 +940,7 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
 
-        let labels = labels.label("peer", "src");
+        let labels = labels(&proxy).label("peer", "src");
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
             .metric("tcp_close_total")
@@ -1088,10 +1091,12 @@ mod transport {
 
     #[tokio::test]
     async fn inbound_http_accept() {
-        test_http_accept(Fixture::inbound(), |_| {
+        test_http_accept(Fixture::inbound(), |proxy| {
+            let orig_dst = proxy.inbound_server.as_ref().unwrap().addr;
             metrics::labels()
                 .label("direction", "inbound")
                 .label("tls", "disabled")
+                .label("target_addr", orig_dst)
         })
         .await;
     }
@@ -1109,11 +1114,13 @@ mod transport {
 
     #[tokio::test]
     async fn outbound_http_accept() {
-        test_http_accept(Fixture::outbound(), |_| {
+        test_http_accept(Fixture::outbound(), |proxy| {
+            let orig_dst = proxy.outbound_server.as_ref().unwrap().addr;
             metrics::labels()
                 .label("direction", "outbound")
                 .label("tls", "no_identity")
                 .label("no_tls_reason", "loopback")
+                .label("target_addr", orig_dst)
         })
         .await;
     }
@@ -1147,12 +1154,13 @@ mod transport {
 
     #[tokio::test]
     async fn inbound_tcp_accept() {
-        test_tcp_accept(
-            TcpFixture::inbound(),
+        test_tcp_accept(TcpFixture::inbound(), |proxy| {
+            let orig_dst = proxy.inbound_server.as_ref().unwrap().addr;
             metrics::labels()
                 .label("direction", "inbound")
-                .label("tls", "disabled"),
-        )
+                .label("tls", "disabled")
+                .label("target_addr", orig_dst)
+        })
         .await
     }
 
@@ -1170,13 +1178,15 @@ mod transport {
 
     #[tokio::test]
     async fn outbound_tcp_accept() {
-        test_tcp_accept(
-            TcpFixture::outbound(),
+        test_tcp_accept(TcpFixture::outbound(), |proxy| {
+            let orig_dst = proxy.outbound_server.as_ref().unwrap().addr;
+
             metrics::labels()
                 .label("direction", "outbound")
                 .label("tls", "no_identity")
-                .label("no_tls_reason", "loopback"),
-        )
+                .label("no_tls_reason", "loopback")
+                .label("target_addr", orig_dst)
+        })
         .await;
     }
 
