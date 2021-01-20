@@ -95,7 +95,7 @@ pub struct Client {
     tls: Option<TlsConfig>,
 }
 
-pub struct NewClient {
+pub struct Reconnect {
     addr: SocketAddr,
     authority: String,
     run: Run,
@@ -185,7 +185,7 @@ impl Client {
 
     /// Shut down the client, returning a type that can be used to initiate a
     /// new client connection to that target.
-    pub async fn shutdown(self) -> NewClient {
+    pub async fn shutdown(self) -> Reconnect {
         let Self {
             tx,
             task,
@@ -200,7 +200,7 @@ impl Client {
         drop(tx);
         task.await.unwrap();
         running.await;
-        NewClient {
+        Reconnect {
             authority,
             run,
             addr,
@@ -209,7 +209,7 @@ impl Client {
     }
 }
 
-impl NewClient {
+impl Reconnect {
     pub fn reconnect(self) -> Client {
         Client::new(self.addr, self.authority, self.run, self.tls)
     }
