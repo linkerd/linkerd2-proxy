@@ -143,11 +143,13 @@ impl TcpFixture {
 
 #[tokio::test]
 async fn metrics_endpoint_inbound_request_count() {
-    test_request_count(Fixture::inbound(), |_| {
+    test_request_count(Fixture::inbound(), |proxy| {
+        let orig_dst = proxy.inbound_server.as_ref().unwrap().addr;
         metrics::labels()
             .label("authority", "tele.test.svc.cluster.local")
             .label("direction", "inbound")
             .label("tls", "disabled")
+            .label("target_addr", orig_dst)
     })
     .await;
 }
@@ -155,15 +157,16 @@ async fn metrics_endpoint_inbound_request_count() {
 #[tokio::test]
 async fn metrics_endpoint_outbound_request_count() {
     test_request_count(Fixture::outbound(), |proxy| {
-        let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
+        let orig_dst = proxy.outbound_server.as_ref().unwrap().addr;
         metrics::labels()
             .label("direction", "outbound")
             .label("tls", "no_identity")
             .label("no_tls_reason", "not_provided_by_service_discovery")
             .label(
                 "authority",
-                format_args!("tele.test.svc.cluster.local:{}", srv_port),
+                format_args!("tele.test.svc.cluster.local:{}", orig_dst.port()),
             )
+            .label("target_addr", orig_dst)
     })
     .await
 }

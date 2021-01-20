@@ -32,6 +32,7 @@ pub struct Concrete<P> {
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
     pub addr: SocketAddr,
+    pub target_addr: SocketAddr,
     pub identity: tls::ConditionalServerId,
     pub metadata: Metadata,
     pub concrete: Concrete<P>,
@@ -189,35 +190,40 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 
 impl<P> Endpoint<P> {
     pub fn from_logical(reason: tls::NoServerId) -> impl (Fn(Logical<P>) -> Self) + Clone {
-        move |logical| match logical
-            .profile
-            .as_ref()
-            .and_then(|p| p.borrow().endpoint.clone())
-        {
-            None => Self {
-                addr: (&logical).into(),
-                metadata: Metadata::default(),
-                identity: Conditional::None(reason),
-                concrete: Concrete {
-                    logical,
-                    resolve: None,
+        move |logical| {
+            let target_addr = logical.orig_dst;
+            match logical
+                .profile
+                .as_ref()
+                .and_then(|p| p.borrow().endpoint.clone())
+            {
+                None => Self {
+                    addr: (&logical).into(),
+                    metadata: Metadata::default(),
+                    identity: Conditional::None(reason),
+                    concrete: Concrete {
+                        logical,
+                        resolve: None,
+                    },
+                    target_addr,
                 },
-            },
-            Some((addr, metadata)) => Self {
-                addr,
-                identity: metadata
-                    .identity()
-                    .cloned()
-                    .map(Conditional::Some)
-                    .unwrap_or(Conditional::None(
-                        tls::NoServerId::NotProvidedByServiceDiscovery,
-                    )),
-                metadata,
-                concrete: Concrete {
-                    logical,
-                    resolve: None,
+                Some((addr, metadata)) => Self {
+                    addr,
+                    identity: metadata
+                        .identity()
+                        .cloned()
+                        .map(Conditional::Some)
+                        .unwrap_or(Conditional::None(
+                            tls::NoServerId::NotProvidedByServiceDiscovery,
+                        )),
+                    metadata,
+                    concrete: Concrete {
+                        logical,
+                        resolve: None,
+                    },
+                    target_addr,
                 },
-            },
+            }
         }
     }
 
@@ -256,6 +262,7 @@ impl<P> Into<metrics::OutboundEndpointLabels> for &'_ Endpoint<P> {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.identity.clone(),
+            target_addr: self.target_addr,
         }
     }
 }
@@ -298,6 +305,7 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             identity,
             metadata,
             concrete: concrete.clone(),
+            target_addr: concrete.logical.orig_dst,
         }
     }
 }

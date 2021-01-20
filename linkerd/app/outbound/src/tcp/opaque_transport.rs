@@ -114,6 +114,7 @@ mod test {
     fn ep(metadata: Metadata) -> Endpoint<()> {
         Endpoint {
             addr: ([127, 0, 0, 2], 4321).into(),
+            target_addr: ([127, 0, 0, 2], 4321).into(),
             identity: Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery),
             metadata,
             concrete: Concrete {
