@@ -3,11 +3,13 @@ use indexmap::IndexSet;
 use linkerd_app_core::{svc::stack::Predicate, Conditional, Error};
 use std::sync::Arc;
 
-/// A connection policy that drops
+/// A connection policy that fails direct connections that don't have a client
+/// identity.
 #[derive(Clone, Debug)]
 pub struct RequireIdentityForDirect;
 
-/// A connection policy that drops
+/// A connection policy that fails connections that don't have a client identity
+/// if they target one of the configured local ports.
 #[derive(Clone, Debug)]
 pub struct RequireIdentityForPorts {
     ports: Arc<IndexSet<u16>>,
