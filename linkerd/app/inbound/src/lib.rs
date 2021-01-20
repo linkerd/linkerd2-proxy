@@ -24,7 +24,8 @@ use linkerd_app_core::{
     profiles,
     proxy::{
         http::{self, orig_proto, strip_header},
-        identity, tap, tcp,
+        identity::LocalCrtKey,
+        tap, tcp,
     },
     reconnect,
     spans::SpanConverter,
@@ -76,7 +77,7 @@ impl Config {
     pub fn build<I, C, L, LSvc, P>(
         self,
         listen_addr: SocketAddr,
-        local_identity: Option<identity::Local>,
+        local_identity: Option<LocalCrtKey>,
         connect: C,
         http_loopback: L,
         profiles_client: P,

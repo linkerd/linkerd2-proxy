@@ -283,7 +283,7 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> Option<&identity::Local> {
+    pub fn local_identity(&self) -> Option<&identity::LocalCrtKey> {
         match self.identity {
             identity::Identity::Disabled => None,
             identity::Identity::Enabled { ref local, .. } => Some(local),

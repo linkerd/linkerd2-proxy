@@ -3,4 +3,4 @@
 pub mod certify;
 pub mod metrics;
 
-pub use self::certify::{AwaitCrt, CrtKeySender, Local};
+pub use self::certify::{AwaitCrt, CrtKeySender, LocalCrtKey};

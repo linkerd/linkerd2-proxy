@@ -1,7 +1,8 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::target::Endpoint;
 use linkerd_app_core::{
-    config::ConnectConfig, io, metrics, proxy::identity, svc, tls, transport::ConnectTcp, Error,
+    config::ConnectConfig, io, metrics, proxy::identity::LocalCrtKey, svc, tls,
+    transport::ConnectTcp, Error,
 };
 use tracing::debug_span;
 
@@ -10,7 +11,7 @@ use tracing::debug_span;
 pub fn stack<P>(
     config: &ConnectConfig,
     server_port: u16,
-    local_identity: Option<identity::Local>,
+    local_identity: Option<LocalCrtKey>,
     metrics: &metrics::Proxy,
 ) -> impl svc::Service<
     Endpoint<P>,

@@ -34,7 +34,7 @@ pub struct Config {
 /// Updates dynamically as certificates are provisioned from the Identity service.
 #[pin_project]
 #[derive(Clone, Debug)]
-pub struct Local {
+pub struct LocalCrtKey {
     trust_anchors: id::TrustAnchors,
     id: id::LocalId,
     crt_key: watch::Receiver<Option<id::CrtKey>>,
@@ -43,7 +43,7 @@ pub struct Local {
 
 /// Produces a `Local` identity once a certificate is available.
 #[derive(Debug)]
-pub struct AwaitCrt(Option<Local>);
+pub struct AwaitCrt(Option<LocalCrtKey>);
 
 #[derive(Copy, Clone, Debug)]
 pub struct LostDaemon;
@@ -158,13 +158,13 @@ impl Daemon {
     }
 }
 
-// === impl Local ===
+// === impl LocalCrtKey ===
 
-impl Local {
+impl LocalCrtKey {
     pub fn new(config: &Config) -> (Self, Daemon) {
         let (s, w) = watch::channel(None);
         let refreshes = Arc::new(Counter::new());
-        let l = Local {
+        let l = Self {
             id: config.local_id.clone(),
             trust_anchors: config.trust_anchors.clone(),
             crt_key: w,
@@ -197,7 +197,7 @@ impl Local {
     }
 }
 
-impl Into<tls::client::Config> for &'_ Local {
+impl Into<tls::client::Config> for &'_ LocalCrtKey {
     fn into(self) -> tls::client::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.into();
@@ -207,13 +207,13 @@ impl Into<tls::client::Config> for &'_ Local {
     }
 }
 
-impl Into<id::LocalId> for &'_ Local {
+impl Into<id::LocalId> for &'_ LocalCrtKey {
     fn into(self) -> id::LocalId {
         id::LocalId(self.name().clone())
     }
 }
 
-impl Into<tls::server::Config> for &'_ Local {
+impl Into<tls::server::Config> for &'_ LocalCrtKey {
     fn into(self) -> tls::server::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.into();
