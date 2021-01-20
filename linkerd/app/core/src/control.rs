@@ -19,7 +19,7 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
     pub addr: Addr,
-    pub identity: tls::PeerIdentity,
+    pub identity: tls::ConditionalServerId,
 }
 
 impl Into<Addr> for ControlAddr {
@@ -52,7 +52,8 @@ impl Config {
         B: http::HttpBody + Send + 'static,
         B::Data: Send,
         B::Error: Into<Error> + Send + Sync,
-        I: Clone + tls::client::HasConfig + Send + 'static,
+        I: Clone + Send + 'static,
+        for<'i> &'i I: Into<tls::client::Config>,
     {
         let backoff = {
             let backoff = self.connect.backoff;
@@ -208,12 +209,12 @@ mod client {
     #[derive(Clone, Hash, Debug, Eq, PartialEq)]
     pub struct Target {
         addr: SocketAddr,
-        server_name: tls::PeerIdentity,
+        server_id: tls::ConditionalServerId,
     }
 
     impl Target {
-        pub(super) fn new(addr: SocketAddr, server_name: tls::PeerIdentity) -> Self {
-            Self { addr, server_name }
+        pub(super) fn new(addr: SocketAddr, server_id: tls::ConditionalServerId) -> Self {
+            Self { addr, server_id }
         }
     }
 
@@ -230,9 +231,9 @@ mod client {
         }
     }
 
-    impl tls::HasPeerIdentity for Target {
-        fn peer_identity(&self) -> tls::PeerIdentity {
-            self.server_name.clone()
+    impl Into<tls::ConditionalServerId> for &'_ Target {
+        fn into(self) -> tls::ConditionalServerId {
+            self.server_id.clone()
         }
     }
 

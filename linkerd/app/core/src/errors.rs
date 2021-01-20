@@ -1,4 +1,3 @@
-use crate::proxy::identity;
 use http::{header::HeaderValue, StatusCode};
 use linkerd_errno::Errno;
 use linkerd_error::Error;
@@ -7,6 +6,7 @@ use linkerd_error_respond as respond;
 pub use linkerd_error_respond::RespondLayer;
 use linkerd_proxy_http::{client_handle::Close, ClientHandle, HasH2Reason};
 use linkerd_timeout::{error::ResponseTimeout, FailFastError};
+use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -334,8 +334,8 @@ fn code_header(code: grpc::Code) -> HeaderValue {
 
 #[derive(Debug)]
 pub struct IdentityRequired {
-    pub required: identity::Name,
-    pub found: Option<identity::Name>,
+    pub required: tls::client::ServerId,
+    pub found: Option<tls::client::ServerId>,
 }
 
 impl std::fmt::Display for IdentityRequired {

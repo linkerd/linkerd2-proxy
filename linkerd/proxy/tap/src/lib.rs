@@ -1,9 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use indexmap::IndexMap;
-use linkerd_conditional::Conditional;
-use linkerd_identity as identity;
-use linkerd_tls::ReasonForNoPeerName;
+use linkerd_tls as tls;
 use std::{net, sync::Arc};
 
 mod accept;
@@ -32,19 +30,13 @@ pub fn new() -> (Registry, grpc::Server) {
 pub trait Inspect {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
 
-    fn src_tls<'a, B>(
-        &self,
-        req: &'a http::Request<B>,
-    ) -> Conditional<&'a identity::Name, ReasonForNoPeerName>;
+    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::server::ConditionalTls;
 
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
 
     fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>>;
 
-    fn dst_tls<B>(
-        &self,
-        req: &http::Request<B>,
-    ) -> Conditional<&identity::Name, ReasonForNoPeerName>;
+    fn dst_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerId;
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>>;
 

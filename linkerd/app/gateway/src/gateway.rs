@@ -1,6 +1,5 @@
 use futures::{future, ready, TryFutureExt};
-use linkerd_app_core::proxy::{http, identity};
-use linkerd_app_core::{dns, errors::HttpError, Error, NameAddr};
+use linkerd_app_core::{dns, errors::HttpError, proxy::http, tls, Error, NameAddr};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -12,7 +11,7 @@ pub(crate) enum Gateway<O> {
     BadDomain(dns::Name),
     Outbound {
         outbound: O,
-        local_identity: identity::Name,
+        local_identity: tls::LocalId,
         host_header: http::header::HeaderValue,
         forwarded_header: http::header::HeaderValue,
     },
@@ -22,8 +21,8 @@ impl<O> Gateway<O> {
     pub fn new(
         outbound: O,
         dst: NameAddr,
-        source_identity: identity::Name,
-        local_identity: identity::Name,
+        source_identity: tls::server::ClientId,
+        local_identity: tls::LocalId,
     ) -> Self {
         let host = dst.as_http_authority().to_string();
         let fwd = format!(
@@ -67,9 +66,9 @@ where
         match self {
             Self::Outbound {
                 ref mut outbound,
-                ref local_identity,
                 ref host_header,
                 ref forwarded_header,
+                local_identity: tls::LocalId(local_id),
             } => {
                 // Check forwarded headers to see if this request has already
                 // transited through this gateway.
@@ -81,7 +80,7 @@ where
                 {
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
-                        if by == local_identity.as_ref() {
+                        if by == local_id.as_ref() {
                             return Box::pin(future::err(HttpError::gateway_loop().into()));
                         }
                     }

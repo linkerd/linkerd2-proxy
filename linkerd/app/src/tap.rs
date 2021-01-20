@@ -1,12 +1,8 @@
 use futures::prelude::*;
 use indexmap::IndexSet;
 use linkerd_app_core::{
-    config::ServerConfig,
-    drain,
-    proxy::{identity, tap},
-    serve, tls,
-    transport::listen::Addrs,
-    Error,
+    config::ServerConfig, drain, proxy::identity::LocalCrtKey, proxy::tap, serve, tls,
+    transport::listen::Addrs, Error,
 };
 use std::{net::SocketAddr, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
@@ -16,7 +12,7 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
-        permitted_peer_identities: IndexSet<identity::Name>,
+        permitted_client_ids: IndexSet<tls::server::ClientId>,
     },
 }
 
@@ -32,11 +28,7 @@ pub enum Tap {
 }
 
 impl Config {
-    pub fn build(
-        self,
-        identity: Option<identity::Local>,
-        drain: drain::Watch,
-    ) -> Result<Tap, Error> {
+    pub fn build(self, identity: Option<LocalCrtKey>, drain: drain::Watch) -> Result<Tap, Error> {
         let (registry, server) = tap::new();
         match self {
             Config::Disabled => {
@@ -45,12 +37,11 @@ impl Config {
             }
             Config::Enabled {
                 config,
-                permitted_peer_identities,
+                permitted_client_ids,
             } => {
                 let (listen_addr, listen) = config.bind.bind()?;
 
-                let service =
-                    tap::AcceptPermittedClients::new(permitted_peer_identities.into(), server);
+                let service = tap::AcceptPermittedClients::new(permitted_client_ids.into(), server);
                 let accept = tls::NewDetectTls::new(
                     identity,
                     move |meta: tls::server::Meta<Addrs>| {

@@ -1,6 +1,6 @@
-use crate::identity;
 use http::uri::Authority;
 use indexmap::IndexMap;
+use linkerd_tls::client::ServerId;
 
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15,7 +15,7 @@ pub struct Metadata {
     opaque_transport_port: Option<u16>,
 
     /// How to verify TLS for the endpoint.
-    identity: Option<identity::Name>,
+    identity: Option<ServerId>,
 
     /// Used to override the the authority if needed
     authority_override: Option<Authority>,
@@ -49,7 +49,7 @@ impl Metadata {
         labels: IndexMap<String, String>,
         protocol_hint: ProtocolHint,
         opaque_transport_port: Option<u16>,
-        identity: Option<identity::Name>,
+        identity: Option<ServerId>,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
@@ -70,7 +70,7 @@ impl Metadata {
         self.protocol_hint
     }
 
-    pub fn identity(&self) -> Option<&identity::Name> {
+    pub fn identity(&self) -> Option<&ServerId> {
         self.identity.as_ref()
     }
 

@@ -2,11 +2,11 @@ use crate::grpc::Server;
 use futures::future;
 use indexmap::IndexSet;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
+use linkerd_conditional::Conditional;
 use linkerd_error::Error;
-use linkerd_identity as identity;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_tls::{server::Connection, Conditional, ReasonForNoPeerName};
+use linkerd_tls::{self as tls, server::Connection};
 use std::{
     future::Future,
     pin::Pin,
@@ -18,14 +18,14 @@ use tower::Service;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
-    permitted_client_ids: Arc<IndexSet<identity::Name>>,
+    permitted_client_ids: Arc<IndexSet<tls::ClientId>>,
     server: Server,
 }
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
 impl AcceptPermittedClients {
-    pub fn new(permitted_client_ids: Arc<IndexSet<identity::Name>>, server: Server) -> Self {
+    pub fn new(permitted_client_ids: Arc<IndexSet<tls::ClientId>>, server: Server) -> Self {
         Self {
             permitted_client_ids,
             server,
@@ -73,19 +73,22 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, ((peer_id, _), io): Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
-        future::ok(match peer_id {
-            Conditional::Some(ref peer) => {
-                if self.permitted_client_ids.contains(peer) {
+    fn call(&mut self, conn: Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
+        future::ok(match conn {
+            ((Conditional::Some(Some(id)), _), io) => {
+                if self.permitted_client_ids.contains(&id) {
                     Box::pin(self.serve_authenticated(io))
                 } else {
-                    Box::pin(self.serve_unauthenticated(io, format!("Unauthorized peer: {}", peer)))
+                    Box::pin(self.serve_unauthenticated(io, "Unauthorized client"))
                 }
             }
-            Conditional::None(ReasonForNoPeerName::Loopback) => {
+            ((Conditional::Some(None), _), io) => {
+                Box::pin(self.serve_unauthenticated(io, "Unauthenticated client"))
+            }
+            ((Conditional::None(tls::server::NoTls::Loopback), _), io) => {
                 Box::pin(self.serve_authenticated(io))
             }
-            Conditional::None(reason) => {
+            ((Conditional::None(reason), _), io) => {
                 Box::pin(self.serve_unauthenticated(io, reason.to_string()))
             }
         })

@@ -107,15 +107,14 @@ mod test {
         proxy::api_resolve::{Metadata, ProtocolHint},
         tls,
         transport_header::TransportHeader,
+        Conditional,
     };
     use tower::util::{service_fn, ServiceExt};
 
     fn ep(metadata: Metadata) -> Endpoint<()> {
         Endpoint {
             addr: ([127, 0, 0, 2], 4321).into(),
-            identity: tls::PeerIdentity::None(
-                tls::ReasonForNoPeerName::NotProvidedByServiceDiscovery,
-            ),
+            identity: Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery),
             metadata,
             concrete: Concrete {
                 resolve: None,

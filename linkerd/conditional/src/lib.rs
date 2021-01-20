@@ -12,10 +12,25 @@ impl<C, R> Conditional<C, R>
 where
     R: Copy + Clone,
 {
+    pub fn as_ref(&self) -> Conditional<&'_ C, R> {
+        match self {
+            Conditional::Some(c) => Conditional::Some(&c),
+            Conditional::None(r) => Conditional::None(*r),
+        }
+    }
+
+    pub fn reason(&self) -> Option<R> {
+        match self {
+            Conditional::Some(_) => None,
+            Conditional::None(r) => Some(*r),
+        }
+    }
+}
+
+impl<C, R> Conditional<C, R> {
     pub fn and_then<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         R: Into<RR>,
-        RR: Clone,
         F: FnOnce(C) -> Conditional<CR, RR>,
     {
         match self {
@@ -24,17 +39,9 @@ where
         }
     }
 
-    pub fn as_ref(&self) -> Conditional<&'_ C, R> {
-        match self {
-            Conditional::Some(c) => Conditional::Some(&c),
-            Conditional::None(r) => Conditional::None(*r),
-        }
-    }
-
     pub fn map<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         R: Into<RR>,
-        RR: Clone,
         F: FnOnce(C) -> CR,
     {
         self.and_then(|c| Conditional::Some(f(c)))
@@ -43,7 +50,6 @@ where
     pub fn or_else<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         C: Into<CR>,
-        RR: Clone,
         F: FnOnce(R) -> Conditional<CR, RR>,
     {
         match self {
@@ -55,7 +61,6 @@ where
     pub fn map_reason<CR, RR, F>(self, f: F) -> Conditional<CR, RR>
     where
         C: Into<CR>,
-        RR: Clone,
         F: FnOnce(R) -> RR,
     {
         self.or_else(|r| Conditional::None(f(r)))
@@ -65,13 +70,6 @@ where
         match self {
             Conditional::Some(v) => Some(v),
             Conditional::None(_) => None,
-        }
-    }
-
-    pub fn reason(&self) -> Option<R> {
-        match self {
-            Conditional::Some(_) => None,
-            Conditional::None(r) => Some(*r),
         }
     }
 

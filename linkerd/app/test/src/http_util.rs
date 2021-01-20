@@ -1,10 +1,5 @@
-use crate::app_core::{
-    io::BoxedIo,
-    tls::{HasPeerIdentity, PeerIdentity, ReasonForNoPeerName},
-    Conditional, Error,
-};
+use crate::app_core::{identity as id, io::BoxedIo, tls, Conditional, Error};
 use hyper::{body::HttpBody, Body, Request, Response};
-use linkerd_identity::Name;
 use std::{
     fmt,
     sync::{Arc, Mutex},
@@ -13,7 +8,7 @@ use tracing::Instrument;
 
 pub struct Server {
     settings: hyper::server::conn::Http,
-    identity: Option<PeerIdentity>,
+    expected_id: Option<tls::ConditionalServerId>,
     f: HandleFuture,
 }
 
@@ -23,7 +18,7 @@ impl Default for Server {
     fn default() -> Self {
         Self {
             settings: hyper::server::conn::Http::new(),
-            identity: None,
+            expected_id: None,
             f: Box::new(|_| {
                 Ok(Response::builder()
                     .status(http::status::StatusCode::NOT_FOUND)
@@ -58,13 +53,13 @@ impl Server {
         self
     }
 
-    pub fn expect_identity(mut self, id: impl Into<Name>) -> Self {
-        self.identity = Some(Conditional::Some(id.into()));
+    pub fn expect_identity(mut self, id: impl Into<id::Name>) -> Self {
+        self.expected_id = Some(Conditional::Some(tls::ServerId(id.into())));
         self
     }
 
-    pub fn no_identity(mut self, reason: ReasonForNoPeerName) -> Self {
-        self.identity = Some(Conditional::None(reason));
+    pub fn no_identity(mut self, reason: tls::NoServerId) -> Self {
+        self.expected_id = Some(Conditional::None(reason));
         self
     }
 
@@ -75,20 +70,23 @@ impl Server {
         }
     }
 
-    pub fn run<E: HasPeerIdentity + std::fmt::Debug>(
-        self,
-    ) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static {
+    pub fn run<E>(self) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static
+    where
+        E: std::fmt::Debug,
+        for<'e> &'e E: Into<tls::ConditionalServerId>,
+    {
         let Self {
             f,
             settings,
-            identity,
+            expected_id,
         } = self;
         let f = Arc::new(Mutex::new(f));
         move |endpoint| {
             let span = tracing::debug_span!("server::run", ?endpoint);
             let _e = span.enter();
-            if let Some(ref id) = identity {
-                assert_eq!(&endpoint.peer_identity(), id)
+            if let Some(expected_id) = expected_id.as_ref() {
+                let server_id: tls::ConditionalServerId = (&endpoint).into();
+                assert_eq!(&server_id, expected_id);
             }
             let f = f.clone();
             let (client_io, server_io) = crate::io::duplex(4096);
