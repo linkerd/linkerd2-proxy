@@ -87,7 +87,7 @@ impl Into<transport::labels::Key> for &'_ TcpAccept {
         transport::labels::Key::accept(
             transport::labels::Direction::In,
             self.peer_id.clone(),
-            self.local_addr,
+            self.target_addr,
         )
     }
 }

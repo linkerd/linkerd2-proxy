@@ -85,7 +85,7 @@ impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
     fn into(self) -> transport::labels::Key {
         const NO_TLS: tls::Conditional<identity::Name> =
             Conditional::None(tls::ReasonForNoPeerName::Loopback);
-        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.local_addr)
+        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.orig_dst)
     }
 }
 
