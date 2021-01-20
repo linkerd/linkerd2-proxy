@@ -42,7 +42,6 @@ pub struct HttpEndpoint {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpEndpoint {
     pub port: u16,
-    pub client_id: tls::server::ConditionalTls,
 }
 
 #[derive(Clone, Debug)]
@@ -111,26 +110,19 @@ impl From<TcpAccept> for TcpEndpoint {
     fn from(tcp: TcpAccept) -> Self {
         Self {
             port: tcp.target_addr.port(),
-            client_id: tcp.client_id,
         }
     }
 }
 
 impl From<(TransportHeader, TcpAccept)> for TcpEndpoint {
-    fn from((header, accept): (TransportHeader, TcpAccept)) -> Self {
-        Self {
-            port: header.port,
-            client_id: accept.client_id,
-        }
+    fn from((header, _): (TransportHeader, TcpAccept)) -> Self {
+        Self { port: header.port }
     }
 }
 
 impl From<HttpEndpoint> for TcpEndpoint {
     fn from(h: HttpEndpoint) -> Self {
-        Self {
-            port: h.port,
-            client_id: h.client_id,
-        }
+        Self { port: h.port }
     }
 }
 
