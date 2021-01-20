@@ -51,7 +51,7 @@ struct CertResolver(rustls::sign::CertifiedKey);
 #[derive(Clone, Debug)]
 pub struct InvalidCrt(rustls::TLSError);
 
-/// A marker type for local server identities.
+/// A newtype for local server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct LocalId(pub Name);
 

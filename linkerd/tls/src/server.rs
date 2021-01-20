@@ -27,7 +27,7 @@ pub fn empty_config() -> Config {
     Arc::new(rustls::ServerConfig::new(verifier))
 }
 
-/// A marker type for remote client idenities..
+/// A newtype for remote client idenities..
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientId(pub id::Name);
 

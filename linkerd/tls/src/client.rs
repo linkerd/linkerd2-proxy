@@ -17,7 +17,7 @@ use std::{
 use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
 
-/// A marker type for target server identities.
+/// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
 
