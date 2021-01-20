@@ -17,7 +17,7 @@ use std::{
 use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
 
-/// A marker type for target server identities.
+/// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
 
@@ -38,6 +38,7 @@ pub enum NoServerId {
     NotProvidedByServiceDiscovery,
 }
 
+/// Indicates whether the target server endpoint has a known TLS identity.
 pub type ConditionalServerId = Conditional<ServerId, NoServerId>;
 
 pub type Config = Arc<rustls::ClientConfig>;

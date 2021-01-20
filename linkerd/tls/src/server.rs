@@ -27,7 +27,7 @@ pub fn empty_config() -> Config {
     Arc::new(rustls::ServerConfig::new(verifier))
 }
 
-/// A marker type for remote client idenities..
+/// A newtype for remote client idenities..
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientId(pub id::Name);
 
@@ -48,6 +48,10 @@ pub enum NoTls {
     NoTlsFromRemote,
 }
 
+/// Indicates whether TLS was established on an accepted connection.
+///
+/// Note that the client may not provide an identity if it has not yet
+/// provisioned a certificate.
 pub type ConditionalTls = Conditional<Option<ClientId>, NoTls>;
 
 // TODO sni name

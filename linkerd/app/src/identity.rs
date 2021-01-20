@@ -1,7 +1,7 @@
 pub use linkerd_app_core::identity::{
     Crt, CrtKey, Csr, InvalidName, Key, Name, TokenSource, TrustAnchors,
 };
-pub use linkerd_app_core::proxy::identity::{certify, metrics, Local};
+pub use linkerd_app_core::proxy::identity::{certify, metrics, LocalCrtKey};
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
@@ -29,7 +29,7 @@ pub enum Identity {
     Disabled,
     Enabled {
         addr: control::ControlAddr,
-        local: Local,
+        local: LocalCrtKey,
         task: Task,
     },
 }
@@ -44,7 +44,7 @@ impl Config {
         match self {
             Config::Disabled => Ok(Identity::Disabled),
             Config::Enabled { control, certify } => {
-                let (local, daemon) = Local::new(&certify);
+                let (local, daemon) = LocalCrtKey::new(&certify);
 
                 let addr = control.addr.clone();
                 let svc = control.build(dns, metrics, Some(certify.trust_anchors));
@@ -65,7 +65,7 @@ impl Config {
 }
 
 impl Identity {
-    pub fn local(&self) -> Option<Local> {
+    pub fn local(&self) -> Option<LocalCrtKey> {
         match self {
             Identity::Disabled => None,
             Identity::Enabled { ref local, .. } => Some(local.clone()),

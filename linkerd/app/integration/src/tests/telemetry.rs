@@ -55,7 +55,8 @@ impl Fixture {
     async fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
         let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
-        let dest = ctrl.destination_tx(format!("tele.test.svc.cluster.local:{}", srv.addr.port()));
+        let authority = format!("tele.test.svc.cluster.local:{}", srv.addr.port());
+        let dest = ctrl.destination_tx(authority);
         dest.send_addr(srv.addr);
         let proxy = proxy::new()
             .controller(ctrl.run().await)
@@ -142,32 +143,34 @@ impl TcpFixture {
 
 #[tokio::test]
 async fn metrics_endpoint_inbound_request_count() {
-    let _trace = trace_init();
-    let Fixture {
-        client,
-        metrics,
-        proxy: _proxy,
-        _profile,
-        dst_tx: _dst_tx,
-    } = Fixture::inbound().await;
-
-    // prior to seeing any requests, request count should be empty.
-    let metric = metrics::metric("request_total")
-        .label("authority", "tele.test.svc.cluster.local")
-        .label("direction", "inbound")
-        .label("tls", "disabled");
-
-    assert!(metric.is_not_in(metrics.get("/metrics").await));
-
-    info!("client.get(/)");
-    assert_eq!(client.get("/").await, "hello");
-
-    // after seeing a request, the request count should be 1.
-    metric.value(1u64).assert_in(&metrics).await;
+    test_request_count(Fixture::inbound(), |_| {
+        metrics::labels()
+            .label("authority", "tele.test.svc.cluster.local")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+    })
+    .await;
 }
 
 #[tokio::test]
 async fn metrics_endpoint_outbound_request_count() {
+    test_request_count(Fixture::outbound(), |proxy| {
+        let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
+        metrics::labels()
+            .label("direction", "outbound")
+            .label("tls", "disabled")
+            .label(
+                "authority",
+                format_args!("tele.test.svc.cluster.local:{}", srv_port),
+            )
+    })
+    .await
+}
+
+async fn test_request_count(
+    fixture: impl Future<Output = Fixture>,
+    labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+) {
     let _trace = trace_init();
     let Fixture {
         client,
@@ -175,16 +178,10 @@ async fn metrics_endpoint_outbound_request_count() {
         proxy,
         _profile,
         dst_tx: _dst_tx,
-    } = Fixture::outbound().await;
+    } = fixture.await;
 
-    let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
-    let metric = metrics::metric("request_total")
-        .label("direction", "outbound")
-        .label("tls", "disabled")
-        .label(
-            "authority",
-            format_args!("tele.test.svc.cluster.local:{}", srv_port),
-        );
+    let metric = labels(&proxy).metric("request_total");
+
     assert!(metric.is_not_in(metrics.get("/metrics").await));
 
     info!("client.get(/)");
@@ -272,16 +269,23 @@ mod response_classification {
             .await
     }
 
-    #[tokio::test]
-    async fn inbound_http() {
+    async fn test_http(
+        fixture: impl Future<Output = Fixture>,
+        direction: &str,
+        tls: &str,
+        no_tls_reason: Option<&str>,
+        port: impl Fn(&proxy::Listening) -> Option<u16>,
+    ) {
         let _trace = trace_init();
         let Fixture {
             client,
             metrics,
-            proxy: _proxy,
+            proxy,
             _profile,
             dst_tx: _dst_tx,
-        } = Fixture::inbound_with_server(make_test_server().await).await;
+        } = fixture.await;
+
+        let port = port(&proxy);
 
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client
@@ -298,7 +302,7 @@ mod response_classification {
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
                 // all previous requests are *not* incremented.
-                expected_metric(status, "inbound", "disabled", None, None)
+                expected_metric(status, direction, tls, no_tls_reason, port)
                     .assert_in(&metrics)
                     .await;
             }
@@ -306,45 +310,27 @@ mod response_classification {
     }
 
     #[tokio::test]
-    async fn outbound_http() {
-        let _trace = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-            _profile,
-            dst_tx: _dst_tx,
-        } = Fixture::outbound_with_server(make_test_server().await).await;
-        let port = proxy.outbound_server.as_ref().unwrap().addr.port();
-        for (i, status) in STATUSES.iter().enumerate() {
-            let request = client
-                .request(
-                    client
-                        .request_builder("/")
-                        .header(REQ_STATUS_HEADER, status.as_str())
-                        .method("GET"),
-                )
-                .await
-                .unwrap();
-            assert_eq!(&request.status(), status);
+    async fn inbound_http() {
+        let fixture = async { Fixture::inbound_with_server(make_test_server().await).await };
+        test_http(fixture, "inbound", "disabled", None, |_| None).await
+    }
 
-            for status in &STATUSES[0..i] {
-                // assert that the current status code is incremented, *and* that
-                expected_metric(status, "outbound", "disabled", None, Some(port))
-                    .assert_in(&metrics)
-                    .await;
-            }
-        }
+    #[tokio::test]
+    async fn outbound_http() {
+        let fixture = async { Fixture::outbound_with_server(make_test_server().await).await };
+        test_http(fixture, "outbound", "disabled", None, |proxy| {
+            Some(proxy.outbound_server.as_ref().unwrap().addr.port())
+        })
+        .await
     }
 }
 
-// Ignore this test on CI, because our method of adding latency to requests
-// (calling `thread::sleep`) is likely to be flakey on Travis.
-// Eventually, we can add some kind of mock timer system for simulating latency
-// more reliably, and re-enable this test.
-#[tokio::test]
-#[cfg_attr(not(feature = "flaky_tests"), ignore)]
-async fn metrics_endpoint_inbound_response_latency() {
+async fn test_response_latency<F>(
+    mk_fixture: impl Fn(server::Listening) -> F,
+    mk_labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+) where
+    F: Future<Output = Fixture>,
+{
     let _trace = trace_init();
 
     info!("running test server");
@@ -357,27 +343,23 @@ async fn metrics_endpoint_inbound_response_latency() {
     let Fixture {
         client,
         metrics,
-        proxy: _proxy,
+        proxy,
         _profile,
         dst_tx: _dst_tx,
-    } = Fixture::inbound_with_server(srv).await;
+    } = mk_fixture(srv).await;
 
     info!("client.get(/hey)");
     assert_eq!(client.get("/hey").await, "hello");
 
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
-    let labels = metrics::labels()
-        .label("authority", "tele.test.svc.cluster.local")
-        .label("direction", "inbound")
-        .label("tls", "disabled")
-        .label("status_code", 200);
+    let labels = mk_labels(&proxy).label("status_code", 200);
     let mut bucket_1000 = labels
         .clone()
         .metric("response_latency_ms_bucket")
         .label("le", 1000)
         .value(1u64);
-    let mut bucket_50 = labels.metric("response_latency_ms_bucket").label("le", 40);
+    let mut bucket_50 = labels.metric("response_latency_ms_bucket").label("le", 50);
     let mut count = labels.metric("response_latency_ms_count").value(1u64);
 
     bucket_1000.assert_in(&metrics).await;
@@ -428,82 +410,35 @@ async fn metrics_endpoint_inbound_response_latency() {
 // more reliably, and re-enable this test.
 #[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-async fn metrics_endpoint_outbound_response_latency() {
-    let _trace = trace_init();
+async fn inbound_response_latency() {
+    test_response_latency(Fixture::inbound_with_server, |_| {
+        metrics::labels()
+            .label("authority", "tele.test.svc.cluster.local")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+    })
+    .await
+}
 
-    info!("running test server");
-    let srv = server::new()
-        .route_with_latency("/hey", "hello", Duration::from_millis(500))
-        .route_with_latency("/hi", "good morning", Duration::from_millis(40))
-        .run()
-        .await;
-
-    let Fixture {
-        client,
-        metrics,
-        proxy: _proxy,
-        _profile,
-        dst_tx: _dst_tx,
-    } = Fixture::outbound_with_server(srv).await;
-
-    info!("client.get(/hey)");
-    assert_eq!(client.get("/hey").await, "hello");
-
-    // assert the >=1000ms bucket is incremented by our request with 500ms
-    // extra latency.
-    let labels = metrics::labels()
-        .label("authority", "tele.test.svc.cluster.local")
-        .label("direction", "outbound")
-        .label("tls", "disabled")
-        .label("status_code", 200);
-    let mut bucket_1000 = labels
-        .clone()
-        .metric("response_latency_ms_bucket")
-        .label("le", 1000)
-        .value(1u64);
-    let mut bucket_50 = labels.metric("response_latency_ms_bucket").label("le", 40);
-    let mut count = labels.metric("response_latency_ms_count").value(1u64);
-
-    bucket_1000.assert_in(&metrics).await;
-    // the histogram's count should be 1.
-    count.assert_in(&metrics).await;
-    // TODO: we're not going to make any assertions about the
-    // response_latency_ms_sum stat, since its granularity depends on the actual
-    // observed latencies, which may vary a bit. we could make more reliable
-    // assertions about that stat if we were using a mock timer, though, as the
-    // observed latency values would be predictable.
-
-    info!("client.get(/hi)");
-    assert_eq!(client.get("/hi").await, "good morning");
-
-    // request with 40ms extra latency should fall into the 50ms bucket.
-    bucket_50.set_value(1u64).assert_in(&metrics).await;
-    // 1000ms bucket should be incremented as well, since it counts *all*
-    // observations less than or equal to 1000ms, even if they also increment
-    // other buckets.
-    bucket_1000.set_value(2u64).assert_in(&metrics).await;
-    // the histogram's total count should be 2.
-    count.set_value(2u64).assert_in(&metrics).await;
-
-    info!("client.get(/hi)");
-    assert_eq!(client.get("/hi").await, "good morning");
-
-    // request with 40ms extra latency should fall into the 50ms bucket.
-    bucket_50.set_value(2u64).assert_in(&metrics).await;
-    // 1000ms bucket should be incremented as well.
-    bucket_1000.set_value(3).assert_in(&metrics).await;
-    // the histogram's total count should be 3.
-    count.set_value(3).assert_in(&metrics).await;
-
-    info!("client.get(/hey)");
-    assert_eq!(client.get("/hey").await, "hello");
-
-    // 50ms bucket should be un-changed by the request with 500ms latency.
-    bucket_50.assert_in(&metrics).await;
-    // 1000ms bucket should be incremented.
-    bucket_1000.set_value(4).assert_in(&metrics).await;
-    // the histogram's total count should be 4.
-    count.set_value(4).assert_in(&metrics).await;
+// Ignore this test on CI, because our method of adding latency to requests
+// (calling `thread::sleep`) is likely to be flakey on Travis.
+// Eventually, we can add some kind of mock timer system for simulating latency
+// more reliably, and re-enable this test.
+#[tokio::test]
+#[cfg_attr(not(feature = "flaky_tests"), ignore)]
+async fn outbound_response_latency() {
+    test_response_latency(Fixture::outbound_with_server, |proxy| {
+        let port = proxy.outbound_server.as_ref().unwrap().addr.port();
+        metrics::labels()
+            .label(
+                "authority",
+                format_args!("tele.test.svc.cluster.local:{}", port),
+            )
+            .label("direction", "outbound")
+            .label("tls", "no_identity")
+            .label("no_tls_reason", "not_provided_by_service_discovery")
+    })
+    .await
 }
 
 // Tests for destination labels provided by control plane service discovery.
@@ -893,8 +828,10 @@ mod transport {
     use super::*;
     use crate::*;
 
-    #[tokio::test]
-    async fn inbound_http_accept() {
+    async fn test_http_connect(
+        fixture: impl Future<Output = Fixture>,
+        labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+    ) {
         let _trace = trace_init();
         let Fixture {
             client,
@@ -902,16 +839,37 @@ mod transport {
             proxy,
             _profile,
             dst_tx: _dst_tx,
-        } = Fixture::inbound().await;
+        } = fixture.await;
 
-        let labels = metrics::labels()
-            .label("peer", "src")
-            .label("direction", "inbound")
-            .label("tls", "disabled");
+        let labels = labels(&proxy).label("peer", "dst");
+        let opens = labels.metric("tcp_open_total").value(1u64);
 
+        info!("client.get(/)");
+        assert_eq!(client.get("/").await, "hello");
+        opens.assert_in(&metrics).await;
+
+        info!("client.get(/)");
+        assert_eq!(client.get("/").await, "hello");
+        // Pooled connection doesn't increment the metric.
+        opens.assert_in(&metrics).await;
+    }
+
+    async fn test_http_accept(
+        fixture: impl Future<Output = Fixture>,
+        labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+    ) {
+        let _trace = trace_init();
+        let Fixture {
+            client,
+            metrics,
+            proxy,
+            _profile,
+            dst_tx: _dst_tx,
+        } = fixture.await;
+
+        let labels = labels(&proxy).label("peer", "src");
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
-            .clone()
             .metric("tcp_close_total")
             .label("errno", "")
             .value(1u64);
@@ -919,11 +877,11 @@ mod transport {
         assert_eq!(client.get("/").await, "hello");
         opens.assert_in(&metrics).await;
         // Shut down the client to force the connection to close.
-        client.shutdown().await;
+        let new_client = client.shutdown().await;
         closes.assert_in(&metrics).await;
 
         // create a new client to force a new connection
-        let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
+        let client = new_client.reconnect();
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
@@ -933,115 +891,33 @@ mod transport {
         closes.set_value(2u64).assert_in(&metrics).await;
     }
 
-    #[tokio::test]
-    async fn inbound_http_connect() {
+    async fn test_tcp_connect(
+        fixture: impl Future<Output = TcpFixture>,
+        labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+    ) {
         let _trace = trace_init();
-        let Fixture {
+        let TcpFixture {
             client,
             metrics,
             proxy,
-            _profile,
-            dst_tx: _dst_tx,
-        } = Fixture::inbound().await;
+            dst: _dst,
+            profile: _profile,
+        } = fixture.await;
 
-        let metric = metrics::metric("tcp_open_total")
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        let labels = labels(&proxy);
+        labels
+            .metric("tcp_open_total")
             .label("peer", "dst")
-            .label("direction", "inbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .value(1u64);
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-        metric.assert_in(&metrics).await;
-
-        // create a new client to force a new connection
-        let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-        // server connection should be pooled
-        metric.assert_in(&metrics).await;
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
     }
 
-    #[tokio::test]
-    async fn outbound_http_accept() {
-        let _trace = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-            _profile,
-            dst_tx: _dst_tx,
-        } = Fixture::outbound().await;
-
-        let labels = metrics::labels()
-            .label("peer", "src")
-            .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback");
-        let mut opens = labels.metric("tcp_open_total").value(1u64);
-        let mut closes = labels
-            .metric("tcp_close_total")
-            .label("errno", "")
-            .value(1u64);
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-        opens.assert_in(&metrics).await;
-        // Shut down the client to force the connection to close.
-        client.shutdown().await;
-        closes.assert_in(&metrics).await;
-
-        // create a new client to force a new connection
-        let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-        opens.set_value(2u64).assert_in(&metrics).await;
-        // Shut down the client to force the connection to close.
-        client.shutdown().await;
-        closes.set_value(2u64).assert_in(&metrics).await;
-    }
-
-    #[tokio::test]
-    async fn outbound_http_connect() {
-        let _trace = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-            _profile,
-            dst_tx: _dst_tx,
-        } = Fixture::outbound().await;
-        let metric = metrics::metric("tcp_open_total")
-            .label("peer", "dst")
-            .label(
-                "authority",
-                format_args!(
-                    "tele.test.svc.cluster.local:{}",
-                    proxy.outbound_server.as_ref().unwrap().addr.port()
-                ),
-            )
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .value(1u64);
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-        metric.assert_in(&metrics).await;
-
-        // create a new client to force a new connection
-        let client2 = client::new(proxy.outbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client2.get("/").await, "hello");
-        // server connection should be pooled
-        metric.assert_in(&metrics).await;
-    }
-
-    #[tokio::test]
-    async fn inbound_tcp_connect() {
+    async fn test_tcp_accept(fixture: impl Future<Output = TcpFixture>, labels: metrics::Labels) {
         let _trace = trace_init();
         let TcpFixture {
             client,
@@ -1049,20 +925,252 @@ mod transport {
             proxy: _proxy,
             dst: _dst,
             profile: _profile,
-        } = TcpFixture::inbound().await;
+        } = fixture.await;
 
         let tcp_client = client.connect().await;
 
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        metrics::metric("tcp_open_total")
+
+        let labels = labels.label("peer", "src");
+        let mut opens = labels.metric("tcp_open_total").value(1u64);
+        let mut closes = labels
+            .metric("tcp_close_total")
+            .label("errno", "")
+            .value(1u64);
+        opens.assert_in(&metrics).await;
+
+        tcp_client.shutdown().await;
+        closes.assert_in(&metrics).await;
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        opens.set_value(2u64).assert_in(&metrics).await;
+
+        tcp_client.shutdown().await;
+        closes.set_value(2u64).assert_in(&metrics).await;
+    }
+
+    async fn test_write_bytes_total(
+        fixture: impl Future<Output = TcpFixture>,
+        src_labels: metrics::Labels,
+        dst_labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+    ) {
+        let _trace = trace_init();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy,
+            dst: _dst,
+            profile: _profile,
+        } = fixture.await;
+        let src = src_labels
+            .metric("tcp_write_bytes_total")
+            .label("peer", "src")
+            .value(TcpFixture::BYE_MSG.len());
+
+        let dst = dst_labels(&proxy)
+            .metric("tcp_write_bytes_total")
             .label("peer", "dst")
-            .label("direction", "inbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .value(1u64)
-            .assert_in(&metrics)
-            .await;
+            .value(TcpFixture::HELLO_MSG.len());
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.shutdown().await;
+
+        src.assert_in(&metrics).await;
+        dst.assert_in(&metrics).await;
+    }
+
+    async fn test_read_bytes_total(
+        fixture: impl Future<Output = TcpFixture>,
+        src_labels: metrics::Labels,
+        dst_labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+    ) {
+        let _trace = trace_init();
+        let TcpFixture {
+            client,
+            metrics,
+            proxy,
+            dst: _dst,
+            profile: _profile,
+        } = fixture.await;
+
+        let src = src_labels
+            .metric("tcp_read_bytes_total")
+            .label("peer", "src")
+            .value(TcpFixture::HELLO_MSG.len());
+
+        let dst = dst_labels(&proxy)
+            .metric("tcp_read_bytes_total")
+            .label("peer", "dst")
+            .value(TcpFixture::BYE_MSG.len());
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        tcp_client.shutdown().await;
+
+        src.assert_in(&metrics).await;
+        dst.assert_in(&metrics).await;
+    }
+
+    async fn test_tcp_open_conns(
+        fixture: impl Future<Output = TcpFixture>,
+        labels: metrics::Labels,
+    ) {
+        let _trace = trace_init();
+        let fixture = fixture.await;
+        let client = fixture.client;
+        let metrics = fixture.metrics;
+        let mut open_conns = labels.metric("tcp_open_connections").label("peer", "src");
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        open_conns.set_value(1).assert_in(&metrics).await;
+
+        tcp_client.shutdown().await;
+        open_conns.set_value(0).assert_in(&metrics).await;
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
+        open_conns.set_value(1).assert_in(&metrics).await;
+
+        tcp_client.shutdown().await;
+        open_conns.set_value(0).assert_in(&metrics).await;
+    }
+
+    async fn test_http_open_conns(fixture: impl Future<Output = Fixture>, labels: metrics::Labels) {
+        let _trace = trace_init();
+        let Fixture {
+            client,
+            metrics,
+            proxy: _proxy,
+            _profile,
+            dst_tx: _dst_tx,
+        } = fixture.await;
+
+        let mut open_conns = labels.metric("tcp_open_connections").label("peer", "src");
+
+        info!("client.get(/)");
+        assert_eq!(client.get("/").await, "hello");
+
+        open_conns.set_value(1).assert_in(&metrics).await;
+        // Shut down the client to force the connection to close.
+        let new_client = client.shutdown().await;
+        open_conns.set_value(0).assert_in(&metrics).await;
+
+        // create a new client to force a new connection
+        let client = new_client.reconnect();
+
+        info!("client.get(/)");
+        assert_eq!(client.get("/").await, "hello");
+        open_conns.set_value(1).assert_in(&metrics).await;
+
+        // Shut down the client to force the connection to close.
+        client.shutdown().await;
+        open_conns.set_value(0).assert_in(&metrics).await;
+    }
+
+    #[tokio::test]
+    async fn inbound_http_accept() {
+        test_http_accept(Fixture::inbound(), |_| {
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "disabled")
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn inbound_http_connect() {
+        test_http_connect(Fixture::inbound(), |_| {
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback")
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn outbound_http_accept() {
+        test_http_accept(Fixture::outbound(), |_| {
+            metrics::labels()
+                .label("direction", "outbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback")
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn outbound_http_connect() {
+        test_http_connect(Fixture::outbound(), |proxy| {
+            let port = proxy.outbound_server.as_ref().unwrap().addr.port();
+            metrics::labels()
+                .label(
+                    "authority",
+                    format_args!("tele.test.svc.cluster.local:{}", port),
+                )
+                .label("direction", "outbound")
+                .label("tls", "disabled")
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn inbound_tcp_connect() {
+        test_tcp_connect(TcpFixture::inbound(), |_| {
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback")
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn inbound_tcp_accept() {
+        test_tcp_accept(
+            TcpFixture::inbound(),
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "disabled"),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn outbound_tcp_connect() {
+        test_tcp_connect(TcpFixture::outbound(), |proxy| {
+            metrics::labels()
+                .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
+                .label("direction", "outbound")
+                .label("tls", "disabled")
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn outbound_tcp_accept() {
+        test_tcp_accept(
+            TcpFixture::outbound(),
+            metrics::labels()
+                .label("direction", "outbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback"),
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -1147,46 +1255,6 @@ mod transport {
             .await;
     }
 
-    #[tokio::test]
-    async fn inbound_tcp_accept() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::inbound().await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-
-        let labels = metrics::labels()
-            .label("peer", "src")
-            .label("direction", "inbound")
-            .label("tls", "disabled");
-        let mut opens = labels.metric("tcp_open_total").value(1u64);
-        let mut closes = labels
-            .metric("tcp_close_total")
-            .label("errno", "")
-            .value(1u64);
-        opens.assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        closes.assert_in(&metrics).await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        opens.set_value(2u64).assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        closes.set_value(2u64).assert_in(&metrics).await;
-    }
-
     // linkerd/linkerd2#831
     #[tokio::test]
     #[cfg_attr(not(feature = "flaky_tests"), ignore)]
@@ -1237,134 +1305,36 @@ mod transport {
 
     #[tokio::test]
     async fn inbound_tcp_write_bytes_total() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::inbound().await;
-        let src = metrics::metric("tcp_write_bytes_total")
-            .label("peer", "src")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-            .value(TcpFixture::BYE_MSG.len());
-
-        let dst = metrics::metric("tcp_write_bytes_total")
-            .label("peer", "dst")
-            .label("direction", "inbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .value(TcpFixture::HELLO_MSG.len());
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        tcp_client.shutdown().await;
-
-        src.assert_in(&metrics).await;
-        dst.assert_in(&metrics).await;
+        test_write_bytes_total(
+            TcpFixture::inbound(),
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "disabled"),
+            |_| {
+                metrics::labels()
+                    .label("direction", "inbound")
+                    .label("tls", "no_identity")
+                    .label("no_tls_reason", "loopback")
+            },
+        )
+        .await
     }
 
     #[tokio::test]
     async fn inbound_tcp_read_bytes_total() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::inbound().await;
-        let src = metrics::metric("tcp_read_bytes_total")
-            .label("peer", "src")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-            .value(TcpFixture::HELLO_MSG.len());
-
-        let dst = metrics::metric("tcp_read_bytes_total")
-            .label("peer", "dst")
-            .label("direction", "inbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .value(TcpFixture::BYE_MSG.len());
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        tcp_client.shutdown().await;
-
-        src.assert_in(&metrics).await;
-        dst.assert_in(&metrics).await;
-    }
-
-    #[tokio::test]
-    async fn outbound_tcp_connect() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::outbound().await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        metrics::metric("tcp_open_total")
-            .label("peer", "dst")
-            .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .value(1u64)
-            .assert_in(&metrics)
-            .await;
-    }
-
-    #[tokio::test]
-    async fn outbound_tcp_accept() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::outbound().await;
-
-        let labels = metrics::labels()
-            .label("peer", "src")
-            .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback");
-        let mut opens = labels.metric("tcp_open_total").value(1u64);
-        let mut closes = labels
-            .metric("tcp_close_total")
-            .label("errno", "")
-            .value(1u64);
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        opens.assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        closes.assert_in(&metrics).await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        opens.set_value(2u64).assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        closes.set_value(2u64).assert_in(&metrics).await;
+        test_read_bytes_total(
+            TcpFixture::inbound(),
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "disabled"),
+            |_| {
+                metrics::labels()
+                    .label("direction", "inbound")
+                    .label("tls", "no_identity")
+                    .label("no_tls_reason", "loopback")
+            },
+        )
+        .await
     }
 
     #[tokio::test]
@@ -1417,139 +1387,84 @@ mod transport {
 
     #[tokio::test]
     async fn outbound_tcp_write_bytes_total() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::outbound().await;
-        let src = metrics::metric("tcp_write_bytes_total")
-            .label("peer", "src")
-            .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .value(TcpFixture::BYE_MSG.len());
-
-        let dst = metrics::metric("tcp_write_bytes_total")
-            .label("peer", "dst")
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
-            .value(TcpFixture::HELLO_MSG.len());
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        tcp_client.shutdown().await;
-
-        src.assert_in(&metrics).await;
-        dst.assert_in(&metrics).await;
+        test_write_bytes_total(
+            TcpFixture::outbound(),
+            metrics::labels()
+                .label("direction", "outbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback"),
+            |proxy| {
+                metrics::labels()
+                    .label("direction", "outbound")
+                    .label("tls", "disabled")
+                    .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
+            },
+        )
+        .await
     }
 
     #[tokio::test]
     async fn outbound_tcp_read_bytes_total() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy,
-            dst: _dst,
-            profile: _profile,
-        } = TcpFixture::outbound().await;
-
-        let src = metrics::metric("tcp_read_bytes_total")
-            .label("peer", "src")
-            .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .value(TcpFixture::HELLO_MSG.len());
-
-        let dst = metrics::metric("tcp_read_bytes_total")
-            .label("peer", "dst")
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
-            .value(TcpFixture::BYE_MSG.len());
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        tcp_client.shutdown().await;
-
-        src.assert_in(&metrics).await;
-        dst.assert_in(&metrics).await;
+        test_read_bytes_total(
+            TcpFixture::outbound(),
+            metrics::labels()
+                .label("direction", "outbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback"),
+            |proxy| {
+                metrics::labels()
+                    .label("direction", "outbound")
+                    .label("tls", "disabled")
+                    .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
+            },
+        )
+        .await
     }
 
     #[tokio::test]
     async fn outbound_tcp_open_connections() {
-        let _trace = trace_init();
-        let fixture = TcpFixture::outbound().await;
-        let client = fixture.client;
-        let metrics = fixture.metrics;
-        let mut open_conns = metrics::metric("tcp_open_connections")
-            .label("direction", "outbound")
-            .label("peer", "src")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback");
+        test_tcp_open_conns(
+            TcpFixture::outbound(),
+            metrics::labels()
+                .label("direction", "outbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback"),
+        )
+        .await
+    }
 
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        open_conns.set_value(1).assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        open_conns.set_value(0).assert_in(&metrics).await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        open_conns.set_value(1).assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        open_conns.set_value(0).assert_in(&metrics).await;
+    #[tokio::test]
+    async fn inbound_tcp_open_connections() {
+        test_tcp_open_conns(
+            TcpFixture::inbound(),
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "disabled"),
+        )
+        .await
     }
 
     #[tokio::test]
     async fn outbound_http_tcp_open_connections() {
-        let _trace = trace_init();
-        let Fixture {
-            client,
-            metrics,
-            proxy,
-            _profile,
-            dst_tx: _dst_tx,
-        } = Fixture::outbound().await;
+        test_http_open_conns(
+            Fixture::outbound(),
+            metrics::labels()
+                .label("direction", "outbound")
+                .label("tls", "no_identity")
+                .label("no_tls_reason", "loopback"),
+        )
+        .await
+    }
 
-        let mut open_conns = metrics::metric("tcp_open_connections")
-            .label("direction", "outbound")
-            .label("peer", "src")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-
-        open_conns.set_value(1).assert_in(&metrics).await;
-        // Shut down the client to force the connection to close.
-        client.shutdown().await;
-        open_conns.set_value(0).assert_in(&metrics).await;
-
-        // create a new client to force a new connection
-        let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
-
-        info!("client.get(/)");
-        assert_eq!(client.get("/").await, "hello");
-        open_conns.set_value(1).assert_in(&metrics).await;
-
-        // Shut down the client to force the connection to close.
-        client.shutdown().await;
-        open_conns.set_value(0).assert_in(&metrics).await;
+    #[tokio::test]
+    async fn inbound_http_tcp_open_connections() {
+        test_http_open_conns(
+            Fixture::inbound(),
+            metrics::labels()
+                .label("direction", "inbound")
+                .label("tls", "disabled"),
+        )
+        .await
     }
 }
 
