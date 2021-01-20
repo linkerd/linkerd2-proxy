@@ -46,15 +46,13 @@ wildcards = "allow"
 highlight = "all"
 deny = []
 skip = [
-    # Pulled in by tracing-futures 0.2
+    # Pulled in by log v0.4.13
+    { name = "cfg-if", version = "0.1.10" },
+    # Pulled in by tracing-futures v0.2
     { name = "pin-project", version = "0.4.27" },
     { name = "pin-project-internal", version = "0.4.27" },
 ]
-skip-tree = [
-    # `prost-build` uses a version of tempfile that pulls in older versions of
-    # `rand`, etc; and these are only used at build-time, anyway.
-    { name = "tempfile", version = "=3.1.0", depth = 4 },
-]
+skip-tree = []
 
 [sources]
 unknown-registry = "deny"
