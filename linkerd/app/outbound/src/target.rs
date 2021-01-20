@@ -13,7 +13,6 @@ pub struct EndpointFromMetadata;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept<P> {
     pub orig_dst: SocketAddr,
-    pub local_addr: SocketAddr,
     pub protocol: P,
 }
 
@@ -44,28 +43,14 @@ impl From<listen::Addrs> for Accept<()> {
     fn from(addrs: listen::Addrs) -> Self {
         Self {
             orig_dst: addrs.target_addr(),
-            local_addr: addrs.local(),
             protocol: (),
         }
     }
 }
 
 impl<P> From<(P, Accept<()>)> for Accept<P> {
-    fn from(
-        (
-            protocol,
-            Accept {
-                orig_dst,
-                local_addr,
-                ..
-            },
-        ): (P, Accept<()>),
-    ) -> Self {
-        Self {
-            orig_dst,
-            protocol,
-            local_addr,
-        }
+    fn from((protocol, Accept { orig_dst, .. }): (P, Accept<()>)) -> Self {
+        Self { orig_dst, protocol }
     }
 }
 
