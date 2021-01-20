@@ -89,6 +89,7 @@ where
         &cfg.proxy,
         super::endpoint::stack(
             &cfg.proxy.connect,
+            None,
             connect,
             tap,
             metrics.outbound.clone(),

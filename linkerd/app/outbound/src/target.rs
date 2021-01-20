@@ -219,6 +219,12 @@ impl<P> Endpoint<P> {
     pub fn from_accept(reason: tls::NoServerId) -> impl (Fn(Accept<P>) -> Self) + Clone {
         move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
     }
+
+    /// Marks identity as disabled.
+    pub fn identity_disabled(mut self) -> Self {
+        self.identity = Conditional::None(tls::NoServerId::Disabled);
+        self
+    }
 }
 
 impl<P> Into<SocketAddr> for Endpoint<P> {

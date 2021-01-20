@@ -150,6 +150,7 @@ impl Config {
                 &outbound.proxy,
                 outbound::http::endpoint::stack(
                     &outbound.proxy.connect,
+                    local_identity.as_ref().map(|l| l.id()),
                     outbound::tcp::connect::stack(
                         &outbound.proxy.connect,
                         outbound_addr.port(),

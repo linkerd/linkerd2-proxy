@@ -18,6 +18,7 @@ pub fn stack<P>(
     Error = Error,
     Future = impl Send,
 > + Clone {
+    let identity_disabled = local_identity.is_none();
     svc::stack(ConnectTcp::new(config.keepalive))
         // Initiates mTLS if the target is configured with identity.
         .push(tls::Client::layer(local_identity))
@@ -29,6 +30,13 @@ pub fn stack<P>(
         .push_timeout(config.timeout)
         .push(svc::stack::BoxFuture::layer())
         .push(metrics.transport.layer_connect())
+        .push_map_target(move |e: Endpoint<P>| {
+            if identity_disabled {
+                e.identity_disabled()
+            } else {
+                e
+            }
+        })
         .push_request_filter(PreventLoop { port: server_port })
         .into_inner()
 }

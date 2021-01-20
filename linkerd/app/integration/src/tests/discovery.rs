@@ -386,8 +386,7 @@ mod http2 {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .label(
                 "authority",
                 format_args!("disco.test.svc.cluster.local:{}", port),

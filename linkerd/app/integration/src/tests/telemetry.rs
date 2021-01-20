@@ -180,8 +180,7 @@ async fn metrics_endpoint_outbound_request_count() {
     let srv_port = proxy.outbound_server.as_ref().unwrap().addr.port();
     let metric = metrics::metric("request_total")
         .label("direction", "outbound")
-        .label("tls", "no_identity")
-        .label("no_tls_reason", "not_provided_by_service_discovery")
+        .label("tls", "disabled")
         .label(
             "authority",
             format_args!("tele.test.svc.cluster.local:{}", srv_port),
@@ -331,15 +330,9 @@ mod response_classification {
 
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
-                expected_metric(
-                    status,
-                    "outbound",
-                    "no_identity",
-                    Some("not_provided_by_service_discovery"),
-                    Some(port),
-                )
-                .assert_in(&metrics)
-                .await;
+                expected_metric(status, "outbound", "disabled", None, Some(port))
+                    .assert_in(&metrics)
+                    .await;
             }
         }
     }
@@ -461,8 +454,7 @@ async fn metrics_endpoint_outbound_response_latency() {
     let labels = metrics::labels()
         .label("authority", "tele.test.svc.cluster.local")
         .label("direction", "outbound")
-        .label("tls", "no_identity")
-        .label("no_tls_reason", "not_provided_by_service_discovery")
+        .label("tls", "disabled")
         .label("status_code", 200);
     let mut bucket_1000 = labels
         .clone()
@@ -1032,8 +1024,7 @@ mod transport {
                 ),
             )
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .value(1u64);
 
         info!("client.get(/)");
@@ -1098,8 +1089,7 @@ mod transport {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "inbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .label("errno", "EXFULL")
             .value(1u64)
             .assert_in(&metrics)
@@ -1140,8 +1130,7 @@ mod transport {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .label("errno", "EXFULL")
             .value(1u64)
             .assert_in(&metrics)
@@ -1331,8 +1320,7 @@ mod transport {
             .label("peer", "dst")
             .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .value(1u64)
             .assert_in(&metrics)
             .await;
@@ -1402,8 +1390,7 @@ mod transport {
         let mut dst_count = metrics::metric("tcp_connection_duration_count")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .label("errno", "")
             .value(1u64);
 
@@ -1448,8 +1435,7 @@ mod transport {
         let dst = metrics::metric("tcp_write_bytes_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
             .value(TcpFixture::HELLO_MSG.len());
 
@@ -1484,8 +1470,7 @@ mod transport {
         let dst = metrics::metric("tcp_read_bytes_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
+            .label("tls", "disabled")
             .label("authority", proxy.outbound_server.as_ref().unwrap().addr)
             .value(TcpFixture::BYE_MSG.len());
 

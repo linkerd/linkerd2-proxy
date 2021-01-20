@@ -192,6 +192,10 @@ impl Local {
         crate::metrics::Report::new(self.crt_key.clone(), self.refreshes.clone())
     }
 
+    pub fn id(&self) -> &tls::LocalId {
+        &self.id
+    }
+
     pub fn name(&self) -> &id::Name {
         self.id.as_ref()
     }
