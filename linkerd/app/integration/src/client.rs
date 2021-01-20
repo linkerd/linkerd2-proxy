@@ -83,6 +83,8 @@ pub fn tcp(addr: SocketAddr) -> tcp::TcpClient {
     tcp::client(addr)
 }
 pub struct Client {
+    addr: SocketAddr,
+    run: Run,
     authority: String,
     /// This is a future that completes when the associated connection for
     /// this Client has been dropped.
@@ -90,6 +92,13 @@ pub struct Client {
     tx: Sender,
     task: JoinHandle<()>,
     version: http::Version,
+    tls: Option<TlsConfig>,
+}
+
+pub struct NewClient {
+    addr: SocketAddr,
+    authority: String,
+    run: Run,
     tls: Option<TlsConfig>,
 }
 
@@ -101,6 +110,8 @@ impl Client {
         };
         let (tx, task, running) = run(addr, r, tls.clone());
         Client {
+            addr,
+            run: r,
             authority,
             running,
             task,
@@ -172,18 +183,39 @@ impl Client {
         self.running.await
     }
 
-    pub async fn shutdown(self) {
+    /// Shut down the client, returning a type that can be used to initiate a
+    /// new client connection to that target.
+    pub async fn shutdown(self) -> NewClient {
         let Self {
-            tx, task, running, ..
+            tx,
+            task,
+            running,
+            run,
+            addr,
+            authority,
+            tls,
+            ..
         } = self;
         // signal the client task to shut down now.
         drop(tx);
         task.await.unwrap();
         running.await;
+        NewClient {
+            authority,
+            run,
+            addr,
+            tls,
+        }
     }
 }
 
-#[derive(Debug)]
+impl NewClient {
+    pub fn reconnect(self) -> Client {
+        Client::new(self.addr, self.authority, self.run, self.tls)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 enum Run {
     Http1 { absolute_uris: bool },
     Http2,
