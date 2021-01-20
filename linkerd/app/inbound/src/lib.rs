@@ -132,6 +132,7 @@ impl Config {
         // 1. Protocol detection is always performed;
         // 2. TLS is required;
         // 3. A transport header is expected. It's not strictly required, as
+        //    gateways may need to accept HTTP requests from older proxy versions.
         let direct = {
             let http = svc::stack(http_loopback)
                 .push_on_response(
