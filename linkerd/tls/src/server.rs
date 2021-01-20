@@ -48,6 +48,10 @@ pub enum NoTls {
     NoTlsFromRemote,
 }
 
+/// Indicates whether TLS was established on an accepted connection.
+///
+/// Note that the client may not provide an identity if it has not yet
+/// provisioned a certificate.
 pub type ConditionalTls = Conditional<Option<ClientId>, NoTls>;
 
 // TODO sni name

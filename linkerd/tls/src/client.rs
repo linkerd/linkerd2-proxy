@@ -38,6 +38,7 @@ pub enum NoServerId {
     NotProvidedByServiceDiscovery,
 }
 
+/// Indicates whether the target server endpoint has a known TLS identity.
 pub type ConditionalServerId = Conditional<ServerId, NoServerId>;
 
 pub type Config = Arc<rustls::ClientConfig>;
