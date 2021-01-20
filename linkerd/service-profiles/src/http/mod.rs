@@ -26,7 +26,7 @@ pub enum RequestMatch {
     All(Vec<RequestMatch>),
     Any(Vec<RequestMatch>),
     Not(Box<RequestMatch>),
-    Path(Regex),
+    Path(Box<Regex>),
     Method(http::Method),
 }
 

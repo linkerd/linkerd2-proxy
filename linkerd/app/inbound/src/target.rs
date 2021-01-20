@@ -82,7 +82,11 @@ impl Into<SocketAddr> for &'_ TcpAccept {
 
 impl Into<transport::labels::Key> for &'_ TcpAccept {
     fn into(self) -> transport::labels::Key {
-        transport::labels::Key::accept(transport::labels::Direction::In, self.client_id.clone())
+        transport::labels::Key::accept(
+            transport::labels::Direction::In,
+            self.client_id.clone(),
+            self.target_addr,
+        )
     }
 }
 
