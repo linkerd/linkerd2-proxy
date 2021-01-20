@@ -68,10 +68,6 @@ impl Server {
         move |endpoint| {
             let span = tracing::debug_span!("server::run", ?endpoint);
             let _e = span.enter();
-            // if let Some(expected_id) = expected_id.as_ref() {
-            //     let server_id: tls::ConditionalServerId = (&endpoint).into();
-            //     assert_eq!(&server_id, expected_id);
-            // }
             let f = f.clone();
             let (client_io, server_io) = crate::io::duplex(4096);
             let svc = hyper::service::service_fn(move |request: Request<Body>| {
