@@ -404,8 +404,7 @@ async fn active_stacks_dont_idle_out() {
         let body = body.take().expect("service only called once in this test");
         Response::new(body)
     })
-    .http2()
-    .expect_identity(id.clone());
+    .http2();
 
     let connect = support::connect().endpoint_fn_boxed(ep1, server.run());
     let profiles = profile::resolver().profile(
