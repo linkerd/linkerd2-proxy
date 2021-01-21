@@ -185,6 +185,7 @@ impl Into<metrics::EndpointLabels> for &'_ Target {
         metrics::InboundEndpointLabels {
             client_id: self.client_id.clone(),
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
+            target_addr: self.target_addr,
         }
         .into()
     }
