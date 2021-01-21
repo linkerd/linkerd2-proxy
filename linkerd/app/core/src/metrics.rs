@@ -269,7 +269,7 @@ impl FmtLabels for InboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        write!(f, "target_addr=\"{}\"", self.target_addr)?;
+        write!(f, "target_addr=\"{}\",", self.target_addr)?;
 
         TlsAccept::from(&self.client_id).fmt_labels(f)?;
 
@@ -284,7 +284,7 @@ impl FmtLabels for OutboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        write!(f, "target_addr=\"{}\"", self.target_addr)?;
+        write!(f, "target_addr=\"{}\",", self.target_addr)?;
 
         TlsConnect::from(&self.server_id).fmt_labels(f)?;
 
