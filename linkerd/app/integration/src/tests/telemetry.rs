@@ -11,6 +11,7 @@ struct Fixture {
     proxy: proxy::Listening,
     _profile: controller::ProfileSender,
     dst_tx: Option<controller::DstSender>,
+    labels: metrics::Labels,
 }
 
 struct TcpFixture {
@@ -34,7 +35,8 @@ impl Fixture {
 
     async fn inbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
+        let orig_dst = srv.addr;
+        let _profile = ctrl.profile_tx_default(orig_dst, "tele.test.svc.cluster.local");
         let proxy = proxy::new()
             .controller(ctrl.run().await)
             .inbound(srv)
@@ -43,20 +45,27 @@ impl Fixture {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
+        let labels = metrics::labels()
+            .label("authority", "tele.test.svc.cluster.local")
+            .label("direction", "inbound")
+            .label("tls", "disabled")
+            .label("target_addr", orig_dst);
         Fixture {
             client,
             metrics,
             proxy,
             _profile,
             dst_tx: None,
+            labels,
         }
     }
 
     async fn outbound_with_server(srv: server::Listening) -> Self {
         let ctrl = controller::new();
-        let _profile = ctrl.profile_tx_default(srv.addr, "tele.test.svc.cluster.local");
-        let authority = format!("tele.test.svc.cluster.local:{}", srv.addr.port());
-        let dest = ctrl.destination_tx(authority);
+        let orig_dst = srv.addr;
+        let _profile = ctrl.profile_tx_default(orig_dst, "tele.test.svc.cluster.local");
+        let authority = format!("tele.test.svc.cluster.local:{}", orig_dst.port());
+        let dest = ctrl.destination_tx(authority.clone());
         dest.send_addr(srv.addr);
         let proxy = proxy::new()
             .controller(ctrl.run().await)
@@ -66,12 +75,18 @@ impl Fixture {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
+        let labels = metrics::labels()
+            .label("direction", "outbound")
+            .label("tls", "disabled")
+            .label("authority", authority)
+            .label("target_addr", orig_dst);
         Fixture {
             client,
             metrics,
             proxy,
             _profile,
             dst_tx: Some(dest),
+            labels,
         }
     }
 }
@@ -143,78 +158,36 @@ impl TcpFixture {
 
 #[tokio::test]
 async fn metrics_endpoint_inbound_request_count() {
-    test_http_count("request_total", Fixture::inbound(), |proxy| {
-        let orig_dst = proxy.inbound_server.as_ref().unwrap().addr;
-        metrics::labels()
-            .label("authority", "tele.test.svc.cluster.local")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-            .label("target_addr", orig_dst)
-    })
-    .await;
+    test_http_count("request_total", Fixture::inbound()).await;
 }
 
 #[tokio::test]
 async fn metrics_endpoint_outbound_request_count() {
-    test_http_count("request_total", Fixture::outbound(), |proxy| {
-        let orig_dst = proxy.outbound_server.as_ref().unwrap().addr;
-        metrics::labels()
-            .label("direction", "outbound")
-            .label("tls", "disabled")
-            .label(
-                "authority",
-                format_args!("tele.test.svc.cluster.local:{}", orig_dst.port()),
-            )
-            .label("target_addr", orig_dst)
-    })
-    .await
+    test_http_count("request_total", Fixture::outbound()).await
 }
 
 #[tokio::test]
 async fn metrics_endpoint_inbound_response_count() {
-    test_http_count("response_total", Fixture::inbound(), |proxy| {
-        let orig_dst = proxy.inbound_server.as_ref().unwrap().addr;
-        metrics::labels()
-            .label("authority", "tele.test.svc.cluster.local")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-            .label("target_addr", orig_dst)
-    })
-    .await;
+    test_http_count("response_total", Fixture::inbound()).await;
 }
 
 #[tokio::test]
 async fn metrics_endpoint_outbound_response_count() {
-    test_http_count("response_total", Fixture::outbound(), |proxy| {
-        let orig_dst = proxy.outbound_server.as_ref().unwrap().addr;
-        metrics::labels()
-            .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
-            .label(
-                "authority",
-                format_args!("tele.test.svc.cluster.local:{}", orig_dst.port()),
-            )
-            .label("target_addr", orig_dst)
-    })
-    .await
+    test_http_count("response_total", Fixture::outbound()).await
 }
 
-async fn test_http_count(
-    metric: &str,
-    fixture: impl Future<Output = Fixture>,
-    labels: impl Fn(&proxy::Listening) -> metrics::Labels,
-) {
+async fn test_http_count(metric: &str, fixture: impl Future<Output = Fixture>) {
     let _trace = trace_init();
     let Fixture {
         client,
         metrics,
-        proxy,
+        proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        labels,
     } = fixture.await;
 
-    let metric = labels(&proxy).metric(metric);
+    let metric = labels.metric(metric);
 
     assert!(metric.is_not_in(metrics.get("/metrics").await));
 
@@ -241,38 +214,6 @@ mod response_classification {
         http::StatusCode::GATEWAY_TIMEOUT,
         http::StatusCode::INTERNAL_SERVER_ERROR,
     ];
-
-    fn expected_metric(
-        status: &http::StatusCode,
-        direction: &str,
-        tls: &str,
-        no_tls_reason: Option<&str>,
-        port: Option<u16>,
-    ) -> metrics::MetricMatch {
-        let addr = if let Some(port) = port {
-            format!("tele.test.svc.cluster.local:{}", port)
-        } else {
-            String::from("tele.test.svc.cluster.local")
-        };
-        let mut metric = metrics::metric("response_total")
-            .label("authority", addr)
-            .label("direction", direction)
-            .label("tls", tls)
-            .label("status_code", status.as_u16())
-            .label(
-                "classification",
-                if status.is_server_error() {
-                    "failure"
-                } else {
-                    "success"
-                },
-            )
-            .value(1u64);
-        if let Some(reason) = no_tls_reason {
-            metric = metric.label("no_tls_reason", reason);
-        }
-        metric
-    }
 
     async fn make_test_server() -> server::Listening {
         fn parse_header(headers: &http::HeaderMap, which: &str) -> Option<http::StatusCode> {
@@ -303,23 +244,16 @@ mod response_classification {
             .await
     }
 
-    async fn test_http(
-        fixture: impl Future<Output = Fixture>,
-        direction: &str,
-        tls: &str,
-        no_tls_reason: Option<&str>,
-        port: impl Fn(&proxy::Listening) -> Option<u16>,
-    ) {
+    async fn test_http(fixture: impl Future<Output = Fixture>) {
         let _trace = trace_init();
         let Fixture {
             client,
             metrics,
-            proxy,
+            proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            labels,
         } = fixture.await;
-
-        let port = port(&proxy);
 
         for (i, status) in STATUSES.iter().enumerate() {
             let request = client
@@ -336,7 +270,18 @@ mod response_classification {
             for status in &STATUSES[0..i] {
                 // assert that the current status code is incremented, *and* that
                 // all previous requests are *not* incremented.
-                expected_metric(status, direction, tls, no_tls_reason, port)
+                labels
+                    .metric("response_total")
+                    .label("status_code", status.as_u16())
+                    .label(
+                        "classification",
+                        if status.is_server_error() {
+                            "failure"
+                        } else {
+                            "success"
+                        },
+                    )
+                    .value(1u64)
                     .assert_in(&metrics)
                     .await;
             }
@@ -346,23 +291,18 @@ mod response_classification {
     #[tokio::test]
     async fn inbound_http() {
         let fixture = async { Fixture::inbound_with_server(make_test_server().await).await };
-        test_http(fixture, "inbound", "disabled", None, |_| None).await
+        test_http(fixture).await
     }
 
     #[tokio::test]
     async fn outbound_http() {
         let fixture = async { Fixture::outbound_with_server(make_test_server().await).await };
-        test_http(fixture, "outbound", "disabled", None, |proxy| {
-            Some(proxy.outbound_server.as_ref().unwrap().addr.port())
-        })
-        .await
+        test_http(fixture).await
     }
 }
 
-async fn test_response_latency<F>(
-    mk_fixture: impl Fn(server::Listening) -> F,
-    mk_labels: impl Fn(&proxy::Listening) -> metrics::Labels,
-) where
+async fn test_response_latency<F>(mk_fixture: impl Fn(server::Listening) -> F)
+where
     F: Future<Output = Fixture>,
 {
     let _trace = trace_init();
@@ -377,9 +317,10 @@ async fn test_response_latency<F>(
     let Fixture {
         client,
         metrics,
-        proxy,
+        proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        labels,
     } = mk_fixture(srv).await;
 
     info!("client.get(/hey)");
@@ -387,7 +328,7 @@ async fn test_response_latency<F>(
 
     // assert the >=1000ms bucket is incremented by our request with 500ms
     // extra latency.
-    let labels = mk_labels(&proxy).label("status_code", 200);
+    let labels = labels.label("status_code", 200);
     let mut bucket_1000 = labels
         .clone()
         .metric("response_latency_ms_bucket")
@@ -445,13 +386,7 @@ async fn test_response_latency<F>(
 #[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 async fn inbound_response_latency() {
-    test_response_latency(Fixture::inbound_with_server, |_| {
-        metrics::labels()
-            .label("authority", "tele.test.svc.cluster.local")
-            .label("direction", "inbound")
-            .label("tls", "disabled")
-    })
-    .await
+    test_response_latency(Fixture::inbound_with_server).await
 }
 
 // Ignore this test on CI, because our method of adding latency to requests
@@ -461,18 +396,7 @@ async fn inbound_response_latency() {
 #[tokio::test]
 #[cfg_attr(not(feature = "flaky_tests"), ignore)]
 async fn outbound_response_latency() {
-    test_response_latency(Fixture::outbound_with_server, |proxy| {
-        let port = proxy.outbound_server.as_ref().unwrap().addr.port();
-        metrics::labels()
-            .label(
-                "authority",
-                format_args!("tele.test.svc.cluster.local:{}", port),
-            )
-            .label("direction", "outbound")
-            .label("tls", "no_identity")
-            .label("no_tls_reason", "not_provided_by_service_discovery")
-    })
-    .await
+    test_response_latency(Fixture::outbound_with_server).await
 }
 
 // Tests for destination labels provided by control plane service discovery.
@@ -489,7 +413,8 @@ mod outbound_dst_labels {
 
         let ctrl = controller::new();
         let _profile = ctrl.profile_tx_default(addr, dest);
-        let dst_tx = ctrl.destination_tx(format!("{}:{}", dest, addr.port()));
+        let dest_and_port = format!("{}:{}", dest, addr.port());
+        let dst_tx = ctrl.destination_tx(dest_and_port.clone());
 
         let proxy = proxy::new()
             .controller(ctrl.run().await)
@@ -499,12 +424,17 @@ mod outbound_dst_labels {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, dest);
-
+        let labels = metrics::labels()
+            .label("direction", "outbound")
+            .label("tls", "disabled")
+            .label("authority", dest_and_port)
+            .label("target_addr", addr);
         let f = Fixture {
             client,
             metrics,
             proxy,
             _profile,
+            labels,
             dst_tx: Some(dst_tx),
         };
 
@@ -521,6 +451,7 @@ mod outbound_dst_labels {
                 proxy: _proxy,
                 _profile,
                 dst_tx,
+                labels,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -535,7 +466,7 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
 
-        let labels = metrics::labels()
+        let labels = labels
             .label("dst_addr_label1", "foo")
             .label("dst_addr_label2", "bar");
 
@@ -558,6 +489,7 @@ mod outbound_dst_labels {
                 proxy: _proxy,
                 _profile,
                 dst_tx,
+                labels,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -573,7 +505,7 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
 
-        let labels = metrics::labels()
+        let labels = labels
             .label("dst_set_label1", "foo")
             .label("dst_set_label2", "bar");
 
@@ -596,6 +528,7 @@ mod outbound_dst_labels {
                 proxy: _proxy,
                 _profile,
                 dst_tx,
+                labels,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -612,7 +545,7 @@ mod outbound_dst_labels {
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
 
-        let labels = metrics::labels()
+        let labels = labels
             .label("dst_addr_label", "foo")
             .label("dst_set_label", "bar");
 
@@ -642,6 +575,7 @@ mod outbound_dst_labels {
                 proxy: _proxy,
                 _profile,
                 dst_tx,
+                labels,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -654,7 +588,8 @@ mod outbound_dst_labels {
             dst_tx.send_labeled(addr, alabels, slabels);
         }
 
-        let labels = metrics::labels()
+        let labels1 = labels
+            .clone()
             .label("dst_addr_label", "foo")
             .label("dst_set_label", "unchanged");
 
@@ -667,12 +602,7 @@ mod outbound_dst_labels {
             "response_total",
             "response_latency_ms_count",
         ] {
-            labels
-                .clone()
-                .metric(metric)
-                .value(1u64)
-                .assert_in(&metrics)
-                .await;
+            labels1.metric(metric).value(1u64).assert_in(&metrics).await;
         }
 
         {
@@ -683,7 +613,7 @@ mod outbound_dst_labels {
             dst_tx.send_labeled(addr, alabels, slabels);
         }
 
-        let labels2 = metrics::labels()
+        let labels2 = labels
             .label("dst_addr_label", "bar")
             .label("dst_set_label", "unchanged");
 
@@ -697,12 +627,7 @@ mod outbound_dst_labels {
             "response_total",
             "response_latency_ms_count",
         ] {
-            labels2
-                .clone()
-                .metric(metric)
-                .value(1u64)
-                .assert_in(&metrics)
-                .await;
+            labels1.metric(metric).value(1u64).assert_in(&metrics).await;
         }
 
         // stats recorded from the first request should still be present.
@@ -712,12 +637,7 @@ mod outbound_dst_labels {
             "response_total",
             "response_latency_ms_count",
         ] {
-            labels
-                .clone()
-                .metric(metric)
-                .value(1u64)
-                .assert_in(&metrics)
-                .await;
+            labels2.metric(metric).value(1u64).assert_in(&metrics).await;
         }
     }
 
@@ -737,6 +657,7 @@ mod outbound_dst_labels {
                 proxy: _proxy,
                 _profile,
                 dst_tx,
+                labels,
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -747,7 +668,7 @@ mod outbound_dst_labels {
             slabels.insert("set_label".to_owned(), "foo".to_owned());
             dst_tx.send_labeled(addr, alabels, slabels);
         }
-        let labels1 = metrics::labels().label("dst_set_label", "foo");
+        let labels1 = labels.clone().label("dst_set_label", "foo");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
@@ -757,12 +678,7 @@ mod outbound_dst_labels {
             "response_total",
             "response_latency_ms_count",
         ] {
-            labels1
-                .clone()
-                .metric(metric)
-                .value(1u64)
-                .assert_in(&client)
-                .await;
+            labels1.metric(metric).value(1u64).assert_in(&client).await;
         }
 
         {
@@ -771,7 +687,7 @@ mod outbound_dst_labels {
             slabels.insert("set_label".to_owned(), "bar".to_owned());
             dst_tx.send_labeled(addr, alabels, slabels);
         }
-        let labels2 = metrics::labels().label("dst_set_label", "bar");
+        let labels2 = labels.label("dst_set_label", "bar");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
@@ -864,18 +780,19 @@ mod transport {
 
     async fn test_http_connect(
         fixture: impl Future<Output = Fixture>,
-        labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+        extra_labels: metrics::Labels,
     ) {
         let _trace = trace_init();
         let Fixture {
             client,
             metrics,
-            proxy,
+            proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            labels,
         } = fixture.await;
 
-        let labels = labels(&proxy).label("peer", "dst");
+        let labels = labels.and(extra_labels).label("peer", "dst");
         let opens = labels.metric("tcp_open_total").value(1u64);
 
         info!("client.get(/)");
@@ -890,18 +807,19 @@ mod transport {
 
     async fn test_http_accept(
         fixture: impl Future<Output = Fixture>,
-        labels: impl Fn(&proxy::Listening) -> metrics::Labels,
+        extra_labels: metrics::Labels,
     ) {
         let _trace = trace_init();
         let Fixture {
             client,
             metrics,
-            proxy,
+            proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            labels,
         } = fixture.await;
 
-        let labels = labels(&proxy).label("peer", "src");
+        let labels = labels.and(extra_labels).label("peer", "src");
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
             .metric("tcp_close_total")
@@ -1086,7 +1004,10 @@ mod transport {
         open_conns.set_value(0).assert_in(&metrics).await;
     }
 
-    async fn test_http_open_conns(fixture: impl Future<Output = Fixture>, labels: metrics::Labels) {
+    async fn test_http_open_conns(
+        fixture: impl Future<Output = Fixture>,
+        extra_labels: metrics::Labels,
+    ) {
         let _trace = trace_init();
         let Fixture {
             client,
@@ -1094,9 +1015,13 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
+            labels,
         } = fixture.await;
 
-        let mut open_conns = labels.metric("tcp_open_connections").label("peer", "src");
+        let mut open_conns = labels
+            .and(extra_labels)
+            .metric("tcp_open_connections")
+            .label("peer", "src");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
@@ -1120,53 +1045,34 @@ mod transport {
 
     #[tokio::test]
     async fn inbound_http_accept() {
-        test_http_accept(Fixture::inbound(), |proxy| {
-            let orig_dst = proxy.inbound_server.as_ref().unwrap().addr;
-            metrics::labels()
-                .label("direction", "inbound")
-                .label("tls", "disabled")
-                .label("target_addr", orig_dst)
-        })
-        .await;
+        test_http_accept(Fixture::inbound(), metrics::labels()).await;
     }
 
     #[tokio::test]
     async fn inbound_http_connect() {
-        test_http_connect(Fixture::inbound(), |_| {
+        test_http_connect(
+            Fixture::inbound(),
             metrics::labels()
-                .label("direction", "inbound")
                 .label("tls", "no_identity")
-                .label("no_tls_reason", "loopback")
-        })
+                .label("no_tls_reason", "loopback"),
+        )
         .await;
     }
 
     #[tokio::test]
     async fn outbound_http_accept() {
-        test_http_accept(Fixture::outbound(), |proxy| {
-            let orig_dst = proxy.outbound_server.as_ref().unwrap().addr;
+        test_http_accept(
+            Fixture::outbound(),
             metrics::labels()
-                .label("direction", "outbound")
                 .label("tls", "no_identity")
-                .label("no_tls_reason", "loopback")
-                .label("target_addr", orig_dst)
-        })
+                .label("no_tls_reason", "loopback"),
+        )
         .await;
     }
 
     #[tokio::test]
     async fn outbound_http_connect() {
-        test_http_connect(Fixture::outbound(), |proxy| {
-            let port = proxy.outbound_server.as_ref().unwrap().addr.port();
-            metrics::labels()
-                .label(
-                    "authority",
-                    format_args!("tele.test.svc.cluster.local:{}", port),
-                )
-                .label("direction", "outbound")
-                .label("tls", "disabled")
-        })
-        .await;
+        test_http_connect(Fixture::outbound(), metrics::labels()).await;
     }
 
     #[tokio::test]
@@ -1523,6 +1429,7 @@ async fn metrics_compression() {
         proxy: _proxy,
         _profile,
         dst_tx: _dst_tx,
+        labels,
     } = Fixture::inbound().await;
 
     let do_scrape = |encoding: &str| {
@@ -1577,10 +1484,8 @@ async fn metrics_compression() {
     info!("client.get(/)");
     assert_eq!(client.get("/").await, "hello");
 
-    let mut metric = metrics::metric("response_latency_ms_count")
-        .label("authority", "tele.test.svc.cluster.local")
-        .label("direction", "inbound")
-        .label("tls", "disabled")
+    let mut metric = labels
+        .metric("response_latency_ms_count")
         .label("status_code", 200)
         .value(1u64);
 

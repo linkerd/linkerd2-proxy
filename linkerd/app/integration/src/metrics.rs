@@ -227,6 +227,17 @@ impl Labels {
         self
     }
 
+    /// Return a new `Labels` consisting of all the labels in `self` plus all
+    /// the labels in `other`.
+    ///
+    /// If `other` defines values for labels that are also defined in `self`,
+    /// the values from `other` overwrite the values in `self`.
+    pub fn and(&self, other: Labels) -> Labels {
+        let mut new_labels = self.0.clone();
+        new_labels.extend(other.0.into_iter());
+        Labels(new_labels)
+    }
+
     pub fn metric(&self, name: impl Into<String>) -> MetricMatch {
         MetricMatch {
             labels: self.0.clone(),
