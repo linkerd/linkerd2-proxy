@@ -1,15 +1,16 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::string::ToString;
 
 #[derive(Debug, Clone)]
 pub struct MetricMatch {
     name: String,
-    labels: Vec<String>,
+    labels: HashMap<String, String>,
     value: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Labels(Vec<String>);
+pub struct Labels(HashMap<String, String>);
 
 pub fn metric(name: impl Into<String>) -> MetricMatch {
     MetricMatch::new(name)
@@ -22,17 +23,23 @@ pub fn labels() -> Labels {
 #[derive(Eq, PartialEq)]
 pub struct MatchErr(String);
 
+macro_rules! match_err {
+    ($($arg:tt)+) => {
+        return Err(MatchErr(format!($($arg)+)));
+    }
+}
+
 impl MetricMatch {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            labels: Vec::new(),
+            labels: HashMap::new(),
             value: None,
         }
     }
 
     pub fn label(mut self, key: impl AsRef<str>, val: impl fmt::Display) -> Self {
-        self.labels.push(format!("{}=\"{}\"", key.as_ref(), val));
+        self.labels.insert(key.as_ref().to_owned(), val.to_string());
         self
     }
 
@@ -54,31 +61,91 @@ impl MetricMatch {
 
     pub fn is_in(&self, scrape: impl AsRef<str>) -> Result<(), MatchErr> {
         let scrape = scrape.as_ref();
-        let lines = scrape
+        let metrics = scrape
             .lines()
             .filter(|&line| line.starts_with(&self.name))
             .collect::<Vec<&str>>();
         let mut candidates = Vec::new();
-        'lines: for &line in &lines {
-            if let Some(labels) = line
+
+        for &metric in &metrics {
+            let span = tracing::debug_span!("checking", ?metric);
+            let _e = span.enter();
+
+            if let Some(labels) = metric
                 .split('{')
                 .nth(1)
                 .and_then(|line| line.split('}').next())
             {
-                for label in &self.labels {
-                    if !labels.contains(&label[..]) {
-                        continue 'lines;
+                let mut matched = true;
+                for label in labels.split(',') {
+                    tracing::trace!(label, "checking");
+
+                    if label.is_empty() {
+                        match_err!("malformed metric (empty label)\n  metric: \"{}\"", metric);
+                    }
+
+                    if !label.contains('=') {
+                        match_err!(
+                            "malformed metric (missing '=')\n in label: {:?}\n  metric: \"{}\"",
+                            label,
+                            metric,
+                        );
+                    }
+
+                    let mut split = label.split('=');
+                    let key = split.next().expect("label contains an '='");
+                    let value = split.next().expect("label contains an '='");
+
+                    if split.next().is_some() {
+                        match_err!(
+                            "malformed metric (multiple '=' in label)\n in label: {:?}\n   metric: \"{}\"",
+                            label,
+                            metric,
+                        );
+                    }
+
+                    if key.contains('"') {
+                        match_err!(
+                            "malformed metric (quotation mark before '=' in label)\n in label: {:?}\n   metric: \"{}\"",
+                            label,
+                            metric,
+                        );
+                    }
+
+                    if !(value.starts_with('"') && value.ends_with('"')) {
+                        match_err!(
+                            "malformed metric (label value not quoted)\n in label: {:?}\n    value: {:?}\n   metric: \"{}\"",
+                            label,
+                            value,
+                            metric,
+                        );
+                    }
+
+                    if let Some(expected_value) = self.labels.get(key) {
+                        if expected_value != value {
+                            tracing::trace!(key, value, ?expected_value, "label is not a match!");
+                            // The label isn't a match, but check all the labels
+                            // in this metric so we can error on invalid metrics
+                            // as well.
+                            matched = false;
+                        }
                     }
                 }
-                candidates.push(line);
+
+                tracing::debug!(matched, "checked all labels");
+                if matched {
+                    candidates.push(metric);
+                }
             }
         }
 
         if candidates.is_empty() {
-            return Err(MatchErr(format!(
+            match_err!(
                 "did not find a `{}` metric\n  with labels: {:?}\nfound metrics: {:#?}",
-                self.name, self.labels, lines
-            )));
+                self.name,
+                self.labels,
+                metrics
+            );
         }
 
         if let Some(ref expected_value) = self.value {
@@ -90,10 +157,10 @@ impl MetricMatch {
                     }
                 }
             }
-            return Err(MatchErr(format!(
+            match_err!(
                 "did not find a `{}` metric\n  with labels: {:?}\n    and value: {}\nfound metrics: {:#?}",
                 self.name, self.labels, expected_value, candidates
-            )));
+            );
         }
 
         Ok(())
@@ -150,7 +217,7 @@ impl MetricMatch {
 
 impl Labels {
     pub fn label(mut self, key: impl AsRef<str>, val: impl fmt::Display) -> Self {
-        self.0.push(format!("{}=\"{}\"", key.as_ref(), val));
+        self.0.insert(key.as_ref().to_owned(), val.to_string());
         self
     }
 
