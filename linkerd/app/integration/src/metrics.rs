@@ -121,6 +121,12 @@ impl MetricMatch {
                         );
                     }
 
+                    // Ignore the quotation marks on either side of the value
+                    // when comparing it against the expected value. We just
+                    // checked that there are quotation marks, on both sides, so
+                    // we know the first and last chars are quotes.
+                    let value = &value[1..value.len() - 1];
+
                     if let Some(expected_value) = self.labels.get(key) {
                         if expected_value != value {
                             tracing::trace!(key, value, ?expected_value, "label is not a match!");
