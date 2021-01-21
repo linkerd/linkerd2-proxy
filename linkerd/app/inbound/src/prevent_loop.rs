@@ -1,5 +1,4 @@
 use crate::TcpEndpoint;
-//use futures::future;
 use linkerd_app_core::{
     svc::stack::{Predicate, Switch},
     transport::listen::Addrs,
