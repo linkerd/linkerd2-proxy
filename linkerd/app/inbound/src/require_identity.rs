@@ -26,10 +26,9 @@ impl Predicate<TcpAccept> for RequireIdentityForDirect {
     fn check(&mut self, meta: TcpAccept) -> Result<TcpAccept, Error> {
         tracing::debug!(client.id = ?meta.client_id);
         match meta.client_id {
-            Conditional::Some(Some(_)) => {}
-            _ => return Err(IdentityRequired(()).into()),
+            Conditional::Some(Some(_)) => Ok(meta),
+            _ => Err(IdentityRequired(()).into()),
         }
-        Ok(meta)
     }
 }
 
@@ -51,14 +50,10 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
         let id_required = self.ports.contains(&port);
 
         tracing::debug!(%port, client.id = ?meta.client_id, %id_required);
-        if id_required {
-            match meta.client_id {
-                Conditional::Some(Some(_)) => {}
-                _ => return Err(IdentityRequired(()).into()),
-            }
+        match meta.client_id {
+            Conditional::Some(Some(_)) if id_required => Ok(meta),
+            _ => Err(IdentityRequired(()).into()),
         }
-
-        Ok(meta)
     }
 }
 
