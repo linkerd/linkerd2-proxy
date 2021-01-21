@@ -192,6 +192,10 @@ impl LocalCrtKey {
         crate::metrics::Report::new(self.crt_key.clone(), self.refreshes.clone())
     }
 
+    pub fn id(&self) -> &id::LocalId {
+        &self.id
+    }
+
     pub fn name(&self) -> &id::Name {
         self.id.as_ref()
     }
@@ -209,7 +213,7 @@ impl Into<tls::client::Config> for &'_ LocalCrtKey {
 
 impl Into<id::LocalId> for &'_ LocalCrtKey {
     fn into(self) -> id::LocalId {
-        id::LocalId(self.name().clone())
+        self.id().clone()
     }
 }
 

@@ -9,13 +9,14 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     spans::SpanConverter,
-    svc, Error, TraceContext, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
+    svc, tls, Error, TraceContext, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
 use tokio::{io, sync::mpsc};
 use tracing::debug_span;
 
 pub fn stack<B, C>(
     config: &ConnectConfig,
+    local_id: Option<&tls::LocalId>,
     tcp_connect: C,
     tap: tap::Registry,
     metrics: metrics::Proxy,
@@ -36,6 +37,7 @@ where
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + Unpin,
 {
+    let identity_disabled = local_id.is_none();
     svc::stack(tcp_connect)
         // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
         // is typically used (i.e. when communicating with other proxies); though
@@ -67,5 +69,12 @@ where
         .push_on_response(http::BoxResponse::layer())
         .check_new::<Endpoint>()
         .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
+        .push_map_target(move |e: Endpoint| {
+            if identity_disabled {
+                e.identity_disabled()
+            } else {
+                e
+            }
+        })
         .into_inner()
 }
