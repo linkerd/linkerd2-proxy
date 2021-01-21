@@ -50,9 +50,13 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
         let id_required = self.ports.contains(&port);
 
         tracing::debug!(%port, client.id = ?meta.client_id, %id_required);
-        match meta.client_id {
-            Conditional::Some(Some(_)) if id_required => Ok(meta),
-            _ => Err(IdentityRequired(()).into()),
+        if id_required {
+            match meta.client_id {
+                Conditional::Some(Some(_)) => Ok(meta),
+                _ => Err(IdentityRequired(()).into()),
+            }
+        } else {
+            Ok(meta)
         }
     }
 }
