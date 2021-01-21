@@ -1,5 +1,9 @@
-//use futures::future;
-use linkerd_app_core::{svc::stack::Predicate, svc::stack::Switch, Error};
+use crate::TcpEndpoint;
+use linkerd_app_core::{
+    svc::stack::{Predicate, Switch},
+    transport::listen::Addrs,
+    Error,
+};
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -18,29 +22,21 @@ impl From<u16> for PreventLoop {
     }
 }
 
-impl<T> Predicate<T> for PreventLoop
-where
-    for<'t> &'t T: Into<std::net::SocketAddr>,
-{
-    type Request = T;
+impl Predicate<TcpEndpoint> for PreventLoop {
+    type Request = TcpEndpoint;
 
-    fn check(&mut self, t: T) -> Result<T, Error> {
-        let addr = (&t).into();
-        tracing::debug!(%addr, self.port);
-        if addr.port() == self.port {
-            return Err(LoopPrevented { port: self.port }.into());
+    fn check(&mut self, t: TcpEndpoint) -> Result<TcpEndpoint, Error> {
+        if t.port == self.port {
+            Err(LoopPrevented { port: t.port }.into())
+        } else {
+            Ok(t)
         }
-
-        Ok(t)
     }
 }
 
-impl<T> Switch<T> for PreventLoop
-where
-    for<'t> &'t T: Into<std::net::SocketAddr>,
-{
-    fn use_primary(&self, target: &T) -> bool {
-        let addr = target.into();
+impl Switch<Addrs> for PreventLoop {
+    fn use_primary(&self, addrs: &Addrs) -> bool {
+        let addr = addrs.target_addr();
         tracing::debug!(%addr, self.port);
         addr.port() != self.port
     }
