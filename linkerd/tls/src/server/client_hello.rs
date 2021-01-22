@@ -1,13 +1,9 @@
+use crate::ServerId;
 use linkerd_identity as identity;
 use std::convert::TryFrom;
 use tracing::trace;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum Match {
-    Incomplete,
-    Matched,
-    NotMatched,
-}
+pub struct Incomplete;
 
 /// Determintes whether the given `input` looks like the start of a TLS
 /// connection that the proxy should terminate.
@@ -18,12 +14,14 @@ pub enum Match {
 ///
 /// XXX: Once the TLS record header is matched, the determination won't be
 /// made until the entire TLS record including the entire ClientHello handshake
-/// message is available. TODO: Reject non-matching inputs earlier.
+/// message is available.
+///
+/// TODO: Reject non-matching inputs earlier.
 ///
 /// This assumes that the ClientHello is small and is sent in a single TLS
 /// record, which is what all reasonable implementations do. (If they were not
 /// to, they wouldn't interoperate with picky servers.)
-pub fn match_client_hello(input: &[u8], identity: &identity::Name) -> Match {
+pub fn parse_sni(input: &[u8]) -> Result<Option<ServerId>, Incomplete> {
     let r = untrusted::Input::from(input).read_all(untrusted::EndOfInput, |input| {
         let r = extract_sni(input);
         input.skip_to_end(); // Ignore anything after what we parsed.
@@ -31,28 +29,19 @@ pub fn match_client_hello(input: &[u8], identity: &identity::Name) -> Match {
     });
     match r {
         Ok(Some(sni)) => {
-            let m = identity::Name::try_from(sni.as_slice_less_safe())
-                .map(|sni| {
-                    if sni == *identity {
-                        Match::Matched
-                    } else {
-                        Match::NotMatched
-                    }
-                })
-                .unwrap_or(Match::NotMatched);
-            trace!(
-                "match_client_hello: parsed correctly up to SNI; matches: {:?}",
-                m
-            );
-            m
+            let sni = identity::Name::try_from(sni.as_slice_less_safe())
+                .ok()
+                .map(ServerId);
+            trace!(?sni, "parse_sni: parsed correctly up to SNI");
+            Ok(sni)
         }
         Ok(None) => {
-            trace!("match_client_hello: failed to parse up to SNI");
-            Match::NotMatched
+            trace!("parse_sni: failed to parse up to SNI");
+            Ok(None)
         }
         Err(untrusted::EndOfInput) => {
-            trace!("match_client_hello: needs more input");
-            Match::Incomplete
+            trace!("parse_sni: needs more input");
+            Err(Incomplete)
         }
     }
 }
