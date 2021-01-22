@@ -30,9 +30,17 @@ fn plaintext() {
         None,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
-    assert_eq!(client_result.is_tls(), false);
+    assert_eq!(
+        client_result.tls,
+        Some(Conditional::None(
+            tls::NoServerId::NotProvidedByServiceDiscovery
+        ))
+    );
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
-    assert_eq!(server_result.is_tls(), false);
+    assert_eq!(
+        server_result.tls,
+        Some(Conditional::None(tls::server::NoTls::Disabled))
+    );
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
@@ -40,15 +48,21 @@ fn plaintext() {
 fn proxy_to_proxy_tls_works() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
     let client_tls = id::test_util::BAR_NS1.validate().unwrap();
+    let server_id = tls::ServerId(server_tls.name().clone());
     let (client_result, server_result) = run_test(
-        Conditional::Some((client_tls, tls::ServerId(server_tls.name().clone()))),
+        Conditional::Some((client_tls.clone(), server_id.clone())),
         |conn| write_then_read(conn, PING),
         Some(server_tls),
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
-    assert_eq!(client_result.is_tls(), true);
+    assert_eq!(client_result.tls, Some(Conditional::Some(server_id)));
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
-    assert_eq!(server_result.is_tls(), true);
+    assert_eq!(
+        server_result.tls,
+        Some(Conditional::Some(tls::server::Tls::Terminated {
+            client_id: Some(tls::ClientId(client_tls.name().clone()))
+        }))
+    );
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
@@ -61,10 +75,10 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let client_tls = id::test_util::BAR_NS1
         .validate()
         .expect("valid client cert");
-    let client_target = id::test_util::BAR_NS1.crt().name().clone();
+    let sni = id::test_util::BAR_NS1.crt().name().clone();
 
     let (client_result, server_result) = run_test(
-        Conditional::Some((client_tls, tls::ServerId(client_target))),
+        Conditional::Some((client_tls, tls::ServerId(sni.clone()))),
         |conn| write_then_read(conn, PING),
         Some(server_tls),
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
@@ -72,23 +86,22 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
 
     // The server's connection will succeed with the TLS client hello passed
     // through, because the SNI doesn't match its identity.
-    assert_eq!(client_result.is_tls(), false);
+    assert_eq!(client_result.tls, None);
     assert!(client_result.result.is_err());
-    assert_eq!(server_result.is_tls(), false);
+    assert_eq!(
+        server_result.tls,
+        Some(Conditional::Some(tls::server::Tls::Opaque {
+            sni: tls::ServerId(sni)
+        }))
+    );
     assert_eq!(&server_result.result.unwrap()[..], START_OF_TLS);
 }
 
 struct Transported<I, R> {
-    peer_id: Option<I>,
+    tls: Option<I>,
 
     /// The connection's result.
     result: Result<R, io::Error>,
-}
-
-impl<T, N, R> Transported<Conditional<T, N>, R> {
-    fn is_tls(&self) -> bool {
-        self.peer_id.as_ref().map(|i| i.is_some()).unwrap_or(false)
-    }
 }
 
 /// Runs a test for a single TCP connection. `client` processes the connection
@@ -144,17 +157,17 @@ where
             move |meta: tls::server::Meta<Addrs>| {
                 let server = server.clone();
                 let sender = sender.clone();
-                let peer_id = Some(meta.0.clone().map(Into::into));
+                let tls = Some(meta.0.clone().map(Into::into));
                 service_fn(move |conn| {
                     let server = server.clone();
                     let sender = sender.clone();
-                    let peer_id = peer_id.clone();
+                    let tls = tls.clone();
                     let future = server((meta.clone(), conn));
                     Box::pin(
                         async move {
                             let result = future.await;
                             sender
-                                .send(Transported { peer_id, result })
+                                .send(Transported { tls, result })
                                 .expect("send result");
                             Ok::<(), Never>(())
                         }
@@ -190,7 +203,7 @@ where
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerId, CR>>();
         let sender_clone = sender.clone();
 
-        let peer_id = Some(client_server_id.clone().map(Into::into));
+        let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {
             let conn = tls::Client::layer(client_tls)
                 .layer(ConnectTcp::new(None))
@@ -200,7 +213,7 @@ where
                 Err(e) => {
                     sender_clone
                         .send(Transported {
-                            peer_id: None,
+                            tls: None,
                             result: Err(e),
                         })
                         .expect("send result");
@@ -208,7 +221,7 @@ where
                 Ok(conn) => {
                     let result = client(conn).instrument(tracing::info_span!("client")).await;
                     sender
-                        .send(Transported { peer_id, result })
+                        .send(Transported { tls, result })
                         .expect("send result");
                 }
             };
