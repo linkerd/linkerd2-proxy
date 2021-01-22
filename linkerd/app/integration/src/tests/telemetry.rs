@@ -191,6 +191,30 @@ impl TcpFixture {
 }
 
 #[tokio::test]
+async fn metrics_endpoint_admin_request_count() {
+    let fixture = Fixture::inbound().await;
+    let metrics = fixture.metrics;
+    let mut metric = metrics::metric("request_total")
+        .label("direction", "inbound")
+        .label("tls", "disabled")
+        .label("target_addr", metrics.target_addr())
+        .label("path", "/ready")
+        .value(1usize);
+
+    assert!(metric.is_not_in(metrics.get("/metrics").await));
+
+    info!("GET /ready");
+    metrics.get("/ready").await;
+
+    metric.assert_in(&metrics).await;
+
+    info!("GET /ready");
+    metrics.get("/ready").await;
+
+    metric.set_value(2usize).assert_in(&metrics).await;
+}
+
+#[tokio::test]
 async fn metrics_endpoint_inbound_request_count() {
     test_http_count("request_total", Fixture::inbound()).await;
 }
