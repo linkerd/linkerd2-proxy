@@ -33,6 +33,8 @@ impl Config {
     where
         R: FmtMetrics + Clone + Send + 'static + Unpin,
     {
+        const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
+
         let (listen_addr, listen) = self.server.bind.bind()?;
 
         let (ready, latch) = admin::Readiness::new();
@@ -49,12 +51,12 @@ impl Config {
                 svc::Fail::<_, AdminHttpOnly>::default(),
             ))
             .push(detect::NewDetectService::timeout(
-                Duration::from_secs(1),
+                DETECT_TIMEOUT,
                 http::DetectHttp::default(),
             ))
             .push_map_target(inbound::TcpAccept::from)
             .check_new_clone::<tls::server::Meta<listen::Addrs>>()
-            .push(tls::NewDetectTls::layer(identity, Duration::from_secs(1)))
+            .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
