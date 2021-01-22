@@ -1,6 +1,7 @@
-use crate::identity::LocalCrtKey;
+use crate::{http, identity::LocalCrtKey, inbound, svc};
 use linkerd_app_core::{
-    admin, config::ServerConfig, drain, metrics::FmtMetrics, serve, tls, trace, Error,
+    admin, config::ServerConfig, detect, drain, metrics::FmtMetrics, serve, tls, trace,
+    transport::listen, Error,
 };
 use std::{net::SocketAddr, pin::Pin, time::Duration};
 use tokio::sync::mpsc;
@@ -33,12 +34,23 @@ impl Config {
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, shutdown, trace);
-        let accept = tls::NewDetectTls::new(
-            identity,
-            admin.into_accept(),
-            std::time::Duration::from_secs(1),
-        );
-        let serve = Box::pin(serve::serve(listen, accept, drain.signaled()));
+        let admin = svc::stack(admin)
+            .push_map_target(|(_, accept): (_, inbound::TcpAccept)| accept)
+            .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
+            .push(detect::NewDetectService::timeout(
+                Duration::from_secs(1),
+                http::DetectHttp::default(),
+            ))
+            .push_map_target(inbound::TcpAccept::from)
+            .check_new_service::<listen::Addrs, _>()
+            .push_map_target(|(_, addrs): tls::server::Meta<listen::Addrs>| addrs)
+            .push(tls::NewDetectTls::layer(
+                identity.map(|crt_key| crt_key.id().clone()),
+                Duration::from_secs(1),
+            ))
+            .check_new_service::<listen::Addrs, _>()
+            .into_inner();
+        let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
         Ok(Admin {
             listen_addr,
             latch,
