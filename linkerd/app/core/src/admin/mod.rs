@@ -1,17 +1,22 @@
-//! Serves an HTTP/1.1. admin server.
+//! Serves an HTTP admin server.
 //!
-//! * `/metrics` -- reports prometheus-formatted metrics.
-//! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
+//! * `GET /metrics` -- reports prometheus-formatted metrics.
+//! * `GET /ready` -- returns 200 when the proxy is ready to participate in meshed
+//!   traffic.
+//! * `GET /live` -- returns 200 when the proxy is live.
+//! * `GET /proxy-log-level` -- returns the current proxy tracing filter.
+//! * `PUT /proxy-log-level` -- sets a new tracing filter.
+//! * `GET /tasks` -- returns a dump of spawned Tokio tasks (when enabled by the
+//!   tracing configuration).
+//! * `POST /shutdown` -- shuts down the proxy.
 
-use crate::{
-    io,
-    proxy::http::{ClientHandle, SetClientHandle},
-    svc, tls, trace,
-    transport::listen::Addrs,
-};
+use crate::{proxy::http::ClientHandle, svc, trace};
 use futures::future;
 use http::StatusCode;
-use hyper::{Body, Request, Response};
+use hyper::{
+    body::{Body, HttpBody},
+    Request, Response,
+};
 use linkerd_error::{Error, Never};
 use linkerd_metrics::{self as metrics, FmtMetrics};
 use std::{
@@ -35,15 +40,15 @@ pub struct Admin<M> {
 }
 
 #[derive(Clone)]
-pub struct Accept<M> {
-    service: Admin<M>,
+pub struct Accept<S> {
+    service: S,
     server: hyper::server::conn::Http,
 }
 
 #[derive(Clone)]
-pub struct Serve<M> {
+pub struct Serve<S> {
     client_addr: SocketAddr,
-    inner: Accept<M>,
+    inner: S,
 }
 
 pub type ResponseFuture =
@@ -61,13 +66,6 @@ impl<M> Admin<M> {
             ready,
             shutdown_tx,
             tracing,
-        }
-    }
-
-    pub fn into_accept(self) -> Accept<M> {
-        Accept {
-            service: self,
-            server: hyper::server::conn::Http::new(),
         }
     }
 
@@ -148,7 +146,20 @@ impl<M> Admin<M> {
     }
 }
 
-impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
+impl<M: FmtMetrics + Clone, T> svc::NewService<T> for Admin<M> {
+    type Service = Self;
+    fn new_service(&mut self, _: T) -> Self::Service {
+        self.clone()
+    }
+}
+
+impl<M, B> tower::Service<http::Request<B>> for Admin<M>
+where
+    M: FmtMetrics,
+    B: HttpBody + Send + Sync + 'static,
+    B::Error: Into<Error>,
+    B::Data: Send,
+{
     type Response = http::Response<Body>;
     type Error = Never;
     type Future = ResponseFuture;
@@ -157,7 +168,7 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, req: Request<B>) -> Self::Future {
         match req.uri().path() {
             "/live" => Box::pin(future::ok(Self::live_rsp())),
             "/ready" => Box::pin(future::ok(self.ready_rsp())),
@@ -207,51 +218,6 @@ impl<M: FmtMetrics> tower::Service<http::Request<Body>> for Admin<M> {
             }
             _ => Box::pin(future::ok(Self::not_found())),
         }
-    }
-}
-
-impl<M: Clone> svc::NewService<tls::server::Meta<Addrs>> for Accept<M> {
-    type Service = Serve<M>;
-
-    fn new_service(&mut self, (_, addrs): tls::server::Meta<Addrs>) -> Self::Service {
-        Serve {
-            client_addr: addrs.peer(),
-            inner: self.clone(),
-        }
-    }
-}
-
-impl<I, M> svc::Service<I> for Serve<M>
-where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-    M: FmtMetrics + Clone + Send + 'static,
-{
-    type Response = ();
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, io: I) -> Self::Future {
-        // Since the `/proxy-log-level` controls access based on the
-        // client's IP address, we wrap the service with a new service
-        // that adds the remote IP as a request extension.
-        let (svc, closed) = SetClientHandle::new(self.client_addr, self.inner.service.clone());
-        let mut conn = self.inner.server.serve_connection(io, svc);
-
-        Box::pin(async move {
-            tokio::select! {
-                res = &mut conn => res?,
-                () = closed => {
-                    Pin::new(&mut conn).graceful_shutdown();
-                    conn.await?;
-                }
-            }
-
-            Ok(())
-        })
     }
 }
 

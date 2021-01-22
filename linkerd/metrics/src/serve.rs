@@ -33,7 +33,7 @@ impl<M> Serve<M> {
 }
 
 impl<M: FmtMetrics> Serve<M> {
-    pub fn serve(&self, req: http::Request<Body>) -> std::io::Result<http::Response<Body>> {
+    pub fn serve<B>(&self, req: http::Request<B>) -> std::io::Result<http::Response<Body>> {
         if Self::is_gzip(&req) {
             trace!("gzipping metrics");
             let mut writer = GzEncoder::new(Vec::<u8>::new(), CompressionOptions::fast());

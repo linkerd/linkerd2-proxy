@@ -9,7 +9,7 @@ pub(crate) struct Handle {
 }
 
 impl Handle {
-    pub(crate) fn serve(&self, req: http::Request<Body>) -> Result<http::Response<Body>, Error> {
+    pub(crate) fn serve<B>(&self, req: http::Request<B>) -> Result<http::Response<Body>, Error> {
         tracing::debug!("dumping tasks...");
         if accept_json(&req) {
             let body = self.render_json()?;

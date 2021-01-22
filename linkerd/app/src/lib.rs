@@ -14,7 +14,7 @@ use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{control::ControlAddr, dns, drain, proxy::http, serve, svc, Error};
 use linkerd_app_gateway as gateway;
-use linkerd_app_inbound as inbound;
+pub(crate) use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};

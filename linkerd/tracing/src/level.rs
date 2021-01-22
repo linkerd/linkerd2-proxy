@@ -1,4 +1,4 @@
-use hyper::{body::Buf, Body};
+use hyper::body::{Body, Buf, HttpBody};
 use linkerd_error::Error;
 use std::{io, str};
 use tracing::{trace, warn};
@@ -12,10 +12,14 @@ impl Handle {
         Self(handle)
     }
 
-    pub(crate) async fn serve(
+    pub(crate) async fn serve<B>(
         &self,
-        req: http::Request<Body>,
-    ) -> Result<http::Response<Body>, Error> {
+        req: http::Request<B>,
+    ) -> Result<http::Response<Body>, Error>
+    where
+        B: HttpBody,
+        B::Error: Into<Error>,
+    {
         match *req.method() {
             http::Method::GET => {
                 let level = self.current()?;

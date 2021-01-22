@@ -5,6 +5,7 @@ mod tasks;
 mod uptime;
 
 use self::uptime::Uptime;
+use hyper::body::HttpBody;
 use linkerd_error::Error;
 use std::{env, str};
 use tokio_trace::tasks::TasksLayer;
@@ -165,10 +166,14 @@ impl Handle {
 
     /// Serve requests that controls the log level. The request is expected to be either a GET or PUT
     /// request. PUT requests must have a body that describes the new log level.
-    pub async fn serve_level(
+    pub async fn serve_level<B>(
         &self,
-        req: http::Request<hyper::Body>,
-    ) -> Result<http::Response<hyper::Body>, Error> {
+        req: http::Request<B>,
+    ) -> Result<http::Response<hyper::Body>, Error>
+    where
+        B: HttpBody,
+        B::Error: Into<Error>,
+    {
         match self.0 {
             Inner::Enabled { ref level, .. } => level.serve(req).await,
             Inner::Disabled => Ok(Self::not_found()),
@@ -176,9 +181,9 @@ impl Handle {
     }
 
     /// Serve requests for task dumps.
-    pub async fn serve_tasks(
+    pub async fn serve_tasks<B>(
         &self,
-        req: http::Request<hyper::Body>,
+        req: http::Request<B>,
     ) -> Result<http::Response<hyper::Body>, Error> {
         match self.0 {
             Inner::Enabled { ref tasks, .. } => tasks.serve(req),
