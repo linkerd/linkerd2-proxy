@@ -1,11 +1,11 @@
 use crate::core::{
     admin, classify,
     config::ServerConfig,
-    detect, drain,
+    detect, drain, errors,
     metrics::{self, FmtMetrics},
     serve, tls, trace,
     transport::listen,
-    Error,
+    Addr, Error,
 };
 use crate::{http, identity::LocalCrtKey, inbound, svc};
 use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
@@ -48,12 +48,24 @@ impl Config {
         let admin = svc::stack(admin)
             .push_on_response(
                 svc::layers()
-                    .push(http::BoxResponse::layer())
-                    .push(svc::MapErrLayer::new(Error::from))
-                    .push(metrics.http_errors.clone()),
+                    // .push(http::BoxResponse::layer())
+                    .push(metrics.http_errors.clone())
+                    .push(errors::layer()),
             )
-            .check_new_clone::<(http::Version, inbound::TcpAccept)>()
             .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
+            .push(svc::stack::MapTargetLayer::new(|(http_version, tcp)| {
+                let inbound::TcpAccept {
+                    target_addr,
+                    client_addr,
+                    client_id,
+                } = tcp;
+                inbound::Target {
+                    dst: Addr::Socket(target_addr),
+                    target_addr,
+                    http_version,
+                    client_id,
+                }
+            }))
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push(svc::NewUnwrapOr::layer(
                 svc::Fail::<_, AdminHttpOnly>::default(),
