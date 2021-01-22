@@ -57,7 +57,7 @@ pub enum EndpointLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InboundEndpointLabels {
-    pub client_id: tls::server::ConditionalTls,
+    pub tls: tls::server::ConditionalTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
 }
@@ -271,7 +271,7 @@ impl FmtLabels for InboundEndpointLabels {
 
         write!(f, "target_addr=\"{}\",", self.target_addr)?;
 
-        TlsAccept::from(&self.client_id).fmt_labels(f)?;
+        TlsAccept::from(&self.tls).fmt_labels(f)?;
 
         Ok(())
     }

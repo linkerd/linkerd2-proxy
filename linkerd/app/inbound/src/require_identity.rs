@@ -1,6 +1,6 @@
 use crate::target::TcpAccept;
 use indexmap::IndexSet;
-use linkerd_app_core::{svc::stack::Predicate, Conditional, Error};
+use linkerd_app_core::{svc::stack::Predicate, tls, Conditional, Error};
 use std::sync::Arc;
 
 /// A connection policy that fails direct connections that don't have a client
@@ -24,9 +24,9 @@ impl Predicate<TcpAccept> for RequireIdentityForDirect {
     type Request = TcpAccept;
 
     fn check(&mut self, meta: TcpAccept) -> Result<TcpAccept, Error> {
-        tracing::debug!(client.id = ?meta.client_id);
-        match meta.client_id {
-            Conditional::Some(Some(_)) => Ok(meta),
+        tracing::debug!(tls = ?meta.tls);
+        match meta.tls {
+            Conditional::Some(tls::server::Tls::Terminated { client_id: Some(_) }) => Ok(meta),
             _ => Err(IdentityRequired(()).into()),
         }
     }
@@ -49,10 +49,10 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
         let port = meta.target_addr.port();
         let id_required = self.ports.contains(&port);
 
-        tracing::debug!(%port, client.id = ?meta.client_id, %id_required);
+        tracing::debug!(%port, tls = ?meta.tls, %id_required);
         if id_required {
-            match meta.client_id {
-                Conditional::Some(Some(_)) => Ok(meta),
+            match meta.tls {
+                Conditional::Some(tls::server::Tls::Terminated { client_id: Some(_) }) => Ok(meta),
                 _ => Err(IdentityRequired(()).into()),
             }
         } else {

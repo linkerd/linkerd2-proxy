@@ -27,13 +27,18 @@ where
     fn new_service(&mut self, (profile, target): Target) -> Self::Service {
         let inbound::Target {
             dst,
-            client_id,
+            tls,
             http_version,
             target_addr: _,
         } = target;
 
-        let (source_id, local_id) = match (client_id, self.local_id.clone()) {
-            (Conditional::Some(Some(src)), Some(local)) => (src, local),
+        let (source_id, local_id) = match (tls, self.local_id.clone()) {
+            (
+                Conditional::Some(tls::server::Tls::Terminated {
+                    client_id: Some(src),
+                }),
+                Some(local),
+            ) => (src, local),
             _ => return Gateway::NoIdentity,
         };
 

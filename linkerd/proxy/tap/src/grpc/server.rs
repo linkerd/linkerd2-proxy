@@ -6,6 +6,7 @@ use hyper::body::{Buf, HttpBody};
 use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
 use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
+use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::convert::TryFrom;
 use std::iter;
@@ -529,12 +530,16 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
                 Conditional::None(reason) => {
                     m.labels.insert("tls".to_owned(), reason.to_string());
                 }
-                Conditional::Some(id) => {
+                Conditional::Some(tls::server::Tls::Terminated { client_id }) => {
                     m.labels.insert("tls".to_owned(), "true".to_owned());
                     m.labels.insert(
                         "client_id".to_owned(),
-                        id.map(|id| id.to_string()).unwrap_or_default(),
+                        client_id.map(|id| id.to_string()).unwrap_or_default(),
                     );
+                }
+                Conditional::Some(tls::server::Tls::Opaque { sni }) => {
+                    m.labels.insert("tls".to_owned(), "opaque".to_owned());
+                    m.labels.insert("sni".to_owned(), sni.to_string());
                 }
             }
             Some(m)
