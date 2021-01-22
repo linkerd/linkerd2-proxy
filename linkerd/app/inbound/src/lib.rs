@@ -114,7 +114,10 @@ impl Config {
         let dispatch_timeout = self.proxy.dispatch_timeout;
 
         // Forwards TCP streams that cannot be decoded as HTTP.
+        //
+        // Looping is always prevented.
         let tcp_forward = svc::stack(connect.clone())
+            .push_request_filter(prevent_loop)
             .push(metrics.transport.layer_connect())
             .push_make_thunk()
             .push_on_response(
@@ -134,6 +137,7 @@ impl Config {
         // 3. A transport header is expected. It's not strictly required, as
         //    gateways may need to accept HTTP requests from older proxy versions.
         let direct = {
+            // Direct traffic may target an HTTP gateway.
             let http = svc::stack(http_loopback)
                 .push_on_response(
                     svc::layers()
@@ -142,46 +146,43 @@ impl Config {
                 )
                 .check_new_service::<Target, http::Request<http::BoxBody>>()
                 .into_inner();
+            let http_detect =
+                svc::stack(self.http_server(http, &metrics, span_sink.clone(), drain.clone()))
+                    .push_cache(self.proxy.cache_max_idle_age)
+                    .push(svc::NewUnwrapOr::layer(
+                        svc::Fail::<_, NonOpaqueRefused>::default(),
+                    ))
+                    .push(detect::NewDetectService::timeout(
+                        detect_timeout,
+                        http::DetectHttp::default(),
+                    ))
+                    .into_inner();
 
-            // If the connection targets the inbound port, try to detect an
-            // opaque transport header and rewrite the target port accordingly.
-            // If there was no opaque transport header, fail the connection with
-            // a ConnectionRefused error.
-            svc::stack(self.http_server(http, &metrics, span_sink.clone(), drain.clone()))
-                // When HTTP detection fails, forward the connection to the
-                // application as an opaque TCP stream.
-                .push(svc::NewUnwrapOr::layer(
-                    tcp_forward
-                        .clone()
-                        .push_request_filter(prevent_loop)
-                        .push_map_target(TcpEndpoint::from)
-                        .into_inner(),
-                ))
-                .push_cache(self.proxy.cache_max_idle_age)
-                // Update the TcpAccept target using a parsed transport-header,
-                // if there was one.
+            // If a transport header can be detected, use it to configure TCP
+            // forwarding. If a transport header cannot be detected, try to
+            // handle the connection as HTTP gateway traffic.
+            tcp_forward
+                .clone()
+                .push_map_target(TcpEndpoint::from)
+                // Update the TcpAccept target using a parsed transport-header.
                 //
                 // TODO use the transport header's `name` to inform gateway
                 // routing.
-                .push_map_target(
-                    |(v, (h, mut t)): (
-                        Option<http::Version>,
-                        (Option<TransportHeader>, TcpAccept),
-                    )| {
-                        if let Some(h) = h {
-                            t.target_addr = (t.target_addr.ip(), h.port).into();
-                        }
-                        (v, t)
-                    },
-                )
-                .push(detect::NewDetectService::timeout(
-                    detect_timeout,
-                    http::DetectHttp::default(),
-                ))
+                .push_map_target(|(h, mut t): (TransportHeader, TcpAccept)| {
+                    t.target_addr = (t.target_addr.ip(), h.port).into();
+                    t
+                })
+                // HTTP detection must *only* be performed when a transport
+                // header is absent. When the header is present, we must
+                // assume the protocol is opaque.
+                .push(svc::NewUnwrapOr::layer(http_detect))
                 .push(detect::NewDetectService::timeout(
                     detect_timeout,
                     DetectHeader::default(),
                 ))
+                // TODO this filter should actually extract the TLS status so
+                // it's no longer wrapped in a conditional... i.e. proving to
+                // the inner stack that the connection is secure.
                 .push_request_filter(RequireIdentityForDirect)
                 .push(metrics.transport.layer_accept())
                 .push_map_target(TcpAccept::from)
