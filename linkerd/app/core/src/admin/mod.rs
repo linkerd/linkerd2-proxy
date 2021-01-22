@@ -1,7 +1,14 @@
-//! Serves an HTTP/1.1. admin server.
+//! Serves an HTTP admin server.
 //!
-//! * `/metrics` -- reports prometheus-formatted metrics.
-//! * `/ready` -- returns 200 when the proxy is ready to participate in meshed traffic.
+//! * `GET /metrics` -- reports prometheus-formatted metrics.
+//! * `GET /ready` -- returns 200 when the proxy is ready to participate in meshed
+//!   traffic.
+//! * `GET /live` -- returns 200 when the proxy is live.
+//! * `GET /proxy-log-level` -- returns the current proxy tracing filter.
+//! * `PUT /proxy-log-level` -- sets a new tracing filter.
+//! * `GET /tasks` -- returns a dump of spawned Tokio tasks (when enabled by the
+//!   tracing configuration).
+//! * `POST /shutdown` -- shuts down the proxy.
 
 use crate::{proxy::http::ClientHandle, svc, trace};
 use futures::future;
