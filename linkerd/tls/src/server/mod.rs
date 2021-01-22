@@ -1,4 +1,5 @@
-use crate::conditional_accept;
+mod client_hello;
+
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
@@ -27,7 +28,7 @@ pub fn empty_config() -> Config {
     Arc::new(rustls::ServerConfig::new(verifier))
 }
 
-/// A newtype for remote client idenities..
+/// A newtype for remote client idenities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientId(pub id::Name);
 
@@ -196,20 +197,20 @@ where
     let mut buf = [0u8; PEEK_CAPACITY];
     let sz = io.peek(&mut buf).await?;
     debug!(sz, "Peeked bytes from TCP stream");
-    match conditional_accept::match_client_hello(&buf, &local_id) {
-        conditional_accept::Match::Matched => {
+    match client_hello::match_client_hello(&buf, &local_id) {
+        client_hello::Match::Matched => {
             trace!("Identified matching SNI via peek");
             // Terminate the TLS stream.
             let (peer_id, tls) = handshake(tls_config, PrefixedIo::from(io)).await?;
             return Ok((peer_id, EitherIo::Right(tls)));
         }
 
-        conditional_accept::Match::NotMatched => {
+        client_hello::Match::NotMatched => {
             trace!("Not a matching TLS ClientHello");
             return Ok((NO_TLS_META, EitherIo::Left(io.into())));
         }
 
-        conditional_accept::Match::Incomplete => {}
+        client_hello::Match::Incomplete => {}
     }
 
     // Peeking didn't return enough data, so instead we'll allocate more
@@ -219,8 +220,8 @@ where
     debug!(buf.capacity = %buf.capacity(), "Reading bytes from TCP stream");
     while io.read_buf(&mut buf).await? != 0 {
         debug!(buf.len = %buf.len(), "Read bytes from TCP stream");
-        match conditional_accept::match_client_hello(buf.as_ref(), &local_id) {
-            conditional_accept::Match::Matched => {
+        match client_hello::match_client_hello(buf.as_ref(), &local_id) {
+            client_hello::Match::Matched => {
                 trace!("Identified matching SNI via buffered read");
                 // Terminate the TLS stream.
                 let (peer_id, tls) =
@@ -228,9 +229,9 @@ where
                 return Ok((peer_id, EitherIo::Right(tls)));
             }
 
-            conditional_accept::Match::NotMatched => break,
+            client_hello::Match::NotMatched => break,
 
-            conditional_accept::Match::Incomplete => {
+            client_hello::Match::Incomplete => {
                 if buf.capacity() == 0 {
                     // If we can't buffer an entire TLS ClientHello, it
                     // almost definitely wasn't initiated by another proxy,
