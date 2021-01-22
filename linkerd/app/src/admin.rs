@@ -1,8 +1,13 @@
-use crate::{http, identity::LocalCrtKey, inbound, svc};
-use linkerd_app_core::{
-    admin, config::ServerConfig, detect, drain, metrics::FmtMetrics, serve, tls, trace,
-    transport::listen, Error,
+use crate::core::{
+    admin, classify,
+    config::ServerConfig,
+    detect, drain,
+    metrics::{self, FmtMetrics},
+    serve, tls, trace,
+    transport::listen,
+    Error,
 };
+use crate::{http, identity::LocalCrtKey, inbound, svc};
 use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::sync::mpsc;
 
@@ -26,6 +31,7 @@ impl Config {
         self,
         identity: Option<LocalCrtKey>,
         report: R,
+        metrics: metrics::Proxy,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -43,9 +49,11 @@ impl Config {
             .push_on_response(
                 svc::layers()
                     .push(http::BoxResponse::layer())
-                    .push(svc::MapErrLayer::new(Error::from)),
+                    .push(svc::MapErrLayer::new(Error::from))
+                    .push(metrics.http_errors.clone()),
             )
             .check_new_clone::<(http::Version, inbound::TcpAccept)>()
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push(svc::NewUnwrapOr::layer(
                 svc::Fail::<_, AdminHttpOnly>::default(),
