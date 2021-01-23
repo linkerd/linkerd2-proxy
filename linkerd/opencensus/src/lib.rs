@@ -39,7 +39,10 @@ struct SpanExporter<T, S> {
     metrics: Registry,
 }
 
-// ===== impl SpanExporter =====
+#[derive(Debug)]
+struct SpanRxClosed;
+
+// === impl SpanExporter ===
 
 impl<T, S> SpanExporter<T, S>
 where
@@ -76,33 +79,47 @@ where
         let mut svc = TraceServiceClient::new(client);
         loop {
             trace!("Establishing new TraceService::export request");
+            metrics.start_stream();
             let (tx, rx) = mpsc::channel(1);
-            match svc.export(grpc::Request::new(rx)).await {
-                Ok(_) => {
-                    metrics.start_stream();
-                    if Self::stream(tx, &mut spans, &mut accum, node.clone())
-                        .await
-                        .is_err()
-                    {
-                        return;
+
+            // The node is only transmitted on the first message of each stream.
+            let mut node = Some(node.clone());
+
+            // Drive both the response future and the export stream
+            // simultaneously.
+            tokio::select! {
+                res = svc.export(grpc::Request::new(rx)) => match res {
+                    Ok(_rsp) => {
+                        // The response future completed. Continue exporting spans until the
+                        // stream stops accepting them.
+                        if let Err(SpanRxClosed) = Self::export(&tx, &mut spans, &mut accum, &mut node).await {
+                            // No more spans.
+                            return;
+                        }
                     }
-                }
-                Err(error) => {
-                    debug!(%error, "Response future failed; restarting");
-                }
+                    Err(error) => {
+                        debug!(%error, "Response future failed; restarting");
+                    }
+                },
+                res = Self::export(&tx, &mut spans, &mut accum, &mut node) => match res {
+                    // The export stream closed; reconnect.
+                    Ok(()) => {},
+                    // No more spans.
+                    Err(SpanRxClosed) => return,
+                },
             }
         }
     }
 
-    async fn stream(
-        tx: mpsc::Sender<ExportTraceServiceRequest>,
+    /// Accumulate spans and send them on the export stream.
+    ///
+    /// Returns an error when the proxy has closed the span stream.
+    async fn export(
+        tx: &mpsc::Sender<ExportTraceServiceRequest>,
         spans: &mut S,
         accum: &mut Vec<Span>,
-        node: Node,
-    ) -> Result<(), ()> {
-        // The node is only transmitted on the first message of each stream.
-        let mut node = Some(node);
-
+        node: &mut Option<Node>,
+    ) -> Result<(), SpanRxClosed> {
         loop {
             // Collect spans into a batch.
             let collect = Self::collect_batch(spans, accum).await;
@@ -134,15 +151,19 @@ where
                 }
             }
 
-            // The span source was closed, so end the task.
-            if collect.is_err() {
+            // If the span source was closed, end the task.
+            if let Err(closed) = collect {
                 debug!("Span channel lost");
-                return Err(());
+                return Err(closed);
             }
         }
     }
 
-    async fn collect_batch(spans: &mut S, accum: &mut Vec<Span>) -> Result<(), ()> {
+    /// Collects spans from the proxy into `accum`.
+    ///
+    /// Returns an error when the span sream has completed. An error may be
+    /// returned after accumulating spans.
+    async fn collect_batch(spans: &mut S, accum: &mut Vec<Span>) -> Result<(), SpanRxClosed> {
         loop {
             if accum.len() == Self::MAX_BATCH_SIZE {
                 trace!(capacity = Self::MAX_BATCH_SIZE, "Batch capacity reached");
@@ -155,7 +176,7 @@ where
                         trace!(?span, "Adding to batch");
                         accum.push(span);
                     }
-                    None => return Err(()),
+                    None => return Err(SpanRxClosed),
                 },
                 // Don't hold spans indefinitely. Return if we hit an idle
                 // timeout and spans have been collected.
