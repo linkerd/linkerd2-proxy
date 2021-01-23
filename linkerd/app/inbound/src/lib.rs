@@ -145,6 +145,13 @@ impl Config {
                         .push_spawn_buffer(self.proxy.buffer_capacity),
                 )
                 .check_new_service::<Target, http::Request<http::BoxBody>>()
+                // Removes the override header after it has been used to
+                // determine a reuquest target.
+                .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+                // Routes each request to a target, obtains a service for that
+                // target, and dispatches the request.
+                .instrument_from_target()
+                .push(svc::NewRouter::layer(RequestTarget::from))
                 .into_inner();
             let http_detect =
                 svc::stack(self.http_server(http, &metrics, span_sink.clone(), drain.clone()))
@@ -238,7 +245,7 @@ impl Config {
         metrics: &metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
     ) -> impl svc::NewService<
-        Target,
+        TcpAccept,
         Service = impl svc::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
@@ -334,25 +341,36 @@ impl Config {
             // having enormous types.
             .push(svc::BoxNewService::layer())
             .check_new_service::<Target, http::Request<http::BoxBody>>()
+            // Removes the override header after it has been used to
+            // determine a reuquest target.
+            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
+            // Routes each request to a target, obtains a service for that
+            // target, and dispatches the request.
+            .instrument_from_target()
+            .push(svc::NewRouter::layer(RequestTarget::from))
+            // Used by tap.
+            .push_http_insert_target()
             .into_inner()
     }
 
-    pub fn http_server<I, H, HSvc>(
+    pub fn http_server<T, I, H, HSvc>(
         &self,
         http: H,
         metrics: &metrics::Proxy,
         span_sink: Option<mpsc::Sender<oc::Span>>,
         drain: drain::Watch,
     ) -> impl svc::NewService<
-        (http::Version, TcpAccept),
+        (http::Version, T),
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
     > + Clone
     where
+        for<'t> &'t T: Into<SocketAddr>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
-        H: svc::NewService<Target, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
+        H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Clone
             + Send
+            + Unpin
             + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
@@ -365,16 +383,7 @@ impl Config {
         } = self.proxy.clone();
 
         svc::stack(http)
-            // Removes the override header after it has been used to
-            // determine a reuquest target.
-            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
-            // Routes each request to a target, obtains a service for that
-            // target, and dispatches the request.
-            .instrument_from_target()
-            .push(svc::NewRouter::layer(RequestTarget::from))
-            .check_new_service::<TcpAccept, http::Request<_>>()
-            // Used by tap.
-            .push_http_insert_target()
+            .check_new_service::<T, http::Request<_>>()
             .push_on_response(
                 svc::layers()
                     // Downgrades the protocol if upgraded by an outbound proxy.
@@ -398,9 +407,9 @@ impl Config {
                     .push(http::BoxResponse::layer()),
             )
             .push(http::NewNormalizeUri::layer())
-            .push_map_target(|(_, accept): (_, TcpAccept)| accept)
+            .check_new_service::<T, http::Request<_>>()
+            .push_map_target(|(_, t): (_, T)| t)
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
-            .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
             .push(http::NewServeHttp::layer(h2_settings, drain))
             .into_inner()
     }
