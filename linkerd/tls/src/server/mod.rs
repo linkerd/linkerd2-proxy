@@ -203,7 +203,7 @@ where
     debug!(sz, "Peeked bytes from TCP stream");
     match client_hello::parse_sni(&buf) {
         Ok(Some(ServerId(sni))) if sni == local_id => {
-            trace!("Identified matching SNI via peek");
+            trace!(%sni, "Identified matching SNI via peek");
             // Terminate the TLS stream.
             let (client_id, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
             let tls = Conditional::Some(ServerTls::Terminated { client_id });
@@ -211,7 +211,7 @@ where
         }
 
         Ok(Some(sni)) => {
-            trace!("Identified non-matching SNI via peek");
+            trace!(%sni, "Identified non-matching SNI via peek");
             let tls = Conditional::Some(ServerTls::Opaque { sni });
             return Ok((tls, EitherIo::Left(io.into())));
         }
@@ -233,7 +233,7 @@ where
         debug!(buf.len = %buf.len(), "Read bytes from TCP stream");
         match client_hello::parse_sni(buf.as_ref()) {
             Ok(Some(ServerId(sni))) if sni == local_id => {
-                trace!("Identified matching SNI via buffered read");
+                trace!(%sni, "Identified matching SNI via buffered read");
                 // Terminate the TLS stream.
                 let (client_id, io) =
                     handshake(tls_config.clone(), PrefixedIo::new(buf.freeze(), io)).await?;
@@ -242,7 +242,7 @@ where
             }
 
             Ok(Some(sni)) => {
-                trace!("Identified non-matching SNI via peek");
+                trace!(%sni, "Identified non-matching SNI via peek");
                 let tls = Conditional::Some(ServerTls::Opaque { sni });
                 return Ok((tls, EitherIo::Left(io.into())));
             }
@@ -260,6 +260,7 @@ where
                     warn!("Buffer insufficient for TLS ClientHello");
                     break;
                 }
+                // Continue if there is still buffer capacity.
             }
         }
     }
