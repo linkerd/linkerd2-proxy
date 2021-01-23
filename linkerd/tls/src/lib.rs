@@ -7,6 +7,6 @@ pub mod client;
 pub mod server;
 
 pub use self::{
-    client::{Client, ConditionalServerId, NoServerId, ServerId},
+    client::{Client, ConditionalClientTls, NoClientTls, ServerId},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };

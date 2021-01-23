@@ -25,7 +25,7 @@ use tracing_futures::Instrument;
 #[test]
 fn plaintext() {
     let (client_result, server_result) = run_test(
-        Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery),
+        Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
         |conn| write_then_read(conn, PING),
         None,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
@@ -33,7 +33,7 @@ fn plaintext() {
     assert_eq!(
         client_result.tls,
         Some(Conditional::None(
-            tls::NoServerId::NotProvidedByServiceDiscovery
+            tls::NoClientTls::NotProvidedByServiceDiscovery
         ))
     );
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
@@ -108,12 +108,12 @@ struct Transported<I, R> {
 /// on the client side and `server` processes the connection on the server
 /// side.
 fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: Conditional<(id::CrtKey, tls::ServerId), tls::NoServerId>,
+    client_tls: Conditional<(id::CrtKey, tls::ServerId), tls::NoClientTls>,
     client: C,
     server_tls: Option<id::CrtKey>,
     server: S,
 ) -> (
-    Transported<tls::ConditionalServerId, CR>,
+    Transported<tls::ConditionalClientTls, CR>,
     Transported<tls::ConditionalServerTls, SR>,
 )
 where
@@ -200,7 +200,7 @@ where
         // Saves the result of the single connection. This could be a simpler
         // type, e.g. `Arc<Mutex>`, but using a channel simplifies the code and
         // parallels the server side.
-        let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerId, CR>>();
+        let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalClientTls, CR>>();
         let sender_clone = sender.clone();
 
         let tls = Some(client_server_id.clone().map(Into::into));
@@ -296,7 +296,7 @@ const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
 #[derive(Clone)]
-struct Target(SocketAddr, tls::ConditionalServerId);
+struct Target(SocketAddr, tls::ConditionalClientTls);
 
 #[derive(Clone)]
 struct ClientTls(id::CrtKey);
@@ -307,8 +307,8 @@ impl Into<SocketAddr> for Target {
     }
 }
 
-impl Into<tls::ConditionalServerId> for &'_ Target {
-    fn into(self) -> tls::ConditionalServerId {
+impl Into<tls::ConditionalClientTls> for &'_ Target {
+    fn into(self) -> tls::ConditionalClientTls {
         self.1.clone()
     }
 }

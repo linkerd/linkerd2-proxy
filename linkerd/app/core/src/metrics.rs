@@ -46,7 +46,7 @@ pub struct Metrics {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
     addr: Addr,
-    server_id: tls::ConditionalServerId,
+    server_id: tls::ConditionalClientTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -64,7 +64,7 @@ pub struct InboundEndpointLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutboundEndpointLabels {
-    pub server_id: tls::ConditionalServerId,
+    pub server_id: tls::ConditionalClientTls,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
     pub target_addr: SocketAddr,

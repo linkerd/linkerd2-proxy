@@ -168,9 +168,9 @@ impl Into<SocketAddr> for &'_ Target {
     }
 }
 
-impl Into<tls::ConditionalServerId> for &'_ Target {
-    fn into(self) -> tls::ConditionalServerId {
-        Conditional::None(tls::NoServerId::Loopback)
+impl Into<tls::ConditionalClientTls> for &'_ Target {
+    fn into(self) -> tls::ConditionalClientTls {
+        Conditional::None(tls::NoClientTls::Loopback)
     }
 }
 
@@ -219,8 +219,8 @@ impl tap::Inspect for Target {
         None
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerId {
-        Conditional::None(tls::NoServerId::Loopback)
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
+        Conditional::None(tls::NoClientTls::Loopback)
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {

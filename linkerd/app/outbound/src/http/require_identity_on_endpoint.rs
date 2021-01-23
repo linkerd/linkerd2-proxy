@@ -19,7 +19,7 @@ pub(super) struct NewRequireIdentity<N> {
 
 #[derive(Clone, Debug)]
 pub(super) struct RequireIdentity<N> {
-    server_id: tls::ConditionalServerId,
+    server_id: tls::ConditionalClientTls,
     inner: N,
 }
 

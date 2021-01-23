@@ -33,7 +33,7 @@ pub struct Concrete<P> {
 pub struct Endpoint<P> {
     pub addr: SocketAddr,
     pub target_addr: SocketAddr,
-    pub identity: tls::ConditionalServerId,
+    pub identity: tls::ConditionalClientTls,
     pub metadata: Metadata,
     pub concrete: Concrete<P>,
 }
@@ -189,7 +189,7 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 // === impl Endpoint ===
 
 impl<P> Endpoint<P> {
-    pub fn from_logical(reason: tls::NoServerId) -> impl (Fn(Logical<P>) -> Self) + Clone {
+    pub fn from_logical(reason: tls::NoClientTls) -> impl (Fn(Logical<P>) -> Self) + Clone {
         move |logical| {
             let target_addr = logical.orig_dst;
             match logical
@@ -214,7 +214,7 @@ impl<P> Endpoint<P> {
                         .cloned()
                         .map(Conditional::Some)
                         .unwrap_or(Conditional::None(
-                            tls::NoServerId::NotProvidedByServiceDiscovery,
+                            tls::NoClientTls::NotProvidedByServiceDiscovery,
                         )),
                     metadata,
                     concrete: Concrete {
@@ -227,13 +227,13 @@ impl<P> Endpoint<P> {
         }
     }
 
-    pub fn from_accept(reason: tls::NoServerId) -> impl (Fn(Accept<P>) -> Self) + Clone {
+    pub fn from_accept(reason: tls::NoClientTls) -> impl (Fn(Accept<P>) -> Self) + Clone {
         move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
     }
 
     /// Marks identity as disabled.
     pub fn identity_disabled(mut self) -> Self {
-        self.identity = Conditional::None(tls::NoServerId::Disabled);
+        self.identity = Conditional::None(tls::NoClientTls::Disabled);
         self
     }
 }
@@ -250,8 +250,8 @@ impl<P> Into<SocketAddr> for &'_ Endpoint<P> {
     }
 }
 
-impl<P> Into<tls::ConditionalServerId> for &'_ Endpoint<P> {
-    fn into(self) -> tls::ConditionalServerId {
+impl<P> Into<tls::ConditionalClientTls> for &'_ Endpoint<P> {
+    fn into(self) -> tls::ConditionalClientTls {
         self.identity.clone()
     }
 }
@@ -304,7 +304,7 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             .identity()
             .cloned()
             .map(Conditional::Some)
-            .unwrap_or_else(|| Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery));
+            .unwrap_or_else(|| Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery));
 
         Endpoint {
             addr,

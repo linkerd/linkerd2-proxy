@@ -757,7 +757,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 }
 
 struct Connection {
-    server_id: tls::ConditionalServerId,
+    server_id: tls::ConditionalClientTls,
     count: Arc<AtomicUsize>,
     enabled: Arc<AtomicBool>,
 }
@@ -765,7 +765,7 @@ struct Connection {
 impl Default for Connection {
     fn default() -> Self {
         Self {
-            server_id: Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery),
+            server_id: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
             count: Arc::new(AtomicUsize::new(0)),
             enabled: Arc::new(AtomicBool::new(true)),
         }

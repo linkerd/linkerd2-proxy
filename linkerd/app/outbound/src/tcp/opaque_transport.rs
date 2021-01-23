@@ -115,7 +115,7 @@ mod test {
         Endpoint {
             addr: ([127, 0, 0, 2], 4321).into(),
             target_addr: ([127, 0, 0, 2], 4321).into(),
-            identity: Conditional::None(tls::NoServerId::NotProvidedByServiceDiscovery),
+            identity: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
             metadata,
             concrete: Concrete {
                 resolve: None,

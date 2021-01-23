@@ -133,7 +133,7 @@ where
             svc::stack(endpoint)
                 .push_on_response(http::BoxRequest::layer())
                 .push_map_target(Endpoint::from_logical(
-                    tls::NoServerId::NotProvidedByServiceDiscovery,
+                    tls::NoClientTls::NotProvidedByServiceDiscovery,
                 ))
                 .into_inner(),
         )

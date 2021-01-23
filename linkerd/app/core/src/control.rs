@@ -19,7 +19,7 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct ControlAddr {
     pub addr: Addr,
-    pub identity: tls::ConditionalServerId,
+    pub identity: tls::ConditionalClientTls,
 }
 
 impl Into<Addr> for ControlAddr {
@@ -209,11 +209,11 @@ mod client {
     #[derive(Clone, Hash, Debug, Eq, PartialEq)]
     pub struct Target {
         addr: SocketAddr,
-        server_id: tls::ConditionalServerId,
+        server_id: tls::ConditionalClientTls,
     }
 
     impl Target {
-        pub(super) fn new(addr: SocketAddr, server_id: tls::ConditionalServerId) -> Self {
+        pub(super) fn new(addr: SocketAddr, server_id: tls::ConditionalClientTls) -> Self {
             Self { addr, server_id }
         }
     }
@@ -231,8 +231,8 @@ mod client {
         }
     }
 
-    impl Into<tls::ConditionalServerId> for &'_ Target {
-        fn into(self) -> tls::ConditionalServerId {
+    impl Into<tls::ConditionalClientTls> for &'_ Target {
+        fn into(self) -> tls::ConditionalClientTls {
             self.server_id.clone()
         }
     }

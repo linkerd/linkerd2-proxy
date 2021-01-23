@@ -88,7 +88,7 @@ impl tap::Inspect for Endpoint {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerId {
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
         self.identity.clone()
     }
 

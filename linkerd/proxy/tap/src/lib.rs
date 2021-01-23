@@ -36,7 +36,7 @@ pub trait Inspect {
 
     fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&IndexMap<String, String>>;
 
-    fn dst_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerId;
+    fn dst_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalClientTls;
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>>;
 

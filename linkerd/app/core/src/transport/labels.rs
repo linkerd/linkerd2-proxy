@@ -24,7 +24,7 @@ pub enum Key {
 pub struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsConnect<'t>(&'t tls::ConditionalServerId);
+pub struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
 
 // === impl Key ===
 
@@ -60,8 +60,8 @@ impl FmtLabels for Key {
                 endpoint.fmt_labels(f)
             }
             Self::InboundConnect => {
-                const NO_TLS: tls::client::ConditionalServerId =
-                    Conditional::None(tls::client::NoServerId::Loopback);
+                const NO_TLS: tls::client::ConditionalClientTls =
+                    Conditional::None(tls::NoClientTls::Loopback);
 
                 Direction::In.fmt_labels(f)?;
                 write!(f, ",peer=\"dst\",")?;
@@ -101,8 +101,8 @@ impl<'t> FmtLabels for TlsAccept<'t> {
 
 // === impl TlsConnect ===
 
-impl<'t> From<&'t tls::ConditionalServerId> for TlsConnect<'t> {
-    fn from(s: &'t tls::ConditionalServerId) -> Self {
+impl<'t> From<&'t tls::ConditionalClientTls> for TlsConnect<'t> {
+    fn from(s: &'t tls::ConditionalClientTls) -> Self {
         TlsConnect(s)
     }
 }
@@ -110,7 +110,7 @@ impl<'t> From<&'t tls::ConditionalServerId> for TlsConnect<'t> {
 impl<'t> FmtLabels for TlsConnect<'t> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Conditional::None(tls::NoServerId::Disabled) => {
+            Conditional::None(tls::NoClientTls::Disabled) => {
                 write!(f, "tls=\"disabled\"")
             }
             Conditional::None(why) => {
