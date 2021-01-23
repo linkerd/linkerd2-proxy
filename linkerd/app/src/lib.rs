@@ -124,8 +124,10 @@ impl Config {
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
-            info_span!("admin")
-                .in_scope(move || admin.build(identity, report, log_level, drain, shutdown_tx))?
+            let metrics = metrics.inbound.clone();
+            info_span!("admin").in_scope(move || {
+                admin.build(identity, report, metrics, log_level, drain, shutdown_tx)
+            })?
         };
 
         let dst_addr = dst.addr.clone();

@@ -207,6 +207,10 @@ impl Client {
             tls,
         }
     }
+
+    pub fn target_addr(&self) -> SocketAddr {
+        self.addr
+    }
 }
 
 impl Reconnect {
