@@ -74,6 +74,7 @@ impl Config {
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
             ))
+            .push(metrics.transport.layer_accept())
             .push_map_target(inbound::TcpAccept::from)
             .check_new_clone::<tls::server::Meta<listen::Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
