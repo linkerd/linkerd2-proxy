@@ -17,7 +17,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio_rustls::server::TlsStream;
+pub use tokio_rustls::server::TlsStream;
 use tower::util::ServiceExt;
 use tracing::{debug, trace, warn};
 
@@ -274,15 +274,21 @@ async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(Option<ClientId>
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
-    let tls = tokio_rustls::TlsAcceptor::from(tls_config)
+    use rustls::Session;
+
+    let io = tokio_rustls::TlsAcceptor::from(tls_config)
         .accept(io)
         .await?;
 
     // Determine the peer's identity, if it exist.
-    let client_id = client_identity(&tls);
+    let client_id = client_identity(&io);
 
-    trace!(client.id = ?client_id, "Accepted TLS connection");
-    Ok((client_id, tls))
+    debug!(client.id = ?client_id, "Accepted TLS connection");
+    if let Some(alpn) = io.get_ref().1.get_alpn_protocol() {
+        debug!(alpn = ?std::str::from_utf8(alpn));
+    }
+
+    Ok((client_id, io))
 }
 
 fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
