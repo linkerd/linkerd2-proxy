@@ -51,11 +51,6 @@ impl Config {
                 svc::layers()
                     .push(metrics.http_errors.clone())
                     .push(errors::layer())
-                    .push(
-                        metrics
-                            .stack
-                            .layer(metrics::StackLabels::inbound("http", "admin")),
-                    )
                     .push(http::BoxResponse::layer()),
             )
             .push(svc::stack::MapTargetLayer::new(|(http_version, tcp)| {
