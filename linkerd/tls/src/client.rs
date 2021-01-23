@@ -6,6 +6,7 @@ use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::layer;
+use rustls::Session;
 use std::{
     fmt,
     future::Future,
@@ -14,7 +15,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio_rustls::client::TlsStream;
+pub use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
 
 /// A newtype for target server identities.
@@ -142,6 +143,9 @@ where
         Either::Right(Box::pin(async move {
             let io = connect.await?;
             let io = handshake.connect((&server_id.0).into(), io).await?;
+            if let Some(alpn) = io.get_ref().1.get_alpn_protocol() {
+                debug!(alpn = ?std::str::from_utf8(alpn));
+            }
             Ok(io::EitherIo::Right(io))
         }))
     }
