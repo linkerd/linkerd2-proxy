@@ -49,9 +49,6 @@ pub struct RequestTarget {
     accept: TcpAccept,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct ProfileTarget;
-
 // === impl TcpAccept ===
 
 impl TcpAccept {
