@@ -16,8 +16,11 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct NonOpaqueRefused(());
+
+#[derive(Clone, Debug)]
+struct WithTransportHeaderAlpn(LocalCrtKey);
 
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 
@@ -114,13 +117,33 @@ where
         .push(metrics.transport.layer_accept())
         .push_map_target(TcpAccept::from)
         .push(tls::NewDetectTls::layer(
-            // TODO set ALPN on these connections to indicate support
-            // for the transport header.
-            local_identity,
+            local_identity.map(WithTransportHeaderAlpn),
             config.detect_protocol_timeout,
         ))
         .check_new_service::<listen::Addrs, I>()
         .into_inner()
+}
+
+// === impl WithTransportHeaderAlpn ===
+
+const TRANSPORT_HEADER_PROTOCOL: &[u8] = b"transport.l5d.io/v1";
+
+impl Into<tls::server::Config> for &'_ WithTransportHeaderAlpn {
+    fn into(self) -> tls::server::Config {
+        // Copy the underlying TLS config and set an ALPN value.
+        //
+        // TODO: Avoid cloning the server config for every connection.
+        let c: tls::server::Config = (&self.0).into();
+        let mut config = c.as_ref().clone();
+        config.alpn_protocols.push(TRANSPORT_HEADER_PROTOCOL.into());
+        config.into()
+    }
+}
+
+impl Into<tls::LocalId> for &'_ WithTransportHeaderAlpn {
+    fn into(self) -> tls::LocalId {
+        (&self.0).into()
+    }
 }
 
 // === impl NonOpaqueRefused ===
