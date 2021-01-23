@@ -17,7 +17,7 @@ use hyper::{
     body::{Body, HttpBody},
     Request, Response,
 };
-use linkerd_error::{Error, Never};
+use linkerd_error::Error;
 use linkerd_metrics::{self as metrics, FmtMetrics};
 use std::{
     future::Future,
@@ -52,7 +52,7 @@ pub struct Serve<S> {
 }
 
 pub type ResponseFuture =
-    Pin<Box<dyn Future<Output = Result<Response<Body>, Never>> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Result<Response<Body>, Error>> + Send + 'static>>;
 
 impl<M> Admin<M> {
     pub fn new(
@@ -161,7 +161,7 @@ where
     B::Data: Send,
 {
     type Response = http::Response<Body>;
-    type Error = Never;
+    type Error = Error;
     type Future = ResponseFuture;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
