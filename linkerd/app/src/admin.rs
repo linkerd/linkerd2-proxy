@@ -60,15 +60,13 @@ impl Config {
             )
             .push(svc::stack::MapTargetLayer::new(|(http_version, tcp)| {
                 let inbound::TcpAccept {
-                    target_addr,
-                    client_id,
-                    ..
+                    target_addr, tls, ..
                 } = tcp;
                 inbound::Target {
                     dst: Addr::Socket(target_addr),
                     target_addr,
                     http_version,
-                    client_id,
+                    tls,
                 }
             }))
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
