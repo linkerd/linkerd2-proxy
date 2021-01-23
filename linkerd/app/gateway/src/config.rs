@@ -1,6 +1,6 @@
 use super::make::MakeGateway;
 use linkerd_app_core::{
-    discovery_rejected, profiles, proxy::http, svc, tls, Error, NameAddr, NameMatch,
+    discovery_rejected, profiles, proxy::http, svc, tls, Conditional, Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::target as inbound;
 use linkerd_app_outbound as outbound;
@@ -59,7 +59,7 @@ impl svc::stack::Predicate<inbound::Target> for Allow {
 
     fn check(&mut self, target: inbound::Target) -> Result<NameAddr, Error> {
         // Skip discovery when the client does not have an identity.
-        if target.client_id.is_some() {
+        if let Conditional::Some(tls::ServerTls::Established { client_id: Some(_) }) = target.tls {
             // Discovery needs to have resolved a service name.
             if let Some(addr) = target.dst.into_name_addr() {
                 // The service name needs to exist in the configured set of suffixes.

@@ -22,7 +22,7 @@ use tracing::{debug, trace};
 pub struct ServerId(pub id::Name);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum NoServerId {
+pub enum NoClientTls {
     /// Identity is administratively disabled.
     Disabled,
 
@@ -39,7 +39,7 @@ pub enum NoServerId {
 }
 
 /// Indicates whether the target server endpoint has a known TLS identity.
-pub type ConditionalServerId = Conditional<ServerId, NoServerId>;
+pub type ConditionalClientTls = Conditional<ServerId, NoClientTls>;
 
 pub type Config = Arc<rustls::ClientConfig>;
 
@@ -70,7 +70,7 @@ impl<L, C, T> tower::Service<T> for Client<L, C>
 where
     L: Clone,
     for<'l> &'l L: Into<Config>,
-    for<'t> &'t T: Into<ConditionalServerId>,
+    for<'t> &'t T: Into<ConditionalClientTls>,
     C: tower::Service<T, Error = io::Error>,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
@@ -143,9 +143,9 @@ impl fmt::Display for ServerId {
     }
 }
 
-// === impl NoServerId ===
+// === impl NoClientTls ===
 
-impl fmt::Display for NoServerId {
+impl fmt::Display for NoClientTls {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disabled => write!(f, "disabled"),

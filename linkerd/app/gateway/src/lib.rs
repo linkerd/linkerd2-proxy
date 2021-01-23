@@ -61,9 +61,9 @@ mod test {
 
     #[tokio::test]
     async fn no_identity() {
-        let client_id = Conditional::Some(None);
+        let tls = Conditional::Some(tls::ServerTls::Established { client_id: None });
         let test = Test {
-            client_id,
+            tls,
             ..Default::default()
         };
         let status = test
@@ -97,7 +97,7 @@ mod test {
     struct Test {
         suffix: &'static str,
         dst_name: Option<&'static str>,
-        client_id: tls::server::ConditionalTls,
+        tls: tls::ConditionalServerTls,
         orig_fwd: Option<&'static str>,
     }
 
@@ -106,9 +106,9 @@ mod test {
             Self {
                 suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
-                client_id: Conditional::Some(Some(
-                    tls::ClientId::from_str("client.id.test").unwrap(),
-                )),
+                tls: Conditional::Some(tls::ServerTls::Established {
+                    client_id: Some(tls::ClientId::from_str("client.id.test").unwrap()),
+                }),
                 orig_fwd: None,
             }
         }
@@ -119,7 +119,7 @@ mod test {
             let Self {
                 suffix,
                 dst_name,
-                client_id,
+                tls,
                 orig_fwd,
             } = self;
 
@@ -144,7 +144,7 @@ mod test {
             let target_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
             let target = inbound::Target {
                 target_addr,
-                client_id,
+                tls,
                 dst: dst_name
                     .map(|n| NameAddr::from_str(n).unwrap().into())
                     .unwrap_or_else(|| target_addr.into()),

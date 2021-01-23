@@ -1,4 +1,6 @@
-use crate::conditional_accept;
+mod client_hello;
+
+use crate::{LocalId, ServerId};
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
@@ -27,12 +29,19 @@ pub fn empty_config() -> Config {
     Arc::new(rustls::ServerConfig::new(verifier))
 }
 
-/// A newtype for remote client idenities..
+/// A newtype for remote client idenities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientId(pub id::Name);
 
+/// Indicates a serverside connection's TLS status.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum ServerTls {
+    Established { client_id: Option<ClientId> },
+    Passthru { sni: ServerId },
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum NoTls {
+pub enum NoServerTls {
     /// Identity is administratively disabled.
     Disabled,
 
@@ -44,18 +53,14 @@ pub enum NoTls {
     /// doesn't need or support TLS.
     PortSkipped,
 
-    // TLS not established by the remote client.
-    NoTlsFromRemote,
+    // No TLS Client Hello detected
+    NoClientHello,
 }
 
 /// Indicates whether TLS was established on an accepted connection.
-///
-/// Note that the client may not provide an identity if it has not yet
-/// provisioned a certificate.
-pub type ConditionalTls = Conditional<Option<ClientId>, NoTls>;
+pub type ConditionalServerTls = Conditional<ServerTls, NoServerTls>;
 
-// TODO sni name
-pub type Meta<T> = (ConditionalTls, T);
+pub type Meta<T> = (ConditionalServerTls, T);
 
 pub type Io<T> = EitherIo<PrefixedIo<T>, TlsStream<PrefixedIo<T>>>;
 
@@ -110,7 +115,7 @@ impl<I, N> NewDetectTls<I, N> {
 impl<T, L, N> NewService<T> for NewDetectTls<L, N>
 where
     L: Clone,
-    for<'l> &'l L: Into<id::LocalId> + Into<Config>,
+    for<'l> &'l L: Into<LocalId> + Into<Config>,
     N: NewService<Meta<T>> + Clone,
 {
     type Service = DetectTls<T, L, N>;
@@ -128,7 +133,7 @@ where
 impl<I, L, N, NSvc, T> tower::Service<I> for DetectTls<T, L, N>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
-    for<'l> &'l L: Into<id::LocalId> + Into<Config>,
+    for<'l> &'l L: Into<LocalId> + Into<Config>,
     N: NewService<Meta<T>, Service = NSvc> + Clone + Send + 'static,
     NSvc: tower::Service<Io<I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
@@ -150,7 +155,7 @@ where
         match self.local_identity.as_ref() {
             Some(local) => {
                 let config: Config = local.into();
-                let id::LocalId(local_id) = local.into();
+                let local_id = local.into();
                 let timeout = tokio::time::sleep(self.timeout);
 
                 Box::pin(async move {
@@ -169,7 +174,7 @@ where
             }
 
             None => {
-                let peer = Conditional::None(NoTls::Disabled);
+                let peer = Conditional::None(NoServerTls::Disabled);
                 let svc = new_accept.new_service((peer, target));
                 Box::pin(svc.oneshot(EitherIo::Left(io.into())).err_into::<Error>())
             }
@@ -180,12 +185,12 @@ where
 async fn detect<I>(
     mut io: I,
     tls_config: Config,
-    local_id: id::Name,
-) -> io::Result<(ConditionalTls, Io<I>)>
+    LocalId(local_id): LocalId,
+) -> io::Result<(ConditionalServerTls, Io<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {
-    const NO_TLS_META: ConditionalTls = Conditional::None(NoTls::NoTlsFromRemote);
+    const NO_TLS_META: ConditionalServerTls = Conditional::None(NoServerTls::NoClientHello);
 
     // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello.
     // Because peeked data does not need to be retained, we use a static
@@ -196,20 +201,27 @@ where
     let mut buf = [0u8; PEEK_CAPACITY];
     let sz = io.peek(&mut buf).await?;
     debug!(sz, "Peeked bytes from TCP stream");
-    match conditional_accept::match_client_hello(&buf, &local_id) {
-        conditional_accept::Match::Matched => {
-            trace!("Identified matching SNI via peek");
+    match client_hello::parse_sni(&buf) {
+        Ok(Some(ServerId(sni))) if sni == local_id => {
+            trace!(%sni, "Identified matching SNI via peek");
             // Terminate the TLS stream.
-            let (peer_id, tls) = handshake(tls_config, PrefixedIo::from(io)).await?;
-            return Ok((peer_id, EitherIo::Right(tls)));
+            let (client_id, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
+            let tls = Conditional::Some(ServerTls::Established { client_id });
+            return Ok((tls, EitherIo::Right(io)));
         }
 
-        conditional_accept::Match::NotMatched => {
+        Ok(Some(sni)) => {
+            trace!(%sni, "Identified non-matching SNI via peek");
+            let tls = Conditional::Some(ServerTls::Passthru { sni });
+            return Ok((tls, EitherIo::Left(io.into())));
+        }
+
+        Ok(None) => {
             trace!("Not a matching TLS ClientHello");
             return Ok((NO_TLS_META, EitherIo::Left(io.into())));
         }
 
-        conditional_accept::Match::Incomplete => {}
+        Err(client_hello::Incomplete) => {}
     }
 
     // Peeking didn't return enough data, so instead we'll allocate more
@@ -219,18 +231,28 @@ where
     debug!(buf.capacity = %buf.capacity(), "Reading bytes from TCP stream");
     while io.read_buf(&mut buf).await? != 0 {
         debug!(buf.len = %buf.len(), "Read bytes from TCP stream");
-        match conditional_accept::match_client_hello(buf.as_ref(), &local_id) {
-            conditional_accept::Match::Matched => {
-                trace!("Identified matching SNI via buffered read");
+        match client_hello::parse_sni(buf.as_ref()) {
+            Ok(Some(ServerId(sni))) if sni == local_id => {
+                trace!(%sni, "Identified matching SNI via buffered read");
                 // Terminate the TLS stream.
-                let (peer_id, tls) =
+                let (client_id, io) =
                     handshake(tls_config.clone(), PrefixedIo::new(buf.freeze(), io)).await?;
-                return Ok((peer_id, EitherIo::Right(tls)));
+                let tls = Conditional::Some(ServerTls::Established { client_id });
+                return Ok((tls, EitherIo::Right(io)));
             }
 
-            conditional_accept::Match::NotMatched => break,
+            Ok(Some(sni)) => {
+                trace!(%sni, "Identified non-matching SNI via peek");
+                let tls = Conditional::Some(ServerTls::Passthru { sni });
+                return Ok((tls, EitherIo::Left(io.into())));
+            }
 
-            conditional_accept::Match::Incomplete => {
+            Ok(None) => {
+                trace!("Not a matching TLS ClientHello");
+                return Ok((NO_TLS_META, EitherIo::Left(io.into())));
+            }
+
+            Err(client_hello::Incomplete) => {
                 if buf.capacity() == 0 {
                     // If we can't buffer an entire TLS ClientHello, it
                     // almost definitely wasn't initiated by another proxy,
@@ -238,6 +260,7 @@ where
                     warn!("Buffer insufficient for TLS ClientHello");
                     break;
                 }
+                // Continue if there is still buffer capacity.
             }
         }
     }
@@ -247,10 +270,7 @@ where
     Ok((NO_TLS_META, io))
 }
 
-async fn handshake<T>(
-    tls_config: Config,
-    io: T,
-) -> io::Result<(ConditionalTls, tokio_rustls::server::TlsStream<T>)>
+async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(Option<ClientId>, TlsStream<T>)>
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
@@ -262,10 +282,10 @@ where
     let client_id = client_identity(&tls);
 
     trace!(client.id = ?client_id, "Accepted TLS connection");
-    Ok((Conditional::Some(client_id), tls))
+    Ok((client_id, tls))
 }
 
-fn client_identity<S>(tls: &tokio_rustls::server::TlsStream<S>) -> Option<ClientId> {
+fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
     use rustls::Session;
     use webpki::GeneralDNSNameRef;
 
@@ -329,13 +349,13 @@ impl FromStr for ClientId {
 
 // === impl NoClientId ===
 
-impl fmt::Display for NoTls {
+impl fmt::Display for NoServerTls {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disabled => write!(f, "disabled"),
             Self::Loopback => write!(f, "loopback"),
             Self::PortSkipped => write!(f, "port_skipped"),
-            Self::NoTlsFromRemote => write!(f, "no_tls_from_remote"),
+            Self::NoClientHello => write!(f, "no_tls_from_remote"),
         }
     }
 }

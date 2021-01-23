@@ -46,7 +46,7 @@ pub struct Metrics {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ControlLabels {
     addr: Addr,
-    server_id: tls::ConditionalServerId,
+    server_id: tls::ConditionalClientTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -57,14 +57,14 @@ pub enum EndpointLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InboundEndpointLabels {
-    pub client_id: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct OutboundEndpointLabels {
-    pub server_id: tls::ConditionalServerId,
+    pub server_id: tls::ConditionalClientTls,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
     pub target_addr: SocketAddr,
@@ -271,7 +271,7 @@ impl FmtLabels for InboundEndpointLabels {
 
         write!(f, "target_addr=\"{}\",", self.target_addr)?;
 
-        TlsAccept::from(&self.client_id).fmt_labels(f)?;
+        TlsAccept::from(&self.tls).fmt_labels(f)?;
 
         Ok(())
     }

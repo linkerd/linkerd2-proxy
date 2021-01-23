@@ -96,7 +96,7 @@ impl<F> Summary<F> {
             rotate_interval,
 
             report,
-            quantiles: Box::new(Self::DEFAULT_QUANTILES.clone()),
+            quantiles: Box::new(Self::DEFAULT_QUANTILES),
 
             count: Counter::new(),
             sum: Counter::new(),

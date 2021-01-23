@@ -67,7 +67,7 @@ where
 
     let tcp = svc::stack(tcp)
         .push_on_response(drain::Retain::layer(drain.clone()))
-        .push_map_target(tcp::Endpoint::from_accept(tls::NoServerId::IngressNonHttp))
+        .push_map_target(tcp::Endpoint::from_accept(tls::NoClientTls::IngressNonHttp))
         .into_inner();
 
     svc::stack(http)

@@ -74,24 +74,28 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
     }
 
     fn call(&mut self, conn: Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
-        future::ok(match conn {
-            ((Conditional::Some(Some(id)), _), io) => {
-                if self.permitted_client_ids.contains(&id) {
-                    Box::pin(self.serve_authenticated(io))
-                } else {
-                    Box::pin(self.serve_unauthenticated(io, "Unauthorized client"))
+        match conn {
+            ((Conditional::Some(tls), _), io) => {
+                if let tls::ServerTls::Established {
+                    client_id: Some(id),
+                } = tls
+                {
+                    if self.permitted_client_ids.contains(&id) {
+                        return future::ok(Box::pin(self.serve_authenticated(io)));
+                    }
                 }
+
+                future::ok(Box::pin(
+                    self.serve_unauthenticated(io, "Unauthorized client"),
+                ))
             }
-            ((Conditional::Some(None), _), io) => {
-                Box::pin(self.serve_unauthenticated(io, "Unauthenticated client"))
-            }
-            ((Conditional::None(tls::server::NoTls::Loopback), _), io) => {
-                Box::pin(self.serve_authenticated(io))
+            ((Conditional::None(tls::NoServerTls::Loopback), _), io) => {
+                future::ok(Box::pin(self.serve_authenticated(io)))
             }
             ((Conditional::None(reason), _), io) => {
-                Box::pin(self.serve_unauthenticated(io, reason.to_string()))
+                future::ok(Box::pin(self.serve_unauthenticated(io, reason.to_string())))
             }
-        })
+        }
     }
 }
 

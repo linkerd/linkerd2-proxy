@@ -61,7 +61,7 @@ impl Server {
     pub fn run<E>(self) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static
     where
         E: std::fmt::Debug,
-        for<'e> &'e E: Into<tls::ConditionalServerId>,
+        for<'e> &'e E: Into<tls::ConditionalClientTls>,
     {
         let Self { f, settings } = self;
         let f = Arc::new(Mutex::new(f));

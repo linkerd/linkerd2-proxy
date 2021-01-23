@@ -15,7 +15,7 @@ use tracing::debug;
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
     pub client_addr: SocketAddr,
-    pub client_id: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,7 +23,7 @@ pub struct Target {
     pub dst: Addr,
     pub target_addr: SocketAddr,
     pub http_version: http::Version,
-    pub client_id: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ pub struct Logical {
 pub struct HttpEndpoint {
     pub port: u16,
     pub settings: http::client::Settings,
-    pub client_id: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -59,17 +59,17 @@ impl TcpAccept {
         Self {
             target_addr: tcp.target_addr(),
             client_addr: tcp.peer(),
-            client_id: Conditional::None(tls::server::NoTls::PortSkipped),
+            tls: Conditional::None(tls::NoServerTls::PortSkipped),
         }
     }
 }
 
 impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
-    fn from((client_id, addrs): tls::server::Meta<listen::Addrs>) -> Self {
+    fn from((tls, addrs): tls::server::Meta<listen::Addrs>) -> Self {
         Self {
             target_addr: addrs.target_addr(),
             client_addr: addrs.peer(),
-            client_id,
+            tls,
         }
     }
 }
@@ -84,7 +84,7 @@ impl Into<transport::labels::Key> for &'_ TcpAccept {
     fn into(self) -> transport::labels::Key {
         transport::labels::Key::accept(
             transport::labels::Direction::In,
-            self.client_id.clone(),
+            self.tls.clone(),
             self.target_addr,
         )
     }
@@ -103,7 +103,7 @@ impl From<Target> for HttpEndpoint {
         Self {
             port: target.target_addr.port(),
             settings: target.http_version.into(),
-            client_id: target.client_id,
+            tls: target.tls,
         }
     }
 }
@@ -168,9 +168,9 @@ impl Into<SocketAddr> for &'_ Target {
     }
 }
 
-impl Into<tls::ConditionalServerId> for &'_ Target {
-    fn into(self) -> tls::ConditionalServerId {
-        Conditional::None(tls::NoServerId::Loopback)
+impl Into<tls::ConditionalClientTls> for &'_ Target {
+    fn into(self) -> tls::ConditionalClientTls {
+        Conditional::None(tls::NoClientTls::Loopback)
     }
 }
 
@@ -183,7 +183,7 @@ impl Into<transport::labels::Key> for &'_ Target {
 impl Into<metrics::EndpointLabels> for &'_ Target {
     fn into(self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
-            client_id: self.client_id.clone(),
+            tls: self.tls.clone(),
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
             target_addr: self.target_addr,
         }
@@ -204,11 +204,11 @@ impl tap::Inspect for Target {
         req.extensions().get::<TcpAccept>().map(|s| s.client_addr)
     }
 
-    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::server::ConditionalTls {
+    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {
         req.extensions()
             .get::<TcpAccept>()
-            .map(|s| s.client_id.clone())
-            .unwrap_or_else(|| Conditional::None(tls::server::NoTls::Disabled))
+            .map(|s| s.tls.clone())
+            .unwrap_or_else(|| Conditional::None(tls::NoServerTls::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
@@ -219,8 +219,8 @@ impl tap::Inspect for Target {
         None
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerId {
-        Conditional::None(tls::NoServerId::Loopback)
+    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
+        Conditional::None(tls::NoClientTls::Loopback)
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
@@ -289,7 +289,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
         Target {
             dst,
             target_addr: self.accept.target_addr,
-            client_id: self.accept.client_id.clone(),
+            tls: self.accept.tls.clone(),
             http_version: req
                 .version()
                 .try_into()

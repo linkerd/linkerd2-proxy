@@ -914,7 +914,7 @@ pub fn parse_control_addr<S: Strings>(
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
-            identity: Conditional::None(tls::NoServerId::Loopback),
+            identity: Conditional::None(tls::NoClientTls::Loopback),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
@@ -936,7 +936,7 @@ pub fn parse_control_addr_disable_identity<S: Strings>(
     base: &str,
 ) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let identity = Conditional::None(tls::NoServerId::Disabled);
+    let identity = Conditional::None(tls::NoClientTls::Disabled);
     Ok(a.map(|addr| ControlAddr { addr, identity }))
 }
 
