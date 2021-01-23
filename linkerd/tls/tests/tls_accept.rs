@@ -59,7 +59,7 @@ fn proxy_to_proxy_tls_works() {
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
     assert_eq!(
         server_result.tls,
-        Some(Conditional::Some(tls::ServerTls::Terminated {
+        Some(Conditional::Some(tls::ServerTls::Established {
             client_id: Some(tls::ClientId(client_tls.name().clone()))
         }))
     );
@@ -90,7 +90,7 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert!(client_result.result.is_err());
     assert_eq!(
         server_result.tls,
-        Some(Conditional::Some(tls::ServerTls::Opaque {
+        Some(Conditional::Some(tls::ServerTls::Passthru {
             sni: tls::ServerId(sni)
         }))
     );

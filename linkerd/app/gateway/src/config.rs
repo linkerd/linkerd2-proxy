@@ -59,7 +59,7 @@ impl svc::stack::Predicate<inbound::Target> for Allow {
 
     fn check(&mut self, target: inbound::Target) -> Result<NameAddr, Error> {
         // Skip discovery when the client does not have an identity.
-        if let Conditional::Some(tls::ServerTls::Terminated { client_id: Some(_) }) = target.tls {
+        if let Conditional::Some(tls::ServerTls::Established { client_id: Some(_) }) = target.tls {
             // Discovery needs to have resolved a service name.
             if let Some(addr) = target.dst.into_name_addr() {
                 // The service name needs to exist in the configured set of suffixes.

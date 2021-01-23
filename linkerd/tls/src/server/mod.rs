@@ -36,8 +36,8 @@ pub struct ClientId(pub id::Name);
 /// Indicates a serverside connection's TLS status.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ServerTls {
-    Terminated { client_id: Option<ClientId> },
-    Opaque { sni: ServerId },
+    Established { client_id: Option<ClientId> },
+    Passthru { sni: ServerId },
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -206,13 +206,13 @@ where
             trace!(%sni, "Identified matching SNI via peek");
             // Terminate the TLS stream.
             let (client_id, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
-            let tls = Conditional::Some(ServerTls::Terminated { client_id });
+            let tls = Conditional::Some(ServerTls::Established { client_id });
             return Ok((tls, EitherIo::Right(io)));
         }
 
         Ok(Some(sni)) => {
             trace!(%sni, "Identified non-matching SNI via peek");
-            let tls = Conditional::Some(ServerTls::Opaque { sni });
+            let tls = Conditional::Some(ServerTls::Passthru { sni });
             return Ok((tls, EitherIo::Left(io.into())));
         }
 
@@ -237,13 +237,13 @@ where
                 // Terminate the TLS stream.
                 let (client_id, io) =
                     handshake(tls_config.clone(), PrefixedIo::new(buf.freeze(), io)).await?;
-                let tls = Conditional::Some(ServerTls::Terminated { client_id });
+                let tls = Conditional::Some(ServerTls::Established { client_id });
                 return Ok((tls, EitherIo::Right(io)));
             }
 
             Ok(Some(sni)) => {
                 trace!(%sni, "Identified non-matching SNI via peek");
-                let tls = Conditional::Some(ServerTls::Opaque { sni });
+                let tls = Conditional::Some(ServerTls::Passthru { sni });
                 return Ok((tls, EitherIo::Left(io.into())));
             }
 

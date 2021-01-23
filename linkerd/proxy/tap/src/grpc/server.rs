@@ -530,15 +530,15 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
                 Conditional::None(reason) => {
                     m.labels.insert("tls".to_owned(), reason.to_string());
                 }
-                Conditional::Some(tls::ServerTls::Terminated { client_id }) => {
+                Conditional::Some(tls::ServerTls::Established { client_id }) => {
                     m.labels.insert("tls".to_owned(), "true".to_owned());
                     m.labels.insert(
                         "client_id".to_owned(),
                         client_id.map(|id| id.to_string()).unwrap_or_default(),
                     );
                 }
-                Conditional::Some(tls::ServerTls::Opaque { sni }) => {
-                    m.labels.insert("tls".to_owned(), "opaque".to_owned());
+                Conditional::Some(tls::ServerTls::Passthru { sni }) => {
+                    m.labels.insert("tls".to_owned(), "passthru".to_owned());
                     m.labels.insert("sni".to_owned(), sni.to_string());
                 }
             }

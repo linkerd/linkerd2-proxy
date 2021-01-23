@@ -61,7 +61,7 @@ mod test {
 
     #[tokio::test]
     async fn no_identity() {
-        let tls = Conditional::Some(tls::ServerTls::Terminated { client_id: None });
+        let tls = Conditional::Some(tls::ServerTls::Established { client_id: None });
         let test = Test {
             tls,
             ..Default::default()
@@ -106,7 +106,7 @@ mod test {
             Self {
                 suffix: "test.example.com",
                 dst_name: Some("dst.test.example.com:4321"),
-                tls: Conditional::Some(tls::ServerTls::Terminated {
+                tls: Conditional::Some(tls::ServerTls::Established {
                     client_id: Some(tls::ClientId::from_str("client.id.test").unwrap()),
                 }),
                 orig_fwd: None,

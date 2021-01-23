@@ -219,7 +219,7 @@ where
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
                 .push_switch(tcp::Logical::should_resolve, tcp_forward)
-                .push_on_response(metrics.stack.layer(stack_labels("tcp", "opaque")))
+                .push_on_response(metrics.stack.layer(stack_labels("tcp", "passthru")))
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )

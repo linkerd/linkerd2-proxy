@@ -76,7 +76,7 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
     fn call(&mut self, conn: Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
         match conn {
             ((Conditional::Some(tls), _), io) => {
-                if let tls::ServerTls::Terminated {
+                if let tls::ServerTls::Established {
                     client_id: Some(id),
                 } = tls
                 {
