@@ -21,6 +21,12 @@ use tracing::{debug, trace};
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ClientTls {
+    pub server_id: ServerId,
+    pub alpn: Option<Alpn>,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NoClientTls {
     /// Identity is administratively disabled.
@@ -39,9 +45,13 @@ pub enum NoClientTls {
 }
 
 /// Indicates whether the target server endpoint has a known TLS identity.
-pub type ConditionalClientTls = Conditional<ServerId, NoClientTls>;
+pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
 pub type Config = Arc<rustls::ClientConfig>;
+
+/// A stack param that configures ALPN.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Alpn(pub Vec<Vec<u8>>);
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
@@ -54,6 +64,17 @@ type Handshake<I> =
     Pin<Box<dyn Future<Output = io::Result<io::EitherIo<I, TlsStream<I>>>> + Send + 'static>>;
 
 pub type Io<T> = io::EitherIo<T, TlsStream<T>>;
+
+// === impl ClientTls ===
+
+impl From<ServerId> for ClientTls {
+    fn from(server_id: ServerId) -> Self {
+        Self {
+            server_id,
+            alpn: None,
+        }
+    }
+}
 
 // === impl Client ===
 
@@ -85,26 +106,42 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let tls = match self.local.as_ref() {
-            Some(l) => tokio_rustls::TlsConnector::from(l.into()),
-            None => {
-                trace!("Local identity disabled");
-                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
-            }
-        };
-        let server_id = match (&target).into() {
-            Conditional::Some(ServerId(id)) => id,
+        let ClientTls { server_id, alpn } = match (&target).into() {
+            Conditional::Some(tls) => tls,
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
                 return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };
 
-        debug!(target.id = ?server_id, "Initiating TLS connection");
+        let handshake = match self.local.as_ref() {
+            Some(l) => {
+                // If ALPN protocols are configured by the endpoint, clone the
+                // configuration and set the protocols. Otherwise, just use the
+                // TLS configuration without modification.
+                //
+                // TODO it would be better to avoid cloning the whole TLS config
+                // per-connection.
+                match alpn {
+                    None => tokio_rustls::TlsConnector::from(l.into()),
+                    Some(Alpn(protocols)) => {
+                        let mut config = l.into().as_ref().clone();
+                        config.alpn_protocols = protocols;
+                        tokio_rustls::TlsConnector::from(Arc::new(config))
+                    }
+                }
+            }
+            None => {
+                trace!("Local identity disabled");
+                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
+            }
+        };
+
+        debug!(server.id = %server_id, "Initiating TLS connection");
         let connect = self.inner.call(target);
         Either::Right(Box::pin(async move {
             let io = connect.await?;
-            let io = tls.connect((&server_id).into(), io).await?;
+            let io = handshake.connect((&server_id.0).into(), io).await?;
             Ok(io::EitherIo::Right(io))
         }))
     }

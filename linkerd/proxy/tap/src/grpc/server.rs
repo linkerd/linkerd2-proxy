@@ -553,9 +553,10 @@ fn base_event<B, I: Inspect>(req: &http::Request<B>, inspect: &I) -> api::TapEve
                 Conditional::None(reason) => {
                     m.labels.insert("tls".to_owned(), reason.to_string());
                 }
-                Conditional::Some(id) => {
+                Conditional::Some(tls::ClientTls { server_id, .. }) => {
                     m.labels.insert("tls".to_owned(), "true".to_owned());
-                    m.labels.insert("server_id".to_owned(), id.to_string());
+                    m.labels
+                        .insert("server_id".to_owned(), server_id.to_string());
                 }
             }
             m

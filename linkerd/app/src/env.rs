@@ -918,7 +918,7 @@ pub fn parse_control_addr<S: Strings>(
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
-            identity: Conditional::Some(tls::ServerId(name)),
+            identity: Conditional::Some(tls::ServerId(name).into()),
         })),
         (Some(_), None) => {
             error!("{} must be specified when {} is set", n_env, a_env);

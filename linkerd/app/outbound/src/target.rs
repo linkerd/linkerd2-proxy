@@ -33,7 +33,7 @@ pub struct Concrete<P> {
 pub struct Endpoint<P> {
     pub addr: SocketAddr,
     pub target_addr: SocketAddr,
-    pub identity: tls::ConditionalClientTls,
+    pub tls: tls::ConditionalClientTls,
     pub metadata: Metadata,
     pub concrete: Concrete<P>,
 }
@@ -200,7 +200,7 @@ impl<P> Endpoint<P> {
                 None => Self {
                     addr: (&logical).into(),
                     metadata: Metadata::default(),
-                    identity: Conditional::None(reason),
+                    tls: Conditional::None(reason),
                     concrete: Concrete {
                         logical,
                         resolve: None,
@@ -209,10 +209,15 @@ impl<P> Endpoint<P> {
                 },
                 Some((addr, metadata)) => Self {
                     addr,
-                    identity: metadata
+                    tls: metadata
                         .identity()
                         .cloned()
-                        .map(Conditional::Some)
+                        .map(|server_id| {
+                            Conditional::Some(tls::ClientTls {
+                                server_id,
+                                alpn: None,
+                            })
+                        })
                         .unwrap_or(Conditional::None(
                             tls::NoClientTls::NotProvidedByServiceDiscovery,
                         )),
@@ -233,7 +238,7 @@ impl<P> Endpoint<P> {
 
     /// Marks identity as disabled.
     pub fn identity_disabled(mut self) -> Self {
-        self.identity = Conditional::None(tls::NoClientTls::Disabled);
+        self.tls = Conditional::None(tls::NoClientTls::Disabled);
         self
     }
 }
@@ -252,7 +257,7 @@ impl<P> Into<SocketAddr> for &'_ Endpoint<P> {
 
 impl<P> Into<tls::ConditionalClientTls> for &'_ Endpoint<P> {
     fn into(self) -> tls::ConditionalClientTls {
-        self.identity.clone()
+        self.tls.clone()
     }
 }
 
@@ -267,7 +272,7 @@ impl<P> Into<metrics::OutboundEndpointLabels> for &'_ Endpoint<P> {
         metrics::OutboundEndpointLabels {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
-            server_id: self.identity.clone(),
+            server_id: self.tls.clone(),
             target_addr: self.target_addr,
         }
     }
@@ -283,7 +288,7 @@ impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
 impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
-        self.identity.hash(state);
+        self.tls.hash(state);
         self.concrete.resolve.hash(state);
         self.concrete.logical.orig_dst.hash(state);
         self.concrete.logical.protocol.hash(state);
@@ -300,15 +305,15 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
         metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
-        let identity = metadata
+        let tls = metadata
             .identity()
             .cloned()
-            .map(Conditional::Some)
+            .map(|s| Conditional::Some(s.into()))
             .unwrap_or_else(|| Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery));
 
         Endpoint {
             addr,
-            identity,
+            tls,
             metadata,
             concrete: concrete.clone(),
             target_addr: concrete.logical.orig_dst,

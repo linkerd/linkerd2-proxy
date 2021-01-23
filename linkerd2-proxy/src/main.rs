@@ -53,8 +53,8 @@ fn main() {
                 let addr = app.identity_addr().expect("must have identity addr");
                 match addr.identity.value() {
                     None => info!("Identity verified via {}", addr.addr),
-                    Some(identity) => {
-                        info!("Identity verified via {} ({})", addr.addr, identity);
+                    Some(tls) => {
+                        info!("Identity verified via {} ({})", addr.addr, tls.server_id);
                     }
                 }
             }
@@ -63,14 +63,20 @@ fn main() {
         let dst_addr = app.dst_addr();
         match dst_addr.identity.value() {
             None => info!("Destinations resolved via {}", dst_addr.addr),
-            Some(identity) => info!("Destinations resolved via {} ({})", dst_addr.addr, identity),
+            Some(tls) => info!(
+                "Destinations resolved via {} ({})",
+                dst_addr.addr, tls.server_id
+            ),
         }
 
         if let Some(oc) = app.opencensus_addr() {
             match oc.identity.value() {
                 None => info!("OpenCensus tracing collector at {}", oc.addr),
-                Some(identity) => {
-                    info!("OpenCensus tracing collector at {} ({})", oc.addr, identity)
+                Some(tls) => {
+                    info!(
+                        "OpenCensus tracing collector at {} ({})",
+                        oc.addr, tls.server_id
+                    )
                 }
             }
         }

@@ -55,7 +55,13 @@ fn proxy_to_proxy_tls_works() {
         Some(server_tls),
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     );
-    assert_eq!(client_result.tls, Some(Conditional::Some(server_id)));
+    assert_eq!(
+        client_result.tls,
+        Some(Conditional::Some(tls::ClientTls {
+            server_id,
+            alpn: None,
+        }))
+    );
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
     assert_eq!(
         server_result.tls,
@@ -207,7 +213,7 @@ where
         let client = async move {
             let conn = tls::Client::layer(client_tls)
                 .layer(ConnectTcp::new(None))
-                .oneshot(Target(server_addr, client_server_id))
+                .oneshot(Target(server_addr, client_server_id.map(Into::into)))
                 .await;
             match conn {
                 Err(e) => {

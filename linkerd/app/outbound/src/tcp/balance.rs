@@ -4,7 +4,7 @@ use linkerd_app_core::{
     config::ProxyConfig,
     drain, io,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
-    svc, Addr, Error,
+    svc, Addr, Conditional, Error,
 };
 use tracing::debug_span;
 
@@ -31,9 +31,14 @@ where
 {
     svc::stack(connect)
         .push_make_thunk()
-        .instrument(
-            |t: &Endpoint| debug_span!("endpoint", peer.addr = %t.addr, peer.id = ?t.identity),
-        )
+        .instrument(|t: &Endpoint| match t.tls.as_ref() {
+            Conditional::Some(tls) => {
+                debug_span!("endpoint", server.addr = %t.addr, server.id = ?tls.server_id)
+            }
+            Conditional::None(_) => {
+                debug_span!("endpoint", server.addr = %t.addr)
+            }
+        })
         .push(resolve::layer(resolve, config.cache_max_idle_age * 2))
         .push_on_response(
             svc::layers()
