@@ -46,18 +46,18 @@ impl Config {
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(admin)
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(
                 svc::layers()
-                    // .push(http::BoxResponse::layer())
                     .push(metrics.http_errors.clone())
-                    .push(errors::layer()),
+                    .push(errors::layer())
+                    .push(http::BoxResponse::layer()),
             )
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push(svc::stack::MapTargetLayer::new(|(http_version, tcp)| {
                 let inbound::TcpAccept {
                     target_addr,
-                    client_addr,
                     client_id,
+                    ..
                 } = tcp;
                 inbound::Target {
                     dst: Addr::Socket(target_addr),
