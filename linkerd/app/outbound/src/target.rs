@@ -188,6 +188,8 @@ impl<P> Into<SocketAddr> for &'_ Concrete<P> {
 
 // === impl Endpoint ===
 
+const TRANSPORT_HEADER_PROTOCOL: &[u8] = b"transport.l5d.io/v1";
+
 impl<P> Endpoint<P> {
     pub fn from_logical(reason: tls::NoClientTls) -> impl (Fn(Logical<P>) -> Self) + Clone {
         move |logical| {
@@ -207,27 +209,30 @@ impl<P> Endpoint<P> {
                     },
                     target_addr,
                 },
-                Some((addr, metadata)) => Self {
-                    addr,
-                    tls: metadata
+                Some((addr, metadata)) => {
+                    let alpn = if metadata.opaque_transport_port().is_some() {
+                        Some(tls::client::Alpn(vec![TRANSPORT_HEADER_PROTOCOL.into()]))
+                    } else {
+                        None
+                    };
+                    let tls = metadata
                         .identity()
                         .cloned()
-                        .map(|server_id| {
-                            Conditional::Some(tls::ClientTls {
-                                server_id,
-                                alpn: None,
-                            })
-                        })
+                        .map(move |server_id| Conditional::Some(tls::ClientTls { server_id, alpn }))
                         .unwrap_or(Conditional::None(
                             tls::NoClientTls::NotProvidedByServiceDiscovery,
-                        )),
-                    metadata,
-                    concrete: Concrete {
-                        logical,
-                        resolve: None,
-                    },
-                    target_addr,
-                },
+                        ));
+                    Self {
+                        addr,
+                        tls,
+                        metadata,
+                        concrete: Concrete {
+                            logical,
+                            resolve: None,
+                        },
+                        target_addr,
+                    }
+                }
             }
         }
     }
@@ -305,11 +310,19 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
         metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
+
+        let alpn = if metadata.opaque_transport_port().is_some() {
+            Some(tls::client::Alpn(vec![TRANSPORT_HEADER_PROTOCOL.into()]))
+        } else {
+            None
+        };
         let tls = metadata
             .identity()
             .cloned()
-            .map(|s| Conditional::Some(s.into()))
-            .unwrap_or_else(|| Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery));
+            .map(move |server_id| Conditional::Some(tls::ClientTls { server_id, alpn }))
+            .unwrap_or(Conditional::None(
+                tls::NoClientTls::NotProvidedByServiceDiscovery,
+            ));
 
         Endpoint {
             addr,
