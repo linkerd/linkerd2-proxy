@@ -76,7 +76,7 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
     fn call(&mut self, conn: Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
         match conn {
             ((Conditional::Some(tls), _), io) => {
-                if let tls::server::Tls::Terminated {
+                if let tls::ServerTls::Terminated {
                     client_id: Some(id),
                 } = tls
                 {
@@ -89,7 +89,7 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
                     self.serve_unauthenticated(io, "Unauthorized client"),
                 ))
             }
-            ((Conditional::None(tls::server::NoTls::Loopback), _), io) => {
+            ((Conditional::None(tls::NoServerTls::Loopback), _), io) => {
                 future::ok(Box::pin(self.serve_authenticated(io)))
             }
             ((Conditional::None(reason), _), io) => {

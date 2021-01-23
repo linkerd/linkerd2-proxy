@@ -34,7 +34,7 @@ where
 
         let (source_id, local_id) = match (tls, self.local_id.clone()) {
             (
-                Conditional::Some(tls::server::Tls::Terminated {
+                Conditional::Some(tls::ServerTls::Terminated {
                     client_id: Some(src),
                 }),
                 Some(local),

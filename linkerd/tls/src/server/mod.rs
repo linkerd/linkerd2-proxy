@@ -33,14 +33,15 @@ pub fn empty_config() -> Config {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientId(pub id::Name);
 
+/// Indicates a serverside connection's TLS status.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Tls {
+pub enum ServerTls {
     Terminated { client_id: Option<ClientId> },
     Opaque { sni: ServerId },
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum NoTls {
+pub enum NoServerTls {
     /// Identity is administratively disabled.
     Disabled,
 
@@ -52,14 +53,14 @@ pub enum NoTls {
     /// doesn't need or support TLS.
     PortSkipped,
 
-    // TLS not established by the remote client.
-    NoTlsFromRemote,
+    // No TLS Client Hello detected
+    NoClientHello,
 }
 
 /// Indicates whether TLS was established on an accepted connection.
-pub type ConditionalTls = Conditional<Tls, NoTls>;
+pub type ConditionalServerTls = Conditional<ServerTls, NoServerTls>;
 
-pub type Meta<T> = (ConditionalTls, T);
+pub type Meta<T> = (ConditionalServerTls, T);
 
 pub type Io<T> = EitherIo<PrefixedIo<T>, TlsStream<PrefixedIo<T>>>;
 
@@ -173,7 +174,7 @@ where
             }
 
             None => {
-                let peer = Conditional::None(NoTls::Disabled);
+                let peer = Conditional::None(NoServerTls::Disabled);
                 let svc = new_accept.new_service((peer, target));
                 Box::pin(svc.oneshot(EitherIo::Left(io.into())).err_into::<Error>())
             }
@@ -185,11 +186,11 @@ async fn detect<I>(
     mut io: I,
     tls_config: Config,
     LocalId(local_id): LocalId,
-) -> io::Result<(ConditionalTls, Io<I>)>
+) -> io::Result<(ConditionalServerTls, Io<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {
-    const NO_TLS_META: ConditionalTls = Conditional::None(NoTls::NoTlsFromRemote);
+    const NO_TLS_META: ConditionalServerTls = Conditional::None(NoServerTls::NoClientHello);
 
     // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello.
     // Because peeked data does not need to be retained, we use a static
@@ -205,13 +206,13 @@ where
             trace!("Identified matching SNI via peek");
             // Terminate the TLS stream.
             let (client_id, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
-            let tls = Conditional::Some(Tls::Terminated { client_id });
+            let tls = Conditional::Some(ServerTls::Terminated { client_id });
             return Ok((tls, EitherIo::Right(io)));
         }
 
         Ok(Some(sni)) => {
             trace!("Identified non-matching SNI via peek");
-            let tls = Conditional::Some(Tls::Opaque { sni });
+            let tls = Conditional::Some(ServerTls::Opaque { sni });
             return Ok((tls, EitherIo::Left(io.into())));
         }
 
@@ -236,13 +237,13 @@ where
                 // Terminate the TLS stream.
                 let (client_id, io) =
                     handshake(tls_config.clone(), PrefixedIo::new(buf.freeze(), io)).await?;
-                let tls = Conditional::Some(Tls::Terminated { client_id });
+                let tls = Conditional::Some(ServerTls::Terminated { client_id });
                 return Ok((tls, EitherIo::Right(io)));
             }
 
             Ok(Some(sni)) => {
                 trace!("Identified non-matching SNI via peek");
-                let tls = Conditional::Some(Tls::Opaque { sni });
+                let tls = Conditional::Some(ServerTls::Opaque { sni });
                 return Ok((tls, EitherIo::Left(io.into())));
             }
 
@@ -268,10 +269,7 @@ where
     Ok((NO_TLS_META, io))
 }
 
-async fn handshake<T>(
-    tls_config: Config,
-    io: T,
-) -> io::Result<(Option<ClientId>, tokio_rustls::server::TlsStream<T>)>
+async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(Option<ClientId>, TlsStream<T>)>
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
@@ -286,7 +284,7 @@ where
     Ok((client_id, tls))
 }
 
-fn client_identity<S>(tls: &tokio_rustls::server::TlsStream<S>) -> Option<ClientId> {
+fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
     use rustls::Session;
     use webpki::GeneralDNSNameRef;
 
@@ -350,13 +348,13 @@ impl FromStr for ClientId {
 
 // === impl NoClientId ===
 
-impl fmt::Display for NoTls {
+impl fmt::Display for NoServerTls {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disabled => write!(f, "disabled"),
             Self::Loopback => write!(f, "loopback"),
             Self::PortSkipped => write!(f, "port_skipped"),
-            Self::NoTlsFromRemote => write!(f, "no_tls_from_remote"),
+            Self::NoClientHello => write!(f, "no_tls_from_remote"),
         }
     }
 }

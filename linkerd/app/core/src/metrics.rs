@@ -57,7 +57,7 @@ pub enum EndpointLabels {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct InboundEndpointLabels {
-    pub tls: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
 }

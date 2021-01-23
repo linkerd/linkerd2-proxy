@@ -15,7 +15,7 @@ use tracing::debug;
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
     pub client_addr: SocketAddr,
-    pub tls: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -23,7 +23,7 @@ pub struct Target {
     pub dst: Addr,
     pub target_addr: SocketAddr,
     pub http_version: http::Version,
-    pub tls: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ pub struct Logical {
 pub struct HttpEndpoint {
     pub port: u16,
     pub settings: http::client::Settings,
-    pub tls: tls::server::ConditionalTls,
+    pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -59,7 +59,7 @@ impl TcpAccept {
         Self {
             target_addr: tcp.target_addr(),
             client_addr: tcp.peer(),
-            tls: Conditional::None(tls::server::NoTls::PortSkipped),
+            tls: Conditional::None(tls::NoServerTls::PortSkipped),
         }
     }
 }
@@ -204,11 +204,11 @@ impl tap::Inspect for Target {
         req.extensions().get::<TcpAccept>().map(|s| s.client_addr)
     }
 
-    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::server::ConditionalTls {
+    fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {
         req.extensions()
             .get::<TcpAccept>()
             .map(|s| s.tls.clone())
-            .unwrap_or_else(|| Conditional::None(tls::server::NoTls::Disabled))
+            .unwrap_or_else(|| Conditional::None(tls::NoServerTls::Disabled))
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {

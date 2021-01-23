@@ -76,8 +76,8 @@ impl tap::Inspect for Endpoint {
         req.extensions().get::<ClientHandle>().map(|c| c.addr)
     }
 
-    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::server::ConditionalTls {
-        Conditional::None(tls::server::NoTls::Loopback)
+    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerTls {
+        Conditional::None(tls::NoServerTls::Loopback)
     }
 
     fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {

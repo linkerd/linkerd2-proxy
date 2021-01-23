@@ -13,7 +13,7 @@ use std::{fmt, net::SocketAddr};
 pub enum Key {
     Accept {
         direction: Direction,
-        id: tls::server::ConditionalTls,
+        tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
     },
     OutboundConnect(OutboundEndpointLabels),
@@ -21,7 +21,7 @@ pub enum Key {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsAccept<'t>(&'t tls::server::ConditionalTls);
+pub struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsConnect<'t>(&'t tls::ConditionalServerId);
@@ -31,12 +31,12 @@ pub struct TlsConnect<'t>(&'t tls::ConditionalServerId);
 impl Key {
     pub fn accept(
         direction: Direction,
-        id: tls::server::ConditionalTls,
+        tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
     ) -> Self {
         Self::Accept {
             direction,
-            id,
+            tls,
             target_addr,
         }
     }
@@ -47,12 +47,12 @@ impl FmtLabels for Key {
         match self {
             Self::Accept {
                 direction,
-                id,
+                tls,
                 target_addr,
             } => {
                 direction.fmt_labels(f)?;
                 write!(f, ",peer=\"src\",target_addr=\"{}\",", target_addr)?;
-                TlsAccept::from(id).fmt_labels(f)
+                TlsAccept::from(tls).fmt_labels(f)
             }
             Self::OutboundConnect(endpoint) => {
                 Direction::Out.fmt_labels(f)?;
@@ -73,8 +73,8 @@ impl FmtLabels for Key {
 
 // === impl TlsAccept ===
 
-impl<'t> From<&'t tls::server::ConditionalTls> for TlsAccept<'t> {
-    fn from(c: &'t tls::server::ConditionalTls) -> Self {
+impl<'t> From<&'t tls::ConditionalServerTls> for TlsAccept<'t> {
+    fn from(c: &'t tls::ConditionalServerTls) -> Self {
         TlsAccept(c)
     }
 }
@@ -82,17 +82,17 @@ impl<'t> From<&'t tls::server::ConditionalTls> for TlsAccept<'t> {
 impl<'t> FmtLabels for TlsAccept<'t> {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Conditional::None(tls::server::NoTls::Disabled) => {
+            Conditional::None(tls::NoServerTls::Disabled) => {
                 write!(f, "tls=\"disabled\"")
             }
             Conditional::None(why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
-            Conditional::Some(tls::server::Tls::Terminated { client_id }) => match client_id {
+            Conditional::Some(tls::ServerTls::Terminated { client_id }) => match client_id {
                 Some(id) => write!(f, "tls=\"true\",client_id=\"{}\"", id),
                 None => write!(f, "tls=\"true\",client_id=\"\""),
             },
-            Conditional::Some(tls::server::Tls::Opaque { sni }) => {
+            Conditional::Some(tls::ServerTls::Opaque { sni }) => {
                 write!(f, "tls=\"opaque\",sni=\"{}\"", sni)
             }
         }

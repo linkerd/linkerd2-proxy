@@ -39,7 +39,7 @@ fn plaintext() {
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
     assert_eq!(
         server_result.tls,
-        Some(Conditional::None(tls::server::NoTls::Disabled))
+        Some(Conditional::None(tls::NoServerTls::Disabled))
     );
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
@@ -59,7 +59,7 @@ fn proxy_to_proxy_tls_works() {
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
     assert_eq!(
         server_result.tls,
-        Some(Conditional::Some(tls::server::Tls::Terminated {
+        Some(Conditional::Some(tls::ServerTls::Terminated {
             client_id: Some(tls::ClientId(client_tls.name().clone()))
         }))
     );
@@ -90,7 +90,7 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     assert!(client_result.result.is_err());
     assert_eq!(
         server_result.tls,
-        Some(Conditional::Some(tls::server::Tls::Opaque {
+        Some(Conditional::Some(tls::ServerTls::Opaque {
             sni: tls::ServerId(sni)
         }))
     );
@@ -114,7 +114,7 @@ fn run_test<C, CF, CR, S, SF, SR>(
     server: S,
 ) -> (
     Transported<tls::ConditionalServerId, CR>,
-    Transported<tls::server::ConditionalTls, SR>,
+    Transported<tls::ConditionalServerTls, SR>,
 )
 where
     // Client
@@ -142,7 +142,7 @@ where
     // A future that will receive a single connection.
     let (server, server_addr, server_result) = {
         // Saves the result of every connection.
-        let (sender, receiver) = mpsc::channel::<Transported<tls::server::ConditionalTls, SR>>();
+        let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
         // Let the OS decide the port number and then return the resulting
         // `SocketAddr` so the client can connect to it. This allows multiple
