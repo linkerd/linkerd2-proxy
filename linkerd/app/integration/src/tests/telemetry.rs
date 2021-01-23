@@ -191,7 +191,8 @@ impl TcpFixture {
 }
 
 #[tokio::test]
-async fn metrics_endpoint_admin_request_count() {
+async fn admin_request_count() {
+    let _trace = trace_init();
     let fixture = Fixture::inbound().await;
     let metrics = fixture.metrics;
     let metric = metrics::metric("request_total")
@@ -203,6 +204,55 @@ async fn metrics_endpoint_admin_request_count() {
     // We can't assert that the metric is not present, since `GET /metrics`
     // will bump the request count, lol
     metric.assert_in(&metrics).await;
+}
+
+#[tokio::test]
+async fn admin_transport_metrics() {
+    let _trace = trace_init();
+    let fixture = Fixture::inbound().await;
+    let metrics = fixture.metrics;
+    let labels = metrics::labels()
+        .label("direction", "inbound")
+        .label("tls", "disabled")
+        .label("target_addr", metrics.target_addr())
+        .label("peer", "src");
+
+    let mut open_total = labels.metric("tcp_open_total").value(1usize);
+    open_total.assert_in(&metrics).await;
+    assert!(
+        open_total
+            .clone()
+            .label("peer", "dst")
+            .is_not_in(metrics.get("/metrics").await),
+        "peer=\"dst\" metrics don't make sense for the admin server"
+    );
+
+    let mut close_total = labels.metric("tcp_close_total");
+    assert!(
+        close_total.is_not_in(metrics.get("/metrics").await),
+        "client connection hasn't been closed yet"
+    );
+
+    // Close the connection and reconnect.
+    let metrics = metrics.shutdown().await.reconnect();
+
+    close_total.set_value(1).assert_in(&metrics).await;
+    assert!(
+        close_total
+            .label("peer", "dst")
+            .is_not_in(metrics.get("/metrics").await),
+        "peer=\"dst\" metrics don't make sense for the admin server"
+    );
+    open_total.set_value(2usize).assert_in(&metrics).await;
+
+    let open_gauge = labels.metric("tcp_open_connections");
+    open_gauge.clone().value(1usize).assert_in(&metrics).await;
+    assert!(
+        open_gauge
+            .label("peer", "dst")
+            .is_not_in(metrics.get("/metrics").await),
+        "peer=\"dst\" metrics don't make sense for the admin server"
+    );
 }
 
 #[tokio::test]
