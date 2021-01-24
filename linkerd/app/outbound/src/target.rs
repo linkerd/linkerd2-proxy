@@ -209,7 +209,7 @@ impl<P> Endpoint<P> {
                 },
                 Some((addr, metadata)) => Self {
                     addr,
-                    tls: Self::client_tls(&metadata),
+                    tls: EndpointFromMetadata::client_tls(&metadata),
                     metadata,
                     concrete: Concrete {
                         logical,
@@ -229,29 +229,6 @@ impl<P> Endpoint<P> {
     pub fn identity_disabled(mut self) -> Self {
         self.tls = Conditional::None(tls::NoClientTls::Disabled);
         self
-    }
-
-    fn client_tls(metadata: &Metadata) -> tls::ConditionalClientTls {
-        // If we're transporting an opaque protocol OR we're communicating with
-        // a gateway, then set an ALPN value indicating support for a transport
-        // header.
-        let alpn = if metadata.opaque_transport_port().is_some()
-            || metadata.authority_override().is_some()
-        {
-            Some(tls::client::AlpnProtocols(vec![
-                transport_header::PROTOCOL.into()
-            ]))
-        } else {
-            None
-        };
-
-        metadata
-            .identity()
-            .cloned()
-            .map(move |server_id| Conditional::Some(tls::ClientTls { server_id, alpn }))
-            .unwrap_or(Conditional::None(
-                tls::NoClientTls::NotProvidedByServiceDiscovery,
-            ))
     }
 }
 
@@ -307,6 +284,31 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     }
 }
 
+impl EndpointFromMetadata {
+    fn client_tls(metadata: &Metadata) -> tls::ConditionalClientTls {
+        // If we're transporting an opaque protocol OR we're communicating with
+        // a gateway, then set an ALPN value indicating support for a transport
+        // header.
+        let alpn = if metadata.opaque_transport_port().is_some()
+            || metadata.authority_override().is_some()
+        {
+            Some(tls::client::AlpnProtocols(vec![
+                transport_header::PROTOCOL.into()
+            ]))
+        } else {
+            None
+        };
+
+        metadata
+            .identity()
+            .cloned()
+            .map(move |server_id| Conditional::Some(tls::ClientTls { server_id, alpn }))
+            .unwrap_or(Conditional::None(
+                tls::NoClientTls::NotProvidedByServiceDiscovery,
+            ))
+    }
+}
+
 impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for EndpointFromMetadata {
     type Out = Endpoint<P>;
 
@@ -319,7 +321,7 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
         Endpoint {
             addr,
-            tls: Endpoint::<P>::client_tls(&metadata),
+            tls: Self::client_tls(&metadata),
             metadata,
             concrete: concrete.clone(),
             target_addr: concrete.logical.orig_dst,
