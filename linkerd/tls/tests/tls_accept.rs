@@ -66,7 +66,8 @@ fn proxy_to_proxy_tls_works() {
     assert_eq!(
         server_result.tls,
         Some(Conditional::Some(tls::ServerTls::Established {
-            client_id: Some(tls::ClientId(client_tls.name().clone()))
+            client_id: Some(tls::ClientId(client_tls.name().clone())),
+            negotiated_protocol: None,
         }))
     );
     assert_eq!(&server_result.result.expect("ping")[..], PING);

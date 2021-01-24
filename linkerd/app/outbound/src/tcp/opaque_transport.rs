@@ -23,7 +23,7 @@ impl<S> OpaqueTransport<S> {
     }
 
     fn expects_header<I: tls::HasNegotiatedProtocol>(io: &I) -> bool {
-        if let Some(tls::NegotiatedProtocol(protocol)) = io.negotiated_protocol() {
+        if let Some(tls::NegotiatedProtocolRef(protocol)) = io.negotiated_protocol() {
             protocol == PROTOCOL
         } else {
             false
@@ -162,7 +162,7 @@ mod test {
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
-                    alpn: Some(tls::NegotiatedProtocol(PROTOCOL)),
+                    alpn: Some(tls::NegotiatedProtocolRef(PROTOCOL)),
                     io: tokio_test::io::Builder::new()
                         .write(&buf[..])
                         .write(b"hello")
@@ -195,7 +195,7 @@ mod test {
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
-                    alpn: Some(tls::NegotiatedProtocol(PROTOCOL)),
+                    alpn: Some(tls::NegotiatedProtocolRef(PROTOCOL)),
                     io: tokio_test::io::Builder::new()
                         .write(&buf[..])
                         .write(b"hello")
@@ -228,7 +228,7 @@ mod test {
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
-                    alpn: Some(tls::NegotiatedProtocol(PROTOCOL)),
+                    alpn: Some(tls::NegotiatedProtocolRef(PROTOCOL)),
                     io: tokio_test::io::Builder::new()
                         .write(&buf[..])
                         .write(b"hello")
@@ -252,11 +252,11 @@ mod test {
     pub struct Io {
         #[pin]
         io: tokio_test::io::Mock,
-        alpn: Option<tls::NegotiatedProtocol<'static>>,
+        alpn: Option<tls::NegotiatedProtocolRef<'static>>,
     }
 
     impl tls::HasNegotiatedProtocol for Io {
-        fn negotiated_protocol(&self) -> Option<tls::NegotiatedProtocol<'_>> {
+        fn negotiated_protocol(&self) -> Option<tls::NegotiatedProtocolRef<'_>> {
             self.alpn
         }
     }

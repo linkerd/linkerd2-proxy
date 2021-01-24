@@ -22,6 +22,7 @@ use tracing::{debug, trace};
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
 
+/// A stack paramter that configures a `Client` to establish a TLS connection.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientTls {
     pub server_id: ServerId,
@@ -45,7 +46,8 @@ pub enum NoClientTls {
     NotProvidedByServiceDiscovery,
 }
 
-/// Indicates whether the target server endpoint has a known TLS identity.
+/// A stack paramater that indicates whether the target server endpoint has a
+/// known TLS identity.
 pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
 pub type Config = Arc<rustls::ClientConfig>;
@@ -116,7 +118,7 @@ where
         };
 
         let handshake = match self.local.as_ref() {
-            Some(l) => {
+            Some(local) => {
                 // If ALPN protocols are configured by the endpoint, clone the
                 // configuration and set the protocols. Otherwise, just use the
                 // TLS configuration without modification.
@@ -124,9 +126,9 @@ where
                 // TODO it would be better to avoid cloning the whole TLS config
                 // per-connection.
                 match alpn {
-                    None => tokio_rustls::TlsConnector::from(l.into()),
+                    None => tokio_rustls::TlsConnector::from(local.into()),
                     Some(AlpnProtocols(protocols)) => {
-                        let mut config = l.into().as_ref().clone();
+                        let mut config: rustls::ClientConfig = local.into().as_ref().clone();
                         config.alpn_protocols = protocols;
                         tokio_rustls::TlsConnector::from(Arc::new(config))
                     }
