@@ -9,6 +9,7 @@ use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
 use linkerd_stack::{layer, NewService};
+use rustls::Session;
 use std::{
     fmt,
     pin::Pin,
@@ -274,8 +275,6 @@ async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(Option<ClientId>
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
-    use rustls::Session;
-
     let io = tokio_rustls::TlsAcceptor::from(tls_config)
         .accept(io)
         .await?;
@@ -292,7 +291,6 @@ where
 }
 
 fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
-    use rustls::Session;
     use webpki::GeneralDNSNameRef;
 
     let (_io, session) = tls.get_ref();

@@ -238,7 +238,9 @@ impl<P> Endpoint<P> {
         let alpn = if metadata.opaque_transport_port().is_some()
             || metadata.authority_override().is_some()
         {
-            Some(tls::client::Alpn(vec![transport_header::PROTOCOL.into()]))
+            Some(tls::client::AlpnProtocols(vec![
+                transport_header::PROTOCOL.into()
+            ]))
         } else {
             None
         };

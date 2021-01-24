@@ -25,7 +25,7 @@ pub struct ServerId(pub id::Name);
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ClientTls {
     pub server_id: ServerId,
-    pub alpn: Option<Alpn>,
+    pub alpn: Option<AlpnProtocols>,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -52,7 +52,7 @@ pub type Config = Arc<rustls::ClientConfig>;
 
 /// A stack param that configures ALPN.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Alpn(pub Vec<Vec<u8>>);
+pub struct AlpnProtocols(pub Vec<Vec<u8>>);
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
@@ -64,7 +64,7 @@ type Connect<F, I> = MapOk<F, fn(I) -> io::EitherIo<I, TlsStream<I>>>;
 type Handshake<I> =
     Pin<Box<dyn Future<Output = io::Result<io::EitherIo<I, TlsStream<I>>>> + Send + 'static>>;
 
-pub type Io<T> = io::EitherIo<T, TlsStream<T>>;
+pub type Io<I> = io::EitherIo<I, TlsStream<I>>;
 
 // === impl ClientTls ===
 
@@ -125,7 +125,7 @@ where
                 // per-connection.
                 match alpn {
                     None => tokio_rustls::TlsConnector::from(l.into()),
-                    Some(Alpn(protocols)) => {
+                    Some(AlpnProtocols(protocols)) => {
                         let mut config = l.into().as_ref().clone();
                         config.alpn_protocols = protocols;
                         tokio_rustls::TlsConnector::from(Arc::new(config))
