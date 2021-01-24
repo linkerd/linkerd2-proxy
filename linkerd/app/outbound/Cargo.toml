@@ -9,6 +9,10 @@ description = """
 Configures and runs the outbound proxy
 """
 
+[features]
+default = []
+test-subscriber = []
+
 [dependencies]
 bytes = "1"
 http = "0.2"
