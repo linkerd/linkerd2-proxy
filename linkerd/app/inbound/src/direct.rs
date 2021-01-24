@@ -10,7 +10,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc, tls,
     transport::{listen, metrics::SensorIo},
-    transport_header::{DetectHeader, TransportHeader},
+    transport_header::{self, DetectHeader, TransportHeader},
     Error, DST_OVERRIDE_HEADER,
 };
 use std::fmt::Debug;
@@ -126,8 +126,6 @@ where
 
 // === impl WithTransportHeaderAlpn ===
 
-const TRANSPORT_HEADER_PROTOCOL: &[u8] = b"transport.l5d.io/v1";
-
 impl Into<tls::server::Config> for &'_ WithTransportHeaderAlpn {
     fn into(self) -> tls::server::Config {
         // Copy the underlying TLS config and set an ALPN value.
@@ -135,7 +133,9 @@ impl Into<tls::server::Config> for &'_ WithTransportHeaderAlpn {
         // TODO: Avoid cloning the server config for every connection.
         let c: tls::server::Config = (&self.0).into();
         let mut config = c.as_ref().clone();
-        config.alpn_protocols.push(TRANSPORT_HEADER_PROTOCOL.into());
+        config
+            .alpn_protocols
+            .push(transport_header::PROTOCOL.into());
         config.into()
     }
 }
