@@ -182,8 +182,8 @@ impl<S> Stack<S> {
     /// for the `skip_after` duration.
     pub fn push_when_unready<B: Clone>(
         self,
-        secondary: B,
         skip_after: Duration,
+        secondary: B,
     ) -> Stack<stack::NewSwitchReady<S, B>> {
         self.push(layer::mk(|inner: S| {
             stack::NewSwitchReady::new(inner, secondary.clone(), skip_after)
