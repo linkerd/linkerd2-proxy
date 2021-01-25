@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
     task::{Context, Poll},
 };
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct OpaqueTransport<S> {
@@ -22,7 +22,10 @@ impl<S> OpaqueTransport<S> {
         svc::layer::mk(|inner| OpaqueTransport { inner })
     }
 
-    fn expects_header<I: tls::HasNegotiatedProtocol>(io: &I) -> bool {
+    /// Determines whether the connection has negotiated support for the
+    /// transport header.
+    #[inline]
+    fn negotiated_header<I: tls::HasNegotiatedProtocol>(io: &I) -> bool {
         if let Some(tls::NegotiatedProtocolRef(protocol)) = io.negotiated_protocol() {
             protocol == PROTOCOL
         } else {
@@ -48,47 +51,51 @@ where
     }
 
     fn call(&mut self, mut ep: Endpoint<P>) -> Self::Future {
-        let orig_port = ep.addr.port();
+        // Configure the target port from the endpoing. In opaque cases, this is
+        // the application's actual port to be encoded in the header.
+        let mut target_port = ep.addr.port();
 
-        // Determine whether an opaque header should written on the socket.
-        if let Some(override_port) = ep.metadata.opaque_transport_port() {
-            // Update the endpoint to target the discovery-provided control
-            // plane port.
-            ep.addr = (ep.addr.ip(), override_port).into();
+        // If this endpoint should use opaque transport, then we update the
+        // endpoint so the connection actually targets the target proxy's
+        // inbound port.
+        if let Some(opaque_port) = ep.metadata.opaque_transport_port() {
+            debug!(target_port, opaque_port, "Using opaque transport");
+            ep.addr = (ep.addr.ip(), opaque_port).into();
         }
 
-        // If there's a destination override, encode that in the opaque
-        // transport (i.e. for multicluster gateways). Otherwise, simply
-        // encode the original target port. Note that we prefer any port
-        // specified in the override to the original destination port.
-        let header = ep
-            .metadata
-            .authority_override()
-            .and_then(|auth| {
-                let port = auth.port_u16().unwrap_or(orig_port);
-                dns::Name::from_str(auth.host())
+        // If an authority override is present, we're communicating with a
+        // remote gateway:
+        // - The target port will already be the proxy's inbound port, so
+        //   override it from the authority.
+        // - Encode the name from the authority override so the gateway can
+        //   route the connection appropriately.
+        let mut name = None;
+        if let Some(authority) = ep.metadata.authority_override() {
+            if let Some(override_port) = authority.port_u16() {
+                name = dns::Name::from_str(authority.host())
                     .map_err(|error| warn!(%error, "Invalid name"))
-                    .ok()
-                    .map(|n| TransportHeader {
-                        port,
-                        name: Some(n),
-                    })
-            })
-            .unwrap_or(TransportHeader {
-                port: orig_port,
-                name: None,
-            });
+                    .ok();
+                target_port = override_port;
+                debug!(?name, target_port, "Using authority override");
+            }
+        }
 
-        // Connect to the endpoint.
         let connect = self.inner.call(ep);
         Box::pin(async move {
             let mut io = connect.await.map_err(Into::into)?;
 
-            // Once connected, write the opaque header on the socket before
-            // returning it.
-            if Self::expects_header(&io) {
+            // If transport header support has been negotiated via ALPN, encode
+            // the header and then return the socket.
+            if Self::negotiated_header(&io) {
+                let header = TransportHeader {
+                    port: target_port,
+                    name,
+                };
+                trace!(?header, "Writing transport header");
                 let sz = header.write(&mut io).await?;
-                debug!(sz, "Wrote header to transport");
+                debug!(sz, "Wrote transport header");
+            } else {
+                trace!("Connection does not expect a transport header");
             }
 
             Ok(io)

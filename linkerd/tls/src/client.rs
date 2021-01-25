@@ -52,7 +52,7 @@ pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
 pub type Config = Arc<rustls::ClientConfig>;
 
-/// A stack param that configures ALPN.
+/// A stack param that configures the available ALPN protocols.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AlpnProtocols(pub Vec<Vec<u8>>);
 
