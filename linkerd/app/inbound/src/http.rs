@@ -162,11 +162,17 @@ where
         .push_on_response(http::BoxResponse::layer())
         .instrument(|_: &Target| debug_span!("profile"))
         // Skip the profile stack if it takes too long to become ready.
-        .push_when_unready(target.clone(), config.profile_idle_timeout)
+        .push_on_response(svc::layer::mk(svc::SpawnReady::new))
+        .push_when_unready(
+            config.profile_idle_timeout,
+            target
+                .clone()
+                .push_on_response(svc::layer::mk(svc::SpawnReady::new))
+                .into_inner(),
+        )
         .check_new_service::<Target, http::Request<http::BoxBody>>()
         .push_on_response(
             svc::layers()
-                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer(
                     "HTTP Logical",
                     config.proxy.dispatch_timeout,

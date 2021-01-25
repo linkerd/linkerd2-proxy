@@ -4,10 +4,10 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    time::Duration,
 };
-use tokio::time::{sleep, Instant, Sleep};
+use tokio::time;
 use tower::util::Either;
+use tracing::{debug, trace};
 
 /// A service which falls back to a secondary service if the primary service
 /// takes too long to become ready.
@@ -15,8 +15,8 @@ use tower::util::Either;
 pub struct SwitchReady<A, B> {
     primary: A,
     secondary: B,
-    switch_after: Duration,
-    sleep: Pin<Box<Sleep>>,
+    switch_after: time::Duration,
+    sleep: Pin<Box<time::Sleep>>,
     state: State,
 }
 
@@ -24,7 +24,7 @@ pub struct SwitchReady<A, B> {
 pub struct NewSwitchReady<A, B> {
     new_primary: A,
     new_secondary: B,
-    switch_after: Duration,
+    switch_after: time::Duration,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -42,7 +42,7 @@ impl<A, B> NewSwitchReady<A, B> {
     /// This will forward requests to the primary service, unless it takes over
     /// `switch_after` duration to become ready. If the duration is exceeded,
     /// the `secondary` service is used until the primary service becomes ready again.
-    pub fn new(new_primary: A, new_secondary: B, switch_after: Duration) -> Self {
+    pub fn new(new_primary: A, new_secondary: B, switch_after: time::Duration) -> Self {
         Self {
             new_primary,
             new_secondary,
@@ -76,7 +76,7 @@ impl<A, B> SwitchReady<A, B> {
     /// This will forward requests to the primary service, unless it takes over
     /// `switch_after` duration to become ready. If the duration is exceeded,
     /// the `secondary` service is used until the primary service becomes ready again.
-    pub fn new(primary: A, secondary: B, switch_after: Duration) -> Self {
+    pub fn new(primary: A, secondary: B, switch_after: time::Duration) -> Self {
         Self {
             primary,
             secondary,
@@ -84,7 +84,7 @@ impl<A, B> SwitchReady<A, B> {
             // The sleep is reset whenever the service becomes unready; this
             // initial one will never actually be used, so it's okay to start it
             // now.
-            sleep: Box::pin(sleep(Duration::default())),
+            sleep: Box::pin(time::sleep(time::Duration::default())),
             state: State::Primary,
         }
     }
@@ -103,51 +103,61 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         loop {
-            tracing::trace!(?self.state, "SwitchReady::poll");
+            trace!(state = ?self.state, "SwitchReady::poll");
             match self.state {
-                State::Primary => match self.primary.poll_ready(cx) {
-                    Poll::Ready(x) => return Poll::Ready(x.map_err(Into::into)),
+                // When in the primary state, poll the primary service and if
+                // it's not ready, start a timer and transition into the waiting
+                // state.
+                State::Primary => match self.primary.poll_ready(cx).map_err(Into::into) {
+                    Poll::Ready(ready) => return Poll::Ready(ready),
                     Poll::Pending => {
-                        tracing::trace!("primary service pending");
+                        trace!(delay = ?self.switch_after, "Primary service pending");
                         self.sleep
                             .as_mut()
-                            .reset(Instant::now() + self.switch_after);
+                            .reset(time::Instant::now() + self.switch_after);
                         self.state = State::Waiting;
                     }
                 },
-                State::Waiting => {
-                    match self.primary.poll_ready(cx) {
-                        Poll::Ready(Ok(())) => {
-                            tracing::trace!("primary service became ready");
-                            self.state = State::Primary;
-                            return Poll::Ready(Ok(()));
-                        }
-                        Poll::Ready(Err(e)) => return Poll::Ready(Err(e.into())),
-                        Poll::Pending => {}
-                    };
-                    if let Poll::Pending = self.sleep.as_mut().poll(cx) {
-                        return Poll::Pending;
+
+                // While waiting, check the timer. If the timer has expired, go
+                // into the secondary state. Otherwise, poll the primary service
+                // to see if it's recovered.
+                State::Waiting => match self.sleep.as_mut().poll(cx) {
+                    Poll::Ready(()) => {
+                        debug!(after = ?self.switch_after, "Switching to secondary service");
+                        self.state = State::Secondary;
                     }
-                    tracing::trace!("delay expired, switching to secondary");
-                    self.state = State::Secondary;
-                }
-                State::Secondary => {
-                    return if let Poll::Ready(x) = self.primary.poll_ready(cx) {
-                        tracing::trace!("primary service became ready, switching back");
+                    Poll::Pending => match self.primary.poll_ready(cx).map_err(Into::into) {
+                        Poll::Ready(ready) => {
+                            trace!(?ready, "Primary service became ready");
+                            self.state = State::Primary;
+                            return Poll::Ready(ready);
+                        }
+                        Poll::Pending => return Poll::Pending,
+                    },
+                },
+
+                // Always poll the primary service first so it has a chance to
+                // become ready. If it's ready, change the state to primary and
+                // return the readiness value.
+                State::Secondary => match self.primary.poll_ready(cx).map_err(Into::into) {
+                    Poll::Ready(ready) => {
+                        debug!(?ready, "Reverting to primary service");
                         self.state = State::Primary;
-                        Poll::Ready(x.map_err(Into::into))
-                    } else {
-                        Poll::Ready(
-                            futures::ready!(self.secondary.poll_ready(cx)).map_err(Into::into),
-                        )
-                    };
-                }
+                        return Poll::Ready(ready);
+                    }
+                    Poll::Pending => {
+                        // The primary service is still pending so, poll the
+                        // secondary service.
+                        return self.secondary.poll_ready(cx).map_err(Into::into);
+                    }
+                },
             };
         }
     }
 
     fn call(&mut self, req: R) -> Self::Future {
-        tracing::trace!(?self.state, "SwitchReady::call");
+        trace!(state = ?self.state, "SwitchReady::call");
         match self.state {
             State::Primary => Either::A(self.primary.call(req)),
             State::Secondary => Either::B(self.secondary.call(req)),
@@ -164,7 +174,7 @@ impl<A: Clone, B: Clone> Clone for SwitchReady<A, B> {
             switch_after: self.switch_after,
             // Reset the state and the sleep; each clone of the underlying services
             // may become ready independently (e.g. semaphore).
-            sleep: Box::pin(sleep(Duration::default())),
+            sleep: Box::pin(time::sleep(time::Duration::default())),
             state: State::Primary,
         }
     }
@@ -180,7 +190,8 @@ mod tests {
     async fn primary_first() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let dur = Duration::from_millis(100);
+        time::pause();
+        let dur = time::Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
 
         let (mut switch, mut a_handle) =
@@ -201,7 +212,8 @@ mod tests {
     async fn primary_becomes_ready() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let dur = Duration::from_millis(100);
+        time::pause();
+        let dur = time::Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
@@ -227,7 +239,8 @@ mod tests {
     async fn primary_times_out() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let dur = Duration::from_millis(100);
+        time::pause();
+        let dur = time::Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
@@ -239,7 +252,7 @@ mod tests {
         assert_pending!(switch.poll_ready());
 
         // Idle out the primary service.
-        sleep(dur + Duration::from_millis(1)).await;
+        time::sleep(dur + time::Duration::from_millis(1)).await;
         assert_pending!(switch.poll_ready());
 
         // The secondary service becomes ready.
@@ -257,7 +270,8 @@ mod tests {
     async fn primary_times_out_and_becomes_ready() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let dur = Duration::from_millis(100);
+        time::pause();
+        let dur = time::Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
@@ -268,7 +282,7 @@ mod tests {
         a_handle.allow(0);
         assert_pending!(switch.poll_ready());
 
-        sleep(dur + Duration::from_millis(1)).await;
+        time::sleep(dur + time::Duration::from_millis(1)).await;
         assert_pending!(switch.poll_ready());
 
         // The secondary service becomes ready.
@@ -293,7 +307,7 @@ mod tests {
 
         // delay for _half_ the duration. *not* long enough to time out.
         assert_pending!(switch.poll_ready());
-        sleep(dur / 2).await;
+        time::sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready again.
@@ -311,7 +325,8 @@ mod tests {
     async fn delays_dont_add_up() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let dur = Duration::from_millis(100);
+        time::pause();
+        let dur = time::Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
@@ -323,7 +338,7 @@ mod tests {
         assert_pending!(switch.poll_ready());
 
         // delay for _half_ the duration. *not* long enough to time out.
-        sleep(dur / 2).await;
+        time::sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready.
@@ -338,7 +353,7 @@ mod tests {
 
         // delay for half the duration again
         assert_pending!(switch.poll_ready());
-        sleep(dur / 2).await;
+        time::sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready.
@@ -355,7 +370,7 @@ mod tests {
         // for longer than the total duration after which we idle out the
         // primary service, this should be reset every time the primary becomes ready.
         assert_pending!(switch.poll_ready());
-        sleep(dur / 2).await;
+        time::sleep(dur / 2).await;
         assert_pending!(switch.poll_ready());
 
         // The primary service becomes ready.
@@ -370,10 +385,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn propagates_errors() {
+    async fn propagates_primary_errors() {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let dur = Duration::from_millis(100);
+        time::pause();
+        let dur = time::Duration::from_millis(100);
         let (b, mut b_handle) = mock::pair::<(), ()>();
         b_handle.allow(0);
 
@@ -387,11 +403,25 @@ mod tests {
         // Error the primary
         a_handle.send_error("lol");
         assert_ready_err!(switch.poll_ready());
+    }
 
-        sleep(dur + Duration::from_millis(1)).await;
-        assert_pending!(switch.poll_ready());
+    #[tokio::test]
+    async fn propagates_secondary_errors() {
+        let _ = tracing_subscriber::fmt::try_init();
 
+        time::pause();
+        let dur = time::Duration::from_millis(100);
+        let (b, mut b_handle) = mock::pair::<(), ()>();
+        b_handle.allow(0);
+
+        let (mut switch, mut a_handle) =
+            mock::spawn_with(move |a| SwitchReady::new(a, b.clone(), dur));
+
+        a_handle.allow(0);
         b_handle.send_error("lol");
+
+        assert_pending!(switch.poll_ready());
+        time::sleep(dur).await;
         assert_ready_err!(switch.poll_ready());
     }
 }
