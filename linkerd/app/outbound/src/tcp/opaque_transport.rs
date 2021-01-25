@@ -130,6 +130,7 @@ mod test {
 
     #[tokio::test(flavor = "current_thread")]
     async fn plain() {
+        #[cfg(feature = "test-subscriber")]
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let svc = OpaqueTransport {
@@ -149,6 +150,7 @@ mod test {
 
     #[tokio::test(flavor = "current_thread")]
     async fn opaque_no_name() {
+        #[cfg(feature = "test-subscriber")]
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let svc = OpaqueTransport {
@@ -181,6 +183,7 @@ mod test {
 
     #[tokio::test(flavor = "current_thread")]
     async fn opaque_named_with_port() {
+        #[cfg(feature = "test-subscriber")]
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let svc = OpaqueTransport {
@@ -213,6 +216,7 @@ mod test {
 
     #[tokio::test(flavor = "current_thread")]
     async fn opaque_named_no_port() {
+        #[cfg(feature = "test-subscriber")]
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let svc = OpaqueTransport {
