@@ -15,6 +15,7 @@ use linkerd_app_core::{
     io::{self, BoxedIo},
     metrics,
     proxy::tap,
+    svc::stack,
     svc::{self, NewService},
     tls,
     transport::{self, listen},
@@ -51,7 +52,7 @@ fn build_http_server<I, T>(
 )
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
-    for<'t> &'t T: Into<SocketAddr>,
+    T: stack::Param<SocketAddr>,
     T: Clone,
 {
     let tap = tap::Registry::new();
