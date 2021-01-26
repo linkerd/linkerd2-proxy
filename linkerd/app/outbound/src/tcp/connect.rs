@@ -2,7 +2,7 @@ use super::opaque_transport::OpaqueTransport;
 use crate::target::Endpoint;
 use linkerd_app_core::{
     config::ConnectConfig, io, metrics, proxy::identity::LocalCrtKey, svc, tls,
-    transport::ConnectTcp, Error,
+    transport::ConnectTcp, transport_header::SessionProtocol, Error,
 };
 use tracing::debug_span;
 
@@ -18,7 +18,10 @@ pub fn stack<P>(
     Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
     Error = Error,
     Future = impl Send,
-> + Clone {
+> + Clone
+where
+    Endpoint<P>: svc::stack::Param<Option<SessionProtocol>>,
+{
     let identity_disabled = local_identity.is_none();
     svc::stack(ConnectTcp::new(config.keepalive))
         // Initiates mTLS if the target is configured with identity. The

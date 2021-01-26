@@ -16,7 +16,9 @@ use linkerd_app_core::{
         tap,
     },
     svc::stack::Param,
-    tls, Conditional,
+    tls,
+    transport_header::SessionProtocol,
+    Conditional,
 };
 use std::{net::SocketAddr, sync::Arc};
 
@@ -54,6 +56,15 @@ impl Param<http::client::Settings> for Endpoint {
                 ProtocolHint::Unknown => http::client::Settings::Http1,
                 ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
             },
+        }
+    }
+}
+
+impl Param<Option<SessionProtocol>> for Endpoint {
+    fn param(&self) -> Option<SessionProtocol> {
+        match self.concrete.logical.protocol {
+            http::Version::H2 => Some(SessionProtocol::H2),
+            http::Version::Http1 => Some(SessionProtocol::Http1),
         }
     }
 }

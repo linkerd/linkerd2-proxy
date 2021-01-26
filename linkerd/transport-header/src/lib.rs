@@ -21,6 +21,14 @@ pub struct TransportHeader {
 
     /// The logical name of the target (service), if one is known.
     pub name: Option<Name>,
+
+    pub protocol: Option<SessionProtocol>,
+}
+
+#[derive(Clone, Debug)]
+pub enum SessionProtocol {
+    Http1,
+    H2,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -96,6 +104,18 @@ impl TransportHeader {
                 .as_ref()
                 .map(|n| n.to_string())
                 .unwrap_or_default(),
+            session_protocol: self.protocol.as_ref().map(|p| match p {
+                SessionProtocol::Http1 => proto::SessionProtocol {
+                    kind: Some(proto::session_protocol::Kind::Http1(
+                        proto::session_protocol::Http1 {},
+                    )),
+                },
+                SessionProtocol::H2 => proto::SessionProtocol {
+                    kind: Some(proto::session_protocol::Kind::H2(
+                        proto::session_protocol::H2 {},
+                    )),
+                },
+            }),
         }
     }
 
@@ -171,9 +191,17 @@ impl TransportHeader {
             ));
         }
 
+        let protocol = h.session_protocol.and_then(|p| {
+            p.kind.map(|k| match k {
+                proto::session_protocol::Kind::Http1(_) => SessionProtocol::Http1,
+                proto::session_protocol::Kind::H2(_) => SessionProtocol::H2,
+            })
+        });
+
         Ok(Some(Self {
-            name,
             port: h.port as u16,
+            name,
+            protocol,
         }))
     }
 }

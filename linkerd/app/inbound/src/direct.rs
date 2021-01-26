@@ -98,8 +98,9 @@ where
         .push_map_target(TcpEndpoint::from)
         // Update the TcpAccept target using a parsed transport-header.
         //
-        // TODO use the transport header's `name` to inform gateway
-        // routing.
+        // TODO: Use the transport header's `name` to inform gateway routing.
+        //
+        // TODO: Use the header's session protocol, i.e. for gateway processing.
         .push_map_target(|(h, mut t): (TransportHeader, TcpAccept)| {
             t.target_addr = (t.target_addr.ip(), h.port).into();
             t
@@ -109,19 +110,19 @@ where
         // it's easier to just do detection and handle the case when it's not
         // present as an exception.
         //
-        // HTTP detection must *only* be performed when a transport
-        // header is absent. When the header is present, we must
-        // assume the protocol is opaque.
+        // HTTP detection must *only* be performed when a transport header is
+        // absent. When the header is present, we must assume the protocol is
+        // opaque.
         //
-        // TODO Stop supporting headerless connections after stable-2.10.
+        // TODO: Stop supporting headerless connections after stable-2.10.
         .push(svc::NewUnwrapOr::layer(http_detect))
         .push(detect::NewDetectService::timeout(
             detect_timeout,
             DetectHeader::default(),
         ))
-        // TODO this filter should actually extract the TLS status so
-        // it's no longer wrapped in a conditional... i.e. proving to
-        // the inner stack that the connection is secure.
+        // TODO: this filter should actually extract the TLS status so it's no
+        // longer wrapped in a conditional... i.e. proving to the inner stack
+        // that the connection is secure.
         .push_request_filter(RequireIdentityForDirect)
         .push(metrics.transport.layer_accept())
         .push_map_target(TcpAccept::from)
