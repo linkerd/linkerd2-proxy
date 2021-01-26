@@ -43,15 +43,17 @@ pub use tower::util::{future_service, FutureService};
 ///
 /// Stacks (usually layered `NewService` implementations) frequently need to be
 /// able to obtain configuration from the stack target, but stack modules are
-/// decoupled from any concrate target types. The `Param` trait
+/// decoupled from any concrete target types. The `Param` trait provides a way to
+/// statically guarantee that a given target can provide a configuration
+/// parameter.
 pub trait Param<T> {
     /// Produces a `T`-typed stack paramter.
     fn param(&self) -> T;
 }
 
 /// The identity `Param`.
-impl<T: Clone> Param<T> for T {
-    fn param(&self) -> T {
-        self.clone()
+impl<T: ToOwned> Param<T::Owned> for T {
+    fn param(&self) -> T::Owned {
+        self.to_owned()
     }
 }
