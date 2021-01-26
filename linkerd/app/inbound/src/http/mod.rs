@@ -19,6 +19,9 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tracing::debug_span;
 
+#[cfg(test)]
+mod tests;
+
 pub fn server<T, I, H, HSvc>(
     config: &ProxyConfig,
     http: H,

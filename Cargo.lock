@@ -712,11 +712,17 @@ dependencies = [
  "bytes",
  "futures",
  "http",
+ "hyper",
  "indexmap",
  "linkerd-app-core",
+ "linkerd-app-test",
+ "linkerd-io",
  "tokio",
+ "tokio-test",
  "tower",
  "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
 ]
 
 [[package]]
