@@ -22,13 +22,14 @@ pub struct TransportHeader {
     /// The logical name of the target (service), if one is known.
     pub name: Option<Name>,
 
+    /// Indicates whether a protocol is known for the connection.
     pub protocol: Option<SessionProtocol>,
 }
 
 #[derive(Clone, Debug, PartialEq, Hash)]
 pub enum SessionProtocol {
     Http1,
-    H2,
+    Http2,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -110,9 +111,9 @@ impl TransportHeader {
                         proto::session_protocol::Http1 {},
                     )),
                 },
-                SessionProtocol::H2 => proto::SessionProtocol {
-                    kind: Some(proto::session_protocol::Kind::H2(
-                        proto::session_protocol::H2 {},
+                SessionProtocol::Http2 => proto::SessionProtocol {
+                    kind: Some(proto::session_protocol::Kind::Http2(
+                        proto::session_protocol::Http2 {},
                     )),
                 },
             }),
@@ -194,7 +195,7 @@ impl TransportHeader {
         let protocol = h.session_protocol.and_then(|p| {
             p.kind.map(|k| match k {
                 proto::session_protocol::Kind::Http1(_) => SessionProtocol::Http1,
-                proto::session_protocol::Kind::H2(_) => SessionProtocol::H2,
+                proto::session_protocol::Kind::Http2(_) => SessionProtocol::Http2,
             })
         });
 
@@ -215,7 +216,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
-            protocol: Some(SessionProtocol::H2),
+            protocol: Some(SessionProtocol::Http2),
         };
         let mut rx = {
             let mut buf = BytesMut::new();

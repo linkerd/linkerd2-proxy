@@ -16,10 +16,10 @@ message Header {
 
 message SessionProtocol {
   message Http1 {}
-  message H2 {}
+  message Http2 {}
 
   oneof kind {
     Http1 http1 = 1;
-    H2 h2 = 2;
+    Http2 http2 = 2;
   }
 }

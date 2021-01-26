@@ -63,7 +63,7 @@ impl Param<http::client::Settings> for Endpoint {
 impl Param<Option<SessionProtocol>> for Endpoint {
     fn param(&self) -> Option<SessionProtocol> {
         match self.concrete.logical.protocol {
-            http::Version::H2 => Some(SessionProtocol::H2),
+            http::Version::H2 => Some(SessionProtocol::Http2),
             http::Version::Http1 => Some(SessionProtocol::Http1),
         }
     }
