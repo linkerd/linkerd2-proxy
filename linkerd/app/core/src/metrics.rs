@@ -2,7 +2,9 @@ pub use crate::{
     classify::{Class, SuccessOrFailure},
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
     proxy::identity,
-    stack_metrics, telemetry, tls,
+    stack_metrics,
+    svc::stack::Param,
+    telemetry, tls,
     transport::{
         self,
         labels::{TlsAccept, TlsConnect},
@@ -196,11 +198,11 @@ impl Metrics {
 
 // === impl CtlLabels ===
 
-impl From<&'_ control::ControlAddr> for ControlLabels {
-    fn from(c: &'_ control::ControlAddr) -> Self {
+impl Param<ControlLabels> for control::ControlAddr {
+    fn param(&self) -> ControlLabels {
         ControlLabels {
-            addr: c.addr.clone(),
-            server_id: c.identity.clone(),
+            addr: self.addr.clone(),
+            server_id: self.identity.clone(),
         }
     }
 }
@@ -216,12 +218,12 @@ impl FmtLabels for ControlLabels {
 
 // === impl RouteLabels ===
 
-impl From<&'_ dst::Route> for RouteLabels {
-    fn from(r: &'_ dst::Route) -> Self {
-        Self {
-            target: r.target.clone(),
-            direction: r.direction,
-            labels: prefix_labels("rt", r.route.labels().iter()),
+impl Param<RouteLabels> for dst::Route {
+    fn param(&self) -> RouteLabels {
+        RouteLabels {
+            target: self.target.clone(),
+            direction: self.direction,
+            labels: prefix_labels("rt", self.route.labels().iter()),
         }
     }
 }

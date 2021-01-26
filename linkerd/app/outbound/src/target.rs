@@ -1,6 +1,7 @@
 use linkerd_app_core::{
     metrics, profiles,
     proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
+    svc::stack::Param,
     tls,
     transport::{self, listen},
     transport_header, Addr, Conditional,
@@ -55,20 +56,20 @@ impl<P> From<(P, Accept<()>)> for Accept<P> {
     }
 }
 
-impl<P> Into<SocketAddr> for &'_ Accept<P> {
-    fn into(self) -> SocketAddr {
+impl<P> Param<SocketAddr> for Accept<P> {
+    fn param(&self) -> SocketAddr {
         self.orig_dst
     }
 }
 
-impl<P> Into<Addr> for &'_ Accept<P> {
-    fn into(self) -> Addr {
+impl<P> Param<Addr> for Accept<P> {
+    fn param(&self) -> Addr {
         self.orig_dst.into()
     }
 }
 
-impl<P> Into<transport::labels::Key> for &'_ Accept<P> {
-    fn into(self) -> transport::labels::Key {
+impl<P> Param<transport::labels::Key> for Accept<P> {
+    fn param(&self) -> transport::labels::Key {
         const NO_TLS: tls::ConditionalServerTls = Conditional::None(tls::NoServerTls::Loopback);
         transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.orig_dst)
     }
@@ -94,22 +95,22 @@ impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
 }
 
 /// Used for traffic split
-impl<P> Into<Option<profiles::Receiver>> for &'_ Logical<P> {
-    fn into(self) -> Option<profiles::Receiver> {
+impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
+    fn param(&self) -> Option<profiles::Receiver> {
         self.profile.clone()
     }
 }
 
 /// Used to determine whether detection should be skipped.
-impl<P> Into<SocketAddr> for &'_ Logical<P> {
-    fn into(self) -> SocketAddr {
+impl<P> Param<SocketAddr> for Logical<P> {
+    fn param(&self) -> SocketAddr {
         self.orig_dst
     }
 }
 
 /// Used for default traffic split
-impl<P> Into<Addr> for &'_ Logical<P> {
-    fn into(self) -> Addr {
+impl<P> Param<Addr> for Logical<P> {
+    fn param(&self) -> Addr {
         self.addr()
     }
 }
@@ -177,8 +178,8 @@ impl<P> From<(Option<Addr>, Logical<P>)> for Concrete<P> {
 }
 
 /// Produces an address to be used if resolution is rejected.
-impl<P> Into<SocketAddr> for &'_ Concrete<P> {
-    fn into(self) -> SocketAddr {
+impl<P> Param<SocketAddr> for Concrete<P> {
+    fn param(&self) -> SocketAddr {
         self.resolve
             .as_ref()
             .and_then(|a| a.socket_addr())
@@ -198,7 +199,7 @@ impl<P> Endpoint<P> {
                 .and_then(|p| p.borrow().endpoint.clone())
             {
                 None => Self {
-                    addr: (&logical).into(),
+                    addr: logical.param(),
                     metadata: Metadata::default(),
                     tls: Conditional::None(reason),
                     concrete: Concrete {
@@ -238,26 +239,26 @@ impl<P> Into<SocketAddr> for Endpoint<P> {
     }
 }
 
-impl<P> Into<SocketAddr> for &'_ Endpoint<P> {
-    fn into(self) -> SocketAddr {
+impl<P> Param<SocketAddr> for Endpoint<P> {
+    fn param(&self) -> SocketAddr {
         self.addr
     }
 }
 
-impl<P> Into<tls::ConditionalClientTls> for &'_ Endpoint<P> {
-    fn into(self) -> tls::ConditionalClientTls {
+impl<P> Param<tls::ConditionalClientTls> for Endpoint<P> {
+    fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
     }
 }
 
-impl<P> Into<transport::labels::Key> for &'_ Endpoint<P> {
-    fn into(self) -> transport::labels::Key {
-        transport::labels::Key::OutboundConnect(self.into())
+impl<P> Param<transport::labels::Key> for Endpoint<P> {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::OutboundConnect(self.param())
     }
 }
 
-impl<P> Into<metrics::OutboundEndpointLabels> for &'_ Endpoint<P> {
-    fn into(self) -> metrics::OutboundEndpointLabels {
+impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
+    fn param(&self) -> metrics::OutboundEndpointLabels {
         metrics::OutboundEndpointLabels {
             authority: Some(self.concrete.logical.addr().to_http_authority()),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
@@ -267,10 +268,9 @@ impl<P> Into<metrics::OutboundEndpointLabels> for &'_ Endpoint<P> {
     }
 }
 
-impl<P> Into<metrics::EndpointLabels> for &'_ Endpoint<P> {
-    fn into(self) -> metrics::EndpointLabels {
-        let ep: metrics::OutboundEndpointLabels = self.into();
-        ep.into()
+impl<P> Param<metrics::EndpointLabels> for Endpoint<P> {
+    fn param(&self) -> metrics::EndpointLabels {
+        Param::<metrics::OutboundEndpointLabels>::param(self).into()
     }
 }
 

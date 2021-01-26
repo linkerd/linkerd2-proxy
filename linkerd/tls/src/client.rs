@@ -5,7 +5,7 @@ use futures::{
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
-use linkerd_stack::layer;
+use linkerd_stack::{layer, Param};
 use rustls::Session;
 use std::{
     fmt,
@@ -92,9 +92,8 @@ impl<L: Clone, C> Client<L, C> {
 
 impl<L, C, T> tower::Service<T> for Client<L, C>
 where
-    L: Clone,
-    for<'l> &'l L: Into<Config>,
-    for<'t> &'t T: Into<ConditionalClientTls>,
+    L: Clone + Param<Config>,
+    T: Param<ConditionalClientTls>,
     C: tower::Service<T, Error = io::Error>,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
     C::Future: Send + 'static,
@@ -109,7 +108,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let ClientTls { server_id, alpn } = match (&target).into() {
+        let ClientTls { server_id, alpn } = match target.param() {
             Conditional::Some(tls) => tls,
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
@@ -129,9 +128,9 @@ where
                 // TODO it would be better to avoid cloning the whole TLS config
                 // per-connection.
                 match alpn {
-                    None => tokio_rustls::TlsConnector::from(local.into()),
+                    None => tokio_rustls::TlsConnector::from(local.param()),
                     Some(AlpnProtocols(protocols)) => {
-                        let mut config: rustls::ClientConfig = local.into().as_ref().clone();
+                        let mut config: rustls::ClientConfig = local.param().as_ref().clone();
                         config.alpn_protocols = protocols;
                         tokio_rustls::TlsConnector::from(Arc::new(config))
                     }

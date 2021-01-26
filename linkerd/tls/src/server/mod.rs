@@ -8,7 +8,7 @@ use linkerd_dns_name as dns;
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 use rustls::Session;
 use std::{
     fmt,
@@ -120,8 +120,7 @@ impl<I, N> NewDetectTls<I, N> {
 
 impl<T, L, N> NewService<T> for NewDetectTls<L, N>
 where
-    L: Clone,
-    for<'l> &'l L: Into<LocalId> + Into<Config>,
+    L: Clone + Param<LocalId> + Param<Config>,
     N: NewService<Meta<T>> + Clone,
 {
     type Service = DetectTls<T, L, N>;
@@ -139,7 +138,7 @@ where
 impl<I, L, N, NSvc, T> tower::Service<I> for DetectTls<T, L, N>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
-    for<'l> &'l L: Into<LocalId> + Into<Config>,
+    L: Param<LocalId> + Param<Config>,
     N: NewService<Meta<T>, Service = NSvc> + Clone + Send + 'static,
     NSvc: tower::Service<Io<I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
@@ -160,8 +159,8 @@ where
 
         match self.local_identity.as_ref() {
             Some(local) => {
-                let config: Config = local.into();
-                let local_id = local.into();
+                let config = Param::<Config>::param(local);
+                let local_id = Param::<LocalId>::param(local);
                 let timeout = tokio::time::sleep(self.timeout);
 
                 Box::pin(async move {

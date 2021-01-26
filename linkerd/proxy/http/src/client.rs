@@ -8,7 +8,7 @@
 use crate::{glue::UpgradeBody, h1, h2, orig_proto};
 use futures::prelude::*;
 use linkerd_error::Error;
-use linkerd_stack::layer;
+use linkerd_stack::{layer, Param};
 use std::{
     marker::PhantomData,
     pin::Pin,
@@ -67,7 +67,7 @@ type MakeFuture<C, T, B> =
 impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
     T: Clone + Send + Sync + 'static,
-    for<'t> &'t T: Into<Settings>,
+    T: Param<Settings>,
     C: tower::make::MakeConnection<T> + Clone + Unpin + Send + Sync + 'static,
     C::Future: Unpin + Send + 'static,
     C::Error: Into<Error>,
@@ -90,7 +90,7 @@ where
         let h2_settings = self.h2_settings;
 
         Box::pin(async move {
-            let settings = (&target).into();
+            let settings = target.param();
             debug!(?settings, "Building HTTP client");
 
             let client = match settings {

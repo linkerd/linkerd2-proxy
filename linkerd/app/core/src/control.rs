@@ -2,7 +2,7 @@ use crate::{
     classify, config, control, dns, metrics,
     proxy::http,
     reconnect,
-    svc::{self, NewService},
+    svc::{self, stack::Param, NewService},
     tls,
     transport::ConnectTcp,
     Addr, Error,
@@ -22,9 +22,9 @@ pub struct ControlAddr {
     pub identity: tls::ConditionalClientTls,
 }
 
-impl Into<Addr> for ControlAddr {
-    fn into(self) -> Addr {
-        self.addr
+impl Param<Addr> for ControlAddr {
+    fn param(&self) -> Addr {
+        self.addr.clone()
     }
 }
 
@@ -42,18 +42,17 @@ type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classif
 pub type Client<B> = linkerd_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
 
 impl Config {
-    pub fn build<B, I>(
+    pub fn build<B, L>(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: Option<I>,
+        identity: Option<L>,
     ) -> Client<B>
     where
         B: http::HttpBody + Send + 'static,
         B::Data: Send,
         B::Error: Into<Error> + Send + Sync,
-        I: Clone + Send + 'static,
-        for<'i> &'i I: Into<tls::client::Config>,
+        L: Clone + Param<tls::client::Config> + Send + 'static,
     {
         let backoff = {
             let backoff = self.connect.backoff;
@@ -115,6 +114,7 @@ mod add_origin {
         type Error = S::Error;
         type Future = S::Future;
 
+        #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
@@ -199,7 +199,11 @@ mod balance {
 
 /// Creates a client suitable for gRPC.
 mod client {
-    use crate::{proxy::http, svc, tls};
+    use crate::{
+        proxy::http,
+        svc::{self, stack::Param},
+        tls,
+    };
     use linkerd_proxy_http::h2::Settings as H2Settings;
     use std::{
         net::SocketAddr,
@@ -225,14 +229,14 @@ mod client {
 
     // === impl Target ===
 
-    impl Into<SocketAddr> for Target {
-        fn into(self) -> SocketAddr {
+    impl Param<SocketAddr> for Target {
+        fn param(&self) -> SocketAddr {
             self.addr
         }
     }
 
-    impl Into<tls::ConditionalClientTls> for &'_ Target {
-        fn into(self) -> tls::ConditionalClientTls {
+    impl Param<tls::ConditionalClientTls> for Target {
+        fn param(&self) -> tls::ConditionalClientTls {
             self.server_id.clone()
         }
     }
@@ -259,10 +263,12 @@ mod client {
         type Error = <http::h2::Connect<C, B> as tower::Service<Target>>::Error;
         type Future = <http::h2::Connect<C, B> as tower::Service<Target>>::Future;
 
+        #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
+        #[inline]
         fn call(&mut self, target: Target) -> Self::Future {
             self.inner.call(target)
         }

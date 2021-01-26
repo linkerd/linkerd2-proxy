@@ -47,7 +47,7 @@ impl Config {
                 let (local, daemon) = LocalCrtKey::new(&certify);
 
                 let addr = control.addr.clone();
-                let svc = control.build(dns, metrics, Some(certify.trust_anchors));
+                let svc = control.build(dns, metrics, Some(local.clone()));
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {

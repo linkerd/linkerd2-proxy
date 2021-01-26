@@ -8,6 +8,7 @@ use futures::future;
 use hyper::body::HttpBody;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_retry::NewRetryLayer;
+use linkerd_stack::Param;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
@@ -55,7 +56,7 @@ impl<C> linkerd_retry::NewPolicy<Route> for NewRetry<C> {
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
         let retries = route.route.retries().cloned()?;
 
-        let metrics = self.metrics.get_handle(route);
+        let metrics = self.metrics.get_handle(route.param());
         Some(Retry {
             metrics,
             budget: retries.budget().clone(),

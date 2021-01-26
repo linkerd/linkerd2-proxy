@@ -11,7 +11,7 @@ use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectTcp};
-use linkerd_stack::NewService;
+use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};
@@ -142,7 +142,7 @@ where
     }
 
     let (client_tls, client_server_id) = match client_tls {
-        Conditional::Some((crtkey, name)) => (Some(ClientTls(crtkey)), Conditional::Some(name)),
+        Conditional::Some((crtkey, name)) => (Some(Tls(crtkey)), Conditional::Some(name)),
         Conditional::None(reason) => (None, Conditional::None(reason)),
     };
 
@@ -160,7 +160,7 @@ where
         let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
 
         let mut detect = tls::NewDetectTls::new(
-            server_tls,
+            server_tls.map(Tls),
             move |meta: tls::server::Meta<Addrs>| {
                 let server = server.clone();
                 let sender = sender.clone();
@@ -306,22 +306,34 @@ const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 struct Target(SocketAddr, tls::ConditionalClientTls);
 
 #[derive(Clone)]
-struct ClientTls(id::CrtKey);
+struct Tls(id::CrtKey);
 
-impl Into<SocketAddr> for Target {
-    fn into(self) -> SocketAddr {
+impl Param<SocketAddr> for Target {
+    fn param(&self) -> SocketAddr {
         self.0
     }
 }
 
-impl Into<tls::ConditionalClientTls> for &'_ Target {
-    fn into(self) -> tls::ConditionalClientTls {
+impl Param<tls::ConditionalClientTls> for Target {
+    fn param(&self) -> tls::ConditionalClientTls {
         self.1.clone()
     }
 }
 
-impl Into<tls::client::Config> for &'_ ClientTls {
-    fn into(self) -> tls::client::Config {
-        (&self.0).into()
+impl Param<tls::client::Config> for Tls {
+    fn param(&self) -> tls::client::Config {
+        self.0.client_config()
+    }
+}
+
+impl Param<tls::server::Config> for Tls {
+    fn param(&self) -> tls::server::Config {
+        self.0.server_config()
+    }
+}
+
+impl Param<tls::LocalId> for Tls {
+    fn param(&self) -> tls::LocalId {
+        self.0.id().clone()
     }
 }

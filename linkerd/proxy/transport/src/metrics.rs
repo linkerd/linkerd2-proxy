@@ -5,7 +5,7 @@ use linkerd_metrics::{
     latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, LastUpdate,
     Metric, Store,
 };
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 use pin_project::pin_project;
 use std::collections::HashMap;
 use std::fmt;
@@ -180,14 +180,14 @@ where
 
 impl<T, K, M> NewService<T> for MakeAccept<K, M>
 where
-    for<'t> &'t T: Into<K>,
+    T: Param<K>,
     K: Eq + Hash + FmtLabels,
     M: NewService<T>,
 {
     type Service = Accept<M::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let labels = (&target).into();
+        let labels = Param::<K>::param(&target);
         let metrics = self
             .registry
             .lock()
@@ -235,7 +235,7 @@ where
 
 impl<K, T, M> tower::Service<T> for Connect<K, M>
 where
-    for<'t> &'t T: Into<K>,
+    T: Param<K>,
     K: Eq + Hash + FmtLabels,
     M: tower::make::MakeConnection<T>,
 {
@@ -243,12 +243,13 @@ where
     type Error = M::Error;
     type Future = Connecting<M::Future>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let labels = (&target).into();
+        let labels = target.param();
         let metrics = self
             .registry
             .lock()

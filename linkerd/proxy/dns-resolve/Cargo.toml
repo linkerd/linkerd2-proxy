@@ -16,6 +16,7 @@ linkerd-error = { path = "../../error" }
 linkerd-addr = { path = "../../addr" }
 linkerd-dns = { path = "../../dns" }
 linkerd-proxy-core = { path = "../core" }
+linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1.9"
 tracing-futures = "0.2"
