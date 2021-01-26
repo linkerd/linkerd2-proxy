@@ -135,15 +135,14 @@ where
 
 // === impl WithTransportHeaderAlpn ===
 
-impl Into<tls::server::Config> for &'_ WithTransportHeaderAlpn {
-    fn into(self) -> tls::server::Config {
+impl svc::stack::Param<tls::server::Config> for WithTransportHeaderAlpn {
+    fn param(&self) -> tls::server::Config {
         // Copy the underlying TLS config and set an ALPN value.
         //
         // TODO: Avoid cloning the server config for every connection. It would
         // be preferable if rustls::ServerConfig wrapped individual fields in an
         // Arc so they could be overridden independently.
-        let c: tls::server::Config = (&self.0).into();
-        let mut config = c.as_ref().clone();
+        let mut config = self.0.server_config().as_ref().clone();
         config
             .alpn_protocols
             .push(transport_header::PROTOCOL.into());
@@ -151,9 +150,9 @@ impl Into<tls::server::Config> for &'_ WithTransportHeaderAlpn {
     }
 }
 
-impl Into<tls::LocalId> for &'_ WithTransportHeaderAlpn {
-    fn into(self) -> tls::LocalId {
-        (&self.0).into()
+impl svc::stack::Param<tls::LocalId> for WithTransportHeaderAlpn {
+    fn param(&self) -> tls::LocalId {
+        self.0.id().clone()
     }
 }
 

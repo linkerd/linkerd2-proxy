@@ -5,6 +5,7 @@ use linkerd_addr::{Addr, NameAddr};
 use linkerd_dns as dns;
 use linkerd_error::Error;
 use linkerd_proxy_core::resolve::Update;
+use linkerd_stack::Param;
 use std::{
     net::SocketAddr,
     pin::Pin,
@@ -30,7 +31,7 @@ impl DnsResolve {
 
 type UpdateStream = Pin<Box<dyn Stream<Item = Result<Update<()>, Error>> + Send + Sync + 'static>>;
 
-impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
+impl<T: Param<Addr>> tower::Service<T> for DnsResolve {
     type Response = UpdateStream;
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<UpdateStream, Error>> + Send + 'static>>;
@@ -42,7 +43,7 @@ impl<T: Into<Addr>> tower::Service<T> for DnsResolve {
     fn call(&mut self, target: T) -> Self::Future {
         // If the target address is `localhost.`, skip DNS resolution and use
         // 127.0.0.1.
-        let addr = match target.into() {
+        let addr = match target.param() {
             Addr::Name(na) if na.is_localhost() => {
                 SocketAddr::from(([127, 0, 0, 1], na.port())).into()
             }

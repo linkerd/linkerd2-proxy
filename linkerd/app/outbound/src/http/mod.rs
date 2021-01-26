@@ -15,6 +15,7 @@ use linkerd_app_core::{
         http::{self, CanOverrideAuthority, ClientHandle},
         tap,
     },
+    svc::stack::Param,
     tls, Conditional,
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -45,8 +46,8 @@ impl Logical {
     }
 }
 
-impl Into<http::client::Settings> for &'_ Endpoint {
-    fn into(self) -> http::client::Settings {
+impl Param<http::client::Settings> for Endpoint {
+    fn param(&self) -> http::client::Settings {
         match self.concrete.logical.protocol {
             http::Version::H2 => http::client::Settings::H2,
             http::Version::Http1 => match self.metadata.protocol_hint() {

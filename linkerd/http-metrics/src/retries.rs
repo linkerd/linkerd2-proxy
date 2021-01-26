@@ -36,9 +36,9 @@ impl<T: Hash + Eq> Retries<T> {
         Report::new(retain_idle, self.0)
     }
 
-    pub fn get_handle(&self, target: impl Into<T>) -> Handle {
+    pub fn get_handle(&self, target: T) -> Handle {
         let mut reg = self.0.lock().expect("retry metrics registry poisoned");
-        Handle(reg.entry(target.into()).or_default().clone())
+        Handle(reg.entry(target).or_default().clone())
     }
 }
 

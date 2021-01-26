@@ -290,10 +290,8 @@ impl TrustAnchors {
             server_config: Arc::new(server),
         })
     }
-}
 
-impl Into<Arc<rustls::ClientConfig>> for &'_ TrustAnchors {
-    fn into(self) -> Arc<rustls::ClientConfig> {
+    pub fn client_config(&self) -> Arc<rustls::ClientConfig> {
         self.0.clone()
     }
 }
@@ -341,22 +339,16 @@ impl CrtKey {
     pub fn expiry(&self) -> SystemTime {
         self.expiry
     }
-}
 
-impl Into<LocalId> for &'_ CrtKey {
-    fn into(self) -> LocalId {
-        self.id.clone()
+    pub fn id(&self) -> &LocalId {
+        &self.id
     }
-}
 
-impl Into<Arc<rustls::ClientConfig>> for &'_ CrtKey {
-    fn into(self) -> Arc<rustls::ClientConfig> {
+    pub fn client_config(&self) -> Arc<rustls::ClientConfig> {
         self.client_config.clone()
     }
-}
 
-impl Into<Arc<rustls::ServerConfig>> for &'_ CrtKey {
-    fn into(self) -> Arc<rustls::ServerConfig> {
+    pub fn server_config(&self) -> Arc<rustls::ServerConfig> {
         self.server_config.clone()
     }
 }

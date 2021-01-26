@@ -1,4 +1,4 @@
-use crate::app_core::{io::BoxedIo, tls, Error};
+use crate::app_core::{io::BoxedIo, svc::stack::Param, tls, Error};
 use hyper::{body::HttpBody, Body, Request, Response};
 use std::{
     fmt,
@@ -61,7 +61,7 @@ impl Server {
     pub fn run<E>(self) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static
     where
         E: std::fmt::Debug,
-        for<'e> &'e E: Into<tls::ConditionalClientTls>,
+        E: Param<tls::ConditionalClientTls>,
     {
         let Self { f, settings } = self;
         let f = Arc::new(Mutex::new(f));

@@ -12,6 +12,7 @@ linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", ta
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }
+linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { version = "0.4", default-features = false }

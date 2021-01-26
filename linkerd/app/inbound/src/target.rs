@@ -3,7 +3,9 @@ use linkerd_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr,
     http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, tap},
-    stack_tracing, svc, tls,
+    stack_tracing,
+    svc::{self, stack::Param},
+    tls,
     transport::{self, listen},
     transport_header::TransportHeader,
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
@@ -71,14 +73,14 @@ impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
     }
 }
 
-impl Into<SocketAddr> for &'_ TcpAccept {
-    fn into(self) -> SocketAddr {
+impl Param<SocketAddr> for TcpAccept {
+    fn param(&self) -> SocketAddr {
         self.target_addr
     }
 }
 
-impl Into<transport::labels::Key> for &'_ TcpAccept {
-    fn into(self) -> transport::labels::Key {
+impl Param<transport::labels::Key> for TcpAccept {
+    fn param(&self) -> transport::labels::Key {
         transport::labels::Key::accept(
             transport::labels::Direction::In,
             self.tls.clone(),
@@ -89,8 +91,8 @@ impl Into<transport::labels::Key> for &'_ TcpAccept {
 
 // === impl HttpEndpoint ===
 
-impl Into<http::client::Settings> for &'_ HttpEndpoint {
-    fn into(self) -> http::client::Settings {
+impl Param<http::client::Settings> for HttpEndpoint {
+    fn param(&self) -> http::client::Settings {
         self.settings
     }
 }
@@ -127,14 +129,14 @@ impl From<HttpEndpoint> for TcpEndpoint {
     }
 }
 
-impl Into<u16> for TcpEndpoint {
-    fn into(self) -> u16 {
+impl Param<u16> for TcpEndpoint {
+    fn param(&self) -> u16 {
         self.port
     }
 }
 
-impl Into<transport::labels::Key> for &'_ TcpEndpoint {
-    fn into(self) -> transport::labels::Key {
+impl Param<transport::labels::Key> for TcpEndpoint {
+    fn param(&self) -> transport::labels::Key {
         transport::labels::Key::InboundConnect
     }
 }
@@ -152,33 +154,33 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 // === impl Target ===
 
 /// Used for profile discovery.
-impl Into<Addr> for &'_ Target {
-    fn into(self) -> Addr {
+impl Param<Addr> for Target {
+    fn param(&self) -> Addr {
         self.dst.clone()
     }
 }
 
 /// Used for profile discovery.
-impl Into<SocketAddr> for &'_ Target {
-    fn into(self) -> SocketAddr {
+impl Param<SocketAddr> for Target {
+    fn param(&self) -> SocketAddr {
         self.target_addr
     }
 }
 
-impl Into<tls::ConditionalClientTls> for &'_ Target {
-    fn into(self) -> tls::ConditionalClientTls {
+impl Param<tls::ConditionalClientTls> for Target {
+    fn param(&self) -> tls::ConditionalClientTls {
         Conditional::None(tls::NoClientTls::Loopback)
     }
 }
 
-impl Into<transport::labels::Key> for &'_ Target {
-    fn into(self) -> transport::labels::Key {
+impl Param<transport::labels::Key> for Target {
+    fn param(&self) -> transport::labels::Key {
         transport::labels::Key::InboundConnect
     }
 }
 
-impl Into<metrics::EndpointLabels> for &'_ Target {
-    fn into(self) -> metrics::EndpointLabels {
+impl Param<metrics::EndpointLabels> for Target {
+    fn param(&self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
             tls: self.tls.clone(),
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
@@ -309,8 +311,8 @@ impl From<(Option<profiles::Receiver>, Target)> for Logical {
     }
 }
 
-impl Into<Option<profiles::Receiver>> for &'_ Logical {
-    fn into(self) -> Option<profiles::Receiver> {
+impl Param<Option<profiles::Receiver>> for Logical {
+    fn param(&self) -> Option<profiles::Receiver> {
         self.profiles.clone()
     }
 }

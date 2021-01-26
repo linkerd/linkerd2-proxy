@@ -3,6 +3,7 @@ use linkerd2_proxy_api::identity as api;
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_metrics::Counter;
+use linkerd_stack::Param;
 use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::convert::TryFrom;
@@ -199,30 +200,38 @@ impl LocalCrtKey {
     pub fn name(&self) -> &id::Name {
         self.id.as_ref()
     }
-}
 
-impl Into<tls::client::Config> for &'_ LocalCrtKey {
-    fn into(self) -> tls::client::Config {
+    pub fn client_config(&self) -> tls::client::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
-            return c.into();
+            return c.client_config();
         }
 
-        (&self.trust_anchors).into()
+        self.trust_anchors.client_config()
     }
-}
 
-impl Into<id::LocalId> for &'_ LocalCrtKey {
-    fn into(self) -> id::LocalId {
-        self.id().clone()
-    }
-}
-
-impl Into<tls::server::Config> for &'_ LocalCrtKey {
-    fn into(self) -> tls::server::Config {
+    pub fn server_config(&self) -> tls::server::Config {
         if let Some(ref c) = *self.crt_key.borrow() {
-            return c.into();
+            return c.server_config();
         }
 
         tls::server::empty_config()
+    }
+}
+
+impl Param<tls::client::Config> for LocalCrtKey {
+    fn param(&self) -> tls::client::Config {
+        self.client_config()
+    }
+}
+
+impl Param<tls::server::Config> for LocalCrtKey {
+    fn param(&self) -> tls::server::Config {
+        self.server_config()
+    }
+}
+
+impl Param<id::LocalId> for LocalCrtKey {
+    fn param(&self) -> id::LocalId {
+        self.id().clone()
     }
 }

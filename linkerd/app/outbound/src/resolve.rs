@@ -12,7 +12,7 @@ use linkerd_app_core::{
     },
     svc::{
         layer,
-        stack::{Filter, Predicate},
+        stack::{Filter, Param, Predicate},
         NewService,
     },
     Addr, Error,
@@ -31,8 +31,7 @@ type ResolveStack<R> = map_endpoint::Resolve<
 
 fn new_resolve<T, R>(resolve: R) -> ResolveStack<R>
 where
-    T: Clone,
-    for<'t> &'t T: Into<std::net::SocketAddr>,
+    T: Clone + Param<std::net::SocketAddr>,
     EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
     R: Resolve<Addr, Endpoint = Metadata>,
     R::Future: Send,
@@ -51,8 +50,7 @@ pub fn layer<T, E, R, N>(
     watchdog: Duration,
 ) -> impl layer::Layer<N, Service = Stack<E, R, N>> + Clone
 where
-    T: Clone,
-    for<'t> &'t T: Into<std::net::SocketAddr>,
+    T: Clone + Param<std::net::SocketAddr>,
     R: Resolve<Addr, Endpoint = Metadata> + Clone,
     R::Resolution: Send,
     R::Future: Send,
@@ -94,7 +92,7 @@ type Resolution<R> =
 
 impl<T, S> tower::Service<T> for RecoverDefault<S>
 where
-    for<'t> &'t T: Into<std::net::SocketAddr>,
+    T: Param<std::net::SocketAddr>,
     S: Resolve<T, Endpoint = Metadata, Error = Error>,
     S::Future: Send + 'static,
     S::Resolution: Send + 'static,
@@ -108,7 +106,7 @@ where
     }
 
     fn call(&mut self, t: T) -> Self::Future {
-        let addr = (&t).into();
+        let addr = t.param();
         Box::pin(
             self.0
                 .resolve(t)

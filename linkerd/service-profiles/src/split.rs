@@ -3,7 +3,7 @@ use futures::{prelude::*, ready};
 use indexmap::IndexSet;
 use linkerd_addr::Addr;
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 use std::{
@@ -57,8 +57,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: Clone,
-    for<'t> &'t T: Into<Addr> + Into<Option<Receiver>>,
+    T: Clone + Param<Addr> + Param<Option<Receiver>>,
     N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -72,7 +71,7 @@ where
         //
         // Otherwise, profile lookup was rejected and, therefore, no concrete
         // address is provided.
-        match Into::<Option<Receiver>>::into(&target) {
+        match target.param() {
             None => {
                 trace!("Building default service");
                 Split::Default(self.inner.new_service((None, target)))
@@ -81,7 +80,7 @@ where
                 let mut targets = rx.borrow().targets.clone();
                 if targets.is_empty() {
                     targets.push(Target {
-                        addr: (&target).into(),
+                        addr: target.param(),
                         weight: 1,
                     })
                 }
@@ -119,8 +118,7 @@ where
 impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
-    T: Clone,
-    for<'t> &'t T: Into<Addr>,
+    T: Clone + Param<Addr>,
     N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
@@ -145,7 +143,7 @@ where
                 if let Some(Profile { mut targets, .. }) = update {
                     if targets.is_empty() {
                         targets.push(Target {
-                            addr: (&inner.target).into(),
+                            addr: inner.target.param(),
                             weight: 1,
                         })
                     }

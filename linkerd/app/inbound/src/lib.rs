@@ -20,7 +20,8 @@ use linkerd_app_core::{
     opencensus::proto::trace::v1 as oc,
     profiles,
     proxy::{identity::LocalCrtKey, tap, tcp},
-    svc, tls,
+    svc::{self, stack::Param},
+    tls,
     transport::{self, listen},
     Error, NameAddr, NameMatch,
 };
@@ -42,7 +43,7 @@ pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 // === impl Config ===
 
-pub fn tcp_connect<T: Into<u16>>(
+pub fn tcp_connect<T: Param<u16>>(
     config: &ConnectConfig,
 ) -> impl svc::Service<
     T,
@@ -53,7 +54,7 @@ pub fn tcp_connect<T: Into<u16>>(
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
     svc::stack(transport::ConnectTcp::new(config.keepalive))
-        .push_map_target(|t: T| ([127, 0, 0, 1], t.into()))
+        .push_map_target(|t: T| SocketAddr::from(([127, 0, 0, 1], t.param())))
         // Limits the time we wait for a connection to be established.
         .push_timeout(config.timeout)
         .push(svc::stack::BoxFuture::layer())

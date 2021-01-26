@@ -3,7 +3,7 @@ use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
-use linkerd_stack::{NewService, Proxy};
+use linkerd_stack::{NewService, Param, Proxy};
 use pin_project::{pin_project, pinned_drop};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -117,7 +117,7 @@ where
 
 impl<T, N, K, C> NewService<T> for NewHttpMetrics<N, K, C>
 where
-    for<'t> &'t T: Into<K>,
+    T: Param<K>,
     K: Hash + Eq,
     N: NewService<T>,
     C: ClassifyResponse + Default + Send + Sync + 'static,
@@ -128,7 +128,7 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         let metrics = match self.registry.lock() {
             Ok(mut r) => Some(
-                r.entry((&target).into())
+                r.entry(target.param())
                     .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
                     .clone(),
             ),

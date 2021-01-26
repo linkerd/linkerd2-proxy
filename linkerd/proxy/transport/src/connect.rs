@@ -1,4 +1,5 @@
 use linkerd_io as io;
+use linkerd_stack::Param;
 use std::task::{Context, Poll};
 use std::{future::Future, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::net::TcpStream;
@@ -15,7 +16,7 @@ impl ConnectTcp {
     }
 }
 
-impl<T: Into<SocketAddr>> tower::Service<T> for ConnectTcp {
+impl<T: Param<SocketAddr>> tower::Service<T> for ConnectTcp {
     type Response = io::ScopedIo<TcpStream>;
     type Error = io::Error;
     type Future =
@@ -27,7 +28,7 @@ impl<T: Into<SocketAddr>> tower::Service<T> for ConnectTcp {
 
     fn call(&mut self, t: T) -> Self::Future {
         let keepalive = self.keepalive;
-        let addr = t.into();
+        let addr = t.param();
         debug!(peer.addr = %addr, "Connecting");
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;

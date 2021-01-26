@@ -38,3 +38,22 @@ pub use self::{
 };
 pub use tower::util::Either;
 pub use tower::util::{future_service, FutureService};
+
+/// Describes a stack target that can produce `T` typed parameters.
+///
+/// Stacks (usually layered `NewService` implementations) frequently need to be
+/// able to obtain configuration from the stack target, but stack modules are
+/// decoupled from any concrete target types. The `Param` trait provides a way to
+/// statically guarantee that a given target can provide a configuration
+/// parameter.
+pub trait Param<T> {
+    /// Produces a `T`-typed stack paramter.
+    fn param(&self) -> T;
+}
+
+/// The identity `Param`.
+impl<T: ToOwned> Param<T::Owned> for T {
+    fn param(&self) -> T::Owned {
+        self.to_owned()
+    }
+}

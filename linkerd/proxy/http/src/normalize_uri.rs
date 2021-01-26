@@ -15,7 +15,7 @@
 //! * Otherwise, the target's address is used (as provided by the target).
 
 use super::h1;
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 use std::{
     future::Future,
     net::SocketAddr,
@@ -50,13 +50,13 @@ impl<N> NewNormalizeUri<N> {
 
 impl<T, N> NewService<T> for NewNormalizeUri<N>
 where
-    for<'t> &'t T: Into<SocketAddr>,
+    T: Param<SocketAddr>,
     N: NewService<T>,
 {
     type Service = NormalizeUri<N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let target_addr = (&target).into();
+        let target_addr = target.param();
         let inner = self.inner.new_service(target);
         NormalizeUri::new(inner, target_addr)
     }
@@ -66,7 +66,7 @@ type MakeFuture<T, E> = Pin<Box<dyn Future<Output = Result<NormalizeUri<T>, E>> 
 
 impl<M, T> tower::Service<T> for NewNormalizeUri<M>
 where
-    for<'t> &'t T: Into<SocketAddr>,
+    T: Param<SocketAddr>,
     M: tower::Service<T>,
     M::Future: Send + 'static,
 {
@@ -79,7 +79,7 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let target_addr = (&target).into();
+        let target_addr = target.param();
         let fut = self.inner.call(target);
         Box::pin(async move {
             let inner = fut.await?;

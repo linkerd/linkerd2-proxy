@@ -12,7 +12,14 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
-use linkerd_app_core::{control::ControlAddr, dns, drain, proxy::http, serve, svc, Error};
+use linkerd_app_core::{
+    control::ControlAddr,
+    dns, drain,
+    proxy::http,
+    serve,
+    svc::{self, stack::Param},
+    Error,
+};
 use linkerd_app_gateway as gateway;
 pub(crate) use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
@@ -220,7 +227,7 @@ impl Config {
             let http_gateway = gateway.build(
                 outbound_http,
                 dst.profiles.clone(),
-                local_identity.as_ref().map(|l| l.into()),
+                local_identity.as_ref().map(Param::param),
             );
 
             let connect = inbound::tcp_connect(&inbound.proxy.connect);

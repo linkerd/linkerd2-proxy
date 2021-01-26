@@ -30,7 +30,7 @@ pub fn server<T, I, H, HSvc>(
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
 > + Clone
 where
-    for<'t> &'t T: Into<SocketAddr>,
+    T: svc::stack::Param<SocketAddr>,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>

@@ -2,7 +2,7 @@ use super::{Receiver, RequestMatch, Route};
 use crate::Profile;
 use futures::{future::ErrInto, prelude::*, ready, Stream};
 use linkerd_error::Error;
-use linkerd_stack::{layer, NewService, Proxy};
+use linkerd_stack::{layer, NewService, Param, Proxy};
 use std::{
     collections::HashMap,
     marker::PhantomData,
@@ -55,15 +55,14 @@ impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
 
 impl<T, M, N> NewService<T> for NewRouteRequest<M, N, N::Service>
 where
-    T: Clone,
-    for<'t> &'t T: Into<Option<Receiver>>,
+    T: Clone + Param<Option<Receiver>>,
     M: NewService<T>,
     N: NewService<(Route, T)> + Clone,
 {
     type Service = RouteRequest<T, M::Service, N, N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let rx = (&target).into().map(crate::stream_profile);
+        let rx = target.param().map(crate::stream_profile);
         let inner = self.inner.new_service(target.clone());
         let default = self
             .new_route
