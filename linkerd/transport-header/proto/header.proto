@@ -8,4 +8,18 @@ message Header {
 
   // An optional hostname. Intended for gateway forwarding.
   string name = 2;
+
+  // The session protocol, if one is known. When no protocol is specified, the
+  // connection is handled opaquely.
+  SessionProtocol session_protocol = 3;
+}
+
+message SessionProtocol {
+  message Http1 {}
+  message Http2 {}
+
+  oneof kind {
+    Http1 http1 = 1;
+    Http2 http2 = 2;
+  }
 }

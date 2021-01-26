@@ -1,7 +1,9 @@
 use crate::target::Endpoint;
 use linkerd_app_core::{
-    dns, io, svc, tls,
-    transport_header::{TransportHeader, PROTOCOL},
+    dns, io,
+    svc::{self, stack::Param},
+    tls,
+    transport_header::{SessionProtocol, TransportHeader, PROTOCOL},
     Error,
 };
 use std::{
@@ -36,6 +38,7 @@ impl<S> OpaqueTransport<S> {
 
 impl<S, P> svc::Service<Endpoint<P>> for OpaqueTransport<S>
 where
+    Endpoint<P>: Param<Option<SessionProtocol>>,
     S: svc::Service<Endpoint<P>> + Send + 'static,
     S::Error: Into<Error>,
     S::Response: io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin,
@@ -80,6 +83,8 @@ where
             }
         }
 
+        let protocol: Option<SessionProtocol> = ep.param();
+
         let connect = self.inner.call(ep);
         Box::pin(async move {
             let mut io = connect.await.map_err(Into::into)?;
@@ -90,6 +95,7 @@ where
                 let header = TransportHeader {
                     port: target_port,
                     name,
+                    protocol,
                 };
                 trace!(?header, "Writing transport header");
                 let sz = header.write(&mut io).await?;
@@ -168,6 +174,7 @@ mod test {
                 let hdr = TransportHeader {
                     port: ep.concrete.logical.orig_dst.port(),
                     name: None,
+                    protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
@@ -202,6 +209,7 @@ mod test {
                 let hdr = TransportHeader {
                     port: 5555,
                     name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                    protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
@@ -236,6 +244,7 @@ mod test {
                 let hdr = TransportHeader {
                     port: ep.concrete.logical.orig_dst.port(),
                     name: None,
+                    protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {

@@ -14,13 +14,22 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/transport.l5d.io.rs"));
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct TransportHeader {
     /// The target port.
     pub port: u16,
 
     /// The logical name of the target (service), if one is known.
     pub name: Option<Name>,
+
+    /// Indicates whether a protocol is known for the connection.
+    pub protocol: Option<SessionProtocol>,
+}
+
+#[derive(Clone, Debug, PartialEq, Hash)]
+pub enum SessionProtocol {
+    Http1,
+    Http2,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -96,6 +105,18 @@ impl TransportHeader {
                 .as_ref()
                 .map(|n| n.to_string())
                 .unwrap_or_default(),
+            session_protocol: self.protocol.as_ref().map(|p| match p {
+                SessionProtocol::Http1 => proto::SessionProtocol {
+                    kind: Some(proto::session_protocol::Kind::Http1(
+                        proto::session_protocol::Http1 {},
+                    )),
+                },
+                SessionProtocol::Http2 => proto::SessionProtocol {
+                    kind: Some(proto::session_protocol::Kind::Http2(
+                        proto::session_protocol::Http2 {},
+                    )),
+                },
+            }),
         }
     }
 
@@ -171,9 +192,17 @@ impl TransportHeader {
             ));
         }
 
+        let protocol = h.session_protocol.and_then(|p| {
+            p.kind.map(|k| match k {
+                proto::session_protocol::Kind::Http1(_) => SessionProtocol::Http1,
+                proto::session_protocol::Kind::Http2(_) => SessionProtocol::Http2,
+            })
+        });
+
         Ok(Some(Self {
-            name,
             port: h.port as u16,
+            name,
+            protocol,
         }))
     }
 }
@@ -187,6 +216,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
+            protocol: Some(SessionProtocol::Http2),
         };
         let mut rx = {
             let mut buf = BytesMut::new();
@@ -199,8 +229,7 @@ mod tests {
             .await
             .expect("decodes")
             .expect("decodes");
-        assert_eq!(header.port, h.port);
-        assert_eq!(header.name, h.name);
+        assert_eq!(header, h);
         assert_eq!(buf.as_ref(), b"12345");
     }
 
@@ -209,6 +238,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
+            protocol: Some(SessionProtocol::Http1),
         };
         let mut rx = {
             let mut buf = BytesMut::new();
@@ -222,8 +252,7 @@ mod tests {
             .await
             .expect("must decode")
             .expect("must decode");
-        assert_eq!(header.port, h.port);
-        assert_eq!(header.name, h.name);
+        assert_eq!(header, h);
         assert_eq!(&buf[..], b"12345");
     }
 
@@ -245,6 +274,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
+            protocol: None,
         };
         let mut rx = {
             let msg = {
@@ -271,8 +301,7 @@ mod tests {
             .await
             .expect("I/O must not error")
             .expect("header must be present");
-        assert_eq!(header.port, h.port);
-        assert_eq!(header.name, h.name);
+        assert_eq!(header, h);
 
         let mut buf = [0u8; 5];
         rx.read_exact(&mut buf)

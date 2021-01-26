@@ -2,9 +2,7 @@ use linkerd_app_core::{
     metrics, profiles,
     proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
     svc::stack::Param,
-    tls,
-    transport::{self, listen},
-    transport_header, Addr, Conditional,
+    tls, transport, transport_header, Addr, Conditional,
 };
 use std::net::SocketAddr;
 
@@ -40,21 +38,6 @@ pub struct Endpoint<P> {
 }
 
 // === impl Accept ===
-
-impl From<listen::Addrs> for Accept<()> {
-    fn from(addrs: listen::Addrs) -> Self {
-        Self {
-            orig_dst: addrs.target_addr(),
-            protocol: (),
-        }
-    }
-}
-
-impl<P> From<(P, Accept<()>)> for Accept<P> {
-    fn from((protocol, Accept { orig_dst, .. }): (P, Accept<()>)) -> Self {
-        Self { orig_dst, protocol }
-    }
-}
 
 impl<P> Param<SocketAddr> for Accept<P> {
     fn param(&self) -> SocketAddr {
