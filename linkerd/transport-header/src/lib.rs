@@ -14,7 +14,7 @@ mod proto {
     include!(concat!(env!("OUT_DIR"), "/transport.l5d.io.rs"));
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct TransportHeader {
     /// The target port.
     pub port: u16,
@@ -25,7 +25,7 @@ pub struct TransportHeader {
     pub protocol: Option<SessionProtocol>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum SessionProtocol {
     Http1,
     H2,
@@ -215,6 +215,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
+            protocol: Some(SessionProtocol::H2),
         };
         let mut rx = {
             let mut buf = BytesMut::new();
@@ -227,8 +228,7 @@ mod tests {
             .await
             .expect("decodes")
             .expect("decodes");
-        assert_eq!(header.port, h.port);
-        assert_eq!(header.name, h.name);
+        assert_eq!(header, h);
         assert_eq!(buf.as_ref(), b"12345");
     }
 
@@ -237,6 +237,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
+            protocol: Some(SessionProtocol::Http1),
         };
         let mut rx = {
             let mut buf = BytesMut::new();
@@ -250,8 +251,7 @@ mod tests {
             .await
             .expect("must decode")
             .expect("must decode");
-        assert_eq!(header.port, h.port);
-        assert_eq!(header.name, h.name);
+        assert_eq!(header, h);
         assert_eq!(&buf[..], b"12345");
     }
 
@@ -273,6 +273,7 @@ mod tests {
         let header = TransportHeader {
             port: 4040,
             name: Some(Name::from_str("foo.bar.example.com").unwrap()),
+            protocol: None,
         };
         let mut rx = {
             let msg = {
@@ -299,8 +300,7 @@ mod tests {
             .await
             .expect("I/O must not error")
             .expect("header must be present");
-        assert_eq!(header.port, h.port);
-        assert_eq!(header.name, h.name);
+        assert_eq!(header, h);
 
         let mut buf = [0u8; 5];
         rx.read_exact(&mut buf)

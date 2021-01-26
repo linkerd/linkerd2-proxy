@@ -174,6 +174,7 @@ mod test {
                 let hdr = TransportHeader {
                     port: ep.concrete.logical.orig_dst.port(),
                     name: None,
+                    protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
@@ -208,6 +209,7 @@ mod test {
                 let hdr = TransportHeader {
                     port: 5555,
                     name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
+                    protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
@@ -242,6 +244,7 @@ mod test {
                 let hdr = TransportHeader {
                     port: ep.concrete.logical.orig_dst.port(),
                     name: None,
+                    protocol: None,
                 };
                 let buf = hdr.encode_prefaced_buf().expect("Must encode");
                 future::ready(Ok::<_, io::Error>(Io {
