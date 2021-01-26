@@ -119,9 +119,12 @@ where
 
         let handshake = match self.local.as_ref() {
             Some(local) => {
-                // If ALPN protocols are configured by the endpoint, clone the
-                // configuration and set the protocols. Otherwise, just use the
-                // TLS configuration without modification.
+                // Build a rustls ClientConfig for this connection.
+                //
+                // If ALPN protocols are configured by the endpoint, we have to clone the
+                // entire configuration and set the protocols. If there are no
+                // ALPN options, clone the Arc'd base configuration without
+                // extra allocation.
                 //
                 // TODO it would be better to avoid cloning the whole TLS config
                 // per-connection.
