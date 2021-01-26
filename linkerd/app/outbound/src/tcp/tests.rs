@@ -50,7 +50,7 @@ async fn plaintext_tcp() {
     srv_io.read(b"hello").write(b"world");
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn(target_addr, move |endpoint: Endpoint| {
-        assert!(endpoint.identity.is_none());
+        assert!(endpoint.tls.is_none());
         Ok(srv_io.build())
     });
 
@@ -112,12 +112,12 @@ async fn tls_when_hinted() {
     let connect = support::connect()
         // The plaintext endpoint should use plaintext...
         .endpoint_fn(plain_addr, move |endpoint: Endpoint| {
-            assert!(endpoint.identity.is_none());
+            assert!(endpoint.tls.is_none());
             let io = tls_srv_io.build();
             Ok(io)
         })
         .endpoint_fn(tls_addr, move |endpoint: Endpoint| {
-            assert_eq!(endpoint.identity, Conditional::Some(id_name2.clone()));
+            assert_eq!(endpoint.tls, Conditional::Some(id_name2.clone().into()));
             let io = srv_io.build();
             Ok(io)
         });
@@ -175,7 +175,7 @@ async fn resolutions_are_reused() {
     let connect = support::connect().endpoint(
         addr,
         Connection {
-            server_id: Conditional::Some(id_name.clone()),
+            tls: Conditional::Some(id_name.clone().into()),
             ..Connection::default()
         },
     );
@@ -263,7 +263,7 @@ async fn load_balances() {
         connect = connect.endpoint(
             addr,
             Connection {
-                server_id: Conditional::Some(id_name.clone()),
+                tls: Conditional::Some(id_name.clone().into()),
                 count: conns.clone(),
                 ..Connection::default()
             },
@@ -358,7 +358,7 @@ async fn load_balancer_add_endpoints() {
         connect = connect.endpoint(
             addr,
             Connection {
-                server_id: Conditional::Some(id_name.clone()),
+                tls: Conditional::Some(id_name.clone().into()),
                 count: conns.clone(),
                 ..Connection::default()
             },
@@ -472,7 +472,7 @@ async fn load_balancer_remove_endpoints() {
         connect = connect.endpoint(
             addr,
             Connection {
-                server_id: Conditional::Some(id_name.clone()),
+                tls: Conditional::Some(id_name.clone().into()),
                 enabled: enabled.clone(),
                 ..Default::default()
             },
@@ -566,7 +566,7 @@ async fn no_profiles_when_outside_search_nets() {
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect()
         .endpoint_fn(profile_addr, move |endpoint: Endpoint| {
-            assert_eq!(endpoint.identity, Conditional::Some(id_name2.clone()));
+            assert_eq!(endpoint.tls, Conditional::Some(id_name2.clone().into()));
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")
@@ -575,7 +575,7 @@ async fn no_profiles_when_outside_search_nets() {
             Ok(io)
         })
         .endpoint_fn(no_profile_addr, move |endpoint: Endpoint| {
-            assert!(endpoint.identity.is_none());
+            assert!(endpoint.tls.is_none());
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")
@@ -650,7 +650,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     let connect = support::connect().endpoint(
         ep,
         Connection {
-            server_id: Conditional::Some(id_name.clone()),
+            tls: Conditional::Some(id_name.clone().into()),
             ..Connection::default()
         },
     );
@@ -710,7 +710,7 @@ async fn profile_endpoint_propagates_conn_errors() {
         .endpoint(
             ep2,
             Connection {
-                server_id: Conditional::Some(id_name.clone()),
+                tls: Conditional::Some(id_name.clone().into()),
                 ..Connection::default()
             },
         );
@@ -757,7 +757,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 }
 
 struct Connection {
-    server_id: tls::ConditionalClientTls,
+    tls: tls::ConditionalClientTls,
     count: Arc<AtomicUsize>,
     enabled: Arc<AtomicBool>,
 }
@@ -765,7 +765,7 @@ struct Connection {
 impl Default for Connection {
     fn default() -> Self {
         Self {
-            server_id: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
+            tls: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
             count: Arc::new(AtomicUsize::new(0)),
             enabled: Arc::new(AtomicBool::new(true)),
         }
@@ -781,7 +781,7 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
             );
             let num = self.count.fetch_add(1, Ordering::Release) + 1;
             tracing::info!(?endpoint, num, "connecting");
-            assert_eq!(endpoint.identity, self.server_id);
+            assert_eq!(endpoint.tls, self.tls);
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")

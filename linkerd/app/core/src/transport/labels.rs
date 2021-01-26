@@ -88,7 +88,7 @@ impl<'t> FmtLabels for TlsAccept<'t> {
             Conditional::None(why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
-            Conditional::Some(tls::ServerTls::Established { client_id }) => match client_id {
+            Conditional::Some(tls::ServerTls::Established { client_id, .. }) => match client_id {
                 Some(id) => write!(f, "tls=\"true\",client_id=\"{}\"", id),
                 None => write!(f, "tls=\"true\",client_id=\"\""),
             },
@@ -116,8 +116,8 @@ impl<'t> FmtLabels for TlsConnect<'t> {
             Conditional::None(why) => {
                 write!(f, "tls=\"no_identity\",no_tls_reason=\"{}\"", why)
             }
-            Conditional::Some(id) => {
-                write!(f, "tls=\"true\",server_id=\"{}\"", id)
+            Conditional::Some(tls::ClientTls { server_id, .. }) => {
+                write!(f, "tls=\"true\",server_id=\"{}\"", server_id)
             }
         }
     }

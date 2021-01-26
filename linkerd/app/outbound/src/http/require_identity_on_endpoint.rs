@@ -19,7 +19,7 @@ pub(super) struct NewRequireIdentity<N> {
 
 #[derive(Clone, Debug)]
 pub(super) struct RequireIdentity<N> {
-    server_id: tls::ConditionalClientTls,
+    tls: tls::ConditionalClientTls,
     inner: N,
 }
 
@@ -42,9 +42,9 @@ where
     type Service = RequireIdentity<N::Service>;
 
     fn new_service(&mut self, target: Endpoint) -> Self::Service {
-        let server_id = target.identity.clone();
+        let tls = target.tls.clone();
         let inner = self.inner.new_service(target);
-        RequireIdentity { server_id, inner }
+        RequireIdentity { tls, inner }
     }
 }
 
@@ -72,8 +72,8 @@ where
         // match or there is no `peer_identity`, then we fail the request
         if let Some(require_id) = identity_from_header(&request, L5D_REQUIRE_ID) {
             debug!("found l5d-require-id={:?}", require_id.as_ref());
-            match self.server_id.as_ref() {
-                Conditional::Some(server_id) => {
+            match self.tls.as_ref() {
+                Conditional::Some(tls::ClientTls { server_id, .. }) => {
                     if require_id != *server_id.as_ref() {
                         let e = IdentityRequired {
                             required: require_id.into(),

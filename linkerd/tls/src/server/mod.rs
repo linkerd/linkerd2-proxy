@@ -1,6 +1,6 @@
 mod client_hello;
 
-use crate::{LocalId, ServerId};
+use crate::{LocalId, NegotiatedProtocol, ServerId};
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
@@ -9,6 +9,7 @@ use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
 use linkerd_stack::{layer, NewService};
+use rustls::Session;
 use std::{
     fmt,
     pin::Pin,
@@ -17,7 +18,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tokio_rustls::server::TlsStream;
+pub use tokio_rustls::server::TlsStream;
 use tower::util::ServiceExt;
 use tracing::{debug, trace, warn};
 
@@ -36,8 +37,13 @@ pub struct ClientId(pub id::Name);
 /// Indicates a serverside connection's TLS status.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ServerTls {
-    Established { client_id: Option<ClientId> },
-    Passthru { sni: ServerId },
+    Established {
+        client_id: Option<ClientId>,
+        negotiated_protocol: Option<NegotiatedProtocol>,
+    },
+    Passthru {
+        sni: ServerId,
+    },
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -205,9 +211,8 @@ where
         Ok(Some(ServerId(sni))) if sni == local_id => {
             trace!(%sni, "Identified matching SNI via peek");
             // Terminate the TLS stream.
-            let (client_id, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
-            let tls = Conditional::Some(ServerTls::Established { client_id });
-            return Ok((tls, EitherIo::Right(io)));
+            let (tls, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
+            return Ok((Conditional::Some(tls), EitherIo::Right(io)));
         }
 
         Ok(Some(sni)) => {
@@ -235,10 +240,9 @@ where
             Ok(Some(ServerId(sni))) if sni == local_id => {
                 trace!(%sni, "Identified matching SNI via buffered read");
                 // Terminate the TLS stream.
-                let (client_id, io) =
+                let (tls, io) =
                     handshake(tls_config.clone(), PrefixedIo::new(buf.freeze(), io)).await?;
-                let tls = Conditional::Some(ServerTls::Established { client_id });
-                return Ok((tls, EitherIo::Right(io)));
+                return Ok((Conditional::Some(tls), EitherIo::Right(io)));
             }
 
             Ok(Some(sni)) => {
@@ -270,23 +274,32 @@ where
     Ok((NO_TLS_META, io))
 }
 
-async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(Option<ClientId>, TlsStream<T>)>
+async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(ServerTls, TlsStream<T>)>
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
-    let tls = tokio_rustls::TlsAcceptor::from(tls_config)
+    let io = tokio_rustls::TlsAcceptor::from(tls_config)
         .accept(io)
         .await?;
 
     // Determine the peer's identity, if it exist.
-    let client_id = client_identity(&tls);
+    let client_id = client_identity(&io);
 
-    trace!(client.id = ?client_id, "Accepted TLS connection");
-    Ok((client_id, tls))
+    let negotiated_protocol = io
+        .get_ref()
+        .1
+        .get_alpn_protocol()
+        .map(|b| NegotiatedProtocol(b.into()));
+
+    debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
+    let tls = ServerTls::Established {
+        client_id,
+        negotiated_protocol,
+    };
+    Ok((tls, io))
 }
 
 fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
-    use rustls::Session;
     use webpki::GeneralDNSNameRef;
 
     let (_io, session) = tls.get_ref();

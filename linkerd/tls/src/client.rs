@@ -6,6 +6,7 @@ use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::layer;
+use rustls::Session;
 use std::{
     fmt,
     future::Future,
@@ -14,12 +15,23 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio_rustls::client::TlsStream;
+pub use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
 
 /// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerId(pub id::Name);
+
+/// A stack paramter that configures a `Client` to establish a TLS connection.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ClientTls {
+    pub server_id: ServerId,
+    pub alpn: Option<AlpnProtocols>,
+}
+
+/// A stack param that configures the available ALPN protocols.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct AlpnProtocols(pub Vec<Vec<u8>>);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NoClientTls {
@@ -38,8 +50,9 @@ pub enum NoClientTls {
     NotProvidedByServiceDiscovery,
 }
 
-/// Indicates whether the target server endpoint has a known TLS identity.
-pub type ConditionalClientTls = Conditional<ServerId, NoClientTls>;
+/// A stack paramater that indicates whether the target server endpoint has a
+/// known TLS identity.
+pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
 pub type Config = Arc<rustls::ClientConfig>;
 
@@ -53,7 +66,18 @@ type Connect<F, I> = MapOk<F, fn(I) -> io::EitherIo<I, TlsStream<I>>>;
 type Handshake<I> =
     Pin<Box<dyn Future<Output = io::Result<io::EitherIo<I, TlsStream<I>>>> + Send + 'static>>;
 
-pub type Io<T> = io::EitherIo<T, TlsStream<T>>;
+pub type Io<I> = io::EitherIo<I, TlsStream<I>>;
+
+// === impl ClientTls ===
+
+impl From<ServerId> for ClientTls {
+    fn from(server_id: ServerId) -> Self {
+        Self {
+            server_id,
+            alpn: None,
+        }
+    }
+}
 
 // === impl Client ===
 
@@ -85,26 +109,48 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let tls = match self.local.as_ref() {
-            Some(l) => tokio_rustls::TlsConnector::from(l.into()),
-            None => {
-                trace!("Local identity disabled");
-                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
-            }
-        };
-        let server_id = match (&target).into() {
-            Conditional::Some(ServerId(id)) => id,
+        let ClientTls { server_id, alpn } = match (&target).into() {
+            Conditional::Some(tls) => tls,
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
                 return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
             }
         };
 
-        debug!(target.id = ?server_id, "Initiating TLS connection");
+        let handshake = match self.local.as_ref() {
+            Some(local) => {
+                // Build a rustls ClientConfig for this connection.
+                //
+                // If ALPN protocols are configured by the endpoint, we have to clone the
+                // entire configuration and set the protocols. If there are no
+                // ALPN options, clone the Arc'd base configuration without
+                // extra allocation.
+                //
+                // TODO it would be better to avoid cloning the whole TLS config
+                // per-connection.
+                match alpn {
+                    None => tokio_rustls::TlsConnector::from(local.into()),
+                    Some(AlpnProtocols(protocols)) => {
+                        let mut config: rustls::ClientConfig = local.into().as_ref().clone();
+                        config.alpn_protocols = protocols;
+                        tokio_rustls::TlsConnector::from(Arc::new(config))
+                    }
+                }
+            }
+            None => {
+                trace!("Local identity disabled");
+                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
+            }
+        };
+
+        debug!(server.id = %server_id, "Initiating TLS connection");
         let connect = self.inner.call(target);
         Either::Right(Box::pin(async move {
             let io = connect.await?;
-            let io = tls.connect((&server_id).into(), io).await?;
+            let io = handshake.connect((&server_id.0).into(), io).await?;
+            if let Some(alpn) = io.get_ref().1.get_alpn_protocol() {
+                debug!(alpn = ?std::str::from_utf8(alpn));
+            }
             Ok(io::EitherIo::Right(io))
         }))
     }
@@ -155,5 +201,21 @@ impl fmt::Display for NoClientTls {
             }
             Self::IngressNonHttp => write!(f, "ingress_non_http"),
         }
+    }
+}
+
+// === impl AlpnProtocols ===
+
+impl fmt::Debug for AlpnProtocols {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_tuple("AlpnProtocols");
+        for p in self.0.iter() {
+            if let Ok(s) = std::str::from_utf8(p) {
+                dbg.field(&s);
+            } else {
+                dbg.field(p);
+            }
+        }
+        dbg.finish()
     }
 }

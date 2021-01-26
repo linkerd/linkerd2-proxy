@@ -53,6 +53,14 @@ impl<I> ScopedIo<I> {
             io,
         }
     }
+
+    pub fn get_ref(&self) -> &I {
+        &self.io
+    }
+
+    pub fn get_mut(&mut self) -> &mut I {
+        &mut self.io
+    }
 }
 
 #[async_trait::async_trait]

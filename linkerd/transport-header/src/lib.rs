@@ -26,6 +26,7 @@ pub struct TransportHeader {
 #[derive(Clone, Debug, Default)]
 pub struct DetectHeader(());
 
+pub const PROTOCOL: &[u8] = b"transport.l5d.io/v1";
 const PREFACE: &[u8] = b"transport.l5d.io/v1\r\n\r\n";
 const PREFACE_AND_SIZE_LEN: usize = PREFACE.len() + 4;
 

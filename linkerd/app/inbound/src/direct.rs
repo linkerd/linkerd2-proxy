@@ -10,16 +10,21 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc, tls,
     transport::{listen, metrics::SensorIo},
-    transport_header::{DetectHeader, TransportHeader},
+    transport_header::{self, DetectHeader, TransportHeader},
     Error, DST_OVERRIDE_HEADER,
 };
 use std::fmt::Debug;
 use tokio::sync::mpsc;
 
-#[derive(Default)]
-struct NonOpaqueRefused(());
+#[derive(Clone, Debug)]
+struct WithTransportHeaderAlpn(LocalCrtKey);
 
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
+
+/// Creates I/O errors when a connection cannot be forwarded because no transport
+/// header was present.
+#[derive(Debug, Default)]
+struct RefusedNoHeader(());
 
 /// Builds a stack that handles connections that target the proxy's inbound port
 /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
@@ -78,7 +83,7 @@ where
     let http_detect = svc::stack(http::server(&config, http, metrics, span_sink, drain))
         .push_cache(config.cache_max_idle_age)
         .push(svc::NewUnwrapOr::layer(
-            svc::Fail::<_, NonOpaqueRefused>::default(),
+            svc::Fail::<_, RefusedNoHeader>::default(),
         ))
         .push(detect::NewDetectService::timeout(
             detect_timeout,
@@ -99,9 +104,16 @@ where
             t.target_addr = (t.target_addr.ip(), h.port).into();
             t
         })
+        // We always try to detect a protocol header. We _can_ know whether it's
+        // expected based on the serverside ALPN (passed via the target), but
+        // it's easier to just do detection and handle the case when it's not
+        // present as an exception.
+        //
         // HTTP detection must *only* be performed when a transport
         // header is absent. When the header is present, we must
         // assume the protocol is opaque.
+        //
+        // TODO Stop supporting headerless connections after stable-2.10.
         .push(svc::NewUnwrapOr::layer(http_detect))
         .push(detect::NewDetectService::timeout(
             detect_timeout,
@@ -114,18 +126,40 @@ where
         .push(metrics.transport.layer_accept())
         .push_map_target(TcpAccept::from)
         .push(tls::NewDetectTls::layer(
-            // TODO set ALPN on these connections to indicate support
-            // for the transport header.
-            local_identity,
+            local_identity.map(WithTransportHeaderAlpn),
             config.detect_protocol_timeout,
         ))
         .check_new_service::<listen::Addrs, I>()
         .into_inner()
 }
 
-// === impl NonOpaqueRefused ===
+// === impl WithTransportHeaderAlpn ===
 
-impl Into<Error> for NonOpaqueRefused {
+impl Into<tls::server::Config> for &'_ WithTransportHeaderAlpn {
+    fn into(self) -> tls::server::Config {
+        // Copy the underlying TLS config and set an ALPN value.
+        //
+        // TODO: Avoid cloning the server config for every connection. It would
+        // be preferable if rustls::ServerConfig wrapped individual fields in an
+        // Arc so they could be overridden independently.
+        let c: tls::server::Config = (&self.0).into();
+        let mut config = c.as_ref().clone();
+        config
+            .alpn_protocols
+            .push(transport_header::PROTOCOL.into());
+        config.into()
+    }
+}
+
+impl Into<tls::LocalId> for &'_ WithTransportHeaderAlpn {
+    fn into(self) -> tls::LocalId {
+        (&self.0).into()
+    }
+}
+
+// === impl RefusedNoHeader ===
+
+impl Into<Error> for RefusedNoHeader {
     fn into(self) -> Error {
         Error::from(io::Error::new(
             io::ErrorKind::ConnectionRefused,

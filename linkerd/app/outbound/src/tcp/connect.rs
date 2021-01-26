@@ -21,11 +21,13 @@ pub fn stack<P>(
 > + Clone {
     let identity_disabled = local_identity.is_none();
     svc::stack(ConnectTcp::new(config.keepalive))
-        // Initiates mTLS if the target is configured with identity.
+        // Initiates mTLS if the target is configured with identity. The
+        // endpoint configures ALPN when there is an opaque transport hint OR
+        // when an authority override is present (indicating the target is a
+        // remote cluster gateway).
         .push(tls::Client::layer(local_identity))
-        // If the endpoint has an opaque transport hint, this layer ensures the
-        // transport header is written on the connection as soon as the
-        // connection is established.
+        // Encodes a transport header if the established connection is TLS'd and
+        // ALPN negotiation indicates support.
         .push(OpaqueTransport::layer())
         // Limits the time we wait for a connection to be established.
         .push_timeout(config.timeout)

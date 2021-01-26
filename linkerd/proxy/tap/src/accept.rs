@@ -78,6 +78,7 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
             ((Conditional::Some(tls), _), io) => {
                 if let tls::ServerTls::Established {
                     client_id: Some(id),
+                    ..
                 } = tls
                 {
                     if self.permitted_client_ids.contains(&id) {

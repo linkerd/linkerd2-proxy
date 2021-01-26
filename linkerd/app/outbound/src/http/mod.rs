@@ -89,7 +89,7 @@ impl tap::Inspect for Endpoint {
     }
 
     fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
-        self.identity.clone()
+        self.tls.clone()
     }
 
     fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
