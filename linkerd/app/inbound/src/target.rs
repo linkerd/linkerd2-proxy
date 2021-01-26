@@ -141,6 +141,14 @@ impl Param<transport::labels::Key> for TcpEndpoint {
     }
 }
 
+// Needed by `linkerd_app_test::Connect`
+#[cfg(test)]
+impl Into<SocketAddr> for TcpEndpoint {
+    fn into(self) -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], self.port))
+    }
+}
+
 // === impl Profile ===
 
 pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::Route {

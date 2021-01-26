@@ -33,7 +33,7 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
                     Duration::from_millis(500),
                     0.1,
                 )
-                .unwrap(),`
+                .unwrap(),
                 h1_settings: h1::PoolSettings {
                     max_idle: 1,
                     idle_timeout: Duration::from_secs(1),
