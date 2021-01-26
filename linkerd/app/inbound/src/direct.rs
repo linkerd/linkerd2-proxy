@@ -104,7 +104,7 @@ where
             t.target_addr = (t.target_addr.ip(), h.port).into();
             t
         })
-        // We always try to dect a protocol header. We _can_ know whether it's
+        // We always try to detect a protocol header. We _can_ know whether it's
         // expected based on the serverside ALPN (passed via the target), but
         // it's easier to just do detection and handle the case when it's not
         // present as an exception.

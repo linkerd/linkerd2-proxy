@@ -289,20 +289,24 @@ impl EndpointFromMetadata {
         // If we're transporting an opaque protocol OR we're communicating with
         // a gateway, then set an ALPN value indicating support for a transport
         // header.
-        let alpn = if metadata.opaque_transport_port().is_some()
-            || metadata.authority_override().is_some()
-        {
-            Some(tls::client::AlpnProtocols(vec![
-                transport_header::PROTOCOL.into()
-            ]))
-        } else {
-            None
-        };
+        let use_transport_header =
+            metadata.opaque_transport_port().is_some() || metadata.authority_override().is_some();
 
         metadata
             .identity()
             .cloned()
-            .map(move |server_id| Conditional::Some(tls::ClientTls { server_id, alpn }))
+            .map(move |server_id| {
+                Conditional::Some(tls::ClientTls {
+                    server_id,
+                    alpn: if use_transport_header {
+                        Some(tls::client::AlpnProtocols(vec![
+                            transport_header::PROTOCOL.into()
+                        ]))
+                    } else {
+                        None
+                    },
+                })
+            })
             .unwrap_or(Conditional::None(
                 tls::NoClientTls::NotProvidedByServiceDiscovery,
             ))

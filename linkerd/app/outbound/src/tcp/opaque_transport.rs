@@ -25,7 +25,7 @@ impl<S> OpaqueTransport<S> {
     /// Determines whether the connection has negotiated support for the
     /// transport header.
     #[inline]
-    fn negotiated_header<I: tls::HasNegotiatedProtocol>(io: &I) -> bool {
+    fn header_negotiated<I: tls::HasNegotiatedProtocol>(io: &I) -> bool {
         if let Some(tls::NegotiatedProtocolRef(protocol)) = io.negotiated_protocol() {
             protocol == PROTOCOL
         } else {
@@ -51,7 +51,7 @@ where
     }
 
     fn call(&mut self, mut ep: Endpoint<P>) -> Self::Future {
-        // Configure the target port from the endpoing. In opaque cases, this is
+        // Configure the target port from the endpoint. In opaque cases, this is
         // the application's actual port to be encoded in the header.
         let mut target_port = ep.addr.port();
 
@@ -86,7 +86,7 @@ where
 
             // If transport header support has been negotiated via ALPN, encode
             // the header and then return the socket.
-            if Self::negotiated_header(&io) {
+            if Self::header_negotiated(&io) {
                 let header = TransportHeader {
                     port: target_port,
                     name,
