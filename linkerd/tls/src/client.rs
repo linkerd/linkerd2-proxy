@@ -29,6 +29,10 @@ pub struct ClientTls {
     pub alpn: Option<AlpnProtocols>,
 }
 
+/// A stack param that configures the available ALPN protocols.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct AlpnProtocols(pub Vec<Vec<u8>>);
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum NoClientTls {
     /// Identity is administratively disabled.
@@ -51,10 +55,6 @@ pub enum NoClientTls {
 pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
 pub type Config = Arc<rustls::ClientConfig>;
-
-/// A stack param that configures the available ALPN protocols.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AlpnProtocols(pub Vec<Vec<u8>>);
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
@@ -198,5 +198,21 @@ impl fmt::Display for NoClientTls {
             }
             Self::IngressNonHttp => write!(f, "ingress_non_http"),
         }
+    }
+}
+
+// === impl AlpnProtocols ===
+
+impl fmt::Debug for AlpnProtocols {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut dbg = f.debug_tuple("AlpnProtocols");
+        for p in self.0.iter() {
+            if let Ok(s) = std::str::from_utf8(p) {
+                dbg.field(&s);
+            } else {
+                dbg.field(p);
+            }
+        }
+        dbg.finish()
     }
 }
