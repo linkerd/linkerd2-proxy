@@ -1124,7 +1124,8 @@ mod proxy_to_proxy {
     http1_tests! { proxy: |srv: server::Listening| async move {
         let ctrl = controller::new();
         let srv_addr = srv.addr;
-        let _profile_in = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
+        let dst = format!("transparency.test.svc.cluster.local:{}", srv_addr.port());
+        let _profile_in = ctrl.profile_tx_default(&dst, "transparency.test.svc.cluster.local");
         let ctrl = ctrl
             .run()
             .instrument(tracing::info_span!("ctrl", "inbound"))
@@ -1133,7 +1134,7 @@ mod proxy_to_proxy {
 
         let ctrl = controller::new();
         let _profile_out = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
-        let dst = ctrl.destination_tx(format!("transparency.test.svc.cluster.local:{}", srv_addr.port()));
+        let dst = ctrl.destination_tx(dst);
         dst.send_h2_hinted(inbound.inbound);
 
         let ctrl = ctrl
