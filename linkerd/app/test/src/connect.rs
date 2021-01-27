@@ -1,4 +1,4 @@
-use linkerd_app_core::{io::BoxedIo, Error};
+use linkerd_app_core::{io::BoxedIo, svc::stack::Param, transport::ConnectAddr, Error};
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
@@ -23,7 +23,7 @@ pub struct NoRawTcp;
 
 impl<E> tower::Service<E> for Connect<E>
 where
-    E: Clone + fmt::Debug + Into<SocketAddr>,
+    E: Clone + fmt::Debug + Param<ConnectAddr>,
 {
     type Response = BoxedIo;
     type Future = Instrumented<ConnectFuture>;
@@ -34,7 +34,7 @@ where
     }
 
     fn call(&mut self, endpoint: E) -> Self::Future {
-        let addr = endpoint.clone().into();
+        let ConnectAddr(addr) = endpoint.param();
         let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");

@@ -3,12 +3,12 @@
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-pub mod connect;
+mod connect;
 pub mod listen;
 pub mod metrics;
 
 pub use self::{
-    connect::ConnectTcp,
+    connect::{ConnectAddr, ConnectTcp},
     listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
 };
 

@@ -54,7 +54,7 @@ pub fn tcp_connect<T: Param<u16>>(
     // Establishes connections to remote peers (for both TCP
     // forwarding and HTTP proxying).
     svc::stack(transport::ConnectTcp::new(config.keepalive))
-        .push_map_target(|t: T| SocketAddr::from(([127, 0, 0, 1], t.param())))
+        .push_map_target(|t: T| transport::ConnectAddr(([127, 0, 0, 1], t.param()).into()))
         // Limits the time we wait for a connection to be established.
         .push_timeout(config.timeout)
         .push(svc::stack::BoxFuture::layer())

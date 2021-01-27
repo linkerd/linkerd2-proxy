@@ -203,6 +203,7 @@ mod client {
         proxy::http,
         svc::{self, stack::Param},
         tls,
+        transport::ConnectAddr,
     };
     use linkerd_proxy_http::h2::Settings as H2Settings;
     use std::{
@@ -228,6 +229,12 @@ mod client {
     }
 
     // === impl Target ===
+
+    impl Param<ConnectAddr> for Target {
+        fn param(&self) -> ConnectAddr {
+            ConnectAddr(self.addr)
+        }
+    }
 
     impl Param<SocketAddr> for Target {
         fn param(&self) -> SocketAddr {
