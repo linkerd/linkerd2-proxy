@@ -92,7 +92,9 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
-            if !h1::is_absolute_form(req.uri()) && req.uri().authority().is_none() {
+            if req.extensions().get::<h1::WasAbsoluteForm>().is_none()
+                && req.uri().authority().is_none()
+            {
                 let authority =
                     h1::authority_from_host(&req).unwrap_or_else(|| self.default.clone());
                 trace!(%authority, "Normalizing URI");
