@@ -13,7 +13,7 @@ pub mod h1;
 pub mod h2;
 mod header_from_target;
 pub mod insert;
-mod normalize_uri;
+pub mod normalize_uri;
 pub mod orig_proto;
 mod override_authority;
 mod retain;

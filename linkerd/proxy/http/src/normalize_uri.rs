@@ -13,7 +13,7 @@
 //!   from modified requests;
 //! * Otherwise, if the request has a `Host` header, it is used as the authority;
 //! * Otherwise, the target's address is used (as provided by the target).
-
+#![allow(dead_code)]
 use super::h1;
 use linkerd_stack::{layer, NewService, Param};
 use std::{
@@ -34,6 +34,13 @@ pub struct NewNormalizeUri<N> {
 pub struct NormalizeUri<S> {
     inner: S,
     default: http::uri::Authority,
+}
+
+/// Detects the original form of a request URI and inserts a `WasAbsoluteForm`
+/// extension.
+#[derive(Clone, Debug)]
+pub struct DetectAbsoluteForm<S> {
+    inner: S,
 }
 
 // === impl NewNormalizeUri ===
@@ -112,15 +119,50 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
-            if h1::is_absolute_form(req.uri()) {
-                trace!(uri = ?req.uri(), "Absolute");
-                req.extensions_mut().insert(h1::WasAbsoluteForm(()));
-            } else if req.uri().authority().is_none() {
+            if !h1::is_absolute_form(req.uri()) && req.uri().authority().is_none() {
                 let authority =
                     h1::authority_from_host(&req).unwrap_or_else(|| self.default.clone());
                 trace!(%authority, "Normalizing URI");
                 h1::set_authority(req.uri_mut(), authority);
             }
+        }
+
+        self.inner.call(req)
+    }
+}
+
+// === impl DetectAbsoluteForm ===
+
+impl<S> DetectAbsoluteForm<S> {
+    pub fn new(inner: S) -> Self {
+        Self { inner }
+    }
+
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {
+        layer::mk(Self::new)
+    }
+}
+
+impl<S, B> tower::Service<http::Request<B>> for DetectAbsoluteForm<S>
+where
+    S: tower::Service<http::Request<B>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
+            if h1::is_absolute_form(req.uri()) {
+                trace!(uri = ?req.uri(), "Absolute form");
+                req.extensions_mut().insert(h1::WasAbsoluteForm(()));
+            } else {
+                trace!(uri = ?req.uri(), "Origin form");
+            };
         }
 
         self.inner.call(req)
