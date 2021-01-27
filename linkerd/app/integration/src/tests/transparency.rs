@@ -1101,12 +1101,15 @@ mod proxy_to_proxy {
     use crate::*;
 
     struct ProxyToProxy {
-        // Held to prevent closing, to reduce controller request noise during
-        // tests
-        _dst: controller::DstSender,
         in_proxy: proxy::Listening,
         out_proxy: proxy::Listening,
         inbound: SocketAddr,
+
+        // These are all held to prevent closing, to reduce controller request
+        // noise during tests
+        _dst: controller::DstSender,
+        _profile_in: controller::ProfileSender,
+        _profile_out: controller::ProfileSender,
     }
 
     impl ProxyToProxy {
@@ -1145,6 +1148,8 @@ mod proxy_to_proxy {
         let addr = outbound.outbound;
         ProxyToProxy {
             _dst: dst,
+            _profile_in,
+            _profile_out,
             in_proxy: inbound,
             out_proxy: outbound,
             inbound: addr,
