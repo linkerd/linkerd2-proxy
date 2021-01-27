@@ -77,7 +77,7 @@ where
                 ))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
                 // Record when an HTTP/1 URI was in absolute form
-                .push(http::normalize_uri::DetectAbsoluteForm::layer())
+                .push(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(http::BoxRequest::layer())
                 .push(http::BoxResponse::layer()),
         )

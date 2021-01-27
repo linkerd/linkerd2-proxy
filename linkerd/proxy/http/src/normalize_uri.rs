@@ -39,7 +39,7 @@ pub struct NormalizeUri<S> {
 /// Detects the original form of a request URI and inserts a `WasAbsoluteForm`
 /// extension.
 #[derive(Clone, Debug)]
-pub struct DetectAbsoluteForm<S> {
+pub struct MarkAbsoluteForm<S> {
     inner: S,
 }
 
@@ -131,9 +131,9 @@ where
     }
 }
 
-// === impl DetectAbsoluteForm ===
+// === impl MarkAbsoluteForm ===
 
-impl<S> DetectAbsoluteForm<S> {
+impl<S> MarkAbsoluteForm<S> {
     pub fn new(inner: S) -> Self {
         Self { inner }
     }
@@ -143,7 +143,7 @@ impl<S> DetectAbsoluteForm<S> {
     }
 }
 
-impl<S, B> tower::Service<http::Request<B>> for DetectAbsoluteForm<S>
+impl<S, B> tower::Service<http::Request<B>> for MarkAbsoluteForm<S>
 where
     S: tower::Service<http::Request<B>>,
 {
