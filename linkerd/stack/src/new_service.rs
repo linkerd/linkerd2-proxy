@@ -1,7 +1,4 @@
 use crate::FutureService;
-use futures::future;
-use linkerd_error::Never;
-use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 
 /// Immediately and infalliby creates (usually) a Service.
@@ -19,12 +16,6 @@ pub struct FromMakeServiceLayer(());
 #[derive(Clone, Copy, Debug)]
 pub struct FromMakeService<S> {
     make_service: S,
-}
-
-/// Modifies inner `MakeService`s to be exposd as a `NewService`.
-#[derive(Clone, Copy, Debug)]
-pub struct IntoMakeService<N> {
-    new_service: N,
 }
 
 // === impl NewService ===
@@ -60,27 +51,5 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         FutureService::new(self.make_service.clone().oneshot(target))
-    }
-}
-
-// === impl FromMakeService ===
-
-impl<N> IntoMakeService<N> {
-    pub fn new(new_service: N) -> Self {
-        Self { new_service }
-    }
-}
-
-impl<T, N: NewService<T>> tower::Service<T> for IntoMakeService<N> {
-    type Response = N::Service;
-    type Error = Never;
-    type Future = future::Ready<Result<N::Service, Never>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Never>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        future::ok(self.new_service.new_service(target))
     }
 }

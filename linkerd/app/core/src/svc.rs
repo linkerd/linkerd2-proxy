@@ -103,11 +103,8 @@ impl<S> Stack<S> {
         Stack(layer.layer(self.0))
     }
 
-    pub fn push_map_target<M: Clone>(
-        self,
-        map_target: M,
-    ) -> Stack<stack::map_target::MapTargetService<S, M>> {
-        self.push(stack::map_target::MapTargetLayer::new(map_target))
+    pub fn push_map_target<M: Clone>(self, map_target: M) -> Stack<stack::MapTargetService<S, M>> {
+        self.push(stack::MapTargetLayer::new(map_target))
     }
 
     pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<stack::Filter<S, F>> {
@@ -118,8 +115,8 @@ impl<S> Stack<S> {
     ///
     /// Each time the service is called, the `T`-typed request is cloned and
     /// issued into the inner service.
-    pub fn push_make_thunk(self) -> Stack<stack::make_thunk::MakeThunk<S>> {
-        self.push(layer::mk(stack::make_thunk::MakeThunk::new))
+    pub fn push_make_thunk(self) -> Stack<stack::MakeThunk<S>> {
+        self.push(layer::mk(stack::MakeThunk::new))
     }
 
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
@@ -133,13 +130,6 @@ impl<S> Stack<S> {
     /// Wraps an inner `MakeService` to be a `NewService`.
     pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
         self.push(stack::new_service::FromMakeServiceLayer::default())
-    }
-
-    pub fn into_make_service<T>(self) -> Stack<stack::new_service::IntoMakeService<S>>
-    where
-        S: NewService<T>,
-    {
-        Stack(stack::new_service::IntoMakeService::new(self.0))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
