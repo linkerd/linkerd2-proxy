@@ -154,6 +154,52 @@ async fn downgrade_origin_form() {
     bg.await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn downgrade_absolute_form() {
+    let mut server = hyper::server::conn::Http::new();
+    server.http1_only(true);
+    let mut client = ClientBuilder::new();
+    client.http2_only(true);
+    let _trace = support::trace_init();
+
+    let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
+    let addrs = TcpAccept {
+        target_addr: ([127, 0, 0, 1], 5550).into(),
+        client_addr: ([10, 0, 0, 41], 6894).into(),
+        tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+    };
+
+    let cfg = default_config(ep1);
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect =
+        support::connect().endpoint_fn_boxed(TcpEndpoint { port: 5550 }, hello_server(server));
+
+    let profiles = profile::resolver();
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 80).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
+
+    // Build the outbound server
+    let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
+    let server = s.new_service((proxy::http::Version::H2, addrs));
+    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+
+    let req = Request::builder()
+        .method(http::Method::GET)
+        .uri("http://foo.svc.cluster.local:5550/")
+        .header(http::header::HOST, "foo.svc.cluster.local")
+        .header("l5d-orig-proto", "HTTP/1.1; absolute-form")
+        .body(Body::default())
+        .unwrap();
+    let rsp = http_util::http_request(&mut client, req).await;
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+    let body = http_util::body_to_string(rsp.into_body()).await;
+    assert_eq!(body, "Hello world!");
+
+    drop(client);
+    bg.await;
+}
+
 #[tracing::instrument]
 fn hello_server(http: hyper::server::conn::Http) -> impl Fn(TcpEndpoint) -> Result<BoxedIo, Error> {
     move |endpoint| {
