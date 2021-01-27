@@ -17,9 +17,7 @@
 use super::h1;
 use linkerd_stack::{layer, NewService, Param};
 use std::{
-    future::Future,
     net::SocketAddr,
-    pin::Pin,
     str::FromStr,
     task::{Context, Poll},
 };
@@ -66,32 +64,6 @@ where
         let target_addr = target.param();
         let inner = self.inner.new_service(target);
         NormalizeUri::new(inner, target_addr)
-    }
-}
-
-type MakeFuture<T, E> = Pin<Box<dyn Future<Output = Result<NormalizeUri<T>, E>> + Send + 'static>>;
-
-impl<M, T> tower::Service<T> for NewNormalizeUri<M>
-where
-    T: Param<SocketAddr>,
-    M: tower::Service<T>,
-    M::Future: Send + 'static,
-{
-    type Response = NormalizeUri<M::Response>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Response, M::Error>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let target_addr = target.param();
-        let fut = self.inner.call(target);
-        Box::pin(async move {
-            let inner = fut.await?;
-            Ok(NormalizeUri::new(inner, target_addr))
-        })
     }
 }
 
