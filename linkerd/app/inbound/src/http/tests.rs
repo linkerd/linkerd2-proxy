@@ -1,35 +1,23 @@
-#![allow(unused_imports)]
-use super::HttpEndpoint;
-use crate::test_util::{
-    support::{connect::Connect, http_util, profile, resolver, track},
-    *,
+use crate::{
+    test_util::{
+        support::{connect::Connect, http_util, profile, resolver},
+        *,
+    },
+    Config, TcpAccept, TcpEndpoint,
 };
-use crate::Config;
-use crate::{TcpAccept, TcpEndpoint};
-use hyper::{
-    client::conn::{Builder as ClientBuilder, SendRequest},
-    Body, Request, Response,
-};
+use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     drain,
     io::{self, BoxedIo},
     metrics,
     proxy::{self, tap},
-    svc::stack::{self, Param},
+    svc::stack::Param,
     svc::{self, NewService},
     tls,
-    transport::{self, listen, ConnectAddr},
-    Addr, Conditional, Error, NameAddr,
+    transport::{self, ConnectAddr},
+    Conditional, Error, NameAddr,
 };
-use std::{
-    net::SocketAddr,
-    pin::Pin,
-    str::FromStr,
-    task::{Context, Poll},
-    time::Duration,
-};
-use tokio::time;
-use tower::{Service, ServiceExt};
+use std::{net::SocketAddr, time::Duration};
 use tracing::Instrument;
 
 fn build_server<I>(
