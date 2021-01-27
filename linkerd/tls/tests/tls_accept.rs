@@ -10,7 +10,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectTcp};
+use linkerd_proxy_transport::{connect, listen::Addrs, BindTcp, ConnectTcp};
 use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
 use std::future::Future;
@@ -308,9 +308,9 @@ struct Target(SocketAddr, tls::ConditionalClientTls);
 #[derive(Clone)]
 struct Tls(id::CrtKey);
 
-impl Param<SocketAddr> for Target {
-    fn param(&self) -> SocketAddr {
-        self.0
+impl Param<connect::Addr> for Target {
+    fn param(&self) -> connect::Addr {
+        connect::Addr(self.0)
     }
 }
 

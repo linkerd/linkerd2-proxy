@@ -1,8 +1,13 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::target::Endpoint;
 use linkerd_app_core::{
-    config::ConnectConfig, io, metrics, proxy::identity::LocalCrtKey, svc, tls,
-    transport::ConnectTcp, transport_header::SessionProtocol, Error,
+    config::ConnectConfig,
+    io, metrics,
+    proxy::identity::LocalCrtKey,
+    svc, tls,
+    transport::{connect, ConnectTcp},
+    transport_header::SessionProtocol,
+    Error,
 };
 use tracing::debug_span;
 
@@ -20,7 +25,7 @@ pub fn stack<P>(
     Future = impl Send,
 > + Clone
 where
-    Endpoint<P>: svc::stack::Param<Option<SessionProtocol>>,
+    Endpoint<P>: svc::stack::Param<Option<SessionProtocol>> + svc::stack::Param<connect::Addr>,
 {
     let identity_disabled = local_identity.is_none();
     svc::stack(ConnectTcp::new(config.keepalive))

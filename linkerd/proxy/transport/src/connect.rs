@@ -1,7 +1,12 @@
 use linkerd_io as io;
 use linkerd_stack::Param;
-use std::task::{Context, Poll};
-use std::{future::Future, net::SocketAddr, pin::Pin, time::Duration};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio::net::TcpStream;
 use tracing::debug;
 
@@ -10,13 +15,16 @@ pub struct ConnectTcp {
     keepalive: Option<Duration>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Addr(pub SocketAddr);
+
 impl ConnectTcp {
     pub fn new(keepalive: Option<Duration>) -> Self {
         Self { keepalive }
     }
 }
 
-impl<T: Param<SocketAddr>> tower::Service<T> for ConnectTcp {
+impl<T: Param<Addr>> tower::Service<T> for ConnectTcp {
     type Response = io::ScopedIo<TcpStream>;
     type Error = io::Error;
     type Future =
@@ -28,8 +36,8 @@ impl<T: Param<SocketAddr>> tower::Service<T> for ConnectTcp {
 
     fn call(&mut self, t: T) -> Self::Future {
         let keepalive = self.keepalive;
-        let addr = t.param();
-        debug!(peer.addr = %addr, "Connecting");
+        let Addr(addr) = t.param();
+        debug!(server.addr = %addr, "Connecting");
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;
             super::set_nodelay_or_warn(&io);

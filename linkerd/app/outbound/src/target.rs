@@ -216,15 +216,9 @@ impl<P> Endpoint<P> {
     }
 }
 
-impl<P> Into<SocketAddr> for Endpoint<P> {
-    fn into(self) -> SocketAddr {
-        self.addr
-    }
-}
-
-impl<P> Param<SocketAddr> for Endpoint<P> {
-    fn param(&self) -> SocketAddr {
-        self.addr
+impl<P> Param<transport::connect::Addr> for Endpoint<P> {
+    fn param(&self) -> transport::connect::Addr {
+        transport::connect::Addr(self.addr)
     }
 }
 
