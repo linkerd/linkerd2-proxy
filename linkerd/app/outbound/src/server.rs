@@ -182,7 +182,11 @@ where
                 .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push(http::BoxResponse::layer()),
         )
+        // Convert origin form HTTP/1 URIs to absolute form for Hyper's
+        // `Client`.
         .push(http::NewNormalizeUri::layer())
+        // Record when a HTTP/1 URI originated in absolute form
+        .push_on_response(http::normalize_uri::DetectAbsoluteForm::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .push(http::NewServeHttp::layer(h2_settings, drain))
