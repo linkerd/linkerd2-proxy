@@ -15,10 +15,10 @@ use linkerd_app_core::{
     io::{self, BoxedIo},
     metrics,
     proxy::{self, tap},
-    svc::stack,
+    svc::stack::{self, Param},
     svc::{self, NewService},
     tls,
-    transport::{self, listen},
+    transport::{self, listen, ConnectAddr},
     Addr, Conditional, Error, NameAddr,
 };
 use std::{
@@ -35,7 +35,7 @@ use tracing::Instrument;
 fn build_server<I>(
     cfg: &Config,
     profiles: resolver::Profiles<NameAddr>,
-    connect: Connect<TcpEndpoint>,
+    connect: Connect<ConnectAddr>,
 ) -> (
     impl svc::NewService<
             (proxy::http::Version, TcpAccept),
@@ -57,6 +57,11 @@ where
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let metrics = &metrics.inbound;
     let (drain_tx, drain) = drain::channel();
+    let connect = svc::stack(connect)
+        .push_map_target(|t: TcpEndpoint| {
+            transport::ConnectAddr(([127, 0, 0, 1], t.param()).into())
+        })
+        .into_inner();
     let router = super::router(cfg, connect, profiles, tap, metrics, None);
     let svc = svc::stack(super::server(&cfg.proxy, router, metrics, None, drain))
         .check_new_service::<(proxy::http::Version, TcpAccept), _>()
@@ -80,8 +85,7 @@ async fn unmeshed_http1_hello_world() {
 
     let cfg = default_config(ep1);
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect =
-        support::connect().endpoint_fn_boxed(TcpEndpoint { port: 5550 }, hello_server(server));
+    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -125,8 +129,7 @@ async fn downgrade_origin_form() {
 
     let cfg = default_config(ep1);
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect =
-        support::connect().endpoint_fn_boxed(TcpEndpoint { port: 5550 }, hello_server(server));
+    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -171,8 +174,7 @@ async fn downgrade_absolute_form() {
 
     let cfg = default_config(ep1);
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect =
-        support::connect().endpoint_fn_boxed(TcpEndpoint { port: 5550 }, hello_server(server));
+    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -201,7 +203,7 @@ async fn downgrade_absolute_form() {
 }
 
 #[tracing::instrument]
-fn hello_server(http: hyper::server::conn::Http) -> impl Fn(TcpEndpoint) -> Result<BoxedIo, Error> {
+fn hello_server(http: hyper::server::conn::Http) -> impl Fn(ConnectAddr) -> Result<BoxedIo, Error> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
         let _e = span.enter();
