@@ -131,7 +131,7 @@ impl Config {
             span_sink.clone(),
         );
         svc::stack(http::server(&self.proxy, http, &metrics, span_sink, drain))
-            .push(svc::NewUnwrapOr::layer(
+            .push(svc::Unwrap::layer(
                 // When HTTP detection fails, forward the connection to the
                 // application as an opaque TCP stream.
                 tcp_forward
@@ -173,7 +173,14 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
 }
 
 impl svc::stack::Switch<listen::Addrs> for SkipByPort {
-    fn use_primary(&self, t: &listen::Addrs) -> bool {
-        !self.0.contains(&t.target_addr().port())
+    type Left = listen::Addrs;
+    type Right = listen::Addrs;
+
+    fn switch(&self, t: listen::Addrs) -> svc::Either<Self::Left, Self::Right> {
+        if !self.0.contains(&t.target_addr().port()) {
+            svc::Either::A(t)
+        } else {
+            svc::Either::B(t)
+        }
     }
 }

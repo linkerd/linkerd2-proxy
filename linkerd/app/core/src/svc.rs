@@ -5,7 +5,7 @@ use crate::{cache, Error};
 pub use linkerd_buffer as buffer;
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, Fail, NewRouter, NewService, NewUnwrapOr,
+    self as stack, layer, BoxNewService, Fail, NewRouter, NewService, NewSwitch, Unwrap,
 };
 pub use linkerd_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
@@ -194,9 +194,9 @@ impl<S> Stack<S> {
         self,
         switch: T,
         other: U,
-    ) -> Stack<stack::MakeSwitch<T, S, U>> {
+    ) -> Stack<stack::NewSwitch<T, S, U>> {
         self.push(layer::mk(|inner: S| {
-            stack::MakeSwitch::new(switch.clone(), inner, other.clone())
+            stack::NewSwitch::new(switch.clone(), inner, other.clone())
         }))
     }
 

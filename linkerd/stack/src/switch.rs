@@ -1,34 +1,33 @@
 //! A middleware that switches between two underlying stacks, depending on the
 //! target type.
 
-use futures::{future, prelude::*};
-use linkerd_error::Error;
-use std::task::{Context, Poll};
-use tower::util::ServiceExt;
+use crate::Either;
 
 /// Determines whether the primary stack should be used.
 pub trait Switch<T> {
-    fn use_primary(&self, target: &T) -> bool;
+    type Left;
+    type Right;
+
+    fn switch(&self, target: T) -> Either<Self::Left, Self::Right>;
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Unwrap(());
 
 /// Makes either the primary or fallback stack, as determined by an `S`-typed
 /// `Switch`.
 #[derive(Clone, Debug)]
-pub struct MakeSwitch<S, P, F> {
+pub struct NewSwitch<S, P, F> {
     switch: S,
     primary: P,
     fallback: F,
 }
 
-impl<T, F: Fn(&T) -> bool> Switch<T> for F {
-    fn use_primary(&self, target: &T) -> bool {
-        (self)(target)
-    }
-}
+// === impl NewSwitch ===
 
-impl<S, P, F> MakeSwitch<S, P, F> {
+impl<S, P, F> NewSwitch<S, P, F> {
     pub fn new(switch: S, primary: P, fallback: F) -> Self {
-        MakeSwitch {
+        NewSwitch {
             switch,
             primary,
             fallback,
@@ -44,67 +43,67 @@ impl<S, P, F> MakeSwitch<S, P, F> {
     }
 }
 
-impl<T, S, P, F> super::NewService<T> for MakeSwitch<S, P, F>
+impl<T, S, P, F> super::NewService<T> for NewSwitch<S, P, F>
 where
     S: Switch<T>,
-    P: super::NewService<T>,
-    F: super::NewService<T>,
+    P: super::NewService<S::Left>,
+    F: super::NewService<S::Right>,
 {
-    type Service = tower::util::Either<P::Service, F::Service>;
+    type Service = Either<P::Service, F::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        if self.switch.use_primary(&target) {
-            tower::util::Either::A(self.primary.new_service(target))
-        } else {
-            tower::util::Either::B(self.fallback.new_service(target))
+        match self.switch.switch(target) {
+            Either::A(t) => Either::A(self.primary.new_service(t)),
+            Either::B(t) => Either::B(self.fallback.new_service(t)),
         }
     }
 }
 
-impl<T, S, P, F> tower::Service<T> for MakeSwitch<S, P, F>
-where
-    S: Switch<T>,
-    P: tower::Service<T> + Clone,
-    P::Error: Into<Error>,
-    F: tower::Service<T> + Clone,
-    F::Error: Into<Error>,
-{
-    type Response = tower::util::Either<P::Response, F::Response>;
-    type Error = Error;
+// === impl Switch ===
 
-    #[allow(clippy::type_complexity)]
-    type Future = future::Either<
-        future::MapOk<
-            future::ErrInto<tower::util::Oneshot<P, T>, Error>,
-            fn(P::Response) -> tower::util::Either<P::Response, F::Response>,
-        >,
-        future::MapOk<
-            future::ErrInto<tower::util::Oneshot<F, T>, Error>,
-            fn(F::Response) -> tower::util::Either<P::Response, F::Response>,
-        >,
-    >;
+impl<T, F: Fn(&T) -> bool> Switch<T> for F {
+    type Left = T;
+    type Right = T;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        if self.switch.use_primary(&target) {
-            future::Either::Left(
-                self.primary
-                    .clone()
-                    .oneshot(target)
-                    .err_into::<Error>()
-                    .map_ok(tower::util::Either::A),
-            )
+    fn switch(&self, target: T) -> Either<T, T> {
+        if (self)(&target) {
+            Either::A(target)
         } else {
-            future::Either::Right(
-                self.fallback
-                    .clone()
-                    .oneshot(target)
-                    .err_into::<Error>()
-                    .map_ok(tower::util::Either::B),
-            )
+            Either::B(target)
         }
+    }
+}
+
+// === impl Unwrap ===
+
+impl Unwrap {
+    pub fn layer<N, F>(
+        fallback: F,
+    ) -> impl super::layer::Layer<N, Service = NewSwitch<Self, N, F>> + Clone
+    where
+        F: Clone,
+    {
+        super::layer::mk(move |primary| NewSwitch::new(Self(()), primary, fallback.clone()))
+    }
+}
+
+impl<T, U> Switch<(Option<T>, U)> for Unwrap {
+    type Left = (T, U);
+    type Right = U;
+
+    fn switch(&self, (t, u): (Option<T>, U)) -> Either<(T, U), U> {
+        match t {
+            Some(t) => Either::A((t, u)),
+            None => Either::B(u),
+        }
+    }
+}
+
+impl<T> Switch<Option<T>> for Unwrap {
+    type Left = T;
+    type Right = ();
+
+    fn switch(&self, t: Option<T>) -> Either<T, ()> {
+        t.map(Either::A).unwrap_or(Either::B(()))
     }
 }

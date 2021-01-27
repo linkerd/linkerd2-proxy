@@ -65,9 +65,7 @@ impl Config {
                 }
             }))
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push(svc::NewUnwrapOr::layer(
-                svc::Fail::<_, AdminHttpOnly>::default(),
-            ))
+            .push(svc::Unwrap::layer(svc::Fail::<_, AdminHttpOnly>::default()))
             .push(detect::NewDetectService::timeout(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),

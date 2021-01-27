@@ -186,7 +186,7 @@ where
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .push(http::NewServeHttp::layer(h2_settings, drain))
-        .push(svc::NewUnwrapOr::layer(
+        .push(svc::Unwrap::layer(
             // When an HTTP version cannot be detected, we fallback to a logical
             // TCP stack. This service needs to be buffered so that it can be
             // cached and cloned per connection.
@@ -254,10 +254,18 @@ pub struct SkipByProfile;
 // === impl SkipByProfile ===
 
 impl svc::stack::Switch<tcp::Logical> for SkipByProfile {
-    fn use_primary(&self, l: &tcp::Logical) -> bool {
-        l.profile
+    type Left = tcp::Logical;
+    type Right = tcp::Logical;
+
+    fn switch(&self, l: tcp::Logical) -> svc::Either<tcp::Logical, tcp::Logical> {
+        if l.profile
             .as_ref()
             .map(|p| !p.borrow().opaque_protocol)
             .unwrap_or(true)
+        {
+            svc::Either::A(l)
+        } else {
+            svc::Either::B(l)
+        }
     }
 }

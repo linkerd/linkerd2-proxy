@@ -17,7 +17,6 @@ mod result;
 pub mod router;
 mod switch;
 mod switch_ready;
-mod unwrap_or;
 
 pub use self::{
     box_future::BoxFuture,
@@ -32,9 +31,8 @@ pub use self::{
     request_filter::{Filter, FilterLayer, Predicate},
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
-    switch::{MakeSwitch, Switch},
+    switch::{NewSwitch, Switch, Unwrap},
     switch_ready::{NewSwitchReady, SwitchReady},
-    unwrap_or::NewUnwrapOr,
 };
 pub use tower::util::Either;
 pub use tower::util::{future_service, FutureService};

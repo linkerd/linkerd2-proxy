@@ -1,6 +1,6 @@
 use crate::TcpEndpoint;
 use linkerd_app_core::{
-    svc::stack::{Predicate, Switch},
+    svc::stack::{Either, Predicate, Switch},
     transport::listen::Addrs,
     Error,
 };
@@ -35,10 +35,17 @@ impl Predicate<TcpEndpoint> for PreventLoop {
 }
 
 impl Switch<Addrs> for PreventLoop {
-    fn use_primary(&self, addrs: &Addrs) -> bool {
+    type Left = Addrs;
+    type Right = Addrs;
+
+    fn switch(&self, addrs: Addrs) -> Either<Addrs, Addrs> {
         let addr = addrs.target_addr();
         tracing::debug!(%addr, self.port);
-        addr.port() != self.port
+        if addr.port() != self.port {
+            Either::A(addrs)
+        } else {
+            Either::B(addrs)
+        }
     }
 }
 
