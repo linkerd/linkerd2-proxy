@@ -12,7 +12,7 @@ pub trait Switch<T> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Unwrap(());
+pub struct Unwrap<U = ()>(std::marker::PhantomData<fn() -> U>);
 
 /// Makes either the primary or fallback stack, as determined by an `S`-typed
 /// `Switch`.
@@ -76,18 +76,20 @@ impl<T, F: Fn(&T) -> bool> Switch<T> for F {
 
 // === impl Unwrap ===
 
-impl Unwrap {
+impl<U> Unwrap<U> {
     pub fn layer<N, F>(
         fallback: F,
     ) -> impl super::layer::Layer<N, Service = NewSwitch<Self, N, F>> + Clone
     where
         F: Clone,
     {
-        super::layer::mk(move |primary| NewSwitch::new(Self(()), primary, fallback.clone()))
+        super::layer::mk(move |primary| {
+            NewSwitch::new(Self(std::marker::PhantomData), primary, fallback.clone())
+        })
     }
 }
 
-impl<T, U> Switch<(Option<T>, U)> for Unwrap {
+impl<T, U> Switch<(Option<T>, U)> for Unwrap<U> {
     type Left = (T, U);
     type Right = U;
 
@@ -99,11 +101,11 @@ impl<T, U> Switch<(Option<T>, U)> for Unwrap {
     }
 }
 
-impl<T> Switch<Option<T>> for Unwrap {
+impl<T, U: Default> Switch<Option<T>> for Unwrap<U> {
     type Left = T;
-    type Right = ();
+    type Right = U;
 
-    fn switch(&self, t: Option<T>) -> Either<T, ()> {
-        t.map(Either::A).unwrap_or(Either::B(()))
+    fn switch(&self, t: Option<T>) -> Either<T, U> {
+        t.map(Either::A).unwrap_or_else(|| Either::B(U::default()))
     }
 }
