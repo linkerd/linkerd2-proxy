@@ -5,7 +5,7 @@ use linkerd_app_core::{
     io, metrics,
     proxy::identity::LocalCrtKey,
     svc, tls,
-    transport::{connect, ConnectTcp},
+    transport::{ConnectAddr, ConnectTcp},
     transport_header::SessionProtocol,
     Error,
 };
@@ -25,7 +25,7 @@ pub fn stack<P>(
     Future = impl Send,
 > + Clone
 where
-    Endpoint<P>: svc::stack::Param<Option<SessionProtocol>> + svc::stack::Param<connect::Addr>,
+    Endpoint<P>: svc::stack::Param<Option<SessionProtocol>> + svc::stack::Param<ConnectAddr>,
 {
     let identity_disabled = local_identity.is_none();
     svc::stack(ConnectTcp::new(config.keepalive))

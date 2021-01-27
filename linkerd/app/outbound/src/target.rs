@@ -216,9 +216,9 @@ impl<P> Endpoint<P> {
     }
 }
 
-impl<P> Param<transport::connect::Addr> for Endpoint<P> {
-    fn param(&self) -> transport::connect::Addr {
-        transport::connect::Addr(self.addr)
+impl<P> Param<transport::ConnectAddr> for Endpoint<P> {
+    fn param(&self) -> transport::ConnectAddr {
+        transport::ConnectAddr(self.addr)
     }
 }
 

@@ -16,7 +16,7 @@ pub struct ConnectTcp {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Addr(pub SocketAddr);
+pub struct ConnectAddr(pub SocketAddr);
 
 impl ConnectTcp {
     pub fn new(keepalive: Option<Duration>) -> Self {
@@ -24,7 +24,7 @@ impl ConnectTcp {
     }
 }
 
-impl<T: Param<Addr>> tower::Service<T> for ConnectTcp {
+impl<T: Param<ConnectAddr>> tower::Service<T> for ConnectTcp {
     type Response = io::ScopedIo<TcpStream>;
     type Error = io::Error;
     type Future =
@@ -36,7 +36,7 @@ impl<T: Param<Addr>> tower::Service<T> for ConnectTcp {
 
     fn call(&mut self, t: T) -> Self::Future {
         let keepalive = self.keepalive;
-        let Addr(addr) = t.param();
+        let ConnectAddr(addr) = t.param();
         debug!(server.addr = %addr, "Connecting");
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;
