@@ -153,23 +153,9 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
-/// Used for profile discovery.
-impl Param<Addr> for Target {
-    fn param(&self) -> Addr {
-        self.dst.clone()
-    }
-}
-
-/// Used for profile discovery.
-impl Param<SocketAddr> for Target {
-    fn param(&self) -> SocketAddr {
-        self.target_addr
-    }
-}
-
-impl Param<tls::ConditionalClientTls> for Target {
-    fn param(&self) -> tls::ConditionalClientTls {
-        Conditional::None(tls::NoClientTls::Loopback)
+impl Param<profiles::LogicalAddr> for Target {
+    fn param(&self) -> profiles::LogicalAddr {
+        profiles::LogicalAddr(self.dst.clone())
     }
 }
 

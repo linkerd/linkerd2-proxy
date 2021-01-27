@@ -32,6 +32,10 @@ pub struct Profile {
     pub endpoint: Option<(SocketAddr, Metadata)>,
 }
 
+/// A profile lookup target.
+#[derive(Clone, Debug)]
+pub struct LogicalAddr(pub Addr);
+
 #[derive(Clone, Debug)]
 pub struct Target {
     pub addr: Addr,
