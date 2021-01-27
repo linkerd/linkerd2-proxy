@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::{http, stack_labels, tcp, trace_labels, Config};
+use crate::{http, stack_labels, target::ShouldResolve, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, io, metrics,
@@ -160,6 +160,7 @@ where
         .into_inner();
 
     svc::stack(http_router)
+        .check_new_service::<http::Logical, _>()
         .push_on_response(
             svc::layers()
                 .push(http::BoxRequest::layer())
@@ -190,14 +191,14 @@ where
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push_map_target(http::Logical::from)
         .push(http::NewServeHttp::layer(h2_settings, drain))
-        .push(svc::NewUnwrapOr::layer(
+        .push(svc::UnwrapOr::layer(
             // When an HTTP version cannot be detected, we fallback to a logical
             // TCP stack. This service needs to be buffered so that it can be
             // cached and cloned per connection.
             svc::stack(tcp_balance.clone())
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
-                .push_switch(tcp::Logical::should_resolve, tcp_forward.clone())
+                .push_switch(ShouldResolve, tcp_forward.clone())
                 .push_on_response(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
@@ -206,6 +207,7 @@ where
                         .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
+                .check_new_service::<tcp::Logical, _>()
                 .into_inner(),
         ))
         .push_cache(cache_max_idle_age)
@@ -213,6 +215,7 @@ where
             detect_protocol_timeout,
             http::DetectHttp::default(),
         ))
+        .check_new_service::<tcp::Logical, _>()
         .push_switch(
             SkipByProfile,
             // When the profile marks the target as opaque, we skip HTTP
@@ -222,16 +225,18 @@ where
             svc::stack(tcp_balance)
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
-                .push_switch(tcp::Logical::should_resolve, tcp_forward)
+                .push_switch(ShouldResolve, tcp_forward)
                 .push_on_response(metrics.stack.layer(stack_labels("tcp", "passthru")))
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )
+        .check_new_service::<tcp::Logical, _>()
         .push_map_target(tcp::Logical::from)
         .push(profiles::discover::layer(
             profiles,
             AllowProfile(config.allow_discovery.clone().into()),
         ))
+        .check_new_service::<tcp::Accept, _>()
         .into_inner()
 }
 
@@ -257,11 +262,18 @@ pub struct SkipByProfile;
 
 // === impl SkipByProfile ===
 
-impl svc::stack::Switch<tcp::Logical> for SkipByProfile {
-    fn use_primary(&self, l: &tcp::Logical) -> bool {
-        l.profile
+impl svc::Predicate<tcp::Logical> for SkipByProfile {
+    type Request = svc::Either<tcp::Logical, tcp::Logical>;
+
+    fn check(&mut self, l: tcp::Logical) -> Result<Self::Request, Error> {
+        if l.profile
             .as_ref()
             .map(|p| !p.borrow().opaque_protocol)
             .unwrap_or(true)
+        {
+            Ok(svc::Either::A(l))
+        } else {
+            Ok(svc::Either::B(l))
+        }
     }
 }

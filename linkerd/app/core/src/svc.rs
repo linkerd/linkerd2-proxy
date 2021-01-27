@@ -5,7 +5,7 @@ use crate::{cache, Error};
 pub use linkerd_buffer as buffer;
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, Fail, NewRouter, NewService, NewUnwrapOr,
+    self as stack, layer, BoxNewService, Fail, Filter, NewRouter, NewService, Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
@@ -103,11 +103,8 @@ impl<S> Stack<S> {
         Stack(layer.layer(self.0))
     }
 
-    pub fn push_map_target<M: Clone>(
-        self,
-        map_target: M,
-    ) -> Stack<stack::map_target::MapTargetService<S, M>> {
-        self.push(stack::map_target::MapTargetLayer::new(map_target))
+    pub fn push_map_target<M: Clone>(self, map_target: M) -> Stack<stack::MapTargetService<S, M>> {
+        self.push(stack::MapTargetLayer::new(map_target))
     }
 
     pub fn push_request_filter<F: Clone>(self, filter: F) -> Stack<stack::Filter<S, F>> {
@@ -118,8 +115,8 @@ impl<S> Stack<S> {
     ///
     /// Each time the service is called, the `T`-typed request is cloned and
     /// issued into the inner service.
-    pub fn push_make_thunk(self) -> Stack<stack::make_thunk::MakeThunk<S>> {
-        self.push(layer::mk(stack::make_thunk::MakeThunk::new))
+    pub fn push_make_thunk(self) -> Stack<stack::MakeThunk<S>> {
+        self.push(layer::mk(stack::MakeThunk::new))
     }
 
     pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
@@ -133,13 +130,6 @@ impl<S> Stack<S> {
     /// Wraps an inner `MakeService` to be a `NewService`.
     pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
         self.push(stack::new_service::FromMakeServiceLayer::default())
-    }
-
-    pub fn into_make_service<T>(self) -> Stack<stack::new_service::IntoMakeService<S>>
-    where
-        S: NewService<T>,
-    {
-        Stack(stack::new_service::IntoMakeService::new(self.0))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
@@ -190,13 +180,16 @@ impl<S> Stack<S> {
         }))
     }
 
-    pub fn push_switch<T: Clone, U: Clone>(
+    pub fn push_switch<P: Clone, U: Clone>(
         self,
-        switch: T,
+        predicate: P,
         other: U,
-    ) -> Stack<stack::MakeSwitch<T, S, U>> {
-        self.push(layer::mk(|inner: S| {
-            stack::MakeSwitch::new(switch.clone(), inner, other.clone())
+    ) -> Stack<Filter<stack::NewEither<S, U>, P>> {
+        self.push(layer::mk(move |inner| {
+            stack::Filter::new(
+                stack::NewEither::new(inner, other.clone()),
+                predicate.clone(),
+            )
         }))
     }
 

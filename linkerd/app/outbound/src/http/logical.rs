@@ -1,5 +1,5 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::{resolve, stack_labels};
+use crate::{resolve, stack_labels, target::ShouldResolve};
 use linkerd_app_core::{
     classify,
     config::ProxyConfig,
@@ -129,7 +129,7 @@ where
         )
         .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
         .push_switch(
-            Logical::should_resolve,
+            ShouldResolve,
             svc::stack(endpoint)
                 .push_on_response(http::BoxRequest::layer())
                 .push_map_target(Endpoint::from_logical(
