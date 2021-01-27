@@ -3,10 +3,10 @@
 
 pub use tower::filter::{Filter, FilterLayer, Predicate};
 
-impl<T, F, S> super::NewService<T> for Filter<S, F>
+impl<T, P, S> super::NewService<T> for Filter<S, P>
 where
-    F: Predicate<T>,
-    S: super::NewService<F::Request>,
+    P: Predicate<T>,
+    S: super::NewService<P::Request>,
 {
     type Service = super::ResultService<S::Service>;
 

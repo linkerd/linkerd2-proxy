@@ -1,39 +1,55 @@
-use crate::{layer, Either, NewService};
+use crate::{Either, Filter, NewEither, Predicate};
+use linkerd_error::Error;
 
-/// A stack middleware that takes an optional target type and builds an `A`-typed
-/// stack if the target is set and a `B`-typed stack if it is not.
-#[derive(Clone, Debug, Default)]
-pub struct NewUnwrapOr<A, B> {
-    new_some: A,
-    new_none: B,
-}
+pub struct UnwrapOr<U = ()>(std::marker::PhantomData<fn() -> U>);
 
-// === impl NewUnwrapOr ===
+// === impl Unwrap ===
 
-impl<A, B> NewUnwrapOr<A, B> {
-    pub fn new(new_some: A, new_none: B) -> Self {
-        Self { new_some, new_none }
-    }
-
-    pub fn layer(new_none: B) -> impl layer::Layer<A, Service = Self>
+impl<U> UnwrapOr<U> {
+    pub fn layer<N, F>(
+        fallback: F,
+    ) -> impl super::layer::Layer<N, Service = Filter<NewEither<N, F>, Self>> + Clone
     where
-        B: Clone,
+        F: Clone,
     {
-        layer::mk(move |new_some| Self::new(new_some, new_none.clone()))
+        super::layer::mk(move |primary| {
+            Filter::new(
+                NewEither::new(primary, fallback.clone()),
+                Self(std::marker::PhantomData),
+            )
+        })
     }
 }
 
-impl<T, U, A, B> NewService<(Option<T>, U)> for NewUnwrapOr<A, B>
-where
-    A: NewService<(T, U)> + Clone,
-    B: NewService<U> + Clone,
-{
-    type Service = Either<A::Service, B::Service>;
+impl<T, U> Predicate<(Option<T>, U)> for UnwrapOr<U> {
+    type Request = Either<(T, U), U>;
 
-    fn new_service(&mut self, (t, u): (Option<T>, U)) -> Self::Service {
+    fn check(&mut self, (t, u): (Option<T>, U)) -> Result<Either<(T, U), U>, Error> {
         match t {
-            Some(t) => Either::A(self.new_some.new_service((t, u))),
-            None => Either::B(self.new_none.new_service(u)),
+            Some(t) => Ok(Either::A((t, u))),
+            None => Ok(Either::B(u)),
         }
+    }
+}
+
+impl<T, U: Default> Predicate<Option<T>> for UnwrapOr<U> {
+    type Request = Either<T, U>;
+
+    fn check(&mut self, t: Option<T>) -> Result<Either<T, U>, Error> {
+        Ok(t.map(Either::A).unwrap_or_else(|| Either::B(U::default())))
+    }
+}
+
+impl<U> Clone for UnwrapOr<U> {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl<U> Copy for UnwrapOr<U> {}
+
+impl<U> std::fmt::Debug for UnwrapOr<U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UnwrapOr").finish()
     }
 }
