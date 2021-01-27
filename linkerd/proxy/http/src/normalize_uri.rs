@@ -13,7 +13,7 @@
 //!   from modified requests;
 //! * Otherwise, if the request has a `Host` header, it is used as the authority;
 //! * Otherwise, the target's address is used (as provided by the target).
-#![allow(dead_code)]
+
 use super::h1;
 use linkerd_stack::{layer, NewService, Param};
 use std::{
