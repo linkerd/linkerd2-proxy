@@ -153,9 +153,9 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
-impl Param<profiles::Logical> for Target {
-    fn param(&self) -> profiles::Logical {
-        profiles::Logical(self.dst.clone())
+impl Param<profiles::LogicalAddr> for Target {
+    fn param(&self) -> profiles::LogicalAddr {
+        profiles::LogicalAddr(self.dst.clone())
     }
 }
 

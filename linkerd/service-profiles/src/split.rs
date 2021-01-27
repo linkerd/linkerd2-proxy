@@ -1,4 +1,4 @@
-use crate::{Logical, Profile, Receiver, Target};
+use crate::{LogicalAddr, Profile, Receiver, Target};
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
 use linkerd_addr::Addr;
@@ -57,7 +57,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: Clone + Param<Logical> + Param<Option<Receiver>>,
+    T: Clone + Param<LogicalAddr> + Param<Option<Receiver>>,
     N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -79,7 +79,7 @@ where
             Some(rx) => {
                 let mut targets = rx.borrow().targets.clone();
                 if targets.is_empty() {
-                    let Logical(addr) = target.param();
+                    let LogicalAddr(addr) = target.param();
                     targets.push(Target { addr, weight: 1 })
                 }
                 trace!(?targets, "Building split service");
@@ -116,7 +116,7 @@ where
 impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
-    T: Clone + Param<Logical>,
+    T: Clone + Param<LogicalAddr>,
     N: NewService<(Option<Addr>, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
@@ -140,7 +140,7 @@ where
                 // services that existed in the prior state.
                 if let Some(Profile { mut targets, .. }) = update {
                     if targets.is_empty() {
-                        let Logical(addr) = inner.target.param();
+                        let LogicalAddr(addr) = inner.target.param();
                         targets.push(Target { addr, weight: 1 })
                     }
                     debug!(?targets, "Updating");

@@ -34,7 +34,7 @@ pub struct Profile {
 
 /// A profile lookup target.
 #[derive(Clone, Debug)]
-pub struct Logical(pub Addr);
+pub struct LogicalAddr(pub Addr);
 
 #[derive(Clone, Debug)]
 pub struct Target {
