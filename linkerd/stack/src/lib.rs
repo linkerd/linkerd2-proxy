@@ -4,6 +4,7 @@
 
 mod box_future;
 mod box_new_service;
+mod either;
 mod fail;
 mod fail_on_error;
 pub mod layer;
@@ -15,12 +16,13 @@ mod proxy;
 mod request_filter;
 mod result;
 pub mod router;
-mod switch;
 mod switch_ready;
+mod unwrap_or;
 
 pub use self::{
     box_future::BoxFuture,
     box_new_service::BoxNewService,
+    either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
     make_thunk::MakeThunk,
@@ -31,10 +33,9 @@ pub use self::{
     request_filter::{Filter, FilterLayer, Predicate},
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
-    switch::{NewSwitch, Switch, Unwrap},
     switch_ready::{NewSwitchReady, SwitchReady},
+    unwrap_or::UnwrapOr,
 };
-pub use tower::util::Either;
 pub use tower::util::{future_service, FutureService};
 
 /// Describes a stack target that can produce `T` typed parameters.

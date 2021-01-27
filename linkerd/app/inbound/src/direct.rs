@@ -82,7 +82,7 @@ where
 
     let http_detect = svc::stack(http::server(&config, http, metrics, span_sink, drain))
         .push_cache(config.cache_max_idle_age)
-        .push(svc::Unwrap::layer(
+        .push(svc::UnwrapOr::layer(
             svc::Fail::<_, RefusedNoHeader>::default(),
         ))
         .push(detect::NewDetectService::timeout(
@@ -115,7 +115,7 @@ where
         // opaque.
         //
         // TODO: Stop supporting headerless connections after stable-2.10.
-        .push(svc::Unwrap::layer(http_detect))
+        .push(svc::UnwrapOr::layer(http_detect))
         .push(detect::NewDetectService::timeout(
             detect_timeout,
             DetectHeader::default(),
