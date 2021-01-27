@@ -92,9 +92,9 @@ impl<P> Param<SocketAddr> for Logical<P> {
 }
 
 /// Used for default traffic split
-impl<P> Param<Addr> for Logical<P> {
-    fn param(&self) -> Addr {
-        self.addr()
+impl<P> Param<profiles::Logical> for Logical<P> {
+    fn param(&self) -> profiles::Logical {
+        profiles::Logical(self.addr())
     }
 }
 
