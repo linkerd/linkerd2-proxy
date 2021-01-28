@@ -64,7 +64,10 @@ impl Param<Option<SessionProtocol>> for Endpoint {
     fn param(&self) -> Option<SessionProtocol> {
         match self.concrete.logical.protocol {
             http::Version::H2 => Some(SessionProtocol::Http2),
-            http::Version::Http1 => Some(SessionProtocol::Http1),
+            http::Version::Http1 => match self.metadata.protocol_hint() {
+                ProtocolHint::Http2 => Some(SessionProtocol::Http2),
+                ProtocolHint::Unknown => Some(SessionProtocol::Http1),
+            },
         }
     }
 }
