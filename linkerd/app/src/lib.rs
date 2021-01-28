@@ -108,7 +108,7 @@ impl Config {
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
-        let report = report.and_then(identity.metrics());
+        let report = identity.metrics().and_then(report);
 
         let (drain_tx, drain_rx) = drain::channel();
 
