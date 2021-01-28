@@ -116,7 +116,8 @@ where
                 .box_http_response(),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
-        .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
+        .push(http::normalize_uri::NewNormalizeUri::layer())
+        .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
         .check_new_service::<http::Accept, http::Request<_>>()
         .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
         .push_map_target(http::Accept::from)
