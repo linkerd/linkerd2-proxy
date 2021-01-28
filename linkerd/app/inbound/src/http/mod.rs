@@ -3,7 +3,9 @@ use crate::{
     target::{self, HttpEndpoint, Logical, RequestTarget, Target, TcpAccept, TcpEndpoint},
     Config,
 };
-pub use linkerd_app_core::proxy::http::{strip_header, BoxBody, DetectHttp, Request, Response};
+pub use linkerd_app_core::proxy::http::{
+    strip_header, BoxBody, DetectHttp, Request, Response, Version,
+};
 use linkerd_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
