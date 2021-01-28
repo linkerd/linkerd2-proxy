@@ -11,6 +11,8 @@ mod http;
 mod prevent_loop;
 mod require_identity;
 pub mod target;
+#[cfg(test)]
+pub(crate) mod test_util;
 
 pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpAccept, TcpEndpoint};
 use self::{prevent_loop::PreventLoop, require_identity::RequireIdentityForPorts};

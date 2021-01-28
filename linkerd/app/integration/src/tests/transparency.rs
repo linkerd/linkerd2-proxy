@@ -1101,12 +1101,15 @@ mod proxy_to_proxy {
     use crate::*;
 
     struct ProxyToProxy {
-        // Held to prevent closing, to reduce controller request noise during
-        // tests
-        _dst: controller::DstSender,
         in_proxy: proxy::Listening,
         out_proxy: proxy::Listening,
         inbound: SocketAddr,
+
+        // These are all held to prevent closing, to reduce controller request
+        // noise during tests
+        _dst: controller::DstSender,
+        _profile_in: controller::ProfileSender,
+        _profile_out: controller::ProfileSender,
     }
 
     impl ProxyToProxy {
@@ -1121,7 +1124,8 @@ mod proxy_to_proxy {
     http1_tests! { proxy: |srv: server::Listening| async move {
         let ctrl = controller::new();
         let srv_addr = srv.addr;
-        let _profile_in = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
+        let dst = format!("transparency.test.svc.cluster.local:{}", srv_addr.port());
+        let _profile_in = ctrl.profile_tx_default(&dst, "transparency.test.svc.cluster.local");
         let ctrl = ctrl
             .run()
             .instrument(tracing::info_span!("ctrl", "inbound"))
@@ -1130,7 +1134,7 @@ mod proxy_to_proxy {
 
         let ctrl = controller::new();
         let _profile_out = ctrl.profile_tx_default(srv_addr, "transparency.test.svc.cluster.local");
-        let dst = ctrl.destination_tx(format!("transparency.test.svc.cluster.local:{}", srv_addr.port()));
+        let dst = ctrl.destination_tx(dst);
         dst.send_h2_hinted(inbound.inbound);
 
         let ctrl = ctrl
@@ -1145,6 +1149,8 @@ mod proxy_to_proxy {
         let addr = outbound.outbound;
         ProxyToProxy {
             _dst: dst,
+            _profile_in,
+            _profile_out,
             in_proxy: inbound,
             out_proxy: outbound,
             inbound: addr,

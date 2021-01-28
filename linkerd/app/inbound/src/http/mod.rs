@@ -19,6 +19,9 @@ use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tracing::debug_span;
 
+#[cfg(test)]
+mod tests;
+
 pub fn server<T, I, H, HSvc>(
     config: &ProxyConfig,
     http: H,
@@ -50,6 +53,10 @@ where
 
     svc::stack(http)
         .check_new_service::<T, http::Request<_>>()
+        // Convert origin form HTTP/1 URIs to absolute form for Hyper's
+        // `Client`. This must be below the `orig_proto::Downgrade` layer, since
+        // the request may have been downgraded from a HTTP/2 orig-proto request.
+        .push(http::NewNormalizeUri::layer())
         .push_on_response(
             svc::layers()
                 // Downgrades the protocol if upgraded by an outbound proxy.
@@ -69,10 +76,11 @@ where
                     span_sink.map(|k| SpanConverter::server(k, trace_labels())),
                 ))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
+                // Record when an HTTP/1 URI was in absolute form
+                .push(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(http::BoxRequest::layer())
                 .push(http::BoxResponse::layer()),
         )
-        .push(http::NewNormalizeUri::layer())
         .check_new_service::<T, http::Request<_>>()
         .push_map_target(|(_, t): (_, T)| t)
         .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
