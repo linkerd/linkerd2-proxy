@@ -359,9 +359,11 @@ impl Config {
             // Used by tap.
             .push_http_insert_target()
             .check_new_service::<TcpAccept, http::Request<_>>()
+            .push(http::normalize_uri::NewNormalizeUri::layer())
             .push_on_response(
                 svc::layers()
                     .push(http_admit_request)
+                    .push(http::normalize_uri::MarkAbsoluteForm::layer())
                     .push(TraceContext::layer(span_sink.map(|span_sink| {
                         SpanConverter::server(span_sink, trace_labels())
                     })))
@@ -369,7 +371,6 @@ impl Config {
                     .box_http_request()
                     .box_http_response(),
             )
-            .push(svc::layer::mk(http::normalize_uri::MakeNormalizeUri::new))
             .push_map_target(|(_, accept): (_, TcpAccept)| accept)
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .check_new_service::<(http::Version, TcpAccept), http::Request<_>>()
