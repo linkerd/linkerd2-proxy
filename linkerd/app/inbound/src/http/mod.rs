@@ -17,7 +17,6 @@ use linkerd_app_core::{
     spans::SpanConverter,
     svc, Error, NameAddr, TraceContext, DST_OVERRIDE_HEADER,
 };
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tracing::debug_span;
 
@@ -35,7 +34,7 @@ pub fn server<T, I, H, HSvc>(
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
 > + Clone
 where
-    T: svc::stack::Param<SocketAddr>,
+    T: svc::stack::Param<http::normalize_uri::DefaultAuthority>,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
