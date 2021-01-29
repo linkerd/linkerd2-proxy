@@ -14,8 +14,12 @@ pub mod target;
 #[cfg(test)]
 pub(crate) mod test_util;
 
-pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpAccept, TcpEndpoint};
-use self::{prevent_loop::PreventLoop, require_identity::RequireIdentityForPorts};
+pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
+use self::{
+    prevent_loop::PreventLoop,
+    require_identity::RequireIdentityForPorts,
+    target::{HttpAccept, TcpAccept},
+};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     detect, drain, io, metrics,
@@ -133,6 +137,7 @@ impl Config {
             span_sink.clone(),
         );
         svc::stack(http::server(&self.proxy, http, &metrics, span_sink, drain))
+            .push_map_target(HttpAccept::from)
             .push(svc::UnwrapOr::layer(
                 // When HTTP detection fails, forward the connection to the
                 // application as an opaque TCP stream.

@@ -23,6 +23,12 @@ pub type Logical = crate::target::Logical<Version>;
 pub type Concrete = crate::target::Concrete<Version>;
 pub type Endpoint = crate::target::Endpoint<Version>;
 
+impl Param<Version> for Accept {
+    fn param(&self) -> Version {
+        self.protocol
+    }
+}
+
 impl Param<normalize_uri::DefaultAuthority> for Accept {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         normalize_uri::DefaultAuthority(Some(
@@ -39,6 +45,12 @@ impl From<(Version, tcp::Logical)> for Logical {
             orig_dst: logical.orig_dst,
             profile: logical.profile,
         }
+    }
+}
+
+impl Param<Version> for Logical {
+    fn param(&self) -> Version {
+        self.protocol
     }
 }
 

@@ -8,7 +8,7 @@ use crate::{
 use linkerd_drain as drain;
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 use std::{
     future::Future,
     pin::Pin,
@@ -69,15 +69,17 @@ impl<N> NewServeHttp<N> {
     }
 }
 
-impl<T, N> NewService<(Version, T)> for NewServeHttp<N>
+impl<T, N> NewService<T> for NewServeHttp<N>
 where
-    N: NewService<(Version, T)> + Clone,
+    T: Param<Version>,
+    N: NewService<T> + Clone,
 {
     type Service = ServeHttp<N::Service>;
 
-    fn new_service(&mut self, (version, target): (Version, T)) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
+        let version = target.param();
         debug!(?version, "Creating HTTP service");
-        let inner = self.inner.new_service((version, target));
+        let inner = self.inner.new_service(target);
         ServeHttp {
             inner,
             version,
