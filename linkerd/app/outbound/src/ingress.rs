@@ -119,9 +119,9 @@ where
         .push(http::NewNormalizeUri::layer())
         .check_new_service::<http::Accept, http::Request<_>>()
         .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
-        .push_map_target(http::Accept::from)
-        .check_new_service::<(http::Version, tcp::Accept), http::Request<_>>()
+        .check_new_service::<http::Accept, http::Request<_>>()
         .push(http::NewServeHttp::layer(h2_settings, drain))
+        .push_map_target(http::Accept::from)
         .push(svc::UnwrapOr::layer(tcp))
         .push_cache(cache_max_idle_age)
         .push(detect::NewDetectService::timeout(

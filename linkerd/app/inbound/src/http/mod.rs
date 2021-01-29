@@ -1,6 +1,6 @@
 use crate::{
     allow_discovery::AllowProfile,
-    target::{self, HttpEndpoint, Logical, RequestTarget, Target, TcpAccept, TcpEndpoint},
+    target::{self, HttpAccept, HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
     Config,
 };
 pub use linkerd_app_core::proxy::http::{
@@ -15,7 +15,8 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     spans::SpanConverter,
-    svc, Error, NameAddr, TraceContext, DST_OVERRIDE_HEADER,
+    svc::{self, stack::Param},
+    Error, NameAddr, TraceContext, DST_OVERRIDE_HEADER,
 };
 use tokio::sync::mpsc;
 use tracing::debug_span;
@@ -30,11 +31,11 @@ pub fn server<T, I, H, HSvc>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) -> impl svc::NewService<
-    (http::Version, T),
+    T,
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
 > + Clone
 where
-    T: svc::stack::Param<http::normalize_uri::DefaultAuthority>,
+    T: Param<Version> + Param<http::normalize_uri::DefaultAuthority>,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -83,8 +84,7 @@ where
                 .push(http::BoxResponse::layer()),
         )
         .check_new_service::<T, http::Request<_>>()
-        .push_map_target(|(_, t): (_, T)| t)
-        .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
+        .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
         .push(http::NewServeHttp::layer(h2_settings, drain))
         .into_inner()
 }
@@ -97,7 +97,7 @@ pub fn router<C, P>(
     metrics: &metrics::Proxy,
     span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl svc::NewService<
-    TcpAccept,
+    HttpAccept,
     Service = impl svc::Service<
         http::Request<http::BoxBody>,
         Response = http::Response<http::BoxBody>,

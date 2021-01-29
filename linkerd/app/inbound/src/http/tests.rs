@@ -1,9 +1,10 @@
 use crate::{
+    target::{HttpAccept, TcpAccept, TcpEndpoint},
     test_util::{
         support::{connect::Connect, http_util, profile, resolver},
         *,
     },
-    Config, TcpAccept, TcpEndpoint,
+    Config,
 };
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
@@ -26,7 +27,7 @@ fn build_server<I>(
     connect: Connect<ConnectAddr>,
 ) -> (
     impl svc::NewService<
-            (proxy::http::Version, TcpAccept),
+            HttpAccept,
             Service = impl tower::Service<
                 I,
                 Response = (),
@@ -52,7 +53,7 @@ where
         .into_inner();
     let router = super::router(cfg, connect, profiles, tap, metrics, None);
     let svc = svc::stack(super::server(&cfg.proxy, router, metrics, None, drain))
-        .check_new_service::<(proxy::http::Version, TcpAccept), _>()
+        .check_new_service::<HttpAccept, _>()
         .into_inner();
     (svc, drain_tx)
 }
@@ -65,10 +66,13 @@ async fn unmeshed_http1_hello_world() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
-    let addrs = TcpAccept {
-        target_addr: ([127, 0, 0, 1], 5550).into(),
-        client_addr: ([10, 0, 0, 41], 6894).into(),
-        tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+    let accept = HttpAccept {
+        version: proxy::http::Version::Http1,
+        tcp: TcpAccept {
+            target_addr: ([127, 0, 0, 1], 5550).into(),
+            client_addr: ([10, 0, 0, 41], 6894).into(),
+            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+        },
     };
 
     let cfg = default_config(ep1);
@@ -82,7 +86,7 @@ async fn unmeshed_http1_hello_world() {
 
     // Build the outbound server
     let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
-    let server = s.new_service((proxy::http::Version::Http1, addrs));
+    let server = s.new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -109,10 +113,13 @@ async fn downgrade_origin_form() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
-    let addrs = TcpAccept {
-        target_addr: ([127, 0, 0, 1], 5550).into(),
-        client_addr: ([10, 0, 0, 41], 6894).into(),
-        tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+    let accept = HttpAccept {
+        version: proxy::http::Version::H2,
+        tcp: TcpAccept {
+            target_addr: ([127, 0, 0, 1], 5550).into(),
+            client_addr: ([10, 0, 0, 41], 6894).into(),
+            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+        },
     };
 
     let cfg = default_config(ep1);
@@ -126,7 +133,7 @@ async fn downgrade_origin_form() {
 
     // Build the outbound server
     let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
-    let server = s.new_service((proxy::http::Version::H2, addrs));
+    let server = s.new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -154,10 +161,13 @@ async fn downgrade_absolute_form() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
-    let addrs = TcpAccept {
-        target_addr: ([127, 0, 0, 1], 5550).into(),
-        client_addr: ([10, 0, 0, 41], 6894).into(),
-        tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+    let accept = HttpAccept {
+        version: proxy::http::Version::H2,
+        tcp: TcpAccept {
+            target_addr: ([127, 0, 0, 1], 5550).into(),
+            client_addr: ([10, 0, 0, 41], 6894).into(),
+            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+        },
     };
 
     let cfg = default_config(ep1);
@@ -171,7 +181,7 @@ async fn downgrade_absolute_form() {
 
     // Build the outbound server
     let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
-    let server = s.new_service((proxy::http::Version::H2, addrs));
+    let server = s.new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()

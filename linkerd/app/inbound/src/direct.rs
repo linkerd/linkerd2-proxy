@@ -1,7 +1,7 @@
 use crate::{
     http,
     require_identity::RequireIdentityForDirect,
-    target::{RequestTarget, Target, TcpAccept, TcpEndpoint},
+    target::{HttpAccept, RequestTarget, Target, TcpAccept, TcpEndpoint},
 };
 use linkerd_app_core::{
     config::ProxyConfig,
@@ -81,12 +81,13 @@ where
         // target, and dispatches the request.
         .instrument_from_target()
         .push(svc::NewRouter::layer(RequestTarget::from))
-        .check_new_service::<TcpAccept, _>()
+        .check_new_service::<HttpAccept, _>()
         .into_inner();
 
     let http_server = svc::stack(http::server(&config, http, metrics, span_sink, drain))
-        .check_new_service::<(http::Version, TcpAccept), _>()
-        .push_cache(config.cache_max_idle_age);
+        .check_new_service::<HttpAccept, _>()
+        .push_cache(config.cache_max_idle_age)
+        .push_map_target(HttpAccept::from);
 
     let http_detect = http_server
         .clone()

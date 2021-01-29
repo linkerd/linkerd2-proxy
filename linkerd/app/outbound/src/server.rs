@@ -189,8 +189,8 @@ where
         // Record when a HTTP/1 URI originated in absolute form
         .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
-        .push_map_target(http::Logical::from)
         .push(http::NewServeHttp::layer(h2_settings, drain))
+        .push_map_target(http::Logical::from)
         .push(svc::UnwrapOr::layer(
             // When an HTTP version cannot be detected, we fallback to a logical
             // TCP stack. This service needs to be buffered so that it can be

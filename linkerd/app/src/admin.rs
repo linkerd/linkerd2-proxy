@@ -5,9 +5,14 @@ use crate::core::{
     metrics::{self, FmtMetrics},
     serve, tls, trace,
     transport::listen,
-    Addr, Error,
+    Error,
 };
-use crate::{http, identity::LocalCrtKey, inbound, svc};
+use crate::{
+    http,
+    identity::LocalCrtKey,
+    inbound::target::{HttpAccept, Target, TcpAccept},
+    svc,
+};
 use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::sync::mpsc;
 
@@ -53,18 +58,9 @@ impl Config {
                     .push(errors::layer())
                     .push(http::BoxResponse::layer()),
             )
-            .push(svc::stack::MapTargetLayer::new(|(http_version, tcp)| {
-                let inbound::TcpAccept {
-                    target_addr, tls, ..
-                } = tcp;
-                inbound::Target {
-                    dst: Addr::Socket(target_addr),
-                    target_addr,
-                    http_version,
-                    tls,
-                }
-            }))
+            .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
+            .push_map_target(HttpAccept::from)
             .push(svc::UnwrapOr::layer(
                 svc::Fail::<_, AdminHttpOnly>::default(),
             ))
@@ -73,7 +69,7 @@ impl Config {
                 http::DetectHttp::default(),
             ))
             .push(metrics.transport.layer_accept())
-            .push_map_target(inbound::TcpAccept::from)
+            .push_map_target(TcpAccept::from)
             .check_new_clone::<tls::server::Meta<listen::Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();
