@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: git co
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
 
       - name: meta
         id: release-tag-meta
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: git co
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
 
       - name: meta
         id: release-tag-meta
@@ -82,7 +82,7 @@ jobs:
         run: ls -R artifacts
 
       - name: release
-        uses: softprops/action-gh-release@b21b43d
+        uses: softprops/action-gh-release@affa18ef97bc9db20076945705aba8c516139abd
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
