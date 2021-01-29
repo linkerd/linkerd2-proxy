@@ -79,6 +79,15 @@ impl Param<SocketAddr> for TcpAccept {
     }
 }
 
+impl Param<http::normalize_uri::DefaultAuthority> for TcpAccept {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(
+            http::uri::Authority::from_str(&self.target_addr.to_string())
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
 impl Param<transport::labels::Key> for TcpAccept {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::accept(
