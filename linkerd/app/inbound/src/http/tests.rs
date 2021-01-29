@@ -18,7 +18,7 @@ use linkerd_app_core::{
     transport::{self, ConnectAddr},
     Conditional, Error, NameAddr,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 use tracing::Instrument;
 
 fn build_server<I>(
@@ -65,7 +65,6 @@ async fn unmeshed_http1_hello_world() {
     let mut client = ClientBuilder::new();
     let _trace = support::trace_init();
 
-    let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
     let accept = HttpAccept {
         version: proxy::http::Version::Http1,
         tcp: TcpAccept {
@@ -75,9 +74,10 @@ async fn unmeshed_http1_hello_world() {
         },
     };
 
-    let cfg = default_config(ep1);
+    let cfg = default_config(accept.tcp.target_addr);
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server));
+    let connect =
+        support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -112,7 +112,6 @@ async fn downgrade_origin_form() {
     client.http2_only(true);
     let _trace = support::trace_init();
 
-    let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
     let accept = HttpAccept {
         version: proxy::http::Version::H2,
         tcp: TcpAccept {
@@ -122,9 +121,10 @@ async fn downgrade_origin_form() {
         },
     };
 
-    let cfg = default_config(ep1);
+    let cfg = default_config(accept.tcp.target_addr);
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server));
+    let connect =
+        support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -160,7 +160,6 @@ async fn downgrade_absolute_form() {
     client.http2_only(true);
     let _trace = support::trace_init();
 
-    let ep1 = SocketAddr::from(([127, 0, 0, 1], 5550));
     let accept = HttpAccept {
         version: proxy::http::Version::H2,
         tcp: TcpAccept {
@@ -170,9 +169,10 @@ async fn downgrade_absolute_form() {
         },
     };
 
-    let cfg = default_config(ep1);
+    let cfg = default_config(accept.tcp.target_addr);
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server));
+    let connect =
+        support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =

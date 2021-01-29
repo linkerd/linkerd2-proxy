@@ -10,7 +10,7 @@ use linkerd_app_core::{
     transport_header::TransportHeader,
     Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -329,7 +329,12 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
             dst,
             target_addr: self.accept.tcp.target_addr,
             tls: self.accept.tcp.tls.clone(),
-            http_version: self.accept.version,
+            // The HttpAccept target version reflects the inbound transport
+            // protocol, but it may have changed due to orig-proto downgrading.
+            http_version: req
+                .version()
+                .try_into()
+                .expect("HTTP version must be valid"),
         }
     }
 }
