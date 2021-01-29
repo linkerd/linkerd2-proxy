@@ -74,7 +74,7 @@ impl Config {
 
                     let addr = addr.clone();
                     Box::pin(async move {
-                        debug!(peer.addr = ?addr, "running");
+                        debug!(peer.addr = ?addr, "Running");
                         opencensus::export_spans(svc, node, spans_rx, metrics).await
                     })
                 };

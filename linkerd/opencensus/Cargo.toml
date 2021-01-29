@@ -16,5 +16,5 @@ linkerd-metrics = { path = "../metrics" }
 opencensus-proto = { path = "../../opencensus-proto" }
 tonic = { version = "0.4", default-features = false, features = ["prost", "codegen"] }
 tower = { version = "0.4.1", default-features = false }
-tokio = { version = "1", features = ["macros", "sync"] }
+tokio = { version = "1", features = ["macros", "sync", "time"] }
 tracing = "0.1.22"

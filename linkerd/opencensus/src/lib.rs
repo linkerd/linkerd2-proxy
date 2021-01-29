@@ -1,5 +1,11 @@
 #![deny(warnings, rust_2018_idioms)]
-use futures::stream::{Stream, StreamExt};
+
+pub mod metrics;
+
+use futures::{
+    stream::{Stream, StreamExt},
+    FutureExt,
+};
 use http_body::Body as HttpBody;
 use linkerd_channel::into_stream::IntoStream;
 use linkerd_error::Error;
@@ -10,12 +16,9 @@ use opencensus_proto::agent::trace::v1::{
     trace_service_client::TraceServiceClient, ExportTraceServiceRequest,
 };
 use opencensus_proto::trace::v1::Span;
-use std::convert::TryInto;
-use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
-use tracing::trace;
-pub mod metrics;
+use tracing::{debug, trace};
 
 pub async fn export_spans<T, S>(client: T, node: Node, spans: S, metrics: Registry)
 where
@@ -36,16 +39,22 @@ struct SpanExporter<T, S> {
     metrics: Registry,
 }
 
-// ===== impl SpanExporter =====
+#[derive(Debug)]
+struct SpanRxClosed;
+
+// === impl SpanExporter ===
 
 impl<T, S> SpanExporter<T, S>
 where
-    T: GrpcService<BoxBody> + Clone,
+    T: GrpcService<BoxBody>,
     T::Error: Into<Error>,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
     T::ResponseBody: 'static,
     S: Stream<Item = Span> + Unpin,
 {
+    const MAX_BATCH_SIZE: usize = 1000;
+    const MAX_BATCH_IDLE: time::Duration = time::Duration::from_secs(10);
+
     fn new(client: T, node: Node, spans: S, metrics: Registry) -> Self {
         Self {
             client,
@@ -55,87 +64,129 @@ where
         }
     }
 
-    async fn run(mut self) {
-        'reconnect: loop {
-            let (request_tx, request_rx) = mpsc::channel(1);
-            let mut svc = TraceServiceClient::new(self.client.clone());
-            let req = grpc::Request::new(request_rx.into_stream());
-            trace!("Establishing new TraceService::export request");
-            self.metrics.start_stream();
-            let mut rsp = Box::pin(svc.export(req));
-            let mut drive_rsp = true;
+    async fn run(self) {
+        let Self {
+            client,
+            node,
+            mut spans,
+            mut metrics,
+        } = self;
 
-            loop {
-                tokio::select! {
-                    res = &mut rsp, if drive_rsp => match res {
-                        Ok(_) => {
-                            drive_rsp = false;
+        // Holds the batch of pending spans. Cleared as the spans are flushed.
+        // Contains no more than MAX_BATCH_SIZE spans.
+        let mut accum = Vec::new();
+
+        let mut svc = TraceServiceClient::new(client);
+        loop {
+            trace!("Establishing new TraceService::export request");
+            metrics.start_stream();
+            let (tx, rx) = mpsc::channel(1);
+
+            // The node is only transmitted on the first message of each stream.
+            let mut node = Some(node.clone());
+
+            // Drive both the response future and the export stream
+            // simultaneously.
+            tokio::select! {
+                res = svc.export(grpc::Request::new(rx.into_stream())) => match res {
+                    Ok(_rsp) => {
+                        // The response future completed. Continue exporting spans until the
+                        // stream stops accepting them.
+                        if let Err(SpanRxClosed) = Self::export(&tx, &mut spans, &mut accum, &mut node).await {
+                            // No more spans.
+                            return;
                         }
-                        Err(error) => {
-                            tracing::debug!(%error, "response future failed, sending a new request");
-                            continue 'reconnect;
-                        }
-                    },
-                    res = self.send_batch(&request_tx) => match res {
-                        Ok(false) => return, // The span strean has ended --- the proxy is shutting down.
-                        Ok(true) => {} // Continue the inner loop and send a new batch of spans.
-                        Err(()) => continue 'reconnect,
+                    }
+                    Err(error) => {
+                        debug!(%error, "Response future failed; restarting");
+                    }
+                },
+                res = Self::export(&tx, &mut spans, &mut accum, &mut node) => match res {
+                    // The export stream closed; reconnect.
+                    Ok(()) => {},
+                    // No more spans.
+                    Err(SpanRxClosed) => return,
+                },
+            }
+        }
+    }
+
+    /// Accumulate spans and send them on the export stream.
+    ///
+    /// Returns an error when the proxy has closed the span stream.
+    async fn export(
+        tx: &mpsc::Sender<ExportTraceServiceRequest>,
+        spans: &mut S,
+        accum: &mut Vec<Span>,
+        node: &mut Option<Node>,
+    ) -> Result<(), SpanRxClosed> {
+        loop {
+            // Collect spans into a batch.
+            let collect = Self::collect_batch(spans, accum).await;
+
+            // If we collected spans, flush them.
+            if !accum.is_empty() {
+                // Once a batch has been accumulated, ensure that the
+                // request stream is ready to accept the batch.
+                match tx.reserve().await {
+                    Ok(tx) => {
+                        let msg = ExportTraceServiceRequest {
+                            spans: accum.drain(..).collect(),
+                            node: node.take(),
+                            ..Default::default()
+                        };
+                        trace!(
+                            node = msg.node.is_some(),
+                            spans = msg.spans.len(),
+                            "Sending batch"
+                        );
+                        tx.send(msg);
+                    }
+                    Err(error) => {
+                        // If the channel isn't open, start a new stream
+                        // and retry sending the batch.
+                        debug!(%error, "Request stream lost; restarting");
+                        return Ok(());
+                    }
+                }
+            }
+
+            // If the span source was closed, end the task.
+            if let Err(closed) = collect {
+                debug!("Span channel lost");
+                return Err(closed);
+            }
+        }
+    }
+
+    /// Collects spans from the proxy into `accum`.
+    ///
+    /// Returns an error when the span sream has completed. An error may be
+    /// returned after accumulating spans.
+    async fn collect_batch(spans: &mut S, accum: &mut Vec<Span>) -> Result<(), SpanRxClosed> {
+        loop {
+            if accum.len() == Self::MAX_BATCH_SIZE {
+                trace!(capacity = Self::MAX_BATCH_SIZE, "Batch capacity reached");
+                return Ok(());
+            }
+
+            futures::select_biased! {
+                res = spans.next().fuse() => match res {
+                    Some(span) => {
+                        trace!(?span, "Adding to batch");
+                        accum.push(span);
+                    }
+                    None => return Err(SpanRxClosed),
+                },
+                // Don't hold spans indefinitely. Return if we hit an idle
+                // timeout and spans have been collected.
+                _ = time::sleep(Self::MAX_BATCH_IDLE).fuse() => {
+                    if !accum.is_empty() {
+                        trace!(spans = accum.len(), "Flushing spans due to inactivitiy");
+                        return Ok(());
                     }
                 }
             }
         }
-    }
-
-    async fn send_batch(
-        &mut self,
-        tx: &mpsc::Sender<ExportTraceServiceRequest>,
-    ) -> Result<bool, ()> {
-        const MAX_BATCH_SIZE: usize = 100;
-        // If the sender is dead, return an error so we can reconnect.
-        let send = tx.reserve().await.map_err(|_| ())?;
-
-        let mut spans = Vec::new();
-        let mut can_send_more = false;
-        while let Some(span) = self.spans.next().await {
-            spans.push(span);
-            if spans.len() == MAX_BATCH_SIZE {
-                can_send_more = true;
-                break;
-            }
-        }
-
-        if spans.is_empty() {
-            return Ok(false);
-        }
-
-        if let Ok(num_spans) = spans.len().try_into() {
-            self.metrics.send(num_spans);
-        }
-        let req = ExportTraceServiceRequest {
-            spans,
-            node: Some(self.node.clone()),
-            resource: None,
-        };
-        trace!(message = "Transmitting", ?req);
-        send.send(req);
-        Ok(can_send_more)
-    }
-}
-
-struct IntoService<T>(T);
-
-impl<T, R> tower::Service<http::Request<R>> for IntoService<T>
-where
-    T: GrpcService<R>,
-{
-    type Response = http::Response<T::ResponseBody>;
-    type Future = T::Future;
-    type Error = T::Error;
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<R>) -> Self::Future {
-        self.0.call(req)
     }
 }
