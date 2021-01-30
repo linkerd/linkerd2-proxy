@@ -240,13 +240,15 @@ impl classify::CanClassify for Target {
 
 impl tap::Inspect for Target {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<TcpAccept>().map(|s| s.client_addr)
+        req.extensions()
+            .get::<HttpAccept>()
+            .map(|s| s.tcp.client_addr)
     }
 
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {
         req.extensions()
-            .get::<TcpAccept>()
-            .map(|s| s.tls.clone())
+            .get::<HttpAccept>()
+            .map(|s| s.tcp.tls.clone())
             .unwrap_or_else(|| Conditional::None(tls::NoServerTls::Disabled))
     }
 
