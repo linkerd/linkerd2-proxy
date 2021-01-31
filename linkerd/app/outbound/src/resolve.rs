@@ -24,14 +24,11 @@ use std::{
     time::Duration,
 };
 
-type ResolveStack<R> = map_endpoint::Resolve<
-    EndpointFromMetadata,
-    RecoverDefault<Filter<ResolveService<R>, AllowResolve>>,
->;
+type ResolveStack<R> =
+    map_endpoint::Resolve<EndpointFromMetadata, Filter<ResolveService<R>, ToAddr>>;
 
 fn new_resolve<T, R>(resolve: R) -> ResolveStack<R>
 where
-    T: Clone + Param<std::net::SocketAddr>,
     EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
     R: Resolve<Addr, Endpoint = Metadata>,
     R::Future: Send,
@@ -39,7 +36,7 @@ where
 {
     map_endpoint::Resolve::new(
         EndpointFromMetadata,
-        RecoverDefault(Filter::new(resolve.into_service(), AllowResolve)),
+        Filter::new(resolve.into_service(), ToAddr),
     )
 }
 
@@ -50,7 +47,6 @@ pub fn layer<T, E, R, N>(
     watchdog: Duration,
 ) -> impl layer::Layer<N, Service = Stack<E, R, N>> + Clone
 where
-    T: Clone + Param<std::net::SocketAddr>,
     R: Resolve<Addr, Endpoint = Metadata> + Clone,
     R::Resolution: Send,
     R::Future: Send,
@@ -68,59 +64,14 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct AllowResolve;
+pub struct ToAddr;
 
-/// Wraps a `Resolve` to produce a default resolution when the resolution is
-/// rejected.
-#[derive(Clone, Debug)]
-pub struct RecoverDefault<S>(S);
+// === impl ToAddr ===
 
-// === impl AllowResolve ===
-
-impl<P> Predicate<Concrete<P>> for AllowResolve {
+impl<P> Predicate<Concrete<P>> for ToAddr {
     type Request = Addr;
 
     fn check(&mut self, target: Concrete<P>) -> Result<Addr, Error> {
-        target.resolve.ok_or_else(|| discovery_rejected().into())
-    }
-}
-
-// === impl RecoverDefault ===
-
-type Resolution<R> =
-    future::Either<R, stream::Once<future::Ready<Result<Update<Metadata>, Error>>>>;
-
-impl<T, S> tower::Service<T> for RecoverDefault<S>
-where
-    T: Param<std::net::SocketAddr>,
-    S: Resolve<T, Endpoint = Metadata, Error = Error>,
-    S::Future: Send + 'static,
-    S::Resolution: Send + 'static,
-{
-    type Response = Resolution<S::Resolution>;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Error>> + Send + 'static>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
-        Poll::Ready(futures::ready!(self.0.poll_ready(cx)).map_err(Into::into))
-    }
-
-    fn call(&mut self, t: T) -> Self::Future {
-        let addr = t.param();
-        Box::pin(
-            self.0
-                .resolve(t)
-                .map_ok(future::Either::Left)
-                .or_else(move |error| {
-                    if is_discovery_rejected(&*error) {
-                        tracing::debug!(%error, %addr, "Synthesizing endpoint");
-                        let endpoint = (addr, S::Endpoint::default());
-                        let res = stream::once(future::ok(Update::Reset(vec![endpoint])));
-                        return future::ok(future::Either::Right(res));
-                    }
-
-                    future::err(error)
-                }),
-        )
+        Ok(target.resolve)
     }
 }

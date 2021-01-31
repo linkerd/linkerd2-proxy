@@ -112,7 +112,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::target::{Concrete, Endpoint, Logical};
+    use crate::target::{Endpoint, Logical};
     use futures::future;
     use linkerd_app_core::{
         io::{self, AsyncWriteExt},
@@ -131,13 +131,10 @@ mod test {
             target_addr: ([127, 0, 0, 2], 4321).into(),
             tls: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
             metadata,
-            concrete: Concrete {
-                resolve: None,
-                logical: Logical {
-                    orig_dst: ([127, 0, 0, 2], 4321).into(),
-                    profile: None,
-                    protocol: (),
-                },
+            logical: Logical {
+                orig_dst: ([127, 0, 0, 2], 4321).into(),
+                profile: None,
+                protocol: (),
             },
         }
     }
@@ -172,7 +169,7 @@ mod test {
             inner: service_fn(|ep: Endpoint<()>| {
                 assert_eq!(ep.addr.port(), 4143);
                 let hdr = TransportHeader {
-                    port: ep.concrete.logical.orig_dst.port(),
+                    port: ep.logical.orig_dst.port(),
                     name: None,
                     protocol: None,
                 };
@@ -242,7 +239,7 @@ mod test {
             inner: service_fn(|ep: Endpoint<()>| {
                 assert_eq!(ep.addr.port(), 4143);
                 let hdr = TransportHeader {
-                    port: ep.concrete.logical.orig_dst.port(),
+                    port: ep.logical.orig_dst.port(),
                     name: None,
                     protocol: None,
                 };

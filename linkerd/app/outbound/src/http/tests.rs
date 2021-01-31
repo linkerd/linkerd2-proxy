@@ -98,7 +98,6 @@ where
     let accept = crate::server::accept_stack(
         &cfg,
         profiles,
-        support::connect::NoRawTcp,
         NoTcpBalancer,
         router,
         metrics.outbound.clone(),
@@ -111,9 +110,9 @@ where
 #[derive(Clone, Debug)]
 struct NoTcpBalancer;
 
-impl svc::NewService<crate::tcp::Concrete> for NoTcpBalancer {
+impl<T: std::fmt::Debug> svc::NewService<T> for NoTcpBalancer {
     type Service = Self;
-    fn new_service(&mut self, target: crate::tcp::Concrete) -> Self::Service {
+    fn new_service(&mut self, target: T) -> Self::Service {
         panic!(
             "no TCP load balancer should be created in this test!\n\ttarget = {:?}",
             target

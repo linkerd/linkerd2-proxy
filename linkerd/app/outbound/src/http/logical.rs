@@ -34,7 +34,7 @@ where
     ESvc::Future: Send,
     R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
     R::Resolution: Send,
-    R::Future: Send,
+    R::Future: Send + Unpin,
 {
     let ProxyConfig {
         buffer_capacity,
@@ -57,7 +57,7 @@ where
                 // the balancer need not drive them all directly.
                 .push(svc::layer::mk(svc::SpawnReady::new)),
         )
-        // Resolve the service to its endponts and balance requests over them.
+        // Resolve the service to its endpoints and balance requests over them.
         //
         // If the balancer has been empty/unavailable, eagerly fail requests.
         // When the balancer is in failfast, spawn the service in a background
@@ -71,7 +71,8 @@ where
                 ))
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
-                .push(metrics.stack.layer(stack_labels("http", "concrete"))),
+                .push(metrics.stack.layer(stack_labels("http", "concrete")))
+                .push(http::BoxResponse::layer()),
         )
         .push(svc::MapErrLayer::new(Into::into))
         // Drives the initial resolution via the service's readiness.
@@ -79,11 +80,24 @@ where
         // The concrete address is only set when the profile could be
         // resolved. Endpoint resolution is skipped when there is no
         // concrete address.
-        .instrument(|c: &Concrete| match c.resolve.as_ref() {
-            None => debug_span!("concrete"),
-            Some(addr) => debug_span!("concrete", %addr),
-        })
+        .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
         .push_map_target(Concrete::from)
+        // If there's no resolveable address, bypass the load balancer.
+        .push(svc::UnwrapOr::layer(
+            svc::stack(endpoint.clone())
+                .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
+                .push_on_response(
+                    svc::layers()
+                        .push(http::BoxRequest::layer())
+                        .push(http::BoxResponse::layer()),
+                )
+                .check_new_service::<Endpoint, http::Request<_>>()
+                .push_map_target(Endpoint::from_logical(
+                    tls::NoClientTls::NotProvidedByServiceDiscovery,
+                ))
+                .check_new_service::<Logical, http::Request<_>>()
+                .into_inner(),
+        ))
         // Distribute requests over a distribution of balancers via a traffic
         // split.
         //
