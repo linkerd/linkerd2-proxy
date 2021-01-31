@@ -190,3 +190,7 @@ impl svc::Predicate<listen::Addrs> for SkipByPort {
         }
     }
 }
+
+fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
+    metrics::StackLabels::inbound(proto, name)
+}

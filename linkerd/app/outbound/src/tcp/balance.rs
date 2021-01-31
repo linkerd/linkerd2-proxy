@@ -2,7 +2,7 @@ use super::{Concrete, Endpoint};
 use crate::resolve;
 use linkerd_app_core::{
     config::ProxyConfig,
-    drain, io,
+    drain, io, metrics,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
     svc, Addr, Conditional, Error,
 };
@@ -13,6 +13,7 @@ pub fn stack<I, C, R>(
     config: &ProxyConfig,
     connect: C,
     resolve: R,
+    metrics: &metrics::Proxy,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     Concrete,
@@ -46,6 +47,7 @@ where
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
                 ))
+                .push(metrics.stack.layer(crate::stack_labels("tcp", "balancer")))
                 .push(tcp::Forward::layer())
                 .push(drain::Retain::layer(drain)),
         )

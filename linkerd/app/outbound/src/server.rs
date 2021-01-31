@@ -48,8 +48,13 @@ where
     P::Future: Send,
     P::Error: Send,
 {
-    let tcp_balance =
-        tcp::balance::stack(&config.proxy, tcp_connect.clone(), resolve, drain.clone());
+    let tcp_balance = tcp::balance::stack(
+        &config.proxy,
+        tcp_connect.clone(),
+        resolve,
+        &metrics,
+        drain.clone(),
+    );
     let accept = accept_stack(
         config,
         profiles,
@@ -91,6 +96,7 @@ where
                 // the service in a background task so it becomes ready without
                 // new requests.
                 .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(metrics.stack.layer(crate::stack_labels("tcp", "server")))
                 .push(svc::FailFast::layer("TCP Server", config.dispatch_timeout))
                 .push_spawn_buffer(config.buffer_capacity),
         )
@@ -153,7 +159,6 @@ where
         .push_on_response(tcp::Forward::layer())
         .push(svc::MapErrLayer::new(Into::into))
         .into_new_service()
-        .push_on_response(metrics.stack.layer(stack_labels("tcp", "forward")))
         .push_map_target(tcp::Endpoint::from_logical(
             tls::NoClientTls::NotProvidedByServiceDiscovery,
         ))
@@ -180,7 +185,6 @@ where
                 .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push(http::BoxResponse::layer()),
         )
         // Convert origin form HTTP/1 URIs to absolute form for Hyper's
@@ -201,10 +205,10 @@ where
                 .push_switch(ShouldResolve, tcp_forward.clone())
                 .push_on_response(
                     svc::layers()
+                        .push(metrics.stack.layer(stack_labels("tcp", "logical")))
                         .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
-                        .push_spawn_buffer(buffer_capacity)
-                        .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
+                        .push_spawn_buffer(buffer_capacity),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
                 .check_new_service::<tcp::Logical, _>()
@@ -226,7 +230,6 @@ where
                 .push_map_target(tcp::Concrete::from)
                 .push(profiles::split::layer())
                 .push_switch(ShouldResolve, tcp_forward)
-                .push_on_response(metrics.stack.layer(stack_labels("tcp", "passthru")))
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )

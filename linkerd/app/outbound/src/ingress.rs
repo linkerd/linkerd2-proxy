@@ -91,6 +91,7 @@ where
         ))
         .push_on_response(
             svc::layers()
+                .push(metrics.stack.layer(stack_labels("http", "logical")))
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
@@ -112,7 +113,6 @@ where
                 .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push(http::BoxResponse::layer()),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
