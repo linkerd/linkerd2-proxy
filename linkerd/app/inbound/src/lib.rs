@@ -11,9 +11,15 @@ mod http;
 mod prevent_loop;
 mod require_identity;
 pub mod target;
+#[cfg(test)]
+pub(crate) mod test_util;
 
-pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpAccept, TcpEndpoint};
-use self::{prevent_loop::PreventLoop, require_identity::RequireIdentityForPorts};
+pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
+use self::{
+    prevent_loop::PreventLoop,
+    require_identity::RequireIdentityForPorts,
+    target::{HttpAccept, TcpAccept},
+};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     detect, drain, io, metrics,
@@ -131,7 +137,8 @@ impl Config {
             span_sink.clone(),
         );
         svc::stack(http::server(&self.proxy, http, &metrics, span_sink, drain))
-            .push(svc::NewUnwrapOr::layer(
+            .push_map_target(HttpAccept::from)
+            .push(svc::UnwrapOr::layer(
                 // When HTTP detection fails, forward the connection to the
                 // application as an opaque TCP stream.
                 tcp_forward
@@ -172,8 +179,14 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
     }
 }
 
-impl svc::stack::Switch<listen::Addrs> for SkipByPort {
-    fn use_primary(&self, t: &listen::Addrs) -> bool {
-        !self.0.contains(&t.target_addr().port())
+impl svc::Predicate<listen::Addrs> for SkipByPort {
+    type Request = svc::Either<listen::Addrs, listen::Addrs>;
+
+    fn check(&mut self, t: listen::Addrs) -> Result<Self::Request, Error> {
+        if !self.0.contains(&t.target_addr().port()) {
+            Ok(svc::Either::A(t))
+        } else {
+            Ok(svc::Either::B(t))
+        }
     }
 }

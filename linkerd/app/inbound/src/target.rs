@@ -21,6 +21,12 @@ pub struct TcpAccept {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct HttpAccept {
+    pub tcp: TcpAccept,
+    pub version: http::Version,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Target {
     pub dst: Addr,
     pub target_addr: SocketAddr,
@@ -48,7 +54,7 @@ pub struct TcpEndpoint {
 
 #[derive(Clone, Debug)]
 pub struct RequestTarget {
-    accept: TcpAccept,
+    accept: HttpAccept,
 }
 
 // === impl TcpAccept ===
@@ -86,6 +92,29 @@ impl Param<transport::labels::Key> for TcpAccept {
             self.tls.clone(),
             self.target_addr,
         )
+    }
+}
+
+// === impl HttpAccept ===
+
+impl From<(http::Version, TcpAccept)> for HttpAccept {
+    fn from((version, tcp): (http::Version, TcpAccept)) -> Self {
+        Self { version, tcp }
+    }
+}
+
+impl Param<http::Version> for HttpAccept {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl Param<http::normalize_uri::DefaultAuthority> for HttpAccept {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(
+            http::uri::Authority::from_str(&self.tcp.target_addr.to_string())
+                .expect("Address must be a valid authority"),
+        ))
     }
 }
 
@@ -141,6 +170,14 @@ impl Param<transport::labels::Key> for TcpEndpoint {
     }
 }
 
+// Needed by `linkerd_app_test::Connect`
+#[cfg(test)]
+impl Into<SocketAddr> for TcpEndpoint {
+    fn into(self) -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], self.port))
+    }
+}
+
 // === impl Profile ===
 
 pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::Route {
@@ -152,6 +189,23 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 }
 
 // === impl Target ===
+
+impl From<HttpAccept> for Target {
+    fn from(HttpAccept { version, tcp }: HttpAccept) -> Self {
+        Self {
+            dst: tcp.target_addr.into(),
+            target_addr: tcp.target_addr,
+            http_version: version,
+            tls: tcp.tls,
+        }
+    }
+}
+
+impl From<Logical> for Target {
+    fn from(Logical { target, .. }: Logical) -> Self {
+        target
+    }
+}
 
 impl Param<profiles::LogicalAddr> for Target {
     fn param(&self) -> profiles::LogicalAddr {
@@ -238,8 +292,8 @@ impl stack_tracing::GetSpan<()> for Target {
 
 // === impl RequestTarget ===
 
-impl From<TcpAccept> for RequestTarget {
-    fn from(accept: TcpAccept) -> Self {
+impl From<HttpAccept> for RequestTarget {
+    fn from(accept: HttpAccept) -> Self {
         Self { accept }
     }
 }
@@ -269,23 +323,19 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
             })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
-            .unwrap_or_else(|| self.accept.target_addr.into());
+            .unwrap_or_else(|| self.accept.tcp.target_addr.into());
 
         Target {
             dst,
-            target_addr: self.accept.target_addr,
-            tls: self.accept.tls.clone(),
+            target_addr: self.accept.tcp.target_addr,
+            tls: self.accept.tcp.tls.clone(),
+            // The HttpAccept target version reflects the inbound transport
+            // protocol, but it may have changed due to orig-proto downgrading.
             http_version: req
                 .version()
                 .try_into()
                 .expect("HTTP version must be valid"),
         }
-    }
-}
-
-impl From<Logical> for Target {
-    fn from(Logical { target, .. }: Logical) -> Self {
-        target
     }
 }
 

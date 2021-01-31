@@ -1,9 +1,11 @@
 use crate::{
     allow_discovery::AllowProfile,
-    target::{self, HttpEndpoint, Logical, RequestTarget, Target, TcpAccept, TcpEndpoint},
+    target::{self, HttpAccept, HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
     Config,
 };
-pub use linkerd_app_core::proxy::http::{strip_header, BoxBody, DetectHttp, Request, Response};
+pub use linkerd_app_core::proxy::http::{
+    strip_header, BoxBody, DetectHttp, Request, Response, Version,
+};
 use linkerd_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
@@ -13,11 +15,14 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     spans::SpanConverter,
-    svc, Error, NameAddr, TraceContext, DST_OVERRIDE_HEADER,
+    svc::{self, stack::Param},
+    Error, NameAddr, TraceContext, DST_OVERRIDE_HEADER,
 };
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
 use tracing::debug_span;
+
+#[cfg(test)]
+mod tests;
 
 pub fn server<T, I, H, HSvc>(
     config: &ProxyConfig,
@@ -26,11 +31,11 @@ pub fn server<T, I, H, HSvc>(
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) -> impl svc::NewService<
-    (http::Version, T),
+    T,
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
 > + Clone
 where
-    T: svc::stack::Param<SocketAddr>,
+    T: Param<Version> + Param<http::normalize_uri::DefaultAuthority>,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -50,6 +55,10 @@ where
 
     svc::stack(http)
         .check_new_service::<T, http::Request<_>>()
+        // Convert origin form HTTP/1 URIs to absolute form for Hyper's
+        // `Client`. This must be below the `orig_proto::Downgrade` layer, since
+        // the request may have been downgraded from a HTTP/2 orig-proto request.
+        .push(http::NewNormalizeUri::layer())
         .push_on_response(
             svc::layers()
                 // Downgrades the protocol if upgraded by an outbound proxy.
@@ -69,13 +78,13 @@ where
                     span_sink.map(|k| SpanConverter::server(k, trace_labels())),
                 ))
                 .push(metrics.stack.layer(stack_labels("http", "server")))
+                // Record when an HTTP/1 URI was in absolute form
+                .push(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(http::BoxRequest::layer())
                 .push(http::BoxResponse::layer()),
         )
-        .push(http::NewNormalizeUri::layer())
         .check_new_service::<T, http::Request<_>>()
-        .push_map_target(|(_, t): (_, T)| t)
-        .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
+        .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
         .push(http::NewServeHttp::layer(h2_settings, drain))
         .into_inner()
 }
@@ -88,7 +97,7 @@ pub fn router<C, P>(
     metrics: &metrics::Proxy,
     span_sink: Option<mpsc::Sender<oc::Span>>,
 ) -> impl svc::NewService<
-    TcpAccept,
+    HttpAccept,
     Service = impl svc::Service<
         http::Request<http::BoxBody>,
         Response = http::Response<http::BoxBody>,

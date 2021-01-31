@@ -1,7 +1,7 @@
 use crate::{
     http,
     require_identity::RequireIdentityForDirect,
-    target::{RequestTarget, Target, TcpAccept, TcpEndpoint},
+    target::{HttpAccept, RequestTarget, Target, TcpAccept, TcpEndpoint},
 };
 use linkerd_app_core::{
     config::ProxyConfig,
@@ -25,6 +25,9 @@ type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 /// header was present.
 #[derive(Debug, Default)]
 struct RefusedNoHeader(());
+
+#[derive(Clone, Debug)]
+struct HttpFromTransportHeader;
 
 /// Builds a stack that handles connections that target the proxy's inbound port
 /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
@@ -78,33 +81,31 @@ where
         // target, and dispatches the request.
         .instrument_from_target()
         .push(svc::NewRouter::layer(RequestTarget::from))
+        .check_new_service::<HttpAccept, _>()
         .into_inner();
 
-    let http_detect = svc::stack(http::server(&config, http, metrics, span_sink, drain))
+    let http_server = svc::stack(http::server(&config, http, metrics, span_sink, drain))
+        .check_new_service::<HttpAccept, _>()
         .push_cache(config.cache_max_idle_age)
-        .push(svc::NewUnwrapOr::layer(
+        .push_map_target(HttpAccept::from);
+
+    let http_detect = http_server
+        .clone()
+        .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
+        .push(svc::UnwrapOr::layer(
             svc::Fail::<_, RefusedNoHeader>::default(),
         ))
         .push(detect::NewDetectService::timeout(
             detect_timeout,
             http::DetectHttp::default(),
         ))
+        .check_new_service::<TcpAccept, FwdIo<I>>()
         .into_inner();
 
     // If a transport header can be detected, use it to configure TCP
     // forwarding. If a transport header cannot be detected, try to
     // handle the connection as HTTP gateway traffic.
     svc::stack(tcp_forward)
-        .push_map_target(TcpEndpoint::from)
-        // Update the TcpAccept target using a parsed transport-header.
-        //
-        // TODO: Use the transport header's `name` to inform gateway routing.
-        //
-        // TODO: Use the header's session protocol, i.e. for gateway processing.
-        .push_map_target(|(h, mut t): (TransportHeader, TcpAccept)| {
-            t.target_addr = (t.target_addr.ip(), h.port).into();
-            t
-        })
         // We always try to detect a protocol header. We _can_ know whether it's
         // expected based on the serverside ALPN (passed via the target), but
         // it's easier to just do detection and handle the case when it's not
@@ -115,16 +116,27 @@ where
         // opaque.
         //
         // TODO: Stop supporting headerless connections after stable-2.10.
-        .push(svc::NewUnwrapOr::layer(http_detect))
+        .check_new_service::<TcpEndpoint, FwdIo<I>>()
+        .push_switch(
+            HttpFromTransportHeader,
+            http_server
+                .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
+                .check_new_service::<(http::Version, TcpAccept), FwdIo<I>>()
+                .into_inner(),
+        )
+        .check_new_service::<(TransportHeader, TcpAccept), FwdIo<I>>()
+        .push(svc::UnwrapOr::layer(http_detect))
         .push(detect::NewDetectService::timeout(
             detect_timeout,
             DetectHeader::default(),
         ))
+        .check_new_service::<TcpAccept, _>()
         // TODO: this filter should actually extract the TLS status so it's no
         // longer wrapped in a conditional... i.e. proving to the inner stack
         // that the connection is secure.
         .push_request_filter(RequireIdentityForDirect)
         .push(metrics.transport.layer_accept())
+        .check_new_service::<TcpAccept, _>()
         .push_map_target(TcpAccept::from)
         .push(tls::NewDetectTls::layer(
             local_identity.map(WithTransportHeaderAlpn),
@@ -132,6 +144,32 @@ where
         ))
         .check_new_service::<listen::Addrs, I>()
         .into_inner()
+}
+
+// === impl HttpFromTransportHeader ===
+
+impl svc::Predicate<(TransportHeader, TcpAccept)> for HttpFromTransportHeader {
+    type Request = svc::Either<TcpEndpoint, (http::Version, TcpAccept)>;
+
+    // TODO: Use the transport header's `name` to inform gateway routing.
+    //
+    // TODO: Use the header's session protocol, i.e. for gateway processing.
+    fn check(&mut self, (h, mut t): (TransportHeader, TcpAccept)) -> Result<Self::Request, Error> {
+        match h.protocol {
+            None => {
+                // Update the TcpAccept target using a parsed transport-header.
+                t.target_addr = (t.target_addr.ip(), h.port).into();
+                Ok(svc::Either::A(t.into()))
+            }
+            Some(p) => {
+                let v = match p {
+                    transport_header::SessionProtocol::Http1 => http::Version::Http1,
+                    transport_header::SessionProtocol::Http2 => http::Version::H2,
+                };
+                Ok(svc::Either::B((v, t)))
+            }
+        }
+    }
 }
 
 // === impl WithTransportHeaderAlpn ===

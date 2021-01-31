@@ -15,14 +15,11 @@
 //! * Otherwise, the target's address is used (as provided by the target).
 
 use super::h1;
+use futures::{future, TryFutureExt};
+use http::uri::Authority;
+use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Param};
-use std::{
-    future::Future,
-    net::SocketAddr,
-    pin::Pin,
-    str::FromStr,
-    task::{Context, Poll},
-};
+use std::task::{Context, Poll};
 use tracing::trace;
 
 #[derive(Clone, Debug)]
@@ -33,7 +30,21 @@ pub struct NewNormalizeUri<N> {
 #[derive(Clone, Debug)]
 pub struct NormalizeUri<S> {
     inner: S,
-    default: http::uri::Authority,
+    default: Option<http::uri::Authority>,
+}
+
+/// Parameterizes a stack target to produce an optional default authority.
+#[derive(Clone, Debug)]
+pub struct DefaultAuthority(pub Option<Authority>);
+
+#[derive(Debug)]
+pub struct NoAuthority(());
+
+/// Detects the original form of a request URI and inserts a `WasAbsoluteForm`
+/// extension.
+#[derive(Clone, Debug)]
+pub struct MarkAbsoluteForm<S> {
+    inner: S,
 }
 
 // === impl NewNormalizeUri ===
@@ -50,50 +61,22 @@ impl<N> NewNormalizeUri<N> {
 
 impl<T, N> NewService<T> for NewNormalizeUri<N>
 where
-    T: Param<SocketAddr>,
+    T: Param<DefaultAuthority>,
     N: NewService<T>,
 {
     type Service = NormalizeUri<N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let target_addr = target.param();
+        let DefaultAuthority(default) = target.param();
         let inner = self.inner.new_service(target);
-        NormalizeUri::new(inner, target_addr)
-    }
-}
-
-type MakeFuture<T, E> = Pin<Box<dyn Future<Output = Result<NormalizeUri<T>, E>> + Send + 'static>>;
-
-impl<M, T> tower::Service<T> for NewNormalizeUri<M>
-where
-    T: Param<SocketAddr>,
-    M: tower::Service<T>,
-    M::Future: Send + 'static,
-{
-    type Response = NormalizeUri<M::Response>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Response, M::Error>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), M::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let target_addr = target.param();
-        let fut = self.inner.call(target);
-        Box::pin(async move {
-            let inner = fut.await?;
-            Ok(NormalizeUri::new(inner, target_addr))
-        })
+        NormalizeUri::new(inner, default)
     }
 }
 
 // === impl NormalizeUri ===
 
 impl<S> NormalizeUri<S> {
-    fn new(inner: S, target_addr: SocketAddr) -> Self {
-        let default = http::uri::Authority::from_str(&target_addr.to_string())
-            .expect("SocketAddr must be a valid Authority");
+    fn new(inner: S, default: Option<Authority>) -> Self {
         Self { inner, default }
     }
 }
@@ -101,11 +84,74 @@ impl<S> NormalizeUri<S> {
 impl<S, B> tower::Service<http::Request<B>> for NormalizeUri<S>
 where
     S: tower::Service<http::Request<B>>,
+    S::Error: Into<Error>,
+{
+    type Response = S::Response;
+    type Error = Error;
+    type Future = future::Either<
+        future::ErrInto<S::Future, Error>,
+        future::Ready<Result<S::Response, Error>>,
+    >;
+
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        self.inner.poll_ready(cx).map_err(Into::into)
+    }
+
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
+        if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
+            if req.extensions().get::<h1::WasAbsoluteForm>().is_none()
+                && req.uri().authority().is_none()
+            {
+                let authority = match h1::authority_from_host(&req).or_else(|| self.default.clone())
+                {
+                    Some(a) => a,
+                    None => return future::Either::Right(future::err(NoAuthority(()).into())),
+                };
+
+                trace!(%authority, "Normalizing URI");
+                h1::set_authority(req.uri_mut(), authority);
+            }
+        }
+
+        future::Either::Left(self.inner.call(req).err_into())
+    }
+}
+
+// === impl NoAuthority ===
+
+impl std::fmt::Display for NoAuthority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "failed to normalize URI because no authority could be determined"
+        )
+    }
+}
+
+impl std::error::Error for NoAuthority {}
+
+// === impl MarkAbsoluteForm ===
+
+impl<S> MarkAbsoluteForm<S> {
+    pub fn new(inner: S) -> Self {
+        Self { inner }
+    }
+
+    pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {
+        layer::mk(Self::new)
+    }
+}
+
+impl<S, B> tower::Service<http::Request<B>> for MarkAbsoluteForm<S>
+where
+    S: tower::Service<http::Request<B>>,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
     }
@@ -113,14 +159,11 @@ where
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         if let http::Version::HTTP_10 | http::Version::HTTP_11 = req.version() {
             if h1::is_absolute_form(req.uri()) {
-                trace!(uri = ?req.uri(), "Absolute");
+                trace!(uri = ?req.uri(), "Absolute form");
                 req.extensions_mut().insert(h1::WasAbsoluteForm(()));
-            } else if req.uri().authority().is_none() {
-                let authority =
-                    h1::authority_from_host(&req).unwrap_or_else(|| self.default.clone());
-                trace!(%authority, "Normalizing URI");
-                h1::set_authority(req.uri_mut(), authority);
-            }
+            } else {
+                trace!(uri = ?req.uri(), "Origin form");
+            };
         }
 
         self.inner.call(req)
