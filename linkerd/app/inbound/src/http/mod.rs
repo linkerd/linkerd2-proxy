@@ -153,7 +153,7 @@ where
             svc::proxies()
                 // Sets the route as a request extension so that it can be used
                 // by tap.
-                .push_http_insert_target()
+                .push_http_insert_target::<dst::Route>()
                 // Records per-route metrics.
                 .push(metrics.http_route.to_layer::<classify::Response, _>())
                 // Sets the per-route response classifier as a request
@@ -207,7 +207,7 @@ where
         .instrument_from_target()
         .push(svc::NewRouter::layer(RequestTarget::from))
         // Used by tap.
-        .push_http_insert_target()
+        .push_http_insert_target::<HttpAccept>()
         .into_inner()
 }
 
