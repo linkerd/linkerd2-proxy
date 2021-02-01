@@ -69,9 +69,9 @@ where
                     crate::EWMA_DEFAULT_RTT,
                     crate::EWMA_DECAY,
                 ))
+                .push(metrics.stack.layer(stack_labels("http", "balancer")))
                 .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
-                .push(metrics.stack.layer(stack_labels("http", "concrete"))),
+                .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout)),
         )
         .push(svc::MapErrLayer::new(Into::into))
         // Drives the initial resolution via the service's readiness.
@@ -95,6 +95,7 @@ where
         .push_on_response(
             svc::layers()
                 .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(metrics.stack.layer(stack_labels("http", "logical")))
                 .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )

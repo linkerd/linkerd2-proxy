@@ -1,15 +1,15 @@
 use crate::Metrics;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Instant;
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::time::Instant;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TrackService<S> {
     inner: S,
     metrics: Arc<Metrics>,
     blocked_since: Option<Instant>,
-    // Helps determine when all instances are dropped.
-    _tracker: Arc<()>,
 }
 
 impl<S> TrackService<S> {
@@ -18,7 +18,6 @@ impl<S> TrackService<S> {
             inner,
             metrics,
             blocked_since: None,
-            _tracker: Arc::new(()),
         }
     }
 }
@@ -35,9 +34,15 @@ where
         match self.inner.poll_ready(cx) {
             Poll::Pending => {
                 self.metrics.not_ready_total.incr();
-                if self.blocked_since.is_none() {
-                    self.blocked_since = Some(Instant::now());
+                // If the service was already pending, then add the time we
+                // waited and reset blocked_since. This allows the value to be
+                // updated even when we're "stuck" in pending.
+                let now = Instant::now();
+                if let Some(t0) = self.blocked_since.take() {
+                    let not_ready = now - t0;
+                    self.metrics.poll_millis.add(not_ready.as_millis() as u64);
                 }
+                self.blocked_since = Some(now);
                 Poll::Pending
             }
             Poll::Ready(Ok(())) => {
@@ -59,6 +64,7 @@ where
         }
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.inner.call(target)
     }
@@ -66,8 +72,6 @@ where
 
 impl<S> Drop for TrackService<S> {
     fn drop(&mut self) {
-        if Arc::strong_count(&self._tracker) == 1 {
-            self.metrics.drop_total.incr();
-        }
+        self.metrics.drop_total.incr();
     }
 }

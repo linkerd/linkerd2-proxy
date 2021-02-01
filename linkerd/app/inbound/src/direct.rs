@@ -70,6 +70,8 @@ where
     let http = svc::stack(http_loopback)
         .push_on_response(
             svc::layers()
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(metrics.stack.layer(crate::stack_labels("http", "gateway")))
                 .push(svc::FailFast::layer("Gateway", dispatch_timeout))
                 .push_spawn_buffer(config.buffer_capacity),
         )
