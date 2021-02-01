@@ -48,13 +48,7 @@ where
     P::Future: Send,
     P::Error: Send,
 {
-    let tcp = tcp::balance::stack(
-        &config.proxy,
-        tcp_connect.clone(),
-        resolve,
-        &metrics,
-        drain.clone(),
-    );
+    let tcp = tcp::balance::stack(&config.proxy, tcp_connect, resolve, &metrics, drain.clone());
     let accept = accept_stack(
         config,
         profiles,
