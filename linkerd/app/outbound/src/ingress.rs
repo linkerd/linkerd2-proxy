@@ -91,6 +91,7 @@ where
         ))
         .push_on_response(
             svc::layers()
+                .push(metrics.stack.layer(stack_labels("http", "logical")))
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
@@ -112,7 +113,6 @@ where
                 .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push(http::BoxResponse::layer()),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
@@ -187,10 +187,10 @@ impl TargetPerRequest {
 impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
     type Key = Target;
 
-    fn recognize(&self, req: &http::Request<B>) -> Self::Key {
-        Target {
+    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
+        Ok(Target {
             accept: self.0,
             dst: http_request_l5d_override_dst_addr(req).unwrap_or_else(|_| self.0.orig_dst.into()),
-        }
+        })
     }
 }

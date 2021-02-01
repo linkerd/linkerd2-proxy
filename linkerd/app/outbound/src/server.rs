@@ -48,7 +48,13 @@ where
     P::Future: Send,
     P::Error: Send,
 {
-    let tcp = tcp::balance::stack(&config.proxy, tcp_connect, resolve, drain.clone());
+    let tcp = tcp::balance::stack(
+        &config.proxy,
+        tcp_connect.clone(),
+        resolve,
+        &metrics,
+        drain.clone(),
+    );
     let accept = accept_stack(
         config,
         profiles,
@@ -89,6 +95,7 @@ where
                 // the service in a background task so it becomes ready without
                 // new requests.
                 .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(metrics.stack.layer(crate::stack_labels("tcp", "server")))
                 .push(svc::FailFast::layer("TCP Server", config.dispatch_timeout))
                 .push_spawn_buffer(config.buffer_capacity),
         )
@@ -161,7 +168,6 @@ where
                 .push(TraceContext::layer(span_sink.map(|span_sink| {
                     SpanConverter::server(span_sink, trace_labels())
                 })))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
                 .push(http::BoxResponse::layer()),
         )
         // Convert origin form HTTP/1 URIs to absolute form for Hyper's
@@ -182,10 +188,10 @@ where
                 .push_on_response(
                     svc::layers()
                         .push_map_target(io::EitherIo::Right)
+                        .push(metrics.stack.layer(stack_labels("tcp", "logical")))
                         .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
-                        .push_spawn_buffer(buffer_capacity)
-                        .push(metrics.stack.layer(stack_labels("tcp", "logical"))),
+                        .push_spawn_buffer(buffer_capacity),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
                 .check_new_service::<tcp::Logical, _>()

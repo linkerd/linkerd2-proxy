@@ -154,8 +154,8 @@ impl<S> Stack<S> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
 
-    pub fn push_http_insert_target(self) -> Stack<http::insert::target::NewService<S>> {
-        self.push(http::insert::target::layer())
+    pub fn push_http_insert_target<P>(self) -> Stack<http::insert::NewInsert<P, S>> {
+        self.push(http::insert::NewInsert::layer())
     }
 
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>

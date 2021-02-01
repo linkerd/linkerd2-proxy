@@ -77,7 +77,6 @@ where
                 .push(TraceContext::layer(
                     span_sink.map(|k| SpanConverter::server(k, trace_labels())),
                 ))
-                .push(metrics.stack.layer(stack_labels("http", "server")))
                 // Record when an HTTP/1 URI was in absolute form
                 .push(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(http::BoxRequest::layer())
@@ -153,7 +152,7 @@ where
             svc::proxies()
                 // Sets the route as a request extension so that it can be used
                 // by tap.
-                .push_http_insert_target()
+                .push_http_insert_target::<dst::Route>()
                 // Records per-route metrics.
                 .push(metrics.http_route.to_layer::<classify::Response, _>())
                 // Sets the per-route response classifier as a request
@@ -168,10 +167,13 @@ where
             profiles_client,
             AllowProfile(config.allow_discovery.clone()),
         ))
-        .push_on_response(http::BoxResponse::layer())
         .instrument(|_: &Target| debug_span!("profile"))
+        .push_on_response(
+            svc::layers()
+                .push(http::BoxResponse::layer())
+                .push(svc::layer::mk(svc::SpawnReady::new)),
+        )
         // Skip the profile stack if it takes too long to become ready.
-        .push_on_response(svc::layer::mk(svc::SpawnReady::new))
         .push_when_unready(
             config.profile_idle_timeout,
             target
@@ -182,12 +184,12 @@ where
         .check_new_service::<Target, http::Request<http::BoxBody>>()
         .push_on_response(
             svc::layers()
+                .push(metrics.stack.layer(crate::stack_labels("http", "logical")))
                 .push(svc::FailFast::layer(
                     "HTTP Logical",
                     config.proxy.dispatch_timeout,
                 ))
-                .push_spawn_buffer(config.proxy.buffer_capacity)
-                .push(metrics.stack.layer(stack_labels("http", "logical"))),
+                .push_spawn_buffer(config.proxy.buffer_capacity),
         )
         .push_cache(config.proxy.cache_max_idle_age)
         .push_on_response(
@@ -207,7 +209,7 @@ where
         .instrument_from_target()
         .push(svc::NewRouter::layer(RequestTarget::from))
         // Used by tap.
-        .push_http_insert_target()
+        .push_http_insert_target::<HttpAccept>()
         .into_inner()
 }
 
@@ -215,8 +217,4 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
     let mut l = std::collections::HashMap::new();
     l.insert("direction".to_string(), "inbound".to_string());
     l
-}
-
-fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
-    metrics::StackLabels::inbound(proto, name)
 }
