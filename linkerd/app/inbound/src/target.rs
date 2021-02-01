@@ -8,7 +8,7 @@ use linkerd_app_core::{
     tls,
     transport::{self, listen},
     transport_header::TransportHeader,
-    Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
@@ -303,7 +303,7 @@ impl From<HttpAccept> for RequestTarget {
 impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
     type Key = Target;
 
-    fn recognize(&self, req: &http::Request<A>) -> Self::Key {
+    fn recognize(&self, req: &http::Request<A>) -> Result<Self::Key, Error> {
         let dst = req
             .headers()
             .get(CANONICAL_DST_HEADER)
@@ -327,7 +327,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
             .or_else(|| http_request_host_addr(req).ok())
             .unwrap_or_else(|| self.accept.tcp.target_addr.into());
 
-        Target {
+        Ok(Target {
             dst,
             target_addr: self.accept.tcp.target_addr,
             tls: self.accept.tcp.tls.clone(),
@@ -337,7 +337,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
                 .version()
                 .try_into()
                 .expect("HTTP version must be valid"),
-        }
+        })
     }
 }
 
