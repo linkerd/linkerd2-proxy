@@ -4,7 +4,8 @@ use crate::{
     Config,
 };
 pub use linkerd_app_core::proxy::http::{
-    strip_header, BoxBody, DetectHttp, Request, Response, Version,
+    normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
+    Version,
 };
 use linkerd_app_core::{
     classify,

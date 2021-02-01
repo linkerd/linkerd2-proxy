@@ -1,8 +1,8 @@
 use super::make::MakeGateway;
 use linkerd_app_core::{
-    discovery_rejected, profiles, proxy::http, svc, tls, Conditional, Error, NameAddr, NameMatch,
+    discovery_rejected, profiles, proxy::http, svc, tls, Error, NameAddr, NameMatch,
 };
-use linkerd_app_inbound::target as inbound;
+use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 use tracing::debug_span;
 
@@ -21,7 +21,7 @@ impl Config {
         profiles: P,
         local_id: Option<tls::LocalId>,
     ) -> impl svc::NewService<
-        inbound::Target,
+        inbound::HttpGatewayTarget,
         Service = impl tower::Service<
             http::Request<http::BoxBody>,
             Response = http::Response<http::BoxBody>,
@@ -48,30 +48,22 @@ impl Config {
                 profiles,
                 Allow(self.allow_discovery),
             ))
-            .check_new_service::<inbound::Target, http::Request<http::BoxBody>>()
-            .instrument(|_: &inbound::Target| debug_span!("gateway"))
+            .instrument(
+                |g: &inbound::HttpGatewayTarget| debug_span!("gateway", target=%g.target, v=%g.version),
+            )
             .into_inner()
     }
 }
 
-impl svc::stack::Predicate<inbound::Target> for Allow {
+impl svc::stack::Predicate<inbound::HttpGatewayTarget> for Allow {
     type Request = NameAddr;
 
-    fn check(&mut self, target: inbound::Target) -> Result<NameAddr, Error> {
-        // Skip discovery when the client does not have an identity.
-        if let Conditional::Some(tls::ServerTls::Established {
-            client_id: Some(_), ..
-        }) = target.tls
-        {
-            // Discovery needs to have resolved a service name.
-            if let Some(addr) = target.dst.into_name_addr() {
-                // The service name needs to exist in the configured set of suffixes.
-                if self.0.matches(addr.name()) {
-                    return Ok(addr);
-                }
-            }
+    fn check(&mut self, t: inbound::HttpGatewayTarget) -> Result<NameAddr, Error> {
+        // The service name needs to exist in the configured set of suffixes.
+        if self.0.matches(t.target.name()) {
+            Ok(t.target)
+        } else {
+            Err(discovery_rejected().into())
         }
-
-        Err(discovery_rejected().into())
     }
 }
