@@ -1,4 +1,4 @@
-use super::{Concrete, Endpoint, Logical};
+use super::{Endpoint, Logical};
 use crate::test_util::{
     support::{
         connect::{Connect, ConnectFuture},
@@ -33,13 +33,10 @@ async fn plaintext_tcp() {
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-    let concrete = Concrete {
-        logical: Logical {
-            orig_dst: target_addr,
-            profile: Some(profile::only_default()),
-            protocol: (),
-        },
-        resolve: Some(target_addr.into()),
+    let logical = Logical {
+        orig_dst: target_addr,
+        profile: Some(profile::only_default()),
+        protocol: (),
     };
 
     let cfg = default_config(target_addr);
@@ -59,17 +56,14 @@ async fn plaintext_tcp() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = support::resolver().endpoint_exists(
-        concrete.resolve.clone().unwrap(),
-        target_addr,
-        support::resolver::Metadata::default(),
-    );
+    let resolver =
+        support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
 
     // Build the outbound TCP balancer stack.
     let (_, drain) = drain::channel();
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let forward = super::balance::stack(&cfg.proxy, connect, resolver, &metrics.outbound, drain)
-        .new_service(concrete);
+        .new_service((Some(target_addr.into()), logical));
 
     forward
         .oneshot(client_io)
@@ -83,23 +77,17 @@ async fn tls_when_hinted() {
     let _trace = support::trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let tls_concrete = Concrete {
-        logical: Logical {
-            orig_dst: tls_addr,
-            profile: Some(profile::only_default()),
-            protocol: (),
-        },
-        resolve: Some(tls_addr.into()),
+    let tls_logical = Logical {
+        orig_dst: tls_addr,
+        profile: Some(profile::only_default()),
+        protocol: (),
     };
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
-    let plain_concrete = Concrete {
-        logical: Logical {
-            orig_dst: tls_addr,
-            profile: Some(profile::only_default()),
-            protocol: (),
-        },
-        resolve: Some(plain_addr.into()),
+    let plain_logical = Logical {
+        orig_dst: tls_addr,
+        profile: Some(profile::only_default()),
+        protocol: (),
     };
 
     let cfg = default_config(plain_addr);
@@ -135,12 +123,8 @@ async fn tls_when_hinted() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = support::resolver()
-        .endpoint_exists(
-            plain_concrete.resolve.clone().unwrap(),
-            plain_addr,
-            support::resolver::Metadata::default(),
-        )
-        .endpoint_exists(tls_concrete.resolve.clone().unwrap(), tls_addr, tls_meta);
+        .endpoint_exists(plain_addr, plain_addr, Default::default())
+        .endpoint_exists(tls_addr, tls_addr, tls_meta);
 
     // Configure mock IO for the "client".
     let mut client_io = support::io();
@@ -153,11 +137,11 @@ async fn tls_when_hinted() {
         super::balance::stack(&cfg.proxy, connect, resolver, &metrics.outbound, drain);
 
     let plain = balance
-        .new_service(plain_concrete)
+        .new_service((Some(plain_addr.into()), plain_logical))
         .oneshot(client_io.build())
         .err_into::<Error>();
     let tls = balance
-        .new_service(tls_concrete)
+        .new_service((Some(tls_addr.into()), tls_logical))
         .oneshot(client_io.build())
         .err_into::<Error>();
 

@@ -85,7 +85,7 @@ impl Param<normalize_uri::DefaultAuthority> for Logical {
 
 impl Param<client::Settings> for Endpoint {
     fn param(&self) -> client::Settings {
-        match self.concrete.logical.protocol {
+        match self.logical.protocol {
             Version::H2 => client::Settings::H2,
             Version::Http1 => match self.metadata.protocol_hint() {
                 ProtocolHint::Unknown => client::Settings::Http1,
@@ -97,7 +97,7 @@ impl Param<client::Settings> for Endpoint {
 
 impl Param<Option<SessionProtocol>> for Endpoint {
     fn param(&self) -> Option<SessionProtocol> {
-        match self.concrete.logical.protocol {
+        match self.logical.protocol {
             Version::H2 => Some(SessionProtocol::Http2),
             Version::Http1 => match self.metadata.protocol_hint() {
                 ProtocolHint::Http2 => Some(SessionProtocol::Http2),

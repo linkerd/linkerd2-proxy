@@ -24,7 +24,7 @@ pub struct Logical<P> {
 
 #[derive(Clone, Debug)]
 pub struct Concrete<P> {
-    pub resolve: Option<Addr>,
+    pub resolve: Addr,
     pub logical: Logical<P>,
 }
 
@@ -34,7 +34,7 @@ pub struct Endpoint<P> {
     pub target_addr: SocketAddr,
     pub tls: tls::ConditionalClientTls,
     pub metadata: Metadata,
-    pub concrete: Concrete<P>,
+    pub logical: Logical<P>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -148,19 +148,9 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
 
 // === impl Concrete ===
 
-impl<P> From<(Option<Addr>, Logical<P>)> for Concrete<P> {
-    fn from((resolve, logical): (Option<Addr>, Logical<P>)) -> Self {
+impl<P> From<(Addr, Logical<P>)> for Concrete<P> {
+    fn from((resolve, logical): (Addr, Logical<P>)) -> Self {
         Self { resolve, logical }
-    }
-}
-
-/// Produces an address to be used if resolution is rejected.
-impl<P> Param<SocketAddr> for Concrete<P> {
-    fn param(&self) -> SocketAddr {
-        self.resolve
-            .as_ref()
-            .and_then(|a| a.socket_addr())
-            .unwrap_or(self.logical.orig_dst)
     }
 }
 
@@ -179,20 +169,14 @@ impl<P> Endpoint<P> {
                     addr: logical.param(),
                     metadata: Metadata::default(),
                     tls: Conditional::None(reason),
-                    concrete: Concrete {
-                        logical,
-                        resolve: None,
-                    },
+                    logical,
                     target_addr,
                 },
                 Some((addr, metadata)) => Self {
                     addr,
                     tls: EndpointFromMetadata::client_tls(&metadata),
                     metadata,
-                    concrete: Concrete {
-                        logical,
-                        resolve: None,
-                    },
+                    logical,
                     target_addr,
                 },
             }
@@ -231,7 +215,7 @@ impl<P> Param<transport::labels::Key> for Endpoint<P> {
 impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         metrics::OutboundEndpointLabels {
-            authority: Some(self.concrete.logical.addr().to_http_authority()),
+            authority: Some(self.logical.addr().to_http_authority()),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.tls.clone(),
             target_addr: self.target_addr,
@@ -249,9 +233,8 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
         self.tls.hash(state);
-        self.concrete.resolve.hash(state);
-        self.concrete.logical.orig_dst.hash(state);
-        self.concrete.logical.protocol.hash(state);
+        self.logical.orig_dst.hash(state);
+        self.logical.protocol.hash(state);
     }
 }
 
@@ -298,7 +281,7 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             addr,
             tls: Self::client_tls(&metadata),
             metadata,
-            concrete: concrete.clone(),
+            logical: concrete.logical.clone(),
             target_addr: concrete.logical.orig_dst,
         }
     }

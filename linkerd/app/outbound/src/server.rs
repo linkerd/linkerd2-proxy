@@ -8,7 +8,7 @@ use linkerd_app_core::{
     profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     spans::SpanConverter,
-    svc, tls,
+    svc,
     transport::{listen, metrics::SensorIo},
     Addr, Error, IpMatch, TraceContext,
 };
@@ -33,7 +33,7 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
     R::Resolution: Send,
-    R::Future: Send,
+    R::Future: Send + Unpin,
     C: svc::Service<tcp::Endpoint> + Clone + Send + 'static,
     C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
     C::Error: Into<Error>,
@@ -48,18 +48,11 @@ where
     P::Future: Send,
     P::Error: Send,
 {
-    let tcp_balance = tcp::balance::stack(
-        &config.proxy,
-        tcp_connect.clone(),
-        resolve,
-        &metrics,
-        drain.clone(),
-    );
+    let tcp = tcp::balance::stack(&config.proxy, tcp_connect, resolve, &metrics, drain.clone());
     let accept = accept_stack(
         config,
         profiles,
-        tcp_connect,
-        tcp_balance,
+        tcp,
         http_router,
         metrics.clone(),
         span_sink,
@@ -106,11 +99,10 @@ where
         .into_inner()
 }
 
-pub fn accept_stack<P, C, T, TSvc, H, HSvc, I>(
+pub fn accept_stack<P, T, TSvc, H, HSvc, I>(
     config: &Config,
     profiles: P,
-    tcp_connect: C,
-    tcp_balance: T,
+    tcp: T,
     http_router: H,
     metrics: metrics::Proxy,
     span_sink: Option<mpsc::Sender<oc::Span>>,
@@ -121,19 +113,10 @@ pub fn accept_stack<P, C, T, TSvc, H, HSvc, I>(
 > + Clone
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    C: svc::Service<tcp::Endpoint> + Clone + Send + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-    C::Error: Into<Error>,
-    C::Future: Send,
-    T: svc::NewService<tcp::Concrete, Service = TSvc> + Clone + Send + 'static,
-    TSvc: svc::Service<io::PrefixedIo<I>, Response = ()>
-        + svc::Service<I, Response = ()>
-        + Send
-        + 'static,
-    <TSvc as svc::Service<I>>::Error: Into<Error>,
-    <TSvc as svc::Service<I>>::Future: Send,
-    <TSvc as svc::Service<io::PrefixedIo<I>>>::Error: Into<Error>,
-    <TSvc as svc::Service<io::PrefixedIo<I>>>::Future: Send,
+    T: svc::NewService<(Option<Addr>, tcp::Logical), Service = TSvc> + Clone + Send + 'static,
+    TSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + 'static,
+    TSvc::Error: Into<Error>,
+    TSvc::Future: Send,
     H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
         + Send
@@ -154,14 +137,8 @@ where
         ..
     } = config.proxy.clone();
 
-    let tcp_forward = svc::stack(tcp_connect)
-        .push_make_thunk()
-        .push_on_response(tcp::Forward::layer())
-        .push(svc::MapErrLayer::new(Into::into))
-        .into_new_service()
-        .push_map_target(tcp::Endpoint::from_logical(
-            tls::NoClientTls::NotProvidedByServiceDiscovery,
-        ))
+    let tcp_forward = svc::stack(tcp.clone())
+        .push_map_target(|l| (None, l))
         .into_inner();
 
     svc::stack(http_router)
@@ -199,12 +176,12 @@ where
             // When an HTTP version cannot be detected, we fallback to a logical
             // TCP stack. This service needs to be buffered so that it can be
             // cached and cloned per connection.
-            svc::stack(tcp_balance.clone())
-                .push_map_target(tcp::Concrete::from)
+            svc::stack(tcp.clone())
                 .push(profiles::split::layer())
                 .push_switch(ShouldResolve, tcp_forward.clone())
                 .push_on_response(
                     svc::layers()
+                        .push_map_target(io::EitherIo::Right)
                         .push(metrics.stack.layer(stack_labels("tcp", "logical")))
                         .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
@@ -226,10 +203,14 @@ where
             // detection and just use the TCP logical stack directly. Unlike the
             // above case, this stack need not be buffered, since `fn cache`
             // applies its own buffer on the returned service.
-            svc::stack(tcp_balance)
-                .push_map_target(tcp::Concrete::from)
+            svc::stack(tcp)
                 .push(profiles::split::layer())
                 .push_switch(ShouldResolve, tcp_forward)
+                .push_on_response(
+                    svc::layers()
+                        .push_map_target(io::EitherIo::Left)
+                        .push(metrics.stack.layer(stack_labels("tcp", "passthru"))),
+                )
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )
