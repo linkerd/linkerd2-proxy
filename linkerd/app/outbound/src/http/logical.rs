@@ -85,17 +85,14 @@ where
         // If there's no resolveable address, bypass the load balancer.
         .push(svc::UnwrapOr::layer(
             svc::stack(endpoint.clone())
-                .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_response(
                     svc::layers()
                         .push(http::BoxRequest::layer())
                         .push(http::BoxResponse::layer()),
                 )
-                .check_new_service::<Endpoint, http::Request<_>>()
                 .push_map_target(Endpoint::from_logical(
                     tls::NoClientTls::NotProvidedByServiceDiscovery,
                 ))
-                .check_new_service::<Logical, http::Request<_>>()
                 .into_inner(),
         ))
         // Distribute requests over a distribution of balancers via a traffic
