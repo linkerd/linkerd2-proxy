@@ -1,6 +1,5 @@
 use super::TransportHeader;
 use bytes::BytesMut;
-use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_stack::{layer, NewService, Service, ServiceExt};
@@ -66,26 +65,20 @@ where
         let mut inner = self.inner.clone();
         let mut buf = BytesMut::with_capacity(1024 * 64);
         Box::pin(async move {
-            let hdr = futures::select_biased! {
-                res = TransportHeader::read_prefaced(&mut io, &mut buf).fuse() => match res? {
-                    Some(hdr) => hdr,
-                    None => {
-                        let e = io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Connection did not include a transport header"
-                        );
-                        return Err(e.into());
-                    }
-                },
-                _ = time::sleep(timeout).fuse() => {
-                    let e = io::Error::new(
+            let hdr = time::timeout(timeout, TransportHeader::read_prefaced(&mut io, &mut buf))
+                .await
+                .map_err(|_| {
+                    io::Error::new(
                         io::ErrorKind::TimedOut,
-                        "Reading a transport header timed out"
-                    );
-                    return Err(e.into());
-                }
-            };
-
+                        "Reading a transport header timed out",
+                    )
+                })??
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Connection did not include a transport header",
+                    )
+                })?;
             inner
                 .new_service((hdr, target))
                 .oneshot(io::PrefixedIo::new(buf.freeze(), io))

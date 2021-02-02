@@ -1424,7 +1424,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "futures",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-io",
