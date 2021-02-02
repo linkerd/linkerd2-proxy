@@ -98,7 +98,6 @@ mod tests {
     async fn http1() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-        // If we don't read enough to know
         for i in 1..SMALLEST_POSSIBLE_HTTP1_REQ.len() {
             debug!(read = ?std::str::from_utf8(&HTTP11_LINE[..i]).unwrap());
             let mut buf = BytesMut::with_capacity(1024);
