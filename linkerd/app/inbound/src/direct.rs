@@ -200,7 +200,7 @@ where
                 .push(svc::UnwrapOr::layer(
                     svc::Fail::<_, RefusedNoHeader>::default(),
                 ))
-                .push(detect::NewDetectService::timeout(
+                .push(detect::NewDetectService::layer(
                     detect_timeout,
                     http::DetectHttp::default(),
                 ))

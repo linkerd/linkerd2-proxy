@@ -151,7 +151,7 @@ impl Config {
                     .into_inner(),
             ))
             .push_cache(self.proxy.cache_max_idle_age)
-            .push(detect::NewDetectService::timeout(
+            .push(detect::NewDetectService::layer(
                 self.proxy.detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
