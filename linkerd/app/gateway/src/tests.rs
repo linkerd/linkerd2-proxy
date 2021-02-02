@@ -1,12 +1,11 @@
 use super::*;
 use linkerd_app_core::{
     dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
-    NameAddr, NameMatch, Never,
+    NameAddr, NameMatch,
 };
-use linkerd_app_inbound as inbound;
 use linkerd_app_test as support;
 use std::str::FromStr;
-use tower::util::{service_fn, ServiceExt};
+use tower::util::ServiceExt;
 use tower_test::mock;
 
 #[tokio::test]
@@ -96,27 +95,28 @@ impl Test {
 
         let (outbound, mut handle) =
             mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
-        let mut make_gateway = {
-            let profiles = service_fn(move |na: NameAddr| async move {
-                let rx = support::profile::only(profiles::Profile {
-                    name: Some(na.name().clone()),
-                    ..profiles::Profile::default()
-                });
-                Ok::<_, Never>(Some(rx))
-            });
-            let allow_discovery = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
-            stack(
-                Config { allow_discovery },
-                move |_: _| outbound.clone(),
-                profiles,
-                Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
-            )
-        };
 
-        let gateway = make_gateway.new_service(inbound::HttpGatewayTarget {
+        let new = NewGateway::new(
+            move |_: outbound::http::Logical| outbound.clone(),
+            Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
+        );
+
+        let allow = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
+        let profile = if allow.matches(target.name()) {
+            Some(support::profile::only(profiles::Profile {
+                name: Some(target.name().clone()),
+                ..profiles::Profile::default()
+            }))
+        } else {
+            None
+        };
+        let t = HttpTarget {
             target: target.clone(),
             version: http::Version::Http1,
-        });
+        };
+        let gateway = svc::stack(new)
+            .check_new_service::<gateway::Target, http::Request<http::BoxBody>>()
+            .new_service((profile, t));
 
         let bg = tokio::spawn(async move {
             handle.allow(1);
@@ -142,7 +142,7 @@ impl Test {
         if let Some(id) = client_id {
             req.extensions_mut().insert(id);
         }
-        let rsp = gateway.oneshot(req).await.map_err(Into::into)?;
+        let rsp = gateway.oneshot(req).await?;
         bg.await?;
         Ok(rsp)
     }

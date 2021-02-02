@@ -1,8 +1,7 @@
-use crate::{http, target::TcpEndpoint};
+use crate::target::TcpEndpoint;
 use linkerd_app_core::{
     config::ProxyConfig,
-    detect, drain, io, metrics,
-    opencensus::proto::trace::v1 as oc,
+    io, metrics,
     proxy::identity::LocalCrtKey,
     svc::{self, stack::Param},
     tls,
@@ -10,17 +9,10 @@ use linkerd_app_core::{
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Never,
 };
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt::Debug,
-    net::SocketAddr,
-};
-use tokio::sync::mpsc;
+use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
 
 #[derive(Clone, Debug)]
 struct WithTransportHeaderAlpn(LocalCrtKey);
-
-type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 
 /// Creates I/O errors when a connection cannot be forwarded because no transport
 /// header was present.
@@ -28,41 +20,29 @@ type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 struct RefusedNoHeader;
 
 #[derive(Debug)]
-struct RefusedNoIdentity;
+pub struct RefusedNoIdentity(());
 
 #[derive(Debug)]
 struct RefusedNoTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct HttpGatewayTarget {
-    /// HTTP gateway targets *must* have a logical name.
-    pub target: NameAddr,
-    /// The outbound protocol, i.e. before upgrading.
-    pub version: http::Version,
-}
-
-/// Routes HTTP requests to an `HttpGatewayTarget`.
-#[derive(Clone, Debug)]
-struct RouteHttpGatewayTarget(HttpClientInfo);
-
-#[derive(Clone, Debug)]
-struct HttpClientInfo {
-    /// HTTP connections should have a target addr from the transport header.
-    /// Legacy clients may not provide one, though.
-    target: Option<NameAddr>,
-    /// The serverside protocol, i.e. before downgrading.
-    version: http::Version,
-    client: ClientInfo,
+pub struct GatewayConnection {
+    pub target: Option<NameAddr>,
+    pub protocol: Option<SessionProtocol>,
+    pub client: ClientInfo,
 }
 
 /// Client connections *must* have an identity.
-#[derive(Clone, Debug)]
-struct ClientInfo {
-    client_id: tls::ClientId,
-    alpn: Option<tls::NegotiatedProtocol>,
-    client_addr: SocketAddr,
-    local_addr: SocketAddr,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClientInfo {
+    pub client_id: tls::ClientId,
+    pub alpn: Option<tls::NegotiatedProtocol>,
+    pub client_addr: SocketAddr,
+    pub local_addr: SocketAddr,
 }
+
+type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
+pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 
 /// Builds a stack that handles connections that target the proxy's inbound port
 /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
@@ -72,14 +52,12 @@ struct ClientInfo {
 /// 2. TLS is required;
 /// 3. A transport header is expected. It's not strictly required, as
 ///    gateways may need to accept HTTP requests from older proxy versions
-pub fn stack<I, F, FSvc, H, HSvc>(
+pub fn stack<I, F, FSvc, G, GSvc>(
     config: &ProxyConfig,
     local_identity: Option<LocalCrtKey>,
     tcp: F,
-    http: H,
+    gateway: G,
     metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
-    drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
@@ -91,47 +69,12 @@ where
     FSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
     FSvc::Error: Into<Error>,
     FSvc::Future: Send + Unpin,
-    H: svc::NewService<HttpGatewayTarget, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
-    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-        + Send
-        + 'static,
-    HSvc::Error: Into<Error>,
-    HSvc::Future: Send,
+    G: svc::NewService<GatewayConnection, Service = GSvc> + Clone + Send + Sync + Unpin + 'static,
+    GSvc: svc::Service<GatewayIo<I>, Response = ()> + Send + 'static,
+    GSvc::Error: Into<Error>,
+    GSvc::Future: Send,
 {
     let detect_timeout = config.detect_protocol_timeout;
-    let dispatch_timeout = config.dispatch_timeout;
-
-    let http_server = {
-        // Cache an HTTP gateway service for each destination and HTTP version.
-        //
-        // The destination is determined from the transport header or, if none was
-        // present, the request URI.
-        //
-        // The client's ID is set as a request extension, as required by the
-        // gateway. This permits gateway services (and profile resolutions) to be
-        // cached per target, shared across clients.
-        let gateway = svc::stack(http)
-            .push_on_response(
-                svc::layers()
-                    .push(svc::layer::mk(svc::SpawnReady::new))
-                    .push(metrics.stack.layer(crate::stack_labels("http", "gateway")))
-                    .push(svc::FailFast::layer("Gateway", dispatch_timeout))
-                    .push_spawn_buffer(config.buffer_capacity),
-            )
-            .push_cache(config.cache_max_idle_age)
-            .push_on_response(
-                svc::layers()
-                    .push(http::Retain::layer())
-                    .push(http::BoxResponse::layer()),
-            )
-            .check_new_service::<HttpGatewayTarget, http::Request<_>>()
-            .push(svc::NewRouter::layer(RouteHttpGatewayTarget))
-            .check_new_service::<HttpClientInfo, http::Request<_>>()
-            .push_http_insert_target::<tls::ClientId>()
-            .into_inner();
-
-        http::server(&config, gateway, metrics, span_sink, drain)
-    };
 
     svc::stack(tcp)
         .check_new_service::<TcpEndpoint, FwdIo<I>>()
@@ -149,14 +92,11 @@ where
                 TransportHeader {
                     port,
                     name: Some(name),
-                    protocol: Some(proto),
-                } => Ok(svc::Either::B(HttpClientInfo {
-                    client,
+                    protocol,
+                } => Ok(svc::Either::B(GatewayConnection {
                     target: Some(NameAddr::from((name, port))),
-                    version: match proto {
-                        SessionProtocol::Http1 => http::Version::Http1,
-                        SessionProtocol::Http2 => http::Version::H2,
-                    },
+                    protocol,
+                    client,
                 })),
                 TransportHeader {
                     name: None,
@@ -166,9 +106,9 @@ where
             },
             // HTTP detection is not necessary in this case, since the transport
             // header indicates the connection's HTTP version.
-            svc::stack(http_server.clone())
+            svc::stack(gateway.clone())
                 .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
-                .check_new_service::<HttpClientInfo, FwdIo<I>>()
+                .check_new_service::<GatewayConnection, FwdIo<I>>()
                 .into_inner(),
         )
         // Use ALPN to determine whether a transport header should be read.
@@ -177,35 +117,25 @@ where
         // support legacy gateway clients.
         .push(NewTransportHeaderServer::layer(detect_timeout))
         .push_switch(
-            |c: ClientInfo| {
-                if c.header_negotiated() {
-                    Ok::<_, Never>(svc::Either::A(c))
+            |client: ClientInfo| {
+                if client.header_negotiated() {
+                    Ok::<_, Never>(svc::Either::A(client))
                 } else {
-                    Ok(svc::Either::B(c))
+                    Ok(svc::Either::B(GatewayConnection {
+                        client,
+                        target: None,
+                        protocol: None,
+                    }))
                 }
             },
             // TODO: Remove this after we have at least one stable release out
             // with transport header support.
-            svc::stack(http_server)
-                .check_new_service::<HttpClientInfo, _>()
+            svc::stack(gateway)
                 .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
-                .push_map_target(
-                    |(version, client): (http::Version, ClientInfo)| HttpClientInfo {
-                        version,
-                        client,
-                        target: None,
-                    },
-                )
-                .push(svc::UnwrapOr::layer(
-                    svc::Fail::<_, RefusedNoHeader>::default(),
-                ))
-                .push(detect::NewDetectService::layer(
-                    detect_timeout,
-                    http::DetectHttp::default(),
-                ))
-                .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
+                .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
                 .into_inner(),
         )
+        .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
         .push(metrics.transport.layer_accept())
         // Build a ClientInfo target for each accepted connection. Refuse the
         // connection if it doesn't include an mTLS identity.
@@ -236,7 +166,7 @@ impl TryFrom<(tls::ConditionalServerTls, listen::Addrs)> for ClientInfo {
                 client_addr: addrs.peer(),
                 local_addr: addrs.target_addr(),
             }),
-            _ => Err(RefusedNoIdentity),
+            _ => Err(RefusedNoIdentity(())),
         }
     }
 }
@@ -260,47 +190,6 @@ impl Param<transport::labels::Key> for ClientInfo {
             }),
             self.local_addr,
         )
-    }
-}
-
-// === impl HttpClientInfo ===
-
-impl Param<http::normalize_uri::DefaultAuthority> for HttpClientInfo {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(self.target.as_ref().map(NameAddr::as_http_authority))
-    }
-}
-
-impl Param<http::Version> for HttpClientInfo {
-    fn param(&self) -> http::Version {
-        self.version
-    }
-}
-
-impl Param<tls::ClientId> for HttpClientInfo {
-    fn param(&self) -> tls::ClientId {
-        self.client.client_id.clone()
-    }
-}
-
-// === impl RouteHttpGatewayTarget ===
-
-impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttpGatewayTarget {
-    type Key = HttpGatewayTarget;
-
-    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
-        let version = req.version().try_into()?;
-
-        if let Some(target) = self.0.target.clone() {
-            return Ok(HttpGatewayTarget { target, version });
-        }
-
-        if let Some(a) = req.uri().authority() {
-            let target = NameAddr::from_authority_with_default_port(a, 80)?;
-            return Ok(HttpGatewayTarget { target, version });
-        }
-
-        Err(RefusedNoTarget.into())
     }
 }
 
