@@ -10,12 +10,12 @@ pub use self::config::Config;
 mod test {
     use super::*;
     use linkerd_app_core::{
-        dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls,
-        Conditional, Error, NameAddr, NameMatch, Never,
+        dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
+        NameAddr, NameMatch, Never,
     };
-    use linkerd_app_inbound::target as inbound;
+    use linkerd_app_inbound as inbound;
     use linkerd_app_test as support;
-    use std::{net::SocketAddr, str::FromStr};
+    use std::str::FromStr;
     use tower::util::{service_fn, ServiceExt};
     use tower_test::mock;
 
@@ -44,29 +44,9 @@ mod test {
     }
 
     #[tokio::test]
-    async fn no_authority() {
-        let test = Test {
-            dst_name: None,
-            ..Default::default()
-        };
-        let status = test
-            .run()
-            .await
-            .unwrap_err()
-            .downcast_ref::<HttpError>()
-            .unwrap()
-            .status();
-        assert_eq!(status, http::StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
     async fn no_identity() {
-        let tls = Conditional::Some(tls::ServerTls::Established {
-            client_id: None,
-            negotiated_protocol: None,
-        });
         let test = Test {
-            tls,
+            client_id: None,
             ..Default::default()
         };
         let status = test
@@ -99,8 +79,8 @@ mod test {
 
     struct Test {
         suffix: &'static str,
-        dst_name: Option<&'static str>,
-        tls: tls::ConditionalServerTls,
+        target: NameAddr,
+        client_id: Option<tls::ClientId>,
         orig_fwd: Option<&'static str>,
     }
 
@@ -108,11 +88,8 @@ mod test {
         fn default() -> Self {
             Self {
                 suffix: "test.example.com",
-                dst_name: Some("dst.test.example.com:4321"),
-                tls: Conditional::Some(tls::ServerTls::Established {
-                    client_id: Some(tls::ClientId::from_str("client.id.test").unwrap()),
-                    negotiated_protocol: None,
-                }),
+                target: NameAddr::from_str("dst.test.example.com:4321").unwrap(),
+                client_id: Some(tls::ClientId::from_str("client.id.test").unwrap()),
                 orig_fwd: None,
             }
         }
@@ -122,8 +99,8 @@ mod test {
         async fn run(self) -> Result<http::Response<http::BoxBody>, Error> {
             let Self {
                 suffix,
-                dst_name,
-                tls,
+                target,
+                client_id,
                 orig_fwd,
             } = self;
 
@@ -145,16 +122,10 @@ mod test {
                 )
             };
 
-            let target_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
-            let target = inbound::Target {
-                target_addr,
-                tls,
-                dst: dst_name
-                    .map(|n| NameAddr::from_str(n).unwrap().into())
-                    .unwrap_or_else(|| target_addr.into()),
-                http_version: http::Version::Http1,
-            };
-            let gateway = make_gateway.new_service(target);
+            let gateway = make_gateway.new_service(inbound::HttpGatewayTarget {
+                target: target.clone(),
+                version: http::Version::Http1,
+            });
 
             let bg = tokio::spawn(async move {
                 handle.allow(1);
@@ -171,13 +142,15 @@ mod test {
                 );
             });
 
-            let req = http::Request::builder()
-                .uri(format!("http://{}", dst_name.unwrap_or("127.0.0.1:4321")));
-            let req = orig_fwd
+            let req = http::Request::builder().uri(format!("http://{}", target));
+            let mut req = orig_fwd
                 .into_iter()
                 .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
                 .body(Default::default())
                 .unwrap();
+            if let Some(id) = client_id {
+                req.extensions_mut().insert(id);
+            }
             let rsp = gateway.oneshot(req).await.map_err(Into::into)?;
             bg.await?;
             Ok(rsp)

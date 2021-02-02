@@ -1,6 +1,6 @@
 use super::gateway::Gateway;
-use linkerd_app_core::{profiles, svc, tls, Conditional, NameAddr};
-use linkerd_app_inbound::target as inbound;
+use linkerd_app_core::{profiles, svc, tls, NameAddr};
+use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 use tracing::debug;
 
@@ -16,7 +16,7 @@ impl<O> MakeGateway<O> {
     }
 }
 
-pub(crate) type Target = (Option<profiles::Receiver>, inbound::Target);
+pub(crate) type Target = (Option<profiles::Receiver>, inbound::HttpGatewayTarget);
 
 impl<O> svc::NewService<Target> for MakeGateway<O>
 where
@@ -25,43 +25,28 @@ where
     type Service = Gateway<O::Service>;
 
     fn new_service(&mut self, (profile, target): Target) -> Self::Service {
-        let inbound::Target {
-            dst,
-            tls,
-            http_version,
-            target_addr: _,
-        } = target;
+        let inbound::HttpGatewayTarget { target, version } = target;
 
-        let (source_id, local_id) = match (tls, self.local_id.clone()) {
-            (
-                Conditional::Some(tls::ServerTls::Established {
-                    client_id: Some(src),
-                    ..
-                }),
-                Some(local),
-            ) => (src, local),
-            _ => return Gateway::NoIdentity,
+        let local_id = match self.local_id.clone() {
+            Some(id) => id,
+            None => return Gateway::NoIdentity,
         };
 
         let dst = match profile.as_ref().and_then(|p| p.borrow().name.clone()) {
-            Some(name) => NameAddr::from((name, dst.port())),
-            None => match dst.name_addr() {
-                Some(n) => return Gateway::BadDomain(n.name().clone()),
-                None => return Gateway::NoAuthority,
-            },
+            Some(name) => NameAddr::from((name, target.port())),
+            None => return Gateway::BadDomain(target.name().clone()),
         };
 
         // Create an outbound target using the resolved name and an address
         // including the original port. We don't know the IP of the target, so
         // we use an unroutable one.
-        let target = outbound::http::Logical {
+        debug!("Creating outbound service");
+        let svc = self.outbound.new_service(outbound::http::Logical {
             profile,
-            protocol: http_version,
+            protocol: version,
             orig_dst: ([0, 0, 0, 0], dst.port()).into(),
-        };
-        debug!(?target, "Creating outbound service");
-        let svc = self.outbound.new_service(target);
+        });
 
-        Gateway::new(svc, dst, source_id, local_id)
+        Gateway::new(svc, target, local_id)
     }
 }

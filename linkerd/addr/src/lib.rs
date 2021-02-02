@@ -224,6 +224,19 @@ impl fmt::Display for NameAddr {
     }
 }
 
+// === impl Error ===
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidHost => write!(f, "address contains an invalid host"),
+            Self::MissingPort => write!(f, "address is missing a port"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

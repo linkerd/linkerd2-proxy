@@ -14,7 +14,10 @@ pub mod target;
 #[cfg(test)]
 pub(crate) mod test_util;
 
-pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
+pub use self::{
+    direct::HttpGatewayTarget,
+    target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
+};
 use self::{
     prevent_loop::PreventLoop,
     require_identity::RequireIdentityForPorts,
@@ -91,7 +94,8 @@ impl Config {
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Error: Into<Error>,
         C::Future: Send + Unpin,
-        L: svc::NewService<Target, Service = LSvc> + Clone + Send + Sync + Unpin + 'static,
+        L: svc::NewService<HttpGatewayTarget, Service = LSvc>,
+        L: Clone + Send + Sync + Unpin + 'static,
         LSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
