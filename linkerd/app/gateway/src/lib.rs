@@ -4,7 +4,7 @@ mod config;
 mod gateway;
 mod make;
 
-pub use self::config::Config;
+pub use self::config::{stack, Config};
 
 #[cfg(test)]
 mod test {
@@ -115,7 +115,8 @@ mod test {
                     Ok::<_, Never>(Some(rx))
                 });
                 let allow_discovery = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
-                Config { allow_discovery }.build(
+                stack(
+                    Config { allow_discovery },
                     move |_: _| outbound.clone(),
                     profiles,
                     Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
