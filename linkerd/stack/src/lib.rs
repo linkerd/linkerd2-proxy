@@ -36,7 +36,10 @@ pub use self::{
     switch_ready::{NewSwitchReady, SwitchReady},
     unwrap_or::UnwrapOr,
 };
-pub use tower::util::{future_service, FutureService};
+pub use tower::{
+    util::{future_service, FutureService, ServiceExt},
+    Service,
+};
 
 /// Describes a stack target that can produce `T` typed parameters.
 ///

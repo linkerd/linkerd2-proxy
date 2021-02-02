@@ -7,8 +7,8 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, listen, metrics::SensorIo},
-    transport_header::{self, DetectHeader, SessionProtocol, TransportHeader},
-    Conditional, Error, NameAddr,
+    transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
+    Conditional, Error, NameAddr, Never,
 };
 use std::{
     convert::{TryFrom, TryInto},
@@ -59,6 +59,7 @@ struct HttpClientInfo {
 #[derive(Clone, Debug)]
 struct ClientInfo {
     client_id: tls::ClientId,
+    alpn: Option<tls::NegotiatedProtocol>,
     client_addr: SocketAddr,
     local_addr: SocketAddr,
 }
@@ -170,12 +171,21 @@ where
                 .check_new_service::<HttpClientInfo, FwdIo<I>>()
                 .into_inner(),
         )
+        // Use ALPN to determine whether a transport header should be read.
+        //
         // When the transport header is not present, perform HTTP detection to
         // support legacy gateway clients.
-        //
-        // TODO: Stop supporting headerless connections after we have at least
-        // one stable release out with transport header support.
-        .push(svc::UnwrapOr::layer(
+        .push(NewTransportHeaderServer::layer(detect_timeout))
+        .push_switch(
+            |c: ClientInfo| {
+                if c.header_negotiated() {
+                    Ok::<_, Never>(svc::Either::A(c))
+                } else {
+                    Ok(svc::Either::B(c))
+                }
+            },
+            // TODO: Remove this after we have at least one stable release out
+            // with transport header support.
             svc::stack(http_server)
                 .check_new_service::<HttpClientInfo, _>()
                 .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
@@ -193,17 +203,9 @@ where
                     detect_timeout,
                     http::DetectHttp::default(),
                 ))
-                .check_new_service::<ClientInfo, FwdIo<I>>()
+                .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
                 .into_inner(),
-        ))
-        // We always try to detect a protocol header. While we can know whether
-        // it's expected based on the serverside ALPN (passed via the target),
-        // it's easier to just do detection and handle the case when it's not
-        // present as an exception.
-        .push(detect::NewDetectService::timeout(
-            detect_timeout,
-            DetectHeader::default(),
-        ))
+        )
         .push(metrics.transport.layer_accept())
         // Build a ClientInfo target for each accepted connection. Refuse the
         // connection if it doesn't include an mTLS identity.
@@ -227,14 +229,24 @@ impl TryFrom<(tls::ConditionalServerTls, listen::Addrs)> for ClientInfo {
         match tls {
             Conditional::Some(tls::ServerTls::Established {
                 client_id: Some(client_id),
-                ..
-            }) => Ok(ClientInfo {
+                negotiated_protocol,
+            }) => Ok(Self {
                 client_id,
+                alpn: negotiated_protocol,
                 client_addr: addrs.peer(),
                 local_addr: addrs.target_addr(),
             }),
             _ => Err(RefusedNoIdentity),
         }
+    }
+}
+
+impl ClientInfo {
+    fn header_negotiated(&self) -> bool {
+        self.alpn
+            .as_ref()
+            .map(|tls::NegotiatedProtocol(p)| p == transport_header::PROTOCOL)
+            .unwrap_or(false)
     }
 }
 
@@ -244,7 +256,7 @@ impl Param<transport::labels::Key> for ClientInfo {
             transport::labels::Direction::In,
             Conditional::Some(tls::ServerTls::Established {
                 client_id: Some(self.client_id.clone()),
-                negotiated_protocol: None, // unused
+                negotiated_protocol: self.alpn.clone(),
             }),
             self.local_addr,
         )
