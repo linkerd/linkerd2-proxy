@@ -64,7 +64,7 @@ impl Config {
             .push(svc::UnwrapOr::layer(
                 svc::Fail::<_, AdminHttpOnly>::default(),
             ))
-            .push(detect::NewDetectService::timeout(
+            .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
             ))

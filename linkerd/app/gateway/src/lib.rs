@@ -158,7 +158,7 @@ where
                 .push(svc::UnwrapOr::layer(
                     svc::Fail::<_, RefusedNoTarget>::default(),
                 ))
-                .push(detect::NewDetectService::timeout(
+                .push(detect::NewDetectService::layer(
                     inbound.detect_protocol_timeout,
                     http::DetectHttp::default(),
                 ))

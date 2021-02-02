@@ -857,7 +857,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
- "futures",
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
