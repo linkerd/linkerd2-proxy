@@ -1,5 +1,6 @@
 use super::TransportHeader;
 use bytes::BytesMut;
+use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_stack::{layer, NewService, Service, ServiceExt};
@@ -65,15 +66,8 @@ where
         let mut inner = self.inner.clone();
         let mut buf = BytesMut::with_capacity(1024 * 64);
         Box::pin(async move {
-            let hdr = tokio::select! {
-                _ = time::sleep(timeout) => {
-                    let e = io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "Reading a transport header timed out"
-                    );
-                    return Err(e.into());
-                }
-                res = TransportHeader::read_prefaced(&mut io, &mut buf) => match res? {
+            let hdr = futures::select_biased! {
+                res = TransportHeader::read_prefaced(&mut io, &mut buf).fuse() => match res? {
                     Some(hdr) => hdr,
                     None => {
                         let e = io::Error::new(
@@ -83,6 +77,13 @@ where
                         return Err(e.into());
                     }
                 },
+                _ = time::sleep(timeout).fuse() => {
+                    let e = io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "Reading a transport header timed out"
+                    );
+                    return Err(e.into());
+                }
             };
 
             inner

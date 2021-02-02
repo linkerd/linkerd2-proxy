@@ -9,16 +9,18 @@ publish = false
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
+futures = "0.3"
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 prost = "0.7"
-tokio = { version = "1", features = ["macros", "time"] }
+tokio = { version = "1", features = ["time"] }
 tracing = "0.1"
 
 [build-dependencies]
 prost-build = { version = "0.7", default-features = false }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["macros"] }
 tokio-test = "0.4"
