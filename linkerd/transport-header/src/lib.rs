@@ -1,8 +1,10 @@
+mod server;
+
+pub use self::server::NewTransportHeaderServer;
 use bytes::{
     buf::{Buf, BufMut},
     Bytes, BytesMut,
 };
-use linkerd_detect::Detect;
 use linkerd_dns_name::Name;
 use linkerd_error::Error;
 use linkerd_io::{self as io, AsyncReadExt, AsyncWriteExt};
@@ -32,28 +34,9 @@ pub enum SessionProtocol {
     Http2,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct DetectHeader(());
-
 pub const PROTOCOL: &[u8] = b"transport.l5d.io/v1";
 const PREFACE: &[u8] = b"transport.l5d.io/v1\r\n\r\n";
 const PREFACE_AND_SIZE_LEN: usize = PREFACE.len() + 4;
-
-#[async_trait::async_trait]
-impl Detect for DetectHeader {
-    type Protocol = TransportHeader;
-
-    #[inline]
-    async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
-        &self,
-        io: &mut I,
-        buf: &mut BytesMut,
-    ) -> Result<Option<TransportHeader>, Error> {
-        TransportHeader::read_prefaced(io, buf)
-            .await
-            .map_err(Into::into)
-    }
-}
 
 impl TransportHeader {
     pub async fn write(&self, io: &mut (impl io::AsyncWrite + Unpin)) -> Result<usize, Error> {
@@ -234,35 +217,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn detect_prefaced() {
-        let header = TransportHeader {
-            port: 4040,
-            name: Some(Name::from_str("foo.bar.example.com").unwrap()),
-            protocol: Some(SessionProtocol::Http1),
-        };
-        let mut rx = {
-            let mut buf = BytesMut::new();
-            header.encode_prefaced(&mut buf).expect("must encode");
-            buf.put_slice(b"12345");
-            std::io::Cursor::new(buf.freeze())
-        };
-        let mut buf = BytesMut::new();
-        let h = DetectHeader::default()
-            .detect(&mut rx, &mut buf)
-            .await
-            .expect("must decode")
-            .expect("must decode");
-        assert_eq!(header, h);
-        assert_eq!(&buf[..], b"12345");
-    }
-
-    #[tokio::test]
-    async fn detect_no_header() {
+    async fn no_header() {
         const MSG: &[u8] = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
         let (mut rx, _tx) = tokio_test::io::Builder::new().read(MSG).build_with_handle();
         let mut buf = BytesMut::new();
-        let h = DetectHeader::default()
-            .detect(&mut rx, &mut buf)
+        let h = TransportHeader::read_prefaced(&mut rx, &mut buf)
             .await
             .expect("must not fail");
         assert!(h.is_none(), "must not decode");
