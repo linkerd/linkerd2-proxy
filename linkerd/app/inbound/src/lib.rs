@@ -6,18 +6,15 @@
 #![deny(warnings, rust_2018_idioms)]
 
 mod allow_discovery;
-mod direct;
-mod http;
+pub mod direct;
+pub mod http;
 mod prevent_loop;
 mod require_identity;
 pub mod target;
 #[cfg(test)]
 pub(crate) mod test_util;
 
-pub use self::{
-    direct::HttpGatewayTarget,
-    target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
-};
+pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
 use self::{
     prevent_loop::PreventLoop,
     require_identity::RequireIdentityForPorts,
@@ -72,12 +69,12 @@ pub fn tcp_connect<T: Param<u16>>(
 
 #[allow(clippy::too_many_arguments)]
 impl Config {
-    pub fn build<I, C, L, LSvc, P>(
+    pub fn build<I, C, G, GSvc, P>(
         self,
         listen_addr: SocketAddr,
         local_identity: Option<LocalCrtKey>,
         connect: C,
-        http_loopback: L,
+        gateway: G,
         profiles_client: P,
         tap: tap::Registry,
         metrics: metrics::Proxy,
@@ -94,13 +91,11 @@ impl Config {
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Error: Into<Error>,
         C::Future: Send + Unpin,
-        L: svc::NewService<HttpGatewayTarget, Service = LSvc>,
-        L: Clone + Send + Sync + Unpin + 'static,
-        LSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-            + Send
-            + 'static,
-        LSvc::Error: Into<Error>,
-        LSvc::Future: Send,
+        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
+        G: Clone + Send + Sync + Unpin + 'static,
+        GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
+        GSvc::Error: Into<Error>,
+        GSvc::Future: Send,
         P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + 'static,
         P::Error: Send,
         P::Future: Send,
@@ -126,10 +121,8 @@ impl Config {
             &self.proxy,
             local_identity.clone(),
             tcp_forward.clone().into_inner(),
-            http_loopback,
+            gateway,
             &metrics,
-            span_sink.clone(),
-            drain.clone(),
         );
 
         let http = http::router(

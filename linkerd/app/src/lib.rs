@@ -224,11 +224,15 @@ impl Config {
             let _inbound = span.enter();
             info!(listen.addr = %inbound_addr);
 
-            let http_gateway = gateway::stack(
+            let gateway_stack = gateway::stack(
                 gateway,
+                &inbound.proxy,
                 outbound_http,
                 dst.profiles.clone(),
                 local_identity.as_ref().map(Param::param),
+                &inbound_metrics,
+                oc_span_sink.clone(),
+                drain_rx.clone(),
             );
 
             let connect = inbound::tcp_connect(&inbound.proxy.connect);
@@ -239,9 +243,7 @@ impl Config {
                         inbound_addr,
                         local_identity,
                         connect,
-                        svc::stack(http_gateway)
-                            .push_on_response(http::BoxRequest::layer())
-                            .into_inner(),
+                        gateway_stack,
                         dst.profiles,
                         tap_registry,
                         inbound_metrics,

@@ -28,7 +28,7 @@ pub struct TransportHeader {
     pub protocol: Option<SessionProtocol>,
 }
 
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SessionProtocol {
     Http1,
     Http2,

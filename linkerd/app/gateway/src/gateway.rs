@@ -1,6 +1,6 @@
+use super::HttpTarget;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{dns, errors::HttpError, profiles, proxy::http, svc, tls, Error, NameAddr};
-use linkerd_app_inbound as inbound;
 use linkerd_app_outbound as outbound;
 use std::{
     future::Future,
@@ -26,7 +26,7 @@ pub(crate) enum Gateway<O> {
     },
 }
 
-pub(crate) type Target = (Option<profiles::Receiver>, inbound::HttpGatewayTarget);
+pub(crate) type Target = (Option<profiles::Receiver>, HttpTarget);
 
 // === impl NewGateway ===
 
@@ -42,17 +42,15 @@ where
 {
     type Service = Gateway<O::Service>;
 
-    fn new_service(&mut self, (profile, target): Target) -> Self::Service {
-        let inbound::HttpGatewayTarget { target, version } = target;
-
+    fn new_service(&mut self, (profile, http): Target) -> Self::Service {
         let local_id = match self.local_id.clone() {
             Some(id) => id,
             None => return Gateway::NoIdentity,
         };
 
         let dst = match profile.as_ref().and_then(|p| p.borrow().name.clone()) {
-            Some(name) => NameAddr::from((name, target.port())),
-            None => return Gateway::BadDomain(target.name().clone()),
+            Some(name) => NameAddr::from((name, http.target.port())),
+            None => return Gateway::BadDomain(http.target.name().clone()),
         };
 
         // Create an outbound target using the resolved name and an address
@@ -61,11 +59,11 @@ where
         debug!("Creating outbound service");
         let svc = self.outbound.new_service(outbound::http::Logical {
             profile,
-            protocol: version,
+            protocol: http.version,
             orig_dst: ([0, 0, 0, 0], dst.port()).into(),
         });
 
-        Gateway::new(svc, target, local_id)
+        Gateway::new(svc, http.target, local_id)
     }
 }
 
