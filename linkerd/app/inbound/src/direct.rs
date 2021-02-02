@@ -10,7 +10,7 @@ use linkerd_app_core::{
     transport_header::{self, DetectHeader, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr,
 };
-use std::{convert::TryInto, fmt::Debug, net::SocketAddr, str::FromStr};
+use std::{convert::TryInto, fmt::Debug, net::SocketAddr};
 use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
@@ -243,9 +243,7 @@ impl Param<transport::labels::Key> for ClientInfo {
 
 impl Param<http::normalize_uri::DefaultAuthority> for HttpClientInfo {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(self.target.clone().map(|t| {
-            http::uri::Authority::from_str(&t.to_string()).expect("Address must be a valid URI")
-        }))
+        http::normalize_uri::DefaultAuthority(self.target.as_ref().map(NameAddr::as_http_authority))
     }
 }
 
@@ -274,7 +272,7 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttpGatewayTarget 
         }
 
         if let Some(a) = req.uri().authority() {
-            let target = NameAddr::from_str(&a.to_string())?;
+            let target = NameAddr::from_authority_with_default_port(a, 80)?;
             return Ok(HttpGatewayTarget { target, version });
         }
 
