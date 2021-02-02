@@ -175,9 +175,6 @@ where
         //
         // When the transport header is not present, perform HTTP detection to
         // support legacy gateway clients.
-        //
-        // TODO: Remove this after we have at least one stable release out
-        // with transport header support.
         .push(NewTransportHeaderServer::layer(detect_timeout))
         .push_switch(
             |c: ClientInfo| {
@@ -187,6 +184,8 @@ where
                     Ok(svc::Either::B(c))
                 }
             },
+            // TODO: Remove this after we have at least one stable release out
+            // with transport header support.
             svc::stack(http_server)
                 .check_new_service::<HttpClientInfo, _>()
                 .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
