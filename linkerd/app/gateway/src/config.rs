@@ -49,7 +49,7 @@ impl Config {
                 Allow(self.allow_discovery),
             ))
             .instrument(
-                |g: &inbound::HttpGatewayTarget| debug_span!("gateway", target=%g.target, v=%g.version),
+                |g: &inbound::HttpGatewayTarget| debug_span!("gateway", target = %g.target, v = %g.version),
             )
             .into_inner()
     }

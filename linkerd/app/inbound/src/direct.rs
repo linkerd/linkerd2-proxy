@@ -10,7 +10,11 @@ use linkerd_app_core::{
     transport_header::{self, DetectHeader, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr,
 };
-use std::{convert::TryInto, fmt::Debug, net::SocketAddr};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Debug,
+    net::SocketAddr,
+};
 use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
@@ -203,19 +207,7 @@ where
         .push(metrics.transport.layer_accept())
         // Build a ClientInfo target for each accepted connection. Refuse the
         // connection if it doesn't include an mTLS identity.
-        .push_request_filter(
-            |(tls, addrs): (tls::ConditionalServerTls, listen::Addrs)| match tls {
-                Conditional::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id),
-                    ..
-                }) => Ok(ClientInfo {
-                    client_id,
-                    client_addr: addrs.peer(),
-                    local_addr: addrs.target_addr(),
-                }),
-                _ => Err(RefusedNoIdentity),
-            },
-        )
+        .push_request_filter(ClientInfo::try_from)
         .push(tls::NewDetectTls::layer(
             local_identity.map(WithTransportHeaderAlpn),
             config.detect_protocol_timeout,
@@ -225,6 +217,26 @@ where
 }
 
 // === impl ClientInfo ===
+
+impl TryFrom<(tls::ConditionalServerTls, listen::Addrs)> for ClientInfo {
+    type Error = RefusedNoIdentity;
+
+    fn try_from(
+        (tls, addrs): (tls::ConditionalServerTls, listen::Addrs),
+    ) -> Result<Self, Self::Error> {
+        match tls {
+            Conditional::Some(tls::ServerTls::Established {
+                client_id: Some(client_id),
+                ..
+            }) => Ok(ClientInfo {
+                client_id,
+                client_addr: addrs.peer(),
+                local_addr: addrs.target_addr(),
+            }),
+            _ => Err(RefusedNoIdentity),
+        }
+    }
+}
 
 impl Param<transport::labels::Key> for ClientInfo {
     fn param(&self) -> transport::labels::Key {
