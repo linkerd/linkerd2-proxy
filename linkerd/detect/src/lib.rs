@@ -1,7 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use bytes::BytesMut;
-use futures::prelude::*;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_stack::{layer, NewService};
@@ -110,30 +109,33 @@ where
             trace!("Starting protocol detection");
             let t0 = time::Instant::now();
 
-            let protocol = futures::select_biased! {
-                res = detect.detect(&mut io, &mut buf).fuse() => res?,
-                _ = time::sleep(timeout).fuse() => {
-                    debug!(?timeout, "timed out");
+            let protocol = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
+                Ok(Ok(protocol)) => {
+                    debug!(
+                        ?protocol,
+                        elapsed = ?(time::Instant::now() - t0),
+                        "Detected"
+                    );
+                    protocol
+                }
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    debug!(?timeout, "Detection timed out");
                     None
                 }
             };
-            debug!(
-                ?protocol,
-                elapsed = ?(time::Instant::now() - t0),
-                "Detected"
-            );
 
             let mut accept = inner
                 .new_service((protocol, target))
                 .ready_oneshot()
-                .err_into::<Error>()
-                .await?;
+                .await
+                .map_err(Into::into)?;
 
             trace!("Dispatching connection");
             accept
                 .call(io::PrefixedIo::new(buf.freeze(), io))
-                .err_into::<Error>()
-                .await?;
+                .await
+                .map_err(Into::into)?;
 
             trace!("Connection completed");
             // Hold the service until it's done being used so that cache
