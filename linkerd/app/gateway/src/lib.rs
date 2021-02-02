@@ -1,11 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
 mod gateway;
-mod make;
 #[cfg(test)]
 mod tests;
 
-use self::make::MakeGateway;
+use self::gateway::NewGateway;
 use linkerd_app_core::{
     discovery_rejected, profiles, proxy::http, svc, tls, Error, NameAddr, NameMatch,
 };
@@ -48,8 +47,8 @@ where
     S::Error: Into<Error>,
     S::Future: Send + 'static,
 {
-    svc::stack(MakeGateway::new(outbound, local_id))
-            .check_new_service::<make::Target, http::Request<http::BoxBody>>()
+    svc::stack(NewGateway::new(outbound, local_id))
+            .check_new_service::<gateway::Target, http::Request<http::BoxBody>>()
             .push(profiles::discover::layer(
                 profiles,
                 Allow(allow_discovery),
