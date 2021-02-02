@@ -111,11 +111,7 @@ where
 
             let protocol = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
                 Ok(Ok(protocol)) => {
-                    debug!(
-                        ?protocol,
-                        elapsed = ?(time::Instant::now() - t0),
-                        "Detected"
-                    );
+                    debug!(?protocol, elapsed = ?t0.elapsed(), "Detected");
                     protocol
                 }
                 Ok(Err(e)) => return Err(e),
