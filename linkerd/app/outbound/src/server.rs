@@ -49,8 +49,9 @@ where
     P::Error: Send,
 {
     let tcp = tcp::balance::stack(&config.proxy, tcp_connect, resolve, &metrics, drain.clone());
-    let accept = accept_stack(config, tcp, http_router, metrics.clone(), span_sink, drain);
-    discover(&config, metrics, profiles, accept)
+    let http = http(&config.proxy, &metrics, span_sink, http_router);
+    let accept = dispatch(&config.proxy, &metrics, drain, tcp, http);
+    discover(config, &metrics, profiles, accept)
 }
 
 /// Wraps an `N`-typed TCP stack with caching.
@@ -60,7 +61,7 @@ where
 /// `config.cache_max_idle_age` with no new acquisitions.
 pub fn discover<I, N, NSvc, P>(
     config: &Config,
-    metrics: metrics::Proxy,
+    metrics: &metrics::Proxy,
     profiles: P,
     stack: N,
 ) -> impl svc::NewService<
@@ -110,23 +111,21 @@ where
         .into_inner()
 }
 
-pub fn accept_stack<T, TSvc, H, HSvc, I>(
-    config: &Config,
-    tcp: T,
-    http_router: H,
-    metrics: metrics::Proxy,
+pub fn http<H, HSvc>(
+    config: &ProxyConfig,
+    metrics: &metrics::Proxy,
     span_sink: Option<mpsc::Sender<oc::Span>>,
-    drain: drain::Watch,
+    http: H,
 ) -> impl svc::NewService<
-    tcp::Logical,
-    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+    http::Logical,
+    Service = impl svc::Service<
+        http::Request<http::BoxBody>,
+        Response = http::Response<http::BoxBody>,
+        Error = Error,
+        Future = impl Send,
+    > + Clone,
 > + Clone
 where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    T: svc::NewService<(Option<Addr>, tcp::Logical), Service = TSvc> + Clone + Send + 'static,
-    TSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + 'static,
-    TSvc::Error: Into<Error>,
-    TSvc::Future: Send,
     H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
     HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
         + Send
@@ -135,20 +134,13 @@ where
     HSvc::Future: Send,
 {
     let ProxyConfig {
-        server: ServerConfig { h2_settings, .. },
         dispatch_timeout,
         max_in_flight_requests,
-        detect_protocol_timeout,
         buffer_capacity,
-        cache_max_idle_age,
         ..
-    } = config.proxy.clone();
+    } = config.clone();
 
-    let tcp_forward = svc::stack(tcp.clone())
-        .push_map_target(|l| (None, l))
-        .into_inner();
-
-    svc::stack(http_router)
+    svc::stack(http)
         .check_new_service::<http::Logical, _>()
         .push_on_response(
             svc::layers()
@@ -177,6 +169,51 @@ where
         // Record when a HTTP/1 URI originated in absolute form
         .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
         .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
+        .check_new_service::<http::Logical, http::Request<http::BoxBody>>()
+        .into_inner()
+}
+
+pub fn dispatch<T, TSvc, H, HSvc, I>(
+    config: &ProxyConfig,
+    metrics: &metrics::Proxy,
+    drain: drain::Watch,
+    tcp: T,
+    http: H,
+) -> impl svc::NewService<
+    tcp::Logical,
+    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+> + Clone
+where
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+    T: svc::NewService<(Option<Addr>, tcp::Logical), Service = TSvc> + Clone + Send + 'static,
+    TSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + 'static,
+    TSvc::Error: Into<Error>,
+    TSvc::Future: Send,
+    H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
+    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
+    HSvc: Clone + Send + Sync + Unpin + 'static,
+    HSvc::Error: Into<Error>,
+    HSvc::Future: Send,
+{
+    let ProxyConfig {
+        server: ServerConfig { h2_settings, .. },
+        dispatch_timeout,
+        detect_protocol_timeout,
+        buffer_capacity,
+        cache_max_idle_age,
+        ..
+    } = config.clone();
+
+    let tcp_forward = svc::stack(tcp.clone())
+        .push_map_target(|l| (None, l))
+        .into_inner();
+
+    svc::stack(http)
+        .push_on_response(
+            svc::layers()
+                .push(http::BoxRequest::layer())
+                .push(svc::MapErrLayer::new(Into::into)),
+        )
         .push(http::NewServeHttp::layer(h2_settings, drain))
         .push_map_target(http::Logical::from)
         .push(svc::UnwrapOr::layer(
