@@ -6,6 +6,9 @@ use linkerd_app_core::{
 };
 use std::net::SocketAddr;
 
+/// Discovers the profile for a TCP endpoint.
+///
+/// Resolved services are cached and buffered.
 pub fn stack<I, N, NSvc, P>(
     config: &Config,
     metrics: &metrics::Proxy,
