@@ -49,16 +49,8 @@ where
     P::Error: Send,
 {
     let tcp = tcp::balance::stack(&config.proxy, tcp_connect, resolve, &metrics, drain.clone());
-    let accept = accept_stack(
-        config,
-        profiles,
-        tcp,
-        http_router,
-        metrics.clone(),
-        span_sink,
-        drain,
-    );
-    cache(&config.proxy, metrics, accept)
+    let accept = accept_stack(config, tcp, http_router, metrics.clone(), span_sink, drain);
+    discover(&config, metrics, profiles, accept)
 }
 
 /// Wraps an `N`-typed TCP stack with caching.
@@ -66,9 +58,10 @@ where
 /// Services are cached as long as they are retained by the caller (usually
 /// core::serve) and are evicted from the cache when they have been dropped for
 /// `config.cache_max_idle_age` with no new acquisitions.
-pub fn cache<N, NSvc, I>(
-    config: &ProxyConfig,
+pub fn discover<I, N, NSvc, P>(
+    config: &Config,
     metrics: metrics::Proxy,
+    profiles: P,
     stack: N,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -76,12 +69,24 @@ pub fn cache<N, NSvc, I>(
 >
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    N: svc::NewService<tcp::Accept, Service = NSvc> + 'static,
+    N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + 'static,
     NSvc: svc::Service<SensorIo<I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
+    P: profiles::GetProfile<SocketAddr> + Clone + Send + 'static,
+    P::Future: Send,
+    P::Error: Send,
 {
     svc::stack(stack)
+        .push_on_response(svc::MapErrLayer::new(Into::into))
+        .check_new::<tcp::Logical>()
+        .check_new_service::<tcp::Logical, SensorIo<I>>()
+        .push_map_target(tcp::Logical::from)
+        .push(profiles::discover::layer(
+            profiles,
+            AllowProfile(config.allow_discovery.clone().into()),
+        ))
+        .check_new_service::<tcp::Accept, SensorIo<I>>()
         .push_on_response(
             svc::layers()
                 // If the traffic split is empty/unavailable, eagerly fail
@@ -90,25 +95,30 @@ where
                 // new requests.
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(metrics.stack.layer(crate::stack_labels("tcp", "server")))
-                .push(svc::FailFast::layer("TCP Server", config.dispatch_timeout))
-                .push_spawn_buffer(config.buffer_capacity),
+                .push(svc::FailFast::layer(
+                    "TCP Server",
+                    config.proxy.dispatch_timeout,
+                ))
+                .push_spawn_buffer(config.proxy.buffer_capacity),
         )
-        .push_cache(config.cache_max_idle_age)
+        .check_new_service::<tcp::Accept, SensorIo<I>>()
         .push(metrics.transport.layer_accept())
+        .push_cache(config.proxy.cache_max_idle_age)
+        .check_new_service::<tcp::Accept, I>()
         .push_map_target(tcp::Accept::from)
+        .check_new_service::<listen::Addrs, I>()
         .into_inner()
 }
 
-pub fn accept_stack<P, T, TSvc, H, HSvc, I>(
+pub fn accept_stack<T, TSvc, H, HSvc, I>(
     config: &Config,
-    profiles: P,
     tcp: T,
     http_router: H,
     metrics: metrics::Proxy,
     span_sink: Option<mpsc::Sender<oc::Span>>,
     drain: drain::Watch,
 ) -> impl svc::NewService<
-    tcp::Accept,
+    tcp::Logical,
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
 > + Clone
 where
@@ -123,9 +133,6 @@ where
         + 'static,
     HSvc::Error: Into<Error>,
     HSvc::Future: Send,
-    P: profiles::GetProfile<SocketAddr> + Clone + Send + 'static,
-    P::Future: Send,
-    P::Error: Send,
 {
     let ProxyConfig {
         server: ServerConfig { h2_settings, .. },
@@ -215,12 +222,6 @@ where
                 .into_inner(),
         )
         .check_new_service::<tcp::Logical, _>()
-        .push_map_target(tcp::Logical::from)
-        .push(profiles::discover::layer(
-            profiles,
-            AllowProfile(config.allow_discovery.clone().into()),
-        ))
-        .check_new_service::<tcp::Accept, _>()
         .into_inner()
 }
 
