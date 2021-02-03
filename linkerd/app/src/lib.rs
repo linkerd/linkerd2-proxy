@@ -202,7 +202,7 @@ impl Config {
                 tokio::spawn(
                     serve::serve(
                         outbound_listen,
-                        outbound::server::stack(
+                        outbound::stack(
                             &outbound,
                             dst.profiles.clone(),
                             dst.resolve,
