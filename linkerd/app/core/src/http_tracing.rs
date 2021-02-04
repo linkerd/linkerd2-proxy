@@ -5,7 +5,7 @@ use linkerd_trace_context::{self as trace_context, TraceContext};
 use std::{collections::HashMap, error, fmt, sync::Arc};
 use tokio::sync::mpsc;
 
-pub type SpanSink = Option<mpsc::Sender<oc::Span>>;
+pub type OpenCensusSink = Option<mpsc::Sender<oc::Span>>;
 pub type Labels = Arc<HashMap<String, String>>;
 
 /// SpanConverter converts trace_context::Span objects into OpenCensus agent
@@ -39,14 +39,14 @@ impl fmt::Display for IdLengthError {
 }
 
 pub fn server<S>(
-    sink: SpanSink,
+    sink: OpenCensusSink,
     labels: impl Into<Labels>,
 ) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
     SpanConverter::layer(Kind::Server, sink, labels)
 }
 
 pub fn client<S>(
-    sink: SpanSink,
+    sink: OpenCensusSink,
     labels: impl Into<Labels>,
 ) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
     SpanConverter::layer(Kind::Client, sink, labels)
@@ -61,7 +61,7 @@ enum Kind {
 impl SpanConverter {
     fn layer<S>(
         kind: Kind,
-        sink: SpanSink,
+        sink: OpenCensusSink,
         labels: impl Into<Labels>,
     ) -> impl layer::Layer<S, Service = TraceContext<Option<Self>, S>> + Clone {
         TraceContext::layer(sink.map(move |sink| Self {

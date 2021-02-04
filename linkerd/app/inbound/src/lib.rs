@@ -75,7 +75,7 @@ impl Config {
         profiles_client: P,
         tap: tap::Registry,
         metrics: metrics::Proxy,
-        span_sink: http_tracing::SpanSink,
+        span_sink: http_tracing::OpenCensusSink,
         drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,

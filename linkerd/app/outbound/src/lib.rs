@@ -43,7 +43,7 @@ pub fn stack<R, P, C, H, HSvc, I>(
     tcp_connect: C,
     http_router: H,
     metrics: metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,

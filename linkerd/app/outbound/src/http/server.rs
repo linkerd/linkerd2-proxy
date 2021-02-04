@@ -5,7 +5,7 @@ use tracing::debug_span;
 pub fn stack<H, HSvc>(
     config: &ProxyConfig,
     metrics: &metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
     http: H,
 ) -> impl svc::NewService<
     http::Logical,

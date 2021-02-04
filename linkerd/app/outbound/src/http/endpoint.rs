@@ -17,7 +17,7 @@ pub fn stack<B, C>(
     tcp_connect: C,
     tap: tap::Registry,
     metrics: metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
 ) -> impl svc::NewService<
     Endpoint,
     Service = impl svc::Service<

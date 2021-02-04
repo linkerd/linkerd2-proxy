@@ -25,7 +25,7 @@ pub fn server<T, I, H, HSvc>(
     config: &ProxyConfig,
     http: H,
     metrics: &metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     T,
@@ -89,7 +89,7 @@ pub fn router<C, P>(
     profiles_client: P,
     tap: tap::Registry,
     metrics: &metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
 ) -> impl svc::NewService<
     HttpAccept,
     Service = impl svc::Service<

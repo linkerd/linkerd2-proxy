@@ -22,7 +22,7 @@ pub fn stack<P, T, TSvc, H, HSvc, I>(
     tcp: T,
     http: H,
     metrics: &metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
