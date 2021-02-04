@@ -4,58 +4,46 @@ use crate::{
         support::{connect::Connect, http_util, profile, resolver},
         *,
     },
-    Config,
+    Config, Inbound,
 };
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
-    drain,
     io::{self, BoxedIo},
-    metrics,
-    proxy::{self, tap},
-    svc::stack::Param,
-    svc::{self, NewService},
+    proxy,
+    svc::{self, stack::Param, NewService},
     tls,
     transport::{self, ConnectAddr},
-    Conditional, Error, NameAddr,
+    Conditional, Error, NameAddr, ProxyRuntime,
 };
-use std::time::Duration;
 use tracing::Instrument;
 
 fn build_server<I>(
-    cfg: &Config,
+    cfg: Config,
+    rt: ProxyRuntime,
     profiles: resolver::Profiles<NameAddr>,
     connect: Connect<ConnectAddr>,
-) -> (
-    impl svc::NewService<
-            HttpAccept,
-            Service = impl tower::Service<
-                I,
-                Response = (),
-                Error = impl Into<linkerd_app_core::Error>,
-                Future = impl Send + 'static,
-            > + Send
-                          + Clone,
-        > + Clone,
-    drain::Signal,
-)
+) -> impl svc::NewService<
+    HttpAccept,
+    Service = impl tower::Service<
+        I,
+        Response = (),
+        Error = impl Into<linkerd_app_core::Error>,
+        Future = impl Send + 'static,
+    > + Send
+                  + Clone,
+> + Clone
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
-    let tap = tap::Registry::new();
-
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let metrics = &metrics.inbound;
-    let (drain_tx, drain) = drain::channel();
     let connect = svc::stack(connect)
         .push_map_target(|t: TcpEndpoint| {
             transport::ConnectAddr(([127, 0, 0, 1], t.param()).into())
         })
         .into_inner();
-    let router = super::router(cfg, connect, profiles, tap, metrics, None);
-    let svc = svc::stack(super::server(&cfg.proxy, router, metrics, None, drain))
-        .check_new_service::<HttpAccept, _>()
-        .into_inner();
-    (svc, drain_tx)
+    Inbound::new(cfg, rt, connect)
+        .push_http_router(profiles)
+        .push_http_server()
+        .into_inner()
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -74,7 +62,6 @@ async fn unmeshed_http1_hello_world() {
         },
     };
 
-    let cfg = default_config(accept.tcp.target_addr);
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect =
         support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
@@ -85,8 +72,9 @@ async fn unmeshed_http1_hello_world() {
     profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
-    let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
-    let server = s.new_service(accept);
+    let cfg = default_config(accept.tcp.target_addr);
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -121,7 +109,6 @@ async fn downgrade_origin_form() {
         },
     };
 
-    let cfg = default_config(accept.tcp.target_addr);
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect =
         support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
@@ -132,8 +119,9 @@ async fn downgrade_origin_form() {
     profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
-    let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
-    let server = s.new_service(accept);
+    let cfg = default_config(accept.tcp.target_addr);
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -169,7 +157,6 @@ async fn downgrade_absolute_form() {
         },
     };
 
-    let cfg = default_config(accept.tcp.target_addr);
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect =
         support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
@@ -180,8 +167,9 @@ async fn downgrade_absolute_form() {
     profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
-    let (mut s, _shutdown) = build_server(&cfg, profiles, connect);
-    let server = s.new_service(accept);
+    let cfg = default_config(accept.tcp.target_addr);
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()

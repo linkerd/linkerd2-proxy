@@ -55,7 +55,7 @@ impl<C> Outbound<C> {
         self.stack.into_inner()
     }
 
-    pub fn into_outbound<R, P, I>(
+    pub fn into_server<R, P, I>(
         self,
         server_port: u16,
         resolve: R,

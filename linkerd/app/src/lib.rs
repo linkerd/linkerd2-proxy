@@ -13,15 +13,10 @@ pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
-    control::ControlAddr,
-    dns, drain,
-    proxy::http,
-    serve,
-    svc::{self, stack::Param},
-    Error, ProxyRuntime,
+    control::ControlAddr, dns, drain, proxy::http, serve, svc, Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
-pub(crate) use linkerd_app_inbound as inbound;
+use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
@@ -186,7 +181,7 @@ impl Config {
                 );
             } else {
                 let server = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
-                    .into_outbound(
+                    .into_server(
                         outbound_addr.port(),
                         dst.resolve.clone(),
                         dst.profiles.clone(),
@@ -203,35 +198,35 @@ impl Config {
             let _inbound = span.enter();
             info!(listen.addr = %inbound_addr);
 
+            let inbound = Inbound::new_without_stack(
+                inbound,
+                ProxyRuntime {
+                    identity: local_identity,
+                    metrics: inbound_metrics,
+                    tap: tap_registry,
+                    span_sink: oc_span_sink,
+                    drain: drain_rx.clone(),
+                },
+            );
+
             let gateway_stack = gateway::stack(
                 gateway,
-                &inbound.proxy,
+                inbound.clone(),
                 Outbound::new_tcp_connect(outbound, outbound_rt)
                     .push_tcp_endpoint(outbound_addr.port())
                     .push_http_endpoint()
                     .push_http_logical(dst.resolve.clone())
                     .into_inner(),
                 dst.profiles.clone(),
-                local_identity.as_ref().map(Param::param),
-                &inbound_metrics,
-                oc_span_sink.clone(),
-                drain_rx.clone(),
             );
 
-            let connect = inbound::tcp_connect(&inbound.proxy.connect);
             tokio::spawn(
                 serve::serve(
                     inbound_listen,
-                    inbound.build(
-                        inbound_addr,
-                        local_identity,
-                        connect,
-                        gateway_stack,
+                    inbound.tcp_connect().into_server(
+                        inbound_addr.port(),
                         dst.profiles,
-                        tap_registry,
-                        inbound_metrics,
-                        oc_span_sink,
-                        drain_rx.clone(),
+                        gateway_stack,
                     ),
                     drain_rx.signaled(),
                 )

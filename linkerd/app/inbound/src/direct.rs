@@ -1,7 +1,6 @@
-use crate::target::TcpEndpoint;
+use crate::{target::TcpEndpoint, Inbound};
 use linkerd_app_core::{
-    config::ProxyConfig,
-    io, metrics,
+    io,
     proxy::identity::LocalCrtKey,
     svc::{self, stack::Param},
     tls,
@@ -44,108 +43,124 @@ pub struct ClientInfo {
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 
-/// Builds a stack that handles connections that target the proxy's inbound port
-/// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
-/// the main proxy stack:
-///
-/// 1. Protocol detection is always performed;
-/// 2. TLS is required;
-/// 3. A transport header is expected. It's not strictly required, as
-///    gateways may need to accept HTTP requests from older proxy versions
-pub fn stack<I, F, FSvc, G, GSvc>(
-    config: &ProxyConfig,
-    local_identity: Option<LocalCrtKey>,
-    tcp: F,
-    gateway: G,
-    metrics: &metrics::Proxy,
-) -> impl svc::NewService<
-    listen::Addrs,
-    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-> + Clone
-where
-    I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-    I: Debug + Send + Sync + Unpin + 'static,
-    F: svc::NewService<TcpEndpoint, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-    FSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
-    FSvc::Error: Into<Error>,
-    FSvc::Future: Send + Unpin,
-    G: svc::NewService<GatewayConnection, Service = GSvc> + Clone + Send + Sync + Unpin + 'static,
-    GSvc: svc::Service<GatewayIo<I>, Response = ()> + Send + 'static,
-    GSvc::Error: Into<Error>,
-    GSvc::Future: Send,
-{
-    let detect_timeout = config.detect_protocol_timeout;
+impl<T> Inbound<T> {
+    /// Builds a stack that handles connections that target the proxy's inbound port
+    /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
+    /// the main proxy stack:
+    ///
+    /// 1. Protocol detection is always performed;
+    /// 2. TLS is required;
+    /// 3. A transport header is expected. It's not strictly required, as
+    ///    gateways may need to accept HTTP requests from older proxy versions
+    pub fn push_direct<I, TSvc, G, GSvc>(
+        self,
+        gateway: G,
+    ) -> Inbound<
+        impl svc::NewService<
+                listen::Addrs,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
+    >
+    where
+        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: Debug + Send + Sync + Unpin + 'static,
+        T: svc::NewService<TcpEndpoint, Service = TSvc> + Clone + Send + Sync + Unpin + 'static,
+        TSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
+        TSvc::Error: Into<Error>,
+        TSvc::Future: Send + Unpin,
+        G: svc::NewService<GatewayConnection, Service = GSvc>
+            + Clone
+            + Send
+            + Sync
+            + Unpin
+            + 'static,
+        GSvc: svc::Service<GatewayIo<I>, Response = ()> + Send + 'static,
+        GSvc::Error: Into<Error>,
+        GSvc::Future: Send,
+    {
+        let Self {
+            config,
+            runtime: rt,
+            stack: tcp,
+        } = self;
+        let detect_timeout = config.proxy.detect_protocol_timeout;
 
-    svc::stack(tcp)
-        .check_new_service::<TcpEndpoint, FwdIo<I>>()
-        // When the transport header is present, it may be used for either local
-        // TCP forwarding, or we may be processing an HTTP gateway connection.
-        // HTTP gateway connections that have a transport header must provide a
-        // target name as a part of the header.
-        .push_switch(
-            |(h, client): (TransportHeader, ClientInfo)| match h {
-                TransportHeader {
-                    port,
-                    protocol: None,
-                    ..
-                } => Ok(svc::Either::A(TcpEndpoint { port })),
-                TransportHeader {
-                    port,
-                    name: Some(name),
-                    protocol,
-                } => Ok(svc::Either::B(GatewayConnection {
-                    target: Some(NameAddr::from((name, port))),
-                    protocol,
-                    client,
-                })),
-                TransportHeader {
-                    name: None,
-                    protocol: Some(_),
-                    ..
-                } => Err(RefusedNoTarget),
-            },
-            // HTTP detection is not necessary in this case, since the transport
-            // header indicates the connection's HTTP version.
-            svc::stack(gateway.clone())
-                .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
-                .check_new_service::<GatewayConnection, FwdIo<I>>()
-                .into_inner(),
-        )
-        // Use ALPN to determine whether a transport header should be read.
-        //
-        // When the transport header is not present, perform HTTP detection to
-        // support legacy gateway clients.
-        .push(NewTransportHeaderServer::layer(detect_timeout))
-        .push_switch(
-            |client: ClientInfo| {
-                if client.header_negotiated() {
-                    Ok::<_, Never>(svc::Either::A(client))
-                } else {
-                    Ok(svc::Either::B(GatewayConnection {
-                        client,
-                        target: None,
+        let stack = tcp
+            .check_new_service::<TcpEndpoint, FwdIo<I>>()
+            // When the transport header is present, it may be used for either local
+            // TCP forwarding, or we may be processing an HTTP gateway connection.
+            // HTTP gateway connections that have a transport header must provide a
+            // target name as a part of the header.
+            .push_switch(
+                |(h, client): (TransportHeader, ClientInfo)| match h {
+                    TransportHeader {
+                        port,
                         protocol: None,
-                    }))
-                }
-            },
-            // TODO: Remove this after we have at least one stable release out
-            // with transport header support.
-            svc::stack(gateway)
-                .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
-                .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
-                .into_inner(),
-        )
-        .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
-        .push(metrics.transport.layer_accept())
-        // Build a ClientInfo target for each accepted connection. Refuse the
-        // connection if it doesn't include an mTLS identity.
-        .push_request_filter(ClientInfo::try_from)
-        .push(tls::NewDetectTls::layer(
-            local_identity.map(WithTransportHeaderAlpn),
-            config.detect_protocol_timeout,
-        ))
-        .check_new_service::<listen::Addrs, I>()
-        .into_inner()
+                        ..
+                    } => Ok(svc::Either::A(TcpEndpoint { port })),
+                    TransportHeader {
+                        port,
+                        name: Some(name),
+                        protocol,
+                    } => Ok(svc::Either::B(GatewayConnection {
+                        target: Some(NameAddr::from((name, port))),
+                        protocol,
+                        client,
+                    })),
+                    TransportHeader {
+                        name: None,
+                        protocol: Some(_),
+                        ..
+                    } => Err(RefusedNoTarget),
+                },
+                // HTTP detection is not necessary in this case, since the transport
+                // header indicates the connection's HTTP version.
+                svc::stack(gateway.clone())
+                    .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
+                    .check_new_service::<GatewayConnection, FwdIo<I>>()
+                    .into_inner(),
+            )
+            // Use ALPN to determine whether a transport header should be read.
+            //
+            // When the transport header is not present, perform HTTP detection to
+            // support legacy gateway clients.
+            .push(NewTransportHeaderServer::layer(detect_timeout))
+            .push_switch(
+                |client: ClientInfo| {
+                    if client.header_negotiated() {
+                        Ok::<_, Never>(svc::Either::A(client))
+                    } else {
+                        Ok(svc::Either::B(GatewayConnection {
+                            client,
+                            target: None,
+                            protocol: None,
+                        }))
+                    }
+                },
+                // TODO: Remove this after we have at least one stable release out
+                // with transport header support.
+                svc::stack(gateway)
+                    .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
+                    .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
+                    .into_inner(),
+            )
+            .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
+            .push(rt.metrics.transport.layer_accept())
+            // Build a ClientInfo target for each accepted connection. Refuse the
+            // connection if it doesn't include an mTLS identity.
+            .push_request_filter(ClientInfo::try_from)
+            .push(tls::NewDetectTls::layer(
+                rt.identity.clone().map(WithTransportHeaderAlpn),
+                detect_timeout,
+            ))
+            .check_new_service::<listen::Addrs, I>();
+
+        Inbound {
+            config,
+            runtime: rt,
+            stack,
+        }
+    }
 }
 
 // === impl ClientInfo ===
