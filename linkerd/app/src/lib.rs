@@ -22,7 +22,7 @@ use linkerd_app_core::{
 };
 use linkerd_app_gateway as gateway;
 pub(crate) use linkerd_app_inbound as inbound;
-use linkerd_app_outbound as outbound;
+use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
@@ -164,11 +164,11 @@ impl Config {
             };
 
             if ingress_mode {
-                let tcp = outbound::tcp::connect::stack(outbound.clone(), outbound_rt.clone())
+                let tcp = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
                     .push_tcp_endpoint(outbound_addr.port())
                     .push_tcp_forward()
                     .into_inner();
-                let http = outbound::tcp::connect::stack(outbound.clone(), outbound_rt.clone())
+                let http = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
                     .push_http_endpoint()
                     .push_http_logical(dst.resolve.clone())
                     .into_inner();
@@ -185,7 +185,7 @@ impl Config {
                         .instrument(span.clone()),
                 );
             } else {
-                let server = outbound::tcp::connect::stack(outbound.clone(), outbound_rt.clone())
+                let server = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
                     .into_outbound(
                         outbound_addr.port(),
                         dst.resolve.clone(),
@@ -206,7 +206,7 @@ impl Config {
             let gateway_stack = gateway::stack(
                 gateway,
                 &inbound.proxy,
-                outbound::tcp::connect::stack(outbound, outbound_rt)
+                Outbound::new_tcp_connect(outbound, outbound_rt)
                     .push_tcp_endpoint(outbound_addr.port())
                     .push_http_endpoint()
                     .push_http_logical(dst.resolve.clone())

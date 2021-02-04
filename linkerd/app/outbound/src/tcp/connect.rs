@@ -5,12 +5,14 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-pub fn stack(config: crate::Config, runtime: ProxyRuntime) -> Outbound<ConnectTcp> {
-    let stack = svc::stack(ConnectTcp::new(config.proxy.connect.keepalive));
-    Outbound {
-        config,
-        runtime,
-        stack,
+impl Outbound<ConnectTcp> {
+    pub fn new_tcp_connect(config: crate::Config, runtime: ProxyRuntime) -> Self {
+        let stack = svc::stack(ConnectTcp::new(config.proxy.connect.keepalive));
+        Self {
+            config,
+            runtime,
+            stack,
+        }
     }
 }
 
