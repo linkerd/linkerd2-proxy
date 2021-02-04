@@ -5,9 +5,6 @@ use linkerd_trace_context::{self as trace_context, TraceContext};
 use std::{collections::HashMap, error, fmt, sync::Arc};
 use tokio::sync::mpsc;
 
-const SPAN_KIND_SERVER: i32 = 1;
-const SPAN_KIND_CLIENT: i32 = 2;
-
 pub type SpanSink = Option<mpsc::Sender<oc::Span>>;
 
 /// SpanConverter converts trace_context::Span objects into OpenCensus agent
@@ -16,7 +13,7 @@ pub type SpanSink = Option<mpsc::Sender<oc::Span>>;
 /// it to an OpenCensus span and then sends it on the provided mpsc::Sender.
 #[derive(Clone)]
 pub struct SpanConverter {
-    kind: i32,
+    kind: Kind,
     sink: mpsc::Sender<oc::Span>,
     labels: Arc<HashMap<String, String>>,
 }
@@ -44,19 +41,25 @@ pub fn server<S>(
     sink: SpanSink,
     labels: HashMap<String, String>,
 ) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
-    SpanConverter::layer(SPAN_KIND_SERVER, sink, labels)
+    SpanConverter::layer(Kind::Server, sink, labels)
 }
 
 pub fn client<S>(
     sink: SpanSink,
     labels: HashMap<String, String>,
 ) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
-    SpanConverter::layer(SPAN_KIND_CLIENT, sink, labels)
+    SpanConverter::layer(Kind::Client, sink, labels)
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+enum Kind {
+    Server = 1,
+    Client = 2,
 }
 
 impl SpanConverter {
     fn layer<S>(
-        kind: i32,
+        kind: Kind,
         sink: SpanSink,
         labels: HashMap<String, String>,
     ) -> impl layer::Layer<S, Service = TraceContext<Option<Self>, S>> + Clone {
@@ -93,7 +96,7 @@ impl SpanConverter {
             tracestate: None,
             parent_span_id: into_bytes(span.parent_id, 8)?,
             name: Some(truncatable(span.span_name)),
-            kind: self.kind,
+            kind: self.kind as i32,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
             attributes: Some(oc::span::Attributes {
@@ -105,7 +108,7 @@ impl SpanConverter {
             links: None,
             status: None, // TODO: this is gRPC status; we must read response trailers to populate this
             resource: None,
-            same_process_as_parent_span: Some(self.kind == SPAN_KIND_CLIENT),
+            same_process_as_parent_span: Some(self.kind == Kind::Client),
             child_span_count: None,
         })
     }
