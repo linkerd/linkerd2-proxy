@@ -801,7 +801,7 @@ where
 {
     let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
     let (_, drain) = drain::channel();
-    crate::server::stack(
+    crate::stack(
         &cfg,
         profiles,
         resolver,
