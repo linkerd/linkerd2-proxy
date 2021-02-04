@@ -22,9 +22,7 @@ use self::{
 };
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
-    detect, drain, io, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    detect, drain, http_tracing, io, metrics, profiles,
     proxy::{identity::LocalCrtKey, tap, tcp},
     svc::{self, stack::Param},
     tls,
@@ -32,7 +30,6 @@ use linkerd_app_core::{
     Error, NameAddr, NameMatch,
 };
 use std::{fmt::Debug, net::SocketAddr, time::Duration};
-use tokio::sync::mpsc;
 use tracing::debug_span;
 
 #[derive(Clone, Debug)]
@@ -78,7 +75,7 @@ impl Config {
         profiles_client: P,
         tap: tap::Registry,
         metrics: metrics::Proxy,
-        span_sink: Option<mpsc::Sender<oc::Span>>,
+        span_sink: http_tracing::SpanSink,
         drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,

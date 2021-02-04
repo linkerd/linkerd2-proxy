@@ -22,13 +22,13 @@ use tracing::{debug, info, trace};
 #[derive(Clone, Debug)]
 pub struct TraceContext<K, S> {
     inner: S,
-    sink: Option<K>,
+    sink: K,
 }
 
 // === impl TraceContext ===
 
 impl<K: Clone, S> TraceContext<K, S> {
-    pub fn layer(sink: Option<K>) -> impl layer::Layer<S, Service = TraceContext<K, S>> + Clone {
+    pub fn layer(sink: K) -> impl layer::Layer<S, Service = TraceContext<K, S>> + Clone {
         layer::mk(move |inner| TraceContext {
             inner,
             sink: sink.clone(),
@@ -66,10 +66,10 @@ impl<K: Clone, S> TraceContext<K, S> {
 
 impl<K, S, ReqB, RspB> tower::Service<http::Request<ReqB>> for TraceContext<K, S>
 where
+    K: Clone + SpanSink + Send + 'static,
     S: tower::Service<http::Request<ReqB>, Response = http::Response<RspB>>,
     S::Error: Send,
     S::Future: Send + 'static,
-    K: SpanSink + Clone + Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -78,12 +78,13 @@ where
         Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send + 'static>>,
     >;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, mut req: http::Request<ReqB>) -> Self::Future {
-        if let Some(sink) = self.sink.as_ref() {
+        if self.sink.is_enabled() {
             if let Some(context) = propagation::unpack_trace_context(&req) {
                 // Update the trace ID if the request set one and the proxy is configured to emit
                 // spans.
@@ -94,7 +95,7 @@ where
                     // If the request has been marked for sampling, record its metadata.
                     let start = SystemTime::now();
                     let req_labels = Self::request_labels(&req);
-                    let mut sink = sink.clone();
+                    let mut sink = self.sink.clone();
                     let span_name = req
                         .uri()
                         .path_and_query()

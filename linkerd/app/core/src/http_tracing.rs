@@ -1,23 +1,27 @@
 use linkerd_error::Error;
 use linkerd_opencensus::proto::trace::v1 as oc;
-use linkerd_trace_context as trace_context;
-use std::collections::HashMap;
-use std::{error, fmt};
+use linkerd_stack::layer;
+use linkerd_trace_context::{self as trace_context, TraceContext};
+use std::{collections::HashMap, error, fmt, sync::Arc};
 use tokio::sync::mpsc;
 
 const SPAN_KIND_SERVER: i32 = 1;
 const SPAN_KIND_CLIENT: i32 = 2;
 
+pub type SpanSink = Option<mpsc::Sender<oc::Span>>;
+
 /// SpanConverter converts trace_context::Span objects into OpenCensus agent
-/// protobuf span objects.  SpanConverter receives trace_context::Span objects
-/// by implmenting the SpanSink trait.  For each span that it receives, it
-/// converts it to an OpenCensus span and then sends it on the provided
-/// mpsc::Sender.
+/// protobuf span objects. SpanConverter receives trace_context::Span objects by
+/// implmenting the SpanSink trait. For each span that it receives, it converts
+/// it to an OpenCensus span and then sends it on the provided mpsc::Sender.
 #[derive(Clone)]
-pub struct SpanConverter {
-    kind: i32,
-    sink: mpsc::Sender<oc::Span>,
-    labels: HashMap<String, String>,
+pub enum SpanConverter {
+    Disabled,
+    Enabled {
+        kind: i32,
+        sink: mpsc::Sender<oc::Span>,
+        labels: Arc<HashMap<String, String>>,
+    },
 }
 
 #[derive(Debug)]
@@ -39,26 +43,43 @@ impl fmt::Display for IdLengthError {
     }
 }
 
+pub fn server<S>(
+    sink: SpanSink,
+    labels: HashMap<String, String>,
+) -> impl layer::Layer<S, Service = TraceContext<SpanConverter, S>> + Clone {
+    SpanConverter::layer(SPAN_KIND_SERVER, sink, labels)
+}
+
+pub fn client<S>(
+    sink: SpanSink,
+    labels: HashMap<String, String>,
+) -> impl layer::Layer<S, Service = TraceContext<SpanConverter, S>> + Clone {
+    SpanConverter::layer(SPAN_KIND_CLIENT, sink, labels)
+}
+
 impl SpanConverter {
-    pub fn server(sink: mpsc::Sender<oc::Span>, labels: HashMap<String, String>) -> Self {
-        Self {
-            kind: SPAN_KIND_SERVER,
-            sink,
-            labels,
-        }
+    fn layer<S>(
+        kind: i32,
+        sink: SpanSink,
+        labels: HashMap<String, String>,
+    ) -> impl layer::Layer<S, Service = TraceContext<Self, S>> + Clone {
+        TraceContext::layer(
+            sink.map(move |sink| SpanConverter::Enabled {
+                kind,
+                sink,
+                labels: labels.into(),
+            })
+            .unwrap_or(SpanConverter::Disabled),
+        )
     }
 
-    pub fn client(sink: mpsc::Sender<oc::Span>, labels: HashMap<String, String>) -> Self {
-        Self {
-            kind: SPAN_KIND_CLIENT,
-            sink,
-            labels,
-        }
-    }
-
-    fn mk_span(&self, mut span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
+    fn mk_span(
+        kind: i32,
+        labels: &HashMap<String, String>,
+        mut span: trace_context::Span,
+    ) -> Result<oc::Span, IdLengthError> {
         let mut attributes = HashMap::<String, oc::AttributeValue>::new();
-        for (k, v) in self.labels.iter() {
+        for (k, v) in labels.iter() {
             attributes.insert(
                 k.clone(),
                 oc::AttributeValue {
@@ -77,12 +98,12 @@ impl SpanConverter {
             );
         }
         Ok(oc::Span {
+            kind,
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
             tracestate: None,
             parent_span_id: into_bytes(span.parent_id, 8)?,
             name: Some(truncatable(span.span_name)),
-            kind: self.kind,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
             attributes: Some(oc::span::Attributes {
@@ -94,16 +115,29 @@ impl SpanConverter {
             links: None,
             status: None, // TODO: this is gRPC status; we must read response trailers to populate this
             resource: None,
-            same_process_as_parent_span: Some(self.kind == SPAN_KIND_CLIENT),
+            same_process_as_parent_span: Some(kind == SPAN_KIND_CLIENT),
             child_span_count: None,
         })
     }
 }
 
 impl trace_context::SpanSink for SpanConverter {
+    #[inline]
+    fn is_enabled(&self) -> bool {
+        match self {
+            Self::Disabled => false,
+            Self::Enabled { .. } => true,
+        }
+    }
+
     fn try_send(&mut self, span: trace_context::Span) -> Result<(), Error> {
-        let span = self.mk_span(span)?;
-        self.sink.try_send(span).map_err(Into::into)
+        match self {
+            Self::Disabled => unreachable!("is_enabled must be called"),
+            Self::Enabled { kind, labels, sink } => {
+                let span = Self::mk_span(*kind, labels.as_ref(), span)?;
+                sink.try_send(span).map_err(Into::into)
+            }
+        }
     }
 }
 

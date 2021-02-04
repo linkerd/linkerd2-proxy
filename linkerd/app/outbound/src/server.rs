@@ -3,17 +3,13 @@
 use crate::{http, stack_labels, target::ShouldResolve, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, drain, errors, io, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    detect, discovery_rejected, drain, errors, http_tracing, io, metrics, profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
-    spans::SpanConverter,
     svc,
     transport::{listen, metrics::SensorIo},
-    Addr, Error, IpMatch, TraceContext,
+    Addr, Error, IpMatch,
 };
 use std::net::SocketAddr;
-use tokio::sync::mpsc;
 use tracing::debug_span;
 
 pub fn stack<R, P, C, H, HSvc, I>(
@@ -23,7 +19,7 @@ pub fn stack<R, P, C, H, HSvc, I>(
     tcp_connect: C,
     http_router: H,
     metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::SpanSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -105,7 +101,7 @@ pub fn accept_stack<P, T, TSvc, H, HSvc, I>(
     tcp: T,
     http_router: H,
     metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::SpanSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     tcp::Accept,
@@ -159,9 +155,7 @@ where
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                .push(TraceContext::layer(span_sink.map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
+                .push(http_tracing::server(span_sink, trace_labels()))
                 .push(http::BoxResponse::layer()),
         )
         // Convert origin form HTTP/1 URIs to absolute form for Hyper's

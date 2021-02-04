@@ -4,14 +4,11 @@ use crate::tcp;
 use linkerd_app_core::{
     classify,
     config::ConnectConfig,
-    metrics,
-    opencensus::proto::trace::v1 as oc,
+    http_tracing, metrics,
     proxy::{http, tap},
-    reconnect,
-    spans::SpanConverter,
-    svc, tls, Error, TraceContext, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
+    reconnect, svc, tls, Error, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
-use tokio::{io, sync::mpsc};
+use tokio::io;
 use tracing::debug_span;
 
 pub fn stack<B, C>(
@@ -20,7 +17,7 @@ pub fn stack<B, C>(
     tcp_connect: C,
     tap: tap::Registry,
     metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::SpanSink,
 ) -> impl svc::NewService<
     Endpoint,
     Service = impl svc::Service<
@@ -57,9 +54,7 @@ where
         .check_new::<Endpoint>()
         .push(tap::NewTapHttp::layer(tap))
         .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
-        .push_on_response(TraceContext::layer(
-            span_sink.map(|sink| SpanConverter::client(sink, crate::trace_labels())),
-        ))
+        .push_on_response(http_tracing::client(span_sink, crate::trace_labels()))
         .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
         .push(NewRequireIdentity::layer())
         .push(http::NewOverrideAuthority::layer(vec![

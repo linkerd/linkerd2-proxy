@@ -7,9 +7,7 @@ mod tests;
 use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
-    detect, discovery_rejected, drain, io, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    detect, discovery_rejected, drain, http_tracing, io, metrics, profiles,
     proxy::http,
     svc::{self, stack::Param},
     tls,
@@ -22,7 +20,6 @@ use linkerd_app_inbound::{
 };
 use linkerd_app_outbound as outbound;
 use std::convert::TryInto;
-use tokio::sync::mpsc;
 use tracing::debug_span;
 
 #[derive(Clone, Debug, Default)]
@@ -63,7 +60,7 @@ pub fn stack<I, O, OSvc, P>(
     profiles: P,
     local_id: Option<tls::LocalId>,
     metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::SpanSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     GatewayConnection,
