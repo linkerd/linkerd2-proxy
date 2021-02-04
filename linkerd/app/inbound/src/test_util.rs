@@ -4,7 +4,10 @@ use linkerd_app_core::{
     config,
     dns::Suffix,
     drain, exp_backoff, metrics,
-    proxy::{http::{h1, h2}, tap},
+    proxy::{
+        http::{h1, h2},
+        tap,
+    },
     transport::BindTcp,
     NameMatch, ProxyRuntime,
 };
