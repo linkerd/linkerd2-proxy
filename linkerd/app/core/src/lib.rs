@@ -60,7 +60,7 @@ pub struct ProxyRuntime {
     pub identity: Option<proxy::identity::LocalCrtKey>,
     pub metrics: metrics::Proxy,
     pub tap: proxy::tap::Registry,
-    pub span_sink: http_tracing::SpanSink,
+    pub span_sink: http_tracing::OpenCensusSink,
     pub drain: drain::Watch,
 }
 

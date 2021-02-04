@@ -60,7 +60,7 @@ pub fn stack<I, O, OSvc, P>(
     profiles: P,
     local_id: Option<tls::LocalId>,
     metrics: &metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    span_sink: http_tracing::OpenCensusSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     GatewayConnection,
