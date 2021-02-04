@@ -6,11 +6,11 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 pub fn stack(config: crate::Config, runtime: ProxyRuntime) -> Outbound<ConnectTcp> {
-    let inner = svc::stack(ConnectTcp::new(config.proxy.connect.keepalive));
+    let stack = svc::stack(ConnectTcp::new(config.proxy.connect.keepalive));
     Outbound {
         config,
         runtime,
-        inner,
+        stack,
     }
 }
 
@@ -36,11 +36,11 @@ impl<C> Outbound<C> {
         let Self {
             config,
             runtime: rt,
-            inner: connect,
+            stack: connect,
         } = self;
         let identity_disabled = rt.identity.is_none();
 
-        let inner = connect
+        let stack = connect
             // Initiates mTLS if the target is configured with identity. The
             // endpoint configures ALPN when there is an opaque transport hint OR
             // when an authority override is present (indicating the target is a
@@ -65,7 +65,7 @@ impl<C> Outbound<C> {
         Outbound {
             config,
             runtime: rt,
-            inner,
+            stack,
         }
     }
 
@@ -87,10 +87,10 @@ impl<C> Outbound<C> {
         let Self {
             config,
             runtime,
-            inner: connect,
+            stack: connect,
         } = self;
 
-        let inner = connect
+        let stack = connect
             .push_make_thunk()
             .push_on_response(super::Forward::layer())
             .instrument(|_: &_| debug_span!("tcp.forward"))
@@ -99,7 +99,7 @@ impl<C> Outbound<C> {
         Outbound {
             config,
             runtime,
-            inner,
+            stack,
         }
     }
 }

@@ -31,11 +31,11 @@ impl<N> Outbound<N> {
         let Self {
             config,
             runtime: rt,
-            inner: accept,
+            stack: accept,
         } = self;
         let allow = AllowProfile(config.allow_discovery.clone().into());
 
-        let inner = accept
+        let stack = accept
             .check_new::<tcp::Logical>()
             .check_new_service::<tcp::Logical, SensorIo<I>>()
             .push_map_target(tcp::Logical::from)
@@ -65,7 +65,7 @@ impl<N> Outbound<N> {
         Outbound {
             config,
             runtime: rt,
-            inner,
+            stack,
         }
     }
 }

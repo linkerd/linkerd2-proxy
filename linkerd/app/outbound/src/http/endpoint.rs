@@ -36,7 +36,7 @@ where
         let Self {
             config,
             runtime: rt,
-            inner: connect,
+            stack: connect,
         } = self;
         let identity_disabled = rt.identity.is_none();
         let config::ConnectConfig {
@@ -49,7 +49,7 @@ where
         // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
         // is typically used (i.e. when communicating with other proxies); though
         // HTTP/1.x fallback is supported as needed.
-        let inner = connect
+        let stack = connect
             .push(http::client::layer(h1_settings, h2_settings))
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
@@ -89,7 +89,7 @@ where
         Outbound {
             config,
             runtime: rt,
-            inner,
+            stack,
         }
     }
 }

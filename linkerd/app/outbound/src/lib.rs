@@ -38,7 +38,7 @@ pub struct Config {
 pub struct Outbound<S> {
     config: Config,
     runtime: ProxyRuntime,
-    inner: svc::Stack<S>,
+    stack: svc::Stack<S>,
 }
 
 impl<C> Outbound<C> {
@@ -47,12 +47,12 @@ impl<C> Outbound<C> {
         Self {
             config,
             runtime,
-            inner: svc::stack(inner),
+            stack: svc::stack(inner),
         }
     }
 
     pub fn into_inner(self) -> C {
-        self.inner.into_inner()
+        self.stack.into_inner()
     }
 
     pub fn into_outbound<R, P, I>(

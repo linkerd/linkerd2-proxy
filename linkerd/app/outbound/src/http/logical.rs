@@ -38,7 +38,7 @@ impl<E> Outbound<E> {
         let Self {
             config,
             runtime: rt,
-            inner: endpoint,
+            stack: endpoint,
         } = self;
         let config::ProxyConfig {
             buffer_capacity,
@@ -48,7 +48,7 @@ impl<E> Outbound<E> {
         } = config.proxy;
         let watchdog = cache_max_idle_age * 2;
 
-        let inner = endpoint
+        let stack = endpoint
             .clone()
             .push_on_response(
                 svc::layers()
@@ -159,7 +159,7 @@ impl<E> Outbound<E> {
         Outbound {
             config,
             runtime: rt,
-            inner,
+            stack,
         }
     }
 }

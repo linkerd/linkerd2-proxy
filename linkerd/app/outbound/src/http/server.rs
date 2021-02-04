@@ -26,7 +26,7 @@ where
         let Self {
             config,
             runtime: rt,
-            inner: http,
+            stack: http,
         } = self;
 
         let config::ProxyConfig {
@@ -36,7 +36,7 @@ where
             ..
         } = config.proxy;
 
-        let inner = http
+        let stack = http
             .check_new_service::<http::Logical, _>()
             .push_on_response(
                 svc::layers()
@@ -68,7 +68,7 @@ where
         Outbound {
             config,
             runtime: rt,
-            inner,
+            stack,
         }
     }
 }

@@ -41,7 +41,7 @@ where
         .push_map_target(|l| (None, l))
         .into_inner();
 
-    let inner = svc::stack(http)
+    let stack = svc::stack(http)
         .push_on_response(
             svc::layers()
                 .push(http::BoxRequest::layer())
@@ -96,7 +96,7 @@ where
     Outbound {
         config,
         runtime: rt,
-        inner,
+        stack,
     }
 }
 

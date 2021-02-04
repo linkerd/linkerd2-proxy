@@ -33,10 +33,10 @@ where
         let Self {
             config,
             runtime: rt,
-            inner: connect,
+            stack: connect,
         } = self;
 
-        let inner = connect
+        let stack = connect
             .clone()
             .push_make_thunk()
             .instrument(|t: &Endpoint| match t.tls.as_ref() {
@@ -86,7 +86,7 @@ where
         Outbound {
             config,
             runtime: rt,
-            inner,
+            stack,
         }
     }
 }
