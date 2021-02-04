@@ -55,6 +55,15 @@ pub const L5D_REQUIRE_ID: &str = "l5d-require-id";
 
 const DEFAULT_PORT: u16 = 80;
 
+#[derive(Clone, Debug)]
+pub struct ProxyRuntime {
+    pub identity: Option<proxy::identity::LocalCrtKey>,
+    pub metrics: metrics::Proxy,
+    pub tap: proxy::tap::Registry,
+    pub span_sink: http_tracing::OpenCensusSink,
+    pub drain: drain::Watch,
+}
+
 pub fn discovery_rejected() -> tonic::Status {
     tonic::Status::new(tonic::Code::InvalidArgument, "Discovery rejected")
 }

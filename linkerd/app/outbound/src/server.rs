@@ -1,20 +1,21 @@
-use crate::{http, stack_labels, target::ShouldResolve, tcp};
+use crate::{http, stack_labels, target::ShouldResolve, tcp, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, drain, io, metrics, profiles, svc, Addr, Error, IpMatch,
+    detect, discovery_rejected, io, profiles, svc, Addr, Error, IpMatch, ProxyRuntime,
 };
 use tracing::debug_span;
 
 pub fn stack<T, TSvc, H, HSvc, I>(
-    config: &ProxyConfig,
-    metrics: &metrics::Proxy,
-    drain: drain::Watch,
+    config: Config,
+    rt: ProxyRuntime,
     tcp: T,
     http: H,
-) -> impl svc::NewService<
-    tcp::Logical,
-    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-> + Clone
+) -> Outbound<
+    impl svc::NewService<
+            tcp::Logical,
+            Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+        > + Clone,
+>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     T: svc::NewService<(Option<Addr>, tcp::Logical), Service = TSvc> + Clone + Send + 'static,
@@ -34,19 +35,19 @@ where
         buffer_capacity,
         cache_max_idle_age,
         ..
-    } = config.clone();
+    } = config.proxy;
 
     let tcp_forward = svc::stack(tcp.clone())
         .push_map_target(|l| (None, l))
         .into_inner();
 
-    svc::stack(http)
+    let stack = svc::stack(http)
         .push_on_response(
             svc::layers()
                 .push(http::BoxRequest::layer())
                 .push(svc::MapErrLayer::new(Into::into)),
         )
-        .push(http::NewServeHttp::layer(h2_settings, drain))
+        .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
         .push_map_target(http::Logical::from)
         .push(svc::UnwrapOr::layer(
             // When an HTTP version cannot be detected, we fallback to a logical
@@ -58,7 +59,7 @@ where
                 .push_on_response(
                     svc::layers()
                         .push_map_target(io::EitherIo::Right)
-                        .push(metrics.stack.layer(stack_labels("tcp", "logical")))
+                        .push(rt.metrics.stack.layer(stack_labels("tcp", "logical")))
                         .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity),
@@ -85,17 +86,22 @@ where
                 .push_on_response(
                     svc::layers()
                         .push_map_target(io::EitherIo::Left)
-                        .push(metrics.stack.layer(stack_labels("tcp", "passthru"))),
+                        .push(rt.metrics.stack.layer(stack_labels("tcp", "passthru"))),
                 )
                 .instrument(|_: &_| debug_span!("tcp.opaque"))
                 .into_inner(),
         )
-        .check_new_service::<tcp::Logical, _>()
-        .into_inner()
+        .check_new_service::<tcp::Logical, _>();
+
+    Outbound {
+        config,
+        runtime: rt,
+        stack,
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct AllowProfile(pub IpMatch);
+struct AllowProfile(pub IpMatch);
 
 // === impl AllowProfile ===
 

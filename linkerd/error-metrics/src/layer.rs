@@ -4,6 +4,7 @@ use linkerd_metrics::Counter;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug)]
 pub struct RecordErrorLayer<L, K: Hash + Eq> {
     label: L,
     errors: Arc<Mutex<IndexMap<K, Counter>>>,

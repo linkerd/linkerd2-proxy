@@ -1,15 +1,16 @@
 use super::{Endpoint, Logical};
-use crate::test_util::{
-    support::{
-        connect::{Connect, ConnectFuture},
-        profile, resolver,
+use crate::{
+    test_util::{
+        support::{
+            connect::{Connect, ConnectFuture},
+            profile, resolver,
+        },
+        *,
     },
-    *,
+    Config, Outbound,
 };
-use crate::Config;
 use linkerd_app_core::{
-    drain, io, metrics, svc, svc::NewService, tls, transport::listen, Addr, Conditional, Error,
-    IpMatch,
+    io, svc, svc::NewService, tls, transport::listen, Addr, Conditional, Error, IpMatch,
 };
 use std::{
     future::Future,
@@ -19,7 +20,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
-    time::Duration,
 };
 use tower::ServiceExt;
 use tracing_futures::Instrument;
@@ -38,8 +38,6 @@ async fn plaintext_tcp() {
         profile: Some(profile::only_default()),
         protocol: (),
     };
-
-    let cfg = default_config(target_addr);
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
@@ -60,12 +58,12 @@ async fn plaintext_tcp() {
         support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
 
     // Build the outbound TCP balancer stack.
-    let (_, drain) = drain::channel();
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let forward = super::balance::stack(&cfg.proxy, connect, resolver, &metrics.outbound, drain)
-        .new_service((Some(target_addr.into()), logical));
-
-    forward
+    let cfg = default_config(target_addr);
+    let (rt, _) = runtime();
+    Outbound::new(cfg, rt, connect)
+        .push_tcp_balance(resolver)
+        .into_inner()
+        .new_service((Some(target_addr.into()), logical))
         .oneshot(client_io)
         .err_into::<Error>()
         .await
@@ -90,7 +88,6 @@ async fn tls_when_hinted() {
         protocol: (),
     };
 
-    let cfg = default_config(plain_addr);
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
     let mut srv_io = support::io();
@@ -131,11 +128,11 @@ async fn tls_when_hinted() {
     client_io.read(b"hello").write(b"world");
 
     // Build the outbound TCP balancer stack.
-    let (_, drain) = drain::channel();
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let mut balance =
-        super::balance::stack(&cfg.proxy, connect, resolver, &metrics.outbound, drain);
-
+    let cfg = default_config(plain_addr);
+    let (rt, _) = runtime();
+    let mut balance = Outbound::new(cfg.clone(), rt.clone(), connect)
+        .push_tcp_balance(resolver)
+        .into_inner();
     let plain = balance
         .new_service((Some(plain_addr.into()), plain_logical))
         .oneshot(client_io.build())
@@ -799,18 +796,13 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (_, drain) = drain::channel();
-    crate::stack(
-        &cfg,
-        profiles,
-        resolver,
-        connect,
-        support::service::no_http(),
-        metrics.outbound,
-        None,
-        drain,
-    )
+    let (rt, _) = runtime();
+    let tcp = Outbound::new(cfg.clone(), rt.clone(), connect)
+        .push_tcp_balance(resolver)
+        .into_inner();
+    crate::server::stack(cfg, rt, tcp, support::service::no_http())
+        .push_discover(profiles)
+        .into_inner()
 }
 
 fn hello_world_client<N, S>(
