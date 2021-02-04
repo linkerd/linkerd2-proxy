@@ -17,9 +17,7 @@ pub(crate) mod test_util;
 
 use linkerd_app_core::{
     config::ProxyConfig,
-    drain, io, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    drain, http_tracing, io, metrics, profiles,
     proxy::{api_resolve::Metadata, core::resolve::Resolve},
     svc,
     transport::listen,
@@ -27,7 +25,6 @@ use linkerd_app_core::{
 };
 use std::net::SocketAddr;
 use std::{collections::HashMap, time::Duration};
-use tokio::sync::mpsc;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -46,7 +43,7 @@ pub fn stack<R, P, C, H, HSvc, I>(
     tcp_connect: C,
     http_router: H,
     metrics: metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::SpanSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
