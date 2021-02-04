@@ -1,20 +1,20 @@
 use super::Endpoint;
-use crate::test_util::{
-    support::{connect::Connect, http_util, profile, resolver, track},
-    *,
+
+use crate::{
+    test_util::{
+        support::{connect::Connect, http_util, profile, resolver, track},
+        *,
+    },
+    Config, Outbound,
 };
-use crate::Config;
 use bytes::Bytes;
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
-    drain,
-    io::{self, BoxedIo},
-    metrics,
-    proxy::tap,
+    io,
     svc::{self, NewService},
     tls,
-    transport::{self, listen},
-    Addr, Error,
+    transport::listen,
+    Addr, Error, ProxyRuntime,
 };
 use std::{
     net::SocketAddr,
@@ -29,74 +29,53 @@ use tracing::Instrument;
 
 fn build_server<I>(
     cfg: Config,
+    rt: ProxyRuntime,
     profiles: resolver::Profiles<SocketAddr>,
     resolver: resolver::Dst<Addr, resolver::Metadata>,
     connect: Connect<Endpoint>,
-) -> (
-    impl svc::NewService<
-            listen::Addrs,
-            Service = impl tower::Service<
-                I,
-                Response = (),
-                Error = impl Into<linkerd_app_core::Error>,
-                Future = impl Send + 'static,
-            > + Send
-                          + 'static,
-        > + Send
-        + 'static,
-    drain::Signal,
-)
+) -> impl svc::NewService<
+    listen::Addrs,
+    Service = impl tower::Service<
+        I,
+        Response = (),
+        Error = impl Into<linkerd_app_core::Error>,
+        Future = impl Send + 'static,
+    > + Send
+                  + 'static,
+> + Send
+       + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (accept, drain_tx) = build_accept(&cfg, resolver, connect, &metrics);
-    let svc = crate::discover::stack(&cfg, &metrics.outbound, profiles, accept);
-    (svc, drain_tx)
+    build_accept(cfg, rt, resolver, connect)
+        .push_discover(profiles)
+        .into_inner()
 }
 
 fn build_accept<I>(
-    cfg: &Config,
+    cfg: Config,
+    rt: ProxyRuntime,
     resolver: resolver::Dst<Addr, resolver::Metadata>,
     connect: Connect<Endpoint>,
-    metrics: &metrics::Metrics,
-) -> (
+) -> Outbound<
     impl svc::NewService<
             crate::tcp::Logical,
-            Service = impl tower::Service<
-                transport::metrics::SensorIo<I>,
-                Response = (),
-                Error = impl Into<Error>,
-                Future = impl Send + 'static,
-            > + Send
+            Service = impl tower::Service<I, Response = (), Error = Error, Future = impl Send>
+                          + Send
                           + 'static,
         > + Clone
         + Send
         + 'static,
-    drain::Signal,
-)
+>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let (drain_tx, drain) = drain::channel();
-
-    let (tap, _) = tap::new();
-    let router = super::logical::stack(
-        &cfg.proxy,
-        super::endpoint::stack(
-            &cfg.proxy.connect,
-            None,
-            connect,
-            tap,
-            metrics.outbound.clone(),
-            None,
-        ),
-        resolver.clone(),
-        metrics.outbound.clone(),
-    );
-    let http = crate::http::server::stack(&cfg.proxy, &metrics.outbound, None, router);
-    let accept = crate::server::stack(&cfg.proxy, &metrics.outbound, drain, NoTcpBalancer, http);
-    (accept, drain_tx)
+    let http = Outbound::new(cfg.clone(), rt.clone(), connect)
+        .push_http_endpoint()
+        .push_http_logical(resolver)
+        .push_http_server()
+        .into_inner();
+    crate::server::stack(cfg, rt, NoTcpBalancer, http)
 }
 
 #[derive(Clone, Debug)]
@@ -170,8 +149,8 @@ async fn profile_endpoint_propagates_conn_errors() {
     let resolver = support::resolver::<Addr, support::resolver::Metadata>();
 
     // Build the outbound server
-    let (mut s, shutdown) = build_server(cfg, profiles, resolver, connect);
-    let server = s.new_service(addrs);
+    let (rt, shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs);
 
     let (client_io, server_io) = support::io::duplex(4096);
     tokio::spawn(async move {
@@ -278,8 +257,8 @@ async fn meshed_hello_world() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (mut s, _shutdown) = build_server(cfg, profiles, resolver, connect);
-    let server = s.new_service(addrs);
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs);
     let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
 
     let rsp = http_util::http_request(&mut client, Request::default()).await;
@@ -337,10 +316,12 @@ async fn stacks_idle_out() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (accept, _drain_tx) = build_accept(&cfg, resolver, connect, &metrics);
+    let (rt, _drain_tx) = runtime();
+    let accept = build_accept(cfg.clone(), rt.clone(), resolver, connect).into_inner();
     let (handle, accept) = track::new_service(accept);
-    let mut svc = crate::discover::stack(&cfg, &metrics.outbound, profiles, accept);
+    let mut svc = Outbound::new(cfg, rt, accept)
+        .push_discover(profiles)
+        .into_inner();
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
@@ -410,10 +391,12 @@ async fn active_stacks_dont_idle_out() {
         .expect("still listening to resolution");
 
     // Build the outbound server
-    let (metrics, _) = metrics::Metrics::new(Duration::from_secs(10));
-    let (accept, _drain_tx) = build_accept(&cfg, resolver, connect, &metrics);
+    let (rt, _drain_tx) = runtime();
+    let accept = build_accept(cfg.clone(), rt.clone(), resolver, connect).into_inner();
     let (handle, accept) = track::new_service(accept);
-    let mut svc = crate::discover::stack(&cfg, &metrics.outbound, profiles, accept);
+    let mut svc = Outbound::new(cfg, rt, accept)
+        .push_discover(profiles)
+        .into_inner();
     assert_eq!(handle.tracked_services(), 0);
 
     let server = svc.new_service(addrs);
@@ -482,8 +465,8 @@ async fn unmeshed_hello_world(
     let resolver = support::resolver::<Addr, support::resolver::Metadata>();
 
     // Build the outbound server
-    let (mut s, _shutdown) = build_server(cfg, profiles, resolver, connect);
-    let server = s.new_service(addrs);
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs);
     let (mut client, bg) = http_util::connect_and_accept(&mut client_settings, server).await;
 
     let rsp = http_util::http_request(&mut client, Request::default()).await;
@@ -496,7 +479,9 @@ async fn unmeshed_hello_world(
 }
 
 #[tracing::instrument]
-fn hello_server(http: hyper::server::conn::Http) -> impl Fn(Endpoint) -> Result<BoxedIo, Error> {
+fn hello_server(
+    http: hyper::server::conn::Http,
+) -> impl Fn(Endpoint) -> Result<io::BoxedIo, Error> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
         let _e = span.enter();
@@ -510,6 +495,6 @@ fn hello_server(http: hyper::server::conn::Http) -> impl Fn(Endpoint) -> Result<
             http.serve_connection(server_io, hello_svc)
                 .in_current_span(),
         );
-        Ok(BoxedIo::new(client_io))
+        Ok(io::BoxedIo::new(client_io))
     }
 }

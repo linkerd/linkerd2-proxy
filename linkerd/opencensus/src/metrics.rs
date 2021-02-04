@@ -8,16 +8,17 @@ metrics! {
     opencensus_span_exports: Counter { "Total count of spans exported" }
 }
 
+#[derive(Debug)]
 struct Metrics {
     streams: Counter,
     requests: Counter,
     spans: Counter,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Registry(Arc<Metrics>);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Report(Arc<Metrics>);
 
 pub fn new() -> (Registry, Report) {

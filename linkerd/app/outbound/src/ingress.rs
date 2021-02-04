@@ -2,11 +2,9 @@ use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
-    io, metrics, profiles,
-    svc::{self},
-    tls,
+    io, profiles, svc, tls,
     transport::{self, listen},
-    Addr, AddrMatch, Error,
+    Addr, AddrMatch, Error, ProxyRuntime,
 };
 use tracing::{debug_span, info_span};
 
@@ -16,14 +14,12 @@ use tracing::{debug_span, info_span};
 ///
 /// This is only intended for Ingress configurations, where we assume all
 /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-pub fn stack<P, T, TSvc, H, HSvc, I>(
-    config: &Config,
+pub fn new_service<I, T, TSvc, H, HSvc, P>(
+    config: Config,
+    rt: ProxyRuntime,
     profiles: P,
     tcp: T,
     http: H,
-    metrics: &metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
-    drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
@@ -60,10 +56,11 @@ where
                 cache_max_idle_age,
                 ..
             },
-    } = config.clone();
+    } = config;
+    let allow = AllowHttpProfile(allow_discovery);
 
     let tcp = svc::stack(tcp)
-        .push_on_response(drain::Retain::layer(drain.clone()))
+        .push_on_response(drain::Retain::layer(rt.drain.clone()))
         .push_map_target(tcp::Endpoint::from_accept(tls::NoClientTls::IngressNonHttp))
         .into_inner();
 
@@ -82,13 +79,10 @@ where
         // inner service to readiness even if new requests aren't
         // received.
         .push_map_target(http::Logical::from)
-        .push(profiles::discover::layer(
-            profiles,
-            AllowHttpProfile(allow_discovery),
-        ))
+        .push(profiles::discover::layer(profiles, allow))
         .push_on_response(
             svc::layers()
-                .push(metrics.stack.layer(stack_labels("http", "logical")))
+                .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
                 .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
@@ -105,9 +99,9 @@ where
             svc::layers()
                 .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                 .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                .push(metrics.http_errors.clone())
+                .push(rt.metrics.http_errors.clone())
                 .push(errors::layer())
-                .push(http_tracing::server(span_sink, trace_labels()))
+                .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                 .push(http::BoxResponse::layer()),
         )
         .check_new_service::<http::Accept, http::Request<_>>()
@@ -115,7 +109,7 @@ where
         .check_new_service::<http::Accept, http::Request<_>>()
         .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
         .check_new_service::<http::Accept, http::Request<_>>()
-        .push(http::NewServeHttp::layer(h2_settings, drain))
+        .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
         .push_map_target(http::Accept::from)
         .push(svc::UnwrapOr::layer(tcp))
         .push_cache(cache_max_idle_age)
@@ -124,7 +118,7 @@ where
             http::DetectHttp::default(),
         ))
         .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
-        .push(metrics.transport.layer_accept())
+        .push(rt.metrics.transport.layer_accept())
         .push_map_target(tcp::Accept::from)
         .check_new_service::<listen::Addrs, I>()
         // Boxing is necessary purely to limit the link-time overhead of

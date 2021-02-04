@@ -18,7 +18,7 @@ use linkerd_app_core::{
     proxy::http,
     serve,
     svc::{self, stack::Param},
-    Error,
+    Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
 pub(crate) use linkerd_app_inbound as inbound;
@@ -155,67 +155,46 @@ impl Config {
 
             info!(listen.addr = %outbound_addr, ingress_mode);
 
-            let outbound_http = outbound::http::logical::stack(
-                &outbound.proxy,
-                outbound::http::endpoint::stack(
-                    &outbound.proxy.connect,
-                    local_identity.as_ref().map(|l| l.id()),
-                    outbound::tcp::connect::stack(
-                        &outbound.proxy.connect,
-                        outbound_addr.port(),
-                        local_identity.clone(),
-                        &outbound_metrics,
-                    ),
-                    tap_registry.clone(),
-                    outbound_metrics.clone(),
-                    oc_span_sink.clone(),
-                ),
-                dst.resolve.clone(),
-                outbound_metrics.clone(),
-            );
+            let outbound_rt = ProxyRuntime {
+                identity: local_identity.clone(),
+                metrics: outbound_metrics,
+                tap: tap_registry.clone(),
+                span_sink: oc_span_sink.clone(),
+                drain: drain_rx.clone(),
+            };
 
-            let connect = outbound::tcp::connect::stack(
-                &outbound.proxy.connect,
-                outbound_addr.port(),
-                local_identity.clone(),
-                &outbound_metrics,
-            );
             if ingress_mode {
+                let tcp = outbound::tcp::connect::stack(outbound.clone(), outbound_rt.clone())
+                    .push_tcp_endpoint(outbound_addr.port())
+                    .push_tcp_forward()
+                    .into_inner();
+                let http = outbound::tcp::connect::stack(outbound.clone(), outbound_rt.clone())
+                    .push_http_endpoint()
+                    .push_http_logical(dst.resolve.clone())
+                    .into_inner();
+                let server = outbound::ingress::new_service(
+                    outbound.clone(),
+                    outbound_rt.clone(),
+                    dst.profiles.clone(),
+                    tcp,
+                    http,
+                );
                 tokio::spawn(
-                    serve::serve(
-                        outbound_listen,
-                        outbound::ingress::stack(
-                            &outbound,
-                            dst.profiles.clone(),
-                            outbound::tcp::connect::forward(connect),
-                            outbound_http.clone(),
-                            &outbound_metrics,
-                            oc_span_sink.clone(),
-                            drain_rx.clone(),
-                        ),
-                        drain_rx.clone().signaled(),
-                    )
-                    .map_err(|e| panic!("outbound failed: {}", e))
-                    .instrument(span.clone()),
+                    serve::serve(outbound_listen, server, drain_rx.clone().signaled())
+                        .map_err(|e| panic!("outbound failed: {}", e))
+                        .instrument(span.clone()),
                 );
             } else {
+                let server = outbound::tcp::connect::stack(outbound.clone(), outbound_rt.clone())
+                    .into_outbound(
+                        outbound_addr.port(),
+                        dst.resolve.clone(),
+                        dst.profiles.clone(),
+                    );
                 tokio::spawn(
-                    serve::serve(
-                        outbound_listen,
-                        outbound::stack(
-                            &outbound,
-                            dst.profiles.clone(),
-                            dst.resolve,
-                            connect,
-                            outbound_http.clone(),
-                            outbound_metrics,
-                            oc_span_sink.clone(),
-                            drain_rx.clone(),
-                        ),
-                        drain_rx.clone().signaled(),
-                    )
-                    .map_err(|e| panic!("outbound failed: {}", e))
-                    .instrument(span.clone()),
+                    serve::serve(outbound_listen, server, drain_rx.clone().signaled())
+                        .map_err(|e| panic!("outbound failed: {}", e))
+                        .instrument(span.clone()),
                 );
             }
             drop(_outbound);
@@ -227,7 +206,11 @@ impl Config {
             let gateway_stack = gateway::stack(
                 gateway,
                 &inbound.proxy,
-                outbound_http,
+                outbound::tcp::connect::stack(outbound, outbound_rt)
+                    .push_tcp_endpoint(outbound_addr.port())
+                    .push_http_endpoint()
+                    .push_http_logical(dst.resolve.clone())
+                    .into_inner(),
                 dst.profiles.clone(),
                 local_identity.as_ref().map(Param::param),
                 &inbound_metrics,
