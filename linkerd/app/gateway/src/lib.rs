@@ -7,7 +7,7 @@ mod tests;
 use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
-    detect, discovery_rejected, drain, http_tracing, io, metrics, profiles,
+    detect, discovery_rejected, io, metrics, profiles,
     proxy::http,
     svc::{self, stack::Param},
     tls,
@@ -15,8 +15,8 @@ use linkerd_app_core::{
     Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{
-    self as inbound,
     direct::{ClientInfo, GatewayConnection},
+    Inbound,
 };
 use linkerd_app_outbound as outbound;
 use std::convert::TryInto;
@@ -55,13 +55,9 @@ struct RefusedNoTarget(());
 #[allow(clippy::clippy::too_many_arguments)]
 pub fn stack<I, O, OSvc, P>(
     Config { allow_discovery }: Config,
-    inbound: &ProxyConfig,
+    inbound: Inbound<()>,
     outbound: O,
     profiles: P,
-    local_id: Option<tls::LocalId>,
-    metrics: &metrics::Proxy,
-    span_sink: http_tracing::OpenCensusSink,
-    drain: drain::Watch,
 ) -> impl svc::NewService<
     GatewayConnection,
     Service = impl tower::Service<I, Response = (), Error = impl Into<Error>, Future = impl Send>
@@ -82,6 +78,14 @@ where
     OSvc::Error: Into<Error>,
     OSvc::Future: Send + 'static,
 {
+    let ProxyConfig {
+        buffer_capacity,
+        cache_max_idle_age,
+        detect_protocol_timeout,
+        dispatch_timeout,
+        ..
+    } = inbound.config().proxy.clone();
+
     let http_server = {
         // Cache an HTTP gateway service for each destination and HTTP version.
         //
@@ -91,6 +95,7 @@ where
         // The client's ID is set as a request extension, as required by the
         // gateway. This permits gateway services (and profile resolutions) to be
         // cached per target, shared across clients.
+        let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
         let gateway = svc::stack(NewGateway::new(outbound, local_id))
             .push(profiles::discover::layer(profiles, Allow(allow_discovery)))
             .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
@@ -98,24 +103,25 @@ where
                 svc::layers()
                     .push(svc::layer::mk(svc::SpawnReady::new))
                     .push(
-                        metrics
+                        inbound
+                            .runtime()
+                            .metrics
                             .stack
                             .layer(metrics::StackLabels::inbound("http", "gateway")),
                     )
-                    .push(svc::FailFast::layer("Gateway", inbound.dispatch_timeout))
-                    .push_spawn_buffer(inbound.buffer_capacity),
+                    .push(svc::FailFast::layer("Gateway", dispatch_timeout))
+                    .push_spawn_buffer(buffer_capacity),
             )
-            .push_cache(inbound.cache_max_idle_age)
+            .push_cache(cache_max_idle_age)
             .push_on_response(
                 svc::layers()
                     .push(http::Retain::layer())
                     .push(http::BoxResponse::layer()),
             )
             .push(svc::NewRouter::layer(RouteHttp))
-            .push_http_insert_target::<tls::ClientId>()
-            .into_inner();
+            .push_http_insert_target::<tls::ClientId>();
 
-        inbound::http::server(&inbound, gateway, metrics, span_sink, drain)
+        inbound.with_stack(gateway).push_http_server().into_inner()
     };
 
     // As gateway connctions are received, dispatch HTTP connections to the HTTP
@@ -156,7 +162,7 @@ where
                     svc::Fail::<_, RefusedNoTarget>::default(),
                 ))
                 .push(detect::NewDetectService::layer(
-                    inbound.detect_protocol_timeout,
+                    detect_protocol_timeout,
                     http::DetectHttp::default(),
                 ))
                 .into_inner(),

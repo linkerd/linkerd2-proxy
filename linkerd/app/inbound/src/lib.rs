@@ -22,14 +22,14 @@ use self::{
 };
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
-    detect, drain, http_tracing, io, metrics, profiles,
-    proxy::{identity::LocalCrtKey, tap, tcp},
+    detect, drain, io, metrics, profiles,
+    proxy::tcp,
     svc::{self, stack::Param},
     tls,
     transport::{self, listen},
-    Error, NameAddr, NameMatch,
+    Error, NameAddr, NameMatch, ProxyRuntime,
 };
-use std::{fmt::Debug, net::SocketAddr, time::Duration};
+use std::{fmt::Debug, time::Duration};
 use tracing::debug_span;
 
 #[derive(Clone, Debug)]
@@ -44,39 +44,138 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
-// === impl Config ===
-
-pub fn tcp_connect<T: Param<u16>>(
-    config: &ConnectConfig,
-) -> impl svc::Service<
-    T,
-    Response = impl io::AsyncRead + io::AsyncWrite + Send,
-    Error = Error,
-    Future = impl Send,
-> + Clone {
-    // Establishes connections to remote peers (for both TCP
-    // forwarding and HTTP proxying).
-    svc::stack(transport::ConnectTcp::new(config.keepalive))
-        .push_map_target(|t: T| transport::ConnectAddr(([127, 0, 0, 1], t.param()).into()))
-        // Limits the time we wait for a connection to be established.
-        .push_timeout(config.timeout)
-        .push(svc::stack::BoxFuture::layer())
-        .into_inner()
+#[derive(Clone, Debug)]
+pub struct Inbound<S> {
+    config: Config,
+    runtime: ProxyRuntime,
+    stack: svc::Stack<S>,
 }
 
-#[allow(clippy::too_many_arguments)]
-impl Config {
-    pub fn build<I, C, G, GSvc, P>(
+// === impl Config ===
+
+impl<S> Inbound<S> {
+    fn new(config: Config, runtime: ProxyRuntime, stack: S) -> Self {
+        Self {
+            config,
+            runtime,
+            stack: svc::stack(stack),
+        }
+    }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn runtime(&self) -> &ProxyRuntime {
+        &self.runtime
+    }
+
+    pub fn into_inner(self) -> S {
+        self.stack.into_inner()
+    }
+}
+
+impl Inbound<()> {
+    pub fn new_without_stack(config: Config, runtime: ProxyRuntime) -> Self {
+        Self::new(config, runtime, ())
+    }
+
+    pub fn with_stack<S>(self, stack: svc::Stack<S>) -> Inbound<S> {
+        Inbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack,
+        }
+    }
+
+    pub fn tcp_connect<T: Param<u16>>(
         self,
-        listen_addr: SocketAddr,
-        local_identity: Option<LocalCrtKey>,
-        connect: C,
+    ) -> Inbound<
+        impl svc::Service<
+                T,
+                Response = impl io::AsyncRead + io::AsyncWrite + Send,
+                Error = Error,
+                Future = impl Send,
+            > + Clone,
+    > {
+        let Self {
+            config, runtime, ..
+        } = self;
+
+        // Establishes connections to remote peers (for both TCP
+        // forwarding and HTTP proxying).
+        let ConnectConfig {
+            keepalive, timeout, ..
+        } = config.proxy.connect;
+
+        let stack = svc::stack(transport::ConnectTcp::new(keepalive))
+            .push_map_target(|t: T| transport::ConnectAddr(([127, 0, 0, 1], t.param()).into()))
+            // Limits the time we wait for a connection to be established.
+            .push_timeout(timeout)
+            .push(svc::stack::BoxFuture::layer());
+
+        Inbound {
+            config,
+            runtime,
+            stack,
+        }
+    }
+}
+
+impl<C> Inbound<C>
+where
+    C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
+    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+    C::Error: Into<Error>,
+    C::Future: Send + Unpin,
+{
+    pub fn push_tcp_forward<I>(
+        self,
+        server_port: u16,
+    ) -> Inbound<
+        impl svc::NewService<
+                TcpEndpoint,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            > + Clone,
+    >
+    where
+        I: io::AsyncRead + io::AsyncWrite,
+        I: Debug + Send + Sync + Unpin + 'static,
+    {
+        let Self {
+            config,
+            runtime: rt,
+            stack: connect,
+        } = self;
+        let prevent_loop = PreventLoop::from(server_port);
+
+        // Forwards TCP streams that cannot be decoded as HTTP.
+        //
+        // Looping is always prevented.
+        let stack = connect
+            .push_request_filter(prevent_loop)
+            .push(rt.metrics.transport.layer_connect())
+            .push_make_thunk()
+            .push_on_response(
+                svc::layers()
+                    .push(tcp::Forward::layer())
+                    .push(drain::Retain::layer(rt.drain.clone())),
+            )
+            .instrument(|_: &_| debug_span!("tcp"))
+            .check_new::<TcpEndpoint>();
+
+        Inbound {
+            config,
+            runtime: rt,
+            stack,
+        }
+    }
+
+    pub fn into_server<I, G, GSvc, P>(
+        self,
+        server_port: u16,
+        profiles: P,
         gateway: G,
-        profiles_client: P,
-        tap: tap::Registry,
-        metrics: metrics::Proxy,
-        span_sink: http_tracing::OpenCensusSink,
-        drain: drain::Watch,
     ) -> impl svc::NewService<
         listen::Addrs,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
@@ -84,10 +183,6 @@ impl Config {
     where
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        C::Error: Into<Error>,
-        C::Future: Send + Unpin,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
         G: Clone + Send + Sync + Unpin + 'static,
         GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
@@ -97,70 +192,57 @@ impl Config {
         P::Error: Send,
         P::Future: Send,
     {
-        let prevent_loop = PreventLoop::from(listen_addr.port());
-
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        //
-        // Looping is always prevented.
-        let tcp_forward = svc::stack(connect.clone())
-            .push_request_filter(prevent_loop)
-            .push(metrics.transport.layer_connect())
-            .push_make_thunk()
-            .push_on_response(
-                svc::layers()
-                    .push(tcp::Forward::layer())
-                    .push(drain::Retain::layer(drain.clone())),
-            )
-            .instrument(|_: &_| debug_span!("tcp"))
-            .check_new::<TcpEndpoint>();
-
-        let direct = direct::stack(
-            &self.proxy,
-            local_identity.clone(),
-            tcp_forward.clone().into_inner(),
-            gateway,
-            &metrics,
-        );
-
-        let http = http::router(
-            &self,
-            connect,
-            profiles_client,
-            tap,
-            &metrics,
-            span_sink.clone(),
-        );
-        svc::stack(http::server(&self.proxy, http, &metrics, span_sink, drain))
+        let disable_detect = self.config.disable_protocol_detection_for_ports.clone();
+        let require_id = self.config.require_identity_for_inbound_ports.clone();
+        let config = self.config.proxy.clone();
+        self.clone()
+            .push_http_router(profiles)
+            .push_http_server()
+            .stack
             .push_map_target(HttpAccept::from)
             .push(svc::UnwrapOr::layer(
                 // When HTTP detection fails, forward the connection to the
                 // application as an opaque TCP stream.
-                tcp_forward
-                    .clone()
+                self.clone()
+                    .push_tcp_forward(server_port)
+                    .stack
                     .push_map_target(TcpEndpoint::from)
                     .into_inner(),
             ))
-            .push_cache(self.proxy.cache_max_idle_age)
+            .push_cache(config.cache_max_idle_age)
             .push(detect::NewDetectService::layer(
-                self.proxy.detect_protocol_timeout,
+                config.detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
-            .push_request_filter(self.require_identity_for_inbound_ports)
-            .push(metrics.transport.layer_accept())
+            .push_request_filter(require_id)
+            .push(self.runtime.metrics.transport.layer_accept())
             .push_map_target(TcpAccept::from)
             .push(tls::NewDetectTls::layer(
-                local_identity,
-                self.proxy.detect_protocol_timeout,
+                self.runtime.identity.clone(),
+                config.detect_protocol_timeout,
             ))
+            .check_new_service::<listen::Addrs, I>()
             .push_switch(
-                self.disable_protocol_detection_for_ports,
-                tcp_forward
+                disable_detect,
+                self.clone()
+                    .push_tcp_forward(server_port)
+                    .stack
                     .push_map_target(TcpEndpoint::from)
-                    .push(metrics.transport.layer_accept())
+                    .push(self.runtime.metrics.transport.layer_accept())
                     .push_map_target(TcpAccept::port_skipped)
+                    .check_new_service::<listen::Addrs, I>()
                     .into_inner(),
             )
-            .push_switch(prevent_loop, direct)
+            .check_new_service::<listen::Addrs, I>()
+            .push_switch(
+                PreventLoop::from(server_port),
+                self.push_tcp_forward(server_port)
+                    .push_direct(gateway)
+                    .stack
+                    .check_new_service::<listen::Addrs, I>()
+                    .into_inner(),
+            )
+            .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }
 }

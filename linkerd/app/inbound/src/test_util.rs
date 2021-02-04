@@ -3,10 +3,10 @@ pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
     dns::Suffix,
-    exp_backoff,
-    proxy::http::{h1, h2},
+    drain, exp_backoff, metrics,
+    proxy::{http::{h1, h2}, tap},
     transport::BindTcp,
-    NameMatch,
+    NameMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{net::SocketAddr, time::Duration};
@@ -50,4 +50,18 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
         disable_protocol_detection_for_ports: SkipByPort::from(indexmap::IndexSet::default()),
         profile_idle_timeout: Duration::from_millis(500),
     }
+}
+
+pub fn runtime() -> (ProxyRuntime, drain::Signal) {
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    let (drain_tx, drain) = drain::channel();
+    let (tap, _) = tap::new();
+    let runtime = ProxyRuntime {
+        identity: None,
+        metrics: metrics.outbound,
+        tap,
+        span_sink: None,
+        drain,
+    };
+    (runtime, drain_tx)
 }
