@@ -1,15 +1,11 @@
 use crate::{http, trace_labels};
-use linkerd_app_core::{
-    config::ProxyConfig, errors, metrics, opencensus::proto::trace::v1 as oc, spans::SpanConverter,
-    svc, Error, TraceContext,
-};
-use tokio::sync::mpsc;
+use linkerd_app_core::{config::ProxyConfig, errors, http_tracing, metrics, svc, Error};
 use tracing::debug_span;
 
 pub fn stack<H, HSvc>(
     config: &ProxyConfig,
     metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::OpenCensusSink,
     http: H,
 ) -> impl svc::NewService<
     http::Logical,
@@ -53,9 +49,7 @@ where
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
                 // Initiates OpenCensus tracing.
-                .push(TraceContext::layer(span_sink.map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
+                .push(http_tracing::server(span_sink, trace_labels()))
                 .push(http::BoxResponse::layer()),
         )
         // Convert origin form HTTP/1 URIs to absolute form for Hyper's

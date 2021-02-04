@@ -10,16 +10,12 @@ pub use linkerd_app_core::proxy::http::{
 use linkerd_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    drain, dst, errors, io, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
+    drain, dst, errors, http_tracing, io, metrics, profiles,
     proxy::{http, tap},
     reconnect,
-    spans::SpanConverter,
     svc::{self, stack::Param},
-    Error, NameAddr, TraceContext, DST_OVERRIDE_HEADER,
+    Error, NameAddr, DST_OVERRIDE_HEADER,
 };
-use tokio::sync::mpsc;
 use tracing::debug_span;
 
 #[cfg(test)]
@@ -29,7 +25,7 @@ pub fn server<T, I, H, HSvc>(
     config: &ProxyConfig,
     http: H,
     metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::OpenCensusSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     T,
@@ -75,9 +71,7 @@ where
                 .push(metrics.http_errors.clone())
                 // Synthesizes responses for proxy errors.
                 .push(errors::layer())
-                .push(TraceContext::layer(
-                    span_sink.map(|k| SpanConverter::server(k, trace_labels())),
-                ))
+                .push(http_tracing::server(span_sink, trace_labels()))
                 // Record when an HTTP/1 URI was in absolute form
                 .push(http::normalize_uri::MarkAbsoluteForm::layer())
                 .push(http::BoxRequest::layer())
@@ -95,7 +89,7 @@ pub fn router<C, P>(
     profiles_client: P,
     tap: tap::Registry,
     metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::OpenCensusSink,
 ) -> impl svc::NewService<
     HttpAccept,
     Service = impl svc::Service<
@@ -134,9 +128,7 @@ where
         .push(tap::NewTapHttp::layer(tap))
         // Records metrics for each `Target`.
         .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
-        .push_on_response(TraceContext::layer(
-            span_sink.map(|k| SpanConverter::client(k, trace_labels())),
-        ))
+        .push_on_response(http_tracing::client(span_sink, trace_labels()))
         .push_on_response(http::BoxResponse::layer())
         .check_new_service::<Target, http::Request<_>>();
 

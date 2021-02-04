@@ -1,16 +1,13 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, io, metrics,
-    opencensus::proto::trace::v1 as oc,
-    profiles,
-    spans::SpanConverter,
+    detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
+    io, metrics, profiles,
     svc::{self},
     tls,
     transport::{self, listen},
-    Addr, AddrMatch, Error, TraceContext,
+    Addr, AddrMatch, Error,
 };
-use tokio::sync::mpsc;
 use tracing::{debug_span, info_span};
 
 /// Routes HTTP requests according to the l5d-dst-override header.
@@ -25,7 +22,7 @@ pub fn stack<P, T, TSvc, H, HSvc, I>(
     tcp: T,
     http: H,
     metrics: &metrics::Proxy,
-    span_sink: Option<mpsc::Sender<oc::Span>>,
+    span_sink: http_tracing::OpenCensusSink,
     drain: drain::Watch,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -110,9 +107,7 @@ where
                 .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                 .push(metrics.http_errors.clone())
                 .push(errors::layer())
-                .push(TraceContext::layer(span_sink.map(|span_sink| {
-                    SpanConverter::server(span_sink, trace_labels())
-                })))
+                .push(http_tracing::server(span_sink, trace_labels()))
                 .push(http::BoxResponse::layer()),
         )
         .check_new_service::<http::Accept, http::Request<_>>()

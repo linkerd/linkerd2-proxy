@@ -1,6 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 
-pub use self::layer::TraceContext;
+mod propagation;
+mod service;
+
+pub use self::service::TraceContext;
 use bytes::Bytes;
 use linkerd_channel as mpsc;
 use linkerd_error::Error;
@@ -9,9 +12,6 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
-
-pub mod layer;
-mod propagation;
 
 const SPAN_ID_LEN: usize = 8;
 
@@ -36,12 +36,32 @@ pub struct Span {
 }
 
 pub trait SpanSink {
+    fn is_enabled(&self) -> bool;
+
     fn try_send(&mut self, span: Span) -> Result<(), Error>;
 }
 
 impl SpanSink for mpsc::Sender<Span> {
+    #[inline]
+    fn is_enabled(&self) -> bool {
+        true
+    }
+
+    #[inline]
     fn try_send(&mut self, span: Span) -> Result<(), Error> {
         self.try_send(span).map_err(Into::into)
+    }
+}
+
+impl<K: SpanSink> SpanSink for Option<K> {
+    #[inline]
+    fn is_enabled(&self) -> bool {
+        self.as_ref().map(SpanSink::is_enabled).unwrap_or(false)
+    }
+
+    #[inline]
+    fn try_send(&mut self, span: Span) -> Result<(), Error> {
+        self.as_mut().expect("Must be enabled").try_send(span)
     }
 }
 
