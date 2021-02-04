@@ -1,110 +1,18 @@
-#![allow(clippy::too_many_arguments)]
-
-use crate::{http, stack_labels, target::ShouldResolve, tcp, trace_labels, Config};
+use crate::{http, stack_labels, target::ShouldResolve, tcp};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, drain, errors, http_tracing, io, metrics, profiles,
-    proxy::{api_resolve::Metadata, core::resolve::Resolve},
-    svc,
-    transport::{listen, metrics::SensorIo},
-    Addr, Error, IpMatch,
+    detect, discovery_rejected, drain, io, metrics, profiles, svc, Addr, Error, IpMatch,
 };
-use std::net::SocketAddr;
 use tracing::debug_span;
 
-pub fn stack<R, P, C, H, HSvc, I>(
-    config: &Config,
-    profiles: P,
-    resolve: R,
-    tcp_connect: C,
-    http_router: H,
-    metrics: metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
-    drain: drain::Watch,
-) -> impl svc::NewService<
-    listen::Addrs,
-    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
->
-where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
-    R::Resolution: Send,
-    R::Future: Send + Unpin,
-    C: svc::Service<tcp::Endpoint> + Clone + Send + 'static,
-    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-    C::Error: Into<Error>,
-    C::Future: Send,
-    H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
-    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-        + Send
-        + 'static,
-    HSvc::Error: Into<Error>,
-    HSvc::Future: Send,
-    P: profiles::GetProfile<SocketAddr> + Clone + Send + 'static,
-    P::Future: Send,
-    P::Error: Send,
-{
-    let tcp = tcp::balance::stack(&config.proxy, tcp_connect, resolve, &metrics, drain.clone());
-    let accept = accept_stack(
-        config,
-        profiles,
-        tcp,
-        http_router,
-        metrics.clone(),
-        span_sink,
-        drain,
-    );
-    cache(&config.proxy, metrics, accept)
-}
-
-/// Wraps an `N`-typed TCP stack with caching.
-///
-/// Services are cached as long as they are retained by the caller (usually
-/// core::serve) and are evicted from the cache when they have been dropped for
-/// `config.cache_max_idle_age` with no new acquisitions.
-pub fn cache<N, NSvc, I>(
+pub fn stack<T, TSvc, H, HSvc, I>(
     config: &ProxyConfig,
-    metrics: metrics::Proxy,
-    stack: N,
-) -> impl svc::NewService<
-    listen::Addrs,
-    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
->
-where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    N: svc::NewService<tcp::Accept, Service = NSvc> + 'static,
-    NSvc: svc::Service<SensorIo<I>, Response = ()> + Send + 'static,
-    NSvc::Error: Into<Error>,
-    NSvc::Future: Send,
-{
-    svc::stack(stack)
-        .push_on_response(
-            svc::layers()
-                // If the traffic split is empty/unavailable, eagerly fail
-                // requests requests. When the split is in failfast, spawn
-                // the service in a background task so it becomes ready without
-                // new requests.
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(metrics.stack.layer(crate::stack_labels("tcp", "server")))
-                .push(svc::FailFast::layer("TCP Server", config.dispatch_timeout))
-                .push_spawn_buffer(config.buffer_capacity),
-        )
-        .push_cache(config.cache_max_idle_age)
-        .push(metrics.transport.layer_accept())
-        .push_map_target(tcp::Accept::from)
-        .into_inner()
-}
-
-pub fn accept_stack<P, T, TSvc, H, HSvc, I>(
-    config: &Config,
-    profiles: P,
-    tcp: T,
-    http_router: H,
-    metrics: metrics::Proxy,
-    span_sink: http_tracing::SpanSink,
+    metrics: &metrics::Proxy,
     drain: drain::Watch,
+    tcp: T,
+    http: H,
 ) -> impl svc::NewService<
-    tcp::Accept,
+    tcp::Logical,
     Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
 > + Clone
 where
@@ -114,56 +22,30 @@ where
     TSvc::Error: Into<Error>,
     TSvc::Future: Send,
     H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
-    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-        + Send
-        + 'static,
+    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
+    HSvc: Clone + Send + Sync + Unpin + 'static,
     HSvc::Error: Into<Error>,
     HSvc::Future: Send,
-    P: profiles::GetProfile<SocketAddr> + Clone + Send + 'static,
-    P::Future: Send,
-    P::Error: Send,
 {
     let ProxyConfig {
         server: ServerConfig { h2_settings, .. },
         dispatch_timeout,
-        max_in_flight_requests,
         detect_protocol_timeout,
         buffer_capacity,
         cache_max_idle_age,
         ..
-    } = config.proxy.clone();
+    } = config.clone();
 
     let tcp_forward = svc::stack(tcp.clone())
         .push_map_target(|l| (None, l))
         .into_inner();
 
-    svc::stack(http_router)
-        .check_new_service::<http::Logical, _>()
+    svc::stack(http)
         .push_on_response(
             svc::layers()
                 .push(http::BoxRequest::layer())
-                // Limit the number of in-flight requests. When the proxy is
-                // at capacity, go into failfast after a dispatch timeout. If
-                // the router is unavailable, then spawn the service on a
-                // background task to ensure it becomes ready without new
-                // requests being processed.
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
-                .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity)
-                .push(metrics.http_errors.clone())
-                // Synthesizes responses for proxy errors.
-                .push(errors::layer())
-                // Initiates OpenCensus tracing.
-                .push(http_tracing::server(span_sink, trace_labels()))
-                .push(http::BoxResponse::layer()),
+                .push(svc::MapErrLayer::new(Into::into)),
         )
-        // Convert origin form HTTP/1 URIs to absolute form for Hyper's
-        // `Client`.
-        .push(http::NewNormalizeUri::layer())
-        // Record when a HTTP/1 URI originated in absolute form
-        .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
-        .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
         .push(http::NewServeHttp::layer(h2_settings, drain))
         .push_map_target(http::Logical::from)
         .push(svc::UnwrapOr::layer(
@@ -209,12 +91,6 @@ where
                 .into_inner(),
         )
         .check_new_service::<tcp::Logical, _>()
-        .push_map_target(tcp::Logical::from)
-        .push(profiles::discover::layer(
-            profiles,
-            AllowProfile(config.allow_discovery.clone().into()),
-        ))
-        .check_new_service::<tcp::Accept, _>()
         .into_inner()
 }
 

@@ -1,6 +1,7 @@
 pub mod endpoint;
 pub mod logical;
 mod require_identity_on_endpoint;
+pub mod server;
 
 #[cfg(test)]
 mod tests;
