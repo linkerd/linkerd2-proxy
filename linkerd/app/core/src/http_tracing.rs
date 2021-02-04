@@ -15,13 +15,10 @@ pub type SpanSink = Option<mpsc::Sender<oc::Span>>;
 /// implmenting the SpanSink trait. For each span that it receives, it converts
 /// it to an OpenCensus span and then sends it on the provided mpsc::Sender.
 #[derive(Clone)]
-pub enum SpanConverter {
-    Disabled,
-    Enabled {
-        kind: i32,
-        sink: mpsc::Sender<oc::Span>,
-        labels: Arc<HashMap<String, String>>,
-    },
+pub struct SpanConverter {
+    kind: i32,
+    sink: mpsc::Sender<oc::Span>,
+    labels: Arc<HashMap<String, String>>,
 }
 
 #[derive(Debug)]
@@ -46,14 +43,14 @@ impl fmt::Display for IdLengthError {
 pub fn server<S>(
     sink: SpanSink,
     labels: HashMap<String, String>,
-) -> impl layer::Layer<S, Service = TraceContext<SpanConverter, S>> + Clone {
+) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
     SpanConverter::layer(SPAN_KIND_SERVER, sink, labels)
 }
 
 pub fn client<S>(
     sink: SpanSink,
     labels: HashMap<String, String>,
-) -> impl layer::Layer<S, Service = TraceContext<SpanConverter, S>> + Clone {
+) -> impl layer::Layer<S, Service = TraceContext<Option<SpanConverter>, S>> + Clone {
     SpanConverter::layer(SPAN_KIND_CLIENT, sink, labels)
 }
 
@@ -62,24 +59,17 @@ impl SpanConverter {
         kind: i32,
         sink: SpanSink,
         labels: HashMap<String, String>,
-    ) -> impl layer::Layer<S, Service = TraceContext<Self, S>> + Clone {
-        TraceContext::layer(
-            sink.map(move |sink| SpanConverter::Enabled {
-                kind,
-                sink,
-                labels: labels.into(),
-            })
-            .unwrap_or(SpanConverter::Disabled),
-        )
+    ) -> impl layer::Layer<S, Service = TraceContext<Option<Self>, S>> + Clone {
+        TraceContext::layer(sink.map(move |sink| Self {
+            kind,
+            sink,
+            labels: labels.into(),
+        }))
     }
 
-    fn mk_span(
-        kind: i32,
-        labels: &HashMap<String, String>,
-        mut span: trace_context::Span,
-    ) -> Result<oc::Span, IdLengthError> {
+    fn mk_span(&self, mut span: trace_context::Span) -> Result<oc::Span, IdLengthError> {
         let mut attributes = HashMap::<String, oc::AttributeValue>::new();
-        for (k, v) in labels.iter() {
+        for (k, v) in self.labels.iter() {
             attributes.insert(
                 k.clone(),
                 oc::AttributeValue {
@@ -98,12 +88,12 @@ impl SpanConverter {
             );
         }
         Ok(oc::Span {
-            kind,
             trace_id: into_bytes(span.trace_id, 16)?,
             span_id: into_bytes(span.span_id, 8)?,
             tracestate: None,
             parent_span_id: into_bytes(span.parent_id, 8)?,
             name: Some(truncatable(span.span_name)),
+            kind: self.kind,
             start_time: Some(span.start.into()),
             end_time: Some(span.end.into()),
             attributes: Some(oc::span::Attributes {
@@ -115,7 +105,7 @@ impl SpanConverter {
             links: None,
             status: None, // TODO: this is gRPC status; we must read response trailers to populate this
             resource: None,
-            same_process_as_parent_span: Some(kind == SPAN_KIND_CLIENT),
+            same_process_as_parent_span: Some(self.kind == SPAN_KIND_CLIENT),
             child_span_count: None,
         })
     }
@@ -124,20 +114,12 @@ impl SpanConverter {
 impl trace_context::SpanSink for SpanConverter {
     #[inline]
     fn is_enabled(&self) -> bool {
-        match self {
-            Self::Disabled => false,
-            Self::Enabled { .. } => true,
-        }
+        true
     }
 
     fn try_send(&mut self, span: trace_context::Span) -> Result<(), Error> {
-        match self {
-            Self::Disabled => unreachable!("is_enabled must be called"),
-            Self::Enabled { kind, labels, sink } => {
-                let span = Self::mk_span(*kind, labels.as_ref(), span)?;
-                sink.try_send(span).map_err(Into::into)
-            }
-        }
+        let span = self.mk_span(span)?;
+        self.sink.try_send(span).map_err(Into::into)
     }
 }
 
