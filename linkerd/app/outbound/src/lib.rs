@@ -57,7 +57,6 @@ impl<C> Outbound<C> {
 
     pub fn into_server<R, P, I>(
         self,
-        server_port: u16,
         resolve: R,
         profiles: P,
     ) -> impl svc::NewService<
@@ -86,12 +85,12 @@ impl<C> Outbound<C> {
     {
         let tcp = self
             .clone()
-            .push_tcp_endpoint(server_port)
+            .push_tcp_endpoint()
             .push_tcp_balance(resolve.clone())
             .into_inner();
         let http = self
             .clone()
-            .push_tcp_endpoint(server_port)
+            .push_tcp_endpoint()
             .push_http_endpoint()
             .push_http_logical(resolve)
             .push_http_server()

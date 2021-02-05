@@ -19,7 +19,6 @@ impl Outbound<ConnectTcp> {
 impl<C> Outbound<C> {
     pub fn push_tcp_endpoint<P>(
         self,
-        server_port: u16,
     ) -> Outbound<
         impl svc::Service<
                 Endpoint<P>,
@@ -42,6 +41,8 @@ impl<C> Outbound<C> {
         } = self;
         let identity_disabled = rt.identity.is_none();
 
+        // TODO: We should prevent connections on the loopback interface; but
+        // this is currently required by tests.
         let stack = connect
             // Initiates mTLS if the target is configured with identity. The
             // endpoint configures ALPN when there is an opaque transport hint OR
@@ -61,8 +62,7 @@ impl<C> Outbound<C> {
                 } else {
                     e
                 }
-            })
-            .push_request_filter(PreventLoop { port: server_port });
+            });
 
         Outbound {
             config,
@@ -105,49 +105,3 @@ impl<C> Outbound<C> {
         }
     }
 }
-
-/// A connection policy that fails connections that target the outbound listener.
-#[derive(Clone)]
-struct PreventLoop {
-    port: u16,
-}
-
-#[derive(Clone, Debug)]
-struct LoopPrevented {
-    port: u16,
-}
-
-// === impl PreventLoop ===
-
-impl<P> svc::stack::Predicate<Endpoint<P>> for PreventLoop {
-    type Request = Endpoint<P>;
-
-    fn check(&mut self, ep: Endpoint<P>) -> Result<Endpoint<P>, Error> {
-        let addr = ep.addr;
-
-        tracing::trace!(%addr, self.port, "PreventLoop");
-        if addr.ip().is_loopback() && addr.port() == self.port {
-            return Err(LoopPrevented { port: self.port }.into());
-        }
-
-        Ok(ep)
-    }
-}
-
-// === impl LoopPrevented ===
-
-pub fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
-    err.is::<LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
-}
-
-impl std::fmt::Display for LoopPrevented {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "outbound requests must not target localhost:{}",
-            self.port
-        )
-    }
-}
-
-impl std::error::Error for LoopPrevented {}
