@@ -23,7 +23,7 @@ use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
 
 use tracing::{debug, error, info, info_span};
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 /// Spawns a sidecar proxy.
 ///

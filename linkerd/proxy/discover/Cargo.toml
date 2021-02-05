@@ -17,8 +17,8 @@ linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync", "time"] }
-tracing = "0.1.22"
-tracing-futures = "0.2"
+tracing = "0.1.23"
+
 pin-project = "1"
 
 [dependencies.tower]

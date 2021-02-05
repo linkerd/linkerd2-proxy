@@ -13,7 +13,7 @@ use std::mem;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tracing::{debug, info, trace};
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 use try_lock::TryLock;
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.

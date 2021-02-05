@@ -613,7 +613,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -678,7 +677,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -715,7 +713,6 @@ dependencies = [
  "tokio-test",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
@@ -744,7 +741,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
  "webpki",
 ]
@@ -769,7 +765,6 @@ dependencies = [
  "tokio-test",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
@@ -791,7 +786,6 @@ dependencies = [
  "tokio-test",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
@@ -808,7 +802,6 @@ dependencies = [
  "tower",
  "tower-test",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -822,7 +815,6 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
@@ -1098,7 +1090,6 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -1115,7 +1106,6 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -1148,7 +1138,6 @@ dependencies = [
  "tokio-test",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
  "try-lock",
 ]
@@ -1208,7 +1197,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -1293,7 +1281,6 @@ dependencies = [
  "tonic",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -1340,7 +1327,6 @@ dependencies = [
  "pin-project 1.0.4",
  "tower",
  "tracing",
- "tracing-futures",
 ]
 
 [[package]]
@@ -1377,7 +1363,6 @@ dependencies = [
  "tokio-rustls",
  "tower",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
  "untrusted",
  "webpki",
@@ -2328,9 +2313,9 @@ dependencies = [
 
 [[package]]
 name = "tracing"
-version = "0.1.22"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f47026cdc4080c07e49b37087de021820269d996f581aac150ef9e5583eefe3"
+checksum = "f7d40a22fd029e33300d8d89a5cc8ffce18bb7c587662f54629e94c9de5487f3"
 dependencies = [
  "cfg-if",
  "log",
@@ -2341,9 +2326,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80e0ccfc3378da0cce270c946b676a376943f5cd16aeba64568e7939806f4ada"
+checksum = "43f080ea7e4107844ef4766459426fa2d5c1ada2e47edba05dc7fa99d9629f47"
 dependencies = [
  "proc-macro2",
  "quote",

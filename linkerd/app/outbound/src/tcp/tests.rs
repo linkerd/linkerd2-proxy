@@ -22,7 +22,7 @@ use std::{
     },
 };
 use tower::ServiceExt;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 #[tokio::test]
 async fn plaintext_tcp() {

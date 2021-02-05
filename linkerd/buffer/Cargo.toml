@@ -12,8 +12,8 @@ linkerd-channel = { path = "../channel" }
 linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["sync", "time", "macros"] }
 tower = { version = "0.4.1", default_features = false, features = ["util"] }
-tracing = "0.1.22"
-tracing-futures = "0.2"
+tracing = "0.1.23"
+
 pin-project = "1"
 
 [dev-dependencies]

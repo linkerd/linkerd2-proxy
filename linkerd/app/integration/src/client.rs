@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::info_span;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 use webpki::{DNSName, DNSNameRef};
 
 type ClientError = hyper::Error;

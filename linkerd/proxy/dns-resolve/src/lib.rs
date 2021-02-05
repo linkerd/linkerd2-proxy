@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tracing::{debug, trace};
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 /// A Resolver that attempts to lookup targets via DNS.
 ///

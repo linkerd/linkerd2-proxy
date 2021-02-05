@@ -15,7 +15,7 @@ linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.1", default-features = false }
-tracing = "0.1.22"
+tracing = "0.1.23"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

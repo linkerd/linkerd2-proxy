@@ -20,7 +20,7 @@ use tower::{
     layer::Layer,
     util::{service_fn, ServiceExt},
 };
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 #[test]
 fn plaintext() {

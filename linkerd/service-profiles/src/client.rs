@@ -26,7 +26,7 @@ use tonic::{
 };
 use tower::retry::budget::Budget;
 use tracing::{debug, debug_span, error, trace, warn};
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Client<S, R> {

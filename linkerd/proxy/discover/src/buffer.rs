@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 use tokio::time::{self, Sleep};
 use tower::discover;
 use tracing::warn;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {

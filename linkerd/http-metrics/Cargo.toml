@@ -17,7 +17,7 @@ linkerd-error = { path = "../error" }
 linkerd-http-classify = { path = "../http-classify" }
 linkerd-metrics = { path = "../metrics" }
 linkerd-stack = { path = "../stack" } 
-tracing = "0.1.22"
+tracing = "0.1.23"
 pin-project = "1"
 
 [dependencies.tower]

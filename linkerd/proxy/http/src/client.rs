@@ -16,7 +16,7 @@ use std::{
 };
 use tower::ServiceExt;
 use tracing::{debug, debug_span};
-use tracing_futures::{Instrument, Instrumented};
+use tracing::instrument::{Instrument, Instrumented};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Settings {

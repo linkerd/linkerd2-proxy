@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, debug_span, trace_span};
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Settings {

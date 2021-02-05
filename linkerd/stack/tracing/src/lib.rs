@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tracing::{trace, Span};
-use tracing_futures::{Instrument as _, Instrumented};
+use tracing::instrument::{Instrument as _, Instrumented};
 
 /// A strategy for creating spans based on a service's target.
 pub trait GetSpan<T> {
