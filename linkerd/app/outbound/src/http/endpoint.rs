@@ -1,6 +1,5 @@
-use super::require_identity_on_endpoint::NewRequireIdentity;
-use super::Endpoint;
-use crate::{tcp, Outbound};
+use super::{require_identity_on_endpoint::NewRequireIdentity, Endpoint};
+use crate::Outbound;
 use linkerd_app_core::{
     classify, config, http_tracing,
     proxy::{http, tap},
@@ -54,13 +53,7 @@ where
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
                 let backoff = backoff;
-                move |e: Error| {
-                    if tcp::connect::is_loop(&*e) {
-                        Err(e)
-                    } else {
-                        Ok(backoff.stream())
-                    }
-                }
+                move |_| Ok(backoff.stream())
             }))
             .check_new::<Endpoint>()
             .push(tap::NewTapHttp::layer(rt.tap.clone()))

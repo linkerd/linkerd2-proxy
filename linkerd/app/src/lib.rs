@@ -160,7 +160,7 @@ impl Config {
 
             if ingress_mode {
                 let tcp = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
-                    .push_tcp_endpoint(outbound_addr.port())
+                    .push_tcp_endpoint()
                     .push_tcp_forward()
                     .into_inner();
                 let http = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
@@ -181,11 +181,7 @@ impl Config {
                 );
             } else {
                 let server = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
-                    .into_server(
-                        outbound_addr.port(),
-                        dst.resolve.clone(),
-                        dst.profiles.clone(),
-                    );
+                    .into_server(dst.resolve.clone(), dst.profiles.clone());
                 tokio::spawn(
                     serve::serve(outbound_listen, server, drain_rx.clone().signaled())
                         .map_err(|e| panic!("outbound failed: {}", e))
@@ -213,7 +209,7 @@ impl Config {
                 gateway,
                 inbound.clone(),
                 Outbound::new_tcp_connect(outbound, outbound_rt)
-                    .push_tcp_endpoint(outbound_addr.port())
+                    .push_tcp_endpoint()
                     .push_http_endpoint()
                     .push_http_logical(dst.resolve.clone())
                     .into_inner(),
