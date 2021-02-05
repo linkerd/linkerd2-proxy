@@ -12,8 +12,8 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::mpsc;
-use tracing::{debug, trace};
 use tracing::instrument::Instrument;
+use tracing::{debug, trace};
 
 /// A Resolver that attempts to lookup targets via DNS.
 ///

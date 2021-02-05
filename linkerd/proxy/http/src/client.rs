@@ -15,8 +15,8 @@ use std::{
     task::{Context, Poll},
 };
 use tower::ServiceExt;
-use tracing::{debug, debug_span};
 use tracing::instrument::{Instrument, Instrumented};
+use tracing::{debug, debug_span};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Settings {

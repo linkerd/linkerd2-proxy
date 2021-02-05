@@ -25,8 +25,8 @@ use tonic::{
     client::GrpcService,
 };
 use tower::retry::budget::Budget;
-use tracing::{debug, debug_span, error, trace, warn};
 use tracing::instrument::Instrument;
+use tracing::{debug, debug_span, error, trace, warn};
 
 #[derive(Clone, Debug)]
 pub struct Client<S, R> {

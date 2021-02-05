@@ -9,8 +9,8 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time::{self, Sleep};
 use tower::discover;
-use tracing::warn;
 use tracing::instrument::Instrument;
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct Buffer<M> {
