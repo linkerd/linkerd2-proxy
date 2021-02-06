@@ -1,5 +1,5 @@
 use std::future::Future;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 #[derive(Clone, Debug, Default)]
 pub struct Executor(());

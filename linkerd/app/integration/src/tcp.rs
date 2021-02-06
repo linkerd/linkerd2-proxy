@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 type TcpConnSender = mpsc::UnboundedSender<(
     Option<Vec<u8>>,

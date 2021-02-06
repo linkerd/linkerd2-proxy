@@ -1,6 +1,6 @@
 use super::*;
 use std::{future::Future, pin::Pin, task::Poll, thread};
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 pub fn new() -> Proxy {
     Proxy::default()

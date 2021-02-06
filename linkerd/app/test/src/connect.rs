@@ -7,7 +7,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use tokio_test::io;
-use tracing_futures::{Instrument, Instrumented};
+use tracing::instrument::{Instrument, Instrumented};
 
 type ConnectFn<E> = Box<dyn FnMut(E) -> ConnectFuture + Send>;
 

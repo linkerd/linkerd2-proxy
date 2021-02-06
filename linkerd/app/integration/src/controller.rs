@@ -10,7 +10,7 @@ use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tonic as grpc;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 pub fn new() -> Controller {
     Controller::new()

@@ -22,4 +22,4 @@ pin-project = "1"
 prost = "0.7"
 tonic = { version = "0.4", default-features = false }
 tower = { version = "0.4.1", default-features = false }
-tracing = "0.1.22"
+tracing = "0.1.23"

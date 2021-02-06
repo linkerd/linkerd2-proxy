@@ -11,5 +11,5 @@ bytes = "1"
 futures = "0.3.9"
 tokio = { version = "1", features = ["io-util"] }
 pin-project = "1"
-tracing = "0.1.22"
+tracing = "0.1.23"
 linkerd-io = { path = "../io" }

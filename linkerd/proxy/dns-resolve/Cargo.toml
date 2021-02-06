@@ -19,7 +19,6 @@ linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1.9"
-tracing-futures = "0.2"
 
 [dependencies.tower]
 version = "0.4"

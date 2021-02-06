@@ -22,8 +22,8 @@ use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
 
+use tracing::instrument::Instrument;
 use tracing::{debug, error, info, info_span};
-use tracing_futures::Instrument;
 
 /// Spawns a sidecar proxy.
 ///

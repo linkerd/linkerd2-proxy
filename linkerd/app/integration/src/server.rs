@@ -14,7 +14,7 @@ use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 pub fn new() -> Server {
     http2()

@@ -1,7 +1,7 @@
 use crate::Buffer;
 use linkerd_error::Error;
 use std::time::Duration;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
 pub struct SpawnBufferLayer<Req, Rsp> {
     capacity: usize,
