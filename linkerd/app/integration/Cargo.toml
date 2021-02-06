@@ -37,7 +37,6 @@ tokio-rustls = "0.22"
 tower = { version = "0.4.1", default-features = false}
 tonic = { version = "0.4", default-features = false }
 tracing = "0.1.23"
-
 webpki = "0.21"
 
 [dependencies.tracing-subscriber]

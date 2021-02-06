@@ -27,7 +27,6 @@ tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 async-stream = "0.3"
 tonic = { version = "0.4", default-features = false }
 tracing = "0.1.23"
-
 pin-project = "1"
 
 [dependencies.tower]

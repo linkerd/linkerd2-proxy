@@ -36,7 +36,6 @@ rand = "0.8"
 tokio = { version = "1", features = ["time", "rt"] }
 tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }
 tracing = "0.1.23"
-
 try-lock = "0.2"
 pin-project = "1"
 
