@@ -60,7 +60,8 @@ async fn plaintext_tcp() {
     // Build the outbound TCP balancer stack.
     let cfg = default_config(target_addr);
     let (rt, _) = runtime();
-    Outbound::new(cfg, rt, connect)
+    Outbound::new(cfg, rt)
+        .with_stack(connect)
         .push_tcp_balance(resolver)
         .into_inner()
         .new_service((Some(target_addr.into()), logical))
@@ -130,7 +131,8 @@ async fn tls_when_hinted() {
     // Build the outbound TCP balancer stack.
     let cfg = default_config(plain_addr);
     let (rt, _) = runtime();
-    let mut balance = Outbound::new(cfg.clone(), rt.clone(), connect)
+    let mut balance = Outbound::new(cfg.clone(), rt.clone())
+        .with_stack(connect)
         .push_tcp_balance(resolver)
         .into_inner();
     let plain = balance
@@ -797,10 +799,10 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (rt, _) = runtime();
-    let tcp = Outbound::new(cfg.clone(), rt.clone(), connect)
+    Outbound::new(cfg, rt)
+        .with_stack(connect)
         .push_tcp_balance(resolver)
-        .into_inner();
-    crate::server::stack(cfg, rt, tcp, support::service::no_http())
+        .push_detect_http(support::service::no_http())
         .push_discover(profiles)
         .into_inner()
 }
