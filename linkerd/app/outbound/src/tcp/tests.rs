@@ -62,9 +62,9 @@ async fn plaintext_tcp() {
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)
         .with_stack(connect)
-        .push_tcp_balance(resolver)
+        .push_tcp_logical(resolver)
         .into_inner()
-        .new_service((Some(target_addr.into()), logical))
+        .new_service(logical)
         .oneshot(client_io)
         .err_into::<Error>()
         .await
@@ -133,14 +133,14 @@ async fn tls_when_hinted() {
     let (rt, _) = runtime();
     let mut balance = Outbound::new(cfg.clone(), rt.clone())
         .with_stack(connect)
-        .push_tcp_balance(resolver)
+        .push_tcp_logical(resolver)
         .into_inner();
     let plain = balance
-        .new_service((Some(plain_addr.into()), plain_logical))
+        .new_service(plain_logical)
         .oneshot(client_io.build())
         .err_into::<Error>();
     let tls = balance
-        .new_service((Some(tls_addr.into()), tls_logical))
+        .new_service(tls_logical)
         .oneshot(client_io.build())
         .err_into::<Error>();
 
@@ -801,7 +801,7 @@ where
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)
         .with_stack(connect)
-        .push_tcp_balance(resolver)
+        .push_tcp_logical(resolver)
         .push_detect_http(support::service::no_http())
         .push_discover(profiles)
         .into_inner()
