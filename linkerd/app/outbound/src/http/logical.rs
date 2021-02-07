@@ -116,6 +116,7 @@ impl<E> Outbound<E> {
                     .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity),
             )
+            .push_cache(cache_max_idle_age)
             // Note: routes can't exert backpressure.
             .push(profiles::http::route_request::layer(
                 svc::proxies()

@@ -802,6 +802,7 @@ where
     Outbound::new(cfg, rt)
         .with_stack(connect)
         .push_tcp_balance(resolver)
+        .push_tcp_logical()
         .push_detect_http(support::service::no_http())
         .push_discover(profiles)
         .into_inner()
