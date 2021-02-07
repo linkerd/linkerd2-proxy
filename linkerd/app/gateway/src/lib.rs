@@ -12,10 +12,10 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport_header::SessionProtocol,
-    Error, NameAddr, NameMatch,
+    Error, NameAddr, NameMatch, Never,
 };
 use linkerd_app_inbound::{
-    direct::{ClientInfo, GatewayConnection},
+    direct::{ClientInfo, GatewayConnection, Transported},
     Inbound,
 };
 use linkerd_app_outbound as outbound;
@@ -46,7 +46,7 @@ struct HttpTarget {
     version: http::Version,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct TcpGatewayUnimplemented(());
 
 #[derive(Debug, Default)]
@@ -78,6 +78,7 @@ where
     OSvc::Error: Into<Error>,
     OSvc::Future: Send + 'static,
 {
+    let allow = Allow(allow_discovery);
     let ProxyConfig {
         buffer_capacity,
         cache_max_idle_age,
@@ -85,8 +86,9 @@ where
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
+    let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
 
-    let http_server = {
+    let transported = {
         // Cache an HTTP gateway service for each destination and HTTP version.
         //
         // The destination is determined from the transport header or, if none was
@@ -95,9 +97,8 @@ where
         // The client's ID is set as a request extension, as required by the
         // gateway. This permits gateway services (and profile resolutions) to be
         // cached per target, shared across clients.
-        let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
-        let gateway = svc::stack(NewGateway::new(outbound, local_id))
-            .push(profiles::discover::layer(profiles, Allow(allow_discovery)))
+        let http = svc::stack(NewGateway::new(outbound.clone(), local_id.clone()))
+            .push(profiles::discover::layer(profiles.clone(), allow.clone()))
             .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
             .push_on_response(
                 svc::layers()
@@ -121,51 +122,95 @@ where
             .push(svc::NewRouter::layer(RouteHttp))
             .push_http_insert_target::<tls::ClientId>();
 
-        inbound.with_stack(gateway).push_http_server().into_inner()
+        let tcp = svc::Fail::<_, TcpGatewayUnimplemented>::default();
+
+        inbound
+            .clone()
+            .with_stack(http)
+            .push_http_server()
+            .into_stack()
+            .push_switch(
+                |Transported {
+                     target,
+                     protocol,
+                     client,
+                 }| match protocol {
+                    Some(proto) => Ok(svc::Either::A(HttpClientInfo {
+                        target: Some(target),
+                        version: match proto {
+                            SessionProtocol::Http1 => http::Version::Http1,
+                            SessionProtocol::Http2 => http::Version::H2,
+                        },
+                        client,
+                    })),
+                    None => Ok::<_, Never>(svc::Either::B(target)),
+                },
+                tcp,
+            )
     };
 
-    // As gateway connctions are received, dispatch HTTP connections to the HTTP
-    // gateway. If no target was provided AND no protocol, then we attempt HTTP
-    // detection (for legacy clients).
-    //
-    // TODO: Handle TCP gateway traffic when a target is set without a protocol.
-    svc::stack(http_server.clone())
-        .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
-        .push_switch(
-            |GatewayConnection {
-                 target,
-                 protocol,
-                 client,
-             }| match (protocol, target) {
-                (Some(proto), Some(target)) => Ok(svc::Either::A(HttpClientInfo {
-                    target: Some(target),
-                    version: match proto {
-                        SessionProtocol::Http1 => http::Version::Http1,
-                        SessionProtocol::Http2 => http::Version::H2,
-                    },
+    let legacy_http = {
+        // Cache an HTTP gateway service for each destination and HTTP version.
+        //
+        // The destination is determined from the transport header or, if none was
+        // present, the request URI.
+        //
+        // The client's ID is set as a request extension, as required by the
+        // gateway. This permits gateway services (and profile resolutions) to be
+        // cached per target, shared across clients.
+        let gateway = svc::stack(NewGateway::new(outbound, local_id))
+            .push(profiles::discover::layer(profiles, allow))
+            .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
+            .push_on_response(
+                svc::layers()
+                    .push(svc::layer::mk(svc::SpawnReady::new))
+                    .push(
+                        inbound
+                            .runtime()
+                            .metrics
+                            .stack
+                            .layer(metrics::StackLabels::inbound("http", "gateway")),
+                    )
+                    .push(svc::FailFast::layer("Gateway", dispatch_timeout))
+                    .push_spawn_buffer(buffer_capacity),
+            )
+            .push_cache(cache_max_idle_age)
+            .push_on_response(
+                svc::layers()
+                    .push(http::Retain::layer())
+                    .push(http::BoxResponse::layer()),
+            )
+            .push(svc::NewRouter::layer(RouteHttp))
+            .push_http_insert_target::<tls::ClientId>();
+
+        inbound
+            .with_stack(gateway)
+            .push_http_server()
+            .into_stack()
+            .push_map_target(
+                |(version, client): (http::Version, ClientInfo)| HttpClientInfo {
+                    target: None,
+                    version,
                     client,
-                })),
-                (None, None) => Ok(svc::Either::B(client)),
-                (None, Some(_)) => Err(Error::from(TcpGatewayUnimplemented(()))),
-                (Some(_), None) => Err(Error::from(RefusedNoTarget(()))),
+                },
+            )
+            .push(svc::UnwrapOr::layer(
+                svc::Fail::<_, RefusedNoTarget>::default(),
+            ))
+            .push(detect::NewDetectService::layer(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ))
+            .into_inner()
+    };
+
+    transported
+        .push_switch(
+            |gw: GatewayConnection| match gw {
+                GatewayConnection::Transported(t) => Ok::<_, Never>(svc::Either::A(t)),
+                GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
             },
-            svc::stack(http_server)
-                .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
-                .push_map_target(
-                    |(version, client): (http::Version, ClientInfo)| HttpClientInfo {
-                        target: None,
-                        version,
-                        client,
-                    },
-                )
-                .push(svc::UnwrapOr::layer(
-                    svc::Fail::<_, RefusedNoTarget>::default(),
-                ))
-                .push(detect::NewDetectService::layer(
-                    detect_protocol_timeout,
-                    http::DetectHttp::default(),
-                ))
-                .into_inner(),
+            legacy_http,
         )
         .into_inner()
 }

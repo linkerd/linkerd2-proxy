@@ -25,8 +25,14 @@ pub struct RefusedNoIdentity(());
 struct RefusedNoTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GatewayConnection {
-    pub target: Option<NameAddr>,
+pub enum GatewayConnection {
+    Transported(Transported),
+    Legacy(ClientInfo),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Transported {
+    pub target: NameAddr,
     pub protocol: Option<SessionProtocol>,
     pub client: ClientInfo,
 }
@@ -102,11 +108,13 @@ impl<T> Inbound<T> {
                         port,
                         name: Some(name),
                         protocol,
-                    } => Ok(svc::Either::B(GatewayConnection {
-                        target: Some(NameAddr::from((name, port))),
-                        protocol,
-                        client,
-                    })),
+                    } => Ok(svc::Either::B(GatewayConnection::Transported(
+                        Transported {
+                            target: NameAddr::from((name, port)),
+                            protocol,
+                            client,
+                        },
+                    ))),
                     TransportHeader {
                         name: None,
                         protocol: Some(_),
@@ -130,11 +138,7 @@ impl<T> Inbound<T> {
                     if client.header_negotiated() {
                         Ok::<_, Never>(svc::Either::A(client))
                     } else {
-                        Ok(svc::Either::B(GatewayConnection {
-                            client,
-                            target: None,
-                            protocol: None,
-                        }))
+                        Ok(svc::Either::B(GatewayConnection::Legacy(client)))
                     }
                 },
                 // TODO: Remove this after we have at least one stable release out
