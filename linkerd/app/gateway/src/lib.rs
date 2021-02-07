@@ -8,17 +8,17 @@ use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
     detect, discovery_rejected, io, metrics, profiles,
-    proxy::http,
+    proxy::{api_resolve::Metadata, core::Resolve, http},
     svc::{self, stack::Param},
     tls,
     transport_header::SessionProtocol,
-    Error, NameAddr, NameMatch, Never,
+    Addr, Error, NameAddr, NameMatch, Never,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayConnection, Transported},
     Inbound,
 };
-use linkerd_app_outbound as outbound;
+use linkerd_app_outbound::{self as outbound, Outbound};
 use std::convert::TryInto;
 use tracing::debug_span;
 
@@ -58,30 +58,32 @@ struct TcpGatewayUnimplemented(());
 struct RefusedNoTarget(());
 
 #[allow(clippy::clippy::too_many_arguments)]
-pub fn stack<I, O, OSvc, P>(
+pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
     inbound: Inbound<()>,
-    outbound: O,
+    outbound: Outbound<O>,
     profiles: P,
+    resolve: R,
 ) -> impl svc::NewService<
     GatewayConnection,
-    Service = impl tower::Service<I, Response = (), Error = impl Into<Error>, Future = impl Send>
+    Service = impl svc::Service<I, Response = (), Error = impl Into<Error>, Future = impl Send>
                   + Send
                   + 'static,
 > + Clone
        + Send
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Sync + Unpin + 'static,
+    O: svc::Service<outbound::http::Endpoint, Error = io::Error>,
+    O: Clone + Send + Sync + Unpin + 'static,
+    O::Response:
+        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
+    O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
-    O: svc::NewService<outbound::http::Logical, Service = OSvc>,
-    O: Clone + Send + Sync + Unpin + 'static,
-    OSvc: tower::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
-        + Send
-        + 'static,
-    OSvc::Error: Into<Error>,
-    OSvc::Future: Send + 'static,
+    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + Sync + Unpin + 'static,
+    R::Resolution: Send,
+    R::Future: Send + Unpin,
 {
     let allow = Allow(allow_discovery);
     let ProxyConfig {
@@ -98,7 +100,12 @@ where
     // The client's ID is set as a request extension, as required by the
     // gateway. This permits gateway services (and profile resolutions) to be
     // cached per target, shared across clients.
-    let http = svc::stack(NewGateway::new(outbound, local_id))
+    let http = outbound
+        .push_tcp_endpoint()
+        .push_http_endpoint()
+        .push_http_logical(resolve)
+        .into_stack()
+        .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, allow))
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
         .push_on_response(
