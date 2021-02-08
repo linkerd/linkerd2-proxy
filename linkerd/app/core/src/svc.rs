@@ -5,7 +5,8 @@ use crate::{cache, Error};
 pub use linkerd_buffer as buffer;
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, Fail, Filter, NewRouter, NewService, Predicate, UnwrapOr,
+    self as stack, layer, BoxNewService, Fail, Filter, MapTargetLayer, NewRouter, NewService,
+    Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};

@@ -120,8 +120,7 @@ impl<S> Outbound<S> {
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_balance(resolve)
-            .push_tcp_logical()
+            .push_tcp_logical(resolve)
             .push_detect_http(http)
             .push_discover(profiles)
             .into_inner()

@@ -133,7 +133,7 @@ impl Daemon {
 
                                     match config.trust_anchors.certify(key, crt) {
                                         Err(e) => {
-                                            error!("Received invalid ceritficate: {}", e);
+                                            error!("Received invalid certificate: {}", e);
                                         }
                                         Ok(crt_key) => {
                                             debug!("daemon certified until {:?}", expiry);

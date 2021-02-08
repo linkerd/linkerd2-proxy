@@ -49,9 +49,6 @@ struct HttpTarget {
 }
 
 #[derive(Debug, Default)]
-struct TcpGatewayUnimplemented(());
-
-#[derive(Debug, Default)]
 struct RefusedNoTarget(());
 
 #[allow(clippy::clippy::too_many_arguments)]
@@ -98,10 +95,8 @@ where
     let tcp = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_balance(resolve.clone())
-        .push_tcp_logical()
+        .push_tcp_logical(resolve.clone())
         .into_stack()
-        .check_new_service::<outbound::tcp::Logical, I>()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
             // XXX we should use another target type that actually reflects
             // reality.
@@ -122,14 +117,8 @@ where
                 }
             }
         }))
-        .check_new_service::<NameAddr, I>()
         .push_on_response(
             svc::layers()
-                // If the traffic split is empty/unavailable, eagerly fail
-                // requests requests. When the split is in failfast, spawn
-                // the service in a background task so it becomes ready without
-                // new requests.
-                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(
                     inbound
                         .runtime()
@@ -137,6 +126,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
+                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
@@ -164,7 +154,6 @@ where
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
         .push_on_response(
             svc::layers()
-                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(
                     inbound
                         .runtime()
@@ -172,6 +161,7 @@ where
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
+                .push(svc::layer::mk(svc::SpawnReady::new))
                 .push(svc::FailFast::layer("Gateway", dispatch_timeout))
                 .push_spawn_buffer(buffer_capacity),
         )
@@ -206,7 +196,7 @@ where
         ))
         .into_inner();
 
-    // When a transorted connection is received, use the header's target to
+    // When a transported connection is received, use the header's target to
     // drive routing.
     inbound
         .with_stack(
@@ -316,16 +306,6 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttpLegacy {
         Err(RefusedNoTarget(()).into())
     }
 }
-
-// === impl TcpGatewayUnimplemented ===
-
-impl std::fmt::Display for TcpGatewayUnimplemented {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TCP gateway support is not yet implemented")
-    }
-}
-
-impl std::error::Error for TcpGatewayUnimplemented {}
 
 // === impl RefusedNoTarget ===
 
