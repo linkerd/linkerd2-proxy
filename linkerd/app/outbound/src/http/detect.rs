@@ -55,9 +55,7 @@ impl<T> Outbound<T> {
                 http::DetectHttp::default(),
             ))
             // When the profile marks the target as opaque, we skip HTTP
-            // detection and just use the TCP logical stack directly. Unlike the
-            // above case, this stack need not be buffered, since `fn cache`
-            // applies its own buffer on the returned service.
+            // detection and just use the TCP logical stack directly.
             .push_switch(
                 SkipByProfile,
                 tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
