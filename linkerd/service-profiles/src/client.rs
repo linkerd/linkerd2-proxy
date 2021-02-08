@@ -1,4 +1,4 @@
-use crate::{http, Profile, Receiver, Target};
+use crate::{http, LogicalAddr, Profile, Receiver, Target};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
@@ -7,6 +7,7 @@ use linkerd_addr::Addr;
 use linkerd_dns_name::Name;
 use linkerd_error::{Error, Recover};
 use linkerd_proxy_api_resolve::pb as resolve;
+use linkerd_stack::Param;
 use pin_project::pin_project;
 use regex::Regex;
 use std::{
@@ -110,7 +111,7 @@ where
 
 impl<T, S, R> tower::Service<T> for Client<S, R>
 where
-    T: ToString,
+    T: Param<LogicalAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -130,8 +131,9 @@ where
     }
 
     fn call(&mut self, t: T) -> Self::Future {
+        let LogicalAddr(addr) = t.param();
         let request = api::GetDestination {
-            path: t.to_string(),
+            path: addr.to_string(),
             context_token: self.context_token.clone(),
             ..Default::default()
         };

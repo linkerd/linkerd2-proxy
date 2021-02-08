@@ -4,7 +4,6 @@ use linkerd_app_core::{
     transport::{listen, metrics::SensorIo},
     Error, IpMatch,
 };
-use std::net::SocketAddr;
 
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
@@ -24,7 +23,7 @@ impl<N> Outbound<N> {
         N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + 'static,
         NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile<SocketAddr> + Clone + Send + 'static,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + 'static,
         P::Future: Send,
         P::Error: Send,
     {
@@ -76,11 +75,11 @@ pub struct AllowProfile(pub IpMatch);
 // === impl AllowProfile ===
 
 impl svc::stack::Predicate<tcp::Accept> for AllowProfile {
-    type Request = std::net::SocketAddr;
+    type Request = profiles::LogicalAddr;
 
-    fn check(&mut self, a: tcp::Accept) -> Result<std::net::SocketAddr, Error> {
+    fn check(&mut self, a: tcp::Accept) -> Result<profiles::LogicalAddr, Error> {
         if self.0.matches(a.orig_dst.ip()) {
-            Ok(a.orig_dst)
+            Ok(profiles::LogicalAddr(a.orig_dst.into()))
         } else {
             Err(discovery_rejected().into())
         }

@@ -27,7 +27,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, listen},
-    Error, NameAddr, NameMatch, ProxyRuntime,
+    Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use tracing::debug_span;
@@ -188,7 +188,7 @@ where
         GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
-        P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
         P::Error: Send,
         P::Future: Send,
     {

@@ -10,7 +10,7 @@ use crate::{
     Config, Outbound,
 };
 use linkerd_app_core::{
-    io, svc, svc::NewService, tls, transport::listen, Addr, Conditional, Error, IpMatch,
+    io, svc, svc::NewService, tls, transport::listen, Conditional, Error, IpMatch,
 };
 use std::{
     future::Future,
@@ -640,7 +640,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
         },
     );
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
     let resolve_state = resolver.handle();
 
     let profiles = profile::resolver().profile(
@@ -710,7 +710,7 @@ async fn profile_endpoint_propagates_conn_errors() {
         })
         .expect("still listening to profiles");
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
 
     // Build the outbound server
     let mut server = build_server(cfg, profiles, resolver, connect);
@@ -779,8 +779,8 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
 
 fn build_server<I>(
     cfg: Config,
-    profiles: resolver::Profiles<SocketAddr>,
-    resolver: resolver::Dst<Addr, resolver::Metadata>,
+    profiles: resolver::Profiles,
+    resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
     listen::Addrs,

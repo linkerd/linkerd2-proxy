@@ -6,6 +6,8 @@ use api::destination_client::DestinationClient;
 use async_stream::try_stream;
 use futures::prelude::*;
 use http_body::Body as HttpBody;
+use linkerd_addr::Addr;
+use linkerd_stack::Param;
 use std::error::Error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -22,6 +24,11 @@ pub struct Resolve<S> {
     service: DestinationClient<S>,
     context_token: String,
 }
+
+// TODO this should hold a `NameAddr`; but this currently isn't possible due to
+// outbound target types.
+#[derive(Clone, Debug)]
+pub struct ResolveAddr(pub Addr);
 
 // === impl Resolve ===
 
@@ -50,7 +57,7 @@ type ResolveFuture =
 
 impl<T, S> Service<T> for Resolve<S>
 where
-    T: ToString,
+    T: Param<ResolveAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
     S::ResponseBody: Send,
@@ -67,11 +74,11 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let path = target.to_string();
-        debug!(dst = %path, context = %self.context_token, "Resolving");
+        let ResolveAddr(addr) = target.param();
+        debug!(dst = %addr, context = %self.context_token, "Resolving");
 
         let req = api::GetDestination {
-            path,
+            path: addr.to_string(),
             context_token: self.context_token.clone(),
             ..Default::default()
         };

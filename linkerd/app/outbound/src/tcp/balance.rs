@@ -26,7 +26,7 @@ where
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+        R: Resolve<Concrete, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {

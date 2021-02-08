@@ -21,9 +21,9 @@ use linkerd_app_core::{
     proxy::{api_resolve::Metadata, core::Resolve},
     svc, tls,
     transport::listen,
-    Addr, AddrMatch, Error, ProxyRuntime,
+    AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -71,14 +71,18 @@ impl<C> Outbound<C> {
         <C as svc::Service<http::Endpoint>>::Response:
             tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
         <C as svc::Service<http::Endpoint>>::Future: Send + Unpin,
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Concrete>>::Resolution: Send,
+        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         <C as svc::Service<tcp::Endpoint>>::Response: tls::HasNegotiatedProtocol,
         <C as svc::Service<tcp::Endpoint>>::Response:
             tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
         <C as svc::Service<tcp::Endpoint>>::Future: Send,
-        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
-        P: profiles::GetProfile<SocketAddr> + Clone + Send + 'static,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Concrete>>::Resolution: Send,
+        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Clone + Send + 'static,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + 'static,
         P::Future: Send,
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,

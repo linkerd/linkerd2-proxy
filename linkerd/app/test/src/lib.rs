@@ -13,7 +13,6 @@ pub use tower::Service;
 pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
-use std::fmt;
 pub mod io {
     pub use tokio::io::*;
     pub use tokio_test::io::*;
@@ -26,17 +25,11 @@ pub mod resolver;
 pub mod service;
 pub mod track;
 
-pub fn resolver<T, E>() -> resolver::Dst<T, E>
-where
-    T: std::hash::Hash + Eq + fmt::Debug,
-{
+pub fn resolver<E>() -> resolver::Dst<E> {
     resolver::Resolver::default()
 }
 
-pub fn profiles<T>() -> resolver::Profiles<T>
-where
-    T: std::hash::Hash + Eq + fmt::Debug,
-{
+pub fn profiles() -> resolver::Profiles {
     profile::resolver()
 }
 

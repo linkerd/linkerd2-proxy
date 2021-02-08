@@ -18,10 +18,7 @@ pub fn only(profile: Profile) -> Receiver {
     rx
 }
 
-pub fn resolver<T>() -> crate::resolver::Profiles<T>
-where
-    T: std::hash::Hash + Eq + std::fmt::Debug,
-{
+pub fn resolver() -> crate::resolver::Profiles {
     crate::resolver::Resolver::default()
 }
 

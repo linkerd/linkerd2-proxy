@@ -1,16 +1,16 @@
 pub use crate::profile::Sender as ProfileSender;
 use futures::future;
 pub use linkerd_app_core::proxy::{
-    api_resolve::{Metadata, ProtocolHint},
+    api_resolve::{Metadata, ProtocolHint, ResolveAddr},
     core::resolve::{Resolve, Update},
 };
 use linkerd_app_core::{
     profiles::{self, Profile},
-    Error,
+    svc::stack::Param,
+    Addr, Error,
 };
 use linkerd_channel::into_stream::{IntoStream, Streaming};
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::net::SocketAddr;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -20,22 +20,23 @@ use std::task::{Context, Poll};
 use tokio::sync::{mpsc, watch};
 
 #[derive(Debug)]
-pub struct Resolver<T, E> {
-    state: Arc<State<T, E>>,
+pub struct Resolver<E> {
+    state: Arc<State<E>>,
 }
 
-pub type Dst<T, E> = Resolver<T, DstReceiver<E>>;
-pub type Profiles<T> = Resolver<T, Option<profiles::Receiver>>;
+pub type Dst<E> = Resolver<DstReceiver<E>>;
+
+pub type Profiles = Resolver<Option<profiles::Receiver>>;
 
 #[derive(Debug, Clone)]
-pub struct DstSender<T>(mpsc::UnboundedSender<Result<Update<T>, Error>>);
+pub struct DstSender<E>(mpsc::UnboundedSender<Result<Update<E>, Error>>);
 
 #[derive(Debug, Clone)]
-pub struct Handle<T, E>(Arc<State<T, E>>);
+pub struct Handle<E>(Arc<State<E>>);
 
 #[derive(Debug)]
-struct State<T, E> {
-    endpoints: Mutex<HashMap<T, E>>,
+struct State<E> {
+    endpoints: Mutex<HashMap<Addr, E>>,
     // Keep unused_senders open if they're not going to be used.
     unused_senders: Mutex<Vec<Box<dyn std::any::Any + Send + Sync + 'static>>>,
     only: AtomicBool,
@@ -46,10 +47,7 @@ pub type DstReceiver<E> = Streaming<mpsc::UnboundedReceiver<Result<Update<E>, Er
 #[derive(Debug)]
 pub struct SendFailed(());
 
-impl<T, E> Default for Resolver<T, E>
-where
-    T: Hash + Eq,
-{
+impl<E> Default for Resolver<E> {
     fn default() -> Self {
         Self {
             state: Arc::new(State {
@@ -61,22 +59,19 @@ where
     }
 }
 
-impl<T, E> Resolver<T, E>
-where
-    T: Hash + Eq,
-{
-    pub fn with_handle() -> (Self, Handle<T, E>) {
+impl<E> Resolver<E> {
+    pub fn with_handle() -> (Self, Handle<E>) {
         let r = Self::default();
         let handle = r.handle();
         (r, handle)
     }
 
-    pub fn handle(&self) -> Handle<T, E> {
+    pub fn handle(&self) -> Handle<E> {
         Handle(self.state.clone())
     }
 }
 
-impl<T, E> Clone for Resolver<T, E> {
+impl<E> Clone for Resolver<E> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
@@ -85,31 +80,25 @@ impl<T, E> Clone for Resolver<T, E> {
 }
 // === destination resolver ===
 
-impl<T, E> Dst<T, E>
-where
-    T: Hash + Eq,
-{
-    pub fn endpoint_tx(&self, t: impl Into<T>) -> DstSender<E> {
+impl<E> Dst<E> {
+    pub fn endpoint_tx(&self, addr: impl Into<Addr>) -> DstSender<E> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.state
             .endpoints
             .lock()
             .unwrap()
-            .insert(t.into(), rx.into_stream());
+            .insert(addr.into(), rx.into_stream());
         DstSender(tx)
     }
 
-    pub fn endpoint_exists(self, t: impl Into<T>, addr: SocketAddr, meta: E) -> Self {
-        let mut tx = self.endpoint_tx(t);
+    pub fn endpoint_exists(self, target: impl Into<Addr>, addr: SocketAddr, meta: E) -> Self {
+        let mut tx = self.endpoint_tx(target);
         tx.add(vec![(addr, meta)]).unwrap();
         self
     }
 }
 
-impl<T, E> tower::Service<T> for Dst<T, E>
-where
-    T: Hash + Eq + std::fmt::Debug,
-{
+impl<T: Param<ResolveAddr>, E> tower::Service<T> for Dst<E> {
     type Response = DstReceiver<E>;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
     type Error = Error;
@@ -119,7 +108,8 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let span = tracing::trace_span!("mock_resolver", ?target);
+        let ResolveAddr(addr) = target.param();
+        let span = tracing::trace_span!("mock_resolver", ?addr);
         let _e = span.enter();
 
         let res = self
@@ -127,13 +117,13 @@ where
             .endpoints
             .lock()
             .unwrap()
-            .remove(&target)
+            .remove(&addr)
             .map(|x| {
                 tracing::trace!("found endpoint for target");
                 x
             })
             .unwrap_or_else(|| {
-                tracing::debug!(?target, "no endpoint configured for");
+                tracing::debug!(?addr, "no endpoint configured for");
                 // An unknown endpoint was resolved!
                 self.state
                     .only
@@ -149,42 +139,49 @@ where
 
 // === profile resolver ===
 
-impl<T> Profiles<T>
-where
-    T: Hash + Eq,
-{
-    pub fn profile_tx(&self, addr: T) -> ProfileSender {
+impl Profiles {
+    pub fn profile_tx(&self, addr: impl Into<Addr>) -> ProfileSender {
         let (tx, rx) = watch::channel(Profile::default());
-        self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
+        self.state
+            .endpoints
+            .lock()
+            .unwrap()
+            .insert(addr.into(), Some(rx));
         tx
     }
 
-    pub fn profile(self, addr: T, profile: Profile) -> Self {
+    pub fn profile(self, addr: impl Into<Addr>, profile: Profile) -> Self {
         let (tx, rx) = watch::channel(profile);
         self.state.unused_senders.lock().unwrap().push(Box::new(tx));
-        self.state.endpoints.lock().unwrap().insert(addr, Some(rx));
+        self.state
+            .endpoints
+            .lock()
+            .unwrap()
+            .insert(addr.into(), Some(rx));
         self
     }
 
-    pub fn no_profile(self, addr: T) -> Self {
-        self.state.endpoints.lock().unwrap().insert(addr, None);
+    pub fn no_profile(self, addr: impl Into<Addr>) -> Self {
+        self.state
+            .endpoints
+            .lock()
+            .unwrap()
+            .insert(addr.into(), None);
         self
     }
 }
 
-impl<T> tower::Service<T> for Profiles<T>
-where
-    T: Hash + Eq + std::fmt::Debug,
-{
-    type Error = Error;
+impl<T: Param<profiles::LogicalAddr>> tower::Service<T> for Profiles {
     type Response = Option<profiles::Receiver>;
+    type Error = Error;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, addr: T) -> Self::Future {
+    fn call(&mut self, t: T) -> Self::Future {
+        let profiles::LogicalAddr(addr) = t.param();
         let span = tracing::trace_span!("mock_profile", ?addr);
         let _e = span.enter();
 
@@ -249,7 +246,7 @@ impl<E> DstSender<E> {
 
 // === impl Handle ===
 
-impl<T, E> Handle<T, E> {
+impl<E> Handle<E> {
     /// Returns `true` if all configured endpoints were resolved exactly once.
     pub fn is_empty(&self) -> bool {
         self.0.endpoints.lock().unwrap().is_empty()

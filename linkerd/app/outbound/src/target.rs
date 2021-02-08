@@ -1,6 +1,9 @@
 use linkerd_app_core::{
     metrics, profiles,
-    proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
+    proxy::{
+        api_resolve::{Metadata, ResolveAddr},
+        resolve::map_endpoint::MapEndpoint,
+    },
     svc::{self, stack::Param},
     tls, transport, transport_header, Addr, Conditional, Error,
 };
@@ -151,6 +154,12 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
 impl<P> From<(Addr, Logical<P>)> for Concrete<P> {
     fn from((resolve, logical): (Addr, Logical<P>)) -> Self {
         Self { resolve, logical }
+    }
+}
+
+impl<P> Param<ResolveAddr> for Concrete<P> {
+    fn param(&self) -> ResolveAddr {
+        ResolveAddr(self.resolve.clone())
     }
 }
 

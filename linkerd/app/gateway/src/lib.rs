@@ -67,7 +67,7 @@ pub fn stack<I, O, OSvc, P>(
        + Send
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Sync + Unpin + 'static,
-    P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + Unpin + 'static,
+    P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
     O: svc::NewService<outbound::http::Logical, Service = OSvc>,
@@ -171,12 +171,12 @@ where
 }
 
 impl svc::stack::Predicate<HttpTarget> for Allow {
-    type Request = NameAddr;
+    type Request = profiles::LogicalAddr;
 
-    fn check(&mut self, t: HttpTarget) -> Result<NameAddr, Error> {
+    fn check(&mut self, t: HttpTarget) -> Result<profiles::LogicalAddr, Error> {
         // The service name needs to exist in the configured set of suffixes.
         if self.0.matches(t.target.name()) {
-            Ok(t.target)
+            Ok(profiles::LogicalAddr(t.target.into()))
         } else {
             Err(discovery_rejected().into())
         }

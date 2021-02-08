@@ -20,7 +20,7 @@ use tracing::Instrument;
 fn build_server<I>(
     cfg: Config,
     rt: ProxyRuntime,
-    profiles: resolver::Profiles<NameAddr>,
+    profiles: resolver::Profiles,
     connect: Connect<ConnectAddr>,
 ) -> impl svc::NewService<
     HttpAccept,

@@ -9,4 +9,4 @@ pub mod pb;
 mod resolve;
 
 pub use self::metadata::{Metadata, ProtocolHint};
-pub use self::resolve::Resolve;
+pub use self::resolve::{Resolve, ResolveAddr};
