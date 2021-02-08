@@ -19,16 +19,13 @@ use linkerd_app_inbound::{
     Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
-use std::convert::TryInto;
+use std::{convert::TryInto, fmt};
 use tracing::debug_span;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub allow_discovery: NameMatch,
 }
-
-#[derive(Clone, Debug)]
-struct Allow(NameMatch);
 
 #[derive(Clone, Debug)]
 struct HttpLegacy {
@@ -72,12 +69,16 @@ pub fn stack<I, O, P, R>(
 > + Clone
        + Send
 where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Sync + Unpin + 'static,
-    O: svc::Service<outbound::http::Endpoint, Error = io::Error>,
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
+    O: svc::Service<outbound::http::Endpoint, Error = io::Error>
+        + svc::Service<outbound::tcp::Endpoint, Error = io::Error>,
     O: Clone + Send + Sync + Unpin + 'static,
-    O::Response:
+    <O as svc::Service<outbound::http::Endpoint>>::Response:
         io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
-    O::Future: Send + Unpin + 'static,
+    <O as svc::Service<outbound::http::Endpoint>>::Future: Send + Unpin + 'static,
+    <O as svc::Service<outbound::tcp::Endpoint>>::Response:
+        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
+    <O as svc::Service<outbound::tcp::Endpoint>>::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
@@ -85,7 +86,6 @@ where
     R::Resolution: Send,
     R::Future: Send + Unpin,
 {
-    let allow = Allow(allow_discovery);
     let ProxyConfig {
         buffer_capacity,
         cache_max_idle_age,
@@ -94,6 +94,54 @@ where
         ..
     } = inbound.config().proxy.clone();
     let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
+
+    let tcp = outbound
+        .clone()
+        .push_tcp_endpoint()
+        .push_tcp_balance(resolve.clone())
+        .push_tcp_logical()
+        .into_stack()
+        .check_new_service::<outbound::tcp::Logical, I>()
+        .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
+            // XXX we should use another target type that actually reflects
+            // reality.
+            Some(profile) => Ok(outbound::tcp::Logical {
+                profile: Some(profile),
+                orig_dst: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                protocol: (),
+            }),
+            None => Err(discovery_rejected()),
+        })
+        .push(profiles::discover::layer(profiles.clone(), {
+            let allow = allow_discovery.clone();
+            move |addr: NameAddr| {
+                if allow.matches(addr.name()) {
+                    Ok(addr)
+                } else {
+                    Err(discovery_rejected())
+                }
+            }
+        }))
+        .check_new_service::<NameAddr, I>()
+        .push_on_response(
+            svc::layers()
+                // If the traffic split is empty/unavailable, eagerly fail
+                // requests requests. When the split is in failfast, spawn
+                // the service in a background task so it becomes ready without
+                // new requests.
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(
+                    inbound
+                        .runtime()
+                        .metrics
+                        .stack
+                        .layer(metrics::StackLabels::inbound("tcp", "gateway")),
+                )
+                .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .push_cache(cache_max_idle_age)
+        .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
     //
@@ -106,7 +154,13 @@ where
         .push_http_logical(resolve)
         .into_stack()
         .push(NewGateway::layer(local_id))
-        .push(profiles::discover::layer(profiles, allow))
+        .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
+            if allow_discovery.matches(t.target.name()) {
+                Ok(t.target)
+            } else {
+                Err(discovery_rejected())
+            }
+        }))
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
         .push_on_response(
             svc::layers()
@@ -152,8 +206,6 @@ where
         ))
         .into_inner();
 
-    let tcp = svc::Fail::<_, TcpGatewayUnimplemented>::default();
-
     // When a transorted connection is received, use the header's target to
     // drive routing.
     inbound
@@ -179,7 +231,7 @@ where
                 })),
                 None => Ok::<_, Never>(svc::Either::B(target)),
             },
-            tcp,
+            tcp.into_inner(),
         )
         .push_switch(
             |gw: GatewayConnection| match gw {
@@ -189,19 +241,6 @@ where
             legacy_http,
         )
         .into_inner()
-}
-
-impl svc::stack::Predicate<HttpTarget> for Allow {
-    type Request = NameAddr;
-
-    fn check(&mut self, t: HttpTarget) -> Result<NameAddr, Error> {
-        // The service name needs to exist in the configured set of suffixes.
-        if self.0.matches(t.target.name()) {
-            Ok(t.target)
-        } else {
-            Err(discovery_rejected().into())
-        }
-    }
 }
 
 // === impl HttpTarget ===
