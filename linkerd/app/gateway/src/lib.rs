@@ -51,6 +51,9 @@ struct HttpTarget {
 #[derive(Debug, Default)]
 struct RefusedNoTarget(());
 
+#[derive(Debug)]
+struct RefusedNotResolved(NameAddr);
+
 #[allow(clippy::clippy::too_many_arguments)]
 pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
@@ -92,20 +95,27 @@ where
     } = inbound.config().proxy.clone();
     let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
 
+    // For each gatewayed connection that is *not* HTTP, use the target from the
+    // transport header to lookup a service profile. If the profile includes a
+    // resolvable service name, then continue with TCP endpoint resolution,
+    // balancing, and forwarding. An invalid original destination address is
+    // used so that service discovery is *required* to provide a valid endpoint.
+    //
+    // TODO: We should use another target type that actually reflects
+    // reality. But the outbound stack is currently pretty tightly
+    // coupled to its target types.
     let tcp = outbound
         .clone()
         .push_tcp_endpoint()
         .push_tcp_logical(resolve.clone())
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
-            // XXX we should use another target type that actually reflects
-            // reality.
-            Some(profile) => Ok(outbound::tcp::Logical {
-                profile: Some(profile),
+            Some(rx) if rx.borrow().name.is_some() => Ok(outbound::tcp::Logical {
+                profile: Some(rx),
                 orig_dst: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 protocol: (),
             }),
-            None => Err(discovery_rejected()),
+            _ => Err(discovery_rejected()),
         })
         .push(profiles::discover::layer(profiles.clone(), {
             let allow = allow_discovery.clone();
@@ -113,7 +123,7 @@ where
                 if allow.matches(addr.name()) {
                     Ok(addr)
                 } else {
-                    Err(discovery_rejected())
+                    Err(RefusedNotResolved(addr))
                 }
             }
         }))
@@ -148,7 +158,7 @@ where
             if allow_discovery.matches(t.target.name()) {
                 Ok(t.target)
             } else {
-                Err(discovery_rejected())
+                Err(RefusedNotResolved(t.target))
             }
         }))
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
@@ -309,10 +319,20 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttpLegacy {
 
 // === impl RefusedNoTarget ===
 
-impl std::fmt::Display for RefusedNoTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for RefusedNoTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "A named target must be provided on gateway connections")
     }
 }
 
 impl std::error::Error for RefusedNoTarget {}
+
+// === impl RefusedNotResolved ===
+
+impl fmt::Display for RefusedNotResolved {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "The provided address could not be resolved: {}", self.0)
+    }
+}
+
+impl std::error::Error for RefusedNotResolved {}
