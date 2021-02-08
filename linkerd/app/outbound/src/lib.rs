@@ -5,11 +5,10 @@
 
 #![deny(warnings, rust_2018_idioms)]
 
-pub mod discover;
+mod discover;
 pub mod http;
-pub mod ingress;
+mod ingress;
 mod resolve;
-pub mod server;
 pub mod target;
 pub mod tcp;
 #[cfg(test)]
@@ -41,18 +40,47 @@ pub struct Outbound<S> {
     stack: svc::Stack<S>,
 }
 
-impl<C> Outbound<C> {
-    #[cfg(test)]
-    fn new(config: Config, runtime: ProxyRuntime, inner: C) -> Self {
+impl Outbound<()> {
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
-            stack: svc::stack(inner),
+            stack: svc::stack(()),
         }
     }
 
-    pub fn into_inner(self) -> C {
+    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
+        Outbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack: svc::stack(stack),
+        }
+    }
+}
+
+impl<S> Outbound<S> {
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
+
+    pub fn runtime(&self) -> &ProxyRuntime {
+        &self.runtime
+    }
+
+    pub fn into_stack(self) -> svc::Stack<S> {
+        self.stack
+    }
+
+    pub fn into_inner(self) -> S {
         self.stack.into_inner()
+    }
+
+    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
+        Outbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack: self.stack.push(layer),
+        }
     }
 
     pub fn into_server<R, P, I>(
@@ -64,17 +92,17 @@ impl<C> Outbound<C> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        C: svc::Service<http::Endpoint, Error = io::Error>
+        S: svc::Service<http::Endpoint, Error = io::Error>
             + svc::Service<tcp::Endpoint, Error = io::Error>,
-        C: Clone + Send + Sync + Unpin + 'static,
-        <C as svc::Service<http::Endpoint>>::Response: tls::HasNegotiatedProtocol,
-        <C as svc::Service<http::Endpoint>>::Response:
+        S: Clone + Send + Sync + Unpin + 'static,
+        <S as svc::Service<http::Endpoint>>::Response: tls::HasNegotiatedProtocol,
+        <S as svc::Service<http::Endpoint>>::Response:
             tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        <C as svc::Service<http::Endpoint>>::Future: Send + Unpin,
-        <C as svc::Service<tcp::Endpoint>>::Response: tls::HasNegotiatedProtocol,
-        <C as svc::Service<tcp::Endpoint>>::Response:
+        <S as svc::Service<http::Endpoint>>::Future: Send + Unpin,
+        <S as svc::Service<tcp::Endpoint>>::Response: tls::HasNegotiatedProtocol,
+        <S as svc::Service<tcp::Endpoint>>::Response:
             tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        <C as svc::Service<tcp::Endpoint>>::Future: Send,
+        <S as svc::Service<tcp::Endpoint>>::Future: Send,
         R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
@@ -83,19 +111,17 @@ impl<C> Outbound<C> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
-        let tcp = self
-            .clone()
-            .push_tcp_endpoint()
-            .push_tcp_balance(resolve.clone())
-            .into_inner();
         let http = self
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve)
+            .push_http_logical(resolve.clone())
             .push_http_server()
             .into_inner();
-        server::stack(self.config, self.runtime, tcp, http)
+
+        self.push_tcp_endpoint()
+            .push_tcp_balance(resolve)
+            .push_detect_http(http)
             .push_discover(profiles)
             .into_inner()
     }

@@ -71,7 +71,7 @@ impl<N> Outbound<N> {
 }
 
 #[derive(Clone, Debug)]
-pub struct AllowProfile(pub IpMatch);
+struct AllowProfile(pub IpMatch);
 
 // === impl AllowProfile ===
 
