@@ -116,7 +116,7 @@ impl<T> Inbound<T> {
                 // HTTP detection is not necessary in this case, since the transport
                 // header indicates the connection's HTTP version.
                 svc::stack(gateway.clone())
-                    .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
+                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                     .check_new_service::<GatewayConnection, FwdIo<I>>()
                     .into_inner(),
             )
@@ -140,7 +140,7 @@ impl<T> Inbound<T> {
                 // TODO: Remove this after we have at least one stable release out
                 // with transport header support.
                 svc::stack(gateway)
-                    .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
+                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
                     .into_inner(),
             )

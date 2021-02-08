@@ -1,9 +1,8 @@
-use crate::{http, stack_labels, target::ShouldResolve, tcp, Outbound};
+use crate::{http, tcp, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, io, profiles, svc, Addr, Error,
+    detect, io, svc, Error,
 };
-use tracing::debug_span;
 
 impl<T> Outbound<T> {
     pub fn push_detect_http<TSvc, H, HSvc, I>(
@@ -17,7 +16,7 @@ impl<T> Outbound<T> {
     >
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        T: svc::NewService<(Option<Addr>, tcp::Logical), Service = TSvc> + Clone + Send + 'static,
+        T: svc::NewService<tcp::Logical, Service = TSvc> + Clone + Send + 'static,
         TSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + 'static,
         TSvc::Error: Into<Error>,
         TSvc::Future: Send,
@@ -34,16 +33,9 @@ impl<T> Outbound<T> {
         } = self;
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
-            dispatch_timeout,
             detect_protocol_timeout,
-            buffer_capacity,
-            cache_max_idle_age,
             ..
         } = config.proxy;
-
-        let tcp_forward = svc::stack(tcp.clone())
-            .push_map_target(|l| (None, l))
-            .into_inner();
 
         let stack = svc::stack(http)
             .push_on_response(
@@ -54,48 +46,21 @@ impl<T> Outbound<T> {
             .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
             .push_map_target(http::Logical::from)
             .push(svc::UnwrapOr::layer(
-                // When an HTTP version cannot be detected, we fallback to a logical
-                // TCP stack. This service needs to be buffered so that it can be
-                // cached and cloned per connection.
-                svc::stack(tcp.clone())
-                    .push(profiles::split::layer())
-                    .push_switch(ShouldResolve, tcp_forward.clone())
-                    .push_on_response(
-                        svc::layers()
-                            .push_map_target(io::EitherIo::Right)
-                            .push(rt.metrics.stack.layer(stack_labels("tcp", "logical")))
-                            .push(svc::layer::mk(svc::SpawnReady::new))
-                            .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
-                            .push_spawn_buffer(buffer_capacity),
-                    )
-                    .instrument(|_: &_| debug_span!("tcp"))
-                    .check_new_service::<tcp::Logical, _>()
+                tcp.clone()
+                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .into_inner(),
             ))
-            .push_cache(cache_max_idle_age)
             .push(detect::NewDetectService::layer(
                 detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
-            .check_new_service::<tcp::Logical, _>()
+            // When the profile marks the target as opaque, we skip HTTP
+            // detection and just use the TCP logical stack directly.
             .push_switch(
                 SkipByProfile,
-                // When the profile marks the target as opaque, we skip HTTP
-                // detection and just use the TCP logical stack directly. Unlike the
-                // above case, this stack need not be buffered, since `fn cache`
-                // applies its own buffer on the returned service.
-                svc::stack(tcp)
-                    .push(profiles::split::layer())
-                    .push_switch(ShouldResolve, tcp_forward)
-                    .push_on_response(
-                        svc::layers()
-                            .push_map_target(io::EitherIo::Left)
-                            .push(rt.metrics.stack.layer(stack_labels("tcp", "passthru"))),
-                    )
-                    .instrument(|_: &_| debug_span!("tcp.opaque"))
+                tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                     .into_inner(),
-            )
-            .check_new_service::<tcp::Logical, _>();
+            );
 
         Outbound {
             config,
