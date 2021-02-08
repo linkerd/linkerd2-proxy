@@ -130,7 +130,7 @@ where
     //
     // TODO: Handle TCP gateway traffic when a target is set without a protocol.
     svc::stack(http_server.clone())
-        .push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
+        .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
         .push_switch(
             |GatewayConnection {
                  target,
@@ -150,7 +150,7 @@ where
                 (Some(_), None) => Err(Error::from(RefusedNoTarget(()))),
             },
             svc::stack(http_server)
-                .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
+                .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                 .push_map_target(
                     |(version, client): (http::Version, ClientInfo)| HttpClientInfo {
                         target: None,

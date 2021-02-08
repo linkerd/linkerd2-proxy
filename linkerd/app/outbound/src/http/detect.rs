@@ -47,7 +47,7 @@ impl<T> Outbound<T> {
             .push_map_target(http::Logical::from)
             .push(svc::UnwrapOr::layer(
                 tcp.clone()
-                    .push_on_response(svc::layers().push_map_target(io::EitherIo::Right))
+                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .into_inner(),
             ))
             .push(detect::NewDetectService::layer(
@@ -60,7 +60,7 @@ impl<T> Outbound<T> {
             // applies its own buffer on the returned service.
             .push_switch(
                 SkipByProfile,
-                tcp.push_on_response(svc::layers().push_map_target(io::EitherIo::Left))
+                tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                     .into_inner(),
             );
 
