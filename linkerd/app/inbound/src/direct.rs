@@ -103,8 +103,8 @@ impl<T> Inbound<T> {
                 |(h, client): (TransportHeader, ClientInfo)| match h {
                     TransportHeader {
                         port,
+                        name: None,
                         protocol: None,
-                        ..
                     } => Ok(svc::Either::A(TcpEndpoint { port })),
                     TransportHeader {
                         port,
