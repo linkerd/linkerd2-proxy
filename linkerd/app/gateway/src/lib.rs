@@ -15,7 +15,7 @@ use linkerd_app_core::{
     Addr, Error, NameAddr, NameMatch, Never,
 };
 use linkerd_app_inbound::{
-    direct::{ClientInfo, GatewayConnection, Transported},
+    direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
     Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
@@ -34,7 +34,7 @@ struct HttpLegacy {
 }
 
 #[derive(Clone, Debug)]
-struct HttpTransported {
+struct HttpTransportHeader {
     target: NameAddr,
     client: ClientInfo,
     version: http::Version,
@@ -217,12 +217,12 @@ where
         .push_http_server()
         .into_stack()
         .push_switch(
-            |Transported {
+            |GatewayTransportHeader {
                  target,
                  protocol,
                  client,
              }| match protocol {
-                Some(proto) => Ok(svc::Either::A(HttpTransported {
+                Some(proto) => Ok(svc::Either::A(HttpTransportHeader {
                     target,
                     client,
                     version: match proto {
@@ -236,7 +236,7 @@ where
         )
         .push_switch(
             |gw| match gw {
-                GatewayConnection::Transported(t) => Ok::<_, Never>(svc::Either::A(t)),
+                GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
                 GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
             },
             legacy_http,
@@ -246,8 +246,8 @@ where
 
 // === impl HttpTarget ===
 
-impl From<HttpTransported> for HttpTarget {
-    fn from(t: HttpTransported) -> Self {
+impl From<HttpTransportHeader> for HttpTarget {
+    fn from(t: HttpTransportHeader) -> Self {
         Self {
             version: t.version,
             target: t.target,
@@ -255,21 +255,21 @@ impl From<HttpTransported> for HttpTarget {
     }
 }
 
-// === impl HttpTransported ===
+// === impl HttpTransportHeader ===
 
-impl Param<http::normalize_uri::DefaultAuthority> for HttpTransported {
+impl Param<http::normalize_uri::DefaultAuthority> for HttpTransportHeader {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         http::normalize_uri::DefaultAuthority(Some(self.target.as_http_authority()))
     }
 }
 
-impl Param<http::Version> for HttpTransported {
+impl Param<http::Version> for HttpTransportHeader {
     fn param(&self) -> http::Version {
         self.version
     }
 }
 
-impl Param<tls::ClientId> for HttpTransported {
+impl Param<tls::ClientId> for HttpTransportHeader {
     fn param(&self) -> tls::ClientId {
         self.client.client_id.clone()
     }

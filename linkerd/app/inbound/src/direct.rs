@@ -25,14 +25,16 @@ pub struct RefusedNoIdentity(());
 #[derive(Debug)]
 struct RefusedNoTarget;
 
+/// Gateway connections come in two variants: those with a transport header, and
+/// legacy connections, without a transport header.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GatewayConnection {
-    Transported(Transported),
+    TransportHeader(GatewayTransportHeader),
     Legacy(ClientInfo),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Transported {
+pub struct GatewayTransportHeader {
     pub target: NameAddr,
     pub protocol: Option<SessionProtocol>,
     pub client: ClientInfo,
@@ -110,8 +112,8 @@ impl<T> Inbound<T> {
                         port,
                         name: Some(name),
                         protocol,
-                    } => Ok(svc::Either::B(GatewayConnection::Transported(
-                        Transported {
+                    } => Ok(svc::Either::B(GatewayConnection::TransportHeader(
+                        GatewayTransportHeader {
                             target: NameAddr::from((name, port)),
                             protocol,
                             client,
