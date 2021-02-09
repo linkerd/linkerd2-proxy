@@ -33,6 +33,7 @@ struct HttpLegacy {
     version: http::Version,
 }
 
+#[derive(Clone, Debug)]
 struct HttpTransported {
     target: NameAddr,
     client: ClientInfo,
