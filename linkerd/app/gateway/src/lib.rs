@@ -41,7 +41,7 @@ struct HttpTransportHeader {
 }
 
 #[derive(Clone, Debug)]
-struct RouteHttpLegacy(HttpLegacy);
+struct RouteHttp<T>(T);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct HttpTarget {
@@ -192,7 +192,7 @@ where
         .clone()
         .with_stack(
             http.clone()
-                .push(svc::NewRouter::layer(RouteHttpLegacy))
+                .push(svc::NewRouter::layer(RouteHttp))
                 .push_http_insert_target::<tls::ClientId>(),
         )
         .push_http_server()
@@ -211,7 +211,9 @@ where
     // drive routing.
     inbound
         .with_stack(
-            http.push_map_target(HttpTarget::from)
+            // A router is needed so that we use each request's HTTP version
+            // (i.e. after serverside orig-proto downgrading).
+            http.push(svc::NewRouter::layer(RouteHttp))
                 .push_http_insert_target::<tls::ClientId>(),
         )
         .push_http_server()
@@ -301,9 +303,19 @@ impl Param<tls::ClientId> for HttpLegacy {
     }
 }
 
-// === impl RouteHttpLegacy ===
+// === impl RouteHttp ===
 
-impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttpLegacy {
+impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpTransportHeader> {
+    type Key = HttpTarget;
+
+    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
+        let target = self.0.target.clone();
+        let version = req.version().try_into()?;
+        Ok(HttpTarget { target, version })
+    }
+}
+
+impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpLegacy> {
     type Key = HttpTarget;
 
     fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
