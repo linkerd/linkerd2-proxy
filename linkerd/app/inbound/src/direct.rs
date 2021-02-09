@@ -9,6 +9,7 @@ use linkerd_app_core::{
     Conditional, Error, NameAddr, Never,
 };
 use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
+use tracing::debug_span;
 
 #[derive(Clone, Debug)]
 struct WithTransportHeaderAlpn(LocalCrtKey);
@@ -93,6 +94,7 @@ impl<T> Inbound<T> {
 
         let stack = tcp
             .check_new_service::<TcpEndpoint, FwdIo<I>>()
+            .instrument(|_: &TcpEndpoint| debug_span!("opaque"))
             // When the transport header is present, it may be used for either local
             // TCP forwarding, or we may be processing an HTTP gateway connection.
             // HTTP gateway connections that have a transport header must provide a
@@ -126,6 +128,7 @@ impl<T> Inbound<T> {
                 svc::stack(gateway.clone())
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                     .check_new_service::<GatewayConnection, FwdIo<I>>()
+                    .instrument(|_: &GatewayConnection| debug_span!("gateway"))
                     .into_inner(),
             )
             // Use ALPN to determine whether a transport header should be read.
@@ -146,10 +149,12 @@ impl<T> Inbound<T> {
                 svc::stack(gateway)
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
+                    .instrument(|_: &GatewayConnection| debug_span!("legacy"))
                     .into_inner(),
             )
             .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
             .push(rt.metrics.transport.layer_accept())
+            .instrument(|_: &ClientInfo| debug_span!("direct"))
             // Build a ClientInfo target for each accepted connection. Refuse the
             // connection if it doesn't include an mTLS identity.
             .push_request_filter(ClientInfo::try_from)
