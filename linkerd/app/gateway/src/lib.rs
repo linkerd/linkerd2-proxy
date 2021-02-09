@@ -235,7 +235,7 @@ where
             tcp.into_inner(),
         )
         .push_switch(
-            |gw: GatewayConnection| match gw {
+            |gw| match gw {
                 GatewayConnection::Transported(t) => Ok::<_, Never>(svc::Either::A(t)),
                 GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
             },
