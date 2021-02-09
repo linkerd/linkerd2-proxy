@@ -44,8 +44,8 @@ impl<N> Outbound<N> {
             .push_on_response(
                 svc::layers()
                     // If the traffic split is empty/unavailable, eagerly fail
-                    // requests requests. When the split is in failfast, spawn
-                    // the service in a background task so it becomes ready without
+                    // requests. When the split is in failfast, spawn the
+                    // service in a background task so it becomes ready without
                     // new requests.
                     .push(svc::layer::mk(svc::SpawnReady::new))
                     .push(rt.metrics.stack.layer(crate::stack_labels("tcp", "server")))

@@ -1,6 +1,13 @@
 use super::HttpTarget;
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{dns, errors::HttpError, profiles, proxy::http, svc, tls, Error, NameAddr};
+use linkerd_app_core::{
+    dns,
+    errors::HttpError,
+    profiles,
+    proxy::http,
+    svc::{self, layer},
+    tls, Error, NameAddr,
+};
 use linkerd_app_outbound as outbound;
 use std::{
     future::Future,
@@ -33,6 +40,10 @@ pub(crate) type Target = (Option<profiles::Receiver>, HttpTarget);
 impl<O> NewGateway<O> {
     pub fn new(outbound: O, local_id: Option<tls::LocalId>) -> Self {
         Self { outbound, local_id }
+    }
+
+    pub fn layer(local_id: Option<tls::LocalId>) -> impl layer::Layer<O, Service = Self> + Clone {
+        layer::mk(move |outbound| Self::new(outbound, local_id.clone()))
     }
 }
 

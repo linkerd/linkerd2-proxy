@@ -9,6 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::time;
+use tracing::{debug, trace};
 
 #[derive(Clone, Debug, Default)]
 pub struct NewTransportHeaderServer<N> {
@@ -65,20 +66,24 @@ where
         let mut inner = self.inner.clone();
         let mut buf = BytesMut::with_capacity(1024 * 64);
         Box::pin(async move {
+            trace!("Reading transport header");
             let hdr = time::timeout(timeout, TransportHeader::read_prefaced(&mut io, &mut buf))
                 .await
                 .map_err(|_| {
+                    debug!("Transport header timed out");
                     io::Error::new(
                         io::ErrorKind::TimedOut,
                         "Reading a transport header timed out",
                     )
                 })??
                 .ok_or_else(|| {
+                    debug!("No transport header read");
                     io::Error::new(
                         io::ErrorKind::InvalidData,
                         "Connection did not include a transport header",
                     )
                 })?;
+            debug!(header = ?hdr, "Read transport header");
             inner
                 .new_service((hdr, target))
                 .oneshot(io::PrefixedIo::new(buf.freeze(), io))

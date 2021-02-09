@@ -9,6 +9,7 @@ use linkerd_app_core::{
     Conditional, Error, NameAddr, Never,
 };
 use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
+use tracing::debug_span;
 
 #[derive(Clone, Debug)]
 struct WithTransportHeaderAlpn(LocalCrtKey);
@@ -24,9 +25,17 @@ pub struct RefusedNoIdentity(());
 #[derive(Debug)]
 struct RefusedNoTarget;
 
+/// Gateway connections come in two variants: those with a transport header, and
+/// legacy connections, without a transport header.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GatewayConnection {
-    pub target: Option<NameAddr>,
+pub enum GatewayConnection {
+    TransportHeader(GatewayTransportHeader),
+    Legacy(ClientInfo),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GatewayTransportHeader {
+    pub target: NameAddr,
     pub protocol: Option<SessionProtocol>,
     pub client: ClientInfo,
 }
@@ -87,6 +96,7 @@ impl<T> Inbound<T> {
 
         let stack = tcp
             .check_new_service::<TcpEndpoint, FwdIo<I>>()
+            .instrument(|_: &TcpEndpoint| debug_span!("opaque"))
             // When the transport header is present, it may be used for either local
             // TCP forwarding, or we may be processing an HTTP gateway connection.
             // HTTP gateway connections that have a transport header must provide a
@@ -95,18 +105,20 @@ impl<T> Inbound<T> {
                 |(h, client): (TransportHeader, ClientInfo)| match h {
                     TransportHeader {
                         port,
+                        name: None,
                         protocol: None,
-                        ..
                     } => Ok(svc::Either::A(TcpEndpoint { port })),
                     TransportHeader {
                         port,
                         name: Some(name),
                         protocol,
-                    } => Ok(svc::Either::B(GatewayConnection {
-                        target: Some(NameAddr::from((name, port))),
-                        protocol,
-                        client,
-                    })),
+                    } => Ok(svc::Either::B(GatewayConnection::TransportHeader(
+                        GatewayTransportHeader {
+                            target: NameAddr::from((name, port)),
+                            protocol,
+                            client,
+                        },
+                    ))),
                     TransportHeader {
                         name: None,
                         protocol: Some(_),
@@ -118,6 +130,7 @@ impl<T> Inbound<T> {
                 svc::stack(gateway.clone())
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                     .check_new_service::<GatewayConnection, FwdIo<I>>()
+                    .instrument(|_: &GatewayConnection| debug_span!("gateway"))
                     .into_inner(),
             )
             // Use ALPN to determine whether a transport header should be read.
@@ -130,11 +143,7 @@ impl<T> Inbound<T> {
                     if client.header_negotiated() {
                         Ok::<_, Never>(svc::Either::A(client))
                     } else {
-                        Ok(svc::Either::B(GatewayConnection {
-                            client,
-                            target: None,
-                            protocol: None,
-                        }))
+                        Ok(svc::Either::B(GatewayConnection::Legacy(client)))
                     }
                 },
                 // TODO: Remove this after we have at least one stable release out
@@ -142,10 +151,12 @@ impl<T> Inbound<T> {
                 svc::stack(gateway)
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
+                    .instrument(|_: &GatewayConnection| debug_span!("legacy"))
                     .into_inner(),
             )
             .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
             .push(rt.metrics.transport.layer_accept())
+            .instrument(|_: &ClientInfo| debug_span!("direct"))
             // Build a ClientInfo target for each accepted connection. Refuse the
             // connection if it doesn't include an mTLS identity.
             .push_request_filter(ClientInfo::try_from)

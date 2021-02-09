@@ -199,13 +199,9 @@ impl Config {
             let gateway_stack = gateway::stack(
                 gateway,
                 inbound.clone(),
-                outbound
-                    .to_tcp_connect()
-                    .push_tcp_endpoint()
-                    .push_http_endpoint()
-                    .push_http_logical(dst.resolve.clone())
-                    .into_inner(),
+                outbound.to_tcp_connect(),
                 dst.profiles.clone(),
+                dst.resolve.clone(),
             );
 
             tokio::spawn(

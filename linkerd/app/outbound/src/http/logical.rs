@@ -101,13 +101,12 @@ impl<E> Outbound<E> {
                     ))
                     .into_inner(),
             ))
-            // Distribute requests over a distribution of balancers via a traffic
-            // split.
+            // Distribute requests over a distribution of balancers via a
+            // traffic split.
             //
-            // If the traffic split is empty/unavailable, eagerly fail
-            // requests requests. When the split is in failfast, spawn
-            // the service in a background task so it becomes ready without
-            // new requests.
+            // If the traffic split is empty/unavailable, eagerly fail requests.
+            // When the split is in failfast, spawn the service in a background
+            // task so it becomes ready without new requests.
             .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()
