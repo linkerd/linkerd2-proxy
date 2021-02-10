@@ -3,6 +3,7 @@ use futures::{prelude::*, ready};
 use indexmap::IndexSet;
 use linkerd_addr::Addr;
 use linkerd_error::Error;
+use linkerd_proxy_api_resolve::ConcreteAddr;
 use linkerd_stack::{layer, NewService, Param};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
@@ -58,7 +59,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
     T: Clone + Param<LogicalAddr> + Param<Option<Receiver>>,
-    N: NewService<(Option<Addr>, T), Service = S> + Clone,
+    N: NewService<(Option<ConcreteAddr>, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
@@ -91,7 +92,7 @@ where
                 for Target { weight, addr } in targets.into_iter() {
                     services.push(
                         addr.clone(),
-                        new_service.new_service((Some(addr.clone()), target.clone())),
+                        new_service.new_service((Some(ConcreteAddr(addr.clone())), target.clone())),
                     );
                     addrs.insert(addr);
                     weights.push(weight);
@@ -117,7 +118,7 @@ impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
     T: Clone + Param<LogicalAddr>,
-    N: NewService<(Option<Addr>, T), Service = S> + Clone,
+    N: NewService<(Option<ConcreteAddr>, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
@@ -158,9 +159,10 @@ where
                         // Reuse the prior services whenever possible.
                         if !prior_addrs.remove(&addr) {
                             debug!(%addr, "Creating target");
-                            let svc = inner
-                                .new_service
-                                .new_service((Some(addr.clone()), inner.target.clone()));
+                            let svc = inner.new_service.new_service((
+                                Some(ConcreteAddr(addr.clone())),
+                                inner.target.clone(),
+                            ));
                             inner.services.push(addr.clone(), svc);
                         } else {
                             trace!(%addr, "Target already exists");

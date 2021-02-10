@@ -1,7 +1,7 @@
 pub use crate::profile::Sender as ProfileSender;
 use futures::future;
 pub use linkerd_app_core::proxy::{
-    api_resolve::{Metadata, ProtocolHint, ResolveAddr},
+    api_resolve::{ConcreteAddr, Metadata, ProtocolHint},
     core::resolve::{Resolve, Update},
 };
 use linkerd_app_core::{
@@ -98,7 +98,7 @@ impl<E> Dst<E> {
     }
 }
 
-impl<T: Param<ResolveAddr>, E> tower::Service<T> for Dst<E> {
+impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
     type Response = DstReceiver<E>;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
     type Error = Error;
@@ -108,7 +108,7 @@ impl<T: Param<ResolveAddr>, E> tower::Service<T> for Dst<E> {
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let ResolveAddr(addr) = target.param();
+        let ConcreteAddr(addr) = target.param();
         let span = tracing::trace_span!("mock_resolver", ?addr);
         let _e = span.enter();
 

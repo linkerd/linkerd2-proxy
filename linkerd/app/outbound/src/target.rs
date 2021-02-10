@@ -1,7 +1,7 @@
 use linkerd_app_core::{
     metrics, profiles,
     proxy::{
-        api_resolve::{Metadata, ResolveAddr},
+        api_resolve::{ConcreteAddr, Metadata},
         resolve::map_endpoint::MapEndpoint,
     },
     svc::{self, stack::Param},
@@ -27,7 +27,7 @@ pub struct Logical<P> {
 
 #[derive(Clone, Debug)]
 pub struct Concrete<P> {
-    pub resolve: Addr,
+    pub resolve: ConcreteAddr,
     pub logical: Logical<P>,
 }
 
@@ -170,15 +170,15 @@ impl<P> Logical<P> {
 
 // === impl Concrete ===
 
-impl<P> From<(Addr, Logical<P>)> for Concrete<P> {
-    fn from((resolve, logical): (Addr, Logical<P>)) -> Self {
+impl<P> From<(ConcreteAddr, Logical<P>)> for Concrete<P> {
+    fn from((resolve, logical): (ConcreteAddr, Logical<P>)) -> Self {
         Self { resolve, logical }
     }
 }
 
-impl<P> Param<ResolveAddr> for Concrete<P> {
-    fn param(&self) -> ResolveAddr {
-        ResolveAddr(self.resolve.clone())
+impl<P> Param<ConcreteAddr> for Concrete<P> {
+    fn param(&self) -> ConcreteAddr {
+        self.resolve.clone()
     }
 }
 

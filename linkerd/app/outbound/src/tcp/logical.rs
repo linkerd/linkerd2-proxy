@@ -2,8 +2,12 @@ use super::{Concrete, Endpoint, Logical};
 use crate::{resolve, Outbound};
 use linkerd_app_core::{
     config, drain, io, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, tcp},
-    svc, tls, Addr, Conditional, Error,
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        tcp,
+    },
+    svc, tls, Conditional, Error,
 };
 use tracing::debug_span;
 
@@ -91,7 +95,7 @@ where
                     ))
                     .into_inner(),
             ))
-            .check_new_service::<(Option<Addr>, Logical), I>()
+            .check_new_service::<(Option<ConcreteAddr>, Logical), I>()
             .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()
