@@ -40,9 +40,6 @@ pub struct Endpoint<P> {
     pub logical: Logical<P>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct ShouldResolve;
-
 // === impl Accept ===
 
 impl<P> Param<SocketAddr> for Accept<P> {
@@ -146,6 +143,28 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
                 ),
             )
             .finish()
+    }
+}
+
+impl<P> Logical<P> {
+    pub fn or_endpoint(
+        reason: tls::NoClientTls,
+    ) -> impl Fn(Self) -> Result<svc::Either<Self, Endpoint<P>>, Error> + Copy {
+        move |logical: Self| {
+            let should_resolve = match logical.profile.as_ref() {
+                Some(p) => {
+                    let p = p.borrow();
+                    p.endpoint.is_none() && (p.name.is_some() || !p.targets.is_empty())
+                }
+                None => false,
+            };
+
+            if should_resolve {
+                Ok(svc::Either::A(logical))
+            } else {
+                Ok(svc::Either::B(Endpoint::from_logical(reason)(logical)))
+            }
+        }
     }
 }
 
@@ -292,28 +311,6 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
             metadata,
             logical: concrete.logical.clone(),
             target_addr: concrete.logical.orig_dst,
-        }
-    }
-}
-
-// === impl ShouldResolve ===
-
-impl<P> svc::Predicate<Logical<P>> for ShouldResolve {
-    type Request = svc::Either<Logical<P>, Logical<P>>;
-
-    fn check(&mut self, logical: Logical<P>) -> Result<Self::Request, Error> {
-        let should_resolve = match logical.profile.as_ref() {
-            Some(p) => {
-                let p = p.borrow();
-                p.endpoint.is_none() && (p.name.is_some() || !p.targets.is_empty())
-            }
-            None => false,
-        };
-
-        if should_resolve {
-            Ok(svc::Either::A(logical))
-        } else {
-            Ok(svc::Either::B(logical))
         }
     }
 }

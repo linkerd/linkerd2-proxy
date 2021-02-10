@@ -1,18 +1,14 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::{target::Endpoint, Outbound};
 use linkerd_app_core::{
-    io, svc, tls, transport::ConnectTcp, transport_header::SessionProtocol, Error, ProxyRuntime,
+    io, svc, tls, transport::ConnectTcp, transport_header::SessionProtocol, Error,
 };
 use tracing::debug_span;
 
-impl Outbound<ConnectTcp> {
-    pub fn new_tcp_connect(config: crate::Config, runtime: ProxyRuntime) -> Self {
-        let stack = svc::stack(ConnectTcp::new(config.proxy.connect.keepalive));
-        Self {
-            config,
-            runtime,
-            stack,
-        }
+impl Outbound<()> {
+    pub fn to_tcp_connect(&self) -> Outbound<ConnectTcp> {
+        let connect = ConnectTcp::new(self.config.proxy.connect.keepalive);
+        self.clone().with_stack(connect)
     }
 }
 

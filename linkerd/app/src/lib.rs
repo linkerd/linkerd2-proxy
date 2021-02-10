@@ -21,7 +21,6 @@ use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
-
 use tracing::instrument::Instrument;
 use tracing::{debug, error, info, info_span};
 
@@ -135,14 +134,28 @@ impl Config {
         let dst_addr = dst.addr.clone();
 
         let (inbound_addr, inbound_listen) = inbound.proxy.server.bind.bind()?;
-        let inbound_metrics = metrics.inbound;
+        let inbound = Inbound::new(
+            inbound,
+            ProxyRuntime {
+                identity: identity.local(),
+                metrics: metrics.inbound,
+                tap: tap.registry(),
+                span_sink: oc_collector.span_sink(),
+                drain: drain_rx.clone(),
+            },
+        );
 
         let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
-        let outbound_metrics = metrics.outbound;
-
-        let local_identity = identity.local();
-        let tap_registry = tap.registry();
-        let oc_span_sink = oc_collector.span_sink();
+        let outbound = Outbound::new(
+            outbound,
+            ProxyRuntime {
+                identity: identity.local(),
+                metrics: metrics.outbound,
+                tap: tap.registry(),
+                span_sink: oc_collector.span_sink(),
+                drain: drain_rx.clone(),
+            },
+        );
 
         let start_proxy = Box::pin(async move {
             let span = info_span!("outbound");
@@ -150,37 +163,26 @@ impl Config {
 
             info!(listen.addr = %outbound_addr, ingress_mode);
 
-            let outbound_rt = ProxyRuntime {
-                identity: local_identity.clone(),
-                metrics: outbound_metrics,
-                tap: tap_registry.clone(),
-                span_sink: oc_span_sink.clone(),
-                drain: drain_rx.clone(),
-            };
-
             if ingress_mode {
-                let tcp = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
+                let tcp = outbound
+                    .to_tcp_connect()
                     .push_tcp_endpoint()
                     .push_tcp_forward()
                     .into_inner();
-                let http = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
+                let http = outbound
+                    .to_tcp_connect()
                     .push_http_endpoint()
                     .push_http_logical(dst.resolve.clone())
                     .into_inner();
-                let server = outbound::ingress::new_service(
-                    outbound.clone(),
-                    outbound_rt.clone(),
-                    dst.profiles.clone(),
-                    tcp,
-                    http,
-                );
+                let server = outbound.to_ingress(dst.profiles.clone(), tcp, http);
                 tokio::spawn(
                     serve::serve(outbound_listen, server, drain_rx.clone().signaled())
                         .map_err(|e| panic!("outbound failed: {}", e))
                         .instrument(span.clone()),
                 );
             } else {
-                let server = Outbound::new_tcp_connect(outbound.clone(), outbound_rt.clone())
+                let server = outbound
+                    .to_tcp_connect()
                     .into_server(dst.resolve.clone(), dst.profiles.clone());
                 tokio::spawn(
                     serve::serve(outbound_listen, server, drain_rx.clone().signaled())
@@ -194,32 +196,18 @@ impl Config {
             let _inbound = span.enter();
             info!(listen.addr = %inbound_addr);
 
-            let inbound = Inbound::new_without_stack(
-                inbound,
-                ProxyRuntime {
-                    identity: local_identity,
-                    metrics: inbound_metrics,
-                    tap: tap_registry,
-                    span_sink: oc_span_sink,
-                    drain: drain_rx.clone(),
-                },
-            );
-
             let gateway_stack = gateway::stack(
                 gateway,
                 inbound.clone(),
-                Outbound::new_tcp_connect(outbound, outbound_rt)
-                    .push_tcp_endpoint()
-                    .push_http_endpoint()
-                    .push_http_logical(dst.resolve.clone())
-                    .into_inner(),
+                outbound.to_tcp_connect(),
                 dst.profiles.clone(),
+                dst.resolve.clone(),
             );
 
             tokio::spawn(
                 serve::serve(
                     inbound_listen,
-                    inbound.tcp_connect().into_server(
+                    inbound.to_tcp_connect().into_server(
                         inbound_addr.port(),
                         dst.profiles,
                         gateway_stack,

@@ -1,5 +1,5 @@
-pub mod balance;
 pub mod connect;
+pub mod logical;
 pub mod opaque_transport;
 #[cfg(test)]
 mod tests;

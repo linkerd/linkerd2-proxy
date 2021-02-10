@@ -54,14 +54,6 @@ pub struct Inbound<S> {
 // === impl Config ===
 
 impl<S> Inbound<S> {
-    fn new(config: Config, runtime: ProxyRuntime, stack: S) -> Self {
-        Self {
-            config,
-            runtime,
-            stack: svc::stack(stack),
-        }
-    }
-
     pub fn config(&self) -> &Config {
         &self.config
     }
@@ -70,26 +62,34 @@ impl<S> Inbound<S> {
         &self.runtime
     }
 
+    pub fn into_stack(self) -> svc::Stack<S> {
+        self.stack
+    }
+
     pub fn into_inner(self) -> S {
         self.stack.into_inner()
     }
 }
 
 impl Inbound<()> {
-    pub fn new_without_stack(config: Config, runtime: ProxyRuntime) -> Self {
-        Self::new(config, runtime, ())
-    }
-
-    pub fn with_stack<S>(self, stack: svc::Stack<S>) -> Inbound<S> {
-        Inbound {
-            config: self.config,
-            runtime: self.runtime,
-            stack,
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+        Self {
+            config,
+            runtime,
+            stack: svc::stack(()),
         }
     }
 
-    pub fn tcp_connect<T: Param<u16>>(
-        self,
+    pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
+        Inbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack: svc::stack(stack),
+        }
+    }
+
+    pub fn to_tcp_connect<T: Param<u16>>(
+        &self,
     ) -> Inbound<
         impl svc::Service<
                 T,
@@ -100,7 +100,7 @@ impl Inbound<()> {
     > {
         let Self {
             config, runtime, ..
-        } = self;
+        } = self.clone();
 
         // Establishes connections to remote peers (for both TCP
         // forwarding and HTTP proxying).

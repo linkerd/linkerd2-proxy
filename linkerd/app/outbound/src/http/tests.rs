@@ -70,12 +70,14 @@ fn build_accept<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let http = Outbound::new(cfg.clone(), rt.clone(), connect)
-        .push_http_endpoint()
-        .push_http_logical(resolver)
-        .push_http_server()
-        .into_inner();
-    crate::server::stack(cfg, rt, NoTcpBalancer, http)
+    let out = Outbound::new(cfg, rt);
+    out.clone().with_stack(NoTcpBalancer).push_detect_http(
+        out.with_stack(connect)
+            .push_http_endpoint()
+            .push_http_logical(resolver)
+            .push_http_server()
+            .into_inner(),
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -319,7 +321,8 @@ async fn stacks_idle_out() {
     let (rt, _drain_tx) = runtime();
     let accept = build_accept(cfg.clone(), rt.clone(), resolver, connect).into_inner();
     let (handle, accept) = track::new_service(accept);
-    let mut svc = Outbound::new(cfg, rt, accept)
+    let mut svc = Outbound::new(cfg, rt)
+        .with_stack(accept)
         .push_discover(profiles)
         .into_inner();
     assert_eq!(handle.tracked_services(), 0);
@@ -394,7 +397,8 @@ async fn active_stacks_dont_idle_out() {
     let (rt, _drain_tx) = runtime();
     let accept = build_accept(cfg.clone(), rt.clone(), resolver, connect).into_inner();
     let (handle, accept) = track::new_service(accept);
-    let mut svc = Outbound::new(cfg, rt, accept)
+    let mut svc = Outbound::new(cfg, rt)
+        .with_stack(accept)
         .push_discover(profiles)
         .into_inner();
     assert_eq!(handle.tracked_services(), 0);

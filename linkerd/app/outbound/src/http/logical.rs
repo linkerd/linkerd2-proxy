@@ -1,5 +1,5 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::{resolve, stack_labels, target::ShouldResolve, Outbound};
+use crate::{resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
     proxy::{api_resolve::Metadata, core::Resolve, http},
@@ -101,13 +101,12 @@ impl<E> Outbound<E> {
                     ))
                     .into_inner(),
             ))
-            // Distribute requests over a distribution of balancers via a traffic
-            // split.
+            // Distribute requests over a distribution of balancers via a
+            // traffic split.
             //
-            // If the traffic split is empty/unavailable, eagerly fail
-            // requests requests. When the split is in failfast, spawn
-            // the service in a background task so it becomes ready without
-            // new requests.
+            // If the traffic split is empty/unavailable, eagerly fail requests.
+            // When the split is in failfast, spawn the service in a background
+            // task so it becomes ready without new requests.
             .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()
@@ -116,6 +115,7 @@ impl<E> Outbound<E> {
                     .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity),
             )
+            .push_cache(cache_max_idle_age)
             // Note: routes can't exert backpressure.
             .push(profiles::http::route_request::layer(
                 svc::proxies()
@@ -147,12 +147,9 @@ impl<E> Outbound<E> {
             )
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
             .push_switch(
-                ShouldResolve,
+                Logical::or_endpoint(tls::NoClientTls::NotProvidedByServiceDiscovery),
                 svc::stack(endpoint)
                     .push_on_response(http::BoxRequest::layer())
-                    .push_map_target(Endpoint::from_logical(
-                        tls::NoClientTls::NotProvidedByServiceDiscovery,
-                    ))
                     .into_inner(),
             );
 

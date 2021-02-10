@@ -1,7 +1,7 @@
 use super::{Concrete, Endpoint, Logical};
 use crate::{resolve, Outbound};
 use linkerd_app_core::{
-    drain, io,
+    config, drain, io, profiles,
     proxy::{api_resolve::Metadata, core::Resolve, tcp},
     svc, tls, Addr, Conditional, Error,
 };
@@ -15,12 +15,12 @@ where
     C::Future: Send,
 {
     /// Constructs a TCP load balancer.
-    pub fn push_tcp_balance<I, R>(
+    pub fn push_tcp_logical<I, R>(
         self,
         resolve: R,
     ) -> Outbound<
         impl svc::NewService<
-                (Option<Addr>, Logical),
+                Logical,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
     >
@@ -36,8 +36,26 @@ where
             stack: connect,
         } = self;
 
-        let stack = connect
+        let config::ProxyConfig {
+            buffer_capacity,
+            cache_max_idle_age,
+            dispatch_timeout,
+            ..
+        } = config.proxy;
+
+        let endpoint = connect
             .clone()
+            .push_make_thunk()
+            .push(svc::MapErrLayer::new(Into::into))
+            .instrument(|t: &Endpoint| debug_span!("tcp.forward", server.addr = %t.addr))
+            .push_on_response(
+                svc::layers()
+                    .push(tcp::Forward::layer())
+                    .push(drain::Retain::layer(rt.drain.clone())),
+            )
+            .into_new_service();
+
+        let stack = connect
             .push_make_thunk()
             .instrument(|t: &Endpoint| match t.tls.as_ref() {
                 Conditional::Some(tls) => {
@@ -66,22 +84,34 @@ where
             .push_map_target(Concrete::from)
             // If there's no resolveable address, bypass the load balancer.
             .push(svc::UnwrapOr::layer(
-                connect
-                    .push_make_thunk()
-                    .push(svc::MapErrLayer::new(Into::into))
-                    .instrument(|t: &Endpoint| debug_span!("tcp.forward", server.addr = %t.addr))
-                    .push_on_response(
-                        svc::layers()
-                            .push(tcp::Forward::layer())
-                            .push(drain::Retain::layer(rt.drain.clone())),
-                    )
-                    .into_new_service()
+                endpoint
+                    .clone()
                     .push_map_target(Endpoint::from_logical(
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                     ))
                     .into_inner(),
             ))
-            .check_new_service::<(Option<Addr>, Logical), I>();
+            .check_new_service::<(Option<Addr>, Logical), I>()
+            .push(profiles::split::layer())
+            .push_on_response(
+                svc::layers()
+                    .push(
+                        rt.metrics
+                            .stack
+                            .layer(crate::stack_labels("tcp", "logical")),
+                    )
+                    .push(svc::layer::mk(svc::SpawnReady::new))
+                    .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
+                    .push_spawn_buffer(buffer_capacity),
+            )
+            .push_cache(cache_max_idle_age)
+            .check_new_service::<Logical, I>()
+            .push_switch(
+                Logical::or_endpoint(tls::NoClientTls::NotProvidedByServiceDiscovery),
+                endpoint.into_inner(),
+            )
+            .instrument(|_: &Logical| debug_span!("tcp"))
+            .check_new_service::<Logical, I>();
 
         Outbound {
             config,
