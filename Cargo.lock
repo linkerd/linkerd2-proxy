@@ -619,6 +619,7 @@ dependencies = [
 name = "linkerd-app-core"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "bytes",
  "futures",
  "http",

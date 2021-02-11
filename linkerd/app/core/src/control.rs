@@ -7,7 +7,8 @@ use crate::{
     transport::ConnectTcp,
     Addr, Error,
 };
-use futures::{future::Either, FutureExt};
+use async_stream::stream;
+use futures::future::Either;
 use std::fmt;
 use tokio::time;
 use tracing::warn;
@@ -75,9 +76,18 @@ impl Config {
                     } = e.kind()
                     {
                         let ttl = time::Duration::from_secs(*ttl_secs as u64);
-                        return Ok(Either::Left(Box::pin(time::sleep(ttl)).into_stream()));
+                        let stream = stream! {
+                            loop {
+                                time::sleep(ttl).await;
+                                yield;
+                            }
+                        };
+                        return Ok(Either::Left(Box::pin(stream)));
                     }
                 }
+
+                // If the error didn't give us a TTL, use the default jittered
+                // backoff.
                 Ok(Either::Right(backoff.stream()))
             }
         };

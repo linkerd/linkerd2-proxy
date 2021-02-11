@@ -16,6 +16,7 @@ independently of the inbound and outbound proxy logic.
 mock-orig-dst  = ["linkerd-proxy-transport/mock-orig-dst"]
 
 [dependencies]
+async-stream = "0.3"
 bytes = "1"
 http = "0.2"
 http-body = "0.4"
