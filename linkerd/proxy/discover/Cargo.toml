@@ -30,4 +30,4 @@ features = ["discover"]
 [dev-dependencies]
 async-stream = "0.3"
 tokio = { version = "1", features = ["macros", "rt"] }
-tower = { version = "0.4.1", default-features = false, features = ["discover", "util"]}
+tower = { version = "0.4.5", default-features = false, features = ["discover", "util"]}
