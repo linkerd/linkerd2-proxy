@@ -7,7 +7,10 @@ use crate::{
     transport::ConnectTcp,
     Addr, Error,
 };
+use futures::{future::Either, FutureExt};
 use std::fmt;
+use tokio::time;
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -54,16 +57,37 @@ impl Config {
         B::Error: Into<Error> + Send + Sync,
         L: Clone + Param<tls::client::Config> + Send + 'static,
     {
-        let backoff = {
+        let connect_backoff = {
             let backoff = self.connect.backoff;
             move |_| Ok(backoff.stream())
         };
+
+        // When a DNS resolution fails, log the error and use the TTL, if there
+        // is one, to drive re-resolution attempts.
+        let resolve_backoff = {
+            let backoff = self.connect.backoff;
+            move |error: Error| {
+                warn!(%error, "Failed to resolve control-plane component");
+                if let Some(e) = error.downcast_ref::<dns::ResolveError>() {
+                    if let dns::ResolveErrorKind::NoRecordsFound {
+                        negative_ttl: Some(ttl_secs),
+                        ..
+                    } = e.kind()
+                    {
+                        let ttl = time::Duration::from_secs(*ttl_secs as u64);
+                        return Ok(Either::Left(Box::pin(time::sleep(ttl)).into_stream()));
+                    }
+                }
+                Ok(Either::Right(backoff.stream()))
+            }
+        };
+
         svc::stack(ConnectTcp::new(self.connect.keepalive))
             .push(tls::Client::layer(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push(reconnect::layer(backoff))
-            .push(self::resolve::layer(dns, backoff))
+            .push(reconnect::layer(connect_backoff))
+            .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()
             .push(metrics.to_layer::<classify::Response, _>())
