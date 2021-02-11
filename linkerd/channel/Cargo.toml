@@ -11,6 +11,7 @@ A bounded MPSC channel where senders expose a `poll_ready` method.
 
 [dependencies]
 tokio = { version = "1", features = ["sync", "time"] }
+tokio-util = { version = "0.6.3" }
 futures = "0.3.9"
 
 [dev-dependencies]

@@ -1,8 +1,9 @@
 use futures::{future, ready, Stream};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
-use std::{fmt, future::Future, mem, pin::Pin};
-use tokio::sync::{mpsc, AcquireError, OwnedSemaphorePermit as Permit, Semaphore};
+use std::{fmt, pin::Pin};
+use tokio::sync::{mpsc, OwnedSemaphorePermit as Permit, Semaphore};
+use tokio_util::sync::PollSemaphore;
 
 use self::error::{SendError, TrySendError};
 pub use tokio::sync::mpsc::error;
@@ -23,8 +24,8 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     };
     let tx = Sender {
         tx,
-        semaphore,
-        state: State::Empty,
+        semaphore: PollSemaphore::new(semaphore),
+        permit: None,
     };
     (tx, rx)
 }
@@ -36,8 +37,8 @@ pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
 /// driving it to readiness.
 pub struct Sender<T> {
     tx: mpsc::UnboundedSender<(T, Permit)>,
-    semaphore: Arc<Semaphore>,
-    state: State,
+    semaphore: PollSemaphore,
+    permit: Option<Permit>,
 }
 
 /// A bounded MPSC receiver.
@@ -48,26 +49,14 @@ pub struct Receiver<T> {
     semaphore: Weak<Semaphore>,
 }
 
-enum State {
-    Waiting(Pin<Box<dyn Future<Output = Result<Permit, AcquireError>> + Send + Sync>>),
-    Acquired(Permit),
-    Empty,
-}
-
 impl<T> Sender<T> {
     pub fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), SendError<()>>> {
-        loop {
-            self.state = match self.state {
-                State::Empty => State::Waiting(Box::pin(self.semaphore.clone().acquire_owned())),
-                State::Waiting(ref mut f) => {
-                    State::Acquired(ready!(Pin::new(f).poll(cx).map_err(|_| SendError(())))?)
-                }
-                State::Acquired(_) if self.tx.is_closed() => {
-                    return Poll::Ready(Err(SendError(())))
-                }
-                State::Acquired(_) => return Poll::Ready(Ok(())),
-            }
+        if self.permit.is_some() {
+            return Poll::Ready(Ok(()));
         }
+        let permit = ready!(self.semaphore.poll_acquire(cx)).ok_or(SendError(()))?;
+        self.permit = Some(permit);
+        Poll::Ready(Ok(()))
     }
 
     pub async fn ready(&mut self) -> Result<(), SendError<()>> {
@@ -78,22 +67,19 @@ impl<T> Sender<T> {
         if self.tx.is_closed() {
             return Err(TrySendError::Closed(value));
         }
-        self.state = match mem::replace(&mut self.state, State::Empty) {
-            // Have we previously acquired a permit?
-            State::Acquired(permit) => {
-                self.send2(value, permit);
-                return Ok(());
-            }
-            // Okay, can we acquire a permit now?
-            State::Empty => {
-                if let Ok(permit) = self.semaphore.clone().try_acquire_owned() {
-                    self.send2(value, permit);
-                    return Ok(());
-                }
-                State::Empty
-            }
-            state => state,
-        };
+
+        // Have we previously acquired a permit?
+        if let Some(permit) = self.permit.take() {
+            self.send2(value, permit);
+            return Ok(());
+        }
+
+        // Okay, can we acquire a permit now?
+        if let Ok(permit) = self.semaphore.clone_inner().try_acquire_owned() {
+            self.send2(value, permit);
+            return Ok(());
+        }
+
         Err(TrySendError::Full(value))
     }
 
@@ -101,13 +87,13 @@ impl<T> Sender<T> {
         if self.ready().await.is_err() {
             return Err(SendError(value));
         }
-        match mem::replace(&mut self.state, State::Empty) {
-            State::Acquired(permit) => {
-                self.send2(value, permit);
-                Ok(())
-            }
-            state => panic!("unexpected state after poll_ready: {:?}", state),
-        }
+
+        let permit = self
+            .permit
+            .take()
+            .expect("permit must be acquired if poll_ready returned ready");
+        self.send2(value, permit);
+        Ok(())
     }
 
     fn send2(&mut self, value: T, permit: Permit) {
@@ -120,7 +106,7 @@ impl<T> Clone for Sender<T> {
         Self {
             tx: self.tx.clone(),
             semaphore: self.semaphore.clone(),
-            state: State::Empty,
+            permit: None,
         }
     }
 }
@@ -129,7 +115,7 @@ impl<T> fmt::Debug for Sender<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Sender")
             .field("message_type", &std::any::type_name::<T>())
-            .field("state", &self.state)
+            .field("permit", &self.permit)
             .field("semaphore", &self.semaphore)
             .finish()
     }
@@ -169,20 +155,5 @@ impl<T> fmt::Debug for Receiver<T> {
             .field("message_type", &std::any::type_name::<T>())
             .field("semaphore", &self.semaphore)
             .finish()
-    }
-}
-
-// === impl State ===
-
-impl fmt::Debug for State {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(
-            match self {
-                State::Acquired(_) => "State::Acquired(..)",
-                State::Waiting(_) => "State::Waiting(..)",
-                State::Empty => "State::Empty",
-            },
-            f,
-        )
     }
 }
