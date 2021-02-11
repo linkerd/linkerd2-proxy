@@ -825,6 +825,7 @@ dependencies = [
  "futures",
  "tokio",
  "tokio-test",
+ "tokio-util",
 ]
 
 [[package]]
