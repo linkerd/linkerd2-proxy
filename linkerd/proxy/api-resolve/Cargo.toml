@@ -12,8 +12,11 @@ Implements the Resolve trait using the proxy's gRPC API
 [dependencies]
 async-stream = "0.3"
 futures = "0.3.9"
+linkerd-addr = { path = "../../addr" }
+linkerd-error = { path = "../../error" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18" }
 linkerd-proxy-core = { path = "../core" }
+linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 http = "0.2"
 http-body = "0.4"

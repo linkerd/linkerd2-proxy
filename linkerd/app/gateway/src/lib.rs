@@ -12,7 +12,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport_header::SessionProtocol,
-    Addr, Error, NameAddr, NameMatch, Never,
+    Error, NameAddr, NameMatch, Never,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
@@ -80,12 +80,16 @@ where
     <O as svc::Service<outbound::tcp::Endpoint>>::Response:
         io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
     <O as svc::Service<outbound::tcp::Endpoint>>::Future: Send + Unpin + 'static,
-    P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + Unpin + 'static,
+    P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
-    R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + Sync + Unpin + 'static,
-    R::Resolution: Send,
-    R::Future: Send + Unpin,
+    R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>
+        + Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
+    R: Clone + Send + Sync + Unpin + 'static,
+    <R as Resolve<outbound::http::Concrete>>::Resolution: Send,
+    <R as Resolve<outbound::http::Concrete>>::Future: Send + Unpin,
+    <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
+    <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
 {
     let ProxyConfig {
         buffer_capacity,
@@ -122,7 +126,7 @@ where
             let allow = allow_discovery.clone();
             move |addr: NameAddr| {
                 if allow.matches(addr.name()) {
-                    Ok(addr)
+                    Ok(profiles::LogicalAddr(addr.into()))
                 } else {
                     Err(RefusedNotResolved(addr))
                 }
@@ -157,7 +161,7 @@ where
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
             if allow_discovery.matches(t.target.name()) {
-                Ok(t.target)
+                Ok(profiles::LogicalAddr(t.target.into()))
             } else {
                 Err(RefusedNotResolved(t.target))
             }
@@ -244,17 +248,6 @@ where
             legacy_http,
         )
         .into_inner()
-}
-
-// === impl HttpTarget ===
-
-impl From<HttpTransportHeader> for HttpTarget {
-    fn from(t: HttpTransportHeader) -> Self {
-        Self {
-            version: t.version,
-            target: t.target,
-        }
-    }
 }
 
 // === impl HttpTransportHeader ===

@@ -14,7 +14,7 @@ use linkerd_app_core::{
     svc::{self, NewService},
     tls,
     transport::listen,
-    Addr, Error, ProxyRuntime,
+    Error, ProxyRuntime,
 };
 use std::{
     net::SocketAddr,
@@ -30,8 +30,8 @@ use tracing::Instrument;
 fn build_server<I>(
     cfg: Config,
     rt: ProxyRuntime,
-    profiles: resolver::Profiles<SocketAddr>,
-    resolver: resolver::Dst<Addr, resolver::Metadata>,
+    profiles: resolver::Profiles,
+    resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
     listen::Addrs,
@@ -55,7 +55,7 @@ where
 fn build_accept<I>(
     cfg: Config,
     rt: ProxyRuntime,
-    resolver: resolver::Dst<Addr, resolver::Metadata>,
+    resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
 ) -> Outbound<
     impl svc::NewService<
@@ -148,7 +148,7 @@ async fn profile_endpoint_propagates_conn_errors() {
         })
         .expect("still listening to profiles");
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
 
     // Build the outbound server
     let (rt, shutdown) = runtime();
@@ -253,7 +253,7 @@ async fn meshed_hello_world() {
         },
     );
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
     let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
     dst.add(Some((ep1, meta.clone())))
         .expect("still listening to resolution");
@@ -312,7 +312,7 @@ async fn stacks_idle_out() {
         },
     );
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
     let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
     dst.add(Some((ep1, meta.clone())))
         .expect("still listening to resolution");
@@ -388,7 +388,7 @@ async fn active_stacks_dont_idle_out() {
         },
     );
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
     let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
     dst.add(Some((ep1, meta.clone())))
         .expect("still listening to resolution");
@@ -466,7 +466,7 @@ async fn unmeshed_hello_world(
     let profile_tx = profiles.profile_tx(ep1);
     profile_tx.send(profile::Profile::default()).unwrap();
 
-    let resolver = support::resolver::<Addr, support::resolver::Metadata>();
+    let resolver = support::resolver::<support::resolver::Metadata>();
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();

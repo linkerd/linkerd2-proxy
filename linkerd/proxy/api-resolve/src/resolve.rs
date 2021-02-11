@@ -1,12 +1,15 @@
-use crate::api::destination as api;
-use crate::core::resolve::{self, Update};
-use crate::metadata::Metadata;
-use crate::pb;
+use crate::{
+    api::destination as api,
+    core::resolve::{self, Update},
+    metadata::Metadata,
+    pb, ConcreteAddr,
+};
 use api::destination_client::DestinationClient;
 use async_stream::try_stream;
 use futures::prelude::*;
 use http_body::Body as HttpBody;
-use std::error::Error;
+use linkerd_error::Error;
+use linkerd_stack::Param;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tonic::{
@@ -28,10 +31,10 @@ pub struct Resolve<S> {
 impl<S> Resolve<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
+    S::Error: Into<Error> + Send,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
 {
     pub fn new(svc: S, context_token: String) -> Self {
@@ -50,12 +53,12 @@ type ResolveFuture =
 
 impl<T, S> Service<T> for Resolve<S>
 where
-    T: ToString,
+    T: Param<ConcreteAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::Error: Into<Box<dyn Error + Send + Sync>> + Send,
+    S::Error: Into<Error> + Send,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error: Into<Box<dyn Error + Send + Sync + 'static>> + Send,
+    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     S::Future: Send,
 {
     type Response = UpdatesStream;
@@ -67,11 +70,11 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let path = target.to_string();
-        debug!(dst = %path, context = %self.context_token, "Resolving");
+        let ConcreteAddr(addr) = target.param();
+        debug!(dst = %addr, context = %self.context_token, "Resolving");
 
         let req = api::GetDestination {
-            path,
+            path: addr.to_string(),
             context_token: self.context_token.clone(),
             ..Default::default()
         };

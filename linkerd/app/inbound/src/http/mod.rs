@@ -14,7 +14,7 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     svc::{self, stack::Param},
-    Error, NameAddr, DST_OVERRIDE_HEADER,
+    Error, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -115,7 +115,7 @@ where
             > + Clone,
     >
     where
-        P: profiles::GetProfile<NameAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
     {

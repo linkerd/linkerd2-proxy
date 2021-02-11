@@ -3,7 +3,7 @@ use crate::{resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
     proxy::{api_resolve::Metadata, core::Resolve, http},
-    retry, svc, tls, Addr, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    retry, svc, tls, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -31,7 +31,7 @@ impl<E> Outbound<E> {
             + 'static,
         ESvc::Error: Into<Error>,
         ESvc::Future: Send,
-        R: Resolve<Addr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+        R: Resolve<Concrete, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {

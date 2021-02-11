@@ -1,6 +1,6 @@
 #![allow(warnings)]
 
-use crate::target::{Concrete, EndpointFromMetadata};
+use crate::target::{Concrete, Endpoint, EndpointFromMetadata};
 use futures::{future, prelude::*, stream};
 use linkerd_app_core::{
     discovery_rejected, is_discovery_rejected,
@@ -24,54 +24,28 @@ use std::{
     time::Duration,
 };
 
-type ResolveStack<R> =
-    map_endpoint::Resolve<EndpointFromMetadata, Filter<ResolveService<R>, ToAddr>>;
+type Stack<P, R, N> =
+    Buffer<discover::Stack<N, map_endpoint::Resolve<EndpointFromMetadata, R>, Endpoint<P>>>;
 
-fn new_resolve<T, R>(resolve: R) -> ResolveStack<R>
-where
-    EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata>,
-    R: Resolve<Addr, Endpoint = Metadata>,
-    R::Future: Send,
-    R::Resolution: Send,
-{
-    map_endpoint::Resolve::new(
-        EndpointFromMetadata,
-        Filter::new(resolve.into_service(), ToAddr),
-    )
-}
-
-type Stack<E, R, N> = Buffer<discover::Stack<N, ResolveStack<R>, E>>;
-
-pub fn layer<T, E, R, N>(
+pub fn layer<P, R, N>(
     resolve: R,
     watchdog: Duration,
-) -> impl layer::Layer<N, Service = Stack<E, R, N>> + Clone
+) -> impl layer::Layer<N, Service = Stack<P, R, N>> + Clone
 where
-    R: Resolve<Addr, Endpoint = Metadata> + Clone,
+    P: Copy + Send + std::fmt::Debug,
+    R: Resolve<Concrete<P>, Endpoint = Metadata> + Clone,
     R::Resolution: Send,
     R::Future: Send,
-    EndpointFromMetadata: map_endpoint::MapEndpoint<T, Metadata, Out = E>,
-    ResolveStack<R>: Resolve<T, Endpoint = E> + Clone,
-    N: NewService<E>,
+    N: NewService<Endpoint<P>>,
 {
     const ENDPOINT_BUFFER_CAPACITY: usize = 1_000;
 
-    let resolve = new_resolve(resolve);
+    let to_endpoint = EndpointFromMetadata;
     layer::mk(move |new_endpoint| {
-        let endpoints = discover::resolve(new_endpoint, resolve.clone());
+        let endpoints = discover::resolve(
+            new_endpoint,
+            map_endpoint::Resolve::new(to_endpoint, resolve.clone()),
+        );
         Buffer::new(ENDPOINT_BUFFER_CAPACITY, watchdog, endpoints)
     })
-}
-
-#[derive(Clone, Debug)]
-pub struct ToAddr;
-
-// === impl ToAddr ===
-
-impl<P> Predicate<Concrete<P>> for ToAddr {
-    type Request = Addr;
-
-    fn check(&mut self, target: Concrete<P>) -> Result<Addr, Error> {
-        Ok(target.resolve)
-    }
 }
