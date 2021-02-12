@@ -26,11 +26,6 @@ pub trait ConfigureResolver {
 struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
-    // When the DNS library does not return a TTL, we must assume one to prevent
-    // tight-looping. In practice, default kubernetes configs appear to have a
-    // 5s TTL, so we mirror that default here.
-    const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(5);
-
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -83,42 +78,22 @@ impl Resolver {
         name: &Name,
     ) -> Result<(Vec<net::IpAddr>, time::Sleep), ResolveError> {
         debug!(%name, "resolve_a");
-        match self.dns.lookup_ip(name.as_ref()).await {
-            Ok(lookup) => {
-                let valid_until = Instant::from_std(lookup.valid_until());
-                let ips = lookup.iter().collect::<Vec<_>>();
-                Ok((ips, time::sleep_until(valid_until)))
-            }
-            Err(e) => Self::handle_error(e),
-        }
+        let lookup = self.dns.lookup_ip(name.as_ref()).await?;
+        let valid_until = Instant::from_std(lookup.valid_until());
+        let ips = lookup.iter().collect::<Vec<_>>();
+        Ok((ips, time::sleep_until(valid_until)))
     }
 
     async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         debug!(%name, "resolve_srv");
-        match self.dns.srv_lookup(name.as_ref()).await {
-            Ok(srv) => {
-                let valid_until = Instant::from_std(srv.as_lookup().valid_until());
-                let addrs = srv
-                    .into_iter()
-                    .map(Self::srv_to_socket_addr)
-                    .collect::<Result<_, InvalidSrv>>()?;
-                debug!(?addrs);
-                Ok((addrs, time::sleep_until(valid_until)))
-            }
-            Err(e) => Self::handle_error(e).map_err(Into::into),
-        }
-    }
-
-    fn handle_error<T>(e: ResolveError) -> Result<(Vec<T>, time::Sleep), ResolveError> {
-        match e.kind() {
-            ResolveErrorKind::NoRecordsFound { negative_ttl, .. } => {
-                let expiry = negative_ttl
-                    .map(|t| std::time::Duration::from_secs(t as u64))
-                    .unwrap_or(Self::DEFAULT_TTL);
-                Ok((vec![], time::sleep(expiry)))
-            }
-            _ => Err(e),
-        }
+        let srv = self.dns.srv_lookup(name.as_ref()).await?;
+        let valid_until = Instant::from_std(srv.as_lookup().valid_until());
+        let addrs = srv
+            .into_iter()
+            .map(Self::srv_to_socket_addr)
+            .collect::<Result<_, InvalidSrv>>()?;
+        debug!(?addrs);
+        Ok((addrs, time::sleep_until(valid_until)))
     }
 
     // XXX We need to convert the SRV records to an IP addr manually,
