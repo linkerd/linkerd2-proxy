@@ -7,8 +7,8 @@ use crate::{
     transport::ConnectTcp,
     Addr, Error,
 };
-use async_stream::stream;
-use futures::future::Either;
+use futures::{future::Either, StreamExt};
+use linkerd_channel::into_stream::IntoStream;
 use std::fmt;
 use tokio::time;
 use tracing::warn;
@@ -76,13 +76,7 @@ impl Config {
                     } = e.kind()
                     {
                         let ttl = time::Duration::from_secs(*ttl_secs as u64);
-                        let stream = stream! {
-                            loop {
-                                time::sleep(ttl).await;
-                                yield;
-                            }
-                        };
-                        return Ok(Either::Left(Box::pin(stream)));
+                        return Ok(Either::Left(time::interval(ttl).into_stream().map(|_| ())));
                     }
                 }
 
