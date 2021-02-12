@@ -44,7 +44,7 @@ jobs:
       - run: make lint
 
   check:
-    timeout-minutes: 15
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.49.0-buster
