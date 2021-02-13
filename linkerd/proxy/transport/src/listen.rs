@@ -1,7 +1,7 @@
-use async_stream::try_stream;
 use futures::prelude::*;
 use std::{io, net::SocketAddr, time::Duration};
 use tokio::net::TcpStream;
+use tokio_stream::wrappers::TcpListenerStream;
 use tracing::trace;
 
 /// A mockable source for address info, i.e., for tests.
@@ -65,37 +65,40 @@ impl<A: OrigDstAddr> BindTcp<A> {
     }
 
     pub fn bind(&self) -> io::Result<(SocketAddr, impl Stream<Item = io::Result<Connection>>)> {
-        let listen = std::net::TcpListener::bind(self.bind_addr)?;
-        // Ensure that O_NONBLOCK is set on the socket before using it with Tokio.
-        listen.set_nonblocking(true)?;
+        let listen = {
+            let l = std::net::TcpListener::bind(self.bind_addr)?;
+            // Ensure that O_NONBLOCK is set on the socket before using it with Tokio.
+            l.set_nonblocking(true)?;
+            tokio::net::TcpListener::from_std(l).expect("listener must be valid")
+        };
         let addr = listen.local_addr()?;
         let keepalive = self.keepalive;
         let get_orig = self.orig_dst_addr.clone();
 
-        let accept = try_stream! {
-            tokio::pin! {
-                // The tokio listener is built lazily so that it is initialized on
-                // the proper runtime.
-                let listen = tokio::net::TcpListener::from_std(listen).expect("listener must be valid");
-            };
-
-            while let (tcp, peer_addr) = listen.accept().await? {
-                super::set_nodelay_or_warn(&tcp);
-                super::set_keepalive_or_warn(&tcp, keepalive);
-
-                let local_addr = tcp.local_addr()?;
-                let orig_dst = get_orig.orig_dst_addr(&tcp);
-                trace!(
-                    local.addr = %local_addr,
-                    peer.addr = %peer_addr,
-                    orig.addr = ?orig_dst,
-                    "Accepted",
-                );
-                yield (Addrs::new(local_addr, peer_addr, orig_dst), tcp);
-            }
-        };
+        let accept = TcpListenerStream::new(listen)
+            .and_then(move |tcp| future::ready(Self::accept(tcp, keepalive, get_orig.clone())));
 
         Ok((addr, accept))
+    }
+
+    fn accept(tcp: TcpStream, keepalive: Option<Duration>, get_orig: A) -> io::Result<Connection> {
+        let addrs = {
+            let local_addr = tcp.local_addr()?;
+            let peer_addr = tcp.peer_addr()?;
+            let orig_dst = get_orig.orig_dst_addr(&tcp);
+            trace!(
+                local.addr = %local_addr,
+                peer.addr = %peer_addr,
+                orig.addr = ?orig_dst,
+                "Accepted",
+            );
+            Addrs::new(local_addr, peer_addr, orig_dst)
+        };
+
+        super::set_nodelay_or_warn(&tcp);
+        super::set_keepalive_or_warn(&tcp, keepalive);
+
+        Ok((addrs, tcp))
     }
 }
 
