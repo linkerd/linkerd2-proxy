@@ -83,16 +83,16 @@ impl<A: OrigDstAddr> BindTcp<A> {
 
     fn accept(tcp: TcpStream, keepalive: Option<Duration>, get_orig: A) -> io::Result<Connection> {
         let addrs = {
-            let local_addr = tcp.local_addr()?;
-            let peer_addr = tcp.peer_addr()?;
+            let local = tcp.local_addr()?;
+            let peer = tcp.peer_addr()?;
             let orig_dst = get_orig.orig_dst_addr(&tcp);
             trace!(
-                local.addr = %local_addr,
-                peer.addr = %peer_addr,
+                local.addr = %local,
+                peer.addr = %peer,
                 orig.addr = ?orig_dst,
                 "Accepted",
             );
-            Addrs::new(local_addr, peer_addr, orig_dst)
+            Addrs::new(local, peer, orig_dst)
         };
 
         super::set_nodelay_or_warn(&tcp);
