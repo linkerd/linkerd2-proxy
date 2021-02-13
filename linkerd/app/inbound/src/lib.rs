@@ -24,12 +24,13 @@ use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     detect, drain, io, metrics, profiles,
     proxy::tcp,
+    serve,
     svc::{self, stack::Param},
     tls,
     transport::{self, listen},
     Error, NameMatch, ProxyRuntime,
 };
-use std::{fmt::Debug, time::Duration};
+use std::{fmt::Debug, future::Future, net::SocketAddr, time::Duration};
 use tracing::debug_span;
 
 #[derive(Clone, Debug)]
@@ -119,6 +120,44 @@ impl Inbound<()> {
             runtime,
             stack,
         }
+    }
+
+    pub fn serve<G, GSvc, P>(
+        self,
+        profiles: P,
+        gateway: G,
+    ) -> (SocketAddr, impl Future<Output = ()> + Send)
+    where
+        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
+        G: Clone + Send + Sync + Unpin + 'static,
+        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<tokio::net::TcpStream>>, Response = ()>
+            + Send
+            + 'static,
+        GSvc::Error: Into<Error>,
+        GSvc::Future: Send,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+        P::Error: Send,
+        P::Future: Send,
+    {
+        let (listen_addr, listen) = self
+            .config
+            .proxy
+            .server
+            .bind
+            .bind()
+            .expect("Failed to bind inbound listener");
+
+        let serve = async move {
+            let stack = self
+                .to_tcp_connect()
+                .into_server(listen_addr.port(), profiles, gateway);
+            let shutdown = self.runtime.drain.signaled();
+            serve::serve(listen, stack, shutdown)
+                .await
+                .expect("Inbound server failed");
+        };
+
+        (listen_addr, serve)
     }
 }
 

@@ -56,6 +56,7 @@ impl Outbound<()> {
                     cache_max_idle_age,
                     ..
                 },
+            ..
         } = self.config.clone();
         let allow = AllowHttpProfile(allow_discovery);
 

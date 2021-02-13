@@ -17,6 +17,7 @@ const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
 pub fn default_config(orig_dst: SocketAddr) -> Config {
     Config {
+        ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
