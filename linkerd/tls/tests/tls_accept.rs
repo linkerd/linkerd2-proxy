@@ -22,14 +22,15 @@ use tower::{
 };
 use tracing::instrument::Instrument;
 
-#[test]
-fn plaintext() {
+#[tokio::test]
+async fn plaintext() {
     let (client_result, server_result) = run_test(
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
         |conn| write_then_read(conn, PING),
         None,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
-    );
+    )
+    .await;
     assert_eq!(
         client_result.tls,
         Some(Conditional::None(
@@ -44,8 +45,8 @@ fn plaintext() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[test]
-fn proxy_to_proxy_tls_works() {
+#[tokio::test]
+async fn proxy_to_proxy_tls_works() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
     let client_tls = id::test_util::BAR_NS1.validate().unwrap();
     let server_id = tls::ServerId(server_tls.name().clone());
@@ -54,7 +55,8 @@ fn proxy_to_proxy_tls_works() {
         |conn| write_then_read(conn, PING),
         Some(server_tls),
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
-    );
+    )
+    .await;
     assert_eq!(
         client_result.tls,
         Some(Conditional::Some(tls::ClientTls {
@@ -73,8 +75,8 @@ fn proxy_to_proxy_tls_works() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[test]
-fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
+#[tokio::test]
+async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
 
     // Misuse the client's identity instead of the server's identity. Any
@@ -89,7 +91,8 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
         |conn| write_then_read(conn, PING),
         Some(server_tls),
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
-    );
+    )
+    .await;
 
     // The server's connection will succeed with the TLS client hello passed
     // through, because the SNI doesn't match its identity.
@@ -114,7 +117,7 @@ struct Transported<I, R> {
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
-fn run_test<C, CF, CR, S, SF, SR>(
+async fn run_test<C, CF, CR, S, SF, SR>(
     client_tls: Conditional<(id::CrtKey, tls::ServerId), tls::NoClientTls>,
     client: C,
     server_tls: Option<id::CrtKey>,
@@ -157,8 +160,6 @@ where
         // a fixed port.
         let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
 
-        let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
-
         let mut detect = tls::NewDetectTls::new(
             server_tls.map(Tls),
             move |meta: tls::server::Meta<Addrs>| {
@@ -185,6 +186,7 @@ where
             std::time::Duration::from_secs(10),
         );
 
+        let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
             let (meta, io) = listen
@@ -237,9 +239,7 @@ where
         (client, receiver)
     };
 
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(futures::future::join(server, client).map(|_| ()));
+    futures::future::join(server, client).await;
 
     let client_result = client_result.try_recv().expect("client complete");
 
