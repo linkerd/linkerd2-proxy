@@ -1,4 +1,5 @@
 use super::*;
+use linkerd_app_core::svc;
 use std::{future::Future, pin::Pin, task::Poll, thread};
 use tracing::instrument::Instrument;
 
@@ -301,11 +302,9 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                     .build()
                     .expect("proxy")
                     .block_on(async move {
-                        let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
-                        let main = config
-                            .build(shutdown_tx, trace_handle)
-                            .await
-                            .expect("config");
+                        // TODO use a mock connector
+                        let connect = svc::ConnectTcp::new();
+                        let main = config.build(connect, trace_handle).await.expect("config");
 
                         // slip the running tx into the shutdown future, since the first time
                         // the shutdown future is polled, that means all of the proxy is now
@@ -334,7 +333,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                             _ = on_shutdown => {
                                 debug!("after on_shutdown");
                             }
-                            _ = shutdown_rx.recv() => {}
                         }
 
                         drain.drain().await;

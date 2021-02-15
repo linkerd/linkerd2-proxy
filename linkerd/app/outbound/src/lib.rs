@@ -18,7 +18,7 @@ use linkerd_app_core::{
     config::ProxyConfig,
     io, metrics, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
-    serve, svc, tls,
+    serve, svc,
     transport::listen,
     AddrMatch, Error, ProxyRuntime,
 };
@@ -88,7 +88,9 @@ impl<S> Outbound<S> {
             stack: self.stack.push(layer),
         }
     }
+}
 
+impl<C> Outbound<C> {
     pub fn into_server<R, P, I>(
         self,
         resolve: R,
@@ -98,20 +100,12 @@ impl<S> Outbound<S> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        S: svc::Service<http::Endpoint, Error = io::Error>
-            + svc::Service<tcp::Endpoint, Error = io::Error>,
-        S: Clone + Send + Sync + Unpin + 'static,
-        <S as svc::Service<http::Endpoint>>::Response: tls::HasNegotiatedProtocol,
-        <S as svc::Service<http::Endpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        <S as svc::Service<http::Endpoint>>::Future: Send + Unpin,
+        C: svc::Connect + Send + Sync + Unpin + 'static,
+        C::Io: 'static,
+        C::Future: Unpin + 'static,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        <S as svc::Service<tcp::Endpoint>>::Response: tls::HasNegotiatedProtocol,
-        <S as svc::Service<tcp::Endpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        <S as svc::Service<tcp::Endpoint>>::Future: Send,
         R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<tcp::Concrete>>::Resolution: Send,
         <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
@@ -135,11 +129,12 @@ impl<S> Outbound<S> {
             .push_discover(profiles)
             .into_inner()
     }
-}
 
-impl Outbound<()> {
     pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
     where
+        C: svc::Connect + Send + Sync + Unpin + 'static,
+        C::Io: 'static,
+        C::Future: Unpin + 'static,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
@@ -160,27 +155,24 @@ impl Outbound<()> {
             .expect("Failed to bind outbound listener");
 
         let serve = async move {
+            let shutdown = self.runtime.drain.clone().signaled();
             if self.config.ingress_mode {
                 info!("Outbound routing in ingress-mode");
                 let tcp = self
-                    .to_tcp_connect()
+                    .clone()
                     .push_tcp_endpoint()
                     .push_tcp_forward()
                     .into_inner();
-                let http = self
-                    .to_tcp_connect()
+                let ingress = self
+                    .push_tcp_endpoint()
                     .push_http_endpoint()
                     .push_http_logical(resolve)
-                    .into_inner();
-                let stack = self.to_ingress(profiles, tcp, http);
-                let shutdown = self.runtime.drain.signaled();
-                serve::serve(listen, stack, shutdown)
+                    .into_ingress(tcp, profiles);
+                serve::serve(listen, ingress, shutdown)
                     .await
                     .expect("Outbound server failed");
             } else {
-                let stack = self.to_tcp_connect().into_server(resolve, profiles);
-                let shutdown = self.runtime.drain.signaled();
-                serve::serve(listen, stack, shutdown)
+                serve::serve(listen, self.into_server(resolve, profiles), shutdown)
                     .await
                     .expect("Outbound server failed");
             }

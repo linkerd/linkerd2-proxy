@@ -1,9 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 
-use std::time::Duration;
-use tokio::net::TcpStream;
-
-mod connect;
+pub mod connect;
 pub mod listen;
 pub mod metrics;
 
@@ -11,6 +8,23 @@ pub use self::{
     connect::{ConnectAddr, ConnectTcp},
     listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
 };
+use std::time::Duration;
+use tokio::net::TcpStream;
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Keepalive(pub Option<Duration>);
+
+impl From<Option<Duration>> for Keepalive {
+    fn from(k: Option<Duration>) -> Self {
+        Self(k)
+    }
+}
+
+impl Into<Option<Duration>> for Keepalive {
+    fn into(self) -> Option<Duration> {
+        self.0
+    }
+}
 
 // Misc.
 

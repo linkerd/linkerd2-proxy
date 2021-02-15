@@ -1,5 +1,5 @@
 use crate::{dns, identity::LocalCrtKey};
-use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
+use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, svc, Error};
 use linkerd_channel::into_stream::IntoStream;
 use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::future::Future;
@@ -40,18 +40,22 @@ impl Config {
     const SPAN_BUFFER_CAPACITY: usize = 100;
     const SERVICE_NAME: &'static str = "linkerd-proxy";
 
-    pub fn build(
+    pub fn build<C>(
         self,
+        connect: C,
         identity: Option<LocalCrtKey>,
         dns: dns::Resolver,
         metrics: metrics::Registry,
         client_metrics: HttpMetrics,
-    ) -> Result<OcCollector, Error> {
+    ) -> Result<OcCollector, Error>
+    where
+        C: svc::Connect + Clone + Send + 'static,
+    {
         match self {
             Config::Disabled => Ok(OcCollector::Disabled),
             Config::Enabled(inner) => {
                 let addr = inner.control.addr.clone();
-                let svc = inner.control.build(dns, client_metrics, identity);
+                let svc = inner.control.build(connect, dns, client_metrics, identity);
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
                 let spans_rx = spans_rx.into_stream();

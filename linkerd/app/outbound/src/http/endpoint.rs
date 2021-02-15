@@ -1,20 +1,13 @@
 use super::{require_identity_on_endpoint::NewRequireIdentity, Endpoint};
 use crate::Outbound;
 use linkerd_app_core::{
-    classify, config, http_tracing,
+    classify, config, http_tracing, io,
     proxy::{http, tap},
     reconnect, svc, Error, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
-use tokio::io;
 use tracing::debug_span;
 
-impl<C> Outbound<C>
-where
-    C: svc::Service<Endpoint> + Clone + Send + Sync + Unpin + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-    C::Error: Into<Error>,
-    C::Future: Send + Unpin,
-{
+impl<C> Outbound<C> {
     pub fn push_http_endpoint<B>(
         self,
     ) -> Outbound<
@@ -29,6 +22,10 @@ where
             > + Clone,
     >
     where
+        C: svc::Service<Endpoint> + Clone + Send + Sync + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+        C::Error: Into<Error>,
+        C::Future: Send + Unpin,
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
     {

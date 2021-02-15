@@ -3,9 +3,8 @@
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "16289823"]
 
-use linkerd_app::{trace, Config};
+use linkerd_app::{core::svc, trace, Config};
 use linkerd_signal as signal;
-use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "mimalloc")]
@@ -28,8 +27,8 @@ fn main() {
     };
 
     rt::build().block_on(async move {
-        let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
-        let app = match async move { config.build(shutdown_tx, trace?).await }.await {
+        let mut app = match async move { config.build(svc::ConnectTcp::new(), trace?).await }.await
+        {
             Ok(app) => app,
             Err(e) => {
                 eprintln!("Initialization failure: {}", e);
@@ -81,12 +80,13 @@ fn main() {
             }
         }
 
+        let mut shutdown = app.take_shutdown().expect("Shutdown must be available");
         let drain = app.spawn();
         tokio::select! {
             _ = signal::shutdown() => {
                 info!("Received shutdown signal");
             }
-            _ = shutdown_rx.recv() => {
+            _ = shutdown.recv() => {
                 info!("Received shutdown via admin interface");
             }
         }

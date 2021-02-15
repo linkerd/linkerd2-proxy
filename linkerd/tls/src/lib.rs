@@ -77,30 +77,12 @@ impl<I> HasNegotiatedProtocol for self::server::TlsStream<I> {
     }
 }
 
-impl HasNegotiatedProtocol for tokio::net::TcpStream {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        None
-    }
-}
-
-impl<I: HasNegotiatedProtocol> HasNegotiatedProtocol for io::ScopedIo<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref().negotiated_protocol()
-    }
-}
-
-impl<L, R> HasNegotiatedProtocol for io::EitherIo<L, R>
-where
-    L: HasNegotiatedProtocol,
-    R: HasNegotiatedProtocol,
-{
+impl<A, B: HasNegotiatedProtocol> HasNegotiatedProtocol for io::EitherIo<A, B> {
     #[inline]
     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
         match self {
-            io::EitherIo::Left(l) => l.negotiated_protocol(),
-            io::EitherIo::Right(r) => r.negotiated_protocol(),
+            io::EitherIo::Left(_) => None,
+            io::EitherIo::Right(b) => b.negotiated_protocol(),
         }
     }
 }

@@ -3,9 +3,7 @@ use crate::{
     proxy::http,
     reconnect,
     svc::{self, NewService, Param},
-    tls,
-    transport::ConnectTcp,
-    Addr, Error,
+    tls, Addr, Error,
 };
 use futures::{future::Either, StreamExt};
 use linkerd_channel::into_stream::IntoStream;
@@ -46,8 +44,9 @@ type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classif
 pub type Client<B> = linkerd_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
 
 impl Config {
-    pub fn build<B, L>(
+    pub fn build<C, B, L>(
         self,
+        connect: C,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<L>,
@@ -57,6 +56,7 @@ impl Config {
         B::Data: Send,
         B::Error: Into<Error> + Send + Sync,
         L: Clone + Param<tls::client::Config> + Send + 'static,
+        C: svc::Connect + Clone + Send + 'static,
     {
         let connect_backoff = {
             let backoff = self.connect.backoff;
@@ -86,10 +86,11 @@ impl Config {
             }
         };
 
-        svc::stack(ConnectTcp::new(self.connect.keepalive))
+        svc::stack(connect.into_service())
+            .push_map_target(client::Target::mk_connect(self.connect.keepalive))
             .push(tls::Client::layer(identity))
             .push_timeout(self.connect.timeout)
-            .push(self::client::layer())
+            .push(client::layer())
             .push(reconnect::layer(connect_backoff))
             .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_response(self::control::balance::layer())
@@ -170,6 +171,7 @@ mod resolve {
             resolve::{map_endpoint, recover},
         },
         svc,
+        transport::ConnectAddr,
     };
     use linkerd_error::Recover;
     use std::net::SocketAddr;
@@ -208,7 +210,7 @@ mod resolve {
         type Out = Target;
 
         fn map_endpoint(&self, control: &super::ControlAddr, addr: SocketAddr, _: ()) -> Self::Out {
-            Target::new(addr, control.identity.clone())
+            Target::new(ConnectAddr(addr), control.identity.clone())
         }
     }
 }
@@ -231,23 +233,24 @@ mod client {
         proxy::http,
         svc::{self, Param},
         tls,
-        transport::ConnectAddr,
+        transport::{connect, ConnectAddr, Keepalive},
     };
     use linkerd_proxy_http::h2::Settings as H2Settings;
-    use std::{
-        net::SocketAddr,
-        task::{Context, Poll},
-    };
+    use std::task::{Context, Poll};
 
     #[derive(Clone, Hash, Debug, Eq, PartialEq)]
     pub struct Target {
-        addr: SocketAddr,
-        server_id: tls::ConditionalClientTls,
+        pub addr: ConnectAddr,
+        pub server_id: tls::ConditionalClientTls,
     }
 
     impl Target {
-        pub(super) fn new(addr: SocketAddr, server_id: tls::ConditionalClientTls) -> Self {
+        pub(super) fn new(addr: ConnectAddr, server_id: tls::ConditionalClientTls) -> Self {
             Self { addr, server_id }
+        }
+
+        pub fn mk_connect(keepalive: Keepalive) -> impl Fn(Self) -> connect::Target + Copy {
+            move |Self { addr, .. }| connect::Target { addr, keepalive }
         }
     }
 
@@ -260,12 +263,6 @@ mod client {
 
     impl Param<ConnectAddr> for Target {
         fn param(&self) -> ConnectAddr {
-            ConnectAddr(self.addr)
-        }
-    }
-
-    impl Param<SocketAddr> for Target {
-        fn param(&self) -> SocketAddr {
             self.addr
         }
     }

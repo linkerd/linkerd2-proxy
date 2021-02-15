@@ -89,16 +89,22 @@ impl Inbound<()> {
         }
     }
 
-    pub fn to_tcp_connect<T: Param<u16>>(
+    pub fn to_connect<C, T>(
         &self,
+        connect: C,
     ) -> Inbound<
         impl svc::Service<
                 T,
                 Response = impl io::AsyncRead + io::AsyncWrite + Send,
                 Error = Error,
-                Future = impl Send,
+                Future = impl Send + Unpin,
             > + Clone,
-    > {
+    >
+    where
+        T: Param<u16>,
+        C: svc::Connect + Clone,
+        C::Future: 'static,
+    {
         let Self {
             config, runtime, ..
         } = self.clone();
@@ -109,8 +115,11 @@ impl Inbound<()> {
             keepalive, timeout, ..
         } = config.proxy.connect;
 
-        let stack = svc::stack(transport::ConnectTcp::new(keepalive))
-            .push_map_target(|t: T| transport::ConnectAddr(([127, 0, 0, 1], t.param()).into()))
+        let stack = svc::stack(connect.into_service())
+            .push_map_target(move |t: T| svc::connect::Target {
+                addr: transport::ConnectAddr(([127, 0, 0, 1], t.param()).into()),
+                keepalive,
+            })
             // Limits the time we wait for a connection to be established.
             .push_timeout(timeout)
             .push(svc::stack::BoxFuture::layer());
@@ -120,44 +129,6 @@ impl Inbound<()> {
             runtime,
             stack,
         }
-    }
-
-    pub fn serve<G, GSvc, P>(
-        self,
-        profiles: P,
-        gateway: G,
-    ) -> (SocketAddr, impl Future<Output = ()> + Send)
-    where
-        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
-        G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<tokio::net::TcpStream>>, Response = ()>
-            + Send
-            + 'static,
-        GSvc::Error: Into<Error>,
-        GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
-        P::Error: Send,
-        P::Future: Send,
-    {
-        let (listen_addr, listen) = self
-            .config
-            .proxy
-            .server
-            .bind
-            .bind()
-            .expect("Failed to bind inbound listener");
-
-        let serve = async move {
-            let stack = self
-                .to_tcp_connect()
-                .into_server(listen_addr.port(), profiles, gateway);
-            let shutdown = self.runtime.drain.signaled();
-            serve::serve(listen, stack, shutdown)
-                .await
-                .expect("Inbound server failed");
-        };
-
-        (listen_addr, serve)
     }
 }
 
@@ -283,6 +254,42 @@ where
             )
             .check_new_service::<listen::Addrs, I>()
             .into_inner()
+    }
+
+    pub fn serve<G, GSvc, P>(
+        self,
+        profiles: P,
+        gateway: G,
+    ) -> (SocketAddr, impl Future<Output = ()> + Send)
+    where
+        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
+        G: Clone + Send + Sync + Unpin + 'static,
+        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<tokio::net::TcpStream>>, Response = ()>
+            + Send
+            + 'static,
+        GSvc::Error: Into<Error>,
+        GSvc::Future: Send,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+        P::Error: Send,
+        P::Future: Send,
+    {
+        let (listen_addr, listen) = self
+            .config
+            .proxy
+            .server
+            .bind
+            .bind()
+            .expect("Failed to bind inbound listener");
+
+        let serve = async move {
+            let shutdown = self.runtime.drain.clone().signaled();
+            let stack = self.into_server(listen_addr.port(), profiles, gateway);
+            serve::serve(listen, stack, shutdown)
+                .await
+                .expect("Inbound server failed");
+        };
+
+        (listen_addr, serve)
     }
 }
 

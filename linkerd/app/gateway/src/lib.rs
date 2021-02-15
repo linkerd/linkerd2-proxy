@@ -56,10 +56,10 @@ struct RefusedNoTarget(());
 struct RefusedNotResolved(NameAddr);
 
 #[allow(clippy::clippy::too_many_arguments)]
-pub fn stack<I, O, P, R>(
+pub fn stack<I, C, P, R>(
     Config { allow_discovery }: Config,
     inbound: Inbound<()>,
-    outbound: Outbound<O>,
+    outbound: Outbound<C>,
     profiles: P,
     resolve: R,
 ) -> impl svc::NewService<
@@ -71,15 +71,9 @@ pub fn stack<I, O, P, R>(
        + Send
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
-    O: svc::Service<outbound::http::Endpoint, Error = io::Error>
-        + svc::Service<outbound::tcp::Endpoint, Error = io::Error>,
-    O: Clone + Send + Sync + Unpin + 'static,
-    <O as svc::Service<outbound::http::Endpoint>>::Response:
-        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
-    <O as svc::Service<outbound::http::Endpoint>>::Future: Send + Unpin + 'static,
-    <O as svc::Service<outbound::tcp::Endpoint>>::Response:
-        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
-    <O as svc::Service<outbound::tcp::Endpoint>>::Future: Send + Unpin + 'static,
+    C: svc::Connect + Clone + Send + Sync + Unpin + 'static,
+    C::Io: 'static,
+    C::Future: Unpin + 'static,
     P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,

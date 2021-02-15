@@ -26,7 +26,7 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {
-                keepalive: None,
+                keepalive: None.into(),
                 timeout: Duration::from_secs(1),
                 backoff: exp_backoff::ExponentialBackoff::new(
                     Duration::from_millis(100),

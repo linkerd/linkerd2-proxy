@@ -1,7 +1,10 @@
 // Possibly unused, but useful during development.
 
-pub use crate::proxy::http;
 use crate::{cache, Error};
+pub use crate::{
+    proxy::http,
+    transport::connect::{self, Connect, ConnectTcp},
+};
 pub use linkerd_buffer as buffer;
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{

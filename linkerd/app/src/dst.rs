@@ -3,7 +3,7 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     is_discovery_rejected, metrics, profiles,
     proxy::{api_resolve as api, identity::LocalCrtKey, resolve::recover},
-    Error, Recover,
+    svc, Error, Recover,
 };
 use tonic::body::BoxBody;
 
@@ -32,15 +32,19 @@ pub struct BackoffUnlessInvalidArgument(ExponentialBackoff);
 // === impl Config ===
 
 impl Config {
-    pub fn build(
+    pub fn build<C>(
         self,
+        connect: C,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<LocalCrtKey>,
-    ) -> Result<Dst, Error> {
+    ) -> Result<Dst, Error>
+    where
+        C: svc::Connect + Send + 'static,
+    {
         let addr = self.control.addr.clone();
         let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
-        let svc = self.control.build(dns, metrics, identity);
+        let svc = self.control.build(connect, dns, metrics, identity);
 
         Ok(Dst {
             addr,

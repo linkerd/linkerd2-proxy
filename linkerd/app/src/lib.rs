@@ -18,7 +18,10 @@ use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
-use tokio::{sync::mpsc, time::Duration};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::Duration,
+};
 use tracing::instrument::Instrument;
 use tracing::{debug, error, info, info_span};
 
@@ -58,6 +61,7 @@ pub struct App {
     outbound_addr: SocketAddr,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
+    shutdown: Option<mpsc::UnboundedReceiver<()>>,
 }
 
 impl Config {
@@ -69,11 +73,12 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build(
-        self,
-        shutdown_tx: mpsc::UnboundedSender<()>,
-        log_level: trace::Handle,
-    ) -> Result<App, Error> {
+    pub async fn build<C>(self, connect: C, log_level: trace::Handle) -> Result<App, Error>
+    where
+        C: svc::Connect + Clone + Send + Sync + Unpin + 'static,
+        C::Io: 'static,
+        C::Future: Unpin + 'static,
+    {
         use metrics::FmtMetrics;
 
         let Config {
@@ -92,8 +97,13 @@ impl Config {
 
         let dns = dns.build();
 
-        let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+        let identity = info_span!("identity").in_scope(|| {
+            identity.build(
+                connect.clone(),
+                dns.resolver.clone(),
+                metrics.control.clone(),
+            )
+        })?;
         let report = identity.metrics().and_then(report);
 
         let (drain_tx, drain_rx) = drain::channel();
@@ -102,7 +112,8 @@ impl Config {
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
+            info_span!("dst")
+                .in_scope(|| dst.build(connect.clone(), dns, metrics, identity.local()))
         }?;
 
         let oc_collector = {
@@ -110,10 +121,12 @@ impl Config {
             let dns = dns.resolver;
             let client_metrics = metrics.control;
             let metrics = metrics.opencensus;
-            info_span!("opencensus")
-                .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
+            info_span!("opencensus").in_scope(|| {
+                oc_collector.build(connect.clone(), identity, dns, metrics, client_metrics)
+            })
         }?;
 
+        let (shutdown_tx, shutdown_rx) = mpsc::unbounded_channel();
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
@@ -150,13 +163,17 @@ impl Config {
         let gateway_stack = gateway::stack(
             gateway,
             inbound.clone(),
-            outbound.to_tcp_connect(),
+            outbound.to_connect(connect.clone()),
             dst.profiles.clone(),
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) = inbound.serve(dst.profiles.clone(), gateway_stack);
-        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve);
+        let (inbound_addr, inbound_serve) = inbound
+            .to_connect(connect.clone())
+            .serve(dst.profiles.clone(), gateway_stack);
+        let (outbound_addr, outbound_serve) = outbound
+            .to_connect(connect)
+            .serve(dst.profiles, dst.resolve);
 
         let start_proxy = Box::pin(async move {
             tokio::spawn(outbound_serve.instrument(info_span!("outbound")));
@@ -167,6 +184,7 @@ impl Config {
             admin,
             dst: dst_addr,
             drain: drain_tx,
+            shutdown: Some(shutdown_rx),
             identity,
             inbound_addr,
             oc_collector,
@@ -222,6 +240,10 @@ impl App {
         }
     }
 
+    pub fn take_shutdown(&mut self) -> Option<mpsc::UnboundedReceiver<()>> {
+        self.shutdown.take()
+    }
+
     pub fn spawn(self) -> drain::Signal {
         let App {
             admin,
@@ -237,7 +259,7 @@ impl App {
         //
         // The main reactor holds `admin_shutdown_tx` until the reactor drops
         // the task. This causes the daemon reactor to stop.
-        let (admin_shutdown_tx, admin_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let (admin_shutdown_tx, admin_shutdown_rx) = oneshot::channel::<()>();
         debug!("spawning daemon thread");
         tokio::spawn(future::pending().map(|()| drop(admin_shutdown_tx)));
         std::thread::Builder::new()

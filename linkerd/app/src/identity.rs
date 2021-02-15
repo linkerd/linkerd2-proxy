@@ -6,7 +6,7 @@ use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     metrics::ControlHttp as Metrics,
-    Error,
+    svc, Error,
 };
 use std::future::Future;
 use std::pin::Pin;
@@ -40,14 +40,22 @@ struct Recover(ExponentialBackoff);
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
 impl Config {
-    pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Result<Identity, Error> {
+    pub fn build<C>(
+        self,
+        connect: C,
+        dns: dns::Resolver,
+        metrics: Metrics,
+    ) -> Result<Identity, Error>
+    where
+        C: svc::Connect + Clone + Send + 'static,
+    {
         match self {
             Config::Disabled => Ok(Identity::Disabled),
             Config::Enabled { control, certify } => {
                 let (local, daemon) = LocalCrtKey::new(&certify);
 
                 let addr = control.addr.clone();
-                let svc = control.build(dns, metrics, Some(local.clone()));
+                let svc = control.build(connect, dns, metrics, Some(local.clone()));
 
                 // Save to be spawned on an auxiliary runtime.
                 let task = {

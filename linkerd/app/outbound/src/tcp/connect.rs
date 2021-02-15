@@ -1,13 +1,16 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::{target::Endpoint, Outbound};
 use linkerd_app_core::{
-    io, svc, tls, transport::ConnectTcp, transport_header::SessionProtocol, Error,
+    io,
+    svc::{self, Param},
+    tls,
+    transport_header::SessionProtocol,
+    Error,
 };
 use tracing::debug_span;
 
 impl Outbound<()> {
-    pub fn to_tcp_connect(&self) -> Outbound<ConnectTcp> {
-        let connect = ConnectTcp::new(self.config.proxy.connect.keepalive);
+    pub fn to_connect<C: svc::Connect>(&self, connect: C) -> Outbound<C> {
         self.clone().with_stack(connect)
     }
 }
@@ -18,16 +21,15 @@ impl<C> Outbound<C> {
     ) -> Outbound<
         impl svc::Service<
                 Endpoint<P>,
-                Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+                Response = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
     >
     where
-        Endpoint<P>: svc::Param<Option<SessionProtocol>>,
-        C: svc::Service<Endpoint<P>, Error = io::Error> + Clone + Send + 'static,
-        C::Response: tls::HasNegotiatedProtocol,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+        Endpoint<P>: Param<Option<SessionProtocol>> + Param<svc::connect::ConnectAddr>,
+        C: svc::Connect + Clone + Send + 'static,
+        C::Io: 'static,
         C::Future: Send + 'static,
     {
         let Self {
@@ -36,10 +38,15 @@ impl<C> Outbound<C> {
             stack: connect,
         } = self;
         let identity_disabled = rt.identity.is_none();
+        let keepalive = config.proxy.connect.keepalive;
 
         // TODO: We should prevent connections on the loopback interface; but
         // this is currently required by tests.
-        let stack = connect
+        let stack = svc::stack(connect.into_inner().into_service())
+            .push_map_target(move |ep: Endpoint<P>| svc::connect::Target {
+                keepalive,
+                addr: ep.param(),
+            })
             // Initiates mTLS if the target is configured with identity. The
             // endpoint configures ALPN when there is an opaque transport hint OR
             // when an authority override is present (indicating the target is a
@@ -78,7 +85,7 @@ impl<C> Outbound<C> {
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         C: svc::Service<super::Endpoint> + Clone + Send + 'static,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
         C::Future: Send,
     {
