@@ -18,11 +18,12 @@ use linkerd_app_core::{
     config::ProxyConfig,
     io, metrics, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
-    svc, tls,
+    serve, svc, tls,
     transport::listen,
     AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
+use tracing::info;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
@@ -31,6 +32,11 @@ const EWMA_DECAY: Duration = Duration::from_secs(10);
 pub struct Config {
     pub proxy: ProxyConfig,
     pub allow_discovery: AddrMatch,
+
+    // In "ingress mode", we assume we are always routing HTTP requests and do
+    // not perform per-target-address discovery. Non-HTTP connections are
+    // forwarded without discovery/routing/mTLS.
+    pub ingress_mode: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -128,6 +134,59 @@ impl<S> Outbound<S> {
             .push_detect_http(http)
             .push_discover(profiles)
             .into_inner()
+    }
+}
+
+impl Outbound<()> {
+    pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
+    where
+        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<http::Concrete>>::Resolution: Send,
+        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
+        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
+        <R as Resolve<tcp::Concrete>>::Resolution: Send,
+        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
+        R: Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
+        P::Future: Send,
+        P::Error: Send,
+    {
+        let (listen_addr, listen) = self
+            .config
+            .proxy
+            .server
+            .bind
+            .bind()
+            .expect("Failed to bind outbound listener");
+
+        let serve = async move {
+            if self.config.ingress_mode {
+                info!("Outbound routing in ingress-mode");
+                let tcp = self
+                    .to_tcp_connect()
+                    .push_tcp_endpoint()
+                    .push_tcp_forward()
+                    .into_inner();
+                let http = self
+                    .to_tcp_connect()
+                    .push_http_endpoint()
+                    .push_http_logical(resolve)
+                    .into_inner();
+                let stack = self.to_ingress(profiles, tcp, http);
+                let shutdown = self.runtime.drain.signaled();
+                serve::serve(listen, stack, shutdown)
+                    .await
+                    .expect("Outbound server failed");
+            } else {
+                let stack = self.to_tcp_connect().into_server(resolve, profiles);
+                let shutdown = self.runtime.drain.signaled();
+                serve::serve(listen, stack, shutdown)
+                    .await
+                    .expect("Outbound server failed");
+            }
+        };
+
+        (listen_addr, serve)
     }
 }
 

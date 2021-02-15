@@ -12,9 +12,7 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
-use linkerd_app_core::{
-    control::ControlAddr, dns, drain, proxy::http, serve, svc, Error, ProxyRuntime,
-};
+use linkerd_app_core::{control::ControlAddr, dns, drain, proxy::http, svc, Error, ProxyRuntime};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
@@ -41,11 +39,6 @@ pub struct Config {
     pub outbound: outbound::Config,
     pub inbound: inbound::Config,
     pub gateway: gateway::Config,
-
-    // In "ingress mode", we assume we are always routing HTTP requests and do
-    // not perform per-target-address discovery. Non-HTTP connections are
-    // forwarded without discovery/routing/mTLS.
-    pub ingress_mode: bool,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
@@ -93,7 +86,6 @@ impl Config {
             outbound,
             gateway,
             tap,
-            ingress_mode,
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
@@ -133,7 +125,6 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
 
-        let (inbound_addr, inbound_listen) = inbound.proxy.server.bind.bind()?;
         let inbound = Inbound::new(
             inbound,
             ProxyRuntime {
@@ -145,7 +136,6 @@ impl Config {
             },
         );
 
-        let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
         let outbound = Outbound::new(
             outbound,
             ProxyRuntime {
@@ -153,71 +143,24 @@ impl Config {
                 metrics: metrics.outbound,
                 tap: tap.registry(),
                 span_sink: oc_collector.span_sink(),
-                drain: drain_rx.clone(),
+                drain: drain_rx,
             },
         );
 
+        let gateway_stack = gateway::stack(
+            gateway,
+            inbound.clone(),
+            outbound.to_tcp_connect(),
+            dst.profiles.clone(),
+            dst.resolve.clone(),
+        );
+
+        let (inbound_addr, inbound_serve) = inbound.serve(dst.profiles.clone(), gateway_stack);
+        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve);
+
         let start_proxy = Box::pin(async move {
-            let span = info_span!("outbound");
-            let _outbound = span.enter();
-
-            info!(listen.addr = %outbound_addr, ingress_mode);
-
-            if ingress_mode {
-                let tcp = outbound
-                    .to_tcp_connect()
-                    .push_tcp_endpoint()
-                    .push_tcp_forward()
-                    .into_inner();
-                let http = outbound
-                    .to_tcp_connect()
-                    .push_http_endpoint()
-                    .push_http_logical(dst.resolve.clone())
-                    .into_inner();
-                let server = outbound.to_ingress(dst.profiles.clone(), tcp, http);
-                tokio::spawn(
-                    serve::serve(outbound_listen, server, drain_rx.clone().signaled())
-                        .map_err(|e| panic!("outbound failed: {}", e))
-                        .instrument(span.clone()),
-                );
-            } else {
-                let server = outbound
-                    .to_tcp_connect()
-                    .into_server(dst.resolve.clone(), dst.profiles.clone());
-                tokio::spawn(
-                    serve::serve(outbound_listen, server, drain_rx.clone().signaled())
-                        .map_err(|e| panic!("outbound failed: {}", e))
-                        .instrument(span.clone()),
-                );
-            }
-            drop(_outbound);
-
-            let span = info_span!("inbound");
-            let _inbound = span.enter();
-            info!(listen.addr = %inbound_addr);
-
-            let gateway_stack = gateway::stack(
-                gateway,
-                inbound.clone(),
-                outbound.to_tcp_connect(),
-                dst.profiles.clone(),
-                dst.resolve.clone(),
-            );
-
-            tokio::spawn(
-                serve::serve(
-                    inbound_listen,
-                    inbound.to_tcp_connect().into_server(
-                        inbound_addr.port(),
-                        dst.profiles,
-                        gateway_stack,
-                    ),
-                    drain_rx.signaled(),
-                )
-                .map_err(|e| panic!("inbound failed: {}", e))
-                .instrument(span.clone()),
-            );
-            drop(_inbound);
+            tokio::spawn(outbound_serve.instrument(info_span!("outbound")));
+            tokio::spawn(inbound_serve.instrument(info_span!("inbound")));
         });
 
         Ok(App {
