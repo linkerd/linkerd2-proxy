@@ -3,7 +3,7 @@ pub use crate::{
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
     proxy::identity,
     stack_metrics,
-    svc::stack::Param,
+    svc::Param,
     telemetry, tls,
     transport::{
         self,

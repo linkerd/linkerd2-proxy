@@ -2,7 +2,7 @@ use crate::{
     classify, config, control, dns, metrics,
     proxy::http,
     reconnect,
-    svc::{self, stack::Param, NewService},
+    svc::{self, NewService, Param},
     tls,
     transport::ConnectTcp,
     Addr, Error,
@@ -229,7 +229,7 @@ mod balance {
 mod client {
     use crate::{
         proxy::http,
-        svc::{self, stack::Param},
+        svc::{self, Param},
         tls,
         transport::ConnectAddr,
     };

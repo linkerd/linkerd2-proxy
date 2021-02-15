@@ -1,4 +1,4 @@
-use linkerd_app_core::{io::BoxedIo, svc::stack::Param, transport::ConnectAddr, Error};
+use linkerd_app_core::{io::BoxedIo, svc::Param, transport::ConnectAddr, Error};
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;

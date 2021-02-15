@@ -6,7 +6,7 @@ pub use linkerd_app_core::proxy::{
 };
 use linkerd_app_core::{
     profiles::{self, Profile},
-    svc::stack::Param,
+    svc::Param,
     Addr, Error,
 };
 use linkerd_channel::into_stream::{IntoStream, Streaming};
