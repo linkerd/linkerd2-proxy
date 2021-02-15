@@ -9,7 +9,7 @@ use linkerd_app_core::{
     config::ProxyConfig,
     detect, discovery_rejected, io, metrics, profiles,
     proxy::{api_resolve::Metadata, core::Resolve, http},
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch, Never,

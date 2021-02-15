@@ -13,7 +13,7 @@ pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     dst, profiles,
     proxy::{api_resolve::ProtocolHint, tap},
-    svc::stack::Param,
+    svc::Param,
     tls,
     transport_header::SessionProtocol,
     Conditional,

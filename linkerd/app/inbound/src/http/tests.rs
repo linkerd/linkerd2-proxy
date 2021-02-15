@@ -10,7 +10,7 @@ use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     io::{self, BoxedIo},
     proxy,
-    svc::{self, stack::Param, NewService},
+    svc::{self, NewService, Param},
     tls,
     transport::{self, ConnectAddr},
     Conditional, Error, NameAddr, ProxyRuntime,

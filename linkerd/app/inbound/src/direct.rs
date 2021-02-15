@@ -2,7 +2,7 @@ use crate::{target::TcpEndpoint, Inbound};
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls,
     transport::{self, listen, metrics::SensorIo},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
@@ -221,7 +221,7 @@ impl Param<transport::labels::Key> for ClientInfo {
 
 // === impl WithTransportHeaderAlpn ===
 
-impl svc::stack::Param<tls::server::Config> for WithTransportHeaderAlpn {
+impl svc::Param<tls::server::Config> for WithTransportHeaderAlpn {
     fn param(&self) -> tls::server::Config {
         // Copy the underlying TLS config and set an ALPN value.
         //
@@ -236,7 +236,7 @@ impl svc::stack::Param<tls::server::Config> for WithTransportHeaderAlpn {
     }
 }
 
-impl svc::stack::Param<tls::LocalId> for WithTransportHeaderAlpn {
+impl svc::Param<tls::LocalId> for WithTransportHeaderAlpn {
     fn param(&self) -> tls::LocalId {
         self.0.id().clone()
     }

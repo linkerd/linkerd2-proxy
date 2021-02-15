@@ -24,7 +24,7 @@ use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     detect, drain, io, metrics, profiles,
     proxy::tcp,
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls,
     transport::{self, listen},
     Error, NameMatch, ProxyRuntime,
