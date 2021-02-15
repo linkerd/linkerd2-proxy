@@ -24,7 +24,7 @@ impl<C> Outbound<C> {
             > + Clone,
     >
     where
-        Endpoint<P>: svc::stack::Param<Option<SessionProtocol>>,
+        Endpoint<P>: svc::Param<Option<SessionProtocol>>,
         C: svc::Service<Endpoint<P>, Error = io::Error> + Clone + Send + 'static,
         C::Response: tls::HasNegotiatedProtocol,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,

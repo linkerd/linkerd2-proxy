@@ -4,7 +4,7 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         resolve::map_endpoint::MapEndpoint,
     },
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls, transport, transport_header, Addr, Conditional, Error,
 };
 use std::net::SocketAddr;

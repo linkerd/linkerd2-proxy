@@ -1,7 +1,7 @@
 use crate::target::Endpoint;
 use linkerd_app_core::{
     dns, io,
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls,
     transport_header::{SessionProtocol, TransportHeader, PROTOCOL},
     Error,

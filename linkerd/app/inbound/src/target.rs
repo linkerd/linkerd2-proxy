@@ -4,7 +4,7 @@ use linkerd_app_core::{
     http_request_l5d_override_dst_addr, metrics, profiles,
     proxy::{http, tap},
     stack_tracing,
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls,
     transport::{self, listen},
     transport_header::TransportHeader,

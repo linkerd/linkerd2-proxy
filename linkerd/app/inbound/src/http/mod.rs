@@ -13,7 +13,7 @@ use linkerd_app_core::{
     dst, errors, http_tracing, io, profiles,
     proxy::{http, tap},
     reconnect,
-    svc::{self, stack::Param},
+    svc::{self, Param},
     Error, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
