@@ -4,6 +4,7 @@
 
 mod box_future;
 mod box_new_service;
+mod box_service;
 mod either;
 mod fail;
 mod fail_on_error;
@@ -22,6 +23,7 @@ mod unwrap_or;
 pub use self::{
     box_future::BoxFuture,
     box_new_service::BoxNewService,
+    box_service::{BoxService, BoxServiceLayer},
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
