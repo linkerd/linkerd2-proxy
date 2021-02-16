@@ -1,23 +1,35 @@
+use std::marker::PhantomData;
 pub use tower::util::BoxService;
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct BoxServiceLayer {
-    _p: (),
+#[derive(Copy, Debug)]
+pub struct BoxServiceLayer<R> {
+    _p: PhantomData<fn(R)>,
 }
 
-impl<S, T, U, E> tower::layer::Layer<S> for BoxServiceLayer
+impl<S, R> tower::Layer<S> for BoxServiceLayer<R>
 where
-    S: Service<T, Response = U, Error = E> + Send + 'static,
-    S::Future: Send,
+    S: tower::Service<R> + Send + 'static,
+    S::Future: Send + 'static,
 {
-    type Service = BoxService<T, U, E>;
+    type Service = BoxService<R, S::Response, S::Error>;
     fn layer(&self, s: S) -> Self::Service {
         BoxService::new(s)
     }
 }
 
-impl BoxServiceLayer {
+impl<R> BoxServiceLayer<R> {
     pub fn new() -> Self {
-        Self { _p: () }
+        Self { _p: PhantomData }
+    }
+}
+
+impl<R> Clone for BoxServiceLayer<R> {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<R> Default for BoxServiceLayer<R> {
+    fn default() -> Self {
+        Self::new()
     }
 }

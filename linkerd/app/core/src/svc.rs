@@ -71,13 +71,13 @@ impl<L> Layers<L> {
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn push_spawn_buffer<Req, Rsp>(
+    pub fn push_spawn_buffer<Req>(
         self,
         capacity: usize,
-    ) -> Layers<Pair<Pair<L, BoxServiceLayer>, BufferLayer<Req, Rsp>>>
+    ) -> Layers<Pair<Pair<L, BoxServiceLayer<Req>>, BufferLayer<Req>>>
     where
         Req: Send + 'static,
-        Rsp: Send + 'static,
+        // Rsp: Send + 'static,
     {
         self.push(BoxServiceLayer::new())
             .push(BufferLayer::new(capacity))
@@ -148,7 +148,7 @@ impl<S> Stack<S> {
         S::Future: Send,
     {
         self.push(BoxServiceLayer::new())
-            .push(buffer::SpawnBufferLayer::new(capacity))
+            .push(BufferLayer::new(capacity))
     }
 
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given
