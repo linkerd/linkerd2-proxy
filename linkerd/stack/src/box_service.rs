@@ -1,23 +1,19 @@
-use linkerd_error::Error;
 use std::marker::PhantomData;
-pub use tower::util::MapErr;
-use tower::util::{BoxService as TowerBoxService, ServiceExt};
+pub use tower::util::BoxService;
 #[derive(Copy, Debug)]
 pub struct BoxServiceLayer<R> {
     _p: PhantomData<fn(R)>,
 }
 
-pub type BoxService<Req, Rsp> = TowerBoxService<Req, Rsp, Error>;
-
 impl<S, R> tower::Layer<S> for BoxServiceLayer<R>
 where
     S: tower::Service<R> + Send + 'static,
     S::Future: Send + 'static,
-    S::Error: Into<Error> + 'static,
+    S::Error: Send + 'static,
 {
-    type Service = BoxService<R, S::Response>;
+    type Service = BoxService<R, S::Response, S::Error>;
     fn layer(&self, s: S) -> Self::Service {
-        TowerBoxService::new(s.map_err(Into::into))
+        BoxService::new(s)
     }
 }
 

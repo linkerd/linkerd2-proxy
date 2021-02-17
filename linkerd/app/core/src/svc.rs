@@ -139,12 +139,12 @@ impl<S> Stack<S> {
     pub fn spawn_buffer<Req, Rsp>(
         self,
         capacity: usize,
-    ) -> Stack<buffer::Buffer<BoxService<Req, Rsp>, Req>>
+    ) -> Stack<buffer::Buffer<BoxService<Req, Rsp, S::Error>, Req>>
     where
         Req: Send + 'static,
         Rsp: Send + 'static,
         S: Service<Req, Response = Rsp> + Send + 'static,
-        S::Error: Into<Error> + 'static,
+        S::Error: Send + Sync + 'static,
         S::Future: Send,
     {
         self.push(BoxServiceLayer::new())
