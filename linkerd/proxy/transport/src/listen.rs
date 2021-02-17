@@ -143,7 +143,7 @@ impl GetOrigDstAddr for NoOrigDstAddr {
 
 #[cfg(not(feature = "mock-orig-dst"))]
 mod sys {
-    use super::{GetOrigDstAddr, OrigDstAddr, SocketAddr, TcpStream};
+    use super::{GetOrigDstAddr, OrigDstAddr, TcpStream};
 
     #[derive(Copy, Clone, Debug, Default)]
     pub struct SysOrigDstAddr(());
