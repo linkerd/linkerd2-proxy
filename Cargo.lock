@@ -628,7 +628,6 @@ dependencies = [
  "ipnet",
  "libc",
  "linkerd-addr",
- "linkerd-buffer",
  "linkerd-cache",
  "linkerd-channel",
  "linkerd-concurrency-limit",
@@ -788,21 +787,6 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "linkerd-buffer"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-channel",
- "linkerd-error",
- "pin-project",
- "tokio",
- "tokio-test",
- "tower",
- "tower-test",
- "tracing",
 ]
 
 [[package]]
@@ -2259,6 +2243,7 @@ dependencies = [
  "slab",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

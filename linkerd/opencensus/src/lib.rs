@@ -28,6 +28,7 @@ where
     T::ResponseBody: 'static,
     S: Stream<Item = Span> + Unpin,
 {
+    debug!("Span exporter running");
     SpanExporter::new(client, node, spans, metrics).run().await
 }
 

@@ -43,7 +43,7 @@ type BalanceBody =
 
 type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
-pub type Client<B> = linkerd_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
+pub type Client<B> = svc::Buffer<http::Request<B>, http::Response<RspBody>, Error>;
 
 impl Config {
     pub fn build<B, L>(
@@ -55,7 +55,7 @@ impl Config {
     where
         B: http::HttpBody + Send + 'static,
         B::Data: Send,
-        B::Error: Into<Error> + Send + Sync,
+        B::Error: Into<Error> + Send + Sync + 'static,
         L: Clone + Param<tls::client::Config> + Send + 'static,
     {
         let connect_backoff = {

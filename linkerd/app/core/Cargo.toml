@@ -24,7 +24,6 @@ futures = "0.3.9"
 indexmap = "1.0"
 ipnet = "2.0"
 linkerd-addr = { path = "../../addr" }
-linkerd-buffer = { path = "../../buffer" }
 linkerd-cache = { path = "../../cache" }
 linkerd-channel = { path = "../../channel" }
 linkerd-concurrency-limit = { path = "../../concurrency-limit" }
@@ -78,6 +77,7 @@ version = "0.4"
 # will consume tower's traces as traces.
 default-features = false
 features = [
+    "buffer",
     "make",
     "spawn-ready",
     "timeout",
