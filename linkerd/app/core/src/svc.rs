@@ -2,7 +2,6 @@
 
 pub use crate::proxy::http;
 use crate::{cache, Error};
-pub use linkerd_buffer as buffer;
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{
     self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
@@ -14,6 +13,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
+pub use tower::buffer;
 use tower::{
     buffer::BufferLayer,
     layer::util::{Identity, Stack as Pair},
@@ -139,12 +139,12 @@ impl<S> Stack<S> {
     pub fn spawn_buffer<Req, Rsp>(
         self,
         capacity: usize,
-    ) -> Stack<tower::buffer::Buffer<BoxService<Req, Rsp, S::Error>, Req>>
+    ) -> Stack<buffer::Buffer<BoxService<Req, Rsp>, Req>>
     where
         Req: Send + 'static,
         Rsp: Send + 'static,
         S: Service<Req, Response = Rsp> + Send + 'static,
-        S::Error: Into<Error> + Send + Sync,
+        S::Error: Into<Error> + 'static,
         S::Future: Send,
     {
         self.push(BoxServiceLayer::new())
