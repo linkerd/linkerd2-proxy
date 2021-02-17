@@ -9,7 +9,6 @@ members = [
     "linkerd/app/outbound",
     "linkerd/app/test",
     "linkerd/app",
-    "linkerd/buffer",
     "linkerd/cache",
     "linkerd/channel",
     "linkerd/concurrency-limit",
