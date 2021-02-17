@@ -7,7 +7,7 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{BindTcp, Keepalive},
+    transport::{BindTcp, Keepalive, ListenAddr},
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
@@ -21,8 +21,11 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                bind: BindTcp::new(SocketAddr::new(LOCALHOST.into(), 0), Keepalive(None))
-                    .with_orig_dst_addr(orig_dst.into()),
+                bind: BindTcp::new(
+                    ListenAddr(SocketAddr::new(LOCALHOST.into(), 0)),
+                    Keepalive(None),
+                )
+                .with_orig_dst_addr(orig_dst.into()),
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {

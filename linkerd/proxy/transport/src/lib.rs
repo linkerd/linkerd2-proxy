@@ -1,12 +1,14 @@
 #![deny(warnings, rust_2018_idioms)]
 
+pub mod addrs;
 mod connect;
 pub mod listen;
 pub mod metrics;
 
 pub use self::{
-    connect::{ConnectAddr, ConnectTcp},
-    listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
+    addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    connect::ConnectTcp,
+    listen::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, NoOrigDstAddr},
 };
 use std::time::Duration;
 use tokio::net::TcpStream;

@@ -1,4 +1,4 @@
-use crate::Keepalive;
+use crate::{addrs::*, Keepalive};
 use futures::prelude::*;
 use std::{io, net::SocketAddr};
 use tokio::net::TcpStream;
@@ -6,13 +6,13 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tracing::trace;
 
 /// A mockable source for address info, i.e., for tests.
-pub trait OrigDstAddr: Clone {
-    fn orig_dst_addr(&self, socket: &TcpStream) -> Option<SocketAddr>;
+pub trait GetOrigDstAddr: Clone {
+    fn orig_dst_addr(&self, socket: &TcpStream) -> Option<OrigDstAddr>;
 }
 
 #[derive(Clone, Debug)]
-pub struct BindTcp<O: OrigDstAddr = NoOrigDstAddr> {
-    bind_addr: SocketAddr,
+pub struct BindTcp<O = NoOrigDstAddr> {
+    addr: ListenAddr,
     keepalive: Keepalive,
     orig_dst_addr: O,
 }
@@ -21,9 +21,9 @@ pub type Connection = (Addrs, TcpStream);
 
 #[derive(Clone, Debug)]
 pub struct Addrs {
-    local: SocketAddr,
-    peer: SocketAddr,
-    orig_dst: Option<SocketAddr>,
+    server: Local<ServerAddr>,
+    client: Remote<ClientAddr>,
+    orig_dst: Option<OrigDstAddr>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -39,26 +39,26 @@ pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 pub use self::mock::MockOrigDstAddr as DefaultOrigDstAddr;
 
 impl BindTcp {
-    pub fn new(bind_addr: SocketAddr, keepalive: Keepalive) -> Self {
+    pub fn new(addr: ListenAddr, keepalive: Keepalive) -> Self {
         Self {
-            bind_addr,
+            addr,
             keepalive,
             orig_dst_addr: NoOrigDstAddr(()),
         }
     }
 }
 
-impl<A: OrigDstAddr> BindTcp<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addr: B) -> BindTcp<B> {
+impl<A: GetOrigDstAddr> BindTcp<A> {
+    pub fn with_orig_dst_addr<B: GetOrigDstAddr>(self, orig_dst_addr: B) -> BindTcp<B> {
         BindTcp {
             orig_dst_addr,
-            bind_addr: self.bind_addr,
+            addr: self.addr,
             keepalive: self.keepalive,
         }
     }
 
-    pub fn bind_addr(&self) -> SocketAddr {
-        self.bind_addr
+    pub fn addr(&self) -> ListenAddr {
+        self.addr
     }
 
     pub fn keepalive(&self) -> Keepalive {
@@ -67,7 +67,7 @@ impl<A: OrigDstAddr> BindTcp<A> {
 
     pub fn bind(&self) -> io::Result<(SocketAddr, impl Stream<Item = io::Result<Connection>>)> {
         let listen = {
-            let l = std::net::TcpListener::bind(self.bind_addr)?;
+            let l = std::net::TcpListener::bind(self.addr)?;
             // Ensure that O_NONBLOCK is set on the socket before using it with Tokio.
             l.set_nonblocking(true)?;
             tokio::net::TcpListener::from_std(l).expect("listener must be valid")
@@ -84,16 +84,16 @@ impl<A: OrigDstAddr> BindTcp<A> {
 
     fn accept(tcp: TcpStream, keepalive: Keepalive, get_orig: A) -> io::Result<Connection> {
         let addrs = {
-            let local = tcp.local_addr()?;
-            let peer = tcp.peer_addr()?;
+            let server = Local(ServerAddr(tcp.local_addr()?));
+            let client = Remote(ClientAddr(tcp.peer_addr()?));
             let orig_dst = get_orig.orig_dst_addr(&tcp);
             trace!(
-                local.addr = %local,
-                peer.addr = %peer,
+                server.addr = %server,
+                client.addr = %client,
                 orig.addr = ?orig_dst,
                 "Accepted",
             );
-            Addrs::new(local, peer, orig_dst)
+            Addrs::new(server, client, orig_dst)
         };
 
         let Keepalive(keepalive) = keepalive;
@@ -105,86 +105,62 @@ impl<A: OrigDstAddr> BindTcp<A> {
 }
 
 impl Addrs {
-    pub fn new(local: SocketAddr, peer: SocketAddr, orig_dst: Option<SocketAddr>) -> Self {
+    pub fn new(
+        server: Local<ServerAddr>,
+        client: Remote<ClientAddr>,
+        orig_dst: Option<OrigDstAddr>,
+    ) -> Self {
         Self {
-            local,
-            peer,
+            server,
+            client,
             orig_dst,
         }
     }
 
-    pub fn local(&self) -> SocketAddr {
-        self.local
+    pub fn server(&self) -> Local<ServerAddr> {
+        self.server
     }
 
-    pub fn peer(&self) -> SocketAddr {
-        self.peer
+    pub fn client(&self) -> Remote<ClientAddr> {
+        self.client
     }
 
-    pub fn orig_dst(&self) -> Option<SocketAddr> {
+    pub fn orig_dst(&self) -> Option<OrigDstAddr> {
         self.orig_dst
     }
 
     pub fn target_addr(&self) -> SocketAddr {
-        self.orig_dst.unwrap_or(self.local)
-    }
-
-    pub fn target_addr_is_local(&self) -> bool {
         self.orig_dst
-            .map(|orig_dst| Self::same_addr(orig_dst, self.local))
-            .unwrap_or(true)
-    }
-
-    pub fn target_addr_if_not_local(&self) -> Option<SocketAddr> {
-        if !self.target_addr_is_local() {
-            Some(self.target_addr())
-        } else {
-            None
-        }
-    }
-
-    fn same_addr(a0: SocketAddr, a1: SocketAddr) -> bool {
-        use std::net::IpAddr::{V4, V6};
-        (a0.port() == a1.port())
-            && match (a0.ip(), a1.ip()) {
-                (V6(a0), V4(a1)) => a0.to_ipv4() == Some(a1),
-                (V4(a0), V6(a1)) => Some(a0) == a1.to_ipv4(),
-                (a0, a1) => (a0 == a1),
-            }
+            .map(Into::into)
+            .unwrap_or_else(|| self.server.into())
     }
 }
 
-impl Into<SocketAddr> for &'_ Addrs {
-    fn into(self) -> SocketAddr {
-        self.target_addr()
-    }
-}
-
-impl OrigDstAddr for NoOrigDstAddr {
-    fn orig_dst_addr(&self, _: &TcpStream) -> Option<SocketAddr> {
+impl GetOrigDstAddr for NoOrigDstAddr {
+    fn orig_dst_addr(&self, _: &TcpStream) -> Option<OrigDstAddr> {
         None
     }
 }
 
 #[cfg(not(feature = "mock-orig-dst"))]
 mod sys {
-    use super::{OrigDstAddr, SocketAddr, TcpStream};
+    use super::{GetOrigDstAddr, OrigDstAddr, TcpStream};
 
     #[derive(Copy, Clone, Debug, Default)]
     pub struct SysOrigDstAddr(());
 
-    impl OrigDstAddr for SysOrigDstAddr {
+    impl GetOrigDstAddr for SysOrigDstAddr {
         #[cfg(target_os = "linux")]
-        fn orig_dst_addr(&self, sock: &TcpStream) -> Option<SocketAddr> {
+        fn orig_dst_addr(&self, sock: &TcpStream) -> Option<OrigDstAddr> {
             use std::os::unix::io::AsRawFd;
 
             let fd = sock.as_raw_fd();
             let r = unsafe { linux::so_original_dst(fd) };
-            r.ok()
+            r.map(OrigDstAddr).ok()
         }
 
         #[cfg(not(target_os = "linux"))]
-        fn orig_dst_addr(&self, _sock: &TcpStream) -> Option<SocketAddr> {
+        fn orig_dst_addr(&self, _sock: &TcpStream) -> Option<OrigDstAddr> {
             None
         }
     }
@@ -290,7 +266,7 @@ mod sys {
 
 #[cfg(feature = "mock-orig-dst")]
 mod mock {
-    use super::{OrigDstAddr, SocketAddr, TcpStream};
+    use super::{GetOrigDstAddr, OrigDstAddr, SocketAddr, TcpStream};
 
     #[derive(Copy, Clone, Debug)]
     pub struct MockOrigDstAddr(SocketAddr);
@@ -301,9 +277,9 @@ mod mock {
         }
     }
 
-    impl OrigDstAddr for MockOrigDstAddr {
-        fn orig_dst_addr(&self, _: &TcpStream) -> Option<SocketAddr> {
-            Some(self.0)
+    impl GetOrigDstAddr for MockOrigDstAddr {
+        fn orig_dst_addr(&self, _: &TcpStream) -> Option<OrigDstAddr> {
+            Some(OrigDstAddr(self.0))
         }
     }
 }

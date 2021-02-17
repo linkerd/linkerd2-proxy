@@ -13,7 +13,7 @@ use linkerd_app_core::{
     io,
     svc::{self, NewService},
     tls,
-    transport::listen,
+    transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
 };
 use std::{
@@ -113,11 +113,6 @@ async fn profile_endpoint_propagates_conn_errors() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let addrs = listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
-    );
 
     let cfg = default_config(ep1);
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -152,7 +147,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 
     // Build the outbound server
     let (rt, shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs);
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(ep1));
 
     let (client_io, server_io) = support::io::duplex(4096);
     tokio::spawn(async move {
@@ -222,12 +217,6 @@ async fn meshed_hello_world() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let addrs = listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
-    );
-
     let cfg = default_config(ep1);
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
@@ -260,7 +249,7 @@ async fn meshed_hello_world() {
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs);
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(ep1));
     let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
 
     let rsp = http_util::http_request(&mut client, Request::default()).await;
@@ -277,12 +266,6 @@ async fn stacks_idle_out() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let addrs = listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
-    );
-
     let idle_timeout = Duration::from_millis(500);
     let mut cfg = default_config(ep1);
     cfg.proxy.cache_max_idle_age = idle_timeout;
@@ -327,7 +310,7 @@ async fn stacks_idle_out() {
         .into_inner();
     assert_eq!(handle.tracked_services(), 0);
 
-    let server = svc.new_service(addrs);
+    let server = svc.new_service(addrs(ep1));
     let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
     let rsp = http_util::http_request(&mut client, Request::default()).await;
     assert_eq!(rsp.status(), http::StatusCode::OK);
@@ -348,12 +331,6 @@ async fn active_stacks_dont_idle_out() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let addrs = listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
-    );
-
     let idle_timeout = Duration::from_millis(500);
     let mut cfg = default_config(ep1);
     cfg.proxy.cache_max_idle_age = idle_timeout;
@@ -403,7 +380,7 @@ async fn active_stacks_dont_idle_out() {
         .into_inner();
     assert_eq!(handle.tracked_services(), 0);
 
-    let server = svc.new_service(addrs);
+    let server = svc.new_service(addrs(ep1));
     let (client_io, proxy_bg) = http_util::run_proxy(server).await;
 
     let (mut client, client_bg) =
@@ -445,6 +422,14 @@ async fn active_stacks_dont_idle_out() {
     proxy_bg.await.unwrap();
 }
 
+pub fn addrs(od: SocketAddr) -> listen::Addrs {
+    listen::Addrs::new(
+        Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
+        Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
+        Some(OrigDstAddr(od)),
+    )
+}
+
 async fn unmeshed_hello_world(
     server_settings: hyper::server::conn::Http,
     mut client_settings: ClientBuilder,
@@ -452,12 +437,6 @@ async fn unmeshed_hello_world(
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let addrs = listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
-    );
-
     let cfg = default_config(ep1);
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server_settings));
@@ -470,7 +449,7 @@ async fn unmeshed_hello_world(
 
     // Build the outbound server
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs);
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(ep1));
     let (mut client, bg) = http_util::connect_and_accept(&mut client_settings, server).await;
 
     let rsp = http_util::http_request(&mut client, Request::default()).await;

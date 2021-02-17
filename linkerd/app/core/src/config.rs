@@ -1,10 +1,10 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::{h1, h2};
-pub use crate::transport::{BindTcp, DefaultOrigDstAddr, Keepalive, NoOrigDstAddr, OrigDstAddr};
+pub use crate::transport::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, Keepalive, NoOrigDstAddr};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
-pub struct ServerConfig<A: OrigDstAddr = NoOrigDstAddr> {
+pub struct ServerConfig<A = NoOrigDstAddr> {
     pub bind: BindTcp<A>,
     pub h2_settings: h2::Settings,
 }
@@ -31,8 +31,8 @@ pub struct ProxyConfig {
 
 // === impl ServerConfig ===
 
-impl<A: OrigDstAddr> ServerConfig<A> {
-    pub fn with_orig_dst_addr<B: OrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
+impl<A: GetOrigDstAddr> ServerConfig<A> {
+    pub fn with_orig_dst_addr<B: GetOrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
         ServerConfig {
             bind: self.bind.with_orig_dst_addr(orig_dst_addrs),
             h2_settings: self.h2_settings,

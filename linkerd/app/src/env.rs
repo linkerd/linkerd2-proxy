@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::{BindTcp, Keepalive},
+    transport::{BindTcp, Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
@@ -389,8 +389,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
         let keepalive = Keepalive(outbound_accept_keepalive?);
         let bind = BindTcp::new(
-            outbound_listener_addr?
-                .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
+            ListenAddr(
+                outbound_listener_addr?
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
+            ),
             keepalive,
         );
         let server = ServerConfig {
@@ -451,8 +453,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound = {
         let keepalive = Keepalive(inbound_accept_keepalive?);
         let bind = BindTcp::new(
-            inbound_listener_addr?
-                .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
+            ListenAddr(
+                inbound_listener_addr?
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
+            ),
             keepalive,
         );
         let server = ServerConfig {
@@ -503,7 +507,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
         // Ensure that connections thaat directly target the inbound port are
         // secured (unless identity is disabled).
-        let inbound_port = server.bind.bind_addr().port();
+        let inbound_port = server.bind.addr().as_ref().port();
         if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
             debug!(
                 "Adding {} to {}",
@@ -563,8 +567,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
             bind: BindTcp::new(
-                admin_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
+                ListenAddr(
+                    admin_listener_addr?
+                        .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
+                ),
                 inbound.proxy.server.bind.keepalive(),
             ),
             h2_settings,
@@ -611,7 +617,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|(addr, ids)| super::tap::Config::Enabled {
             permitted_client_ids: ids,
             config: ServerConfig {
-                bind: BindTcp::new(addr, inbound.proxy.server.bind.keepalive()),
+                bind: BindTcp::new(ListenAddr(addr), inbound.proxy.server.bind.keepalive()),
                 h2_settings,
             },
         })
