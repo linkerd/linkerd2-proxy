@@ -78,7 +78,6 @@ impl<L> Layers<L> {
     ) -> Layers<Pair<Pair<L, BoxServiceLayer<Req>>, BufferLayer<Req>>>
     where
         Req: Send + 'static,
-        // Rsp: Send + 'static,
     {
         self.push(BoxServiceLayer::new())
             .push(BufferLayer::new(capacity))
