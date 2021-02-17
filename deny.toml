@@ -45,11 +45,7 @@ multiple-versions = "deny"
 wildcards = "allow"
 highlight = "all"
 deny = []
-skip = [
-    # Pulled in by tracing-futures v0.2
-    { name = "pin-project", version = "0.4.27" },
-    { name = "pin-project-internal", version = "0.4.27" },
-]
+skip = []
 skip-tree = []
 
 [sources]
