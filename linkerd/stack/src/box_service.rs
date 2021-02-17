@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 pub use tower::util::BoxService;
+
 #[derive(Copy, Debug)]
 pub struct BoxServiceLayer<R> {
     _p: PhantomData<fn(R)>,
