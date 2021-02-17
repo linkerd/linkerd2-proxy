@@ -10,7 +10,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectAddr, ConnectTcp};
+use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectAddr, ConnectTcp, Keepalive};
 use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
 use std::future::Future;
@@ -186,7 +186,9 @@ where
             std::time::Duration::from_secs(10),
         );
 
-        let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
+        let (listen_addr, listen) = BindTcp::new(addr, Keepalive(None))
+            .bind()
+            .expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
             let (meta, io) = listen
@@ -215,7 +217,7 @@ where
         let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {
             let conn = tls::Client::layer(client_tls)
-                .layer(ConnectTcp::new(None))
+                .layer(ConnectTcp::new(Keepalive(None)))
                 .oneshot(Target(server_addr, client_server_id.map(Into::into)))
                 .await;
             match conn {

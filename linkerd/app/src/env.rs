@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::BindTcp,
+    transport::{BindTcp, Keepalive},
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
@@ -387,7 +387,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
-        let keepalive = outbound_accept_keepalive?;
+        let keepalive = Keepalive(outbound_accept_keepalive?);
         let bind = BindTcp::new(
             outbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
@@ -396,7 +396,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             bind: bind.with_orig_dst_addr(outbound_orig_dst),
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
         };
@@ -404,7 +404,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             outbound_max_idle_per_endoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
-        let keepalive = outbound_connect_keepalive?;
+        let keepalive = Keepalive(outbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
@@ -414,7 +414,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
             h1_settings: h1::PoolSettings {
@@ -449,7 +449,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let inbound = {
-        let keepalive = inbound_accept_keepalive?;
+        let keepalive = Keepalive(inbound_accept_keepalive?);
         let bind = BindTcp::new(
             inbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
@@ -458,7 +458,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             bind: bind.with_orig_dst_addr(inbound_orig_dst),
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
         };
@@ -466,7 +466,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
-        let keepalive = inbound_connect_keepalive?;
+        let keepalive = Keepalive(inbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
             timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
@@ -476,7 +476,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
             h1_settings: h1::PoolSettings {

@@ -1,5 +1,6 @@
+use crate::Keepalive;
 use futures::prelude::*;
-use std::{io, net::SocketAddr, time::Duration};
+use std::{io, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio_stream::wrappers::TcpListenerStream;
 use tracing::trace;
@@ -12,7 +13,7 @@ pub trait OrigDstAddr: Clone {
 #[derive(Clone, Debug)]
 pub struct BindTcp<O: OrigDstAddr = NoOrigDstAddr> {
     bind_addr: SocketAddr,
-    keepalive: Option<Duration>,
+    keepalive: Keepalive,
     orig_dst_addr: O,
 }
 
@@ -38,7 +39,7 @@ pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 pub use self::mock::MockOrigDstAddr as DefaultOrigDstAddr;
 
 impl BindTcp {
-    pub fn new(bind_addr: SocketAddr, keepalive: Option<Duration>) -> Self {
+    pub fn new(bind_addr: SocketAddr, keepalive: Keepalive) -> Self {
         Self {
             bind_addr,
             keepalive,
@@ -60,7 +61,7 @@ impl<A: OrigDstAddr> BindTcp<A> {
         self.bind_addr
     }
 
-    pub fn keepalive(&self) -> Option<Duration> {
+    pub fn keepalive(&self) -> Keepalive {
         self.keepalive
     }
 
@@ -81,7 +82,7 @@ impl<A: OrigDstAddr> BindTcp<A> {
         Ok((addr, accept))
     }
 
-    fn accept(tcp: TcpStream, keepalive: Option<Duration>, get_orig: A) -> io::Result<Connection> {
+    fn accept(tcp: TcpStream, keepalive: Keepalive, get_orig: A) -> io::Result<Connection> {
         let addrs = {
             let local = tcp.local_addr()?;
             let peer = tcp.peer_addr()?;
@@ -95,6 +96,7 @@ impl<A: OrigDstAddr> BindTcp<A> {
             Addrs::new(local, peer, orig_dst)
         };
 
+        let Keepalive(keepalive) = keepalive;
         super::set_nodelay_or_warn(&tcp);
         super::set_keepalive_or_warn(&tcp, keepalive);
 
