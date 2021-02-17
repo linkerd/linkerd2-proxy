@@ -1,6 +1,6 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::{h1, h2};
-pub use crate::transport::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, NoOrigDstAddr};
+pub use crate::transport::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, Keepalive, NoOrigDstAddr};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -13,7 +13,7 @@ pub struct ServerConfig<A = NoOrigDstAddr> {
 pub struct ConnectConfig {
     pub backoff: ExponentialBackoff,
     pub timeout: Duration,
-    pub keepalive: Option<Duration>,
+    pub keepalive: Keepalive,
     pub h1_settings: h1::PoolSettings,
     pub h2_settings: h2::Settings,
 }

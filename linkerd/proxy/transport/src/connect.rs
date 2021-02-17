@@ -1,22 +1,21 @@
-use crate::{Remote, ServerAddr};
+use crate::{Keepalive, Remote, ServerAddr};
 use linkerd_io as io;
 use linkerd_stack::Param;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    time::Duration,
 };
 use tokio::net::TcpStream;
 use tracing::debug;
 
 #[derive(Copy, Clone, Debug)]
 pub struct ConnectTcp {
-    keepalive: Option<Duration>,
+    keepalive: Keepalive,
 }
 
 impl ConnectTcp {
-    pub fn new(keepalive: Option<Duration>) -> Self {
+    pub fn new(keepalive: Keepalive) -> Self {
         Self { keepalive }
     }
 }
@@ -32,7 +31,7 @@ impl<T: Param<Remote<ServerAddr>>> tower::Service<T> for ConnectTcp {
     }
 
     fn call(&mut self, t: T) -> Self::Future {
-        let keepalive = self.keepalive;
+        let Keepalive(keepalive) = self.keepalive;
         let Remote(ServerAddr(addr)) = t.param();
         debug!(server.addr = %addr, "Connecting");
         Box::pin(async move {
