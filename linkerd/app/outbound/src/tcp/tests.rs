@@ -10,7 +10,11 @@ use crate::{
     Config, Outbound,
 };
 use linkerd_app_core::{
-    io, svc, svc::NewService, tls, transport::listen, Conditional, Error, IpMatch,
+    io, svc,
+    svc::NewService,
+    tls,
+    transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    Conditional, Error, IpMatch,
 };
 use std::{
     future::Future,
@@ -721,9 +725,9 @@ async fn profile_endpoint_propagates_conn_errors() {
     let mut server = build_server(cfg, profiles, resolver, connect);
 
     let svc = server.new_service(listen::Addrs::new(
-        ([127, 0, 0, 1], 4140).into(),
-        ([127, 0, 0, 1], 666).into(),
-        Some(ep1),
+        Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
+        Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
+        Some(OrigDstAddr(ep1)),
     ));
 
     let res = svc
@@ -824,9 +828,9 @@ where
     let svc = {
         let _e = span.enter();
         let addrs = listen::Addrs::new(
-            ([127, 0, 0, 1], 4140).into(),
-            ([127, 0, 0, 1], 666).into(),
-            Some(orig_dst),
+            Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
+            Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
+            Some(OrigDstAddr(orig_dst)),
         );
         let svc = new_svc.new_service(addrs);
         tracing::trace!("new service");

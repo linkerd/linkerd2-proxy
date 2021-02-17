@@ -6,7 +6,7 @@ use linkerd_app_core::{
     stack_tracing,
     svc::{self, Param},
     tls,
-    transport::{self, listen},
+    transport::{self, addrs::*, listen},
     transport_header::TransportHeader,
     Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
@@ -16,7 +16,7 @@ use tracing::debug;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
-    pub client_addr: SocketAddr,
+    pub client_addr: Remote<ClientAddr>,
     pub tls: tls::ConditionalServerTls,
 }
 
@@ -63,7 +63,7 @@ impl TcpAccept {
     pub fn port_skipped(tcp: listen::Addrs) -> Self {
         Self {
             target_addr: tcp.target_addr(),
-            client_addr: tcp.peer(),
+            client_addr: tcp.client(),
             tls: Conditional::None(tls::NoServerTls::PortSkipped),
         }
     }
@@ -73,7 +73,7 @@ impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
     fn from((tls, addrs): tls::server::Meta<listen::Addrs>) -> Self {
         Self {
             target_addr: addrs.target_addr(),
-            client_addr: addrs.peer(),
+            client_addr: addrs.client(),
             tls,
         }
     }
@@ -242,7 +242,7 @@ impl tap::Inspect for Target {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
         req.extensions()
             .get::<HttpAccept>()
-            .map(|s| s.tcp.client_addr)
+            .map(|s| s.tcp.client_addr.into())
     }
 
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {

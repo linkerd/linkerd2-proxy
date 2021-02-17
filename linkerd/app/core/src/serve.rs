@@ -35,7 +35,7 @@ where
                     // The local addr should be instrumented from the listener's context.
                     let span = info_span!(
                         "accept",
-                        peer.addr = %addrs.peer(),
+                        client.addr = %addrs.client(),
                         target.addr = %addrs.target_addr(),
                     );
 

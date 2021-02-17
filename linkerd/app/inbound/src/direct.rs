@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
-    transport::{self, listen, metrics::SensorIo},
+    transport::{self, listen, metrics::SensorIo, ClientAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Never,
 };
@@ -45,7 +45,7 @@ pub struct GatewayTransportHeader {
 pub struct ClientInfo {
     pub client_id: tls::ClientId,
     pub alpn: Option<tls::NegotiatedProtocol>,
-    pub client_addr: SocketAddr,
+    pub client_addr: Remote<ClientAddr>,
     pub local_addr: SocketAddr,
 }
 
@@ -189,7 +189,7 @@ impl TryFrom<(tls::ConditionalServerTls, listen::Addrs)> for ClientInfo {
             }) => Ok(Self {
                 client_id,
                 alpn: negotiated_protocol,
-                client_addr: addrs.peer(),
+                client_addr: addrs.client(),
                 local_addr: addrs.target_addr(),
             }),
             _ => Err(RefusedNoIdentity(())),
