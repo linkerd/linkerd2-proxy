@@ -466,7 +466,7 @@ dependencies = [
  "httparse",
  "httpdate",
  "itoa",
- "pin-project 1.0.5",
+ "pin-project",
  "socket2",
  "tokio",
  "tower-service",
@@ -481,7 +481,7 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-test",
  "tower",
@@ -669,7 +669,7 @@ dependencies = [
  "linkerd-tracing",
  "linkerd-transport-header",
  "linkerd2-proxy-api",
- "pin-project 1.0.5",
+ "pin-project",
  "procinfo",
  "prost-types",
  "regex",
@@ -760,7 +760,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-retry",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-test",
  "tower",
@@ -819,7 +819,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tower",
  "tracing",
@@ -850,7 +850,7 @@ dependencies = [
  "futures",
  "linkerd-dns-name",
  "linkerd-error",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tracing",
  "trust-dns-resolver",
@@ -870,7 +870,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-test",
  "tower",
@@ -883,7 +883,7 @@ dependencies = [
  "bytes",
  "futures",
  "linkerd-io",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tracing",
 ]
@@ -906,7 +906,7 @@ dependencies = [
  "futures",
  "indexmap",
  "linkerd-metrics",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
 ]
 
@@ -916,7 +916,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
 ]
 
@@ -925,7 +925,7 @@ name = "linkerd-exp-backoff"
 version = "0.1.0"
 dependencies = [
  "futures",
- "pin-project 1.0.5",
+ "pin-project",
  "quickcheck",
  "rand",
  "tokio",
@@ -941,7 +941,7 @@ dependencies = [
  "http-body",
  "linkerd-error",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
 ]
 
@@ -969,7 +969,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-metrics",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
  "tracing",
 ]
@@ -994,7 +994,7 @@ dependencies = [
  "bytes",
  "futures",
  "linkerd-errno",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-rustls",
  "tokio-test",
@@ -1048,7 +1048,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
- "pin-project 1.0.5",
+ "pin-project",
  "prost",
  "tonic",
  "tower",
@@ -1061,7 +1061,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-error",
- "pin-project 0.4.27",
+ "pin-project",
  "tower",
 ]
 
@@ -1075,7 +1075,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-core",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tower",
  "tracing",
@@ -1121,7 +1121,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-timeout",
- "pin-project 1.0.5",
+ "pin-project",
  "rand",
  "tokio",
  "tokio-test",
@@ -1143,7 +1143,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tonic",
  "tracing",
@@ -1156,7 +1156,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-proxy-core",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
  "tracing",
 ]
@@ -1179,7 +1179,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
- "pin-project 1.0.5",
+ "pin-project",
  "prost-types",
  "rand",
  "tokio",
@@ -1196,7 +1196,7 @@ dependencies = [
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "rand",
  "tokio",
  "tower",
@@ -1214,7 +1214,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "socket2",
  "tokio",
  "tokio-stream",
@@ -1229,7 +1229,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
  "tracing",
 ]
@@ -1240,7 +1240,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-error",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
  "tracing",
 ]
@@ -1261,7 +1261,7 @@ dependencies = [
  "linkerd-proxy-api-resolve",
  "linkerd-stack",
  "linkerd2-proxy-api",
- "pin-project 1.0.5",
+ "pin-project",
  "prost-types",
  "quickcheck",
  "rand",
@@ -1287,7 +1287,7 @@ dependencies = [
  "dyn-clone",
  "futures",
  "linkerd-error",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-test",
  "tower",
@@ -1313,7 +1313,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tower",
  "tracing",
 ]
@@ -1325,7 +1325,7 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-test",
  "tower",
@@ -1643,31 +1643,11 @@ dependencies = [
 
 [[package]]
 name = "pin-project"
-version = "0.4.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ffbc8e94b38ea3d2d8ba92aea2983b503cd75d0888d75b86bb37970b5698e15"
-dependencies = [
- "pin-project-internal 0.4.27",
-]
-
-[[package]]
-name = "pin-project"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96fa8ebb90271c4477f144354485b8068bd8f6b78b428b01ba892ca26caf0b63"
 dependencies = [
- "pin-project-internal 1.0.5",
-]
-
-[[package]]
-name = "pin-project-internal"
-version = "0.4.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65ad2ae56b6abe3a1ee25f15ee605bacadb9a764edaba9c2bf4103800d4a1895"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "pin-project-internal",
 ]
 
 [[package]]
@@ -2228,7 +2208,7 @@ dependencies = [
  "http",
  "http-body",
  "percent-encoding",
- "pin-project 1.0.5",
+ "pin-project",
  "prost",
  "prost-derive",
  "tokio-stream",
@@ -2258,7 +2238,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "indexmap",
- "pin-project 1.0.5",
+ "pin-project",
  "rand",
  "slab",
  "tokio",
@@ -2288,7 +2268,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4546773ffeab9e4ea02b8872faa49bb616a80a7da66afc2f32688943f97efa7"
 dependencies = [
  "futures-util",
- "pin-project 1.0.5",
+ "pin-project",
  "tokio",
  "tokio-test",
  "tower-layer",
@@ -2330,11 +2310,11 @@ dependencies = [
 
 [[package]]
 name = "tracing-futures"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab7bb6f14721aa00656086e9335d363c5c8747bae02ebe32ea2c7dece5689b4c"
+checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
 dependencies = [
- "pin-project 0.4.27",
+ "pin-project",
  "tracing",
 ]
 
