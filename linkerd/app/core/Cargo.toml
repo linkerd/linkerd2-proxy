@@ -77,11 +77,11 @@ version = "0.4"
 # will consume tower's traces as traces.
 default-features = false
 features = [
+    "buffer",
     "make",
     "spawn-ready",
     "timeout",
     "util",
-    "buffer",
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies]
