@@ -6,7 +6,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
 use tokio::sync::mpsc;
-use tracing::debug;
+use tracing::Instrument;
 
 #[derive(Clone, Debug)]
 pub enum Config {
@@ -73,10 +73,10 @@ impl Config {
                     };
 
                     let addr = addr.clone();
-                    Box::pin(async move {
-                        debug!(peer.addr = ?addr, "Running");
-                        opencensus::export_spans(svc, node, spans_rx, metrics).await
-                    })
+                    Box::pin(
+                        opencensus::export_spans(svc, node, spans_rx, metrics)
+                            .instrument(tracing::debug_span!("opencensus", peer.addr = %addr)),
+                    )
                 };
 
                 Ok(OcCollector::Enabled(Box::new(EnabledCollector {
