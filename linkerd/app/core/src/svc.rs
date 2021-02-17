@@ -13,9 +13,8 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-pub use tower::buffer;
 use tower::{
-    buffer::BufferLayer,
+    buffer::{Buffer as TowerBuffer, BufferLayer},
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
@@ -26,6 +25,8 @@ pub use tower::{
     util::{Either, MapErrLayer},
     Service, ServiceExt,
 };
+
+pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -139,11 +140,11 @@ impl<S> Stack<S> {
     pub fn spawn_buffer<Req, Rsp>(
         self,
         capacity: usize,
-    ) -> Stack<buffer::Buffer<BoxService<Req, Rsp, S::Error>, Req>>
+    ) -> Stack<Buffer<Req, S::Response, S::Error>>
     where
         Req: Send + 'static,
-        Rsp: Send + 'static,
-        S: Service<Req, Response = Rsp> + Send + 'static,
+        S: Service<Req> + Send + 'static,
+        S::Response: Send + 'static,
         S::Error: Into<Error> + Send + Sync + 'static,
         S::Future: Send,
     {

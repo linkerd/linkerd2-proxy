@@ -43,10 +43,7 @@ type BalanceBody =
 
 type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
-pub type Client<B> = svc::buffer::Buffer<
-    svc::BoxService<http::Request<B>, http::Response<RspBody>, Error>,
-    http::Request<B>,
->;
+pub type Client<B> = svc::Buffer<http::Request<B>, http::Response<RspBody>, Error>;
 
 impl Config {
     pub fn build<B, L>(
