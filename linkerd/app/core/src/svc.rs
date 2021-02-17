@@ -144,7 +144,7 @@ impl<S> Stack<S> {
         Req: Send + 'static,
         Rsp: Send + 'static,
         S: Service<Req, Response = Rsp> + Send + 'static,
-        S::Error: Send + Sync + 'static,
+        S::Error: Into<Error> + Send + Sync + 'static,
         S::Future: Send,
     {
         self.push(BoxServiceLayer::new())
