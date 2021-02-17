@@ -12,7 +12,7 @@ use linkerd_app_core::{
     proxy,
     svc::{self, NewService, Param},
     tls,
-    transport::{self, ConnectAddr},
+    transport::{ClientAddr, Remote, ServerAddr},
     Conditional, Error, NameAddr, ProxyRuntime,
 };
 use tracing::Instrument;
@@ -21,7 +21,7 @@ fn build_server<I>(
     cfg: Config,
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
-    connect: Connect<ConnectAddr>,
+    connect: Connect<Remote<ServerAddr>>,
 ) -> impl svc::NewService<
     HttpAccept,
     Service = impl tower::Service<
@@ -36,9 +36,7 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
     let connect = svc::stack(connect)
-        .push_map_target(|t: TcpEndpoint| {
-            transport::ConnectAddr(([127, 0, 0, 1], t.param()).into())
-        })
+        .push_map_target(|t: TcpEndpoint| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
         .into_inner();
     Inbound::new(cfg, rt)
         .with_stack(connect)
@@ -58,7 +56,7 @@ async fn unmeshed_http1_hello_world() {
         version: proxy::http::Version::Http1,
         tcp: TcpAccept {
             target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: ([10, 0, 0, 41], 6894).into(),
+            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
             tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
         },
     };
@@ -105,7 +103,7 @@ async fn downgrade_origin_form() {
         version: proxy::http::Version::H2,
         tcp: TcpAccept {
             target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: ([10, 0, 0, 41], 6894).into(),
+            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
             tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
         },
     };
@@ -153,7 +151,7 @@ async fn downgrade_absolute_form() {
         version: proxy::http::Version::H2,
         tcp: TcpAccept {
             target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: ([10, 0, 0, 41], 6894).into(),
+            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
             tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
         },
     };
@@ -190,7 +188,9 @@ async fn downgrade_absolute_form() {
 }
 
 #[tracing::instrument]
-fn hello_server(http: hyper::server::conn::Http) -> impl Fn(ConnectAddr) -> Result<BoxedIo, Error> {
+fn hello_server(
+    http: hyper::server::conn::Http,
+) -> impl Fn(Remote<ServerAddr>) -> Result<BoxedIo, Error> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
         let _e = span.enter();

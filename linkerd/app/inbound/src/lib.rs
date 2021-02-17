@@ -27,7 +27,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{self, listen},
+    transport::{self, listen, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, future::Future, net::SocketAddr, time::Duration};
@@ -110,7 +110,7 @@ impl Inbound<()> {
         } = config.proxy.connect;
 
         let stack = svc::stack(transport::ConnectTcp::new(keepalive))
-            .push_map_target(|t: T| transport::ConnectAddr(([127, 0, 0, 1], t.param()).into()))
+            .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
             // Limits the time we wait for a connection to be established.
             .push_timeout(timeout)
             .push(svc::stack::BoxFuture::layer());

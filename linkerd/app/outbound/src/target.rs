@@ -5,7 +5,9 @@ use linkerd_app_core::{
         resolve::map_endpoint::MapEndpoint,
     },
     svc::{self, Param},
-    tls, transport, transport_header, Addr, Conditional, Error,
+    tls,
+    transport::{self, Remote, ServerAddr},
+    transport_header, Addr, Conditional, Error,
 };
 use std::net::SocketAddr;
 
@@ -222,9 +224,9 @@ impl<P> Endpoint<P> {
     }
 }
 
-impl<P> Param<transport::ConnectAddr> for Endpoint<P> {
-    fn param(&self) -> transport::ConnectAddr {
-        transport::ConnectAddr(self.addr)
+impl<P> Param<Remote<ServerAddr>> for Endpoint<P> {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(self.addr))
     }
 }
 
