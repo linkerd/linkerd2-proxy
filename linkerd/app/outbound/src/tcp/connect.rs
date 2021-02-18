@@ -1,13 +1,25 @@
 use super::opaque_transport::OpaqueTransport;
 use crate::{target::Endpoint, Outbound};
+use futures::future;
 use linkerd_app_core::{
-    io, svc, tls, transport::ConnectTcp, transport_header::SessionProtocol, Error,
+    io, svc, tls,
+    transport::{ConnectTcp, Remote, ServerAddr},
+    transport_header::SessionProtocol,
+    Error,
 };
+use std::task::{Context, Poll};
 use tracing::debug_span;
 
+/// Prevents outbound connections on the loopback interface, unless the
+/// `allow-loopback` feature is enabled.
+#[derive(Clone, Debug)]
+pub struct PreventLoopback<S>(S);
+
+// === impl Outbound ===
+
 impl Outbound<()> {
-    pub fn to_tcp_connect(&self) -> Outbound<ConnectTcp> {
-        let connect = ConnectTcp::new(self.config.proxy.connect.keepalive);
+    pub fn to_tcp_connect(&self) -> Outbound<PreventLoopback<ConnectTcp>> {
+        let connect = PreventLoopback(ConnectTcp::new(self.config.proxy.connect.keepalive));
         self.clone().with_stack(connect)
     }
 }
@@ -18,7 +30,7 @@ impl<C> Outbound<C> {
     ) -> Outbound<
         impl svc::Service<
                 Endpoint<P>,
-                Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+                Response = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
@@ -27,7 +39,7 @@ impl<C> Outbound<C> {
         Endpoint<P>: svc::Param<Option<SessionProtocol>>,
         C: svc::Service<Endpoint<P>, Error = io::Error> + Clone + Send + 'static,
         C::Response: tls::HasNegotiatedProtocol,
-        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Future: Send + 'static,
     {
         let Self {
@@ -37,8 +49,6 @@ impl<C> Outbound<C> {
         } = self;
         let identity_disabled = rt.identity.is_none();
 
-        // TODO: We should prevent connections on the loopback interface; but
-        // this is currently required by tests.
         let stack = connect
             // Initiates mTLS if the target is configured with identity. The
             // endpoint configures ALPN when there is an opaque transport hint OR
@@ -99,5 +109,49 @@ impl<C> Outbound<C> {
             runtime,
             stack,
         }
+    }
+}
+
+// === impl PreventLoopback ===
+
+impl<S> PreventLoopback<S> {
+    #[cfg(not(feature = "allow-loopback"))]
+    fn check_loopback(Remote(ServerAddr(addr)): Remote<ServerAddr>) -> io::Result<()> {
+        if addr.ip().is_loopback() {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                "Outbound proxy cannot initiate connections on the loopback interface",
+            ));
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "allow-loopback")]
+    fn check_loopback(_: Remote<ServerAddr>) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<T, S> svc::Service<T> for PreventLoopback<S>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+    S: svc::Service<T, Error = io::Error>,
+{
+    type Response = S::Response;
+    type Error = io::Error;
+    type Future = future::Either<S::Future, future::Ready<io::Result<S::Response>>>;
+
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.0.poll_ready(cx)
+    }
+
+    fn call(&mut self, ep: T) -> Self::Future {
+        if let Err(e) = Self::check_loopback(ep.param()) {
+            return future::Either::Right(future::err(e));
+        }
+
+        future::Either::Left(self.0.call(ep))
     }
 }
