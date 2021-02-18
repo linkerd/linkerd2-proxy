@@ -12,6 +12,7 @@ This is used by tests and the executable.
 """
 
 [features]
+allow-loopback = ["linkerd-app-outbound/allow-loopback"]
 mock-orig-dst  = ["linkerd-app-core/mock-orig-dst"]
 
 [dependencies]
