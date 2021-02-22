@@ -41,4 +41,4 @@ pin-project = "1"
 
 [dev-dependencies]
 tokio-test = "0.4"
-tracing-subscriber = "0.2"
+tracing-subscriber = "0.2.16"
