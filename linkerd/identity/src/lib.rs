@@ -62,7 +62,10 @@ const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
     rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
 const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
-const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
+const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[
+    rustls::ProtocolVersion::TLSv1_2,
+    rustls::ProtocolVersion::TLSv1_3,
+];
 
 // === impl Csr ===
 
