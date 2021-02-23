@@ -12,7 +12,7 @@ use std::{
 };
 use tokio::time;
 use tower::util::ServiceExt;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 #[async_trait::async_trait]
 pub trait Detect<I>: Clone + Send + Sync + 'static {
@@ -50,7 +50,7 @@ pub fn allow_timeout<P, T>((p, t): (Detected<P>, T)) -> (Option<P>, T) {
     match p {
         Ok(p) => (p, t),
         Err(DetectTimeout(timeout)) => {
-            debug!(?timeout, "Detection timeout");
+            info!(?timeout, "Protocol detection timeout");
             (None, t)
         }
     }
