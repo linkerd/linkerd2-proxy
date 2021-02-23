@@ -25,7 +25,7 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
 pub type Detected<P> = Result<Option<P>, DetectTimeout>;
 
 #[derive(Clone, Debug)]
-pub struct DetectTimeout(());
+pub struct DetectTimeout(time::Duration);
 
 #[derive(Copy, Clone, Debug)]
 pub struct NewDetectService<D, N> {
@@ -49,8 +49,8 @@ const BUFFER_CAPACITY: usize = 1024;
 pub fn allow_timeout<P, T>((p, t): (Detected<P>, T)) -> (Option<P>, T) {
     match p {
         Ok(p) => (p, t),
-        Err(DetectTimeout(())) => {
-            debug!("Detection timed out");
+        Err(DetectTimeout(timeout)) => {
+            debug!(?timeout, "Detection timeout");
             (None, t)
         }
     }
@@ -127,7 +127,7 @@ where
                     debug!(?protocol, elapsed = ?t0.elapsed(), "Detected");
                     Ok(protocol)
                 }
-                Err(_) => Err(DetectTimeout(())),
+                Err(_) => Err(DetectTimeout(timeout)),
                 Ok(Err(e)) => return Err(e),
             };
 
@@ -157,7 +157,7 @@ where
 
 impl fmt::Display for DetectTimeout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Detection timeout")
+        write!(f, "Detection timed out after {:?}", self.0)
     }
 }
 
