@@ -50,6 +50,7 @@ impl<T> Outbound<T> {
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .into_inner(),
             ))
+            .push_map_target(detect::allow_timeout)
             .push(detect::NewDetectService::layer(
                 detect_protocol_timeout,
                 http::DetectHttp::default(),

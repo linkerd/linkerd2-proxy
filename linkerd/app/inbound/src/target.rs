@@ -10,7 +10,13 @@ use linkerd_app_core::{
     transport_header::TransportHeader,
     Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt,
+    net::SocketAddr,
+    str::FromStr,
+    sync::Arc,
+};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -57,6 +63,9 @@ pub struct RequestTarget {
     accept: HttpAccept,
 }
 
+#[derive(Debug, Default)]
+pub struct AdminHttpOnly(());
+
 // === impl TcpAccept ===
 
 impl TcpAccept {
@@ -96,6 +105,20 @@ impl Param<transport::labels::Key> for TcpAccept {
 }
 
 // === impl HttpAccept ===
+
+impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, TcpAccept)> for HttpAccept {
+    type Error = Error;
+
+    fn try_from(
+        (version, tcp): (Result<Option<http::Version>, E>, TcpAccept),
+    ) -> Result<Self, Error> {
+        match version {
+            Ok(Some(version)) => Ok(Self { version, tcp }),
+            Ok(None) => Err(AdminHttpOnly(()).into()),
+            Err(timeout) => Err(timeout.into()),
+        }
+    }
+}
 
 impl From<(http::Version, TcpAccept)> for HttpAccept {
     fn from((version, tcp): (http::Version, TcpAccept)) -> Self {
@@ -354,3 +377,13 @@ impl Param<Option<profiles::Receiver>> for Logical {
         self.profiles.clone()
     }
 }
+
+// === impl AdminHttpOnly ===
+
+impl fmt::Display for AdminHttpOnly {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("proxy admin server is HTTP-only")
+    }
+}
+
+impl std::error::Error for AdminHttpOnly {}

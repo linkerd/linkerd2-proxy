@@ -19,7 +19,10 @@ use linkerd_app_inbound::{
     Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
-use std::{convert::TryInto, fmt};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt,
+};
 use tracing::debug_span;
 
 #[derive(Clone, Debug, Default)]
@@ -201,10 +204,7 @@ where
         )
         .push_http_server()
         .into_stack()
-        .push_map_target(HttpLegacy::from)
-        .push(svc::UnwrapOr::layer(
-            svc::Fail::<_, RefusedNoTarget>::default(),
-        ))
+        .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
         .push(detect::NewDetectService::layer(
             detect_protocol_timeout,
             http::DetectHttp::default(),
@@ -271,6 +271,20 @@ impl Param<tls::ClientId> for HttpTransportHeader {
 }
 
 // === impl HttpLegacy ===
+
+impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, ClientInfo)> for HttpLegacy {
+    type Error = Error;
+
+    fn try_from(
+        (version, client): (Result<Option<http::Version>, E>, ClientInfo),
+    ) -> Result<Self, Error> {
+        match version {
+            Ok(Some(version)) => Ok(Self { version, client }),
+            Ok(None) => Err(RefusedNoTarget(()).into()),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
 
 impl From<(http::Version, ClientInfo)> for HttpLegacy {
     fn from((version, client): (http::Version, ClientInfo)) -> Self {

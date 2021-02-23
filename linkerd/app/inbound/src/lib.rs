@@ -249,6 +249,7 @@ where
                     .into_inner(),
             ))
             .push_cache(config.cache_max_idle_age)
+            .push_map_target(detect::allow_timeout)
             .push(detect::NewDetectService::layer(
                 config.detect_protocol_timeout,
                 http::DetectHttp::default(),

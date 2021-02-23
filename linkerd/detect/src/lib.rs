@@ -5,6 +5,7 @@ use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_stack::{layer, NewService};
 use std::{
+    fmt,
     future::Future,
     pin::Pin,
     task::{Context, Poll},
@@ -14,15 +15,17 @@ use tower::util::ServiceExt;
 use tracing::{debug, trace};
 
 #[async_trait::async_trait]
-pub trait Detect: Clone + Send + Sync + 'static {
+pub trait Detect<I>: Clone + Send + Sync + 'static {
     type Protocol: Send;
 
-    async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
-        &self,
-        io: &mut I,
-        buf: &mut BytesMut,
-    ) -> Result<Option<Self::Protocol>, Error>;
+    async fn detect(&self, io: &mut I, buf: &mut BytesMut)
+        -> Result<Option<Self::Protocol>, Error>;
 }
+
+pub type Detected<P> = Result<Option<P>, DetectTimeout>;
+
+#[derive(Clone, Debug)]
+pub struct DetectTimeout(());
 
 #[derive(Copy, Clone, Debug)]
 pub struct NewDetectService<D, N> {
@@ -42,6 +45,16 @@ pub struct DetectService<T, D, N> {
 }
 
 const BUFFER_CAPACITY: usize = 1024;
+
+pub fn allow_timeout<P, T>((p, t): (Detected<P>, T)) -> (Option<P>, T) {
+    match p {
+        Ok(p) => (p, t),
+        Err(DetectTimeout(())) => {
+            debug!("Detection timed out");
+            (None, t)
+        }
+    }
+}
 
 // === impl NewDetectService ===
 
@@ -82,10 +95,10 @@ impl<D: Clone, N: Clone, T> NewService<T> for NewDetectService<D, N> {
 impl<S, T, D, N, I> tower::Service<I> for DetectService<T, D, N>
 where
     T: Clone + Send + 'static,
-    I: io::AsyncRead + Send + Unpin + 'static,
-    D: Detect,
+    I: Send + 'static,
+    D: Detect<I>,
     D::Protocol: std::fmt::Debug,
-    N: NewService<(Option<D::Protocol>, T), Service = S> + Clone + Send + 'static,
+    N: NewService<(Detected<D::Protocol>, T), Service = S> + Clone + Send + 'static,
     S: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     S::Error: Into<Error>,
     S::Future: Send,
@@ -109,20 +122,17 @@ where
             trace!("Starting protocol detection");
             let t0 = time::Instant::now();
 
-            let protocol = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
+            let detected = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
                 Ok(Ok(protocol)) => {
                     debug!(?protocol, elapsed = ?t0.elapsed(), "Detected");
-                    protocol
+                    Ok(protocol)
                 }
+                Err(_) => Err(DetectTimeout(())),
                 Ok(Err(e)) => return Err(e),
-                Err(_) => {
-                    debug!(?timeout, "Detection timed out");
-                    None
-                }
             };
 
             let mut accept = inner
-                .new_service((protocol, target))
+                .new_service((detected, target))
                 .ready_oneshot()
                 .await
                 .map_err(Into::into)?;
@@ -142,3 +152,13 @@ where
         })
     }
 }
+
+// === impl DetectTimeout
+
+impl fmt::Display for DetectTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Detection timeout")
+    }
+}
+
+impl std::error::Error for DetectTimeout {}

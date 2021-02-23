@@ -25,14 +25,10 @@ const SMALLEST_POSSIBLE_HTTP1_REQ: &str = "GET / HTTP/1.1";
 pub struct DetectHttp(());
 
 #[async_trait::async_trait]
-impl Detect for DetectHttp {
+impl<I: io::AsyncRead + Send + Unpin + 'static> Detect<I> for DetectHttp {
     type Protocol = Version;
 
-    async fn detect<I: io::AsyncRead + Send + Unpin + 'static>(
-        &self,
-        io: &mut I,
-        buf: &mut BytesMut,
-    ) -> Result<Option<Version>, Error> {
+    async fn detect(&self, io: &mut I, buf: &mut BytesMut) -> Result<Option<Version>, Error> {
         trace!(capacity = buf.capacity(), "Reading");
         let sz = io.read_buf(buf).await?;
         trace!(sz, "Read");

@@ -125,6 +125,7 @@ impl Outbound<()> {
             .push_map_target(http::Accept::from)
             .push(svc::UnwrapOr::layer(tcp))
             .push_cache(cache_max_idle_age)
+            .push_map_target(detect::allow_timeout)
             .push(detect::NewDetectService::layer(
                 detect_protocol_timeout,
                 http::DetectHttp::default(),
