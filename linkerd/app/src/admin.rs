@@ -31,6 +31,8 @@ pub struct Admin {
 #[derive(Debug, Default)]
 pub struct AdminHttpOnly(());
 
+// === impl Config ===
+
 impl Config {
     pub fn build<R>(
         self,
@@ -60,9 +62,14 @@ impl Config {
             )
             .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push_map_target(HttpAccept::from)
-            .push(svc::UnwrapOr::layer(
-                svc::Fail::<_, AdminHttpOnly>::default(),
+            .push(svc::Filter::<TcpAccept, _>::layer(
+                |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout<_>>, _)| {
+                    match version {
+                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
+                        Ok(None) => Err(Error::from(AdminHttpOnly(()))),
+                        Err(timeout) => Err(Error::from(timeout)),
+                    }
+                },
             ))
             .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
@@ -82,6 +89,8 @@ impl Config {
         })
     }
 }
+
+// === impl AdminHttpOnly ===
 
 impl fmt::Display for AdminHttpOnly {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
