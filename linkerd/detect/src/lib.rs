@@ -50,7 +50,11 @@ pub fn allow_timeout<P, T>((p, t): (Detected<P>, T)) -> (Option<P>, T) {
     match p {
         Ok(p) => (p, t),
         Err(DetectTimeout(timeout)) => {
-            info!(?timeout, "Protocol detection timeout");
+            info!(
+                ?timeout,
+                protocol = %std::any::type_name::<P>(),
+                "Protocol detection timeout"
+            );
             (None, t)
         }
     }
@@ -157,7 +161,7 @@ where
 
 impl fmt::Display for DetectTimeout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Detection timed out after {:?}", self.0)
+        write!(f, "protocol detection timed out after {:?}", self.0)
     }
 }
 
