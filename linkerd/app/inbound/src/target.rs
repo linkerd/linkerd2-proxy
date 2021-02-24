@@ -10,7 +10,7 @@ use linkerd_app_core::{
     transport_header::TransportHeader,
     Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::{convert::TryInto, fmt, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
