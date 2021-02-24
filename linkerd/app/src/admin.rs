@@ -13,7 +13,7 @@ use crate::{
     inbound::target::{HttpAccept, Target, TcpAccept},
     svc,
 };
-use std::{convert::TryFrom, net::SocketAddr, pin::Pin, time::Duration};
+use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
@@ -27,6 +27,11 @@ pub struct Admin {
     pub latch: admin::Latch,
     pub serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
 }
+
+#[derive(Debug, Default)]
+pub struct AdminHttpOnly(());
+
+// === impl Config ===
 
 impl Config {
     pub fn build<R>(
@@ -57,7 +62,15 @@ impl Config {
             )
             .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push(svc::Filter::<TcpAccept, _>::layer(HttpAccept::try_from))
+            .push(svc::Filter::<TcpAccept, _>::layer(
+                |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout>, _)| {
+                    match version {
+                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
+                        Ok(None) => Err(Error::from(AdminHttpOnly(()))),
+                        Err(timeout) => Err(Error::from(timeout)),
+                    }
+                },
+            ))
             .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
@@ -76,3 +89,13 @@ impl Config {
         })
     }
 }
+
+// === impl AdminHttpOnly ===
+
+impl fmt::Display for AdminHttpOnly {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("proxy admin server is HTTP-only")
+    }
+}
+
+impl std::error::Error for AdminHttpOnly {}
