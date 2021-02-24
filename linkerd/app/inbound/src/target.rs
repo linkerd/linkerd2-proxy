@@ -57,9 +57,6 @@ pub struct RequestTarget {
     accept: HttpAccept,
 }
 
-#[derive(Debug, Default)]
-pub struct AdminHttpOnly(());
-
 // === impl TcpAccept ===
 
 impl TcpAccept {
@@ -357,13 +354,3 @@ impl Param<Option<profiles::Receiver>> for Logical {
         self.profiles.clone()
     }
 }
-
-// === impl AdminHttpOnly ===
-
-impl fmt::Display for AdminHttpOnly {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("proxy admin server is HTTP-only")
-    }
-}
-
-impl std::error::Error for AdminHttpOnly {}
