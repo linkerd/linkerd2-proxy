@@ -22,10 +22,9 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
         -> Result<Option<Self::Protocol>, Error>;
 }
 
-pub type Detected<P> = Result<Option<P>, DetectTimeout>;
+pub type Detected<P> = Result<Option<P>, DetectTimeout<P>>;
 
-#[derive(Clone, Debug)]
-pub struct DetectTimeout(time::Duration);
+pub struct DetectTimeout<P>(time::Duration, std::marker::PhantomData<P>);
 
 #[derive(Copy, Clone, Debug)]
 pub struct NewDetectService<D, N> {
@@ -49,12 +48,8 @@ const BUFFER_CAPACITY: usize = 1024;
 pub fn allow_timeout<P, T>((p, t): (Detected<P>, T)) -> (Option<P>, T) {
     match p {
         Ok(p) => (p, t),
-        Err(DetectTimeout(timeout)) => {
-            info!(
-                ?timeout,
-                protocol = %std::any::type_name::<P>(),
-                "Protocol detection timeout"
-            );
+        Err(e) => {
+            info!("Continuing after timeout: {}", e);
             (None, t)
         }
     }
@@ -131,7 +126,7 @@ where
                     debug!(?protocol, elapsed = ?t0.elapsed(), "Detected");
                     Ok(protocol)
                 }
-                Err(_) => Err(DetectTimeout(timeout)),
+                Err(_) => Err(DetectTimeout(timeout, std::marker::PhantomData)),
                 Ok(Err(e)) => return Err(e),
             };
 
@@ -157,12 +152,25 @@ where
     }
 }
 
-// === impl DetectTimeout
+// === impl DetectTimeout ===
 
-impl fmt::Display for DetectTimeout {
+impl<P> fmt::Debug for DetectTimeout<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "protocol detection timed out after {:?}", self.0)
+        f.debug_tuple(std::any::type_name::<Self>())
+            .field(&self.0)
+            .finish()
     }
 }
 
-impl std::error::Error for DetectTimeout {}
+impl<P> fmt::Display for DetectTimeout<P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} protocol detection timed out after {:?}",
+            std::any::type_name::<P>(),
+            self.0
+        )
+    }
+}
+
+impl<P> std::error::Error for DetectTimeout<P> {}

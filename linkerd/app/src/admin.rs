@@ -63,7 +63,7 @@ impl Config {
             .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push(svc::Filter::<TcpAccept, _>::layer(
-                |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout>, _)| {
+                |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout<_>>, _)| {
                     match version {
                         Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
                         Ok(None) => Err(Error::from(AdminHttpOnly(()))),
