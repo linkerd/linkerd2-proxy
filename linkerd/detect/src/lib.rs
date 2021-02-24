@@ -22,7 +22,7 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
         -> Result<Option<Self::Protocol>, Error>;
 }
 
-pub type Detected<P> = Result<Option<P>, DetectTimeout<P>>;
+pub type DetectResult<P> = Result<Option<P>, DetectTimeout<P>>;
 
 pub struct DetectTimeout<P>(time::Duration, std::marker::PhantomData<P>);
 
@@ -45,7 +45,7 @@ pub struct DetectService<T, D, N> {
 
 const BUFFER_CAPACITY: usize = 1024;
 
-pub fn allow_timeout<P, T>((p, t): (Detected<P>, T)) -> (Option<P>, T) {
+pub fn allow_timeout<P, T>((p, t): (DetectResult<P>, T)) -> (Option<P>, T) {
     match p {
         Ok(p) => (p, t),
         Err(e) => {
@@ -97,7 +97,7 @@ where
     I: Send + 'static,
     D: Detect<I>,
     D::Protocol: std::fmt::Debug,
-    N: NewService<(Detected<D::Protocol>, T), Service = S> + Clone + Send + 'static,
+    N: NewService<(DetectResult<D::Protocol>, T), Service = S> + Clone + Send + 'static,
     S: tower::Service<io::PrefixedIo<I>, Response = ()> + Send,
     S::Error: Into<Error>,
     S::Future: Send,
@@ -123,7 +123,7 @@ where
 
             let detected = match time::timeout(timeout, detect.detect(&mut io, &mut buf)).await {
                 Ok(Ok(protocol)) => {
-                    debug!(?protocol, elapsed = ?t0.elapsed(), "Detected");
+                    debug!(?protocol, elapsed = ?t0.elapsed(), "DetectResult");
                     Ok(protocol)
                 }
                 Err(_) => Err(DetectTimeout(timeout, std::marker::PhantomData)),
