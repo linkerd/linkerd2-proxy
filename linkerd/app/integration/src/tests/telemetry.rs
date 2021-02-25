@@ -1260,51 +1260,6 @@ mod transport {
             .await;
     }
 
-    // linkerd/linkerd2#831
-    #[tokio::test]
-    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-    async fn inbound_tcp_duration() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-            dst: _dst,
-            profile: _profile,
-            src_labels,
-            dst_labels,
-        } = TcpFixture::inbound().await;
-
-        let tcp_client = client.connect().await;
-
-        let mut src_count = src_labels
-            .metric("tcp_connection_duration_count")
-            .label("errno", "")
-            .value(1u64);
-
-        let mut dst_count = dst_labels
-            .metric("tcp_connection_duration_count")
-            .label("errno", "")
-            .value(1u64);
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        tcp_client.shutdown().await;
-        // TODO: make assertions about buckets
-        src_count.assert_in(&metrics).await;
-        dst_count.assert_in(&metrics).await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        src_count.assert_in(&metrics).await;
-        dst_count.assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        src_count.set_value(2u64).assert_in(&metrics).await;
-        dst_count.set_value(2u64).assert_in(&metrics).await;
-    }
-
     #[tokio::test]
     async fn inbound_tcp_write_bytes_total() {
         test_write_bytes_total(TcpFixture::inbound()).await
@@ -1313,51 +1268,6 @@ mod transport {
     #[tokio::test]
     async fn inbound_tcp_read_bytes_total() {
         test_read_bytes_total(TcpFixture::inbound()).await
-    }
-
-    #[tokio::test]
-    #[cfg_attr(not(feature = "flaky_tests"), ignore)]
-    async fn outbound_tcp_duration() {
-        let _trace = trace_init();
-        let TcpFixture {
-            client,
-            metrics,
-            proxy: _proxy,
-            dst: _dst,
-            profile: _profile,
-            src_labels,
-            dst_labels,
-        } = TcpFixture::outbound().await;
-
-        let mut src_count = src_labels
-            .metric("tcp_connection_duration_count")
-            .label("errno", "")
-            .value(1u64);
-
-        let mut dst_count = dst_labels
-            .metric("tcp_connection_duration_count")
-            .label("errno", "")
-            .value(1u64);
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        tcp_client.shutdown().await;
-        // TODO: make assertions about buckets
-        src_count.assert_in(&metrics).await;
-        dst_count.assert_in(&metrics).await;
-
-        let tcp_client = client.connect().await;
-
-        tcp_client.write(TcpFixture::HELLO_MSG).await;
-        assert_eq!(tcp_client.read().await, TcpFixture::BYE_MSG.as_bytes());
-        src_count.assert_in(&metrics).await;
-        dst_count.assert_in(&metrics).await;
-
-        tcp_client.shutdown().await;
-        src_count.set_value(2u64).assert_in(&metrics).await;
-        dst_count.set_value(2u64).assert_in(&metrics).await;
     }
 
     #[tokio::test]
