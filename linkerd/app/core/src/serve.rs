@@ -52,13 +52,10 @@ where
                                         .await
                                     {
                                         Ok(()) => debug!("Connection closed"),
-                                        Err(reason) => {
-                                            if is_io(&*reason) {
-                                                debug!(%reason, "Connection closed")
-                                            } else {
-                                                info!(%reason, "Connection closed")
-                                            }
+                                        Err(reason) if is_io(&*reason) => {
+                                            debug!(%reason, "Connection closed")
                                         }
+                                        Err(error) => info!(%error, "Connection closed"),
                                     }
                                     // Hold the service until the connection is
                                     // complete. This helps tie any inner cache
