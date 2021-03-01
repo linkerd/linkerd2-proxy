@@ -5,7 +5,7 @@ use linkerd_error::Error;
 use linkerd_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
 use tracing::instrument::Instrument;
-use tracing::{debug, info_span, warn};
+use tracing::{debug, info, info_span, warn};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
@@ -52,7 +52,10 @@ where
                                         .await
                                     {
                                         Ok(()) => debug!("Connection closed"),
-                                        Err(reason) => debug!(%reason, "Connection closed"),
+                                        Err(reason) if is_io(&*reason) => {
+                                            debug!(%reason, "Connection closed")
+                                        }
+                                        Err(error) => info!(%error, "Connection closed"),
                                     }
                                     // Hold the service until the connection is
                                     // complete. This helps tie any inner cache
@@ -78,4 +81,8 @@ where
         res = accept => { res }
         _ = shutdown => { Ok(()) }
     }
+}
+
+fn is_io(e: &(dyn std::error::Error + 'static)) -> bool {
+    e.is::<io::Error>() || e.source().map(is_io).unwrap_or(false)
 }
