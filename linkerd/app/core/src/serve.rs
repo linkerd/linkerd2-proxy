@@ -5,7 +5,7 @@ use linkerd_error::Error;
 use linkerd_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
 use tracing::instrument::Instrument;
-use tracing::{debug, info, info_span, warn};
+use tracing::{debug, info_span, warn};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
