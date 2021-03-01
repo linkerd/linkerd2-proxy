@@ -52,7 +52,7 @@ where
                                         .await
                                     {
                                         Ok(()) => debug!("Connection closed"),
-                                        Err(error) => info!(%error, "Connection closed"),
+                                        Err(reason) => debug!(%reason, "Connection closed"),
                                     }
                                     // Hold the service until the connection is
                                     // complete. This helps tie any inner cache
