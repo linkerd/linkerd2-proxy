@@ -169,6 +169,7 @@ impl Outbound<()> {
                     .into_inner();
                 let http = self
                     .to_tcp_connect()
+                    .push_tcp_endpoint()
                     .push_http_endpoint()
                     .push_http_logical(resolve)
                     .into_inner();
