@@ -81,13 +81,6 @@ impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
     }
 }
 
-// /// Used to determine whether detection should be skipped.
-// impl<P> Param<OrigDstAddr> for Logical<P> {
-//     fn param(&self) -> OrigDstAddr {
-//         self.orig_dst
-//     }
-// }
-
 /// Used for default traffic split
 impl<P> Param<profiles::LogicalAddr> for Logical<P> {
     fn param(&self) -> profiles::LogicalAddr {
