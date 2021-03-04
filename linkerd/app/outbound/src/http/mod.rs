@@ -87,7 +87,7 @@ impl Param<normalize_uri::DefaultAuthority> for Logical {
 
 impl Param<client::Settings> for Endpoint {
     fn param(&self) -> client::Settings {
-        match self.logical.protocol {
+        match self.protocol {
             Version::H2 => client::Settings::H2,
             Version::Http1 => match self.metadata.protocol_hint() {
                 ProtocolHint::Unknown => client::Settings::Http1,
@@ -99,7 +99,7 @@ impl Param<client::Settings> for Endpoint {
 
 impl Param<Option<SessionProtocol>> for Endpoint {
     fn param(&self) -> Option<SessionProtocol> {
-        match self.logical.protocol {
+        match self.protocol {
             Version::H2 => Some(SessionProtocol::Http2),
             Version::Http1 => match self.metadata.protocol_hint() {
                 ProtocolHint::Http2 => Some(SessionProtocol::Http2),
@@ -133,7 +133,7 @@ impl tap::Inspect for Endpoint {
     }
 
     fn dst_addr<B>(&self, _: &Request<B>) -> Option<SocketAddr> {
-        Some(self.addr)
+        Some(self.addr.into())
     }
 
     fn dst_labels<B>(&self, _: &Request<B>) -> Option<&IndexMap<String, String>> {

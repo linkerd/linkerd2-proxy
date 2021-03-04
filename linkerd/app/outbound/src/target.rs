@@ -35,11 +35,11 @@ pub struct Concrete<P> {
 
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
-    pub addr: SocketAddr,
-    pub target_addr: SocketAddr,
+    pub addr: Remote<ServerAddr>,
     pub tls: tls::ConditionalClientTls,
     pub metadata: Metadata,
-    pub logical: Logical<P>,
+    pub logical_addr: Addr,
+    pub protocol: P,
 }
 
 // === impl Accept ===
@@ -188,28 +188,25 @@ impl<P> Param<ConcreteAddr> for Concrete<P> {
 
 impl<P> Endpoint<P> {
     pub fn from_logical(reason: tls::NoClientTls) -> impl (Fn(Logical<P>) -> Self) + Clone {
-        move |logical| {
-            let target_addr = logical.orig_dst;
-            match logical
-                .profile
-                .as_ref()
-                .and_then(|p| p.borrow().endpoint.clone())
-            {
-                None => Self {
-                    addr: logical.param(),
-                    metadata: Metadata::default(),
-                    tls: Conditional::None(reason),
-                    logical,
-                    target_addr,
-                },
-                Some((addr, metadata)) => Self {
-                    addr,
-                    tls: EndpointFromMetadata::client_tls(&metadata),
-                    metadata,
-                    logical,
-                    target_addr,
-                },
-            }
+        move |logical| match logical
+            .profile
+            .as_ref()
+            .and_then(|p| p.borrow().endpoint.clone())
+        {
+            None => Self {
+                addr: Remote(ServerAddr(logical.orig_dst)),
+                metadata: Metadata::default(),
+                tls: Conditional::None(reason),
+                logical_addr: logical.addr(),
+                protocol: logical.protocol,
+            },
+            Some((addr, metadata)) => Self {
+                addr: Remote(ServerAddr(addr)),
+                tls: EndpointFromMetadata::client_tls(&metadata),
+                metadata,
+                logical_addr: logical.addr(),
+                protocol: logical.protocol,
+            },
         }
     }
 
@@ -226,7 +223,7 @@ impl<P> Endpoint<P> {
 
 impl<P> Param<Remote<ServerAddr>> for Endpoint<P> {
     fn param(&self) -> Remote<ServerAddr> {
-        Remote(ServerAddr(self.addr))
+        self.addr
     }
 }
 
@@ -245,10 +242,10 @@ impl<P> Param<transport::labels::Key> for Endpoint<P> {
 impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         metrics::OutboundEndpointLabels {
-            authority: Some(self.logical.addr().to_http_authority()),
+            authority: Some(self.logical_addr.to_http_authority()),
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.tls.clone(),
-            target_addr: self.target_addr,
+            target_addr: self.addr.into(),
         }
     }
 }
@@ -263,8 +260,8 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.addr.hash(state);
         self.tls.hash(state);
-        self.logical.orig_dst.hash(state);
-        self.logical.protocol.hash(state);
+        self.logical_addr.hash(state);
+        self.protocol.hash(state);
     }
 }
 
@@ -297,7 +294,7 @@ impl EndpointFromMetadata {
     }
 }
 
-impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for EndpointFromMetadata {
+impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for EndpointFromMetadata {
     type Out = Endpoint<P>;
 
     fn map_endpoint(
@@ -307,12 +304,13 @@ impl<P: Clone + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for Endpoint
         metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
+        let tls = Self::client_tls(&metadata);
         Endpoint {
-            addr,
-            tls: Self::client_tls(&metadata),
+            addr: Remote(ServerAddr(addr)),
+            tls,
             metadata,
-            logical: concrete.logical.clone(),
-            target_addr: concrete.logical.orig_dst,
+            logical_addr: concrete.logical.addr(),
+            protocol: concrete.logical.protocol,
         }
     }
 }

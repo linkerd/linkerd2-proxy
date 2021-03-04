@@ -3,6 +3,7 @@ use linkerd_app_core::{
     dns, io,
     svc::{self, Param},
     tls,
+    transport::{Remote, ServerAddr},
     transport_header::{SessionProtocol, TransportHeader, PROTOCOL},
     Error,
 };
@@ -56,14 +57,15 @@ where
     fn call(&mut self, mut ep: Endpoint<P>) -> Self::Future {
         // Configure the target port from the endpoint. In opaque cases, this is
         // the application's actual port to be encoded in the header.
-        let mut target_port = ep.addr.port();
+        let Remote(ServerAddr(addr)) = ep.addr;
+        let mut target_port = addr.port();
 
         // If this endpoint should use opaque transport, then we update the
         // endpoint so the connection actually targets the target proxy's
         // inbound port.
         if let Some(opaque_port) = ep.metadata.opaque_transport_port() {
             debug!(target_port, opaque_port, "Using opaque transport");
-            ep.addr = (ep.addr.ip(), opaque_port).into();
+            ep.addr = Remote(ServerAddr((addr.ip(), opaque_port).into()));
         }
 
         // If an authority override is present, we're communicating with a
@@ -112,14 +114,15 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::target::{Endpoint, Logical};
+    use crate::target::Endpoint;
     use futures::future;
     use linkerd_app_core::{
         io::{self, AsyncWriteExt},
         proxy::api_resolve::{Metadata, ProtocolHint},
         tls,
+        transport::{Remote, ServerAddr},
         transport_header::TransportHeader,
-        Conditional,
+        Addr, Conditional,
     };
     use pin_project::pin_project;
     use std::task::Context;
@@ -127,15 +130,11 @@ mod test {
 
     fn ep(metadata: Metadata) -> Endpoint<()> {
         Endpoint {
-            addr: ([127, 0, 0, 2], 4321).into(),
-            target_addr: ([127, 0, 0, 2], 4321).into(),
+            addr: Remote(ServerAddr(([127, 0, 0, 2], 4321).into())),
             tls: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
             metadata,
-            logical: Logical {
-                orig_dst: ([127, 0, 0, 2], 4321).into(),
-                profile: None,
-                protocol: (),
-            },
+            logical_addr: Addr::Socket(([127, 0, 0, 2], 4321).into()),
+            protocol: (),
         }
     }
 
@@ -146,7 +145,8 @@ mod test {
 
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
-                assert_eq!(ep.addr.port(), 4321);
+                let Remote(ServerAddr(sa)) = ep.addr;
+                assert_eq!(sa.port(), 4321);
                 future::ready(Ok::<_, io::Error>(Io {
                     io: tokio_test::io::Builder::new().write(b"hello").build(),
                     alpn: None,
@@ -167,9 +167,10 @@ mod test {
 
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
-                assert_eq!(ep.addr.port(), 4143);
+                let Remote(ServerAddr(sa)) = ep.addr;
+                assert_eq!(sa.port(), 4143);
                 let hdr = TransportHeader {
-                    port: ep.logical.orig_dst.port(),
+                    port: 4321,
                     name: None,
                     protocol: None,
                 };
@@ -202,7 +203,8 @@ mod test {
 
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
-                assert_eq!(ep.addr.port(), 4143);
+                let Remote(ServerAddr(sa)) = ep.addr;
+                assert_eq!(sa.port(), 4143);
                 let hdr = TransportHeader {
                     port: 5555,
                     name: Some(dns::Name::from_str("foo.bar.example.com").unwrap()),
@@ -237,9 +239,10 @@ mod test {
 
         let svc = OpaqueTransport {
             inner: service_fn(|ep: Endpoint<()>| {
-                assert_eq!(ep.addr.port(), 4143);
+                let Remote(ServerAddr(sa)) = ep.addr;
+                assert_eq!(sa.port(), 4143);
                 let hdr = TransportHeader {
-                    port: ep.logical.orig_dst.port(),
+                    port: 4321,
                     name: None,
                     protocol: None,
                 };
