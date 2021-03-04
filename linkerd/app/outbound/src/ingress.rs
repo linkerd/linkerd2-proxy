@@ -133,7 +133,6 @@ impl Outbound<()> {
             ))
             .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
             .push(self.runtime.metrics.transport.layer_accept())
-            .push_map_target(tcp::Accept::from)
             .push_request_filter(tcp::Accept::try_from)
             .check_new_service::<listen::Addrs, I>()
             // Boxing is necessary purely to limit the link-time overhead of
