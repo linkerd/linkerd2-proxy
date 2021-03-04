@@ -38,7 +38,7 @@ async fn plaintext_tcp() {
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
     let logical = Logical {
-        orig_dst: target_addr,
+        orig_dst: OrigDstAddr(target_addr),
         profile: Some(profile::only_default()),
         protocol: (),
     };
@@ -81,14 +81,16 @@ async fn plaintext_tcp() {
 async fn tls_when_hinted() {
     let _trace = support::trace_init();
 
+    let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls = Logical {
-        orig_dst: SocketAddr::new([0, 0, 0, 0].into(), 5550),
+        orig_dst: OrigDstAddr(tls_addr),
         profile: Some(profile::only_default()),
         protocol: (),
     };
 
+    let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
     let plain = Logical {
-        orig_dst: SocketAddr::new([0, 0, 0, 0].into(), 5551),
+        orig_dst: OrigDstAddr(plain_addr),
         profile: Some(profile::only_default()),
         protocol: (),
     };
@@ -103,12 +105,12 @@ async fn tls_when_hinted() {
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect()
         // The plaintext endpoint should use plaintext...
-        .endpoint_fn(plain.orig_dst, move |endpoint: Endpoint| {
+        .endpoint_fn(plain_addr, move |endpoint: Endpoint| {
             assert!(endpoint.tls.is_none());
             let io = tls_srv_io.build();
             Ok(io)
         })
-        .endpoint_fn(tls.orig_dst, move |endpoint: Endpoint| {
+        .endpoint_fn(tls_addr, move |endpoint: Endpoint| {
             assert_eq!(endpoint.tls, Conditional::Some(id_name2.clone().into()));
             let io = srv_io.build();
             Ok(io)
@@ -117,10 +119,10 @@ async fn tls_when_hinted() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = support::resolver()
-        .endpoint_exists(plain.orig_dst, plain.orig_dst, Default::default())
+        .endpoint_exists(plain_addr, plain_addr, Default::default())
         .endpoint_exists(
-            tls.orig_dst,
-            tls.orig_dst,
+            tls_addr,
+            tls_addr,
             support::resolver::Metadata::new(
                 Default::default(),
                 support::resolver::ProtocolHint::Unknown,
@@ -136,7 +138,7 @@ async fn tls_when_hinted() {
 
     // Build the outbound TCP balancer stack.
     let (rt, _) = runtime();
-    let plain = Outbound::new(default_config(plain.orig_dst), rt.clone())
+    let plain = Outbound::new(default_config(plain_addr), rt.clone())
         .with_stack(connect.clone())
         .push_tcp_logical(resolver.clone())
         .into_inner()
@@ -144,7 +146,7 @@ async fn tls_when_hinted() {
         .oneshot(client_io.build())
         .err_into::<Error>();
 
-    let tls = Outbound::new(default_config(tls.orig_dst), rt)
+    let tls = Outbound::new(default_config(tls_addr), rt)
         .with_stack(connect)
         .push_tcp_logical(resolver)
         .into_inner()

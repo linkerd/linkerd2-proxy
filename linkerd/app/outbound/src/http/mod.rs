@@ -72,7 +72,7 @@ impl Param<normalize_uri::DefaultAuthority> for Logical {
         if let Some(p) = self.profile.as_ref() {
             if let Some(n) = p.borrow().name.as_ref() {
                 return normalize_uri::DefaultAuthority(Some(
-                    uri::Authority::from_str(&format!("{}:{}", n, self.orig_dst.port()))
+                    uri::Authority::from_str(&format!("{}:{}", n, self.orig_dst.0.port()))
                         .expect("Address must be a valid authority"),
                 ));
             }

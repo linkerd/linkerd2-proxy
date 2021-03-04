@@ -4,6 +4,7 @@ use linkerd_app_core::{
     transport::{listen, metrics::SensorIo},
     Error, IpMatch,
 };
+use std::convert::TryFrom;
 
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
@@ -58,7 +59,7 @@ impl<N> Outbound<N> {
             .push(rt.metrics.transport.layer_accept())
             .push_cache(config.proxy.cache_max_idle_age)
             .check_new_service::<tcp::Accept, I>()
-            .push_map_target(tcp::Accept::from)
+            .push_request_filter(tcp::Accept::try_from)
             .check_new_service::<listen::Addrs, I>();
 
         Outbound {
@@ -78,8 +79,8 @@ impl svc::stack::Predicate<tcp::Accept> for AllowProfile {
     type Request = profiles::LogicalAddr;
 
     fn check(&mut self, a: tcp::Accept) -> Result<profiles::LogicalAddr, Error> {
-        if self.0.matches(a.orig_dst.ip()) {
-            Ok(profiles::LogicalAddr(a.orig_dst.into()))
+        if self.0.matches(a.orig_dst.0.ip()) {
+            Ok(profiles::LogicalAddr(a.orig_dst.0.into()))
         } else {
             Err(discovery_rejected().into())
         }
