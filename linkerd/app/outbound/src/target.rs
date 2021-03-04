@@ -6,7 +6,7 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::{self, Remote, ServerAddr},
+    transport::{self, OrigDstAddr, Remote, ServerAddr},
     transport_header, Addr, Conditional, Error,
 };
 use std::net::SocketAddr;
@@ -16,13 +16,13 @@ pub struct EndpointFromMetadata;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept<P> {
-    pub orig_dst: SocketAddr,
+    pub orig_dst: OrigDstAddr,
     pub protocol: P,
 }
 
 #[derive(Clone)]
 pub struct Logical<P> {
-    pub orig_dst: SocketAddr,
+    pub orig_dst: OrigDstAddr,
     pub profile: Option<profiles::Receiver>,
     pub protocol: P,
 }
@@ -44,22 +44,14 @@ pub struct Endpoint<P> {
 
 // === impl Accept ===
 
-impl<P> Param<SocketAddr> for Accept<P> {
-    fn param(&self) -> SocketAddr {
-        self.orig_dst
-    }
-}
-
-impl<P> Param<Addr> for Accept<P> {
-    fn param(&self) -> Addr {
-        self.orig_dst.into()
-    }
-}
-
 impl<P> Param<transport::labels::Key> for Accept<P> {
     fn param(&self) -> transport::labels::Key {
         const NO_TLS: tls::ConditionalServerTls = Conditional::None(tls::NoServerTls::Loopback);
-        transport::labels::Key::accept(transport::labels::Direction::Out, NO_TLS, self.orig_dst)
+        transport::labels::Key::accept(
+            transport::labels::Direction::Out,
+            NO_TLS,
+            self.orig_dst.into(),
+        )
     }
 }
 
@@ -89,12 +81,12 @@ impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
     }
 }
 
-/// Used to determine whether detection should be skipped.
-impl<P> Param<SocketAddr> for Logical<P> {
-    fn param(&self) -> SocketAddr {
-        self.orig_dst
-    }
-}
+// /// Used to determine whether detection should be skipped.
+// impl<P> Param<OrigDstAddr> for Logical<P> {
+//     fn param(&self) -> OrigDstAddr {
+//         self.orig_dst
+//     }
+// }
 
 /// Used for default traffic split
 impl<P> Param<profiles::LogicalAddr> for Logical<P> {
@@ -108,8 +100,8 @@ impl<P> Logical<P> {
         self.profile
             .as_ref()
             .and_then(|p| p.borrow().name.clone())
-            .map(|n| Addr::from((n, self.orig_dst.port())))
-            .unwrap_or_else(|| self.orig_dst.into())
+            .map(|n| Addr::from((n, self.orig_dst.0.port())))
+            .unwrap_or_else(|| self.orig_dst.0.into())
     }
 }
 
@@ -194,7 +186,7 @@ impl<P> Endpoint<P> {
             .and_then(|p| p.borrow().endpoint.clone())
         {
             None => Self {
-                addr: Remote(ServerAddr(logical.orig_dst)),
+                addr: Remote(ServerAddr(logical.orig_dst.into())),
                 metadata: Metadata::default(),
                 tls: Conditional::None(reason),
                 logical_addr: logical.addr(),

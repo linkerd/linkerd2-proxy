@@ -6,6 +6,7 @@ use linkerd_app_core::{
     transport::{self, listen},
     Addr, AddrMatch, Error,
 };
+use std::convert::TryFrom;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -133,6 +134,7 @@ impl Outbound<()> {
             .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
             .push(self.runtime.metrics.transport.layer_accept())
             .push_map_target(tcp::Accept::from)
+            .push_request_filter(tcp::Accept::try_from)
             .check_new_service::<listen::Addrs, I>()
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
@@ -193,7 +195,8 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
     fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
         Ok(Target {
             accept: self.0,
-            dst: http_request_l5d_override_dst_addr(req).unwrap_or_else(|_| self.0.orig_dst.into()),
+            dst: http_request_l5d_override_dst_addr(req)
+                .unwrap_or_else(|_| self.0.orig_dst.0.into()),
         })
     }
 }

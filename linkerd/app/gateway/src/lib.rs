@@ -11,6 +11,7 @@ use linkerd_app_core::{
     proxy::{api_resolve::Metadata, core::Resolve, http},
     svc::{self, Param},
     tls,
+    transport::OrigDstAddr,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch, Never,
 };
@@ -120,7 +121,7 @@ where
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
             Some(rx) if rx.borrow().name.is_some() => Ok(outbound::tcp::Logical {
                 profile: Some(rx),
-                orig_dst: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                 protocol: (),
             }),
             _ => Err(discovery_rejected()),

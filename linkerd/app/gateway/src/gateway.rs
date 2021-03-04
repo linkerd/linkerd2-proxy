@@ -6,7 +6,9 @@ use linkerd_app_core::{
     profiles,
     proxy::http,
     svc::{self, layer},
-    tls, Error, NameAddr,
+    tls,
+    transport::OrigDstAddr,
+    Error, NameAddr,
 };
 use linkerd_app_outbound as outbound;
 use std::{
@@ -71,7 +73,7 @@ where
         let svc = self.outbound.new_service(outbound::http::Logical {
             profile,
             protocol: http.version,
-            orig_dst: ([0, 0, 0, 0], dst.port()).into(),
+            orig_dst: OrigDstAddr(([0, 0, 0, 0], dst.port()).into()),
         });
 
         Gateway::new(svc, http.target, local_id)
