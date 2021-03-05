@@ -62,9 +62,7 @@ async fn plaintext_tcp() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = map_endpoint::Resolve::new(
-        target::EndpointFromMetadata {
-            identity_disabled: false,
-        },
+        target::EndpointFromMetadata::default(),
         support::resolver().endpoint_exists(target_addr, target_addr, Default::default()),
     );
 
@@ -124,9 +122,7 @@ async fn tls_when_hinted() {
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
     let resolver = map_endpoint::Resolve::new(
-        target::EndpointFromMetadata {
-            identity_disabled: false,
-        },
+        target::EndpointFromMetadata::default(),
         support::resolver()
             .endpoint_exists(
                 Addr::from_str("plain:5551").unwrap(),
@@ -824,9 +820,7 @@ where
     Outbound::new(cfg, rt)
         .with_stack(connect)
         .push_tcp_logical(map_endpoint::Resolve::new(
-            target::EndpointFromMetadata {
-                identity_disabled: false,
-            },
+            target::EndpointFromMetadata::default(),
             resolver,
         ))
         .push_detect_http(support::service::no_http())

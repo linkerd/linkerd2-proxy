@@ -250,6 +250,16 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     }
 }
 
+// === EndpointFromMetadata ===
+
+impl Default for EndpointFromMetadata {
+    fn default() -> Self {
+        Self {
+            identity_disabled: false,
+        }
+    }
+}
+
 impl EndpointFromMetadata {
     fn client_tls(metadata: &Metadata) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with

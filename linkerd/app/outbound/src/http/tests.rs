@@ -77,9 +77,7 @@ where
         out.with_stack(connect)
             .push_http_endpoint()
             .push_http_logical(map_endpoint::Resolve::new(
-                target::EndpointFromMetadata {
-                    identity_disabled: true,
-                },
+                target::EndpointFromMetadata::default(),
                 resolver,
             ))
             .push_http_server()

@@ -117,9 +117,7 @@ where
         .clone()
         .push_tcp_endpoint()
         .push_tcp_logical(map_endpoint::Resolve::new(
-            outbound::target::EndpointFromMetadata {
-                identity_disabled: false,
-            },
+            outbound::target::EndpointFromMetadata::default(),
             resolve.clone(),
         ))
         .into_stack()
@@ -166,9 +164,7 @@ where
         .push_tcp_endpoint()
         .push_http_endpoint()
         .push_http_logical(map_endpoint::Resolve::new(
-            outbound::target::EndpointFromMetadata {
-                identity_disabled: false,
-            },
+            outbound::target::EndpointFromMetadata::default(),
             resolve,
         ))
         .into_stack()
