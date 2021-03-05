@@ -47,7 +47,6 @@ impl<C> Outbound<C> {
             runtime: rt,
             stack: connect,
         } = self;
-        let identity_disabled = rt.identity.is_none();
 
         let stack = connect
             // Initiates mTLS if the target is configured with identity. The
@@ -61,14 +60,7 @@ impl<C> Outbound<C> {
             // Limits the time we wait for a connection to be established.
             .push_timeout(config.proxy.connect.timeout)
             .push(svc::stack::BoxFuture::layer())
-            .push(rt.metrics.transport.layer_connect())
-            .push_map_target(move |e: Endpoint<P>| {
-                if identity_disabled {
-                    e.identity_disabled()
-                } else {
-                    e
-                }
-            });
+            .push(rt.metrics.transport.layer_connect());
 
         Outbound {
             config,

@@ -1,6 +1,7 @@
 use super::Endpoint;
 
 use crate::{
+    target,
     test_util::{
         support::{connect::Connect, http_util, profile, resolver, track},
         *,
@@ -11,6 +12,7 @@ use bytes::Bytes;
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     io,
+    proxy::resolve::map_endpoint,
     svc::{self, NewService},
     tls,
     transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -74,7 +76,10 @@ where
     out.clone().with_stack(NoTcpBalancer).push_detect_http(
         out.with_stack(connect)
             .push_http_endpoint()
-            .push_http_logical(resolver)
+            .push_http_logical(map_endpoint::Resolve::new(
+                target::EndpointFromMetadata::default(),
+                resolver,
+            ))
             .push_http_server()
             .into_inner(),
     )

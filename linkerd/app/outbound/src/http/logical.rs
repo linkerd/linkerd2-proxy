@@ -1,9 +1,9 @@
-use super::{Concrete, Endpoint, Logical};
+use super::{Concrete, Logical};
 use crate::{resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, http},
-    retry, svc, tls, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    proxy::{core::Resolve, http},
+    retry, svc, tls, Error, Never, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -25,13 +25,14 @@ impl<E> Outbound<E> {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + 'static,
+        E: svc::NewService<R::Endpoint, Service = ESvc> + Clone + Send + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
         ESvc::Error: Into<Error>,
         ESvc::Future: Send,
-        R: Resolve<Concrete, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+        R: Resolve<Concrete, Error = Error> + Clone + Send + 'static,
+        R::Endpoint: From<(tls::NoClientTls, Logical)> + Clone + Send,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
@@ -50,6 +51,7 @@ impl<E> Outbound<E> {
 
         let stack = endpoint
             .clone()
+            .check_new_service::<R::Endpoint, http::Request<http::BoxBody>>()
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())
@@ -62,6 +64,7 @@ impl<E> Outbound<E> {
                     // the balancer need not drive them all directly.
                     .push(svc::layer::mk(svc::SpawnReady::new)),
             )
+            .check_new_service::<R::Endpoint, http::Request<_>>()
             // Resolve the service to its endpoints and balance requests over them.
             //
             // If the balancer has been empty/unavailable, eagerly fail requests.
@@ -79,6 +82,7 @@ impl<E> Outbound<E> {
                     .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                     .push(http::BoxResponse::layer()),
             )
+            .check_make_service::<Concrete, http::Request<_>>()
             .push(svc::MapErrLayer::new(Into::into))
             // Drives the initial resolution via the service's readiness.
             .into_new_service()
@@ -96,9 +100,12 @@ impl<E> Outbound<E> {
                             .push(http::BoxRequest::layer())
                             .push(http::BoxResponse::layer()),
                     )
-                    .push_map_target(Endpoint::from_logical(
-                        tls::NoClientTls::NotProvidedByServiceDiscovery,
-                    ))
+                    .push_map_target(|logical: Logical| {
+                        R::Endpoint::from((
+                            tls::NoClientTls::NotProvidedByServiceDiscovery,
+                            logical,
+                        ))
+                    })
                     .into_inner(),
             ))
             // Distribute requests over a distribution of balancers via a
@@ -147,7 +154,24 @@ impl<E> Outbound<E> {
             )
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
             .push_switch(
-                Logical::or_endpoint(tls::NoClientTls::NotProvidedByServiceDiscovery),
+                |logical: Logical| {
+                    let should_resolve = match logical.profile.as_ref() {
+                        Some(p) => {
+                            let p = p.borrow();
+                            p.endpoint.is_none() && (p.name.is_some() || !p.targets.is_empty())
+                        }
+                        None => false,
+                    };
+
+                    if should_resolve {
+                        Ok::<_, Never>(svc::Either::A(logical))
+                    } else {
+                        Ok(svc::Either::B(R::Endpoint::from((
+                            tls::NoClientTls::NotProvidedByServiceDiscovery,
+                            logical,
+                        ))))
+                    }
+                },
                 svc::stack(endpoint)
                     .push_on_response(http::BoxRequest::layer())
                     .into_inner(),

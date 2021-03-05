@@ -10,9 +10,12 @@ use linkerd_app_core::{
     transport_header, Addr, Conditional, Error,
 };
 use std::net::SocketAddr;
+use tracing::debug;
 
 #[derive(Copy, Clone)]
-pub struct EndpointFromMetadata;
+pub struct EndpointFromMetadata {
+    pub identity_disabled: bool,
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept<P> {
@@ -149,7 +152,8 @@ impl<P> Logical<P> {
             if should_resolve {
                 Ok(svc::Either::A(logical))
             } else {
-                Ok(svc::Either::B(Endpoint::from_logical(reason)(logical)))
+                debug!(%reason, orig_dst = %logical.orig_dst, "Target is unresolveable");
+                Ok(svc::Either::B(Endpoint::from((reason, logical))))
             }
         }
     }
@@ -171,9 +175,9 @@ impl<P> Param<ConcreteAddr> for Concrete<P> {
 
 // === impl Endpoint ===
 
-impl<P> Endpoint<P> {
-    pub fn from_logical(reason: tls::NoClientTls) -> impl (Fn(Logical<P>) -> Self) + Clone {
-        move |logical| match logical
+impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
+    fn from((reason, logical): (tls::NoClientTls, Logical<P>)) -> Self {
+        match logical
             .profile
             .as_ref()
             .and_then(|p| p.borrow().endpoint.clone())
@@ -194,15 +198,11 @@ impl<P> Endpoint<P> {
             },
         }
     }
+}
 
-    pub fn from_accept(reason: tls::NoClientTls) -> impl (Fn(Accept<P>) -> Self) + Clone {
-        move |accept| Self::from_logical(reason)(Logical::from((None, accept)))
-    }
-
-    /// Marks identity as disabled.
-    pub fn identity_disabled(mut self) -> Self {
-        self.tls = Conditional::None(tls::NoClientTls::Disabled);
-        self
+impl<P> From<(tls::NoClientTls, Accept<P>)> for Endpoint<P> {
+    fn from((reason, accept): (tls::NoClientTls, Accept<P>)) -> Self {
+        Self::from((reason, Logical::from((None, accept))))
     }
 }
 
@@ -250,6 +250,16 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     }
 }
 
+// === EndpointFromMetadata ===
+
+impl Default for EndpointFromMetadata {
+    fn default() -> Self {
+        Self {
+            identity_disabled: false,
+        }
+    }
+}
+
 impl EndpointFromMetadata {
     fn client_tls(metadata: &Metadata) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with
@@ -289,7 +299,11 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for EndpointF
         metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
-        let tls = Self::client_tls(&metadata);
+        let tls = if self.identity_disabled {
+            tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
+        } else {
+            Self::client_tls(&metadata)
+        };
         Endpoint {
             addr: Remote(ServerAddr(addr)),
             tls,

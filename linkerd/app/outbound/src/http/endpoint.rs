@@ -37,7 +37,6 @@ where
             runtime: rt,
             stack: connect,
         } = self;
-        let identity_disabled = rt.identity.is_none();
         let config::ConnectConfig {
             h1_settings,
             h2_settings,
@@ -70,14 +69,7 @@ where
             ]))
             .push_on_response(http::BoxResponse::layer())
             .check_new::<Endpoint>()
-            .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
-            .push_map_target(move |e: Endpoint| {
-                if identity_disabled {
-                    e.identity_disabled()
-                } else {
-                    e
-                }
-            });
+            .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr));
 
         Outbound {
             config,

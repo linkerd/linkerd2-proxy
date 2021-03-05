@@ -50,7 +50,6 @@ impl Fixture {
         let labels = metrics::labels()
             .label("authority", "tele.test.svc.cluster.local")
             .label("direction", "inbound")
-            .label("tls", "disabled")
             .label("target_addr", orig_dst);
         Fixture {
             client,
@@ -79,7 +78,6 @@ impl Fixture {
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
         let labels = metrics::labels()
             .label("direction", "outbound")
-            .label("tls", "disabled")
             .label("authority", authority)
             .label("target_addr", orig_dst);
         Fixture {
@@ -175,7 +173,6 @@ impl TcpFixture {
         let dst_labels = metrics::labels()
             .label("direction", "outbound")
             .label("peer", "dst")
-            .label("tls", "disabled")
             .label("authority", orig_dst);
 
         TcpFixture {
@@ -525,7 +522,6 @@ mod outbound_dst_labels {
         let client = client::new(proxy.outbound, dest);
         let labels = metrics::labels()
             .label("direction", "outbound")
-            .label("tls", "disabled")
             .label("authority", dest_and_port)
             .label("target_addr", addr);
         let f = Fixture {

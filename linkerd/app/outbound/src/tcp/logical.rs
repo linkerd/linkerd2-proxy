@@ -2,14 +2,10 @@ use super::{Concrete, Endpoint, Logical};
 use crate::{resolve, Outbound};
 use linkerd_app_core::{
     config, drain, io, profiles,
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-        tcp,
-    },
+    proxy::{api_resolve::ConcreteAddr, core::Resolve, tcp},
     svc, tls, Conditional, Error,
 };
-use tracing::debug_span;
+use tracing::{debug, debug_span};
 
 impl<C> Outbound<C>
 where
@@ -30,7 +26,7 @@ where
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Resolve<Concrete, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+        R: Resolve<Concrete, Endpoint = Endpoint, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
@@ -90,9 +86,10 @@ where
             .push(svc::UnwrapOr::layer(
                 endpoint
                     .clone()
-                    .push_map_target(Endpoint::from_logical(
-                        tls::NoClientTls::NotProvidedByServiceDiscovery,
-                    ))
+                    .push_map_target(|logical: Logical| {
+                        debug!("No profile resolved");
+                        Endpoint::from((tls::NoClientTls::NotProvidedByServiceDiscovery, logical))
+                    })
                     .into_inner(),
             ))
             .check_new_service::<(Option<ConcreteAddr>, Logical), I>()
