@@ -8,7 +8,7 @@ use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
     detect, discovery_rejected, io, metrics, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, http},
+    proxy::{api_resolve::Metadata, core::Resolve, http, resolve::map_endpoint},
     svc::{self, Param},
     tls,
     transport::OrigDstAddr,
@@ -116,7 +116,12 @@ where
     let tcp = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_logical(resolve.clone())
+        .push_tcp_logical(map_endpoint::Resolve::new(
+            outbound::target::EndpointFromMetadata {
+                identity_disabled: false,
+            },
+            resolve.clone(),
+        ))
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
             Some(rx) if rx.borrow().name.is_some() => Ok(outbound::tcp::Logical {
@@ -160,7 +165,12 @@ where
     let http = outbound
         .push_tcp_endpoint()
         .push_http_endpoint()
-        .push_http_logical(resolve)
+        .push_http_logical(map_endpoint::Resolve::new(
+            outbound::target::EndpointFromMetadata {
+                identity_disabled: false,
+            },
+            resolve,
+        ))
         .into_stack()
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {

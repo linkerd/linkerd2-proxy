@@ -137,7 +137,7 @@ impl<S> Outbound<S> {
         self.push_tcp_endpoint()
             .push_tcp_logical(map_endpoint::Resolve::new(
                 target::EndpointFromMetadata { identity_disabled },
-                resolve.clone(),
+                resolve,
             ))
             .push_detect_http(http)
             .push_discover(profiles)
