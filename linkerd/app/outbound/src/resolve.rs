@@ -1,51 +1,30 @@
-#![allow(warnings)]
-
-use crate::target::{Concrete, Endpoint, EndpointFromMetadata};
-use futures::{future, prelude::*, stream};
 use linkerd_app_core::{
-    discovery_rejected, is_discovery_rejected,
     proxy::{
-        api_resolve::Metadata,
-        core::{Resolve, ResolveService, Update},
-        discover::{self, Buffer, FromResolve, MakeEndpoint},
-        resolve::map_endpoint,
+        core::Resolve,
+        discover::{self, Buffer},
     },
-    svc::{
-        layer,
-        stack::{Filter, Param, Predicate},
-        NewService,
-    },
-    Addr, Error,
+    svc::{layer, NewService},
 };
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::time::Duration;
 
-type Stack<P, R, N> =
-    Buffer<discover::Stack<N, map_endpoint::Resolve<EndpointFromMetadata, R>, Endpoint<P>>>;
-
-pub fn layer<P, R, N>(
+pub fn layer<T, R, N>(
     resolve: R,
     watchdog: Duration,
-) -> impl layer::Layer<N, Service = Stack<P, R, N>> + Clone
+) -> impl layer::Layer<N, Service = Buffer<discover::Stack<N, R, R::Endpoint>>> + Clone
 where
-    P: Copy + Send + std::fmt::Debug,
-    R: Resolve<Concrete<P>, Endpoint = Metadata> + Clone,
+    T: Clone + Send + std::fmt::Debug,
+    R: Resolve<T> + Clone,
     R::Resolution: Send,
     R::Future: Send,
-    N: NewService<Endpoint<P>>,
+    N: NewService<R::Endpoint>,
 {
     const ENDPOINT_BUFFER_CAPACITY: usize = 1_000;
 
-    let to_endpoint = EndpointFromMetadata;
     layer::mk(move |new_endpoint| {
-        let endpoints = discover::resolve(
-            new_endpoint,
-            map_endpoint::Resolve::new(to_endpoint, resolve.clone()),
-        );
-        Buffer::new(ENDPOINT_BUFFER_CAPACITY, watchdog, endpoints)
+        Buffer::new(
+            ENDPOINT_BUFFER_CAPACITY,
+            watchdog,
+            discover::resolve(new_endpoint, resolve.clone()),
+        )
     })
 }

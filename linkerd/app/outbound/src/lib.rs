@@ -17,7 +17,7 @@ pub(crate) mod test_util;
 use linkerd_app_core::{
     config::ProxyConfig,
     io, metrics, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve},
+    proxy::{api_resolve::Metadata, core::Resolve, resolve::map_endpoint},
     serve, svc, tls,
     transport::listen,
     AddrMatch, Error, ProxyRuntime,
@@ -121,16 +121,24 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
+        let identity_disabled = self.runtime.identity.is_none();
+
         let http = self
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve.clone())
+            .push_http_logical(map_endpoint::Resolve::new(
+                target::EndpointFromMetadata { identity_disabled },
+                resolve.clone(),
+            ))
             .push_http_server()
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_logical(resolve)
+            .push_tcp_logical(map_endpoint::Resolve::new(
+                target::EndpointFromMetadata { identity_disabled },
+                resolve.clone(),
+            ))
             .push_detect_http(http)
             .push_discover(profiles)
             .into_inner()
@@ -162,6 +170,7 @@ impl Outbound<()> {
         let serve = async move {
             if self.config.ingress_mode {
                 info!("Outbound routing in ingress-mode");
+                let identity_disabled = self.runtime.identity.is_none();
                 let tcp = self
                     .to_tcp_connect()
                     .push_tcp_endpoint()
@@ -171,7 +180,10 @@ impl Outbound<()> {
                     .to_tcp_connect()
                     .push_tcp_endpoint()
                     .push_http_endpoint()
-                    .push_http_logical(resolve)
+                    .push_http_logical(map_endpoint::Resolve::new(
+                        target::EndpointFromMetadata { identity_disabled },
+                        resolve,
+                    ))
                     .into_inner();
                 let stack = self.to_ingress(profiles, tcp, http);
                 let shutdown = self.runtime.drain.signaled();

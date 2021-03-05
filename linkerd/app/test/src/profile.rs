@@ -22,6 +22,10 @@ pub fn resolver() -> crate::resolver::Profiles {
     crate::resolver::Resolver::default()
 }
 
+pub fn only_with_name(name: &str) -> Receiver {
+    only(with_name(name))
+}
+
 pub fn with_name(name: &str) -> Profile {
     use std::str::FromStr;
     let name = dns::Name::from_str(name).expect("non-ascii characters in DNS name! 😢");

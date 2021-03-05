@@ -1,5 +1,6 @@
 use super::{Endpoint, Logical};
 use crate::{
+    target,
     test_util::{
         support::{
             connect::{Connect, ConnectFuture},
@@ -10,11 +11,13 @@ use crate::{
     Config, Outbound,
 };
 use linkerd_app_core::{
-    io, svc,
+    io,
+    proxy::resolve::map_endpoint,
+    svc,
     svc::NewService,
     tls,
     transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Conditional, Error, IpMatch,
+    Addr, Conditional, Error, IpMatch,
 };
 use std::{
     future::Future,
@@ -58,8 +61,12 @@ async fn plaintext_tcp() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver =
-        support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
+    let resolver = map_endpoint::Resolve::new(
+        target::EndpointFromMetadata {
+            identity_disabled: false,
+        },
+        support::resolver().endpoint_exists(target_addr, target_addr, Default::default()),
+    );
 
     // Build the outbound TCP balancer stack.
     let cfg = default_config(target_addr);
@@ -75,8 +82,6 @@ async fn plaintext_tcp() {
         .expect("conn should succeed");
 }
 
-// FIXME tls hinting requires a local identity.
-#[ignore]
 #[tokio::test]
 async fn tls_when_hinted() {
     let _trace = support::trace_init();
@@ -84,14 +89,14 @@ async fn tls_when_hinted() {
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls = Logical {
         orig_dst: OrigDstAddr(tls_addr),
-        profile: Some(profile::only_default()),
+        profile: Some(profile::only_with_name("tls")),
         protocol: (),
     };
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
     let plain = Logical {
         orig_dst: OrigDstAddr(plain_addr),
-        profile: Some(profile::only_default()),
+        profile: Some(profile::only_with_name("plain")),
         protocol: (),
     };
 
@@ -118,19 +123,28 @@ async fn tls_when_hinted() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = support::resolver()
-        .endpoint_exists(plain_addr, plain_addr, Default::default())
-        .endpoint_exists(
-            tls_addr,
-            tls_addr,
-            support::resolver::Metadata::new(
+    let resolver = map_endpoint::Resolve::new(
+        target::EndpointFromMetadata {
+            identity_disabled: false,
+        },
+        support::resolver()
+            .endpoint_exists(
+                Addr::from_str("plain:5551").unwrap(),
+                plain_addr,
                 Default::default(),
-                support::resolver::ProtocolHint::Unknown,
-                None,
-                Some(id_name),
-                None,
+            )
+            .endpoint_exists(
+                Addr::from_str("tls:5550").unwrap(),
+                tls_addr,
+                support::resolver::Metadata::new(
+                    Default::default(),
+                    support::resolver::ProtocolHint::Unknown,
+                    None,
+                    Some(id_name),
+                    None,
+                ),
             ),
-        );
+    );
 
     // Configure mock IO for the "client".
     let mut client_io = support::io();
@@ -138,18 +152,17 @@ async fn tls_when_hinted() {
 
     // Build the outbound TCP balancer stack.
     let (rt, _) = runtime();
-    let plain = Outbound::new(default_config(plain_addr), rt.clone())
-        .with_stack(connect.clone())
-        .push_tcp_logical(resolver.clone())
-        .into_inner()
+    let mut stack = Outbound::new(default_config(([0, 0, 0, 0], 0).into()), rt)
+        .with_stack(connect)
+        .push_tcp_logical(resolver)
+        .into_inner();
+
+    let plain = stack
         .new_service(plain)
         .oneshot(client_io.build())
         .err_into::<Error>();
 
-    let tls = Outbound::new(default_config(tls_addr), rt)
-        .with_stack(connect)
-        .push_tcp_logical(resolver)
-        .into_inner()
+    let tls = stack
         .new_service(tls)
         .oneshot(client_io.build())
         .err_into::<Error>();
@@ -810,7 +823,12 @@ where
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)
         .with_stack(connect)
-        .push_tcp_logical(resolver)
+        .push_tcp_logical(map_endpoint::Resolve::new(
+            target::EndpointFromMetadata {
+                identity_disabled: false,
+            },
+            resolver,
+        ))
         .push_detect_http(support::service::no_http())
         .push_discover(profiles)
         .into_inner()

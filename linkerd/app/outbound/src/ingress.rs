@@ -63,7 +63,9 @@ impl Outbound<()> {
 
         let tcp = svc::stack(tcp)
             .push_on_response(drain::Retain::layer(self.runtime.drain.clone()))
-            .push_map_target(tcp::Endpoint::from_accept(tls::NoClientTls::IngressNonHttp))
+            .push_map_target(|a: tcp::Accept| {
+                tcp::Endpoint::from((tls::NoClientTls::IngressNonHttp, a))
+            })
             .into_inner();
 
         svc::stack(http)
