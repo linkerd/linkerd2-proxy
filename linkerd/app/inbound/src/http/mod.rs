@@ -31,7 +31,7 @@ impl<H> Inbound<H> {
             > + Clone,
     >
     where
-        T: Param<Version> + Param<http::normalize_uri::DefaultAuthority>,
+        T: Param<Version> + Param<http::normalize_uri::DefaultAuthority> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>

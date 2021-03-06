@@ -7,7 +7,7 @@ pub use linkerd_stack::{
     self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
     NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
-pub use linkerd_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
+pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
@@ -87,8 +87,8 @@ impl<L> Layers<L> {
         self.push(stack::OnResponseLayer::new(layer))
     }
 
-    pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
-        self.push(InstrumentMakeLayer::new(get_span))
+    pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
+        self.push(NewInstrumentLayer::new(get_span))
     }
 }
 
@@ -122,12 +122,12 @@ impl<S> Stack<S> {
         self.push(layer::mk(stack::MakeThunk::new))
     }
 
-    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
-        self.push(InstrumentMakeLayer::new(get_span))
+    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<NewInstrument<G, S>> {
+        self.push(NewInstrumentLayer::new(get_span))
     }
 
-    pub fn instrument_from_target(self) -> Stack<InstrumentMake<(), S>> {
-        self.push(InstrumentMakeLayer::from_target())
+    pub fn instrument_from_target(self) -> Stack<NewInstrument<(), S>> {
+        self.push(NewInstrumentLayer::from_target())
     }
 
     /// Wraps an inner `MakeService` to be a `NewService`.
