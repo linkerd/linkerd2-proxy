@@ -191,11 +191,9 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                 }
 
                 // Gracefully teardown the server-side connection.
-                if should_teardown_connection(&*error) {
-                    if let Some(c) = self.close.as_ref() {
-                        debug!("Closing server-side connection");
-                        c.close();
-                    }
+                if let Some(c) = self.close.as_ref() {
+                    debug!("Closing server-side connection");
+                    c.close();
                 }
 
                 if self.is_grpc {
@@ -220,16 +218,6 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     .expect("error response must be valid"))
             }
         }
-    }
-}
-
-fn should_teardown_connection(error: &(dyn std::error::Error + 'static)) -> bool {
-    if error.is::<ResponseTimeout>() || error.is::<tower::timeout::error::Elapsed>() {
-        false
-    } else if let Some(e) = error.source() {
-        should_teardown_connection(e)
-    } else {
-        true
     }
 }
 
