@@ -36,10 +36,16 @@ pub use self::{
     timeout::MakeTimeoutLayer,
     version::Version,
 };
-pub use http::{header, uri, Request, Response, StatusCode};
+pub use http::{
+    header::{self, HeaderName, HeaderValue},
+    uri, Request, Response, StatusCode,
+};
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
 use std::str::FromStr;
+
+#[derive(Clone, Debug)]
+pub struct HeaderPair(pub HeaderName, pub HeaderValue);
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
