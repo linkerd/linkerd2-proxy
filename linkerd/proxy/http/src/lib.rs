@@ -29,7 +29,7 @@ pub use self::{
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
-    normalize_uri::NewNormalizeUri,
+    normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
     override_authority::{CanOverrideAuthority, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,

@@ -3,7 +3,7 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
     io, profiles, svc, tls,
-    transport::{self, listen},
+    transport::{self, listen, OrigDstAddr},
     Addr, AddrMatch, Error,
 };
 use std::convert::TryFrom;
@@ -104,8 +104,10 @@ impl Outbound<()> {
             // Note that the router service is always ready, so the `FailFast` layer
             // need not use a `SpawnReady` to drive the service to ready.
             .push(svc::NewRouter::layer(TargetPerRequest::accept))
+            .push(http::NewNormalizeUri::layer())
             .push_on_response(
                 svc::layers()
+                    .push(http::MarkAbsoluteForm::layer())
                     .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
                     .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                     .push(self.runtime.metrics.http_errors.clone())
@@ -116,8 +118,6 @@ impl Outbound<()> {
                     ))
                     .push(http::BoxResponse::layer()),
             )
-            .check_new_service::<http::Accept, http::Request<_>>()
-            .push(http::NewNormalizeUri::layer())
             .check_new_service::<http::Accept, http::Request<_>>()
             .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
             .check_new_service::<http::Accept, http::Request<_>>()
@@ -150,7 +150,7 @@ struct AllowHttpProfile(AddrMatch);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Target {
     dst: Addr,
-    accept: http::Accept,
+    version: http::Version,
 }
 
 #[derive(Clone)]
@@ -173,11 +173,18 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
 // === impl Target ===
 
 impl From<(Option<profiles::Receiver>, Target)> for http::Logical {
-    fn from((p, Target { accept, .. }): (Option<profiles::Receiver>, Target)) -> Self {
+    fn from((profile, Target { dst, version }): (Option<profiles::Receiver>, Target)) -> Self {
+        // XXX This is a hack to fix caching when an dst-override is set.
+        let orig_dst = if let Some(a) = dst.socket_addr() {
+            OrigDstAddr(a)
+        } else {
+            OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
+        };
+
         Self {
-            profile: p,
-            orig_dst: accept.orig_dst,
-            protocol: accept.protocol,
+            orig_dst,
+            profile,
+            protocol: version,
         }
     }
 }
@@ -194,10 +201,11 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
     type Key = Target;
 
     fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
+        let dst =
+            http_request_l5d_override_dst_addr(req).unwrap_or_else(|_| self.0.orig_dst.0.into());
         Ok(Target {
-            accept: self.0,
-            dst: http_request_l5d_override_dst_addr(req)
-                .unwrap_or_else(|_| self.0.orig_dst.0.into()),
+            dst,
+            version: self.0.protocol,
         })
     }
 }
