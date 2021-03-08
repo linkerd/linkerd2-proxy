@@ -46,14 +46,13 @@ where
         let endpoint = connect
             .clone()
             .push_make_thunk()
-            .push(svc::MapErrLayer::new(Into::into))
             .instrument(|t: &Endpoint| debug_span!("tcp.forward", server.addr = %t.addr))
             .push_on_response(
                 svc::layers()
+                    .push(svc::MapErrLayer::new(Into::into))
                     .push(tcp::Forward::layer())
                     .push(drain::Retain::layer(rt.drain.clone())),
-            )
-            .into_new_service();
+            );
 
         let stack = connect
             .push_make_thunk()
