@@ -1,9 +1,9 @@
-use super::{Concrete, Logical};
+use super::{CanonicalDstHeader, Concrete, Logical};
 use crate::{resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
     proxy::{core::Resolve, http},
-    retry, svc, tls, Error, Never, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    retry, svc, tls, Error, Never, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -146,7 +146,7 @@ impl<E> Outbound<E> {
             // Strips headers that may be set by this proxy and add an outbound
             // canonical-dst-header. The response body is boxed unify the profile
             // stack's response type. withthat of to endpoint stack.
-            .push(http::NewHeaderFromTarget::layer(CANONICAL_DST_HEADER))
+            .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
             .push_on_response(
                 svc::layers()
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))

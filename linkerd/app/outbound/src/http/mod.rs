@@ -16,7 +16,7 @@ use linkerd_app_core::{
     svc::Param,
     tls,
     transport_header::SessionProtocol,
-    Conditional,
+    Addr, Conditional, CANONICAL_DST_HEADER,
 };
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 
@@ -24,6 +24,22 @@ pub type Accept = crate::target::Accept<Version>;
 pub type Logical = crate::target::Logical<Version>;
 pub type Concrete = crate::target::Concrete<Version>;
 pub type Endpoint = crate::target::Endpoint<Version>;
+
+#[derive(Clone, Debug)]
+pub struct CanonicalDstHeader(pub Addr);
+
+// === impl CanonicalDstHeader ===
+
+impl Into<HeaderPair> for CanonicalDstHeader {
+    fn into(self) -> HeaderPair {
+        HeaderPair(
+            HeaderName::from_static(CANONICAL_DST_HEADER),
+            HeaderValue::from_str(&self.0.to_string()).expect("addr must be a valid header"),
+        )
+    }
+}
+
+// === impl Accept ===
 
 impl Param<Version> for Accept {
     fn param(&self) -> Version {
@@ -40,6 +56,8 @@ impl Param<normalize_uri::DefaultAuthority> for Accept {
     }
 }
 
+// === impl Logical ===
+
 impl From<(Version, tcp::Logical)> for Logical {
     fn from((protocol, logical): (Version, tcp::Logical)) -> Self {
         Self {
@@ -47,6 +65,12 @@ impl From<(Version, tcp::Logical)> for Logical {
             orig_dst: logical.orig_dst,
             profile: logical.profile,
         }
+    }
+}
+
+impl Param<CanonicalDstHeader> for Logical {
+    fn param(&self) -> CanonicalDstHeader {
+        CanonicalDstHeader(self.addr())
     }
 }
 
@@ -85,6 +109,8 @@ impl Param<normalize_uri::DefaultAuthority> for Logical {
     }
 }
 
+// === impl Endpoint ===
+
 impl Param<client::Settings> for Endpoint {
     fn param(&self) -> client::Settings {
         match self.protocol {
@@ -106,14 +132,6 @@ impl Param<Option<SessionProtocol>> for Endpoint {
                 ProtocolHint::Unknown => Some(SessionProtocol::Http1),
             },
         }
-    }
-}
-
-// Used to set the l5d-canonical-dst header.
-impl From<&'_ Logical> for header::HeaderValue {
-    fn from(target: &'_ Logical) -> Self {
-        header::HeaderValue::from_str(&target.addr().to_string())
-            .expect("addr must be a valid header")
     }
 }
 
