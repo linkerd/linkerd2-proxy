@@ -73,16 +73,14 @@ where
     type Service = Instrument<T, G, N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let span = self.get_span.get_span(&target);
-        span.in_scope(move || {
-            trace!("new");
-            let inner = self.inner.new_service(target.clone());
-            Instrument {
-                inner,
-                target,
-                get_span: self.get_span.clone(),
-            }
-        })
+        let _span = self.get_span.get_span(&target).entered();
+        trace!("new");
+        let inner = self.inner.new_service(target.clone());
+        Instrument {
+            inner,
+            target,
+            get_span: self.get_span.clone(),
+        }
     }
 }
 
@@ -108,10 +106,9 @@ where
     type Future = Instrumented<P::Future>;
 
     fn proxy(&self, svc: &mut S, request: Req) -> Self::Future {
-        let span = self.get_span();
-        let _enter = span.enter();
+        let span = self.get_span().entered();
         trace!(?request, "proxy");
-        self.inner.proxy(svc, request).instrument(span.clone())
+        self.inner.proxy(svc, request).instrument(span.exit())
     }
 }
 
@@ -126,8 +123,7 @@ where
     type Future = Instrumented<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let span = self.get_span();
-        let _enter = span.enter();
+        let _span = self.get_span().entered();
 
         let ready = self.inner.poll_ready(cx);
         match ready {
@@ -138,11 +134,10 @@ where
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
-        let span = self.get_span();
-        let _enter = span.enter();
+        let span = self.get_span().entered();
 
         trace!(?request, "service");
-        self.inner.call(request).instrument(span.clone())
+        self.inner.call(request).instrument(span.exit())
     }
 }
 
