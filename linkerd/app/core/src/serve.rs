@@ -15,8 +15,7 @@ pub async fn serve<M, A, I>(
     listen: impl Stream<Item = std::io::Result<(Addrs, I)>>,
     mut new_accept: M,
     shutdown: impl Future,
-) -> Result<(), Error>
-where
+) where
     I: Send + 'static,
     M: svc::NewService<Addrs, Service = A>,
     A: tower::Service<io::ScopedIo<I>, Response = ()> + Send + 'static,
@@ -27,10 +26,16 @@ where
         futures::pin_mut!(listen);
         loop {
             match listen.next().await {
-                None => return Ok(()),
+                None => return,
                 Some(conn) => {
                     // If the listener returned an error, complete the task.
-                    let (addrs, io) = conn?;
+                    let (addrs, io) = match conn {
+                        Ok(conn) => conn,
+                        Err(error) => {
+                            warn!(%error, "Server failed to accept connection");
+                            continue;
+                        }
+                    };
 
                     // The local addr should be instrumented from the listener's context.
                     let span = info_span!(
@@ -79,7 +84,7 @@ where
     // This ensures that the accept service's readiness can't block shutdown.
     tokio::select! {
         res = accept => { res }
-        _ = shutdown => { Ok(()) }
+        _ = shutdown => {}
     }
 }
 

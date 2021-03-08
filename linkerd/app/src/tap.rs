@@ -23,7 +23,7 @@ pub enum Tap {
     Enabled {
         listen_addr: SocketAddr,
         registry: tap::Registry,
-        serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
+        serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     },
 }
 
