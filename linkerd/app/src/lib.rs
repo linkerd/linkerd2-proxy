@@ -20,7 +20,7 @@ use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
 use tokio::{sync::mpsc, time::Duration};
 use tracing::instrument::Instrument;
-use tracing::{debug, error, info, info_span};
+use tracing::{debug, info, info_span};
 
 /// Spawns a sidecar proxy.
 ///
@@ -255,7 +255,6 @@ impl App {
                         tokio::spawn(
                             admin
                                 .serve
-                                .map_err(|e| panic!("admin server died: {}", e))
                                 .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
                         );
 
@@ -293,11 +292,7 @@ impl App {
                                     )
                                     .instrument(info_span!("tap_clean")),
                             );
-                            tokio::spawn(
-                                serve
-                                    .map_err(|error| error!(%error, "server died"))
-                                    .instrument(info_span!("tap")),
-                            );
+                            tokio::spawn(serve.instrument(info_span!("tap")));
                         }
 
                         if let oc_collector::OcCollector::Enabled(oc) = oc_collector {

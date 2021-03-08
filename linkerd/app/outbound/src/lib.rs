@@ -187,15 +187,11 @@ impl Outbound<()> {
                     .into_inner();
                 let stack = self.to_ingress(profiles, tcp, http);
                 let shutdown = self.runtime.drain.signaled();
-                serve::serve(listen, stack, shutdown)
-                    .await
-                    .expect("Outbound server failed");
+                serve::serve(listen, stack, shutdown).await;
             } else {
                 let stack = self.to_tcp_connect().into_server(resolve, profiles);
                 let shutdown = self.runtime.drain.signaled();
-                serve::serve(listen, stack, shutdown)
-                    .await
-                    .expect("Outbound server failed");
+                serve::serve(listen, stack, shutdown).await;
             }
         };
 

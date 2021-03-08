@@ -152,9 +152,7 @@ impl Inbound<()> {
                 .to_tcp_connect()
                 .into_server(listen_addr.port(), profiles, gateway);
             let shutdown = self.runtime.drain.signaled();
-            serve::serve(listen, stack, shutdown)
-                .await
-                .expect("Inbound server failed");
+            serve::serve(listen, stack, shutdown).await
         };
 
         (listen_addr, serve)

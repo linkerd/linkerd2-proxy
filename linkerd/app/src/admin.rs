@@ -25,7 +25,7 @@ pub struct Config {
 pub struct Admin {
     pub listen_addr: SocketAddr,
     pub latch: admin::Latch,
-    pub serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
+    pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
 
 #[derive(Debug, Default)]
