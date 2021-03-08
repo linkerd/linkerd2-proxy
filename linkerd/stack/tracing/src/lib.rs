@@ -23,9 +23,19 @@ pub struct NewInstrument<G, N> {
 
 /// Instruments a service produced by `NewInstrument`.
 #[pin_project]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Instrument<T, G, S> {
     target: T,
+    /// When this is a `Service` (and not a `Proxy`), we consider the `poll_ready`
+    /// calls that drive the service to readiness and the `call` future that
+    /// consumes that readiness to be part of one logical span (so, for example,
+    /// we track time waiting for readiness as part of the request span's idle
+    /// time).
+    ///
+    /// Therefore, we hang onto one instance of the span that's created when we
+    /// are first polled after having been called, and take that span instance
+    /// in `call`.
+    current_span: Option<Span>,
     get_span: G,
     #[pin]
     inner: S,
@@ -79,6 +89,7 @@ where
         Instrument {
             inner,
             target,
+            current_span: None,
             get_span: self.get_span.clone(),
         }
     }
@@ -123,7 +134,15 @@ where
     type Future = Instrumented<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let _span = self.get_span().entered();
+        // These need to be borrowed individually, or else the
+        // `get_or_insert_with` closure will borrow *all* of `self` while
+        // `self.current_span` is borrowed mutably... T_T
+        let get_span = &self.get_span;
+        let target = &self.target;
+        let _enter = self
+            .current_span
+            .get_or_insert_with(|| get_span.get_span(target))
+            .enter();
 
         let ready = self.inner.poll_ready(cx);
         match ready {
@@ -134,10 +153,40 @@ where
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
-        let span = self.get_span().entered();
+        let span = self
+            .current_span
+            .take()
+            // NOTE(eliza): if `current_span` is `None` here, we were called
+            // before  being driven to readiness, which is invalid --- we're
+            // permitted to panic here, so we could unwrap this. But, it's not
+            // important...we can just make a new span, so I thought it was
+            // better to err on the side of not panicking.
+            .unwrap_or_else(|| self.get_span())
+            .entered();
 
         trace!(?request, "service");
         self.inner.call(request).instrument(span.exit())
+    }
+}
+
+impl<T, G, S> Clone for Instrument<T, G, S>
+where
+    T: Clone,
+    G: Clone,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        // Manually implement `Clone` so that each clone of an instrumented
+        // service has its own "current span" state, since each clone of the
+        // inner service will have its own independent readiness state.
+        Self {
+            target: self.target.clone(),
+            inner: self.inner.clone(),
+            get_span: self.get_span.clone(),
+            // If this is a `Service`, the clone will construct its own span
+            // when it's first driven to readiness.
+            current_span: None,
+        }
     }
 }
 
