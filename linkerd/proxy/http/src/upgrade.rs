@@ -139,7 +139,7 @@ impl Drop for Inner {
             let both_upgrades = async move {
                 let (server_conn, client_conn) = tokio::try_join!(server_upgrade, client_upgrade)?;
                 trace!("HTTP upgrade successful");
-                if let Err(e) = Duplex::new(server_conn, client_conn).await {
+                if let Err(e) = Duplex::new(client_conn, server_conn).await {
                     info!("tcp duplex error: {}", e)
                 }
                 Ok::<(), ()>(())

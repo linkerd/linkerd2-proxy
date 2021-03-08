@@ -23,7 +23,7 @@ struct HalfDuplex<T> {
     is_shutdown: bool,
     #[pin]
     io: T,
-    peer: &'static str,
+    direction: &'static str,
 }
 
 /// A buffer used to copy bytes from one IO to another.
@@ -46,8 +46,8 @@ where
 {
     pub fn new(in_io: In, out_io: Out) -> Self {
         Duplex {
-            half_in: HalfDuplex::new(in_io, "src"),
-            half_out: HalfDuplex::new(out_io, "dst"),
+            half_in: HalfDuplex::new(in_io, "client->server"),
+            half_out: HalfDuplex::new(out_io, "server->client"),
         }
     }
 }
@@ -79,12 +79,12 @@ impl<T> HalfDuplex<T>
 where
     T: AsyncRead + Unpin,
 {
-    fn new(io: T, peer: &'static str) -> Self {
+    fn new(io: T, direction: &'static str) -> Self {
         Self {
             buf: Some(CopyBuf::new()),
             is_shutdown: false,
             io,
-            peer,
+            direction,
         }
     }
 
@@ -102,14 +102,14 @@ where
         // shutdown, we finished in a previous poll, so don't even enter into
         // the copy loop.
         if dst.is_shutdown {
-            trace!(peer = %self.peer, "already shutdown");
+            trace!(direction = %self.direction, "already shutdown");
             return Poll::Ready(Ok(()));
         }
         loop {
             ready!(self.poll_read(cx))?;
             ready!(self.poll_write_into(dst, cx))?;
             if self.buf.is_none() {
-                trace!(peer = %self.peer, "shutting down");
+                trace!(direction = %self.direction, "shutting down");
                 debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
                 ready!(Pin::new(&mut dst.io).poll_shutdown(cx))?;
                 dst.is_shutdown = true;
@@ -125,9 +125,9 @@ where
             if !buf.has_remaining() {
                 buf.reset();
 
-                trace!(peer = %self.peer, "reading");
+                trace!(direction = %self.direction, "reading");
                 let n = ready!(io::poll_read_buf(Pin::new(&mut self.io), cx, buf))?;
-                trace!(peer = %self.peer, "read {}B", n);
+                trace!(direction = %self.direction, "read {}B", n);
 
                 is_eof = n == 0;
             }
@@ -150,9 +150,9 @@ where
     {
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
-                trace!(peer = %self.peer, "writing {}B", buf.remaining());
+                trace!(direction = %self.direction, "writing {}B", buf.remaining());
                 let n = ready!(io::poll_write_buf(Pin::new(&mut dst.io), cx, buf))?;
-                trace!(peer = %self.peer, "wrote {}B", n);
+                trace!(direction = %self.direction, "wrote {}B", n);
                 if n == 0 {
                     return Poll::Ready(Err(write_zero()));
                 }
