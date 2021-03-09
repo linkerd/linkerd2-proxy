@@ -2,8 +2,7 @@
 
 use bytes::{Buf, BufMut};
 use futures::ready;
-use io::{AsyncRead, AsyncWrite};
-use linkerd_io as io;
+use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use pin_project::pin_project;
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin};
@@ -88,14 +87,11 @@ where
         }
     }
 
-    fn copy_into<U>(
+    fn copy_into<U: AsyncWrite + Unpin>(
         &mut self,
         dst: &mut HalfDuplex<U>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>>
-    where
-        U: AsyncWrite + Unpin,
-    {
+    ) -> Poll<io::Result<()>> {
         // Since Duplex::poll() intentionally ignores the Async part of our
         // return value, we may be polled again after returning Ready, if the
         // other half isn't ready. In that case, if the destination has
@@ -105,23 +101,44 @@ where
             trace!(direction = %self.direction, "already shutdown");
             return Poll::Ready(Ok(()));
         }
+
+        // Proxy data until there's no more data to read.
+        let mut wsz = 0;
         loop {
-            ready!(self.poll_read(cx))?;
-            ready!(self.poll_write_into(dst, cx))?;
+            if let Poll::Pending = self.poll_read(cx)? {
+                break;
+            }
+            match self.poll_write_into(dst, cx)? {
+                Poll::Pending => break,
+                Poll::Ready(sz) => {
+                    wsz += sz;
+                }
+            }
+
             if self.buf.is_none() {
                 trace!(direction = %self.direction, "shutting down");
                 debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
                 ready!(Pin::new(&mut dst.io).poll_shutdown(cx))?;
                 dst.is_shutdown = true;
-
                 return Poll::Ready(Ok(()));
             }
         }
+
+        // If we attempted to write data, ensure it's flushed.
+        if wsz > 0 {
+            ready!(Pin::new(&mut dst.io).poll_flush(cx))?;
+        }
+        Poll::Pending
     }
 
-    fn poll_read(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+    fn poll_read(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
         let mut is_eof = false;
+        let mut sz = 0;
+
         if let Some(ref mut buf) = self.buf {
+            // If we've written all buffered data, read more.
+            //
+            // XXX should we read more data as long as there's buffer capacity?
             if !buf.has_remaining() {
                 buf.reset();
 
@@ -129,25 +146,25 @@ where
                 let n = ready!(io::poll_read_buf(Pin::new(&mut self.io), cx, buf))?;
                 trace!(direction = %self.direction, "read {}B", n);
 
+                sz += n;
                 is_eof = n == 0;
             }
         }
+
         if is_eof {
             trace!("eof");
             self.buf = None;
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(sz))
     }
 
-    fn poll_write_into<U>(
+    fn poll_write_into<U: AsyncWrite + Unpin>(
         &mut self,
         dst: &mut HalfDuplex<U>,
         cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>>
-    where
-        U: AsyncWrite + Unpin,
-    {
+    ) -> Poll<io::Result<usize>> {
+        let mut sz = 0;
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
                 trace!(direction = %self.direction, "writing {}B", buf.remaining());
@@ -156,10 +173,11 @@ where
                 if n == 0 {
                     return Poll::Ready(Err(write_zero()));
                 }
+                sz += n;
             }
         }
 
-        Poll::Ready(Ok(()))
+        Poll::Ready(Ok(sz))
     }
 
     fn is_done(&self) -> bool {
@@ -174,7 +192,7 @@ fn write_zero() -> io::Error {
 impl CopyBuf {
     fn new() -> Self {
         CopyBuf {
-            buf: Box::new([0; 4096]),
+            buf: Box::new([0; 64 * 1024]),
             read_pos: 0,
             write_pos: 0,
         }
