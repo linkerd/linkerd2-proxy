@@ -23,6 +23,7 @@ struct HalfDuplex<T> {
     #[pin]
     io: T,
     direction: &'static str,
+    flushing: bool,
 }
 
 /// A buffer used to copy bytes from one IO to another.
@@ -96,6 +97,7 @@ where
             is_shutdown: false,
             io,
             direction,
+            flushing: false,
         }
     }
 
@@ -120,34 +122,44 @@ where
             return Pin::new(&mut dst.io).poll_shutdown(cx);
         }
 
-        let mut written_sz = 0;
+        // If the last invocation returned pending while flushing, resume
+        // flushing and only proceed when the flush is complete.
+        if self.flushing {
+            ready!(self.poll_flush(dst, cx))?;
+        }
+
+        let mut written = 0;
         loop {
             // As long as the underlying socket is alive, ensure we've read data
             // from it into the local buffer.
             match self.poll_buffer(cx)? {
                 Poll::Pending => {
-                    // If there's no more data buffered but we've already
-                    // written data, try flushing the written data.
-                    if written_sz > 0 {
-                        ready!(Pin::new(&mut dst.io).poll_flush(cx))?;
+                    // If there's no data to be read and we've written data, try
+                    // flushing before returning pending.
+                    if written > 0 {
+                        // The poll status of the flush isn't relevant, as we
+                        // have registered interest in the read (and maybe the
+                        // write as well).
+                        let _ = self.poll_flush(dst, cx)?;
                     }
                     return Poll::Pending;
                 }
+
                 Poll::Ready(Buffered::NotEmpty) | Poll::Ready(Buffered::Read(_)) => {
                     // Write buffered data to the destination.
                     match self.drain_into(dst, cx)? {
                         // All of the buffered data was written, so continue reading more.
                         Drained::All(sz) => {
                             debug_assert!(sz > 0);
-                            written_sz += sz;
+                            written += sz;
                         }
+                        // Only some of the buffered data could be written
+                        // before the destination became pending. Try to flush
+                        // the written data to get capacity.
                         Drained::Partial(_) => {
-                            // Only some of the buffered data could be written before
-                            // the destination became pending. Try to flush the written
-                            // data to get capacity. If the flush completes,
-                            // continue trying to write more data.
-                            trace!(direction = %self.direction, "flushing");
-                            if Pin::new(&mut dst.io).poll_flush(cx)?.is_pending() {
+                            // If the flush completes, continue trying to write
+                            // more data.
+                            if self.poll_flush(dst, cx)?.is_pending() {
                                 return Poll::Pending;
                             }
                         }
@@ -158,8 +170,9 @@ where
                         }
                     }
                 }
+
+                // The socket closed, so initiate shutdown on the destination.
                 Poll::Ready(Buffered::Eof) => {
-                    // The socket closed, so initiate shutdown on the destination.
                     trace!(direction = %self.direction, "shutting down");
                     debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
                     ready!(Pin::new(&mut dst.io).poll_shutdown(cx))?;
@@ -200,6 +213,20 @@ where
         trace!("eof");
         self.buf = None;
         Poll::Ready(Ok(Buffered::Eof))
+    }
+
+    fn poll_flush<U: AsyncWrite + Unpin>(
+        &mut self,
+        dst: &mut HalfDuplex<U>,
+        cx: &mut Context<'_>,
+    ) -> io::Poll<()> {
+        trace!(direction = %self.direction, "flushing");
+        let poll = Pin::new(&mut dst.io).poll_flush(cx);
+        self.flushing = poll.is_pending();
+        if poll.is_ready() {
+            trace!(direction = %self.direction, "flushed");
+        }
+        poll
     }
 
     /// Writes as much buffered data as possible, returning the number of bytes written.
