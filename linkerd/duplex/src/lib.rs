@@ -128,7 +128,7 @@ where
             ready!(self.poll_flush(dst, cx))?;
         }
 
-        let mut written = 0;
+        let mut needs_flush = false;
         loop {
             // As long as the underlying socket is alive, ensure we've read data
             // from it into the local buffer.
@@ -136,7 +136,7 @@ where
                 Poll::Pending => {
                     // If there's no data to be read and we've written data, try
                     // flushing before returning pending.
-                    if written > 0 {
+                    if needs_flush {
                         // The poll status of the flush isn't relevant, as we
                         // have registered interest in the read (and maybe the
                         // write as well).
@@ -151,7 +151,7 @@ where
                         // All of the buffered data was written, so continue reading more.
                         Drained::All(sz) => {
                             debug_assert!(sz > 0);
-                            written += sz;
+                            needs_flush = true;
                         }
                         // Only some of the buffered data could be written
                         // before the destination became pending. Try to flush
@@ -162,6 +162,7 @@ where
                             if self.poll_flush(dst, cx)?.is_pending() {
                                 return Poll::Pending;
                             }
+                            needs_flush = false;
                         }
                         Drained::BufferEmpty => {
                             error!("Invalid state: attempted to write from an empty buffer");
