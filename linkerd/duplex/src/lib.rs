@@ -6,7 +6,7 @@ use linkerd_io::{self as io, AsyncRead, AsyncWrite};
 use pin_project::pin_project;
 use std::task::{Context, Poll};
 use std::{future::Future, pin::Pin};
-use tracing::trace;
+use tracing::{error, trace};
 
 /// A future piping data bi-directionally to In and Out.
 #[pin_project]
@@ -36,6 +36,18 @@ struct CopyBuf {
     buf: Box<[u8]>,
     read_pos: usize,
     write_pos: usize,
+}
+
+enum Buffered {
+    NotEmpty,
+    Read(usize),
+    Eof,
+}
+
+enum Drained {
+    BufferEmpty,
+    Partial(usize),
+    All(usize),
 }
 
 impl<In, Out> Duplex<In, Out>
@@ -87,6 +99,10 @@ where
         }
     }
 
+    /// Reads data from `self`, buffering it, and writing it to `dst.
+    ///
+    /// Returns ready when the stream has shutdown such that no more data may be
+    /// proxied.
     fn copy_into<U: AsyncWrite + Unpin>(
         &mut self,
         dst: &mut HalfDuplex<U>,
@@ -98,86 +114,122 @@ where
         // shutdown, we finished in a previous poll, so don't even enter into
         // the copy loop.
         if dst.is_shutdown {
+            // A prior shutdown may not have completed, so continue driving the
+            // shutdown.
             trace!(direction = %self.direction, "already shutdown");
-            return Poll::Ready(Ok(()));
+            return Pin::new(&mut dst.io).poll_shutdown(cx);
         }
 
-        // Proxy data until there's no more data to read.
-        let mut wsz = 0;
+        let mut written_sz = 0;
         loop {
-            if let Poll::Pending = self.poll_read(cx)? {
-                break;
-            }
-            match self.poll_write_into(dst, cx)? {
-                Poll::Pending => break,
-                Poll::Ready(sz) => {
-                    wsz += sz;
+            // As long as the underlying socket is alive, ensure we've read data
+            // from it into the local buffer.
+            match self.poll_buffer(cx)? {
+                Poll::Pending => {
+                    // If there's no more data buffered but we've already
+                    // written data, try flushing the written data.
+                    if written_sz > 0 {
+                        ready!(Pin::new(&mut dst.io).poll_flush(cx))?;
+                    }
+                    return Poll::Pending;
+                }
+                Poll::Ready(Buffered::NotEmpty) | Poll::Ready(Buffered::Read(_)) => {
+                    // Write buffered data to the destination.
+                    match self.drain_into(dst, cx)? {
+                        // All of the buffered data was written, so continue reading more.
+                        Drained::All(sz) => {
+                            debug_assert!(sz > 0);
+                            written_sz += sz;
+                        }
+                        Drained::Partial(_) => {
+                            // Only some of the buffered data could be written before
+                            // the destination became pending. Try to flush the written
+                            // data to get capacity. If the flush completes,
+                            // continue trying to write more data.
+                            trace!(direction = %self.direction, "flushing");
+                            if Pin::new(&mut dst.io).poll_flush(cx)?.is_pending() {
+                                return Poll::Pending;
+                            }
+                        }
+                        Drained::BufferEmpty => {
+                            error!("Invalid state: attempted to write from an empty buffer");
+                            debug_assert!(false, "The write buffer should never be empty");
+                            return Poll::Ready(Ok(()));
+                        }
+                    }
+                }
+                Poll::Ready(Buffered::Eof) => {
+                    // The socket closed, so initiate shutdown on the destination.
+                    trace!(direction = %self.direction, "shutting down");
+                    debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
+                    ready!(Pin::new(&mut dst.io).poll_shutdown(cx))?;
+                    dst.is_shutdown = true;
+                    return Poll::Ready(Ok(()));
                 }
             }
-
-            if self.buf.is_none() {
-                trace!(direction = %self.direction, "shutting down");
-                debug_assert!(!dst.is_shutdown, "attempted to shut down destination twice");
-                ready!(Pin::new(&mut dst.io).poll_shutdown(cx))?;
-                dst.is_shutdown = true;
-                return Poll::Ready(Ok(()));
-            }
         }
-
-        // If we attempted to write data, ensure it's flushed.
-        if wsz > 0 {
-            ready!(Pin::new(&mut dst.io).poll_flush(cx))?;
-        }
-        Poll::Pending
     }
 
-    fn poll_read(&mut self, cx: &mut Context<'_>) -> io::Poll<usize> {
-        let mut is_eof = false;
-        let mut sz = 0;
-
+    /// Attempts to read and buffer data from the underlying stream, returning
+    /// the number of bytes read. If the buffer already has data, no new data
+    /// will be read.
+    fn poll_buffer(&mut self, cx: &mut Context<'_>) -> io::Poll<Buffered> {
+        // Buffer data only if no data is buffered.
+        //
+        // TODO should we read more data as long as there's buffer capacity?
+        // To do this, we'd have to get more complex about handling EOF.
         if let Some(ref mut buf) = self.buf {
-            // If we've written all buffered data, read more.
-            //
-            // XXX should we read more data as long as there's buffer capacity?
-            if !buf.has_remaining() {
-                buf.reset();
+            if buf.has_remaining() {
+                // Data was already buffered, so just return 0 immediately.
+                trace!(direction = %self.direction, remaining = buf.remaining(), "skipping read");
+                return Poll::Ready(Ok(Buffered::NotEmpty));
+            }
 
-                trace!(direction = %self.direction, "reading");
-                let n = ready!(io::poll_read_buf(Pin::new(&mut self.io), cx, buf))?;
-                trace!(direction = %self.direction, "read {}B", n);
+            buf.reset();
+            trace!(direction = %self.direction, "reading");
+            let sz = ready!(io::poll_read_buf(Pin::new(&mut self.io), cx, buf))?;
+            trace!(direction = %self.direction, "read {}B", sz);
 
-                sz += n;
-                is_eof = n == 0;
+            // If data was read, return the number of bytes read.
+            if sz > 0 {
+                return Poll::Ready(Ok(Buffered::Read(sz)));
             }
         }
 
-        if is_eof {
-            trace!("eof");
-            self.buf = None;
-        }
-
-        Poll::Ready(Ok(sz))
+        // No more data can be read.
+        trace!("eof");
+        self.buf = None;
+        Poll::Ready(Ok(Buffered::Eof))
     }
 
-    fn poll_write_into<U: AsyncWrite + Unpin>(
+    /// Writes as much buffered data as possible, returning the number of bytes written.
+    fn drain_into<U: AsyncWrite + Unpin>(
         &mut self,
         dst: &mut HalfDuplex<U>,
         cx: &mut Context<'_>,
-    ) -> io::Poll<usize> {
+    ) -> io::Result<Drained> {
         let mut sz = 0;
+
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
                 trace!(direction = %self.direction, "writing {}B", buf.remaining());
-                let n = ready!(io::poll_write_buf(Pin::new(&mut dst.io), cx, buf))?;
+                let n = match io::poll_write_buf(Pin::new(&mut dst.io), cx, buf)? {
+                    Poll::Pending => return Ok(Drained::Partial(sz)),
+                    Poll::Ready(n) => n,
+                };
                 trace!(direction = %self.direction, "wrote {}B", n);
                 if n == 0 {
-                    return Poll::Ready(Err(write_zero()));
+                    return Err(write_zero());
                 }
                 sz += n;
             }
         }
 
-        Poll::Ready(Ok(sz))
+        if sz == 0 {
+            Ok(Drained::BufferEmpty)
+        } else {
+            Ok(Drained::All(sz))
+        }
     }
 
     fn is_done(&self) -> bool {
@@ -226,11 +278,9 @@ unsafe impl BufMut for CopyBuf {
     }
 
     fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
+        // Safety: The memory is initialized. This is the only way to turn a
+        // `&[T]` into a `&[MaybeUninit<T>]` without ptr casting.
         unsafe {
-            // this is, in fact, _totally fine and safe_: all the memory is
-            // initialized.
-            // there's just no way to turn a `&[T]` into a `&[MaybeUninit<T>]`
-            // without ptr casting.
             bytes::buf::UninitSlice::from_raw_parts_mut(
                 &mut self.buf[self.write_pos] as *mut _,
                 self.buf.len() - self.write_pos,
@@ -243,61 +293,3 @@ unsafe impl BufMut for CopyBuf {
         self.write_pos += cnt;
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use std::io::{Error, Read, Result, Write};
-//     use std::sync::atomic::{AtomicBool, Ordering};
-
-//     use super::*;
-//     use tokio::io::{AsyncRead, AsyncWrite};
-
-//     #[derive(Debug)]
-//     struct DoneIo(AtomicBool);
-
-//     impl<'a> Read for &'a DoneIo {
-//         fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-//             if self.0.swap(false, Ordering::Relaxed) {
-//                 Ok(buf.len())
-//             } else {
-//                 Ok(0)
-//             }
-//         }
-//     }
-
-//     impl<'a> AsyncRead for &'a DoneIo {
-//         unsafe fn prepare_uninitialized_buffer(&self, _buf: &mut [u8]) -> bool {
-//             true
-//         }
-//     }
-
-//     impl<'a> Write for &'a DoneIo {
-//         fn write(&mut self, buf: &[u8]) -> Result<usize> {
-//             Ok(buf.len())
-//         }
-//         fn flush(&mut self) -> Result<()> {
-//             Ok(())
-//         }
-//     }
-//     impl<'a> AsyncWrite for &'a DoneIo {
-//         fn shutdown(&mut self) -> Poll<(), Error> {
-//             if self.0.swap(false, Ordering::Relaxed) {
-//                 Ok(Async::NotReady)
-//             } else {
-//                 Ok(Async::Ready(()))
-//             }
-//         }
-//     }
-
-//     #[test]
-//     fn duplex_doesnt_hang_when_one_half_finishes() {
-//         // Test reproducing an infinite loop in Duplex that caused issue #519,
-//         // where a Duplex would enter an infinite loop when one half finishes.
-//         let io_1 = DoneIo(AtomicBool::new(true));
-//         let io_2 = DoneIo(AtomicBool::new(true));
-//         let mut duplex = Duplex::new(&io_1, &io_2);
-
-//         assert_eq!(duplex.poll().unwrap(), Async::NotReady);
-//         assert_eq!(duplex.poll().unwrap(), Async::Ready(()));
-//     }
-// }
