@@ -56,9 +56,9 @@ where
     In: AsyncRead + AsyncWrite + Unpin,
     Out: AsyncRead + AsyncWrite + Unpin,
 {
-    type Output = Result<(), io::Error>;
+    type Output = io::Result<()>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         let mut this = self.project();
         // This purposefully ignores the Async part, since we don't want to
         // return early if the first half isn't ready, but the other half
@@ -91,7 +91,7 @@ where
         &mut self,
         dst: &mut HalfDuplex<U>,
         cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    ) -> io::Poll<()> {
         // Since Duplex::poll() intentionally ignores the Async part of our
         // return value, we may be polled again after returning Ready, if the
         // other half isn't ready. In that case, if the destination has
@@ -131,7 +131,7 @@ where
         Poll::Pending
     }
 
-    fn poll_read(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
+    fn poll_read(&mut self, cx: &mut Context<'_>) -> io::Poll<usize> {
         let mut is_eof = false;
         let mut sz = 0;
 
@@ -163,7 +163,7 @@ where
         &mut self,
         dst: &mut HalfDuplex<U>,
         cx: &mut Context<'_>,
-    ) -> Poll<io::Result<usize>> {
+    ) -> io::Poll<usize> {
         let mut sz = 0;
         if let Some(ref mut buf) = self.buf {
             while buf.has_remaining() {
