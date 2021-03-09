@@ -157,9 +157,12 @@ where
                         // before the destination became pending. Try to flush
                         // the written data to get capacity.
                         Drained::Partial(_) => {
-                            // If the flush completes, continue trying to write
-                            // more data.
-                            if self.poll_flush(dst, cx)?.is_pending() {
+                            ready!(self.poll_flush(dst, cx))?;
+                            // If the flush completed, try writing again to
+                            // ensure that we have a notification registered. If
+                            // all of the buffered data still cannot be written,
+                            // return pending. Otherwise, continue.
+                            if let Drained::Partial(_) = self.drain_into(dst, cx)? {
                                 return Poll::Pending;
                             }
                             needs_flush = false;
@@ -192,7 +195,7 @@ where
         //
         // TODO should we read more data as long as there's buffer capacity?
         // To do this, we'd have to get more complex about handling EOF.
-        if let Some(ref mut buf) = self.buf {
+        if let Some(buf) = self.buf.as_mut() {
             if buf.has_remaining() {
                 // Data was already buffered, so just return 0 immediately.
                 trace!(direction = %self.direction, remaining = buf.remaining(), "skipping read");
@@ -238,7 +241,7 @@ where
     ) -> io::Result<Drained> {
         let mut sz = 0;
 
-        if let Some(ref mut buf) = self.buf {
+        if let Some(buf) = self.buf.as_mut() {
             while buf.has_remaining() {
                 trace!(direction = %self.direction, "writing {}B", buf.remaining());
                 let n = match io::poll_write_buf(Pin::new(&mut dst.io), cx, buf)? {
