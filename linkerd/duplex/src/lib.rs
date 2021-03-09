@@ -116,10 +116,8 @@ where
         // shutdown, we finished in a previous poll, so don't even enter into
         // the copy loop.
         if dst.is_shutdown {
-            // A prior shutdown may not have completed, so continue driving the
-            // shutdown.
             trace!(direction = %self.direction, "already shutdown");
-            return Pin::new(&mut dst.io).poll_shutdown(cx);
+            return Poll::Ready(Ok(()));
         }
 
         // If the last invocation returned pending while flushing, resume
@@ -128,7 +126,10 @@ where
             ready!(self.poll_flush(dst, cx))?;
         }
 
+        // `needs_flush` is set to true if the buffer is written so that, if a
+        // read returns pending, that data may be flushed.
         let mut needs_flush = false;
+
         loop {
             // As long as the underlying socket is alive, ensure we've read data
             // from it into the local buffer.
@@ -139,7 +140,9 @@ where
                     if needs_flush {
                         // The poll status of the flush isn't relevant, as we
                         // have registered interest in the read (and maybe the
-                        // write as well).
+                        // write as well). If the flush did not complete
+                        // `self.flushing` is true so that it may be resumed on
+                        // the next poll.
                         let _ = self.poll_flush(dst, cx)?;
                     }
                     return Poll::Pending;
@@ -168,7 +171,10 @@ where
                             needs_flush = false;
                         }
                         Drained::BufferEmpty => {
-                            error!("Invalid state: attempted to write from an empty buffer");
+                            error!(
+                                direction = self.direction,
+                                "Invalid state: attempted to write from an empty buffer"
+                            );
                             debug_assert!(false, "The write buffer should never be empty");
                             return Poll::Ready(Ok(()));
                         }
@@ -197,7 +203,7 @@ where
         // To do this, we'd have to get more complex about handling EOF.
         if let Some(buf) = self.buf.as_mut() {
             if buf.has_remaining() {
-                // Data was already buffered, so just return 0 immediately.
+                // Data was already buffered, so just return immediately.
                 trace!(direction = %self.direction, remaining = buf.remaining(), "skipping read");
                 return Poll::Ready(Ok(Buffered::NotEmpty));
             }
@@ -219,6 +225,8 @@ where
         Poll::Ready(Ok(Buffered::Eof))
     }
 
+    /// Attempts to flush the destination. `self.flushing` is set to true iff the
+    /// flush operation did not complete.
     fn poll_flush<U: AsyncWrite + Unpin>(
         &mut self,
         dst: &mut HalfDuplex<U>,
