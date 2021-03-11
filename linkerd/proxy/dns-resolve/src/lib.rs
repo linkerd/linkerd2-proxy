@@ -54,7 +54,8 @@ impl<T: Param<Addr>> tower::Service<T> for DnsResolve {
             Addr::Name(na) => Box::pin(resolution(self.dns.clone(), na).in_current_span()),
             Addr::Socket(sa) => {
                 let eps = vec![(sa, ())];
-                let updates: UpdateStream = Box::pin(stream::iter(Some(Ok(Update::Reset(eps)))));
+                let updates: UpdateStream =
+                    Box::pin(stream::iter(Some(Ok(Update::Reset(eps)))).chain(stream::pending()));
                 Box::pin(future::ok(updates))
             }
         }
