@@ -135,9 +135,12 @@ impl Param<Option<SessionProtocol>> for Endpoint {
     }
 }
 
-impl CanOverrideAuthority for Endpoint {
-    fn override_authority(&self) -> Option<uri::Authority> {
-        self.metadata.authority_override().cloned()
+impl Param<Option<AuthorityOverride>> for Endpoint {
+    fn param(&self) -> Option<AuthorityOverride> {
+        self.metadata
+            .authority_override()
+            .cloned()
+            .map(AuthorityOverride)
     }
 }
 

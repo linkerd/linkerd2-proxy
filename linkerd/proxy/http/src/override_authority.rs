@@ -1,6 +1,6 @@
 use super::h1;
 use http::{self, header::AsHeaderName, uri::Authority};
-use linkerd_stack::{layer, NewService};
+use linkerd_stack::{layer, NewService, Param};
 use std::{
     fmt,
     sync::Arc,
@@ -8,9 +8,8 @@ use std::{
 };
 use tracing::debug;
 
-pub trait CanOverrideAuthority {
-    fn override_authority(&self) -> Option<Authority>;
-}
+#[derive(Clone, Debug)]
+pub struct AuthorityOverride(pub Authority);
 
 #[derive(Clone, Debug)]
 pub struct NewOverrideAuthority<H, M> {
@@ -41,7 +40,7 @@ impl<H: Clone, N> NewOverrideAuthority<H, N> {
 
 impl<H, T, M> NewService<T> for NewOverrideAuthority<H, M>
 where
-    T: CanOverrideAuthority + Clone + Send + Sync + 'static,
+    T: Param<Option<AuthorityOverride>>,
     M: NewService<T>,
     H: AsHeaderName + Clone,
 {
@@ -50,7 +49,7 @@ where
     #[inline]
     fn new_service(&mut self, t: T) -> Self::Service {
         OverrideAuthority {
-            authority: t.override_authority(),
+            authority: t.param().map(|AuthorityOverride(a)| a),
             headers_to_strip: self.headers_to_strip.clone(),
             inner: self.inner.new_service(t),
         }
