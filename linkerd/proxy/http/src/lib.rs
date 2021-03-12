@@ -30,7 +30,7 @@ pub use self::{
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
     normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
-    override_authority::{CanOverrideAuthority, NewOverrideAuthority},
+    override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,
     timeout::MakeTimeoutLayer,
