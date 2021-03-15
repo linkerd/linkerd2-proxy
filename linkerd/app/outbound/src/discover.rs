@@ -5,6 +5,7 @@ use linkerd_app_core::{
     Error, IpMatch,
 };
 use std::convert::TryFrom;
+use tracing::info_span;
 
 impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
@@ -36,11 +37,8 @@ impl<N> Outbound<N> {
         let allow = AllowProfile(config.allow_discovery.clone().into());
 
         let stack = accept
-            .check_new::<tcp::Logical>()
-            .check_new_service::<tcp::Logical, SensorIo<I>>()
             .push_map_target(tcp::Logical::from)
             .push(profiles::discover::layer(profiles, allow))
-            .check_new_service::<tcp::Accept, SensorIo<I>>()
             .push_on_response(
                 svc::layers()
                     // If the traffic split is empty/unavailable, eagerly fail
@@ -55,10 +53,9 @@ impl<N> Outbound<N> {
                     ))
                     .push_spawn_buffer(config.proxy.buffer_capacity),
             )
-            .check_new_service::<tcp::Accept, SensorIo<I>>()
             .push(rt.metrics.transport.layer_accept())
             .push_cache(config.proxy.cache_max_idle_age)
-            .check_new_service::<tcp::Accept, I>()
+            .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
             .push_request_filter(tcp::Accept::try_from)
             .check_new_service::<listen::Addrs, I>();
 

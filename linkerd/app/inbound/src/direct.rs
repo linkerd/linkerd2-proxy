@@ -9,7 +9,7 @@ use linkerd_app_core::{
     Conditional, Error, NameAddr, Never,
 };
 use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
-use tracing::debug_span;
+use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
 struct WithTransportHeaderAlpn(LocalCrtKey);
@@ -95,7 +95,6 @@ impl<T> Inbound<T> {
         let detect_timeout = config.proxy.detect_protocol_timeout;
 
         let stack = tcp
-            .check_new_service::<TcpEndpoint, FwdIo<I>>()
             .instrument(|_: &TcpEndpoint| debug_span!("opaque"))
             // When the transport header is present, it may be used for either local
             // TCP forwarding, or we may be processing an HTTP gateway connection.
@@ -112,13 +111,11 @@ impl<T> Inbound<T> {
                         port,
                         name: Some(name),
                         protocol,
-                    } => Ok(svc::Either::B(GatewayConnection::TransportHeader(
-                        GatewayTransportHeader {
-                            target: NameAddr::from((name, port)),
-                            protocol,
-                            client,
-                        },
-                    ))),
+                    } => Ok(svc::Either::B(GatewayTransportHeader {
+                        target: NameAddr::from((name, port)),
+                        protocol,
+                        client,
+                    })),
                     TransportHeader {
                         name: None,
                         protocol: Some(_),
@@ -129,8 +126,8 @@ impl<T> Inbound<T> {
                 // header indicates the connection's HTTP version.
                 svc::stack(gateway.clone())
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
-                    .check_new_service::<GatewayConnection, FwdIo<I>>()
-                    .instrument(|_: &GatewayConnection| debug_span!("gateway"))
+                    .push_map_target(GatewayConnection::TransportHeader)
+                    .instrument(|g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target))
                     .into_inner(),
             )
             // Use ALPN to determine whether a transport header should be read.
@@ -150,13 +147,10 @@ impl<T> Inbound<T> {
                 // with transport header support.
                 svc::stack(gateway)
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
-                    .check_new_service::<GatewayConnection, SensorIo<tls::server::Io<I>>>()
-                    .instrument(|_: &GatewayConnection| debug_span!("legacy"))
+                    .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
                     .into_inner(),
             )
-            .check_new_service::<ClientInfo, SensorIo<tls::server::Io<I>>>()
             .push(rt.metrics.transport.layer_accept())
-            .instrument(|_: &ClientInfo| debug_span!("direct"))
             // Build a ClientInfo target for each accepted connection. Refuse the
             // connection if it doesn't include an mTLS identity.
             .push_request_filter(ClientInfo::try_from)

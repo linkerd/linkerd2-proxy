@@ -31,7 +31,7 @@ use linkerd_app_core::{
     Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, future::Future, net::SocketAddr, time::Duration};
-use tracing::debug_span;
+use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -258,7 +258,7 @@ where
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .check_new_service::<listen::Addrs, I>()
+            .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 disable_detect,
                 self.clone()
@@ -267,7 +267,7 @@ where
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
                     .push_map_target(TcpAccept::port_skipped)
-                    .check_new_service::<listen::Addrs, I>()
+                    .instrument(|_: &_| debug_span!("forward"))
                     .into_inner(),
             )
             .check_new_service::<listen::Addrs, I>()
@@ -276,9 +276,10 @@ where
                 self.push_tcp_forward(server_port)
                     .push_direct(gateway)
                     .stack
-                    .check_new_service::<listen::Addrs, I>()
+                    .instrument(|_: &_| debug_span!("direct"))
                     .into_inner(),
             )
+            .instrument(|a: &listen::Addrs| info_span!("server", port = %a.target_addr().port()))
             .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }

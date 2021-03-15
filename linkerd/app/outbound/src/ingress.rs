@@ -118,9 +118,7 @@ impl Outbound<()> {
                     ))
                     .push(http::BoxResponse::layer()),
             )
-            .check_new_service::<http::Accept, http::Request<_>>()
             .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
-            .check_new_service::<http::Accept, http::Request<_>>()
             .push(http::NewServeHttp::layer(
                 h2_settings,
                 self.runtime.drain.clone(),
@@ -133,13 +131,13 @@ impl Outbound<()> {
                 detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
-            .check_new_service::<tcp::Accept, transport::metrics::SensorIo<I>>()
             .push(self.runtime.metrics.transport.layer_accept())
+            .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
             .push_request_filter(tcp::Accept::try_from)
-            .check_new_service::<listen::Addrs, I>()
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .push(svc::BoxNewService::layer())
+            .check_new_service::<listen::Addrs, I>()
             .into_inner()
     }
 }
