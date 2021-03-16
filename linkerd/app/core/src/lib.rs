@@ -70,7 +70,10 @@ pub fn discovery_rejected() -> tonic::Status {
 
 pub fn is_discovery_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
     if let Some(status) = err.downcast_ref::<tonic::Status>() {
+        // Address is not resolveable
         status.code() == tonic::Code::InvalidArgument
+            // Unexpected cluster state
+            || status.code() == tonic::Code::FailedPrecondition
     } else if let Some(err) = err.source() {
         is_discovery_rejected(err)
     } else {
