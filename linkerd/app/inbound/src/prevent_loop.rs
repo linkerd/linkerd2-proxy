@@ -50,11 +50,7 @@ impl Predicate<Addrs> for PreventLoop {
 
 impl std::fmt::Display for LoopPrevented {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "inbound requests must not target localhost:{}",
-            self.port
-        )
+        write!(f, "inbound connection must not target port {}", self.port)
     }
 }
 

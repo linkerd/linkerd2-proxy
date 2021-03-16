@@ -5,7 +5,7 @@ use linkerd_error::Error;
 use linkerd_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
 use tracing::instrument::Instrument;
-use tracing::{debug, info, info_span, warn};
+use tracing::{debug, debug_span, info, warn};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
@@ -38,13 +38,9 @@ pub async fn serve<M, A, I>(
                     };
 
                     // The local addr should be instrumented from the listener's context.
-                    let span = info_span!(
-                        "accept",
-                        client.addr = %addrs.client(),
-                        target.addr = %addrs.target_addr(),
-                    );
+                    let span = debug_span!("accept", client.addr = %addrs.client());
 
-                    let accept = new_accept.new_service(addrs);
+                    let accept = span.in_scope(|| new_accept.new_service(addrs));
 
                     // Dispatch all of the work for a given connection onto a connection-specific task.
                     tokio::spawn(
