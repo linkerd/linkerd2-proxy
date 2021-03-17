@@ -54,6 +54,11 @@ impl<E> Outbound<E> {
         let watchdog = cache_max_idle_age * 2;
 
         let identity_disabled = rt.identity.is_none();
+        let no_tls_reason = if identity_disabled {
+            tls::NoClientTls::Disabled
+        } else {
+            tls::NoClientTls::NotProvidedByServiceDiscovery
+        };
         let resolve = svc::stack(resolve.into_service())
             .check_service::<ConcreteAddr>()
             .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
@@ -117,8 +122,9 @@ impl<E> Outbound<E> {
                             .push(http::BoxRequest::layer())
                             .push(http::BoxResponse::layer()),
                     )
-                    .push_map_target(|logical: Logical| {
-                        Endpoint::from((tls::NoClientTls::NotProvidedByServiceDiscovery, logical))
+                    .push_map_target({
+                        let no_tls_reason = no_tls_reason;
+                        move |logical: Logical| Endpoint::from((no_tls_reason, logical))
                     })
                     .into_inner(),
             ))
@@ -168,7 +174,7 @@ impl<E> Outbound<E> {
             )
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
             .push_switch(
-                |logical: Logical| {
+                move |logical: Logical| {
                     let should_resolve = match logical.profile.as_ref() {
                         Some(p) => {
                             let p = p.borrow();
@@ -180,10 +186,7 @@ impl<E> Outbound<E> {
                     if should_resolve {
                         Ok::<_, Never>(svc::Either::A(logical))
                     } else {
-                        Ok(svc::Either::B(Endpoint::from((
-                            tls::NoClientTls::NotProvidedByServiceDiscovery,
-                            logical,
-                        ))))
+                        Ok(svc::Either::B(Endpoint::from((no_tls_reason, logical))))
                     }
                 },
                 svc::stack(endpoint)

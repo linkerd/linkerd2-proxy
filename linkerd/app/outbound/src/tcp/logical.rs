@@ -49,6 +49,11 @@ where
         } = config.proxy;
 
         let identity_disabled = rt.identity.is_none();
+        let no_tls_reason = if identity_disabled {
+            tls::NoClientTls::Disabled
+        } else {
+            tls::NoClientTls::NotProvidedByServiceDiscovery
+        };
         let resolve = svc::stack(resolve.into_service())
             .check_service::<ConcreteAddr>()
             .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
@@ -103,9 +108,12 @@ where
             .push(svc::UnwrapOr::layer(
                 endpoint
                     .clone()
-                    .push_map_target(|logical: Logical| {
-                        debug!("No profile resolved");
-                        Endpoint::from((tls::NoClientTls::NotProvidedByServiceDiscovery, logical))
+                    .push_map_target({
+                        let no_tls_reason = no_tls_reason;
+                        move |logical: Logical| {
+                            debug!("No profile resolved");
+                            Endpoint::from((no_tls_reason, logical))
+                        }
                     })
                     .into_inner(),
             ))
@@ -124,10 +132,7 @@ where
             )
             .push_cache(cache_max_idle_age)
             .check_new_service::<Logical, I>()
-            .push_switch(
-                Logical::or_endpoint(tls::NoClientTls::NotProvidedByServiceDiscovery),
-                endpoint.into_inner(),
-            )
+            .push_switch(Logical::or_endpoint(no_tls_reason), endpoint.into_inner())
             .instrument(|_: &Logical| debug_span!("tcp"))
             .check_new_service::<Logical, I>();
 

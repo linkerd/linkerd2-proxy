@@ -191,7 +191,7 @@ impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
             },
             Some((addr, metadata)) => Self {
                 addr: Remote(ServerAddr(addr)),
-                tls: EndpointFromMetadata::client_tls(&metadata),
+                tls: EndpointFromMetadata::client_tls(&metadata, reason),
                 metadata,
                 logical_addr: logical.addr(),
                 protocol: logical.protocol,
@@ -253,7 +253,7 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
 // === EndpointFromMetadata ===
 
 impl EndpointFromMetadata {
-    fn client_tls(metadata: &Metadata) -> tls::ConditionalClientTls {
+    fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with
         // a gateway, then set an ALPN value indicating support for a transport
         // header.
@@ -275,9 +275,7 @@ impl EndpointFromMetadata {
                     },
                 })
             })
-            .unwrap_or(Conditional::None(
-                tls::NoClientTls::NotProvidedByServiceDiscovery,
-            ))
+            .unwrap_or(Conditional::None(reason))
     }
 }
 
@@ -294,7 +292,7 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for EndpointF
         let tls = if self.identity_disabled {
             tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
         } else {
-            Self::client_tls(&metadata)
+            Self::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
         };
         Endpoint {
             addr: Remote(ServerAddr(addr)),
