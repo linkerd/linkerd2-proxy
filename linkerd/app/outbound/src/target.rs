@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use tracing::debug;
 
 #[derive(Copy, Clone)]
-pub struct EndpointFromMetadata {
+pub(crate) struct EndpointFromMetadata {
     pub identity_disabled: bool,
 }
 
@@ -251,14 +251,6 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
 }
 
 // === EndpointFromMetadata ===
-
-impl Default for EndpointFromMetadata {
-    fn default() -> Self {
-        Self {
-            identity_disabled: false,
-        }
-    }
-}
 
 impl EndpointFromMetadata {
     fn client_tls(metadata: &Metadata) -> tls::ConditionalClientTls {

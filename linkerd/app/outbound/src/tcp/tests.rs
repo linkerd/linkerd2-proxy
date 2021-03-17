@@ -1,6 +1,5 @@
 use super::{Endpoint, Logical};
 use crate::{
-    target,
     test_util::{
         support::{
             connect::{Connect, ConnectFuture},
@@ -11,9 +10,7 @@ use crate::{
     Config, Outbound,
 };
 use linkerd_app_core::{
-    io,
-    proxy::resolve::map_endpoint,
-    svc,
+    io, svc,
     svc::NewService,
     tls,
     transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -61,10 +58,8 @@ async fn plaintext_tcp() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = map_endpoint::Resolve::new(
-        target::EndpointFromMetadata::default(),
-        support::resolver().endpoint_exists(target_addr, target_addr, Default::default()),
-    );
+    let resolver =
+        support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
 
     // Build the outbound TCP balancer stack.
     let cfg = default_config(target_addr);
@@ -121,26 +116,23 @@ async fn tls_when_hinted() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = map_endpoint::Resolve::new(
-        target::EndpointFromMetadata::default(),
-        support::resolver()
-            .endpoint_exists(
-                Addr::from_str("plain:5551").unwrap(),
-                plain_addr,
+    let resolver = support::resolver()
+        .endpoint_exists(
+            Addr::from_str("plain:5551").unwrap(),
+            plain_addr,
+            Default::default(),
+        )
+        .endpoint_exists(
+            Addr::from_str("tls:5550").unwrap(),
+            tls_addr,
+            support::resolver::Metadata::new(
                 Default::default(),
-            )
-            .endpoint_exists(
-                Addr::from_str("tls:5550").unwrap(),
-                tls_addr,
-                support::resolver::Metadata::new(
-                    Default::default(),
-                    support::resolver::ProtocolHint::Unknown,
-                    None,
-                    Some(id_name),
-                    None,
-                ),
+                support::resolver::ProtocolHint::Unknown,
+                None,
+                Some(id_name),
+                None,
             ),
-    );
+        );
 
     // Configure mock IO for the "client".
     let mut client_io = support::io();
@@ -819,10 +811,7 @@ where
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)
         .with_stack(connect)
-        .push_tcp_logical(map_endpoint::Resolve::new(
-            target::EndpointFromMetadata::default(),
-            resolver,
-        ))
+        .push_tcp_logical(resolver)
         .push_detect_http(support::service::no_http())
         .push_discover(profiles)
         .into_inner()

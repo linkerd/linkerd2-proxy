@@ -17,7 +17,10 @@ pub(crate) mod test_util;
 use linkerd_app_core::{
     config::ProxyConfig,
     io, metrics, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, resolve::map_endpoint},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+    },
     serve, svc, tls,
     transport::listen,
     AddrMatch, Error, ProxyRuntime,
@@ -105,40 +108,29 @@ impl<S> Outbound<S> {
         <S as svc::Service<http::Endpoint>>::Response:
             tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
         <S as svc::Service<http::Endpoint>>::Future: Send + Unpin,
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
         <S as svc::Service<tcp::Endpoint>>::Response: tls::HasNegotiatedProtocol,
         <S as svc::Service<tcp::Endpoint>>::Response:
             tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
         <S as svc::Service<tcp::Endpoint>>::Future: Send,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
         R: Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + 'static,
         P::Future: Send,
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
-        let identity_disabled = self.runtime.identity.is_none();
-
         let http = self
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(map_endpoint::Resolve::new(
-                target::EndpointFromMetadata { identity_disabled },
-                resolve.clone(),
-            ))
+            .push_http_logical(resolve.clone())
             .push_http_server()
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_logical(map_endpoint::Resolve::new(
-                target::EndpointFromMetadata { identity_disabled },
-                resolve,
-            ))
+            .push_tcp_logical(resolve)
             .push_detect_http(http)
             .push_discover(profiles)
             .into_inner()
@@ -148,13 +140,10 @@ impl<S> Outbound<S> {
 impl Outbound<()> {
     pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
     where
-        R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<http::Concrete>>::Resolution: Send,
-        <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
-        <R as Resolve<tcp::Concrete>>::Resolution: Send,
-        <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
         R: Clone + Send + Sync + Unpin + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
         P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Future: Send,
         P::Error: Send,
@@ -170,7 +159,6 @@ impl Outbound<()> {
         let serve = async move {
             if self.config.ingress_mode {
                 info!("Outbound routing in ingress-mode");
-                let identity_disabled = self.runtime.identity.is_none();
                 let tcp = self
                     .to_tcp_connect()
                     .push_tcp_endpoint()
@@ -180,10 +168,7 @@ impl Outbound<()> {
                     .to_tcp_connect()
                     .push_tcp_endpoint()
                     .push_http_endpoint()
-                    .push_http_logical(map_endpoint::Resolve::new(
-                        target::EndpointFromMetadata { identity_disabled },
-                        resolve,
-                    ))
+                    .push_http_logical(resolve)
                     .into_inner();
                 let stack = self.to_ingress(profiles, tcp, http);
                 let shutdown = self.runtime.drain.signaled();
