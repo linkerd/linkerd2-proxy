@@ -108,12 +108,9 @@ where
             .push(svc::UnwrapOr::layer(
                 endpoint
                     .clone()
-                    .push_map_target({
-                        let no_tls_reason = no_tls_reason;
-                        move |logical: Logical| {
-                            debug!("No profile resolved");
-                            Endpoint::from((no_tls_reason, logical))
-                        }
+                    .push_map_target(move |logical: Logical| {
+                        debug!("No profile resolved");
+                        Endpoint::from((no_tls_reason, logical))
                     })
                     .into_inner(),
             ))

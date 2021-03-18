@@ -122,10 +122,7 @@ impl<E> Outbound<E> {
                             .push(http::BoxRequest::layer())
                             .push(http::BoxResponse::layer()),
                     )
-                    .push_map_target({
-                        let no_tls_reason = no_tls_reason;
-                        move |logical: Logical| Endpoint::from((no_tls_reason, logical))
-                    })
+                    .push_map_target(move |l: Logical| Endpoint::from((no_tls_reason, l)))
                     .into_inner(),
             ))
             // Distribute requests over a distribution of balancers via a
