@@ -1,14 +1,22 @@
-use super::opaque_transport::OpaqueTransport;
-use crate::{target::Endpoint, Outbound};
+use super::opaque_transport::{self, OpaqueTransport};
+use crate::Outbound;
 use futures::future;
 use linkerd_app_core::{
-    io, svc, tls,
-    transport::{ConnectTcp, Remote, ServerAddr},
+    io,
+    proxy::http,
+    svc, tls,
+    transport::{self, ConnectTcp, Remote, ServerAddr},
     transport_header::SessionProtocol,
     Error,
 };
 use std::task::{Context, Poll};
 use tracing::debug_span;
+
+#[derive(Clone, Debug)]
+pub struct Connect {
+    pub addr: Remote<ServerAddr>,
+    pub tls: tls::ConditionalClientTls,
+}
 
 /// Prevents outbound connections on the loopback interface, unless the
 /// `allow-loopback` feature is enabled.
@@ -25,19 +33,24 @@ impl Outbound<()> {
 }
 
 impl<C> Outbound<C> {
-    pub fn push_tcp_endpoint<P>(
+    pub fn push_tcp_endpoint<T>(
         self,
     ) -> Outbound<
         impl svc::Service<
-                Endpoint<P>,
+                T,
                 Response = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
                 Error = Error,
                 Future = impl Send,
             > + Clone,
     >
     where
-        Endpoint<P>: svc::Param<Option<SessionProtocol>>,
-        C: svc::Service<Endpoint<P>, Error = io::Error> + Clone + Send + 'static,
+        T: svc::Param<Remote<ServerAddr>>
+            + svc::Param<tls::ConditionalClientTls>
+            + svc::Param<Option<opaque_transport::PortOverride>>
+            + svc::Param<Option<http::AuthorityOverride>>
+            + svc::Param<Option<SessionProtocol>>
+            + svc::Param<transport::labels::Key>,
+        C: svc::Service<Connect, Error = io::Error> + Clone + Send + 'static,
         C::Response: tls::HasNegotiatedProtocol,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Future: Send + 'static,
@@ -145,5 +158,19 @@ where
         }
 
         future::Either::Left(self.0.call(ep))
+    }
+}
+
+// === impl Connect ===
+
+impl svc::Param<Remote<ServerAddr>> for Connect {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.addr
+    }
+}
+
+impl svc::Param<tls::ConditionalClientTls> for Connect {
+    fn param(&self) -> tls::ConditionalClientTls {
+        self.tls.clone()
     }
 }

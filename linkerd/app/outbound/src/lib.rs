@@ -98,20 +98,14 @@ impl<S> Outbound<S> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        S: svc::Service<http::Endpoint, Error = io::Error>
-            + svc::Service<tcp::Endpoint, Error = io::Error>,
         S: Clone + Send + Sync + Unpin + 'static,
-        <S as svc::Service<http::Endpoint>>::Response: tls::HasNegotiatedProtocol,
-        <S as svc::Service<http::Endpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        <S as svc::Service<http::Endpoint>>::Future: Send + Unpin,
+        S: svc::Service<tcp::Connect, Error = io::Error>,
+        S::Response: tls::HasNegotiatedProtocol,
+        S::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+        S::Future: Send + Unpin,
         R: Resolve<http::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<http::Concrete>>::Resolution: Send,
         <R as Resolve<http::Concrete>>::Future: Send + Unpin,
-        <S as svc::Service<tcp::Endpoint>>::Response: tls::HasNegotiatedProtocol,
-        <S as svc::Service<tcp::Endpoint>>::Response:
-            tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-        <S as svc::Service<tcp::Endpoint>>::Future: Send,
         R: Resolve<tcp::Concrete, Endpoint = Metadata, Error = Error>,
         <R as Resolve<tcp::Concrete>>::Resolution: Send,
         <R as Resolve<tcp::Concrete>>::Future: Send + Unpin,
