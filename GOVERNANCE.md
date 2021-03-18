@@ -1,1 +1,1 @@
-See https://github.com/linkerd/linkerd2/blob/master/GOVERNANCE.md
+See https://github.com/linkerd/linkerd2/blob/main/GOVERNANCE.md
