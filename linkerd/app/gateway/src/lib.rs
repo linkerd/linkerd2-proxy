@@ -79,15 +79,11 @@ pub fn stack<I, O, P, R>(
        + Send
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
-    O: svc::Service<outbound::http::Endpoint, Error = io::Error>
-        + svc::Service<outbound::tcp::Endpoint, Error = io::Error>,
     O: Clone + Send + Sync + Unpin + 'static,
-    <O as svc::Service<outbound::http::Endpoint>>::Response:
+    O: svc::Service<outbound::tcp::Connect, Error = io::Error>,
+    O::Response:
         io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
-    <O as svc::Service<outbound::http::Endpoint>>::Future: Send + Unpin + 'static,
-    <O as svc::Service<outbound::tcp::Endpoint>>::Response:
-        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
-    <O as svc::Service<outbound::tcp::Endpoint>>::Future: Send + Unpin + 'static,
+    O::Future: Send + Unpin + 'static,
     P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,

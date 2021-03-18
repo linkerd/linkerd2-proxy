@@ -4,6 +4,7 @@ pub mod opaque_transport;
 #[cfg(test)]
 mod tests;
 
+pub use self::connect::Connect;
 use crate::target;
 pub use linkerd_app_core::proxy::tcp::Forward;
 use linkerd_app_core::{

@@ -1,7 +1,9 @@
+use crate::tcp::opaque_transport;
 use linkerd_app_core::{
     metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
+        http,
         resolve::map_endpoint::MapEndpoint,
     },
     svc::{self, Param},
@@ -11,11 +13,6 @@ use linkerd_app_core::{
 };
 use std::net::SocketAddr;
 use tracing::debug;
-
-#[derive(Copy, Clone)]
-pub(crate) struct EndpointFromMetadata {
-    pub identity_disabled: bool,
-}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Accept<P> {
@@ -43,6 +40,11 @@ pub struct Endpoint<P> {
     pub metadata: Metadata,
     pub logical_addr: Addr,
     pub protocol: P,
+}
+
+#[derive(Copy, Clone)]
+pub struct EndpointFromMetadata {
+    pub identity_disabled: bool,
 }
 
 // === impl Accept ===
@@ -215,6 +217,23 @@ impl<P> Param<Remote<ServerAddr>> for Endpoint<P> {
 impl<P> Param<tls::ConditionalClientTls> for Endpoint<P> {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
+    }
+}
+
+impl<P> Param<Option<opaque_transport::PortOverride>> for Endpoint<P> {
+    fn param(&self) -> Option<opaque_transport::PortOverride> {
+        self.metadata
+            .opaque_transport_port()
+            .map(opaque_transport::PortOverride)
+    }
+}
+
+impl<P> Param<Option<http::AuthorityOverride>> for Endpoint<P> {
+    fn param(&self) -> Option<http::AuthorityOverride> {
+        self.metadata
+            .authority_override()
+            .cloned()
+            .map(http::AuthorityOverride)
     }
 }
 

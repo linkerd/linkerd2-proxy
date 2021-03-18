@@ -135,15 +135,6 @@ impl Param<Option<SessionProtocol>> for Endpoint {
     }
 }
 
-impl Param<Option<AuthorityOverride>> for Endpoint {
-    fn param(&self) -> Option<AuthorityOverride> {
-        self.metadata
-            .authority_override()
-            .cloned()
-            .map(AuthorityOverride)
-    }
-}
-
 impl tap::Inspect for Endpoint {
     fn src_addr<B>(&self, req: &Request<B>) -> Option<SocketAddr> {
         req.extensions().get::<ClientHandle>().map(|c| c.addr)

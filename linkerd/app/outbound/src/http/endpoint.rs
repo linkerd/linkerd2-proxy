@@ -8,13 +8,7 @@ use linkerd_app_core::{
 use tokio::io;
 use tracing::debug_span;
 
-impl<C> Outbound<C>
-where
-    C: svc::Service<Endpoint> + Clone + Send + Sync + Unpin + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-    C::Error: Into<Error>,
-    C::Future: Send + Unpin,
-{
+impl<C> Outbound<C> {
     pub fn push_http_endpoint<B>(
         self,
     ) -> Outbound<
@@ -31,6 +25,10 @@ where
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
+        C: svc::Service<Endpoint> + Clone + Send + Sync + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+        C::Error: Into<Error>,
+        C::Future: Send + Unpin,
     {
         let Self {
             config,
