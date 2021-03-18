@@ -66,8 +66,8 @@ where
 
     fn call(&mut self, ep: T) -> Self::Future {
         let tls: tls::ConditionalClientTls = ep.param();
-        if tls.is_none() {
-            trace!("Not attempting opaque transport");
+        if let tls::ConditionalClientTls::None(reason) = tls {
+            trace!(%reason, "Not attempting opaque transport");
             let target = Connect {
                 addr: ep.param(),
                 tls,
