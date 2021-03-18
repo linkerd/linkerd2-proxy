@@ -1,8 +1,13 @@
-use super::{CanonicalDstHeader, Concrete, Logical};
-use crate::{resolve, stack_labels, Outbound};
+use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
+use crate::{resolve, stack_labels, target, Outbound};
 use linkerd_app_core::{
     classify, config, profiles,
-    proxy::{core::Resolve, http},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        http,
+        resolve::map_endpoint,
+    },
     retry, svc, tls, Error, Never, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
@@ -25,14 +30,13 @@ impl<E> Outbound<E> {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: svc::NewService<R::Endpoint, Service = ESvc> + Clone + Send + 'static,
+        E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
         ESvc::Error: Into<Error>,
         ESvc::Future: Send,
-        R: Resolve<Concrete, Error = Error> + Clone + Send + 'static,
-        R::Endpoint: From<(tls::NoClientTls, Logical)> + Clone + Send,
+        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
@@ -49,9 +53,27 @@ impl<E> Outbound<E> {
         } = config.proxy;
         let watchdog = cache_max_idle_age * 2;
 
+        let identity_disabled = rt.identity.is_none();
+        let no_tls_reason = if identity_disabled {
+            tls::NoClientTls::Disabled
+        } else {
+            tls::NoClientTls::NotProvidedByServiceDiscovery
+        };
+        let resolve = svc::stack(resolve.into_service())
+            .check_service::<ConcreteAddr>()
+            .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
+            .push(svc::layer::mk(move |inner| {
+                map_endpoint::Resolve::new(
+                    target::EndpointFromMetadata { identity_disabled },
+                    inner,
+                )
+            }))
+            .check_service::<Concrete>()
+            .into_inner();
+
         let stack = endpoint
             .clone()
-            .check_new_service::<R::Endpoint, http::Request<http::BoxBody>>()
+            .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())
@@ -64,7 +86,7 @@ impl<E> Outbound<E> {
                     // the balancer need not drive them all directly.
                     .push(svc::layer::mk(svc::SpawnReady::new)),
             )
-            .check_new_service::<R::Endpoint, http::Request<_>>()
+            .check_new_service::<Endpoint, http::Request<_>>()
             // Resolve the service to its endpoints and balance requests over them.
             //
             // If the balancer has been empty/unavailable, eagerly fail requests.
@@ -100,12 +122,7 @@ impl<E> Outbound<E> {
                             .push(http::BoxRequest::layer())
                             .push(http::BoxResponse::layer()),
                     )
-                    .push_map_target(|logical: Logical| {
-                        R::Endpoint::from((
-                            tls::NoClientTls::NotProvidedByServiceDiscovery,
-                            logical,
-                        ))
-                    })
+                    .push_map_target(move |l: Logical| Endpoint::from((no_tls_reason, l)))
                     .into_inner(),
             ))
             // Distribute requests over a distribution of balancers via a
@@ -154,7 +171,7 @@ impl<E> Outbound<E> {
             )
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
             .push_switch(
-                |logical: Logical| {
+                move |logical: Logical| {
                     let should_resolve = match logical.profile.as_ref() {
                         Some(p) => {
                             let p = p.borrow();
@@ -166,10 +183,7 @@ impl<E> Outbound<E> {
                     if should_resolve {
                         Ok::<_, Never>(svc::Either::A(logical))
                     } else {
-                        Ok(svc::Either::B(R::Endpoint::from((
-                            tls::NoClientTls::NotProvidedByServiceDiscovery,
-                            logical,
-                        ))))
+                        Ok(svc::Either::B(Endpoint::from((no_tls_reason, logical))))
                     }
                 },
                 svc::stack(endpoint)

@@ -1,6 +1,5 @@
 use super::{Endpoint, Logical};
 use crate::{
-    target,
     test_util::{
         support::{
             connect::{Connect, ConnectFuture},
@@ -11,9 +10,7 @@ use crate::{
     Config, Outbound,
 };
 use linkerd_app_core::{
-    io,
-    proxy::resolve::map_endpoint,
-    svc,
+    io, svc,
     svc::NewService,
     tls,
     transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -61,10 +58,8 @@ async fn plaintext_tcp() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = map_endpoint::Resolve::new(
-        target::EndpointFromMetadata::default(),
-        support::resolver().endpoint_exists(target_addr, target_addr, Default::default()),
-    );
+    let resolver =
+        support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
 
     // Build the outbound TCP balancer stack.
     let cfg = default_config(target_addr);
@@ -102,7 +97,6 @@ async fn tls_when_hinted() {
         .expect("hostname is valid");
     let mut srv_io = support::io();
     srv_io.write(b"hello").read(b"world");
-    let id_name2 = id_name.clone();
     let mut tls_srv_io = srv_io.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -114,33 +108,32 @@ async fn tls_when_hinted() {
             Ok(io)
         })
         .endpoint_fn(tls_addr, move |endpoint: Endpoint| {
-            assert_eq!(endpoint.tls, Conditional::Some(id_name2.clone().into()));
+            // XXX identity is disabled in tests, so we can't actually test
+            //assert_eq!(endpoint.tls, Conditional::Some(id_name2.clone().into()));
+            assert_eq!(endpoint.tls, Conditional::None(tls::NoClientTls::Disabled));
             let io = srv_io.build();
             Ok(io)
         });
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = map_endpoint::Resolve::new(
-        target::EndpointFromMetadata::default(),
-        support::resolver()
-            .endpoint_exists(
-                Addr::from_str("plain:5551").unwrap(),
-                plain_addr,
+    let resolver = support::resolver()
+        .endpoint_exists(
+            Addr::from_str("plain:5551").unwrap(),
+            plain_addr,
+            Default::default(),
+        )
+        .endpoint_exists(
+            Addr::from_str("tls:5550").unwrap(),
+            tls_addr,
+            support::resolver::Metadata::new(
                 Default::default(),
-            )
-            .endpoint_exists(
-                Addr::from_str("tls:5550").unwrap(),
-                tls_addr,
-                support::resolver::Metadata::new(
-                    Default::default(),
-                    support::resolver::ProtocolHint::Unknown,
-                    None,
-                    Some(id_name),
-                    None,
-                ),
+                support::resolver::ProtocolHint::Unknown,
+                None,
+                Some(id_name),
+                None,
             ),
-    );
+        );
 
     // Configure mock IO for the "client".
     let mut client_io = support::io();
@@ -173,23 +166,15 @@ async fn resolutions_are_reused() {
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let cfg = default_config(addr);
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
-    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-        .expect("hostname is valid");
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint(
-        addr,
-        Connection {
-            tls: Conditional::Some(id_name.clone().into()),
-            ..Connection::default()
-        },
-    );
+    let connect = support::connect().endpoint(addr, Connection::default());
 
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         None,
-        Some(id_name),
+        None,
         None,
     );
 
@@ -268,7 +253,6 @@ async fn load_balances() {
         connect = connect.endpoint(
             addr,
             Connection {
-                tls: Conditional::Some(id_name.clone().into()),
                 count: conns.clone(),
                 ..Connection::default()
             },
@@ -363,7 +347,6 @@ async fn load_balancer_add_endpoints() {
         connect = connect.endpoint(
             addr,
             Connection {
-                tls: Conditional::Some(id_name.clone().into()),
                 count: conns.clone(),
                 ..Connection::default()
             },
@@ -477,7 +460,6 @@ async fn load_balancer_remove_endpoints() {
         connect = connect.endpoint(
             addr,
             Connection {
-                tls: Conditional::Some(id_name.clone().into()),
                 enabled: enabled.clone(),
                 ..Default::default()
             },
@@ -566,12 +548,11 @@ async fn no_profiles_when_outside_search_nets() {
     let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
-    let id_name2 = id_name.clone();
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect()
         .endpoint_fn(profile_addr, move |endpoint: Endpoint| {
-            assert_eq!(endpoint.tls, Conditional::Some(id_name2.clone().into()));
+            assert_eq!(endpoint.tls, Conditional::None(tls::NoClientTls::Disabled));
             let io = support::io()
                 .write(b"hello")
                 .read(b"world")
@@ -641,24 +622,16 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let cfg = default_config(ep);
-    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-        .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
         None,
-        Some(id_name.clone()),
+        None,
         None,
     );
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint(
-        ep,
-        Connection {
-            tls: Conditional::Some(id_name.clone().into()),
-            ..Connection::default()
-        },
-    );
+    let connect = support::connect().endpoint(ep, Connection::default());
 
     let resolver = support::resolver::<support::resolver::Metadata>();
     let resolve_state = resolver.handle();
@@ -712,13 +685,7 @@ async fn profile_endpoint_propagates_conn_errors() {
                 "i dont like you, go away",
             )))
         })
-        .endpoint(
-            ep2,
-            Connection {
-                tls: Conditional::Some(id_name.clone().into()),
-                ..Connection::default()
-            },
-        );
+        .endpoint(ep2, Connection::default());
 
     let profiles = profile::resolver();
     let profile_tx = profiles.profile_tx(ep1);
@@ -770,7 +737,7 @@ struct Connection {
 impl Default for Connection {
     fn default() -> Self {
         Self {
-            tls: Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
+            tls: Conditional::None(tls::NoClientTls::Disabled),
             count: Arc::new(AtomicUsize::new(0)),
             enabled: Arc::new(AtomicBool::new(true)),
         }
@@ -819,10 +786,7 @@ where
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)
         .with_stack(connect)
-        .push_tcp_logical(map_endpoint::Resolve::new(
-            target::EndpointFromMetadata::default(),
-            resolver,
-        ))
+        .push_tcp_logical(resolver)
         .push_detect_http(support::service::no_http())
         .push_discover(profiles)
         .into_inner()

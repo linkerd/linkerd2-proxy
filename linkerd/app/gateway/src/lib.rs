@@ -8,7 +8,11 @@ use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
     detect, discovery_rejected, io, metrics, profiles,
-    proxy::{api_resolve::Metadata, core::Resolve, http, resolve::map_endpoint},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        http,
+    },
     svc::{self, Param},
     tls,
     transport::OrigDstAddr,
@@ -87,13 +91,10 @@ where
     P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
-    R: Resolve<outbound::http::Concrete, Endpoint = Metadata, Error = Error>
-        + Resolve<outbound::tcp::Concrete, Endpoint = Metadata, Error = Error>,
     R: Clone + Send + Sync + Unpin + 'static,
-    <R as Resolve<outbound::http::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::http::Concrete>>::Future: Send + Unpin,
-    <R as Resolve<outbound::tcp::Concrete>>::Resolution: Send,
-    <R as Resolve<outbound::tcp::Concrete>>::Future: Send + Unpin,
+    R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+    R::Resolution: Send,
+    R::Future: Send + Unpin,
 {
     let ProxyConfig {
         buffer_capacity,
@@ -116,10 +117,7 @@ where
     let tcp = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_logical(map_endpoint::Resolve::new(
-            outbound::target::EndpointFromMetadata::default(),
-            resolve.clone(),
-        ))
+        .push_tcp_logical(resolve.clone())
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
             Some(rx) if rx.borrow().name.is_some() => Ok(outbound::tcp::Logical {
@@ -163,10 +161,7 @@ where
     let http = outbound
         .push_tcp_endpoint()
         .push_http_endpoint()
-        .push_http_logical(map_endpoint::Resolve::new(
-            outbound::target::EndpointFromMetadata::default(),
-            resolve,
-        ))
+        .push_http_logical(resolve)
         .into_stack()
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {

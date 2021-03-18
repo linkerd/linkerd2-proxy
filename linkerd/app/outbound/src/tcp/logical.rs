@@ -1,9 +1,14 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::{resolve, Outbound};
+use crate::{resolve, target, Outbound};
 use linkerd_app_core::{
     config, drain, io, profiles,
-    proxy::{api_resolve::ConcreteAddr, core::Resolve, tcp},
-    svc, tls, Conditional, Error,
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        resolve::map_endpoint,
+        tcp,
+    },
+    svc, tls, Conditional, Error, Never,
 };
 use tracing::{debug, debug_span};
 
@@ -26,7 +31,7 @@ where
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Resolve<Concrete, Endpoint = Endpoint, Error = Error> + Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
@@ -42,6 +47,24 @@ where
             dispatch_timeout,
             ..
         } = config.proxy;
+
+        let identity_disabled = rt.identity.is_none();
+        let no_tls_reason = if identity_disabled {
+            tls::NoClientTls::Disabled
+        } else {
+            tls::NoClientTls::NotProvidedByServiceDiscovery
+        };
+        let resolve = svc::stack(resolve.into_service())
+            .check_service::<ConcreteAddr>()
+            .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
+            .push(svc::layer::mk(move |inner| {
+                map_endpoint::Resolve::new(
+                    target::EndpointFromMetadata { identity_disabled },
+                    inner,
+                )
+            }))
+            .check_service::<Concrete>()
+            .into_inner();
 
         let endpoint = connect
             .clone()
@@ -85,9 +108,9 @@ where
             .push(svc::UnwrapOr::layer(
                 endpoint
                     .clone()
-                    .push_map_target(|logical: Logical| {
+                    .push_map_target(move |logical: Logical| {
                         debug!("No profile resolved");
-                        Endpoint::from((tls::NoClientTls::NotProvidedByServiceDiscovery, logical))
+                        Endpoint::from((no_tls_reason, logical))
                     })
                     .into_inner(),
             ))
@@ -106,10 +129,7 @@ where
             )
             .push_cache(cache_max_idle_age)
             .check_new_service::<Logical, I>()
-            .push_switch(
-                Logical::or_endpoint(tls::NoClientTls::NotProvidedByServiceDiscovery),
-                endpoint.into_inner(),
-            )
+            .push_switch(Logical::or_endpoint(no_tls_reason), endpoint.into_inner())
             .instrument(|_: &Logical| debug_span!("tcp"))
             .check_new_service::<Logical, I>();
 
