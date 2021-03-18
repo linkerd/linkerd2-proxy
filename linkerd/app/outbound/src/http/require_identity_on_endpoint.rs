@@ -1,13 +1,10 @@
-use crate::http::Endpoint;
 use futures::{
     future::{self, Either},
     TryFutureExt,
 };
 use linkerd_app_core::{
-    errors::IdentityRequired,
-    proxy::http::identity_from_header,
-    svc::{layer, NewService, Service},
-    tls, Conditional, Error, L5D_REQUIRE_ID,
+    errors::IdentityRequired, proxy::http::identity_from_header, svc, tls, Conditional, Error,
+    L5D_REQUIRE_ID,
 };
 use std::task::{Context, Poll};
 use tracing::debug;
@@ -30,19 +27,20 @@ impl<N> NewRequireIdentity<N> {
         Self { inner }
     }
 
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
-        layer::mk(Self::new)
+    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone + Copy {
+        svc::layer::mk(Self::new)
     }
 }
 
-impl<N> NewService<Endpoint> for NewRequireIdentity<N>
+impl<T, N> svc::NewService<T> for NewRequireIdentity<N>
 where
-    N: NewService<Endpoint>,
+    T: svc::Param<tls::ConditionalClientTls>,
+    N: svc::NewService<T>,
 {
     type Service = RequireIdentity<N::Service>;
 
-    fn new_service(&mut self, target: Endpoint) -> Self::Service {
-        let tls = target.tls.clone();
+    fn new_service(&mut self, target: T) -> Self::Service {
+        let tls = target.param();
         let inner = self.inner.new_service(target);
         RequireIdentity { tls, inner }
     }
@@ -53,15 +51,16 @@ where
 type ResponseFuture<F, T, E> =
     Either<future::Ready<Result<T, Error>>, future::MapErr<F, fn(E) -> Error>>;
 
-impl<S, A> Service<http::Request<A>> for RequireIdentity<S>
+impl<S, A> svc::Service<http::Request<A>> for RequireIdentity<S>
 where
-    S: Service<http::Request<A>>,
+    S: svc::Service<http::Request<A>>,
     S::Error: Into<Error>,
 {
     type Response = S::Response;
     type Error = Error;
     type Future = ResponseFuture<S::Future, S::Response, S::Error>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx).map_err(Into::into)
     }

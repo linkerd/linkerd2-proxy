@@ -53,6 +53,9 @@ impl<E> Outbound<E> {
         } = config.proxy;
         let watchdog = cache_max_idle_age * 2;
 
+        let endpoint =
+            endpoint.instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr));
+
         let identity_disabled = rt.identity.is_none();
         let no_tls_reason = if identity_disabled {
             tls::NoClientTls::Disabled
