@@ -52,13 +52,11 @@ impl<C> Outbound<C> {
         // HTTP/1.x fallback is supported as needed.
         let stack = connect
             .push(http::client::layer(h1_settings, h2_settings))
-            .check_service::<T>()
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
                 let backoff = backoff;
                 move |_| Ok(backoff.stream())
             }))
-            .check_new::<T>()
             .push(tap::NewTapHttp::layer(rt.tap.clone()))
             .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(http_tracing::client(
@@ -71,9 +69,7 @@ impl<C> Outbound<C> {
                 "host",
                 CANONICAL_DST_HEADER,
             ]))
-            .push_on_response(http::BoxResponse::layer())
-            //.instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
-            .check_new::<T>();
+            .push_on_response(http::BoxResponse::layer());
 
         Outbound {
             config,
