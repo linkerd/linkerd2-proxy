@@ -1,19 +1,18 @@
-use super::{require_identity_on_endpoint::NewRequireIdentity, Endpoint};
+use super::require_identity_on_endpoint::NewRequireIdentity;
 use crate::Outbound;
 use linkerd_app_core::{
-    classify, config, http_tracing,
+    classify, config, http_tracing, metrics,
     proxy::{http, tap},
-    reconnect, svc, Error, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
+    reconnect, svc, tls, Error, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
 use tokio::io;
-use tracing::debug_span;
 
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<B>(
+    pub fn push_http_endpoint<T, B>(
         self,
     ) -> Outbound<
         impl svc::NewService<
-                Endpoint,
+                T,
                 Service = impl svc::Service<
                     http::Request<B>,
                     Response = http::Response<http::BoxBody>,
@@ -23,9 +22,15 @@ impl<C> Outbound<C> {
             > + Clone,
     >
     where
+        T: Clone + Send + Sync + 'static,
+        T: svc::Param<http::client::Settings>
+            + svc::Param<Option<http::AuthorityOverride>>
+            + svc::Param<metrics::EndpointLabels>
+            + svc::Param<tls::ConditionalClientTls>
+            + tap::Inspect,
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        C: svc::Service<Endpoint> + Clone + Send + Sync + Unpin + 'static,
+        C: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
         C::Future: Send + Unpin,
@@ -47,12 +52,13 @@ impl<C> Outbound<C> {
         // HTTP/1.x fallback is supported as needed.
         let stack = connect
             .push(http::client::layer(h1_settings, h2_settings))
+            .check_service::<T>()
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
                 let backoff = backoff;
                 move |_| Ok(backoff.stream())
             }))
-            .check_new::<Endpoint>()
+            .check_new::<T>()
             .push(tap::NewTapHttp::layer(rt.tap.clone()))
             .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(http_tracing::client(
@@ -66,8 +72,8 @@ impl<C> Outbound<C> {
                 CANONICAL_DST_HEADER,
             ]))
             .push_on_response(http::BoxResponse::layer())
-            .check_new::<Endpoint>()
-            .instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr));
+            //.instrument(|e: &Endpoint| debug_span!("endpoint", peer.addr = %e.addr))
+            .check_new::<T>();
 
         Outbound {
             config,
