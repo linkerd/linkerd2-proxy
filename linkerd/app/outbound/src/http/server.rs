@@ -1,20 +1,12 @@
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{config, errors, http_tracing, svc, Error};
-use tracing::debug_span;
 
-impl<H, HSvc> Outbound<H>
-where
-    H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + 'static,
-    HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
-    HSvc: Send + 'static,
-    HSvc::Error: Into<Error>,
-    HSvc::Future: Send,
-{
-    pub fn push_http_server(
+impl<N> Outbound<N> {
+    pub fn push_http_server<T, NSvc>(
         self,
     ) -> Outbound<
         impl svc::NewService<
-                http::Logical,
+                T,
                 Service = impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
@@ -22,7 +14,15 @@ where
                     Future = impl Send,
                 > + Clone,
             > + Clone,
-    > {
+    >
+    where
+        T: svc::Param<http::normalize_uri::DefaultAuthority>,
+        N: svc::NewService<T, Service = NSvc> + Clone + Send + 'static,
+        NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
+        NSvc: Send + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+    {
         let Self {
             config,
             runtime: rt,
@@ -37,7 +37,7 @@ where
         } = config.proxy;
 
         let stack = http
-            .check_new_service::<http::Logical, _>()
+            .check_new_service::<T, _>()
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())
@@ -62,8 +62,7 @@ where
             .push(http::NewNormalizeUri::layer())
             // Record when a HTTP/1 URI originated in absolute form
             .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
-            .instrument(|l: &http::Logical| debug_span!("http", v = %l.protocol))
-            .check_new_service::<http::Logical, http::Request<http::BoxBody>>();
+            .check_new_service::<T, http::Request<http::BoxBody>>();
 
         Outbound {
             config,

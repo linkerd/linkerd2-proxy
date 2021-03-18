@@ -3,6 +3,7 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io, svc, Error,
 };
+use tracing::debug_span;
 
 impl<T> Outbound<T> {
     pub fn push_detect_http<TSvc, H, HSvc, I>(
@@ -45,6 +46,7 @@ impl<T> Outbound<T> {
             )
             .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
             .push_map_target(http::Logical::from)
+            .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .push(svc::UnwrapOr::layer(
                 tcp.clone()
                     .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
