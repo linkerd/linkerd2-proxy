@@ -207,9 +207,9 @@ impl From<Logical> for Target {
     }
 }
 
-impl Param<profiles::LogicalAddr> for Target {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.dst.clone())
+impl Param<profiles::LookupAddr> for Target {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.dst.clone())
     }
 }
 

@@ -181,7 +181,7 @@ impl<E> Outbound<E> {
                     let should_resolve = match logical.profile.as_ref() {
                         Some(p) => {
                             let p = p.borrow();
-                            p.endpoint.is_none() && (p.name.is_some() || !p.targets.is_empty())
+                            p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
                         }
                         None => false,
                     };
