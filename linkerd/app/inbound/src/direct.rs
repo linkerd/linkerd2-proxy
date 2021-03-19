@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
-    transport::{self, listen, metrics::SensorIo, ClientAddr, Remote},
+    transport::{self, metrics::SensorIo, ClientAddr, Remote, TargetAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Never,
 };
@@ -61,16 +61,17 @@ impl<T> Inbound<T> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub fn push_direct<I, TSvc, G, GSvc>(
+    pub fn push_direct<A, I, TSvc, G, GSvc>(
         self,
         gateway: G,
     ) -> Inbound<
         impl svc::NewService<
-                listen::Addrs,
+                A,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
     >
     where
+        A: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         T: svc::NewService<TcpEndpoint, Service = TSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -158,7 +159,7 @@ impl<T> Inbound<T> {
                 rt.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
-            .check_new_service::<listen::Addrs, I>();
+            .check_new_service::<A, I>();
 
         Inbound {
             config,
@@ -170,22 +171,27 @@ impl<T> Inbound<T> {
 
 // === impl ClientInfo ===
 
-impl TryFrom<(tls::ConditionalServerTls, listen::Addrs)> for ClientInfo {
+impl<T> TryFrom<(tls::ConditionalServerTls, T)> for ClientInfo
+where
+    T: Param<TargetAddr>,
+    T: Param<Remote<ClientAddr>>,
+{
     type Error = RefusedNoIdentity;
 
-    fn try_from(
-        (tls, addrs): (tls::ConditionalServerTls, listen::Addrs),
-    ) -> Result<Self, Self::Error> {
+    fn try_from((tls, addrs): (tls::ConditionalServerTls, T)) -> Result<Self, Self::Error> {
         match tls {
             Conditional::Some(tls::ServerTls::Established {
                 client_id: Some(client_id),
                 negotiated_protocol,
-            }) => Ok(Self {
-                client_id,
-                alpn: negotiated_protocol,
-                client_addr: addrs.client(),
-                local_addr: addrs.target_addr(),
-            }),
+            }) => {
+                let TargetAddr(local_addr) = addrs.param();
+                Ok(Self {
+                    client_id,
+                    alpn: negotiated_protocol,
+                    client_addr: addrs.param(),
+                    local_addr,
+                })
+            }
             _ => Err(RefusedNoIdentity(())),
         }
     }

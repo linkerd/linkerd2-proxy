@@ -6,7 +6,7 @@ use linkerd_app_core::{
     stack_tracing,
     svc::{self, Param},
     tls,
-    transport::{self, addrs::*, listen},
+    transport::{self, addrs::*},
     transport_header::TransportHeader,
     Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
@@ -60,20 +60,28 @@ pub struct RequestTarget {
 // === impl TcpAccept ===
 
 impl TcpAccept {
-    pub fn port_skipped(tcp: listen::Addrs) -> Self {
+    pub fn port_skipped<T>(tcp: T) -> Self
+    where
+        T: Param<Remote<ClientAddr>> + Param<TargetAddr>,
+    {
+        let TargetAddr(target_addr) = tcp.param();
         Self {
-            target_addr: tcp.target_addr(),
-            client_addr: tcp.client(),
+            target_addr,
+            client_addr: tcp.param(),
             tls: Conditional::None(tls::NoServerTls::PortSkipped),
         }
     }
 }
 
-impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
-    fn from((tls, addrs): tls::server::Meta<listen::Addrs>) -> Self {
+impl<T> From<tls::server::Meta<T>> for TcpAccept
+where
+    T: Param<Remote<ClientAddr>> + Param<TargetAddr>,
+{
+    fn from((tls, addrs): tls::server::Meta<T>) -> Self {
+        let TargetAddr(target_addr) = addrs.param();
         Self {
-            target_addr: addrs.target_addr(),
-            client_addr: addrs.client(),
+            target_addr,
+            client_addr: addrs.param(),
             tls,
         }
     }

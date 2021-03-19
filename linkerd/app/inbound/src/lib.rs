@@ -27,7 +27,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{self, listen, Remote, ServerAddr},
+    transport::{self, ClientAddr, Remote, ServerAddr, TargetAddr},
     Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, future::Future, net::SocketAddr, time::Duration};
@@ -208,16 +208,17 @@ where
         }
     }
 
-    pub fn into_server<I, G, GSvc, P>(
+    pub fn into_server<A, I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
     ) -> impl svc::NewService<
-        listen::Addrs,
+        A,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
+        A: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -267,20 +268,24 @@ where
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
                     .push_map_target(TcpAccept::port_skipped)
-                    .instrument(|_: &_| debug_span!("forward"))
+                    .check_new_service::<A, _>()
+                    .instrument(|_: &A| debug_span!("forward"))
                     .into_inner(),
             )
-            .check_new_service::<listen::Addrs, I>()
+            .check_new_service::<A, I>()
             .push_switch(
-                PreventLoop::from(server_port),
+                PreventLoop::from(server_port).to_switch(),
                 self.push_tcp_forward(server_port)
                     .push_direct(gateway)
                     .stack
                     .instrument(|_: &_| debug_span!("direct"))
                     .into_inner(),
             )
-            .instrument(|a: &listen::Addrs| info_span!("server", port = %a.target_addr().port()))
-            .check_new_service::<listen::Addrs, I>()
+            .instrument(|a: &A| {
+                let TargetAddr(target_addr) = a.param();
+                info_span!("server", port = target_addr.port())
+            })
+            .check_new_service::<A, I>()
             .into_inner()
     }
 }
@@ -293,11 +298,15 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
     }
 }
 
-impl svc::Predicate<listen::Addrs> for SkipByPort {
-    type Request = svc::Either<listen::Addrs, listen::Addrs>;
+impl<T> svc::Predicate<T> for SkipByPort
+where
+    T: Param<TargetAddr>,
+{
+    type Request = svc::Either<T, T>;
 
-    fn check(&mut self, t: listen::Addrs) -> Result<Self::Request, Error> {
-        if !self.0.contains(&t.target_addr().port()) {
+    fn check(&mut self, t: T) -> Result<Self::Request, Error> {
+        let TargetAddr(addr) = t.param();
+        if !self.0.contains(&addr.port()) {
             Ok(svc::Either::A(t))
         } else {
             Ok(svc::Either::B(t))
