@@ -94,16 +94,16 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn into_server<A, R, P, I>(
+    pub fn into_server<T, R, P, I>(
         self,
         resolve: R,
         profiles: P,
     ) -> impl svc::NewService<
-        A,
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: Param<Option<OrigDstAddr>>,
+        T: Param<Option<OrigDstAddr>>,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,

@@ -52,32 +52,32 @@ pub struct ClientInfo {
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 
-impl<T> Inbound<T> {
+impl<N> Inbound<N> {
     /// Builds a stack that handles connections that target the proxy's inbound port
     /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
     /// the main proxy stack:
     ///
     /// 1. Protocol detection is always performed;
     /// 2. TLS is required;
-    /// 3. A transport header is expected. It's not strictly required, as
+    /// 3. T transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub fn push_direct<A, I, TSvc, G, GSvc>(
+    pub fn push_direct<T, I, NSvc, G, GSvc>(
         self,
         gateway: G,
     ) -> Inbound<
         impl svc::NewService<
-                A,
+                T,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
     >
     where
-        A: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
+        T: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        T: svc::NewService<TcpEndpoint, Service = TSvc> + Clone + Send + Sync + Unpin + 'static,
-        TSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
-        TSvc::Error: Into<Error>,
-        TSvc::Future: Send + Unpin,
+        N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send + Unpin,
         G: svc::NewService<GatewayConnection, Service = GSvc>
             + Clone
             + Send
@@ -159,7 +159,7 @@ impl<T> Inbound<T> {
                 rt.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
-            .check_new_service::<A, I>();
+            .check_new_service::<T, I>();
 
         Inbound {
             config,
@@ -171,14 +171,14 @@ impl<T> Inbound<T> {
 
 // === impl ClientInfo ===
 
-impl<T> TryFrom<(tls::ConditionalServerTls, T)> for ClientInfo
+impl<N> TryFrom<(tls::ConditionalServerTls, N)> for ClientInfo
 where
-    T: Param<TargetAddr>,
-    T: Param<Remote<ClientAddr>>,
+    N: Param<TargetAddr>,
+    N: Param<Remote<ClientAddr>>,
 {
     type Error = RefusedNoIdentity;
 
-    fn try_from((tls, addrs): (tls::ConditionalServerTls, T)) -> Result<Self, Self::Error> {
+    fn try_from((tls, addrs): (tls::ConditionalServerTls, N)) -> Result<Self, Self::Error> {
         match tls {
             Conditional::Some(tls::ServerTls::Established {
                 client_id: Some(client_id),
@@ -267,7 +267,7 @@ impl std::error::Error for RefusedNoIdentity {}
 
 impl std::fmt::Display for RefusedNoTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "A named target must be provided on gateway connections")
+        write!(f, "T named target must be provided on gateway connections")
     }
 }
 

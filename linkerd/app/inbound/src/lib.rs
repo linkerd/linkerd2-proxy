@@ -208,17 +208,17 @@ where
         }
     }
 
-    pub fn into_server<A, I, G, GSvc, P>(
+    pub fn into_server<T, I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
     ) -> impl svc::NewService<
-        A,
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        A: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
+        T: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -268,11 +268,11 @@ where
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
                     .push_map_target(TcpAccept::port_skipped)
-                    .check_new_service::<A, _>()
-                    .instrument(|_: &A| debug_span!("forward"))
+                    .check_new_service::<T, _>()
+                    .instrument(|_: &T| debug_span!("forward"))
                     .into_inner(),
             )
-            .check_new_service::<A, I>()
+            .check_new_service::<T, I>()
             .push_switch(
                 PreventLoop::from(server_port).to_switch(),
                 self.push_tcp_forward(server_port)
@@ -281,11 +281,11 @@ where
                     .instrument(|_: &_| debug_span!("direct"))
                     .into_inner(),
             )
-            .instrument(|a: &A| {
+            .instrument(|a: &T| {
                 let TargetAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
-            .check_new_service::<A, I>()
+            .check_new_service::<T, I>()
             .into_inner()
     }
 }

@@ -18,26 +18,26 @@ impl Outbound<()> {
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<A, I, T, TSvc, H, HSvc, P>(
+    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P>(
         &self,
         profiles: P,
-        tcp: T,
+        tcp: N,
         http: H,
     ) -> impl svc::NewService<
-        A,
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: Param<Option<OrigDstAddr>>,
+        T: Param<Option<OrigDstAddr>>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        T: svc::NewService<tcp::Endpoint, Service = TSvc> + Clone + Send + Sync + 'static,
-        TSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
+        N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
+        NSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
             + Clone
             + Send
             + Sync
             + 'static,
-        TSvc::Error: Into<Error>,
-        TSvc::Future: Send,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
         H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
@@ -136,11 +136,11 @@ impl Outbound<()> {
             ))
             .push(self.runtime.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-            .push_request_filter(|a: A| tcp::Accept::try_from(a.param()))
+            .push_request_filter(|a: T| tcp::Accept::try_from(a.param()))
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .push(svc::BoxNewService::layer())
-            .check_new_service::<A, I>()
+            .check_new_service::<T, I>()
             .into_inner()
     }
 }
