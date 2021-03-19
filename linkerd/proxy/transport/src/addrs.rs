@@ -15,6 +15,12 @@ pub struct ListenAddr(pub SocketAddr);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerAddr(pub SocketAddr);
 
+/// The target address of a connection. This may be the `SO_ORIGINAL_DST` target
+/// address, if present, or the server listener's address if there is no
+/// original destination address.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TargetAddr(pub SocketAddr);
+
 /// An SO_ORIGINAL_DST address.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct OrigDstAddr(pub SocketAddr);

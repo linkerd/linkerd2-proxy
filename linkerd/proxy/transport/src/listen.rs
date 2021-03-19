@@ -1,5 +1,6 @@
 use crate::{addrs::*, Keepalive};
 use futures::prelude::*;
+use linkerd_stack::Param;
 use std::{io, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -139,6 +140,20 @@ impl Addrs {
 impl GetOrigDstAddr for NoOrigDstAddr {
     fn orig_dst_addr(&self, _: &TcpStream) -> Option<OrigDstAddr> {
         None
+    }
+}
+
+impl Param<TargetAddr> for Addrs {
+    #[inline]
+    fn param(&self) -> TargetAddr {
+        TargetAddr(self.target_addr())
+    }
+}
+
+impl Param<Remote<ClientAddr>> for Addrs {
+    #[inline]
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client()
     }
 }
 
