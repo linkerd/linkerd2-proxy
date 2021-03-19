@@ -13,7 +13,7 @@ use crate::{
     inbound::target::{HttpAccept, Target, TcpAccept},
     svc,
 };
-use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
+use std::{convert::TryFrom, fmt, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::sync::mpsc;
 
 #[derive(Clone, Debug)]
@@ -76,7 +76,7 @@ impl Config {
                 http::DetectHttp::default(),
             ))
             .push(metrics.transport.layer_accept())
-            .push_map_target(TcpAccept::from)
+            .push_request_filter(TcpAccept::try_from)
             .check_new_clone::<tls::server::Meta<listen::Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();
