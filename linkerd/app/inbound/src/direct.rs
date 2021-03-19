@@ -59,7 +59,7 @@ impl<N> Inbound<N> {
     ///
     /// 1. Protocol detection is always performed;
     /// 2. TLS is required;
-    /// 3. T transport header is expected. It's not strictly required, as
+    /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
     pub fn push_direct<T, I, NSvc, G, GSvc>(
         self,
