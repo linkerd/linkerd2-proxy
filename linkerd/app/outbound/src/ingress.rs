@@ -2,8 +2,10 @@ use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
-    io, profiles, svc, tls,
-    transport::{self, listen, OrigDstAddr},
+    io, profiles,
+    svc::{self, stack::Param},
+    tls,
+    transport::{self, OrigDstAddr},
     Addr, AddrMatch, Error,
 };
 use std::convert::TryFrom;
@@ -16,16 +18,17 @@ impl Outbound<()> {
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<I, T, TSvc, H, HSvc, P>(
+    pub fn to_ingress<A, I, T, TSvc, H, HSvc, P>(
         &self,
         profiles: P,
         tcp: T,
         http: H,
     ) -> impl svc::NewService<
-        listen::Addrs,
+        A,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
+        A: Param<Option<OrigDstAddr>>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         T: svc::NewService<tcp::Endpoint, Service = TSvc> + Clone + Send + Sync + 'static,
         TSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
@@ -133,11 +136,11 @@ impl Outbound<()> {
             ))
             .push(self.runtime.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-            .push_request_filter(tcp::Accept::try_from)
+            .push_request_filter(|a: A| tcp::Accept::try_from(a.param()))
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .push(svc::BoxNewService::layer())
-            .check_new_service::<listen::Addrs, I>()
+            .check_new_service::<A, I>()
             .into_inner()
     }
 }

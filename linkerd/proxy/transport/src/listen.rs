@@ -142,6 +142,12 @@ impl GetOrigDstAddr for NoOrigDstAddr {
         None
     }
 }
+impl Param<Option<OrigDstAddr>> for Addrs {
+    #[inline]
+    fn param(&self) -> Option<OrigDstAddr> {
+        self.orig_dst()
+    }
+}
 
 impl Param<TargetAddr> for Addrs {
     #[inline]
