@@ -171,14 +171,14 @@ impl<N> Inbound<N> {
 
 // === impl ClientInfo ===
 
-impl<N> TryFrom<(tls::ConditionalServerTls, N)> for ClientInfo
+impl<T> TryFrom<(tls::ConditionalServerTls, T)> for ClientInfo
 where
-    N: Param<TargetAddr>,
-    N: Param<Remote<ClientAddr>>,
+    T: Param<Local<ServerAddr>>,
+    T: Param<Remote<ClientAddr>>,
 {
     type Error = RefusedNoIdentity;
 
-    fn try_from((tls, addrs): (tls::ConditionalServerTls, N)) -> Result<Self, Self::Error> {
+    fn try_from((tls, addrs): (tls::ConditionalServerTls, T)) -> Result<Self, Self::Error> {
         match tls {
             Conditional::Some(tls::ServerTls::Established {
                 client_id: Some(client_id),
@@ -267,7 +267,7 @@ impl std::error::Error for RefusedNoIdentity {}
 
 impl std::fmt::Display for RefusedNoTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "T named target must be provided on gateway connections")
+        write!(f, "A named target must be provided on gateway connections")
     }
 }
 
