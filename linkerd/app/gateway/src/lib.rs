@@ -84,7 +84,7 @@ where
     O::Response:
         io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
     O::Future: Send + Unpin + 'static,
-    P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
+    P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
     P::Future: Send + 'static,
     P::Error: Send,
     R: Clone + Send + Sync + Unpin + 'static,
@@ -116,7 +116,7 @@ where
         .push_tcp_logical(resolve.clone())
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
-            Some(rx) if rx.borrow().name.is_some() => Ok(outbound::tcp::Logical {
+            Some(rx) if rx.borrow().addr.is_some() => Ok(outbound::tcp::Logical {
                 profile: Some(rx),
                 orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                 protocol: (),
@@ -127,7 +127,7 @@ where
             let allow = allow_discovery.clone();
             move |addr: NameAddr| {
                 if allow.matches(addr.name()) {
-                    Ok(profiles::LogicalAddr(addr.into()))
+                    Ok(profiles::LookupAddr(addr.into()))
                 } else {
                     Err(RefusedNotResolved(addr))
                 }
@@ -162,7 +162,7 @@ where
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
             if allow_discovery.matches(t.target.name()) {
-                Ok(profiles::LogicalAddr(t.target.into()))
+                Ok(profiles::LookupAddr(t.target.into()))
             } else {
                 Err(RefusedNotResolved(t.target))
             }

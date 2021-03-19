@@ -11,7 +11,8 @@ use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    dst, profiles,
+    dst,
+    profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
     tls,
@@ -94,9 +95,9 @@ impl Logical {
 impl Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         if let Some(p) = self.profile.as_ref() {
-            if let Some(n) = p.borrow().name.as_ref() {
+            if let Some(LogicalAddr(a)) = p.borrow().addr.as_ref() {
                 return normalize_uri::DefaultAuthority(Some(
-                    uri::Authority::from_str(&format!("{}:{}", n, self.orig_dst.0.port()))
+                    uri::Authority::from_str(&a.to_string())
                         .expect("Address must be a valid authority"),
                 ));
             }

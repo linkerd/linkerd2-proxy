@@ -14,7 +14,7 @@ use linkerd_app_core::{
     svc::NewService,
     tls,
     transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Addr, Conditional, Error, IpMatch,
+    Addr, Conditional, Error, IpMatch, NameAddr,
 };
 use std::{
     future::Future,
@@ -82,14 +82,14 @@ async fn tls_when_hinted() {
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls = Logical {
         orig_dst: OrigDstAddr(tls_addr),
-        profile: Some(profile::only_with_name("tls")),
+        profile: Some(profile::only_with_addr("tls:5550")),
         protocol: (),
     };
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
     let plain = Logical {
         orig_dst: OrigDstAddr(plain_addr),
-        profile: Some(profile::only_with_name("plain")),
+        profile: Some(profile::only_with_addr("plain:5551")),
         protocol: (),
     };
 
@@ -165,7 +165,7 @@ async fn resolutions_are_reused() {
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let cfg = default_config(addr);
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint(addr, Connection::default());
@@ -180,13 +180,13 @@ async fn resolutions_are_reused() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = support::resolver().endpoint_exists((svc_name.clone(), addr.port()), addr, meta);
+    let resolver = support::resolver().endpoint_exists(svc_addr.clone(), addr, meta);
     let resolve_state = resolver.handle();
 
     let profiles = support::profiles().profile(
         addr,
         profile::Profile {
-            name: Some(svc_name),
+            addr: Some(svc_addr.into()),
             ..profile::Profile::default()
         },
     );
@@ -226,7 +226,7 @@ async fn resolutions_are_reused() {
 async fn load_balances() {
     let _trace = support::trace_init();
 
-    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
         (
             SocketAddr::new([10, 0, 170, 42].into(), 5550),
@@ -242,8 +242,8 @@ async fn load_balances() {
         ),
     ];
 
-    let cfg = default_config(svc_addr);
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let cfg = default_config(addr);
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
 
@@ -260,9 +260,9 @@ async fn load_balances() {
     }
 
     let profiles = support::profile::resolver().profile(
-        svc_addr,
+        addr,
         profile::Profile {
-            name: Some(svc_name.clone()),
+            addr: Some(svc_addr.clone().into()),
             ..Default::default()
         },
     );
@@ -277,7 +277,7 @@ async fn load_balances() {
     );
 
     let resolver = support::resolver();
-    let mut dst = resolver.endpoint_tx((svc_name, svc_addr.port()));
+    let mut dst = resolver.endpoint_tx(svc_addr);
     dst.add(endpoints.iter().map(|&(addr, _)| (addr, meta.clone())))
         .expect("still listening");
     let resolve_state = resolver.handle();
@@ -288,8 +288,7 @@ async fn load_balances() {
     let conns = (0..10)
         .map(|i| {
             tokio::spawn(
-                hello_world_client(svc_addr, &mut server)
-                    .instrument(tracing::info_span!("conn", i)),
+                hello_world_client(addr, &mut server).instrument(tracing::info_span!("conn", i)),
             )
             .err_into::<Error>()
         })
@@ -321,7 +320,7 @@ async fn load_balances() {
 async fn load_balancer_add_endpoints() {
     let _trace = support::trace_init();
 
-    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
         (
             SocketAddr::new([10, 0, 170, 42].into(), 5550),
@@ -337,8 +336,8 @@ async fn load_balancer_add_endpoints() {
         ),
     ];
 
-    let cfg = default_config(svc_addr);
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let cfg = default_config(addr);
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
 
@@ -354,9 +353,9 @@ async fn load_balancer_add_endpoints() {
     }
 
     let profiles = support::profile::resolver().profile(
-        svc_addr,
+        addr,
         profile::Profile {
-            name: Some(svc_name.clone()),
+            addr: Some(svc_addr.clone().into()),
             ..Default::default()
         },
     );
@@ -370,7 +369,7 @@ async fn load_balancer_add_endpoints() {
     );
 
     let resolver = support::resolver();
-    let mut dst = resolver.endpoint_tx((svc_name, svc_addr.port()));
+    let mut dst = resolver.endpoint_tx(svc_addr);
     dst.add(Some((endpoints[0].0, meta.clone())))
         .expect("still listening");
 
@@ -381,7 +380,7 @@ async fn load_balancer_add_endpoints() {
         let conns = (0..10)
             .map(|i| {
                 tokio::spawn(
-                    hello_world_client(svc_addr, &mut server)
+                    hello_world_client(addr, &mut server)
                         .instrument(tracing::info_span!("conn", i)),
                 )
                 .err_into::<Error>()
@@ -434,7 +433,7 @@ async fn load_balancer_add_endpoints() {
 async fn load_balancer_remove_endpoints() {
     let _trace = support::trace_init();
 
-    let svc_addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
+    let addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
         (
             SocketAddr::new([10, 0, 170, 42].into(), 5550),
@@ -450,8 +449,8 @@ async fn load_balancer_remove_endpoints() {
         ),
     ];
 
-    let cfg = default_config(svc_addr);
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let cfg = default_config(addr);
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
 
@@ -467,9 +466,9 @@ async fn load_balancer_remove_endpoints() {
     }
 
     let profiles = support::profile::resolver().profile(
-        svc_addr,
+        addr,
         profile::Profile {
-            name: Some(svc_name.clone()),
+            addr: Some(svc_addr.clone().into()),
             ..Default::default()
         },
     );
@@ -483,7 +482,7 @@ async fn load_balancer_remove_endpoints() {
     );
 
     let resolver = support::resolver();
-    let mut dst = resolver.endpoint_tx((svc_name, svc_addr.port()));
+    let mut dst = resolver.endpoint_tx(svc_addr);
     dst.add(Some((endpoints[0].0, meta.clone())))
         .expect("still listening");
 
@@ -494,7 +493,7 @@ async fn load_balancer_remove_endpoints() {
         let conns = (0..10)
             .map(|i| {
                 tokio::spawn(
-                    hello_world_client(svc_addr, &mut server)
+                    hello_world_client(addr, &mut server)
                         .instrument(tracing::info_span!("conn", i)),
                 )
                 .err_into::<Error>()
@@ -545,7 +544,7 @@ async fn no_profiles_when_outside_search_nets() {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("10.0.0.0/8").unwrap())).into(),
         ..default_config(profile_addr)
     };
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
 
@@ -580,17 +579,13 @@ async fn no_profiles_when_outside_search_nets() {
 
     // Configure the mock destination resolver to just give us a single endpoint
     // for the target, which always exists and has no metadata.
-    let resolver = support::resolver().endpoint_exists(
-        (svc_name.clone(), profile_addr.port()),
-        profile_addr,
-        meta,
-    );
+    let resolver = support::resolver().endpoint_exists(svc_addr.clone(), profile_addr, meta);
     let resolve_state = resolver.handle();
 
     let profiles = support::profiles().profile(
         profile_addr,
         profile::Profile {
-            name: Some(svc_name),
+            addr: Some(svc_addr.into()),
             ..Default::default()
         },
     );

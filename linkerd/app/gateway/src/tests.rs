@@ -104,7 +104,7 @@ impl Test {
         let allow = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
         let profile = if allow.matches(target.name()) {
             Some(support::profile::only(profiles::Profile {
-                name: Some(target.name().clone()),
+                addr: Some(target.clone().into()),
                 ..profiles::Profile::default()
             }))
         } else {

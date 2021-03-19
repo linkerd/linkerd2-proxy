@@ -52,6 +52,7 @@ impl<C> Outbound<C> {
         // HTTP/1.x fallback is supported as needed.
         let stack = connect
             .push(http::client::layer(h1_settings, h2_settings))
+            .check_service::<T>()
             // Re-establishes a connection when the client fails.
             .push(reconnect::layer({
                 let backoff = backoff;

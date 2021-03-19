@@ -41,7 +41,7 @@ impl Outbound<()> {
             + 'static,
         HSvc::Error: Into<Error>,
         HSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + Unpin + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
     {
@@ -157,11 +157,11 @@ struct TargetPerRequest(http::Accept);
 // === AllowHttpProfile ===
 
 impl svc::stack::Predicate<Target> for AllowHttpProfile {
-    type Request = profiles::LogicalAddr;
+    type Request = profiles::LookupAddr;
 
-    fn check(&mut self, Target { dst, .. }: Target) -> Result<profiles::LogicalAddr, Error> {
+    fn check(&mut self, Target { dst, .. }: Target) -> Result<profiles::LookupAddr, Error> {
         if self.0.matches(&dst) {
-            Ok(profiles::LogicalAddr(dst))
+            Ok(profiles::LookupAddr(dst))
         } else {
             Err(discovery_rejected().into())
         }

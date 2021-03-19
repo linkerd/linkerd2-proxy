@@ -171,7 +171,7 @@ impl Profiles {
     }
 }
 
-impl<T: Param<profiles::LogicalAddr>> tower::Service<T> for Profiles {
+impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
     type Response = Option<profiles::Receiver>;
     type Error = Error;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
@@ -181,7 +181,7 @@ impl<T: Param<profiles::LogicalAddr>> tower::Service<T> for Profiles {
     }
 
     fn call(&mut self, t: T) -> Self::Future {
-        let profiles::LogicalAddr(addr) = t.param();
+        let profiles::LookupAddr(addr) = t.param();
         let span = tracing::trace_span!("mock_profile", ?addr);
         let _e = span.enter();
 

@@ -1,4 +1,5 @@
-pub use linkerd_app_core::{dns, profiles::*};
+pub use linkerd_app_core::{profiles::*, NameAddr};
+use std::str::FromStr;
 pub use tokio::sync::watch;
 pub use watch::channel;
 
@@ -22,15 +23,14 @@ pub fn resolver() -> crate::resolver::Profiles {
     crate::resolver::Resolver::default()
 }
 
-pub fn only_with_name(name: &str) -> Receiver {
-    only(with_name(name))
+pub fn only_with_addr(addr: &str) -> Receiver {
+    only(with_addr(addr))
 }
 
-pub fn with_name(name: &str) -> Profile {
-    use std::str::FromStr;
-    let name = dns::Name::from_str(name).expect("non-ascii characters in DNS name! 😢");
+pub fn with_addr(addr: &str) -> Profile {
+    let na = NameAddr::from_str(addr).expect("Invalid name:port");
     Profile {
-        name: Some(name),
+        addr: Some(LogicalAddr(na)),
         ..Default::default()
     }
 }

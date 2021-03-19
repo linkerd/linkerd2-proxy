@@ -61,8 +61,8 @@ where
             None => return Gateway::NoIdentity,
         };
 
-        let dst = match profile.as_ref().and_then(|p| p.borrow().name.clone()) {
-            Some(name) => NameAddr::from((name, http.target.port())),
+        let dst = match profile.as_ref().and_then(|p| p.borrow().addr.clone()) {
+            Some(profiles::LogicalAddr(addr)) => addr,
             None => return Gateway::BadDomain(http.target.name().clone()),
         };
 

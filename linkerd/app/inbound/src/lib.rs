@@ -135,7 +135,7 @@ impl Inbound<()> {
             + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Error: Send,
         P::Future: Send,
     {
@@ -225,7 +225,7 @@ where
         GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Error: Send,
         P::Future: Send,
     {

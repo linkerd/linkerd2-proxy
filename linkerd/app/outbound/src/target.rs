@@ -1,6 +1,7 @@
 use crate::tcp::opaque_transport;
 use linkerd_app_core::{
-    metrics, profiles,
+    metrics,
+    profiles::{self, LogicalAddr},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         http,
@@ -87,9 +88,9 @@ impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
 }
 
 /// Used for default traffic split
-impl<P> Param<profiles::LogicalAddr> for Logical<P> {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.addr())
+impl<P> Param<profiles::LookupAddr> for Logical<P> {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.addr())
     }
 }
 
@@ -97,8 +98,8 @@ impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         self.profile
             .as_ref()
-            .and_then(|p| p.borrow().name.clone())
-            .map(|n| Addr::from((n, self.orig_dst.0.port())))
+            .and_then(|p| p.borrow().addr.clone())
+            .map(|LogicalAddr(a)| Addr::from(a))
             .unwrap_or_else(|| self.orig_dst.0.into())
     }
 }
@@ -146,7 +147,7 @@ impl<P> Logical<P> {
             let should_resolve = match logical.profile.as_ref() {
                 Some(p) => {
                     let p = p.borrow();
-                    p.endpoint.is_none() && (p.name.is_some() || !p.targets.is_empty())
+                    p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
                 }
                 None => false,
             };

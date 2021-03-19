@@ -115,7 +115,7 @@ where
             > + Clone,
     >
     where
-        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
     {

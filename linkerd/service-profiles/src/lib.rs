@@ -1,14 +1,15 @@
 #![deny(warnings, rust_2018_idioms)]
 
 use futures::stream::Stream;
-use linkerd_addr::Addr;
-pub use linkerd_dns_name::Name;
+use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
 use std::{
+    fmt,
     future::Future,
     net::SocketAddr,
     pin::Pin,
+    str::FromStr,
     task::{Context, Poll},
 };
 use tower::util::{Oneshot, ServiceExt};
@@ -25,7 +26,7 @@ pub type Receiver = tokio::sync::watch::Receiver<Profile>;
 
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
-    pub name: Option<Name>,
+    pub addr: Option<LogicalAddr>,
     pub http_routes: Vec<(self::http::RequestMatch, self::http::Route)>,
     pub targets: Vec<Target>,
     pub opaque_protocol: bool,
@@ -33,8 +34,12 @@ pub struct Profile {
 }
 
 /// A profile lookup target.
-#[derive(Clone, Debug)]
-pub struct LogicalAddr(pub Addr);
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub struct LookupAddr(pub Addr);
+
+/// A bound logical service address
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub struct LogicalAddr(pub NameAddr);
 
 #[derive(Clone, Debug)]
 pub struct Target {
@@ -68,6 +73,7 @@ where
     type Error = S::Error;
     type Future = Oneshot<S, T>;
 
+    #[inline]
     fn get_profile(&mut self, target: T) -> Self::Future {
         self.clone().oneshot(target)
     }
@@ -85,6 +91,7 @@ where
         Poll::Ready(Ok(()))
     }
 
+    #[inline]
     fn call(&mut self, target: T) -> Self::Future {
         self.0.get_profile(target)
     }
@@ -104,4 +111,60 @@ fn stream_profile(mut rx: Receiver) -> Pin<Box<dyn Stream<Item = Profile> + Send
             }
         }
     })
+}
+
+// === impl LookupAddr ===
+
+impl fmt::Display for LookupAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for LookupAddr {
+    type Err = <Addr as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Addr::from_str(s).map(LookupAddr)
+    }
+}
+
+impl From<Addr> for LookupAddr {
+    fn from(a: Addr) -> Self {
+        Self(a)
+    }
+}
+
+impl Into<Addr> for LookupAddr {
+    fn into(self) -> Addr {
+        self.0
+    }
+}
+
+// === impl LogicalAddr ===
+
+impl fmt::Display for LogicalAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FromStr for LogicalAddr {
+    type Err = <NameAddr as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        NameAddr::from_str(s).map(LogicalAddr)
+    }
+}
+
+impl From<NameAddr> for LogicalAddr {
+    fn from(na: NameAddr) -> Self {
+        Self(na)
+    }
+}
+
+impl Into<NameAddr> for LogicalAddr {
+    fn into(self) -> NameAddr {
+        self.0
+    }
 }

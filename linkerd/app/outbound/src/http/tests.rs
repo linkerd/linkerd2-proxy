@@ -14,7 +14,7 @@ use linkerd_app_core::{
     svc::{self, NewService},
     tls,
     transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, ProxyRuntime,
+    Error, NameAddr, ProxyRuntime,
 };
 use std::{
     net::SocketAddr,
@@ -220,7 +220,7 @@ async fn meshed_hello_world() {
     let cfg = default_config(ep1);
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Http2,
@@ -237,13 +237,13 @@ async fn meshed_hello_world() {
     let profiles = profile::resolver().profile(
         ep1,
         profile::Profile {
-            name: Some(svc_name.clone()),
+            addr: Some(svc_addr.clone().into()),
             ..Default::default()
         },
     );
 
     let resolver = support::resolver::<support::resolver::Metadata>();
-    let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
+    let mut dst = resolver.endpoint_tx(svc_addr);
     dst.add(Some((ep1, meta.clone())))
         .expect("still listening to resolution");
 
@@ -272,7 +272,7 @@ async fn stacks_idle_out() {
 
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Http2,
@@ -290,13 +290,13 @@ async fn stacks_idle_out() {
         ep1,
         profile::Profile {
             opaque_protocol: false,
-            name: Some(svc_name.clone()),
+            addr: Some(svc_addr.clone().into()),
             ..Default::default()
         },
     );
 
     let resolver = support::resolver::<support::resolver::Metadata>();
-    let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
+    let mut dst = resolver.endpoint_tx(svc_addr);
     dst.add(Some((ep1, meta.clone())))
         .expect("still listening to resolution");
 
@@ -337,7 +337,7 @@ async fn active_stacks_dont_idle_out() {
 
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
-    let svc_name = profile::Name::from_str("foo.ns1.svc.example.com").unwrap();
+    let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Http2,
@@ -360,13 +360,13 @@ async fn active_stacks_dont_idle_out() {
         ep1,
         profile::Profile {
             opaque_protocol: false,
-            name: Some(svc_name.clone()),
+            addr: Some(svc_addr.clone().into()),
             ..Default::default()
         },
     );
 
     let resolver = support::resolver::<support::resolver::Metadata>();
-    let mut dst = resolver.endpoint_tx((svc_name, ep1.port()));
+    let mut dst = resolver.endpoint_tx(svc_addr);
     dst.add(Some((ep1, meta.clone())))
         .expect("still listening to resolution");
 

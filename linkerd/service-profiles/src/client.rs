@@ -1,9 +1,9 @@
-use crate::{http, LogicalAddr, Profile, Receiver, Target};
+use crate::{http, LogicalAddr, LookupAddr, Profile, Receiver, Target};
 use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
 use linkerd2_proxy_api::destination as api;
-use linkerd_addr::Addr;
+use linkerd_addr::{Addr, NameAddr};
 use linkerd_dns_name::Name;
 use linkerd_error::{Error, Recover};
 use linkerd_proxy_api_resolve::pb as resolve;
@@ -52,6 +52,7 @@ where
     S: GrpcService<BoxBody>,
     R: Recover,
 {
+    addr: LookupAddr,
     service: DestinationClient<S>,
     recover: R,
     #[pin]
@@ -111,7 +112,7 @@ where
 
 impl<T, S, R> tower::Service<T> for Client<S, R>
 where
-    T: Param<LogicalAddr>,
+    T: Param<LookupAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::ResponseBody: Send,
     <S::ResponseBody as Body>::Data: Send,
@@ -131,7 +132,7 @@ where
     }
 
     fn call(&mut self, t: T) -> Self::Future {
-        let LogicalAddr(addr) = t.param();
+        let LookupAddr(addr) = t.param();
         let request = api::GetDestination {
             path: addr.to_string(),
             context_token: self.context_token.clone(),
@@ -139,6 +140,7 @@ where
         };
 
         let inner = Inner {
+            addr: t.param(),
             request,
             service: self.service.clone(),
             recover: self.recover.clone(),
@@ -228,11 +230,12 @@ where
     R::Backoff: Unpin,
 {
     fn poll_rx(
+        port: u16,
         rx: Pin<&mut grpc::Streaming<api::DestinationProfile>>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Profile, grpc::Status>>> {
         trace!("poll");
-        let profile = ready!(rx.poll_next(cx)).map(|res| {
+        let profile = ready!(rx.poll_next(cx)).map(move |res| {
             res.map(|proto| {
                 debug!("profile received: {:?}", proto);
                 let name = Name::from_str(&proto.fully_qualified_name).ok();
@@ -252,7 +255,7 @@ where
                     resolve::to_addr_meta(e, &labels)
                 });
                 Profile {
-                    name,
+                    addr: name.map(move |n| LogicalAddr(NameAddr::from((n, port)))),
                     http_routes,
                     targets,
                     opaque_protocol: proto.opaque_protocol,
@@ -297,7 +300,8 @@ where
                 }
                 StateProj::Streaming(s) => {
                     trace!("streaming");
-                    let status = match ready!(Self::poll_rx(s, cx)) {
+                    let port = this.addr.0.port();
+                    let status = match ready!(Self::poll_rx(port, s, cx)) {
                         Some(Ok(profile)) => return Poll::Ready(Ok(profile)),
                         None => grpc::Status::new(grpc::Code::Ok, ""),
                         Some(Err(status)) => status,

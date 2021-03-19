@@ -25,7 +25,7 @@ impl<N> Outbound<N> {
         N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + 'static,
         NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LogicalAddr> + Clone + Send + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + 'static,
         P::Future: Send,
         P::Error: Send,
     {
@@ -73,11 +73,11 @@ struct AllowProfile(pub IpMatch);
 // === impl AllowProfile ===
 
 impl svc::stack::Predicate<tcp::Accept> for AllowProfile {
-    type Request = profiles::LogicalAddr;
+    type Request = profiles::LookupAddr;
 
-    fn check(&mut self, a: tcp::Accept) -> Result<profiles::LogicalAddr, Error> {
+    fn check(&mut self, a: tcp::Accept) -> Result<profiles::LookupAddr, Error> {
         if self.0.matches(a.orig_dst.0.ip()) {
-            Ok(profiles::LogicalAddr(a.orig_dst.0.into()))
+            Ok(profiles::LookupAddr(a.orig_dst.0.into()))
         } else {
             Err(discovery_rejected().into())
         }
