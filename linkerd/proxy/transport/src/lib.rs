@@ -6,7 +6,7 @@ pub mod listen;
 pub mod metrics;
 
 pub use self::{
-    addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr, TargetAddr},
+    addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr},
     connect::ConnectTcp,
     listen::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, NoOrigDstAddr},
 };

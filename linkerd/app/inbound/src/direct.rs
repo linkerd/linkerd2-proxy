@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
-    transport::{self, metrics::SensorIo, ClientAddr, Remote, TargetAddr},
+    transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Never,
 };
@@ -71,7 +71,7 @@ impl<N> Inbound<N> {
             > + Clone,
     >
     where
-        T: Param<Remote<ClientAddr>> + Param<TargetAddr> + Clone + Send + 'static,
+        T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -173,10 +173,10 @@ impl<N> Inbound<N> {
 
 impl<T> TryFrom<(tls::ConditionalServerTls, T)> for ClientInfo
 where
-    T: Param<Local<ServerAddr>>,
+    T: Param<Option<OrigDstAddr>>,
     T: Param<Remote<ClientAddr>>,
 {
-    type Error = RefusedNoIdentity;
+    type Error = Error;
 
     fn try_from((tls, addrs): (tls::ConditionalServerTls, T)) -> Result<Self, Self::Error> {
         match tls {
@@ -184,7 +184,13 @@ where
                 client_id: Some(client_id),
                 negotiated_protocol,
             }) => {
-                let TargetAddr(local_addr) = addrs.param();
+                let local: Option<OrigDstAddr> = addrs.param();
+                let OrigDstAddr(local_addr) = local.ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "No SO_ORIGINAL_DST address found",
+                    )
+                })?;
                 Ok(Self {
                     client_id,
                     alpn: negotiated_protocol,
@@ -192,7 +198,7 @@ where
                     local_addr,
                 })
             }
-            _ => Err(RefusedNoIdentity(())),
+            _ => Err(RefusedNoIdentity(()).into()),
         }
     }
 }

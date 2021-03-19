@@ -1,7 +1,7 @@
 use crate::TcpEndpoint;
 use linkerd_app_core::{
     svc::stack::{Either, Param, Predicate},
-    transport::addrs::TargetAddr,
+    transport::addrs::OrigDstAddr,
     Error,
 };
 
@@ -44,11 +44,16 @@ impl PreventLoop {
     }
 }
 
-impl<T: Param<TargetAddr>> Predicate<T> for SwitchLoop {
+impl<T: Param<Option<OrigDstAddr>>> Predicate<T> for SwitchLoop {
     type Request = Either<T, T>;
 
     fn check(&mut self, addrs: T) -> Result<Either<T, T>, Error> {
-        let TargetAddr(addr) = addrs.param();
+        let OrigDstAddr(addr) = addrs.param().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No SO_ORIGINAL_DST address found",
+            )
+        })?;
         tracing::debug!(%addr, self.port);
         if addr.port() != self.port {
             Ok(Either::A(addrs))
