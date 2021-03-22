@@ -29,10 +29,13 @@ impl std::convert::TryFrom<Option<OrigDstAddr>> for Accept {
     fn try_from(orig_dst: Option<OrigDstAddr>) -> Result<Self, Self::Error> {
         match orig_dst {
             Some(addr) => Ok(Self::from(addr)),
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No SO_ORIGINAL_DST address found",
-            )),
+            None => {
+                tracing::warn!("No SO_ORIGINAL_DST address found!");
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No SO_ORIGINAL_DST address found",
+                ))
+            }
         }
     }
 }

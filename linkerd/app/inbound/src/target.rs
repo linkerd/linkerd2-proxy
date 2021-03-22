@@ -72,6 +72,7 @@ impl TcpAccept {
     {
         let orig_dst: Option<OrigDstAddr> = tcp.param();
         let OrigDstAddr(target_addr) = orig_dst.ok_or_else(|| {
+            tracing::warn!("No SO_ORIGINAL_DST address found!");
             io::Error::new(io::ErrorKind::NotFound, "No SO_ORIGINAL_DST address found")
         })?;
         Ok(Self {

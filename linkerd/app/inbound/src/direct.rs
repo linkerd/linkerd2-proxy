@@ -186,6 +186,7 @@ where
             }) => {
                 let local: Option<OrigDstAddr> = addrs.param();
                 let OrigDstAddr(local_addr) = local.ok_or_else(|| {
+                    tracing::warn!("No SO_ORIGINAL_DST address found!");
                     std::io::Error::new(
                         std::io::ErrorKind::NotFound,
                         "No SO_ORIGINAL_DST address found",

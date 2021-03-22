@@ -309,6 +309,7 @@ where
 
     fn check(&mut self, t: T) -> Result<Self::Request, Error> {
         let OrigDstAddr(addr) = t.param().ok_or_else(|| {
+            tracing::warn!("No SO_ORIGINAL_DST address found!");
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No SO_ORIGINAL_DST address found",

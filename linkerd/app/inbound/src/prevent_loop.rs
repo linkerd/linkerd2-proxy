@@ -49,6 +49,7 @@ impl<T: Param<Option<OrigDstAddr>>> Predicate<T> for SwitchLoop {
 
     fn check(&mut self, addrs: T) -> Result<Either<T, T>, Error> {
         let OrigDstAddr(addr) = addrs.param().ok_or_else(|| {
+            tracing::warn!("No SO_ORIGINAL_DST address found!");
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No SO_ORIGINAL_DST address found",
