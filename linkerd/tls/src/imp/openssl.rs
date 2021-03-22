@@ -10,6 +10,7 @@ use std::{
 
 use openssl::ssl::SslVerifyMode;
 use std::str::FromStr;
+use tracing::debug;
 use {
     openssl::{
         ssl,
@@ -18,7 +19,6 @@ use {
     },
     tokio_openssl::SslStream,
 };
-use tracing::debug;
 
 #[derive(Clone)]
 pub struct TlsConnector(ssl::SslConnector);

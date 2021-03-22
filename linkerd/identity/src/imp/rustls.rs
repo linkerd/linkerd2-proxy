@@ -293,7 +293,7 @@ impl rustls::ResolvesServerCert for CertResolver {
             .map(rustls::Certificate::as_ref)
             .unwrap_or(&[]); // An empty input will fail to parse.
         if let Err(err) =
-        webpki::EndEntityCert::from(c).and_then(|c| c.verify_is_valid_for_dns_name(server_name))
+            webpki::EndEntityCert::from(c).and_then(|c| c.verify_is_valid_for_dns_name(server_name))
         {
             debug!(
                 "our certificate is not valid for the SNI name -> no certificate: {:?}",

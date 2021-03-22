@@ -8,16 +8,19 @@ use std::{
     task::{Context, Poll},
 };
 
+use std::str::FromStr;
+use tracing::debug;
 use {
     boring::{
         ssl,
-        ssl::{SslVerifyMode, SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslMethod},
+        ssl::{
+            SslAcceptor, SslAcceptorBuilder, SslConnector, SslConnectorBuilder, SslMethod,
+            SslVerifyMode,
+        },
         x509::store::X509StoreBuilder,
     },
     tokio_boring::SslStream,
 };
-use tracing::debug;
-use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct TlsConnector(ssl::SslConnector);
@@ -27,10 +30,7 @@ impl TlsConnector {
     where
         IO: AsyncRead + AsyncWrite + Unpin,
     {
-        let conf = self
-            .0
-            .configure()
-            .unwrap();
+        let conf = self.0.configure().unwrap();
         match tokio_boring::connect(conf, domain.as_ref(), stream).await {
             Ok(ss) => Ok(ss.into()),
             Err(err) => {
