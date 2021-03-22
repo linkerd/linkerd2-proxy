@@ -210,10 +210,7 @@ impl TrustAnchors {
     }
 
     pub fn from_pem(s: &str) -> Option<TrustAnchors> {
-        match imp::TrustAnchors::from_pem(s) {
-            None => None,
-            Some(ta) => Some(TrustAnchors(ta)),
-        }
+        imp::TrustAnchors::from_pem(s).map(TrustAnchors)
     }
 
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {

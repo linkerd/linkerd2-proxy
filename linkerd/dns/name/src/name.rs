@@ -92,7 +92,6 @@ mod tests {
         ];
         for (host, expected_result) in cases {
             let dns_name = Name::try_from(host.as_bytes()).unwrap();
-            println!("Hello {:?}", dns_name);
             assert_eq!(dns_name.is_localhost(), *expected_result, "{:?}", dns_name)
         }
     }
