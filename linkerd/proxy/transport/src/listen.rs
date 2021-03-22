@@ -157,6 +157,13 @@ impl Param<Remote<ClientAddr>> for Addrs {
     }
 }
 
+impl Param<Local<ServerAddr>> for Addrs {
+    #[inline]
+    fn param(&self) -> Local<ServerAddr> {
+        self.server()
+    }
+}
+
 #[cfg(not(feature = "mock-orig-dst"))]
 mod sys {
     use super::{GetOrigDstAddr, OrigDstAddr, TcpStream};
