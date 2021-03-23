@@ -2,22 +2,26 @@ use crate::io;
 use crate::svc;
 use futures::prelude::*;
 use linkerd_error::Error;
-use linkerd_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
-use tracing::instrument::Instrument;
-use tracing::{debug, debug_span, info, warn};
+// use tracing::instrument::Instrument;
+use tracing::{
+    debug,
+    //  debug_span,
+    info,
+    warn,
+};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
 ///
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, A, I>(
-    listen: impl Stream<Item = std::io::Result<(Addrs, I)>>,
+    listen: impl Stream<Item = std::io::Result<I>>,
     mut new_accept: M,
     shutdown: impl Future,
 ) where
     I: Send + 'static,
-    M: svc::NewService<Addrs, Service = A>,
+    M: for<'a> svc::NewService<&'a io::ScopedIo<I>, Service = A>,
     A: tower::Service<io::ScopedIo<I>, Response = ()> + Send + 'static,
     A::Error: Into<Error>,
     A::Future: Send + 'static,
@@ -29,7 +33,7 @@ pub async fn serve<M, A, I>(
                 None => return,
                 Some(conn) => {
                     // If the listener returned an error, complete the task.
-                    let (addrs, io) = match conn {
+                    let io = match conn {
                         Ok(conn) => conn,
                         Err(error) => {
                             warn!(%error, "Server failed to accept connection");
@@ -37,21 +41,19 @@ pub async fn serve<M, A, I>(
                         }
                     };
 
-                    // The local addr should be instrumented from the listener's context.
-                    let span = debug_span!("accept", client.addr = %addrs.client());
+                    // // The local addr should be instrumented from the listener's context.
+                    // let span = debug_span!("accept", client.addr = %addrs.client());
 
-                    let accept = span.in_scope(|| new_accept.new_service(addrs));
+                    // let accept = span.in_scope(|| new_accept.new_service(addrs));
+                    let io = io::ScopedIo::server(io);
+                    let accept = new_accept.new_service(&io);
 
                     // Dispatch all of the work for a given connection onto a connection-specific task.
                     tokio::spawn(
                         async move {
                             match accept.ready_oneshot().err_into::<Error>().await {
                                 Ok(mut accept) => {
-                                    match accept
-                                        .call(io::ScopedIo::server(io))
-                                        .err_into::<Error>()
-                                        .await
-                                    {
+                                    match accept.call(io).err_into::<Error>().await {
                                         Ok(()) => debug!("Connection closed"),
                                         Err(reason) if is_io(&*reason) => {
                                             debug!(%reason, "Connection closed")
@@ -67,8 +69,7 @@ pub async fn serve<M, A, I>(
                                     warn!(%error, "Server failed to become ready");
                                 }
                             }
-                        }
-                        .instrument(span),
+                        }, // .instrument(span),
                     );
                 }
             }

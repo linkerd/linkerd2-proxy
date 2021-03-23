@@ -27,7 +27,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
+    transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
 use std::{convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr, time::Duration};
@@ -129,6 +129,12 @@ impl Inbound<()> {
         addrs: A,
     ) -> (SocketAddr, impl Future<Output = ()> + Send)
     where
+        A: transport::GetAddrs<io::ScopedIo<tokio::net::TcpStream>> + Send + 'static,
+        A::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Clone
+            + Send,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
         G: Clone + Send + Sync + Unpin + 'static,
         GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<tokio::net::TcpStream>>, Response = ()>
@@ -309,13 +315,7 @@ where
     type Request = svc::Either<T, T>;
 
     fn check(&mut self, t: T) -> Result<Self::Request, Error> {
-        let OrigDstAddr(addr) = t.param().ok_or_else(|| {
-            tracing::warn!("No SO_ORIGINAL_DST address found!");
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No SO_ORIGINAL_DST address found",
-            )
-        })?;
+        let OrigDstAddr(addr) = t.param();
         if !self.0.contains(&addr.port()) {
             Ok(svc::Either::A(t))
         } else {

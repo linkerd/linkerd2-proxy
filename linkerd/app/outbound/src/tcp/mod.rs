@@ -23,23 +23,6 @@ impl From<OrigDstAddr> for Accept {
     }
 }
 
-impl std::convert::TryFrom<Option<OrigDstAddr>> for Accept {
-    type Error = std::io::Error;
-
-    fn try_from(orig_dst: Option<OrigDstAddr>) -> Result<Self, Self::Error> {
-        match orig_dst {
-            Some(addr) => Ok(Self::from(addr)),
-            None => {
-                tracing::warn!("No SO_ORIGINAL_DST address found!");
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "No SO_ORIGINAL_DST address found",
-                ))
-            }
-        }
-    }
-}
-
 impl<P> From<(P, Accept)> for target::Accept<P> {
     fn from((protocol, Accept { orig_dst, .. }): (P, Accept)) -> Self {
         Self { orig_dst, protocol }

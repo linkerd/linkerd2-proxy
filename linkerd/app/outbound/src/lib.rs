@@ -132,6 +132,7 @@ impl<S> Outbound<S> {
             .push_tcp_logical(resolve)
             .push_detect_http(http)
             .push_discover(profiles)
+            .into_stack()
             .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()
     }
@@ -147,7 +148,7 @@ impl Outbound<()> {
     where
         // TODO(eliza): make `serve` generic over incoming conns (pass in a stream
         // of IOs?) rather than making this hardcoded to `TcpStream` here?
-        A: transport::GetAddrs<tokio::net::TcpStream>,
+        A: transport::GetAddrs<io::ScopedIo<tokio::net::TcpStream>> + Send + Sync + 'static,
         A::Addrs: Param<OrigDstAddr>,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,

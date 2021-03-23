@@ -700,7 +700,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let svc = server.new_service(listen::Addrs::new(
         Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
         Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        Some(OrigDstAddr(ep1)),
+        OrigDstAddr(ep1),
     ));
 
     let res = svc

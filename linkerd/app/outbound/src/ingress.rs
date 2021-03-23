@@ -8,7 +8,6 @@ use linkerd_app_core::{
     transport::{self, OrigDstAddr},
     Addr, AddrMatch, Error,
 };
-use std::convert::TryFrom;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -29,7 +28,7 @@ impl Outbound<()> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: transport::GetAddrs<I>,
+        A: transport::GetAddrs<I> + Send + Sync + 'static,
         A::Addrs: Param<OrigDstAddr>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
@@ -138,7 +137,7 @@ impl Outbound<()> {
             ))
             .push(self.runtime.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-            .push_request_filter(|a: A::Addrs| tcp::Accept::try_from(a.param()))
+            .push_map_target(|a: A::Addrs| tcp::Accept::from(a.param()))
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .check_new_service::<A::Addrs, I>()
