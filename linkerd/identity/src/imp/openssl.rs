@@ -2,17 +2,17 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use std::{error, fmt};
 
-// #[cfg(feature = "boring-tls")]
-// use boring::{
-//     error::ErrorStack,
-//     pkey::{PKey, Private},
-//     stack::Stack,
-//     x509::{
-//         {X509, X509StoreContext, X509VerifyResult},
-//         store::{X509Store, X509StoreBuilder},
-//     },
-// };
-// #[cfg(not(feature = "boring-tls"))]
+#[cfg(feature = "boring-tls")]
+use boring::{
+    error::ErrorStack,
+    pkey::{PKey, Private},
+    stack::Stack,
+    x509::{
+        {X509, X509StoreContext, X509VerifyResult},
+        store::{X509Store, X509StoreBuilder},
+    },
+};
+#[cfg(not(feature = "boring-tls"))]
 use openssl::{
     error::ErrorStack,
     pkey::{PKey, Private},

@@ -8,13 +8,23 @@ use std::{
     task::{Context, Poll},
 };
 
-use openssl::ssl::SslVerifyMode;
 use std::str::FromStr;
 use tracing::debug;
+
+#[cfg(feature = "boring-tls")]
+use {
+    boring::{
+        ssl,
+        ssl::{SslAcceptor, SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode},
+        x509::store::X509StoreBuilder,
+    },
+    tokio_boring::SslStream,
+};
+#[cfg(not(feature = "boring-tls"))]
 use {
     openssl::{
         ssl,
-        ssl::{Ssl, SslAcceptor, SslConnector, SslConnectorBuilder, SslMethod},
+        ssl::{Ssl, SslAcceptor, SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode},
         x509::store::X509StoreBuilder,
     },
     tokio_openssl::SslStream,
@@ -24,6 +34,7 @@ use {
 pub struct TlsConnector(ssl::SslConnector);
 
 impl TlsConnector {
+    #[cfg(not(feature = "boring-tls"))]
     pub async fn connect<IO>(&self, domain: Name, stream: IO) -> Result<client::TlsStream<IO>>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
@@ -38,6 +49,20 @@ impl TlsConnector {
         match Pin::new(&mut s.0).connect().await {
             Ok(_) => Ok(s),
             Err(err) => Err(io::Error::new(ErrorKind::Other, err)),
+        }
+    }
+    #[cfg(feature = "boring-tls")]
+    pub async fn connect<IO>(&self, domain: Name, stream: IO) -> Result<client::TlsStream<IO>>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin,
+    {
+        let conf = self.0.configure().unwrap();
+        match tokio_boring::connect(conf, domain.as_ref(), stream).await {
+            Ok(ss) => Ok(ss.into()),
+            Err(err) => {
+                let _ = err.ssl();
+                Err(io::Error::new(ErrorKind::Other, "Ble"))
+            }
         }
     }
 }
@@ -99,6 +124,7 @@ impl From<Arc<ClientConfig>> for TlsConnector {
 pub struct TlsAcceptor(ssl::SslAcceptor);
 
 impl TlsAcceptor {
+    #[cfg(not(feature = "boring-tls"))]
     pub async fn accept<IO>(&self, stream: IO) -> Result<server::TlsStream<IO>>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
@@ -109,6 +135,19 @@ impl TlsAcceptor {
         match Pin::new(&mut s.0).accept().await {
             Ok(_) => Ok(s),
             Err(err) => Err(io::Error::new(ErrorKind::Other, err)),
+        }
+    }
+    #[cfg(feature = "boring-tls")]
+    pub async fn accept<IO>(&self, stream: IO) -> Result<server::TlsStream<IO>>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin,
+    {
+        match tokio_boring::accept(&self.0, stream).await {
+            Ok(ss) => Ok(ss.into()),
+            Err(err) => {
+                let _ = err.ssl();
+                Err(io::Error::new(ErrorKind::Other, "Ble"))
+            }
         }
     }
 }
@@ -161,6 +200,7 @@ impl<IO> TlsStream<IO>
 where
     IO: AsyncRead + AsyncWrite,
 {
+    #[cfg(not(feature = "boring-tls"))]
     pub fn new(ssl: Ssl, stream: IO) -> Self {
         Self(SslStream::new(ssl, stream).unwrap())
     }
