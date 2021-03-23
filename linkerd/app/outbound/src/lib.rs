@@ -24,7 +24,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::OrigDstAddr,
+    transport::{self, OrigDstAddr},
     AddrMatch, Error, ProxyRuntime,
 };
 use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
@@ -94,16 +94,18 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn into_server<T, R, P, I>(
+    pub fn into_server<R, P, A, I>(
         self,
         resolve: R,
         profiles: P,
-    ) -> impl svc::NewService<
-        T,
+        addrs: A,
+    ) -> impl for<'a> svc::NewService<
+        &'a I,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        T: Param<Option<OrigDstAddr>>,
+        A: listen::GetAddrs<I>,
+        A::Addrs: Param<Option<OrigDstAddr>>,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,
@@ -130,13 +132,23 @@ impl<S> Outbound<S> {
             .push_tcp_logical(resolve)
             .push_detect_http(http)
             .push_discover(profiles)
+            .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()
     }
 }
 
 impl Outbound<()> {
-    pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
+    pub fn serve<P, R>(
+        self,
+        profiles: P,
+        resolve: R,
+        addrs: A,
+    ) -> (SocketAddr, impl Future<Output = ()>)
     where
+        // TODO(eliza): make `serve` generic over incoming conns (pass in a stream
+        // of IOs?) rather than making this hardcoded to `TcpStream` here?
+        A: listen::GetAddrs<TcpStream>,
+        A::Addrs: Param<Option<OrigDstAddr>>,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
@@ -167,11 +179,11 @@ impl Outbound<()> {
                     .push_http_endpoint()
                     .push_http_logical(resolve)
                     .into_inner();
-                let stack = self.to_ingress(profiles, tcp, http);
+                let stack = self.to_ingress(profiles, tcp, http, addrs);
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             } else {
-                let stack = self.to_tcp_connect().into_server(resolve, profiles);
+                let stack = self.to_tcp_connect().into_server(resolve, profiles, addrs);
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             }

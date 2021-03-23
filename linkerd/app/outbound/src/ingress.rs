@@ -18,17 +18,19 @@ impl Outbound<()> {
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P>(
+    pub fn to_ingress<I, N, NSvc, H, HSvc, P>(
         &self,
         profiles: P,
         tcp: N,
         http: H,
-    ) -> impl svc::NewService<
-        T,
+        addrs: A,
+    ) -> impl for<'a> svc::NewService<
+        &'a I,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        T: Param<Option<OrigDstAddr>>,
+        A: transport::GetAddrs<I>,
+        A::Addrs: Param<OrigDstAddr>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>

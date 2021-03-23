@@ -193,14 +193,15 @@ where
             .expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
-            let (meta, io) = listen
+            let io = listen
                 .next()
                 .await
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            let accept = detect.new_service(meta);
-            accept.oneshot(io).await.expect("connection failed");
+            todo!("eliza fix this");
+            // let accept = detect.new_service(meta);
+            // accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
         .instrument(tracing::info_span!("run_server", %listen_addr));

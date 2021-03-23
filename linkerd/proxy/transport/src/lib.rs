@@ -8,7 +8,7 @@ pub mod metrics;
 pub use self::{
     addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr},
     connect::ConnectTcp,
-    listen::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, NoOrigDstAddr},
+    listen::{BindTcp, DefaultOrigDstAddr, GetAddrs, GetOrigDstAddr, NoOrigDstAddr},
 };
 use std::time::Duration;
 use tokio::net::TcpStream;
