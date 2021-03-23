@@ -13,7 +13,7 @@ use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt}
 use linkerd_proxy_transport::{
     listen::Addrs, BindTcp, ConnectTcp, Keepalive, ListenAddr, Remote, ServerAddr,
 };
-use linkerd_stack::{NewService, Param};
+use linkerd_stack::Param;
 use linkerd_tls as tls;
 use std::future::Future;
 use std::{net::SocketAddr, sync::mpsc};

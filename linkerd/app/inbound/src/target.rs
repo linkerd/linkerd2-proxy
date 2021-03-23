@@ -10,13 +10,7 @@ use linkerd_app_core::{
     transport_header::TransportHeader,
     Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
 };
-use std::{
-    convert::{TryFrom, TryInto},
-    io,
-    net::SocketAddr,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -66,20 +60,16 @@ pub struct RequestTarget {
 // === impl TcpAccept ===
 
 impl TcpAccept {
-    pub fn port_skipped<T>(tcp: T) -> Result<Self, io::Error>
+    pub fn port_skipped<T>(tcp: T) -> Self
     where
-        T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>>,
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
     {
-        let orig_dst: Option<OrigDstAddr> = tcp.param();
-        let OrigDstAddr(target_addr) = orig_dst.ok_or_else(|| {
-            tracing::warn!("No SO_ORIGINAL_DST address found!");
-            io::Error::new(io::ErrorKind::NotFound, "No SO_ORIGINAL_DST address found")
-        })?;
-        Ok(Self {
+        let OrigDstAddr(target_addr) = tcp.param();
+        Self {
             target_addr,
             client_addr: tcp.param(),
             tls: Conditional::None(tls::NoServerTls::PortSkipped),
-        })
+        }
     }
 
     /// Returns a `TcpAccept` for the provided TLS metadata and addresses,
@@ -98,22 +88,17 @@ impl TcpAccept {
     }
 }
 
-impl<T> TryFrom<tls::server::Meta<T>> for TcpAccept
+impl<T> From<tls::server::Meta<T>> for TcpAccept
 where
-    T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>>,
+    T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
 {
-    type Error = io::Error;
-    fn try_from((tls, addrs): tls::server::Meta<T>) -> Result<Self, Self::Error> {
-        let orig_dst: Option<OrigDstAddr> = addrs.param();
-        let OrigDstAddr(target_addr) = orig_dst.ok_or_else(|| {
-            tracing::warn!("No SO_ORIGINAL_DST address found!");
-            io::Error::new(io::ErrorKind::NotFound, "No SO_ORIGINAL_DST address found")
-        })?;
-        Ok(Self {
+    fn from((tls, addrs): tls::server::Meta<T>) -> Self {
+        let OrigDstAddr(target_addr) = addrs.param();
+        Self {
             target_addr,
             client_addr: addrs.param(),
             tls,
-        })
+        }
     }
 }
 

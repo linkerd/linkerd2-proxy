@@ -104,8 +104,8 @@ impl<S> Outbound<S> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: listen::GetAddrs<I>,
-        A::Addrs: Param<Option<OrigDstAddr>>,
+        A: transport::GetAddrs<I>,
+        A::Addrs: Param<OrigDstAddr>,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,
@@ -138,7 +138,7 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub fn serve<P, R>(
+    pub fn serve<A, P, R>(
         self,
         profiles: P,
         resolve: R,
@@ -147,8 +147,8 @@ impl Outbound<()> {
     where
         // TODO(eliza): make `serve` generic over incoming conns (pass in a stream
         // of IOs?) rather than making this hardcoded to `TcpStream` here?
-        A: listen::GetAddrs<TcpStream>,
-        A::Addrs: Param<Option<OrigDstAddr>>,
+        A: transport::GetAddrs<tokio::net::TcpStream>,
+        A::Addrs: Param<OrigDstAddr>,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,

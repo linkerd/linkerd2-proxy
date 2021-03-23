@@ -122,10 +122,11 @@ impl Inbound<()> {
         }
     }
 
-    pub fn serve<G, GSvc, P>(
+    pub fn serve<A, G, GSvc, P>(
         self,
         profiles: P,
         gateway: G,
+        addrs: A,
     ) -> (SocketAddr, impl Future<Output = ()> + Send)
     where
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -148,9 +149,9 @@ impl Inbound<()> {
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack = self
-                .to_tcp_connect()
-                .into_server(listen_addr.port(), profiles, gateway);
+            let stack =
+                self.to_tcp_connect()
+                    .into_server(listen_addr.port(), profiles, gateway, addrs);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -208,17 +209,19 @@ where
         }
     }
 
-    pub fn into_server<T, I, G, GSvc, P>(
+    pub fn into_server<A, I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
-    ) -> impl svc::NewService<
-        T,
+        addrs: A,
+    ) -> impl for<'a> svc::NewService<
+        &'a I,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>> + Clone + Send + 'static,
+        A: transport::GetAddrs<I>,
+        A::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -267,12 +270,12 @@ where
                     .stack
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
-                    .push_request_filter(TcpAccept::port_skipped)
-                    .check_new_service::<T, _>()
-                    .instrument(|_: &T| debug_span!("forward"))
+                    .push_map_target(TcpAccept::port_skipped)
+                    .check_new_service::<A::Addrs, _>()
+                    .instrument(|_: &A::Addrs| debug_span!("forward"))
                     .into_inner(),
             )
-            .check_new_service::<T, I>()
+            .check_new_service::<A::Addrs, I>()
             .push_switch(
                 PreventLoop::from(server_port).to_switch(),
                 self.push_tcp_forward(server_port)
@@ -281,14 +284,12 @@ where
                     .instrument(|_: &_| debug_span!("direct"))
                     .into_inner(),
             )
-            .instrument(|a: &T| {
-                if let Some(OrigDstAddr(target_addr)) = a.param() {
-                    info_span!("server", port = target_addr.port())
-                } else {
-                    info_span!("server", port = %"<no original dst>")
-                }
+            .instrument(|a: &A::Addrs| {
+                let OrigDstAddr(target_addr) = a.param();
+                info_span!("server", port = target_addr.port())
             })
-            .check_new_service::<T, I>()
+            .check_new_service::<A::Addrs, I>()
+            .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()
     }
 }
@@ -303,7 +304,7 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
 
 impl<T> svc::Predicate<T> for SkipByPort
 where
-    T: Param<Option<OrigDstAddr>>,
+    T: Param<OrigDstAddr>,
 {
     type Request = svc::Either<T, T>;
 

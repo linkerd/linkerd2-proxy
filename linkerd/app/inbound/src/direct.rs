@@ -71,7 +71,7 @@ impl<N> Inbound<N> {
             > + Clone,
     >
     where
-        T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>> + Clone + Send + 'static,
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -173,7 +173,7 @@ impl<N> Inbound<N> {
 
 impl<T> TryFrom<(tls::ConditionalServerTls, T)> for ClientInfo
 where
-    T: Param<Option<OrigDstAddr>>,
+    T: Param<OrigDstAddr>,
     T: Param<Remote<ClientAddr>>,
 {
     type Error = Error;
@@ -184,14 +184,7 @@ where
                 client_id: Some(client_id),
                 negotiated_protocol,
             }) => {
-                let local: Option<OrigDstAddr> = addrs.param();
-                let OrigDstAddr(local_addr) = local.ok_or_else(|| {
-                    tracing::warn!("No SO_ORIGINAL_DST address found!");
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        "No SO_ORIGINAL_DST address found",
-                    )
-                })?;
+                let OrigDstAddr(local_addr) = addrs.param();
                 Ok(Self {
                     client_id,
                     alpn: negotiated_protocol,
