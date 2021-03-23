@@ -21,8 +21,10 @@ use linkerd_app_core::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
     },
-    serve, svc, tls,
-    transport::listen,
+    serve,
+    svc::{self, stack::Param},
+    tls,
+    transport::OrigDstAddr,
     AddrMatch, Error, ProxyRuntime,
 };
 use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
@@ -92,15 +94,16 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn into_server<R, P, I>(
+    pub fn into_server<T, R, P, I>(
         self,
         resolve: R,
         profiles: P,
     ) -> impl svc::NewService<
-        listen::Addrs,
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
+        T: Param<Option<OrigDstAddr>>,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,

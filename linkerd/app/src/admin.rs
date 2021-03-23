@@ -76,7 +76,7 @@ impl Config {
                 http::DetectHttp::default(),
             ))
             .push(metrics.transport.layer_accept())
-            .push_map_target(TcpAccept::from)
+            .push_map_target(TcpAccept::from_local_addr)
             .check_new_clone::<tls::server::Meta<listen::Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();

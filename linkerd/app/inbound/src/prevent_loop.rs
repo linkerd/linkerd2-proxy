@@ -1,13 +1,17 @@
 use crate::TcpEndpoint;
 use linkerd_app_core::{
-    svc::stack::{Either, Predicate},
-    transport::listen::Addrs,
+    svc::stack::{Either, Param, Predicate},
+    transport::addrs::OrigDstAddr,
     Error,
 };
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
 pub struct PreventLoop {
+    port: u16,
+}
+#[derive(Copy, Clone, Debug)]
+pub struct SwitchLoop {
     port: u16,
 }
 
@@ -34,11 +38,23 @@ impl Predicate<TcpEndpoint> for PreventLoop {
     }
 }
 
-impl Predicate<Addrs> for PreventLoop {
-    type Request = Either<Addrs, Addrs>;
+impl PreventLoop {
+    pub fn to_switch(self) -> SwitchLoop {
+        SwitchLoop { port: self.port }
+    }
+}
 
-    fn check(&mut self, addrs: Addrs) -> Result<Either<Addrs, Addrs>, Error> {
-        let addr = addrs.target_addr();
+impl<T: Param<Option<OrigDstAddr>>> Predicate<T> for SwitchLoop {
+    type Request = Either<T, T>;
+
+    fn check(&mut self, addrs: T) -> Result<Either<T, T>, Error> {
+        let OrigDstAddr(addr) = addrs.param().ok_or_else(|| {
+            tracing::warn!("No SO_ORIGINAL_DST address found!");
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No SO_ORIGINAL_DST address found",
+            )
+        })?;
         tracing::debug!(%addr, self.port);
         if addr.port() != self.port {
             Ok(Either::A(addrs))

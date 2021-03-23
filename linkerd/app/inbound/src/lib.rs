@@ -27,10 +27,10 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{self, listen, Remote, ServerAddr},
+    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
-use std::{fmt::Debug, future::Future, net::SocketAddr, time::Duration};
+use std::{convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -208,16 +208,17 @@ where
         }
     }
 
-    pub fn into_server<I, G, GSvc, P>(
+    pub fn into_server<T, I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
     ) -> impl svc::NewService<
-        listen::Addrs,
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
+        T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -253,7 +254,7 @@ where
             ))
             .push_request_filter(require_id)
             .push(self.runtime.metrics.transport.layer_accept())
-            .push_map_target(TcpAccept::from)
+            .push_request_filter(TcpAccept::try_from)
             .push(tls::NewDetectTls::layer(
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
@@ -266,21 +267,28 @@ where
                     .stack
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
-                    .push_map_target(TcpAccept::port_skipped)
-                    .instrument(|_: &_| debug_span!("forward"))
+                    .push_request_filter(TcpAccept::port_skipped)
+                    .check_new_service::<T, _>()
+                    .instrument(|_: &T| debug_span!("forward"))
                     .into_inner(),
             )
-            .check_new_service::<listen::Addrs, I>()
+            .check_new_service::<T, I>()
             .push_switch(
-                PreventLoop::from(server_port),
+                PreventLoop::from(server_port).to_switch(),
                 self.push_tcp_forward(server_port)
                     .push_direct(gateway)
                     .stack
                     .instrument(|_: &_| debug_span!("direct"))
                     .into_inner(),
             )
-            .instrument(|a: &listen::Addrs| info_span!("server", port = %a.target_addr().port()))
-            .check_new_service::<listen::Addrs, I>()
+            .instrument(|a: &T| {
+                if let Some(OrigDstAddr(target_addr)) = a.param() {
+                    info_span!("server", port = target_addr.port())
+                } else {
+                    info_span!("server", port = %"<no original dst>")
+                }
+            })
+            .check_new_service::<T, I>()
             .into_inner()
     }
 }
@@ -293,11 +301,21 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
     }
 }
 
-impl svc::Predicate<listen::Addrs> for SkipByPort {
-    type Request = svc::Either<listen::Addrs, listen::Addrs>;
+impl<T> svc::Predicate<T> for SkipByPort
+where
+    T: Param<Option<OrigDstAddr>>,
+{
+    type Request = svc::Either<T, T>;
 
-    fn check(&mut self, t: listen::Addrs) -> Result<Self::Request, Error> {
-        if !self.0.contains(&t.target_addr().port()) {
+    fn check(&mut self, t: T) -> Result<Self::Request, Error> {
+        let OrigDstAddr(addr) = t.param().ok_or_else(|| {
+            tracing::warn!("No SO_ORIGINAL_DST address found!");
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No SO_ORIGINAL_DST address found",
+            )
+        })?;
+        if !self.0.contains(&addr.port()) {
             Ok(svc::Either::A(t))
         } else {
             Ok(svc::Either::B(t))

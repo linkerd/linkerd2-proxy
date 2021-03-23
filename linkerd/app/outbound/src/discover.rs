@@ -1,7 +1,8 @@
 use crate::{tcp, Outbound};
 use linkerd_app_core::{
-    discovery_rejected, io, profiles, svc,
-    transport::{listen, metrics::SensorIo},
+    discovery_rejected, io, profiles,
+    svc::{self, stack::Param},
+    transport::{metrics::SensorIo, OrigDstAddr},
     Error, IpMatch,
 };
 use std::convert::TryFrom;
@@ -11,16 +12,17 @@ impl<N> Outbound<N> {
     /// Discovers the profile for a TCP endpoint.
     ///
     /// Resolved services are cached and buffered.
-    pub fn push_discover<I, NSvc, P>(
+    pub fn push_discover<T, I, NSvc, P>(
         self,
         profiles: P,
     ) -> Outbound<
         impl svc::NewService<
-            listen::Addrs,
+            T,
             Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
+        T: Param<Option<OrigDstAddr>>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + 'static,
         NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,
@@ -56,8 +58,8 @@ impl<N> Outbound<N> {
             .push(rt.metrics.transport.layer_accept())
             .push_cache(config.proxy.cache_max_idle_age)
             .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
-            .push_request_filter(tcp::Accept::try_from)
-            .check_new_service::<listen::Addrs, I>();
+            .push_request_filter(|addrs: T| tcp::Accept::try_from(addrs.param()))
+            .check_new_service::<T, I>();
 
         Outbound {
             config,

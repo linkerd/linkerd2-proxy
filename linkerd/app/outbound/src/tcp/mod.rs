@@ -7,11 +7,7 @@ mod tests;
 pub use self::connect::Connect;
 use crate::target;
 pub use linkerd_app_core::proxy::tcp::Forward;
-use linkerd_app_core::{
-    svc::Param,
-    transport::{listen, OrigDstAddr},
-    transport_header::SessionProtocol,
-};
+use linkerd_app_core::{svc::Param, transport::OrigDstAddr, transport_header::SessionProtocol};
 
 pub type Accept = target::Accept<()>;
 pub type Logical = target::Logical<()>;
@@ -27,16 +23,19 @@ impl From<OrigDstAddr> for Accept {
     }
 }
 
-impl std::convert::TryFrom<listen::Addrs> for Accept {
+impl std::convert::TryFrom<Option<OrigDstAddr>> for Accept {
     type Error = std::io::Error;
 
-    fn try_from(t: listen::Addrs) -> Result<Self, Self::Error> {
-        match t.orig_dst() {
+    fn try_from(orig_dst: Option<OrigDstAddr>) -> Result<Self, Self::Error> {
+        match orig_dst {
             Some(addr) => Ok(Self::from(addr)),
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No SO_ORIGINAL_DST address found",
-            )),
+            None => {
+                tracing::warn!("No SO_ORIGINAL_DST address found!");
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No SO_ORIGINAL_DST address found",
+                ))
+            }
         }
     }
 }
