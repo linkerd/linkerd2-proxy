@@ -16,7 +16,7 @@ use std::{net::SocketAddr, time::Duration};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
-pub fn default_config(orig_dst: SocketAddr) -> Config {
+pub fn default_config() -> Config {
     let cluster_local = "svc.cluster.local."
         .parse::<Suffix>()
         .expect("`svc.cluster.local.` suffix is definitely valid");
@@ -27,8 +27,7 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
                 bind: BindTcp::new(
                     ListenAddr(SocketAddr::new(LOCALHOST.into(), 0)),
                     Keepalive(None),
-                )
-                .with_orig_dst_addr(orig_dst.into()),
+                ),
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {

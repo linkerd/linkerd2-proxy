@@ -15,7 +15,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
-pub fn default_config(orig_dst: SocketAddr) -> Config {
+pub fn default_config() -> Config {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
@@ -24,8 +24,7 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
                 bind: BindTcp::new(
                     ListenAddr(SocketAddr::new(LOCALHOST.into(), 0)),
                     Keepalive(None),
-                )
-                .with_orig_dst_addr(orig_dst.into()),
+                ),
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {

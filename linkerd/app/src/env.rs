@@ -241,7 +241,7 @@ const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
 
 /// Load a `App` by reading ENV variables.
-pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> {
+pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config<A>, EnvError> {
     // Parse all the environment variables. `parse` will log any errors so
     // defer returning any errors until all of them have been parsed.
     let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
@@ -261,12 +261,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
-
-    #[cfg(feature = "mock-orig-dst")]
-    let (inbound_mock_orig_dst, outbound_mock_orig_dst) = (
-        parse(strings, ENV_INBOUND_ORIG_DST_ADDR, parse_socket_addr),
-        parse(strings, ENV_OUTBOUND_ORIG_DST_ADDR, parse_socket_addr),
-    );
 
     let inbound_disable_ports = parse(
         strings,
@@ -360,26 +354,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
 
-    #[cfg(feature = "mock-orig-dst")]
-    let (inbound_orig_dst, outbound_orig_dst) = (
-        inbound_mock_orig_dst?
-            .map(DefaultOrigDstAddr::from)
-            .ok_or_else(|| {
-                error!("{} must be specified", ENV_INBOUND_ORIG_DST_ADDR);
-                EnvError::NoDestinationAddress
-            })?,
-        outbound_mock_orig_dst?
-            .map(DefaultOrigDstAddr::from)
-            .ok_or_else(|| {
-                error!("{} must be specified", ENV_OUTBOUND_ORIG_DST_ADDR);
-                EnvError::NoDestinationAddress
-            })?,
-    );
-
-    #[cfg(not(feature = "mock-orig-dst"))]
-    let (inbound_orig_dst, outbound_orig_dst): (DefaultOrigDstAddr, DefaultOrigDstAddr) =
-        Default::default();
-
     let dst_profile_suffixes = dst_profile_suffixes?
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
@@ -396,7 +370,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
         );
         let server = ServerConfig {
-            bind: bind.with_orig_dst_addr(outbound_orig_dst),
+            bind,
             h2_settings: h2::Settings {
                 keepalive_timeout: keepalive.into(),
                 ..h2_settings
@@ -460,7 +434,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             keepalive,
         );
         let server = ServerConfig {
-            bind: bind.with_orig_dst_addr(inbound_orig_dst),
+            bind,
             h2_settings: h2::Settings {
                 keepalive_timeout: keepalive.into(),
                 ..h2_settings
@@ -652,6 +626,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         gateway,
         inbound,
+        orig_dst: Default::default(),
     })
 }
 
@@ -700,7 +675,7 @@ impl Strings for Env {
 }
 
 impl Env {
-    pub fn try_config(&self) -> Result<super::Config, EnvError> {
+    pub fn try_config<A: Default>(&self) -> Result<super::Config<A>, EnvError> {
         parse_config(self)
     }
 }

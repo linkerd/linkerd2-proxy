@@ -62,7 +62,7 @@ async fn plaintext_tcp() {
         support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
 
     // Build the outbound TCP balancer stack.
-    let cfg = default_config(target_addr);
+    let cfg = default_config();
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)
         .with_stack(connect)
@@ -141,7 +141,7 @@ async fn tls_when_hinted() {
 
     // Build the outbound TCP balancer stack.
     let (rt, _) = runtime();
-    let mut stack = Outbound::new(default_config(([0, 0, 0, 0], 0).into()), rt)
+    let mut stack = Outbound::new(default_config(), rt)
         .with_stack(connect)
         .push_tcp_logical(resolver)
         .into_inner();
@@ -164,7 +164,7 @@ async fn resolutions_are_reused() {
     let _trace = support::trace_init();
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let cfg = default_config(addr);
+    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -242,7 +242,7 @@ async fn load_balances() {
         ),
     ];
 
-    let cfg = default_config(addr);
+    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -336,7 +336,7 @@ async fn load_balancer_add_endpoints() {
         ),
     ];
 
-    let cfg = default_config(addr);
+    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -449,7 +449,7 @@ async fn load_balancer_remove_endpoints() {
         ),
     ];
 
-    let cfg = default_config(addr);
+    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -542,7 +542,7 @@ async fn no_profiles_when_outside_search_nets() {
     let no_profile_addr = SocketAddr::new([126, 32, 5, 18].into(), 5550);
     let cfg = Config {
         allow_discovery: IpMatch::new(Some(IpNet::from_str("10.0.0.0/8").unwrap())).into(),
-        ..default_config(profile_addr)
+        ..default_config()
     };
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -616,7 +616,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     let _trace = support::trace_init();
 
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let cfg = default_config(ep);
+    let cfg = default_config();
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
@@ -661,7 +661,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let ep2 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
 
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
@@ -803,7 +803,7 @@ where
         let addrs = listen::Addrs::new(
             Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
             Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-            Some(OrigDstAddr(orig_dst)),
+            OrigDstAddr(orig_dst),
         );
         let svc = new_svc.new_service(addrs);
         tracing::trace!("new service");

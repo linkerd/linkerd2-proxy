@@ -114,7 +114,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
 
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
@@ -217,7 +217,7 @@ async fn meshed_hello_world() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
@@ -267,7 +267,7 @@ async fn stacks_idle_out() {
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let idle_timeout = Duration::from_millis(500);
-    let mut cfg = default_config(ep1);
+    let mut cfg = default_config();
     cfg.proxy.cache_max_idle_age = idle_timeout;
 
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -332,7 +332,7 @@ async fn active_stacks_dont_idle_out() {
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let idle_timeout = Duration::from_millis(500);
-    let mut cfg = default_config(ep1);
+    let mut cfg = default_config();
     cfg.proxy.cache_max_idle_age = idle_timeout;
 
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -426,7 +426,7 @@ pub fn addrs(od: SocketAddr) -> listen::Addrs {
     listen::Addrs::new(
         Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
         Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        Some(OrigDstAddr(od)),
+        OrigDstAddr(od),
     )
 }
 
@@ -437,7 +437,7 @@ async fn unmeshed_hello_world(
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server_settings));
 

@@ -12,13 +12,21 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
-use linkerd_app_core::{control::ControlAddr, dns, drain, proxy::http, svc, Error, ProxyRuntime};
+use linkerd_app_core::{
+    control::ControlAddr,
+    dns, drain, io,
+    proxy::http,
+    svc,
+    svc::Param,
+    transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    Error, ProxyRuntime,
+};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
 use std::{net::SocketAddr, pin::Pin};
-use tokio::{sync::mpsc, time::Duration};
+use tokio::{net::TcpStream, sync::mpsc, time::Duration};
 use tracing::instrument::Instrument;
 use tracing::{debug, info, info_span};
 
@@ -35,7 +43,7 @@ use tracing::{debug, info, info_span};
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct Config<A> {
     pub outbound: outbound::Config,
     pub inbound: inbound::Config,
     pub gateway: gateway::Config,
@@ -46,6 +54,7 @@ pub struct Config {
     pub admin: admin::Config,
     pub tap: tap::Config,
     pub oc_collector: oc_collector::Config,
+    pub orig_dst: A,
 }
 
 pub struct App {
@@ -60,8 +69,11 @@ pub struct App {
     tap: tap::Tap,
 }
 
-impl Config {
-    pub fn try_from_env() -> Result<Self, env::EnvError> {
+impl<A> Config<A> {
+    pub fn try_from_env() -> Result<Self, env::EnvError>
+    where
+        A: Default,
+    {
         env::Env.try_config()
     }
 
@@ -73,7 +85,15 @@ impl Config {
         self,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
-    ) -> Result<App, Error> {
+    ) -> Result<App, Error>
+    where
+        A: transport::GetAddrs<io::ScopedIo<TcpStream>> + Clone + Send + Sync + 'static,
+        A::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Clone
+            + Send,
+    {
         use metrics::FmtMetrics;
 
         let Config {
@@ -86,6 +106,7 @@ impl Config {
             outbound,
             gateway,
             tap,
+            orig_dst,
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
@@ -155,8 +176,9 @@ impl Config {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) = inbound.serve(dst.profiles.clone(), gateway_stack);
-        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve);
+        let (inbound_addr, inbound_serve) =
+            inbound.serve(dst.profiles.clone(), gateway_stack, orig_dst.clone());
+        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve, orig_dst);
 
         let start_proxy = Box::pin(async move {
             tokio::spawn(outbound_serve.instrument(info_span!("outbound")));

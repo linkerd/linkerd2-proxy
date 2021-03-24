@@ -11,8 +11,10 @@ use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{
-    listen::Addrs, BindTcp, ConnectTcp, Keepalive, ListenAddr, Remote, ServerAddr,
+    listen::Addrs, BindTcp, ClientAddr, ConnectTcp, Keepalive, ListenAddr, Local, OrigDstAddr,
+    Remote, ServerAddr,
 };
+use linkerd_stack::NewService;
 use linkerd_stack::Param;
 use linkerd_tls as tls;
 use std::future::Future;
@@ -199,9 +201,12 @@ where
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            todo!("eliza fix this");
-            // let accept = detect.new_service(meta);
-            // accept.oneshot(io).await.expect("connection failed");
+            let accept = detect.new_service(Addrs::new(
+                Local(ServerAddr(listen_addr)),
+                Remote(ClientAddr(io.peer_addr().unwrap())),
+                OrigDstAddr(listen_addr),
+            ));
+            accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
         .instrument(tracing::info_span!("run_server", %listen_addr));
