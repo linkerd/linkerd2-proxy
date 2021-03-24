@@ -1,8 +1,9 @@
+use crate::admin::{Addrs, GetAdminAddrs};
 use futures::prelude::*;
 use indexmap::IndexSet;
 use linkerd_app_core::{
-    config::ServerConfig, drain, proxy::identity::LocalCrtKey, proxy::tap, serve, tls,
-    transport::listen::Addrs, Error,
+    config::ServerConfig, drain, proxy::identity::LocalCrtKey, proxy::tap, serve, svc, tls,
+    transport, Error,
 };
 use std::{net::SocketAddr, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
@@ -40,21 +41,31 @@ impl Config {
                 permitted_client_ids,
             } => {
                 let (listen_addr, listen) = config.bind.bind()?;
-
-                let service = tap::AcceptPermittedClients::new(permitted_client_ids.into(), server);
-                let accept = tls::NewDetectTls::new(
-                    identity,
-                    move |meta: tls::server::Meta<Addrs>| {
-                        let service = service.clone();
-                        service_fn(move |io| {
-                            let fut = service.clone().oneshot((meta.clone(), io));
-                            Box::pin(async move {
-                                fut.err_into::<Error>().await?.err_into::<Error>().await
+                let accept = svc::stack(server)
+                    .push(svc::layer::mk(move |service| {
+                        tap::AcceptPermittedClients::new(
+                            permitted_client_ids.clone().into(),
+                            service,
+                        )
+                    }))
+                    .push(svc::layer::mk(|service: tap::AcceptPermittedClients| {
+                        move |meta: tls::server::Meta<Addrs>| {
+                            let service = service.clone();
+                            service_fn(move |io| {
+                                let fut = service.clone().oneshot((meta.clone(), io));
+                                Box::pin(async move {
+                                    fut.err_into::<Error>().await?.err_into::<Error>().await
+                                })
                             })
-                        })
-                    },
-                    std::time::Duration::from_secs(1),
-                );
+                        }
+                    }))
+                    .check_new_service::<tls::server::Meta<Addrs>, _>()
+                    .push(tls::NewDetectTls::layer(
+                        identity,
+                        std::time::Duration::from_secs(1),
+                    ))
+                    .push_request_filter(transport::AddrsFilter(GetAdminAddrs::new(listen_addr)))
+                    .into_inner();
 
                 let serve = Box::pin(serve::serve(listen, accept, drain.signaled()));
 
