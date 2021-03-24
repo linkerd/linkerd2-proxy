@@ -142,7 +142,9 @@ impl Outbound<()> {
             // having enormous types.
             .check_new_service::<A::Addrs, I>()
             .push_request_filter(transport::AddrsFilter(addrs))
-            .push(svc::BoxNewService::layer())
+            .check_new_service::<&I, I>()
+            // .push(svc::BoxNewService::layer()) // XXX(eliza): WHY DOES THIS BREAK IT T_T
+            .check_new_service::<&I, I>()
             .into_inner()
     }
 }
