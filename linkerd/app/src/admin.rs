@@ -4,7 +4,7 @@ use crate::core::{
     detect, drain, errors,
     metrics::{self, FmtMetrics},
     serve, tls, trace,
-    transport::listen,
+    transport::{self, listen::GetAddrs, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
 use crate::{
@@ -13,8 +13,8 @@ use crate::{
     inbound::target::{HttpAccept, Target, TcpAccept},
     svc,
 };
-use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
-use tokio::sync::mpsc;
+use std::{fmt, io, net::SocketAddr, pin::Pin, time::Duration};
+use tokio::{net::TcpStream, sync::mpsc};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -27,6 +27,15 @@ pub struct Admin {
     pub latch: admin::Latch,
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Addrs {
+    server: Local<ServerAddr>,
+    client: Remote<ClientAddr>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GetAdminAddrs(Local<ServerAddr>);
 
 #[derive(Debug, Default)]
 pub struct AdminHttpOnly(());
@@ -77,8 +86,9 @@ impl Config {
             ))
             .push(metrics.transport.layer_accept())
             .push_map_target(TcpAccept::from_local_addr)
-            .check_new_clone::<tls::server::Meta<listen::Addrs>>()
+            .check_new_clone::<tls::server::Meta<Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
+            .push_request_filter(transport::AddrsFilter(GetAdminAddrs::new(listen_addr)))
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
@@ -99,3 +109,43 @@ impl fmt::Display for AdminHttpOnly {
 }
 
 impl std::error::Error for AdminHttpOnly {}
+
+// === impl AdminAddrs ===
+
+impl svc::Param<Local<ServerAddr>> for Addrs {
+    fn param(&self) -> Local<ServerAddr> {
+        self.server
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for Addrs {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client
+    }
+}
+
+// === impl GetAdminAddrs ===
+
+impl GetAdminAddrs {
+    pub fn new(listen_addr: SocketAddr) -> Self {
+        Self(Local(ServerAddr(listen_addr)))
+    }
+}
+
+impl<T> GetAddrs<T> for GetAdminAddrs
+where
+    T: AsRef<TcpStream>,
+{
+    type Addrs = Addrs;
+    fn addrs(&self, tcp: &T) -> io::Result<Self::Addrs> {
+        let tcp = tcp.as_ref();
+        let server = self.0;
+        let client = Remote(ClientAddr(tcp.peer_addr()?));
+        tracing::trace!(
+            server.addr = %server,
+            client.addr = %client,
+            "Accepted",
+        );
+        Ok(Addrs { server, client })
+    }
+}
