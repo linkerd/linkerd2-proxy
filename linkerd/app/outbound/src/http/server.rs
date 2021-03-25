@@ -1,7 +1,7 @@
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{config, errors, http_tracing, svc, Error};
 
-impl<N> Outbound<N> {
+impl<N, A> Outbound<N, A> {
     pub fn push_http_server<T, NSvc>(
         self,
     ) -> Outbound<
@@ -14,6 +14,7 @@ impl<N> Outbound<N> {
                     Future = impl Send,
                 > + Clone,
             > + Clone,
+        A,
     >
     where
         T: svc::Param<http::normalize_uri::DefaultAuthority>,

@@ -10,19 +10,18 @@ use linkerd_app_core::{
 };
 use tracing::{debug_span, info_span};
 
-impl Outbound<()> {
+impl<A> Outbound<(), A> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
     /// Forwards TCP connections without discovery/routing (or mTLS).
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<A, I, N, NSvc, H, HSvc, P>(
+    pub fn to_ingress<I, N, NSvc, H, HSvc, P>(
         &self,
         profiles: P,
         tcp: N,
         http: H,
-        addrs: A,
     ) -> impl for<'a> svc::NewService<
         &'a I,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
@@ -53,7 +52,12 @@ impl Outbound<()> {
             allow_discovery,
             proxy:
                 ProxyConfig {
-                    server: ServerConfig { h2_settings, .. },
+                    server:
+                        ServerConfig {
+                            h2_settings,
+                            orig_dst_addrs,
+                            ..
+                        },
                     dispatch_timeout,
                     max_in_flight_requests,
                     detect_protocol_timeout,
@@ -141,7 +145,7 @@ impl Outbound<()> {
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .check_new_service::<A::Addrs, I>()
-            .push_request_filter(transport::AddrsFilter(addrs))
+            .push_request_filter(transport::AddrsFilter(orig_dst_addrs))
             .check_new_service::<&I, I>()
             // .push(svc::BoxNewService::layer()) // XXX(eliza): WHY DOES THIS BREAK IT T_T
             .check_new_service::<&I, I>()

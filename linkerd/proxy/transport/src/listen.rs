@@ -35,11 +35,11 @@ pub struct NoOrigDstAddr(());
 // The mock-orig-dst feature disables use of the syscall-based OrigDstAddr implementation and
 // replaces it with one that must be configured.
 
-#[cfg(not(feature = "mock-orig-dst"))]
+#[cfg(target_os = "linux")]
 pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 
-#[cfg(feature = "mock-orig-dst")]
-pub use self::mock::MockOrigDstAddr as DefaultOrigDstAddr;
+#[cfg(not(target_os = "linux"))]
+pub use NoOrigDstAddr as DefaultOrigDstAddr;
 
 impl BindTcp {
     pub fn new(addr: ListenAddr, keepalive: Keepalive) -> Self {
@@ -107,12 +107,6 @@ impl Addrs {
     }
 }
 
-impl GetOrigDstAddr for NoOrigDstAddr {
-    fn orig_dst_addr(&self, _: &TcpStream) -> Option<OrigDstAddr> {
-        None
-    }
-}
-
 impl Param<OrigDstAddr> for Addrs {
     #[inline]
     fn param(&self) -> OrigDstAddr {
@@ -131,6 +125,16 @@ impl Param<Local<ServerAddr>> for Addrs {
     #[inline]
     fn param(&self) -> Local<ServerAddr> {
         self.server()
+    }
+}
+
+impl<T> GetAddrs<T> for NoOrigDstAddr {
+    type Addrs = Addrs;
+
+    fn addrs(&self, _: &T) -> io::Result<Self::Addrs> {
+        const NOT_SUPPORTED: &str = "SO_ORIGINAL_DST is not supported on this operating system";
+        tracing::error!(message = NOT_SUPPORTED);
+        Err(io::Error::new(io::ErrorKind::Other, NOT_SUPPORTED))
     }
 }
 
@@ -272,26 +276,6 @@ mod sys {
 
         fn ntoh32(i: u32) -> u32 {
             <u32>::from_be(i)
-        }
-    }
-}
-
-#[cfg(feature = "mock-orig-dst")]
-mod mock {
-    use super::{GetOrigDstAddr, OrigDstAddr, SocketAddr, TcpStream};
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct MockOrigDstAddr(SocketAddr);
-
-    impl From<SocketAddr> for MockOrigDstAddr {
-        fn from(addr: SocketAddr) -> Self {
-            MockOrigDstAddr(addr)
-        }
-    }
-
-    impl GetOrigDstAddr for MockOrigDstAddr {
-        fn orig_dst_addr(&self, _: &TcpStream) -> Option<OrigDstAddr> {
-            Some(OrigDstAddr(self.0))
         }
     }
 }

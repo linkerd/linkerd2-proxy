@@ -7,7 +7,7 @@ use linkerd_app_core::{
 };
 use tokio::io;
 
-impl<C> Outbound<C> {
+impl<C, A> Outbound<C, A> {
     pub fn push_http_endpoint<T, B>(
         self,
     ) -> Outbound<
@@ -20,6 +20,7 @@ impl<C> Outbound<C> {
                     Future = impl Send,
                 >,
             > + Clone,
+        A,
     >
     where
         T: Clone + Send + Sync + 'static,

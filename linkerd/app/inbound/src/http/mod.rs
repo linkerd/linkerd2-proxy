@@ -21,7 +21,7 @@ use tracing::debug_span;
 #[cfg(test)]
 mod tests;
 
-impl<H> Inbound<H> {
+impl<H, A> Inbound<H, A> {
     pub fn push_http_server<T, I, HSvc>(
         self,
     ) -> Inbound<
@@ -29,6 +29,7 @@ impl<H> Inbound<H> {
                 T,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
             > + Clone,
+        A,
     >
     where
         T: Param<Version> + Param<http::normalize_uri::DefaultAuthority> + Clone + Send + 'static,
@@ -93,7 +94,7 @@ impl<H> Inbound<H> {
     }
 }
 
-impl<C> Inbound<C>
+impl<C, A> Inbound<C, A>
 where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
@@ -113,6 +114,7 @@ where
                     Future = impl Send,
                 > + Clone,
             > + Clone,
+        A,
     >
     where
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,

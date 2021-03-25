@@ -759,8 +759,8 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
     }
 }
 
-fn build_server<I>(
-    cfg: Config,
+fn build_server<I, A>(
+    cfg: Config<A>,
     profiles: resolver::Profiles,
     resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
@@ -777,6 +777,7 @@ fn build_server<I>(
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    A: 'static,
 {
     let (rt, _) = runtime();
     Outbound::new(cfg, rt)

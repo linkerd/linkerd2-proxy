@@ -4,9 +4,10 @@ pub use crate::transport::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, Keepaliv
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
-pub struct ServerConfig {
+pub struct ServerConfig<A = DefaultOrigDstAddr> {
     pub bind: BindTcp,
     pub h2_settings: h2::Settings,
+    pub orig_dst_addrs: A,
 }
 
 #[derive(Clone, Debug)]
@@ -19,8 +20,8 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProxyConfig {
-    pub server: ServerConfig,
+pub struct ProxyConfig<A> {
+    pub server: ServerConfig<A>,
     pub connect: ConnectConfig,
     pub buffer_capacity: usize,
     pub cache_max_idle_age: Duration,
@@ -29,13 +30,14 @@ pub struct ProxyConfig {
     pub detect_protocol_timeout: Duration,
 }
 
-// // === impl ServerConfig ===
+// === impl ServerConfig ===
 
-// impl<A: GetOrigDstAddr> ServerConfig<A> {
-//     pub fn with_orig_dst_addr<B: GetOrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
-//         ServerConfig {
-//             bind: self.bind.with_orig_dst_addr(orig_dst_addrs),
-//             h2_settings: self.h2_settings,
-//         }
-//     }
-// }
+impl<A> ServerConfig<A> {
+    pub fn with_orig_dst_addr<B: GetOrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
+        ServerConfig {
+            bind: self.bind,
+            h2_settings: self.h2_settings,
+            orig_dst_addrs,
+        }
+    }
+}

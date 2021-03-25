@@ -15,7 +15,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
-pub fn default_config() -> Config {
+pub fn default_config() -> Config<support::transport::NoGetAddrs> {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
@@ -26,6 +26,7 @@ pub fn default_config() -> Config {
                     Keepalive(None),
                 ),
                 h2_settings: h2::Settings::default(),
+                orig_dst_addrs: support::transport::NoGetAddrs,
             },
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),

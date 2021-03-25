@@ -375,6 +375,7 @@ pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config
                 keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
+            orig_dst_addrs: Default::default(),
         };
         let cache_max_idle_age =
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
@@ -439,6 +440,7 @@ pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config
                 keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
+            orig_dst_addrs: Default::default(),
         };
         let cache_max_idle_age =
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
@@ -548,6 +550,7 @@ pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config
                 inbound.proxy.server.bind.keepalive(),
             ),
             h2_settings,
+            orig_dst_addrs: Default::default(),
         },
     };
 
@@ -593,6 +596,8 @@ pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config
             config: ServerConfig {
                 bind: BindTcp::new(ListenAddr(addr), inbound.proxy.server.bind.keepalive()),
                 h2_settings,
+                // TODO(eliza): pass the admin addrs behavior in *here*
+                orig_dst_addrs: Default::default(),
             },
         })
         .unwrap_or(super::tap::Config::Disabled);
@@ -626,7 +631,6 @@ pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config
         outbound,
         gateway,
         inbound,
-        orig_dst: Default::default(),
     })
 }
 

@@ -12,7 +12,7 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-impl<E> Outbound<E> {
+impl<E, A> Outbound<E, A> {
     pub fn push_http_logical<B, ESvc, R>(
         self,
         resolve: R,
@@ -26,6 +26,7 @@ impl<E> Outbound<E> {
                     Future = impl Send,
                 >,
             > + Clone,
+        A,
     >
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,

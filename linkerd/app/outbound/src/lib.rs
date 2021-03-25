@@ -24,7 +24,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{self, OrigDstAddr},
+    transport::{self, listen::DefaultOrigDstAddr, OrigDstAddr},
     AddrMatch, Error, ProxyRuntime,
 };
 use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
@@ -34,8 +34,8 @@ const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
-pub struct Config {
-    pub proxy: ProxyConfig,
+pub struct Config<A = DefaultOrigDstAddr> {
+    pub proxy: ProxyConfig<A>,
     pub allow_discovery: AddrMatch,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
@@ -45,14 +45,14 @@ pub struct Config {
 }
 
 #[derive(Clone, Debug)]
-pub struct Outbound<S> {
-    config: Config,
+pub struct Outbound<S, A> {
+    config: Config<A>,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
-impl Outbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+impl<A> Outbound<(), A> {
+    pub fn new(config: Config<A>, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -60,7 +60,7 @@ impl Outbound<()> {
         }
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
+    pub fn with_stack<S>(self, stack: S) -> Outbound<S, A> {
         Outbound {
             config: self.config,
             runtime: self.runtime,
@@ -69,8 +69,8 @@ impl Outbound<()> {
     }
 }
 
-impl<S> Outbound<S> {
-    pub fn config(&self) -> &Config {
+impl<S, A> Outbound<S, A> {
+    pub fn config(&self) -> &Config<A> {
         &self.config
     }
 
@@ -86,7 +86,7 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
+    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service, A> {
         Outbound {
             config: self.config,
             runtime: self.runtime,
@@ -94,17 +94,16 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn into_server<R, P, A, I>(
+    pub fn into_server<R, P, I>(
         self,
         resolve: R,
         profiles: P,
-        addrs: A,
     ) -> impl for<'a> svc::NewService<
         &'a I,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: transport::GetAddrs<I>,
+        A: transport::GetAddrs<I> + 'static,
         A::Addrs: Param<OrigDstAddr>,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
@@ -120,6 +119,7 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
+        let addrs = self.config.proxy.server.orig_dst_addrs.clone();
         let http = self
             .clone()
             .push_tcp_endpoint()
@@ -138,13 +138,8 @@ impl<S> Outbound<S> {
     }
 }
 
-impl Outbound<()> {
-    pub fn serve<A, P, R>(
-        self,
-        profiles: P,
-        resolve: R,
-        addrs: A,
-    ) -> (SocketAddr, impl Future<Output = ()>)
+impl<A> Outbound<(), A> {
+    pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
     where
         // TODO(eliza): make `serve` generic over incoming conns (pass in a stream
         // of IOs?) rather than making this hardcoded to `TcpStream` here?
@@ -180,11 +175,11 @@ impl Outbound<()> {
                     .push_http_endpoint()
                     .push_http_logical(resolve)
                     .into_inner();
-                let stack = self.to_ingress(profiles, tcp, http, addrs);
+                let stack = self.to_ingress(profiles, tcp, http);
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             } else {
-                let stack = self.to_tcp_connect().into_server(resolve, profiles, addrs);
+                let stack = self.to_tcp_connect().into_server(resolve, profiles);
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             }

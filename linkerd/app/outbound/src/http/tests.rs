@@ -27,8 +27,8 @@ use tokio::time;
 use tower::{Service, ServiceExt};
 use tracing::Instrument;
 
-fn build_server<I>(
-    cfg: Config,
+fn build_server<I, A>(
+    cfg: Config<A>,
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     resolver: resolver::Dst<resolver::Metadata>,
@@ -46,14 +46,15 @@ fn build_server<I>(
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    A: Clone + 'static,
 {
     build_accept(cfg, rt, resolver, connect)
         .push_discover(profiles)
         .into_inner()
 }
 
-fn build_accept<I>(
-    cfg: Config,
+fn build_accept<I, A>(
+    cfg: Config<A>,
     rt: ProxyRuntime,
     resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
@@ -66,9 +67,11 @@ fn build_accept<I>(
         > + Clone
         + Send
         + 'static,
+    A,
 >
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    A: Clone + 'static,
 {
     let out = Outbound::new(cfg, rt);
     out.clone().with_stack(NoTcpBalancer).push_detect_http(

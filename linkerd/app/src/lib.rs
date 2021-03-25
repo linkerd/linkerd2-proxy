@@ -44,8 +44,8 @@ use tracing::{debug, info, info_span};
 ///
 #[derive(Clone, Debug)]
 pub struct Config<A> {
-    pub outbound: outbound::Config,
-    pub inbound: inbound::Config,
+    pub outbound: outbound::Config<A>,
+    pub inbound: inbound::Config<A>,
     pub gateway: gateway::Config,
 
     pub dns: dns::Config,
@@ -54,7 +54,6 @@ pub struct Config<A> {
     pub admin: admin::Config,
     pub tap: tap::Config,
     pub oc_collector: oc_collector::Config,
-    pub orig_dst: A,
 }
 
 pub struct App {
@@ -106,7 +105,6 @@ impl<A> Config<A> {
             outbound,
             gateway,
             tap,
-            orig_dst,
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
@@ -176,9 +174,8 @@ impl<A> Config<A> {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) =
-            inbound.serve(dst.profiles.clone(), gateway_stack, orig_dst.clone());
-        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve, orig_dst);
+        let (inbound_addr, inbound_serve) = inbound.serve(dst.profiles.clone(), gateway_stack);
+        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve);
 
         let start_proxy = Box::pin(async move {
             tokio::spawn(outbound_serve.instrument(info_span!("outbound")));

@@ -8,7 +8,7 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{BindTcp, Keepalive, ListenAddr},
+    transport::{listen::DefaultOrigDstAddr, BindTcp, Keepalive, ListenAddr},
     NameMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
@@ -29,6 +29,7 @@ pub fn default_config() -> Config {
                     Keepalive(None),
                 ),
                 h2_settings: h2::Settings::default(),
+                orig_dst_addrs: DefaultOrigDstAddr::default(),
             },
             connect: config::ConnectConfig {
                 keepalive: Keepalive(None),

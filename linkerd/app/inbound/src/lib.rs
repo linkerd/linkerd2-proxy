@@ -27,16 +27,18 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        self, listen::DefaultOrigDstAddr, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, NameMatch, ProxyRuntime,
 };
 use std::{convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
-pub struct Config {
+pub struct Config<A = DefaultOrigDstAddr> {
     pub allow_discovery: NameMatch,
-    pub proxy: ProxyConfig,
+    pub proxy: ProxyConfig<A>,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
     pub disable_protocol_detection_for_ports: SkipByPort,
     pub profile_idle_timeout: Duration,
@@ -46,16 +48,16 @@ pub struct Config {
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 #[derive(Clone, Debug)]
-pub struct Inbound<S> {
-    config: Config,
+pub struct Inbound<S, A> {
+    config: Config<A>,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
-// === impl Config ===
+// === impl Inbound ===
 
-impl<S> Inbound<S> {
-    pub fn config(&self) -> &Config {
+impl<S, A> Inbound<S, A> {
+    pub fn config(&self) -> &Config<A> {
         &self.config
     }
 
@@ -72,8 +74,8 @@ impl<S> Inbound<S> {
     }
 }
 
-impl Inbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+impl<A> Inbound<(), A> {
+    pub fn new(config: Config<A>, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -81,7 +83,7 @@ impl Inbound<()> {
         }
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
+    pub fn with_stack<S>(self, stack: S) -> Inbound<S, A> {
         Inbound {
             config: self.config,
             runtime: self.runtime,
@@ -98,7 +100,11 @@ impl Inbound<()> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-    > {
+        A,
+    >
+    where
+        A: Clone,
+    {
         let Self {
             config, runtime, ..
         } = self.clone();
@@ -122,11 +128,10 @@ impl Inbound<()> {
         }
     }
 
-    pub fn serve<A, G, GSvc, P>(
+    pub fn serve<G, GSvc, P>(
         self,
         profiles: P,
         gateway: G,
-        addrs: A,
     ) -> (SocketAddr, impl Future<Output = ()> + Send)
     where
         A: transport::GetAddrs<io::ScopedIo<tokio::net::TcpStream>> + Send + 'static,
@@ -155,9 +160,9 @@ impl Inbound<()> {
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack =
-                self.to_tcp_connect()
-                    .into_server(listen_addr.port(), profiles, gateway, addrs);
+            let stack = self
+                .to_tcp_connect()
+                .into_server(listen_addr.port(), profiles, gateway);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -166,7 +171,7 @@ impl Inbound<()> {
     }
 }
 
-impl<C> Inbound<C>
+impl<C, A> Inbound<C, A>
 where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
@@ -181,6 +186,7 @@ where
                 TcpEndpoint,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
             > + Clone,
+        A,
     >
     where
         I: io::AsyncRead + io::AsyncWrite,
@@ -215,18 +221,17 @@ where
         }
     }
 
-    pub fn into_server<A, I, G, GSvc, P>(
+    pub fn into_server<I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
-        addrs: A,
     ) -> impl for<'a> svc::NewService<
         &'a I,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        A: transport::GetAddrs<I>,
+        A: transport::GetAddrs<I> + 'static,
         A::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -242,6 +247,7 @@ where
         let disable_detect = self.config.disable_protocol_detection_for_ports.clone();
         let require_id = self.config.require_identity_for_inbound_ports.clone();
         let config = self.config.proxy.clone();
+        let addrs = self.config.proxy.server.orig_dst_addrs.clone();
         self.clone()
             .push_http_router(profiles)
             .push_http_server()

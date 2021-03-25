@@ -15,7 +15,7 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::OrigDstAddr,
+    transport::{listen, OrigDstAddr},
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch, Never,
 };
@@ -64,10 +64,10 @@ struct RefusedNoTarget(());
 struct RefusedNotResolved(NameAddr);
 
 #[allow(clippy::clippy::too_many_arguments)]
-pub fn stack<I, O, P, R>(
+pub fn stack<I, O, P, R, A>(
     Config { allow_discovery }: Config,
-    inbound: Inbound<()>,
-    outbound: Outbound<O>,
+    inbound: Inbound<(), A>,
+    outbound: Outbound<O, A>,
     profiles: P,
     resolve: R,
 ) -> impl svc::NewService<
@@ -78,6 +78,7 @@ pub fn stack<I, O, P, R>(
 > + Clone
        + Send
 where
+    A: listen::GetAddrs<I> + Clone + Send + Sync + 'static,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
     O: svc::Service<outbound::tcp::Connect, Error = io::Error>,

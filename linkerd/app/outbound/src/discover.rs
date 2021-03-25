@@ -8,7 +8,7 @@ use linkerd_app_core::{
 use std::convert::TryFrom;
 use tracing::info_span;
 
-impl<N> Outbound<N> {
+impl<N, A> Outbound<N, A> {
     /// Discovers the profile for a TCP endpoint.
     ///
     /// Resolved services are cached and buffered.
@@ -20,6 +20,7 @@ impl<N> Outbound<N> {
             T,
             Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
+        A,
     >
     where
         T: Param<OrigDstAddr>,
