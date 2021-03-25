@@ -1,6 +1,6 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 pub use crate::proxy::http::{h1, h2};
-pub use crate::transport::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, Keepalive, NoOrigDstAddr};
+pub use crate::transport::{BindTcp, DefaultOrigDstAddr, Keepalive, NoOrigDstAddr};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -33,11 +33,26 @@ pub struct ProxyConfig<A> {
 // === impl ServerConfig ===
 
 impl<A> ServerConfig<A> {
-    pub fn with_orig_dst_addr<B: GetOrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
+    pub fn with_orig_dst_addr<B>(self, orig_dst_addrs: B) -> ServerConfig<B> {
         ServerConfig {
             bind: self.bind,
             h2_settings: self.h2_settings,
             orig_dst_addrs,
+        }
+    }
+}
+
+// === impl ProxyConfig
+impl<A> ProxyConfig<A> {
+    pub fn with_orig_dst_addr<B>(self, orig_dst_addrs: B) -> ProxyConfig<B> {
+        ProxyConfig {
+            server: self.server.with_orig_dst_addr(orig_dst_addrs),
+            connect: self.connect,
+            buffer_capacity: self.buffer_capacity,
+            cache_max_idle_age: self.cache_max_idle_age,
+            dispatch_timeout: self.dispatch_timeout,
+            max_in_flight_requests: self.max_in_flight_requests,
+            detect_protocol_timeout: self.detect_protocol_timeout,
         }
     }
 }

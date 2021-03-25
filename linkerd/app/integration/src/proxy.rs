@@ -1,4 +1,5 @@
 use super::*;
+use linkerd_app::Config;
 use std::{future::Future, pin::Pin, task::Poll, thread};
 use tracing::instrument::Instrument;
 
@@ -200,16 +201,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     }
 
-    // If a given server is missing, use the admin server as a substitute.
-    env.put(
-        app::env::ENV_INBOUND_ORIG_DST_ADDR,
-        inbound.unwrap_or(controller.addr).to_string(),
-    );
-    env.put(
-        app::env::ENV_OUTBOUND_ORIG_DST_ADDR,
-        outbound.unwrap_or(controller.addr).to_string(),
-    );
-
     if random_ports {
         env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
         env.put(app::env::ENV_CONTROL_LISTEN_ADDR, "127.0.0.1:0".to_owned());
@@ -263,7 +254,20 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         );
     }
 
+    let out_orig_dst = transport::listen::MockOrigDstAddr(outbound.unwrap_or(controller.addr));
+    let in_orig_dst = transport::listen::MockOrigDstAddr(inbound.unwrap_or(controller.addr));
     let config = app::env::parse_config(&env).unwrap();
+    let config = Config {
+        outbound: config.outbound.with_orig_dst(out_orig_dst),
+        inbound: config.inbound.with_orig_dst(in_orig_dst),
+        gateway: config.gateway,
+        dns: config.dns,
+        identity: config.identity,
+        dst: config.dst,
+        admin: config.admin,
+        tap: config.tap,
+        oc_collector: config.oc_collector,
+    };
     let dispatch = tracing::Dispatch::default();
     let (trace, trace_handle) = if dispatch
         .downcast_ref::<tracing_subscriber::fmt::TestWriter>()

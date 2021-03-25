@@ -54,6 +54,20 @@ pub struct Inbound<S, A> {
     stack: svc::Stack<S>,
 }
 
+// === impl Config ===
+
+impl<A> Config<A> {
+    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<A2> {
+        Config {
+            allow_discovery: self.allow_discovery,
+            proxy: self.proxy.with_orig_dst_addr(orig_dst),
+            require_identity_for_inbound_ports: self.require_identity_for_inbound_ports,
+            disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
+            profile_idle_timeout: self.profile_idle_timeout,
+        }
+    }
+}
+
 // === impl Inbound ===
 
 impl<S, A> Inbound<S, A> {

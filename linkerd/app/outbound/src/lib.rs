@@ -51,6 +51,16 @@ pub struct Outbound<S, A> {
     stack: svc::Stack<S>,
 }
 
+impl<A> Config<A> {
+    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<A2> {
+        Config {
+            allow_discovery: self.allow_discovery,
+            ingress_mode: self.ingress_mode,
+            proxy: self.proxy.with_orig_dst_addr(orig_dst),
+        }
+    }
+}
+
 impl<A> Outbound<(), A> {
     pub fn new(config: Config<A>, runtime: ProxyRuntime) -> Self {
         Self {
