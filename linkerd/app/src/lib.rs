@@ -43,7 +43,7 @@ use tracing::{debug, info, info_span};
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<A> {
+pub struct Config<A = transport::listen::DefaultOrigDstAddr> {
     pub outbound: outbound::Config<A>,
     pub inbound: inbound::Config<A>,
     pub gateway: gateway::Config,
@@ -68,14 +68,13 @@ pub struct App {
     tap: tap::Tap,
 }
 
-impl<A> Config<A> {
-    pub fn try_from_env() -> Result<Self, env::EnvError>
-    where
-        A: Default,
-    {
+impl Config {
+    pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
     }
+}
 
+impl<A> Config<A> {
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some

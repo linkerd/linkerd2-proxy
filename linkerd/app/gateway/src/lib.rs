@@ -15,7 +15,7 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::{listen, OrigDstAddr},
+    transport::OrigDstAddr,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch, Never,
 };
@@ -78,7 +78,7 @@ pub fn stack<I, O, P, R, A>(
 > + Clone
        + Send
 where
-    A: listen::GetAddrs<I> + Clone + Send + Sync + 'static,
+    A: Clone + Send + Sync + 'static,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
     O: svc::Service<outbound::tcp::Connect, Error = io::Error>,

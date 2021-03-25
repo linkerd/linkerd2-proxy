@@ -120,3 +120,9 @@ impl<I: io::AsyncWrite> io::AsyncWrite for PrefixedIo<I> {
         self.io.is_write_vectored()
     }
 }
+
+impl<I> AsRef<I> for PrefixedIo<I> {
+    fn as_ref(&self) -> &I {
+        &self.io
+    }
+}

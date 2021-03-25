@@ -241,7 +241,7 @@ const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
 
 /// Load a `App` by reading ENV variables.
-pub fn parse_config<S: Strings, A: Default>(strings: &S) -> Result<super::Config<A>, EnvError> {
+pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> {
     // Parse all the environment variables. `parse` will log any errors so
     // defer returning any errors until all of them have been parsed.
     let outbound_listener_addr = parse(strings, ENV_OUTBOUND_LISTEN_ADDR, parse_socket_addr);
@@ -679,7 +679,7 @@ impl Strings for Env {
 }
 
 impl Env {
-    pub fn try_config<A: Default>(&self) -> Result<super::Config<A>, EnvError> {
+    pub fn try_config(&self) -> Result<super::Config, EnvError> {
         parse_config(self)
     }
 }
