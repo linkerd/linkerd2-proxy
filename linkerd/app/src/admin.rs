@@ -1,7 +1,7 @@
 use crate::core::{
     admin, classify,
     config::ServerConfig,
-    detect, drain, errors,
+    detect, drain, errors, io,
     metrics::{self, FmtMetrics},
     serve, tls, trace,
     transport::{self, listen::GetAddrs, ClientAddr, Local, Remote, ServerAddr},
@@ -11,14 +11,14 @@ use crate::{
     http,
     identity::LocalCrtKey,
     inbound::target::{HttpAccept, Target, TcpAccept},
-    svc,
+    svc::{self, Param},
 };
-use std::{fmt, io, net::SocketAddr, pin::Pin, time::Duration};
+use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
 
 #[derive(Clone, Debug)]
-pub struct Config {
-    pub server: ServerConfig,
+pub struct Config<A> {
+    pub server: ServerConfig<A>,
     pub metrics_retain_idle: Duration,
 }
 
@@ -42,7 +42,7 @@ pub struct AdminHttpOnly(());
 
 // === impl Config ===
 
-impl Config {
+impl<A> Config<A> {
     pub fn build<R>(
         self,
         identity: Option<LocalCrtKey>,
@@ -54,9 +54,13 @@ impl Config {
     ) -> Result<Admin, Error>
     where
         R: FmtMetrics + Clone + Send + 'static + Unpin,
+        A: GetAddrs<io::ScopedIo<TcpStream>> + Clone + Send + Sync + 'static,
+        A::Addrs:
+            Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone + Send + Sync + 'static,
     {
         const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 
+        let get_addrs = self.server.orig_dst_addrs;
         let (listen_addr, listen) = self.server.bind.bind()?;
 
         let (ready, latch) = admin::Readiness::new();
@@ -86,9 +90,13 @@ impl Config {
             ))
             .push(metrics.transport.layer_accept())
             .push_map_target(TcpAccept::from_local_addr)
-            .check_new_clone::<tls::server::Meta<Addrs>>()
+            .check_new_clone::<tls::server::Meta<A::Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
-            .push_request_filter(transport::AddrsFilter(GetAdminAddrs::new(listen_addr)))
+            .instrument(|a: &A::Addrs| {
+                let Remote(ClientAddr(addr)) = a.param();
+                tracing::debug_span!("accept", server = %"admin", client.addr = %addr)
+            })
+            .push_request_filter(transport::AddrsFilter(get_addrs))
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));

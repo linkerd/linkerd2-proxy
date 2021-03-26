@@ -10,6 +10,7 @@ pub mod oc_collector;
 pub mod tap;
 
 pub use self::metrics::Metrics;
+use admin::GetAdminAddrs;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
@@ -18,7 +19,9 @@ use linkerd_app_core::{
     proxy::http,
     svc,
     svc::Param,
-    transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        self, listen::DefaultOrigDstAddr, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
@@ -43,16 +46,16 @@ use tracing::{debug, info, info_span};
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<A = transport::listen::DefaultOrigDstAddr> {
-    pub outbound: outbound::Config<A>,
-    pub inbound: inbound::Config<A>,
+pub struct Config<AProxy = DefaultOrigDstAddr, AAdmin = GetAdminAddrs> {
+    pub outbound: outbound::Config<AProxy>,
+    pub inbound: inbound::Config<AProxy>,
     pub gateway: gateway::Config,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
     pub dst: dst::Config,
-    pub admin: admin::Config,
-    pub tap: tap::Config,
+    pub admin: admin::Config<AAdmin>,
+    pub tap: tap::Config<AAdmin>,
     pub oc_collector: oc_collector::Config,
 }
 
