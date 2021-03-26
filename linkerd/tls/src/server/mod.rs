@@ -68,7 +68,8 @@ pub type ConditionalServerTls = Conditional<ServerTls, NoServerTls>;
 
 pub type Meta<T> = (ConditionalServerTls, T);
 
-pub type Io<T> = EitherIo<PrefixedIo<T>, TlsStream<PrefixedIo<T>>>;
+type DetectIo<T> = EitherIo<T, PrefixedIo<T>>;
+pub type Io<T> = EitherIo<TlsStream<DetectIo<T>>, DetectIo<T>>;
 
 pub type Connection<T, I> = (Meta<T>, Io<I>);
 
@@ -159,17 +160,38 @@ where
 
         match self.local_identity.as_ref() {
             Some(local) => {
-                let config = Param::<Config>::param(local);
-                let local_id = Param::<LocalId>::param(local);
-                let timeout = tokio::time::sleep(self.timeout);
+                let config: Config = local.param();
+                let LocalId(local_id) = local.param();
 
+                let timeout = tokio::time::sleep(self.timeout);
                 Box::pin(async move {
-                    let (peer, io) = tokio::select! {
-                        res = detect(io, config, local_id) => { res? }
+                    // Detect the SNI from a ClientHello (or timeout).
+                    let (sni, io) = tokio::select! {
+                        res = detect_sni(io) => { res? }
                         () = timeout => {
                             return Err(DetectTimeout(()).into());
                         }
                     };
+
+                    let (peer, io) = match sni {
+                        // If we detected an SNI matching this proxy, terminate TLS.
+                        Some(ServerId(id)) if id == local_id => {
+                            let (peer, io) = handshake(config, io).await?;
+                            (Conditional::Some(peer), EitherIo::Left(io))
+                        }
+                        // If we detected another SNI, continue proxying the
+                        // opaque stream.
+                        Some(sni) => (
+                            Conditional::Some(ServerTls::Passthru { sni }),
+                            EitherIo::Right(io),
+                        ),
+                        // If no TLS was detected, continue proxying the stream.
+                        None => (
+                            Conditional::None(NoServerTls::NoClientHello),
+                            EitherIo::Right(io),
+                        ),
+                    };
+
                     new_accept
                         .new_service((peer, target))
                         .oneshot(io)
@@ -181,22 +203,20 @@ where
             None => {
                 let peer = Conditional::None(NoServerTls::Disabled);
                 let svc = new_accept.new_service((peer, target));
-                Box::pin(svc.oneshot(EitherIo::Left(io.into())).err_into::<Error>())
+                Box::pin(
+                    svc.oneshot(EitherIo::Right(EitherIo::Left(io)))
+                        .err_into::<Error>(),
+                )
             }
         }
     }
 }
 
-async fn detect<I>(
-    mut io: I,
-    tls_config: Config,
-    LocalId(local_id): LocalId,
-) -> io::Result<(ConditionalServerTls, Io<I>)>
+// Peek or buffer the provided stream to determine an SNI value.
+async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerId>, DetectIo<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
 {
-    const NO_TLS_META: ConditionalServerTls = Conditional::None(NoServerTls::NoClientHello);
-
     // First, try to use MSG_PEEK to read the SNI from the TLS ClientHello.
     // Because peeked data does not need to be retained, we use a static
     // buffer to prevent needless heap allocation.
@@ -206,26 +226,15 @@ where
     let mut buf = [0u8; PEEK_CAPACITY];
     let sz = io.peek(&mut buf).await?;
     debug!(sz, "Peeked bytes from TCP stream");
-    match client_hello::parse_sni(&buf) {
-        Ok(Some(ServerId(sni))) if sni == local_id => {
-            trace!(%sni, "Identified matching SNI via peek");
-            // Terminate the TLS stream.
-            let (tls, io) = handshake(tls_config, PrefixedIo::from(io)).await?;
-            return Ok((Conditional::Some(tls), EitherIo::Right(io)));
-        }
+    // Peek may return 0 bytes if the socket is not peekable.
+    if sz > 0 {
+        match client_hello::parse_sni(&buf) {
+            Ok(sni) => {
+                return Ok((sni, EitherIo::Left(io)));
+            }
 
-        Ok(Some(sni)) => {
-            trace!(%sni, "Identified non-matching SNI via peek");
-            let tls = Conditional::Some(ServerTls::Passthru { sni });
-            return Ok((tls, EitherIo::Left(io.into())));
+            Err(client_hello::Incomplete) => {}
         }
-
-        Ok(None) => {
-            trace!("Not a matching TLS ClientHello");
-            return Ok((NO_TLS_META, EitherIo::Left(io.into())));
-        }
-
-        Err(client_hello::Incomplete) => {}
     }
 
     // Peeking didn't return enough data, so instead we'll allocate more
@@ -236,25 +245,8 @@ where
     while io.read_buf(&mut buf).await? != 0 {
         debug!(buf.len = %buf.len(), "Read bytes from TCP stream");
         match client_hello::parse_sni(buf.as_ref()) {
-            Ok(Some(ServerId(sni))) if sni == local_id => {
-                trace!(%sni, "Identified matching SNI via buffered read");
-                // Terminate the TLS stream.
-                let (tls, io) =
-                    handshake(tls_config.clone(), PrefixedIo::new(buf.freeze(), io)).await?;
-                return Ok((Conditional::Some(tls), EitherIo::Right(io)));
-            }
-
-            Ok(Some(sni)) => {
-                trace!(%sni, "Identified non-matching SNI via peek");
-                let tls = Conditional::Some(ServerTls::Passthru { sni });
-                let io = PrefixedIo::new(buf.freeze(), io);
-                return Ok((tls, EitherIo::Left(io)));
-            }
-
-            Ok(None) => {
-                trace!("Not a matching TLS ClientHello");
-                let io = PrefixedIo::new(buf.freeze(), io);
-                return Ok((NO_TLS_META, EitherIo::Left(io)));
+            Ok(sni) => {
+                return Ok((sni, EitherIo::Right(PrefixedIo::new(buf.freeze(), io))));
             }
 
             Err(client_hello::Incomplete) => {
@@ -271,8 +263,8 @@ where
     }
 
     trace!("Could not read TLS ClientHello via buffering");
-    let io = EitherIo::Left(PrefixedIo::new(buf.freeze(), io));
-    Ok((NO_TLS_META, io))
+    let io = EitherIo::Right(PrefixedIo::new(buf.freeze(), io));
+    Ok((None, io))
 }
 
 async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(ServerTls, TlsStream<T>)>
@@ -370,6 +362,41 @@ impl fmt::Display for NoServerTls {
             Self::Loopback => write!(f, "loopback"),
             Self::PortSkipped => write!(f, "port_skipped"),
             Self::NoClientHello => write!(f, "no_tls_from_remote"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use io::AsyncWriteExt;
+
+    use super::*;
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn detect_buffered() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let (mut client_io, server_io) = tokio::io::duplex(1024);
+        let input = include_bytes!("testdata/curl-example-com-client-hello.bin");
+        let len = input.len();
+        tokio::spawn(async move {
+            client_io
+                .write_all(&*input)
+                .await
+                .expect("Write must suceed");
+        });
+
+        let (sni, io) = detect_sni(server_io)
+            .await
+            .expect("SNI detection must not fail");
+
+        let identity = id::Name::from_str("example.com").unwrap();
+        assert_eq!(sni, Some(ServerId(identity)));
+
+        match io {
+            EitherIo::Left(_) => panic!("Detected IO should be buffered"),
+            EitherIo::Right(io) => assert_eq!(io.prefix().len(), len, "All data must be buffered"),
         }
     }
 }

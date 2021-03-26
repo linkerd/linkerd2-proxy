@@ -40,6 +40,13 @@ impl Peek for tokio::net::TcpStream {
     }
 }
 
+#[async_trait::async_trait]
+impl Peek for tokio::io::DuplexStream {
+    async fn peek(&self, _: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+}
+
 // === PeerAddr ===
 
 pub trait PeerAddr {
@@ -71,7 +78,6 @@ impl PeerAddr for tokio_test::io::Mock {
     }
 }
 
-#[cfg(feature = "tokio-test")]
 impl PeerAddr for tokio::io::DuplexStream {
     fn peer_addr(&self) -> Result<SocketAddr> {
         Ok(([0, 0, 0, 0], 0).into())
