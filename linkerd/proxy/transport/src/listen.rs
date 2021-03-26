@@ -5,11 +5,6 @@ use std::{io, net::SocketAddr};
 use tokio::net::TcpStream;
 use tokio_stream::wrappers::TcpListenerStream;
 
-/// A mockable source for address info, i.e., for tests.
-pub trait GetOrigDstAddr: Clone {
-    fn orig_dst_addr(&self, socket: &TcpStream) -> Option<OrigDstAddr>;
-}
-
 #[derive(Clone, Debug)]
 pub struct BindTcp {
     addr: ListenAddr,
