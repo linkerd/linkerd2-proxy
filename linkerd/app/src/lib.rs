@@ -90,7 +90,9 @@ impl<A> Config<A> {
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Clone
-            + Send,
+            + Send
+            + Sync
+            + 'static,
     {
         use metrics::FmtMetrics;
 

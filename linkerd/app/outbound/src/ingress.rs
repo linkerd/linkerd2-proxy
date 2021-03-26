@@ -5,7 +5,7 @@ use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
     tls,
-    transport::{self, OrigDstAddr},
+    transport::{self, ClientAddr, OrigDstAddr, Remote},
     Addr, AddrMatch, Error,
 };
 use tracing::{debug_span, info_span};
@@ -28,7 +28,7 @@ impl<A> Outbound<(), A> {
     >
     where
         A: transport::GetAddrs<I> + Send + Sync + 'static,
-        A::Addrs: Param<OrigDstAddr>,
+        A::Addrs: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
@@ -141,12 +141,19 @@ impl<A> Outbound<(), A> {
             ))
             .push(self.runtime.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-            .push_map_target(|a: A::Addrs| tcp::Accept::from(a.param()))
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
+            .push_map_target(|a: A::Addrs| {
+                let orig_dst = Param::<OrigDstAddr>::param(&a);
+                tcp::Accept::from(orig_dst)
+            })
+            .instrument(|addrs: &A::Addrs| {
+                let Remote(ClientAddr(addr)) = addrs.param();
+                debug_span!("accept", client.addr = %addr)
+            })
             .check_new_service::<A::Addrs, I>()
             .push_request_filter(transport::AddrsFilter(orig_dst_addrs))
             .check_new_service::<&I, I>()
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
             // .push(svc::BoxNewService::layer()) // XXX(eliza): WHY DOES THIS BREAK IT T_T
             .check_new_service::<&I, I>()
             .into_inner()

@@ -24,7 +24,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{self, listen::DefaultOrigDstAddr, OrigDstAddr},
+    transport::{self, listen::DefaultOrigDstAddr, ClientAddr, OrigDstAddr, Remote},
     AddrMatch, Error, ProxyRuntime,
 };
 use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
@@ -114,7 +114,7 @@ impl<S, A> Outbound<S, A> {
     >
     where
         A: transport::GetAddrs<I> + 'static,
-        A::Addrs: Param<OrigDstAddr>,
+        A::Addrs: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,
@@ -143,6 +143,10 @@ impl<S, A> Outbound<S, A> {
             .push_detect_http(http)
             .push_discover(profiles)
             .into_stack()
+            .instrument(|addrs: &A::Addrs| {
+                let Remote(ClientAddr(addr)) = addrs.param();
+                tracing::debug_span!("accept", client.addr = %addr)
+            })
             .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()
     }
@@ -154,7 +158,7 @@ impl<A> Outbound<(), A> {
         // TODO(eliza): make `serve` generic over incoming conns (pass in a stream
         // of IOs?) rather than making this hardcoded to `TcpStream` here?
         A: transport::GetAddrs<io::ScopedIo<tokio::net::TcpStream>> + Send + Sync + 'static,
-        A::Addrs: Param<OrigDstAddr>,
+        A::Addrs: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,

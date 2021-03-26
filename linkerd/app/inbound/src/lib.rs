@@ -314,6 +314,10 @@ where
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
+            .instrument(|a: &A::Addrs| {
+                let Remote(ClientAddr(addr)) = a.param();
+                debug_span!("accept", client.addr = %addr)
+            })
             .check_new_service::<A::Addrs, I>()
             .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()

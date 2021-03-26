@@ -3,13 +3,7 @@ use crate::svc;
 use futures::prelude::*;
 use linkerd_error::Error;
 use tower::util::ServiceExt;
-// use tracing::instrument::Instrument;
-use tracing::{
-    debug,
-    //  debug_span,
-    info,
-    warn,
-};
+use tracing::{debug, info, warn};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
@@ -40,37 +34,30 @@ pub async fn serve<M, A, I>(
                             continue;
                         }
                     };
-
-                    // // The local addr should be instrumented from the listener's context.
-                    // let span = debug_span!("accept", client.addr = %addrs.client());
-
-                    // let accept = span.in_scope(|| new_accept.new_service(addrs));
                     let io = io::ScopedIo::server(io);
                     let accept = new_accept.new_service(&io);
 
                     // Dispatch all of the work for a given connection onto a connection-specific task.
-                    tokio::spawn(
-                        async move {
-                            match accept.ready_oneshot().err_into::<Error>().await {
-                                Ok(mut accept) => {
-                                    match accept.call(io).err_into::<Error>().await {
-                                        Ok(()) => debug!("Connection closed"),
-                                        Err(reason) if is_io(&*reason) => {
-                                            debug!(%reason, "Connection closed")
-                                        }
-                                        Err(error) => info!(%error, "Connection closed"),
+                    tokio::spawn(async move {
+                        match accept.ready_oneshot().err_into::<Error>().await {
+                            Ok(mut accept) => {
+                                match accept.call(io).err_into::<Error>().await {
+                                    Ok(()) => debug!("Connection closed"),
+                                    Err(reason) if is_io(&*reason) => {
+                                        debug!(%reason, "Connection closed")
                                     }
-                                    // Hold the service until the connection is
-                                    // complete. This helps tie any inner cache
-                                    // lifetimes to the services they return.
-                                    drop(accept);
+                                    Err(error) => info!(%error, "Connection closed"),
                                 }
-                                Err(error) => {
-                                    warn!(%error, "Server failed to become ready");
-                                }
+                                // Hold the service until the connection is
+                                // complete. This helps tie any inner cache
+                                // lifetimes to the services they return.
+                                drop(accept);
                             }
-                        }, // .instrument(span),
-                    );
+                            Err(error) => {
+                                warn!(%error, "Server failed to become ready");
+                            }
+                        }
+                    });
                 }
             }
         }
