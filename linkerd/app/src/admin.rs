@@ -34,8 +34,8 @@ pub struct Addrs {
     client: Remote<ClientAddr>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct GetAdminAddrs(Local<ServerAddr>);
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GetAdminAddrs(());
 
 #[derive(Debug, Default)]
 pub struct AdminHttpOnly(());
@@ -135,8 +135,8 @@ impl svc::Param<Remote<ClientAddr>> for Addrs {
 // === impl GetAdminAddrs ===
 
 impl GetAdminAddrs {
-    pub fn new(listen_addr: SocketAddr) -> Self {
-        Self(Local(ServerAddr(listen_addr)))
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
@@ -147,7 +147,7 @@ where
     type Addrs = Addrs;
     fn addrs(&self, tcp: &T) -> io::Result<Self::Addrs> {
         let tcp = tcp.as_ref();
-        let server = self.0;
+        let server = Local(ServerAddr(tcp.local_addr()?));
         let client = Remote(ClientAddr(tcp.peer_addr()?));
         tracing::trace!(
             server.addr = %server,

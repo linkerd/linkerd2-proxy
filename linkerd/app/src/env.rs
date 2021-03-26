@@ -539,17 +539,18 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         }
     };
 
-    let admin_addr = admin_listener_addr?
-        .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap());
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
             bind: BindTcp::new(
-                ListenAddr(admin_addr),
+                ListenAddr(
+                    admin_listener_addr?
+                        .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
+                ),
                 inbound.proxy.server.bind.keepalive(),
             ),
             h2_settings,
-            orig_dst_addrs: crate::admin::GetAdminAddrs::new(admin_addr),
+            orig_dst_addrs: crate::admin::GetAdminAddrs::new(),
         },
     };
 
@@ -595,7 +596,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             config: ServerConfig {
                 bind: BindTcp::new(ListenAddr(addr), inbound.proxy.server.bind.keepalive()),
                 h2_settings,
-                orig_dst_addrs: crate::admin::GetAdminAddrs::new(addr),
+                orig_dst_addrs: crate::admin::GetAdminAddrs::new(),
             },
         })
         .unwrap_or(super::tap::Config::Disabled);
