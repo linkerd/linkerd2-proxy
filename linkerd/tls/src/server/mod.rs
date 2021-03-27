@@ -247,12 +247,14 @@ where
             Ok(Some(sni)) => {
                 trace!(%sni, "Identified non-matching SNI via peek");
                 let tls = Conditional::Some(ServerTls::Passthru { sni });
-                return Ok((tls, EitherIo::Left(io.into())));
+                let io = PrefixedIo::new(buf.freeze(), io);
+                return Ok((tls, EitherIo::Left(io)));
             }
 
             Ok(None) => {
                 trace!("Not a matching TLS ClientHello");
-                return Ok((NO_TLS_META, EitherIo::Left(io.into())));
+                let io = PrefixedIo::new(buf.freeze(), io);
+                return Ok((NO_TLS_META, EitherIo::Left(io)));
             }
 
             Err(client_hello::Incomplete) => {
