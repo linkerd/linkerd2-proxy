@@ -331,7 +331,7 @@ where
     fn check(&mut self, t: T) -> Result<Self::Request, Error> {
         let OrigDstAddr(addr) = t.param();
         if !self.0.contains(&addr.port()) {
-            Ok(svc::Either::B(t))
+            Ok(svc::Either::A(t))
         } else {
             Ok(svc::Either::B(t))
         }
