@@ -20,7 +20,8 @@ use linkerd_app_core::{
     svc,
     svc::Param,
     transport::{
-        self, listen::DefaultOrigDstAddr, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+        listen::{Bind, BindTcp},
+        ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
     },
     Error, ProxyRuntime,
 };
@@ -28,8 +29,8 @@ use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
-use std::{net::SocketAddr, pin::Pin};
-use tokio::{net::TcpStream, sync::mpsc, time::Duration};
+use std::{fmt, net::SocketAddr, pin::Pin};
+use tokio::{sync::mpsc, time::Duration};
 use tracing::instrument::Instrument;
 use tracing::{debug, info, info_span};
 
@@ -46,16 +47,16 @@ use tracing::{debug, info, info_span};
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<AProxy = DefaultOrigDstAddr, AAdmin = GetAdminAddrs> {
-    pub outbound: outbound::Config<AProxy>,
-    pub inbound: inbound::Config<AProxy>,
+pub struct Config<BindProxy = BindTcp, BindAdmin = BindTcp<GetAdminAddrs>> {
+    pub outbound: outbound::Config<BindProxy>,
+    pub inbound: inbound::Config<BindProxy>,
     pub gateway: gateway::Config,
 
     pub dns: dns::Config,
     pub identity: identity::Config,
     pub dst: dst::Config,
-    pub admin: admin::Config<AAdmin>,
-    pub tap: tap::Config<AAdmin>,
+    pub admin: admin::Config<BindAdmin>,
+    pub tap: tap::Config<BindAdmin>,
     pub oc_collector: oc_collector::Config,
 }
 
@@ -77,7 +78,7 @@ impl Config {
     }
 }
 
-impl<A> Config<A> {
+impl<BindProxy, BindAdmin> Config<BindProxy, BindAdmin> {
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
@@ -88,14 +89,19 @@ impl<A> Config<A> {
         log_level: trace::Handle,
     ) -> Result<App, Error>
     where
-        A: transport::GetAddrs<io::ScopedIo<TcpStream>> + Clone + Send + Sync + 'static,
-        A::Addrs: Param<Remote<ClientAddr>>
+        BindProxy: Bind + Clone + Send + Sync + 'static,
+        BindAdmin: Bind + Clone + Send + Sync + 'static,
+        BindProxy::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Clone
             + Send
             + Sync
             + 'static,
+        BindProxy::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
+        BindAdmin::Addrs:
+            Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone + Send + Sync + 'static,
+        BindAdmin::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
     {
         use metrics::FmtMetrics;
 

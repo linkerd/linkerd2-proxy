@@ -8,18 +8,17 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{self, ClientAddr, GetAddrs, Local, Remote, ServerAddr},
+    transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::{net::SocketAddr, pin::Pin};
-use tokio::net::TcpStream;
+use std::{fmt, net::SocketAddr, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
-pub enum Config<A> {
+pub enum Config<B> {
     Disabled,
     Enabled {
-        config: ServerConfig<A>,
+        config: ServerConfig<B>,
         permitted_client_ids: IndexSet<tls::server::ClientId>,
     },
 }
@@ -35,12 +34,13 @@ pub enum Tap {
     },
 }
 
-impl<A> Config<A> {
+impl<B> Config<B> {
     pub fn build(self, identity: Option<LocalCrtKey>, drain: drain::Watch) -> Result<Tap, Error>
     where
-        A: GetAddrs<io::ScopedIo<TcpStream>> + Clone + Send + Sync + 'static,
-        A::Addrs:
+        B: Bind + Clone + Send + Sync + 'static,
+        B::Addrs:
             Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone + Send + Sync + 'static,
+        B::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
     {
         let (registry, server) = tap::new();
         match self {
@@ -52,7 +52,6 @@ impl<A> Config<A> {
                 config,
                 permitted_client_ids,
             } => {
-                let get_addrs = config.orig_dst_addrs;
                 let (listen_addr, listen) = config.bind.bind()?;
                 let accept = svc::stack(server)
                     .push(svc::layer::mk(move |service| {
@@ -62,7 +61,7 @@ impl<A> Config<A> {
                         )
                     }))
                     .push(svc::layer::mk(|service: tap::AcceptPermittedClients| {
-                        move |meta: tls::server::Meta<A::Addrs>| {
+                        move |meta: tls::server::Meta<B::Addrs>| {
                             let service = service.clone();
                             service_fn(move |io| {
                                 let fut = service.clone().oneshot((meta.clone(), io));
@@ -72,16 +71,12 @@ impl<A> Config<A> {
                             })
                         }
                     }))
-                    .check_new_service::<tls::server::Meta<A::Addrs>, _>()
+                    .check_new_service::<tls::server::Meta<B::Addrs>, _>()
                     .push(tls::NewDetectTls::layer(
                         identity,
                         std::time::Duration::from_secs(1),
                     ))
-                    .instrument(|a: &A::Addrs| {
-                        let Remote(ClientAddr(addr)) = a.param();
-                        tracing::debug_span!("accept", server = %"tap", client.addr = %addr)
-                    })
-                    .push_request_filter(transport::AddrsFilter(get_addrs))
+                    .check_new_service::<B::Addrs, _>()
                     .into_inner();
 
                 let serve = Box::pin(serve::serve(listen, accept, drain.signaled()));

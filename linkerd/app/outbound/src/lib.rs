@@ -24,18 +24,18 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{self, listen::DefaultOrigDstAddr, ClientAddr, OrigDstAddr, Remote},
+    transport::{listen::Bind, BindTcp, ClientAddr, OrigDstAddr, Remote},
     AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, fmt, future::Future, net::SocketAddr, time::Duration};
 use tracing::info;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
-pub struct Config<A = DefaultOrigDstAddr> {
-    pub proxy: ProxyConfig<A>,
+pub struct Config<B> {
+    pub proxy: ProxyConfig<B>,
     pub allow_discovery: AddrMatch,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
@@ -45,24 +45,24 @@ pub struct Config<A = DefaultOrigDstAddr> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Outbound<S, A> {
-    config: Config<A>,
+pub struct Outbound<S, B> {
+    config: Config<B>,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
-impl<A> Config<A> {
-    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<A2> {
+impl<B> Config<BindTcp<B>> {
+    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<BindTcp<A2>> {
         Config {
             allow_discovery: self.allow_discovery,
             ingress_mode: self.ingress_mode,
-            proxy: self.proxy.with_orig_dst_addr(orig_dst),
+            proxy: self.proxy.with_orig_dst_addrs(orig_dst),
         }
     }
 }
 
-impl<A> Outbound<(), A> {
-    pub fn new(config: Config<A>, runtime: ProxyRuntime) -> Self {
+impl<B> Outbound<(), B> {
+    pub fn new(config: Config<B>, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -70,7 +70,7 @@ impl<A> Outbound<(), A> {
         }
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S, A> {
+    pub fn with_stack<S>(self, stack: S) -> Outbound<S, B> {
         Outbound {
             config: self.config,
             runtime: self.runtime,
@@ -79,8 +79,8 @@ impl<A> Outbound<(), A> {
     }
 }
 
-impl<S, A> Outbound<S, A> {
-    pub fn config(&self) -> &Config<A> {
+impl<S, B> Outbound<S, B> {
+    pub fn config(&self) -> &Config<B> {
         &self.config
     }
 
@@ -96,7 +96,7 @@ impl<S, A> Outbound<S, A> {
         self.stack.into_inner()
     }
 
-    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service, A> {
+    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service, B> {
         Outbound {
             config: self.config,
             runtime: self.runtime,
@@ -104,17 +104,17 @@ impl<S, A> Outbound<S, A> {
         }
     }
 
-    pub fn into_server<R, P, I>(
+    pub fn into_server<T, R, P, I>(
         self,
         resolve: R,
         profiles: P,
-    ) -> impl for<'a> svc::NewService<
-        &'a I,
+    ) -> impl svc::NewService<
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: transport::GetAddrs<I> + 'static,
-        A::Addrs: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
+        Self: Clone + 'static,
+        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,
@@ -129,7 +129,6 @@ impl<S, A> Outbound<S, A> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
-        let addrs = self.config.proxy.server.orig_dst_addrs.clone();
         let http = self
             .clone()
             .push_tcp_endpoint()
@@ -142,23 +141,16 @@ impl<S, A> Outbound<S, A> {
             .push_tcp_logical(resolve)
             .push_detect_http(http)
             .push_discover(profiles)
-            .into_stack()
-            .instrument(|addrs: &A::Addrs| {
-                let Remote(ClientAddr(addr)) = addrs.param();
-                tracing::debug_span!("accept", client.addr = %addr)
-            })
-            .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()
     }
 }
 
-impl<A> Outbound<(), A> {
+impl<B> Outbound<(), B> {
     pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
     where
-        // TODO(eliza): make `serve` generic over incoming conns (pass in a stream
-        // of IOs?) rather than making this hardcoded to `TcpStream` here?
-        A: transport::GetAddrs<io::ScopedIo<tokio::net::TcpStream>> + Send + Sync + 'static,
-        A::Addrs: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
+        B: Bind + Clone + Send + Sync + 'static,
+        B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send,
+        B::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,

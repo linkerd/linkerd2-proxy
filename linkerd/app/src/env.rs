@@ -4,7 +4,10 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::{BindTcp, Keepalive, ListenAddr},
+    transport::{
+        listen::{Bind, BindTcp},
+        DefaultOrigDstAddr, Keepalive, ListenAddr,
+    },
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
@@ -368,6 +371,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
             ),
             keepalive,
+            DefaultOrigDstAddr::default(),
         );
         let server = ServerConfig {
             bind,
@@ -375,7 +379,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
-            orig_dst_addrs: Default::default(),
         };
         let cache_max_idle_age =
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
@@ -433,6 +436,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
             ),
             keepalive,
+            DefaultOrigDstAddr::default(),
         );
         let server = ServerConfig {
             bind,
@@ -440,7 +444,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
-            orig_dst_addrs: Default::default(),
         };
         let cache_max_idle_age =
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
@@ -548,9 +551,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
                 ),
                 inbound.proxy.server.bind.keepalive(),
+                crate::admin::GetAdminAddrs::new(),
             ),
             h2_settings,
-            orig_dst_addrs: crate::admin::GetAdminAddrs::new(),
         },
     };
 
@@ -594,9 +597,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|(addr, ids)| super::tap::Config::Enabled {
             permitted_client_ids: ids,
             config: ServerConfig {
-                bind: BindTcp::new(ListenAddr(addr), inbound.proxy.server.bind.keepalive()),
+                bind: BindTcp::new(
+                    ListenAddr(addr),
+                    inbound.proxy.server.bind.keepalive(),
+                    crate::admin::GetAdminAddrs::new(),
+                ),
                 h2_settings,
-                orig_dst_addrs: crate::admin::GetAdminAddrs::new(),
             },
         })
         .unwrap_or(super::tap::Config::Disabled);

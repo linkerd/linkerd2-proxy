@@ -4,7 +4,10 @@ use crate::core::{
     detect, drain, errors, io,
     metrics::{self, FmtMetrics},
     serve, tls, trace,
-    transport::{self, listen::GetAddrs, ClientAddr, Local, Remote, ServerAddr},
+    transport::{
+        listen::{Bind, GetAddrs},
+        ClientAddr, Local, Remote, ServerAddr,
+    },
     Error,
 };
 use crate::{
@@ -17,8 +20,8 @@ use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
 
 #[derive(Clone, Debug)]
-pub struct Config<A> {
-    pub server: ServerConfig<A>,
+pub struct Config<B> {
+    pub server: ServerConfig<B>,
     pub metrics_retain_idle: Duration,
 }
 
@@ -42,7 +45,7 @@ pub struct AdminHttpOnly(());
 
 // === impl Config ===
 
-impl<A> Config<A> {
+impl<B> Config<B> {
     pub fn build<R>(
         self,
         identity: Option<LocalCrtKey>,
@@ -54,13 +57,12 @@ impl<A> Config<A> {
     ) -> Result<Admin, Error>
     where
         R: FmtMetrics + Clone + Send + 'static + Unpin,
-        A: GetAddrs<io::ScopedIo<TcpStream>> + Clone + Send + Sync + 'static,
-        A::Addrs:
-            Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone + Send + Sync + 'static,
+        B: Bind,
+        B::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone,
+        B::Io: io::Peek + io::PeerAddr + Unpin,
     {
         const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 
-        let get_addrs = self.server.orig_dst_addrs;
         let (listen_addr, listen) = self.server.bind.bind()?;
 
         let (ready, latch) = admin::Readiness::new();
@@ -90,13 +92,8 @@ impl<A> Config<A> {
             ))
             .push(metrics.transport.layer_accept())
             .push_map_target(TcpAccept::from_local_addr)
-            .check_new_clone::<tls::server::Meta<A::Addrs>>()
+            .check_new_clone::<tls::server::Meta<B::Addrs>>()
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
-            .instrument(|a: &A::Addrs| {
-                let Remote(ClientAddr(addr)) = a.param();
-                tracing::debug_span!("accept", server = %"admin", client.addr = %addr)
-            })
-            .push_request_filter(transport::AddrsFilter(get_addrs))
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
@@ -140,13 +137,9 @@ impl GetAdminAddrs {
     }
 }
 
-impl<T> GetAddrs<T> for GetAdminAddrs
-where
-    T: AsRef<TcpStream>,
-{
+impl GetAddrs<TcpStream> for GetAdminAddrs {
     type Addrs = Addrs;
-    fn addrs(&self, tcp: &T) -> io::Result<Self::Addrs> {
-        let tcp = tcp.as_ref();
+    fn addrs(&self, tcp: &TcpStream) -> io::Result<Self::Addrs> {
         let server = Local(ServerAddr(tcp.local_addr()?));
         let client = Remote(ClientAddr(tcp.peer_addr()?));
         tracing::trace!(

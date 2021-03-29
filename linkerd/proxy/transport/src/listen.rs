@@ -179,14 +179,10 @@ impl<T> GetAddrs<T> for NoOrigDstAddr {
 }
 
 #[cfg(feature = "mock-orig-dst")]
-impl<T> GetAddrs<T> for MockOrigDstAddr
-where
-    T: AsRef<TcpStream>,
-{
+impl GetAddrs<TcpStream> for MockOrigDstAddr {
     type Addrs = Addrs;
 
-    fn addrs(&self, tcp: &T) -> io::Result<Self::Addrs> {
-        let tcp = tcp.as_ref();
+    fn addrs(&self, tcp: &TcpStream) -> io::Result<Self::Addrs> {
         let server = Local(ServerAddr(tcp.local_addr()?));
         let client = Remote(ClientAddr(tcp.peer_addr()?));
         let orig_dst = OrigDstAddr(self.0);
@@ -238,13 +234,9 @@ mod sys {
         }
     }
 
-    impl<T> GetAddrs<T> for SysOrigDstAddr
-    where
-        T: AsRef<TcpStream>,
-    {
+    impl GetAddrs<TcpStream> for SysOrigDstAddr {
         type Addrs = Addrs;
-        fn addrs(&self, tcp: &T) -> io::Result<Self::Addrs> {
-            let tcp = tcp.as_ref();
+        fn addrs(&self, tcp: &TcpStream) -> io::Result<Self::Addrs> {
             let server = Local(ServerAddr(tcp.local_addr()?));
             let client = Remote(ClientAddr(tcp.peer_addr()?));
             let orig_dst = self.orig_dst_addr(tcp)?;

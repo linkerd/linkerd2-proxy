@@ -10,25 +10,25 @@ use linkerd_app_core::{
 };
 use tracing::{debug_span, info_span};
 
-impl<A> Outbound<(), A> {
+impl<B> Outbound<(), B> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
     /// Forwards TCP connections without discovery/routing (or mTLS).
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<I, N, NSvc, H, HSvc, P>(
+    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P>(
         &self,
         profiles: P,
         tcp: N,
         http: H,
-    ) -> impl for<'a> svc::NewService<
-        &'a I,
+    ) -> impl svc::NewService<
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        A: transport::GetAddrs<I> + Send + Sync + 'static,
-        A::Addrs: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
+        B: Clone,
+        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
@@ -52,12 +52,7 @@ impl<A> Outbound<(), A> {
             allow_discovery,
             proxy:
                 ProxyConfig {
-                    server:
-                        ServerConfig {
-                            h2_settings,
-                            orig_dst_addrs,
-                            ..
-                        },
+                    server: ServerConfig { h2_settings, .. },
                     dispatch_timeout,
                     max_in_flight_requests,
                     detect_protocol_timeout,
@@ -141,21 +136,14 @@ impl<A> Outbound<(), A> {
             ))
             .push(self.runtime.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-            .push_map_target(|a: A::Addrs| {
+            .push_map_target(|a: T| {
                 let orig_dst = Param::<OrigDstAddr>::param(&a);
                 tcp::Accept::from(orig_dst)
             })
-            .instrument(|addrs: &A::Addrs| {
-                let Remote(ClientAddr(addr)) = addrs.param();
-                debug_span!("accept", client.addr = %addr)
-            })
-            .check_new_service::<A::Addrs, I>()
-            .push_request_filter(transport::AddrsFilter(orig_dst_addrs))
-            .check_new_service::<&I, I>()
+            .check_new_service::<T, I>()
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
-            // .push(svc::BoxNewService::layer()) // XXX(eliza): WHY DOES THIS BREAK IT T_T
-            .check_new_service::<&I, I>()
+            .push(svc::BoxNewService::layer())
             .into_inner()
     }
 }
