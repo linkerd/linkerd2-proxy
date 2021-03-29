@@ -138,9 +138,3 @@ impl<I: io::AsyncWrite> io::AsyncWrite for ScopedIo<I> {
         self.io.is_write_vectored()
     }
 }
-
-impl<I> AsRef<I> for ScopedIo<I> {
-    fn as_ref(&self) -> &I {
-        &self.io
-    }
-}

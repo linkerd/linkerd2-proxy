@@ -82,9 +82,3 @@ impl<T: PeerAddr, S> PeerAddr for SensorIo<T, S> {
         self.io.peer_addr()
     }
 }
-
-impl<T, I: AsRef<T>, S> AsRef<T> for SensorIo<I, S> {
-    fn as_ref(&self) -> &T {
-        self.io.as_ref()
-    }
-}

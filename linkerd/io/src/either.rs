@@ -92,16 +92,3 @@ impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
         }
     }
 }
-
-impl<L, R, T> AsRef<T> for EitherIo<L, R>
-where
-    L: AsRef<T>,
-    R: AsRef<T>,
-{
-    fn as_ref(&self) -> &T {
-        match self {
-            EitherIo::Left(l) => l.as_ref(),
-            EitherIo::Right(r) => r.as_ref(),
-        }
-    }
-}
