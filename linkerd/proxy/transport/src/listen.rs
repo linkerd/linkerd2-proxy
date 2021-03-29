@@ -1,14 +1,32 @@
 use crate::{addrs::*, Keepalive};
 use futures::prelude::*;
 use linkerd_stack::Param;
-use std::{io, net::SocketAddr};
-use tokio::net::TcpStream;
+use std::{io, net::SocketAddr, pin::Pin};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+};
 use tokio_stream::wrappers::TcpListenerStream;
 
+/// Binds a listener, producing a stream of incoming connections.
+///
+/// Typically, this represents binding a TCP socket. However, it may also be an
+/// stream of in-memory mock connections, for testing purposes.
+pub trait Bind {
+    type Incoming: Stream<Item = io::Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
+    type Addrs: Send + Sync + 'static;
+    type Io: AsyncRead + AsyncWrite + Send + Sync + 'static;
+
+    fn addr(&self) -> ListenAddr;
+    fn keepalive(&self) -> Keepalive;
+    fn bind(&self) -> io::Result<(SocketAddr, Self::Incoming)>;
+}
+
 #[derive(Clone, Debug)]
-pub struct BindTcp {
+pub struct BindTcp<A = DefaultOrigDstAddr> {
     addr: ListenAddr,
     keepalive: Keepalive,
+    get_addrs: A,
 }
 
 #[derive(Clone, Debug)]
@@ -27,6 +45,9 @@ pub trait GetAddrs<T>: Clone {
 #[derive(Copy, Clone, Debug)]
 pub struct NoOrigDstAddr(());
 
+#[derive(Copy, Clone, Debug)]
+pub struct GetAddrsFn<F>(F);
+
 #[cfg(feature = "mock-orig-dst")]
 #[derive(Copy, Clone, Debug)]
 pub struct MockOrigDstAddr(pub SocketAddr);
@@ -37,22 +58,54 @@ pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 #[cfg(not(target_os = "linux"))]
 pub use NoOrigDstAddr as DefaultOrigDstAddr;
 
-impl BindTcp {
-    pub fn new(addr: ListenAddr, keepalive: Keepalive) -> Self {
-        Self { addr, keepalive }
+impl<A> BindTcp<A> {
+    pub fn new(addr: ListenAddr, keepalive: Keepalive, get_addrs: A) -> Self {
+        Self {
+            addr,
+            keepalive,
+            get_addrs,
+        }
+    }
+
+    pub fn with_orig_dst_addrs<A2>(self, get_addrs: A2) -> BindTcp<A2> {
+        BindTcp {
+            addr: self.addr,
+            keepalive: self.keepalive,
+            get_addrs,
+        }
+    }
+
+    fn accept(&self, tcp: TcpStream) -> io::Result<(A::Addrs, TcpStream)>
+    where
+        A: GetAddrs<TcpStream>,
+    {
+        let Keepalive(keepalive) = self.keepalive;
+        super::set_nodelay_or_warn(&tcp);
+        super::set_keepalive_or_warn(&tcp, keepalive);
+        let addrs = self.get_addrs.addrs(&tcp)?;
+
+        Ok((addrs, tcp))
     }
 }
 
-impl BindTcp {
-    pub fn addr(&self) -> ListenAddr {
+impl<A> Bind for BindTcp<A>
+where
+    A: GetAddrs<TcpStream> + Send + Sync + 'static,
+    A::Addrs: Send + Sync + 'static,
+{
+    type Addrs = A::Addrs;
+    type Incoming = Pin<Box<dyn Stream<Item = io::Result<(Self::Addrs, Self::Io)>> + Send + Sync>>;
+    type Io = TcpStream;
+
+    fn addr(&self) -> ListenAddr {
         self.addr
     }
 
-    pub fn keepalive(&self) -> Keepalive {
+    fn keepalive(&self) -> Keepalive {
         self.keepalive
     }
 
-    pub fn bind(&self) -> io::Result<(SocketAddr, impl Stream<Item = io::Result<TcpStream>>)> {
+    fn bind(&self) -> io::Result<(SocketAddr, Self::Incoming)> {
         let listen = {
             let l = std::net::TcpListener::bind(self.addr)?;
             // Ensure that O_NONBLOCK is set on the socket before using it with Tokio.
@@ -60,20 +113,11 @@ impl BindTcp {
             tokio::net::TcpListener::from_std(l).expect("listener must be valid")
         };
         let addr = listen.local_addr()?;
-        let keepalive = self.keepalive;
 
-        let accept = TcpListenerStream::new(listen)
-            .and_then(move |tcp| future::ready(Self::accept(tcp, keepalive)));
+        let bind = self.clone();
+        let accept = TcpListenerStream::new(listen).map(move |tcp| bind.accept(tcp?));
 
-        Ok((addr, accept))
-    }
-
-    fn accept(tcp: TcpStream, keepalive: Keepalive) -> io::Result<TcpStream> {
-        let Keepalive(keepalive) = keepalive;
-        super::set_nodelay_or_warn(&tcp);
-        super::set_keepalive_or_warn(&tcp, keepalive);
-
-        Ok(tcp)
+        Ok((addr, Box::pin(accept)))
     }
 }
 
@@ -153,6 +197,17 @@ where
             "Accepted (mock SO_ORIGINAL_DST)",
         );
         Ok(Addrs::new(server, client, orig_dst))
+    }
+}
+
+impl<F, T, A> GetAddrs<T> for F
+where
+    F: Fn(&T) -> io::Result<A> + Clone,
+    A: Param<Remote<ClientAddr>>,
+{
+    type Addrs = A;
+    fn addrs(&self, io: &T) -> io::Result<Self::Addrs> {
+        (self)(io)
     }
 }
 

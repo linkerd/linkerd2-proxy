@@ -11,8 +11,8 @@ use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{
-    listen::Addrs, BindTcp, ClientAddr, ConnectTcp, Keepalive, ListenAddr, Local, OrigDstAddr,
-    Remote, ServerAddr,
+    listen::{Addrs, Bind},
+    BindTcp, ClientAddr, ConnectTcp, Keepalive, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr,
 };
 use linkerd_stack::NewService;
 use linkerd_stack::Param;
@@ -190,22 +190,25 @@ where
             std::time::Duration::from_secs(10),
         );
 
-        let (listen_addr, listen) = BindTcp::new(ListenAddr(addr), Keepalive(None))
+        let (listen_addr, listen) =
+            BindTcp::new(ListenAddr(addr), Keepalive(None), move |io: &TcpStream| {
+                Ok(Addrs::new(
+                    Local(ServerAddr(addr)),
+                    Remote(ClientAddr(io.peer_addr()?)),
+                    OrigDstAddr(addr),
+                ))
+            })
             .bind()
             .expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
-            let io = listen
+            let (addrs, io) = listen
                 .next()
                 .await
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            let accept = detect.new_service(Addrs::new(
-                Local(ServerAddr(listen_addr)),
-                Remote(ClientAddr(io.peer_addr().unwrap())),
-                OrigDstAddr(listen_addr),
-            ));
+            let accept = detect.new_service(addrs);
             accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
