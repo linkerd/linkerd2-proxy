@@ -39,17 +39,21 @@ pub async fn serve<M, S, I, A>(
                         }
                     };
 
-                    let span = debug_span!("accept", client.addr = %addrs.param()).entered();
+                    // The local addr should be instrumented from the listener's context.
+                    let span = debug_span!("accept", client.addr = %addrs.param());
 
-                    let accept = new_accept.new_service(addrs);
-                    let io = io::ScopedIo::server(io);
+                    let accept = span.in_scope(|| new_accept.new_service(addrs));
 
                     // Dispatch all of the work for a given connection onto a connection-specific task.
                     tokio::spawn(
                         async move {
                             match accept.ready_oneshot().err_into::<Error>().await {
                                 Ok(mut accept) => {
-                                    match accept.call(io).err_into::<Error>().await {
+                                    match accept
+                                        .call(io::ScopedIo::server(io))
+                                        .err_into::<Error>()
+                                        .await
+                                    {
                                         Ok(()) => debug!("Connection closed"),
                                         Err(reason) if is_io(&*reason) => {
                                             debug!(%reason, "Connection closed")
@@ -66,7 +70,7 @@ pub async fn serve<M, S, I, A>(
                                 }
                             }
                         }
-                        .instrument(span.exit()),
+                        .instrument(span),
                     );
                 }
             }
