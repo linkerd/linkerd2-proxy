@@ -27,18 +27,16 @@ use linkerd_app_core::{
     serve,
     svc::{self, Param},
     tls,
-    transport::{
-        self, listen::DefaultOrigDstAddr, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
-    },
+    transport::{self, listen::Bind, BindTcp, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
 use std::{convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
-pub struct Config<A = DefaultOrigDstAddr> {
+pub struct Config<B> {
     pub allow_discovery: NameMatch,
-    pub proxy: ProxyConfig<A>,
+    pub proxy: ProxyConfig<B>,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
     pub disable_protocol_detection_for_ports: SkipByPort,
     pub profile_idle_timeout: Duration,
@@ -48,19 +46,19 @@ pub struct Config<A = DefaultOrigDstAddr> {
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 #[derive(Clone, Debug)]
-pub struct Inbound<S, A> {
-    config: Config<A>,
+pub struct Inbound<S, B> {
+    config: Config<B>,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
 // === impl Config ===
 
-impl<A> Config<A> {
-    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<A2> {
+impl<B> Config<BindTcp<B>> {
+    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<BindTcp<A2>> {
         Config {
             allow_discovery: self.allow_discovery,
-            proxy: self.proxy.with_orig_dst_addr(orig_dst),
+            proxy: self.proxy.with_orig_dst_addrs(orig_dst),
             require_identity_for_inbound_ports: self.require_identity_for_inbound_ports,
             disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
             profile_idle_timeout: self.profile_idle_timeout,
@@ -70,8 +68,8 @@ impl<A> Config<A> {
 
 // === impl Inbound ===
 
-impl<S, A> Inbound<S, A> {
-    pub fn config(&self) -> &Config<A> {
+impl<S, B> Inbound<S, B> {
+    pub fn config(&self) -> &Config<B> {
         &self.config
     }
 
@@ -88,8 +86,8 @@ impl<S, A> Inbound<S, A> {
     }
 }
 
-impl<A> Inbound<(), A> {
-    pub fn new(config: Config<A>, runtime: ProxyRuntime) -> Self {
+impl<B> Inbound<(), B> {
+    pub fn new(config: Config<B>, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -97,7 +95,7 @@ impl<A> Inbound<(), A> {
         }
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Inbound<S, A> {
+    pub fn with_stack<S>(self, stack: S) -> Inbound<S, B> {
         Inbound {
             config: self.config,
             runtime: self.runtime,
@@ -114,10 +112,10 @@ impl<A> Inbound<(), A> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-        A,
+        B,
     >
     where
-        A: Clone,
+        B: Clone,
     {
         let Self {
             config, runtime, ..
@@ -148,17 +146,16 @@ impl<A> Inbound<(), A> {
         gateway: G,
     ) -> (SocketAddr, impl Future<Output = ()> + Send)
     where
-        A: transport::GetAddrs<io::ScopedIo<tokio::net::TcpStream>> + Send + 'static,
-        A::Addrs: Param<Remote<ClientAddr>>
+        B: Bind + Clone + Send + Sync + 'static,
+        B::Addrs: Param<Remote<ClientAddr>>
             + Param<Local<ServerAddr>>
             + Param<OrigDstAddr>
             + Clone
             + Send,
+        B::Io: io::Peek + io::PeerAddr + Debug + Unpin,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
         G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<tokio::net::TcpStream>>, Response = ()>
-            + Send
-            + 'static,
+        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
@@ -185,7 +182,7 @@ impl<A> Inbound<(), A> {
     }
 }
 
-impl<C, A> Inbound<C, A>
+impl<C, B> Inbound<C, B>
 where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
@@ -200,7 +197,7 @@ where
                 TcpEndpoint,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
             > + Clone,
-        A,
+        B,
     >
     where
         I: io::AsyncRead + io::AsyncWrite,
@@ -235,18 +232,18 @@ where
         }
     }
 
-    pub fn into_server<I, G, GSvc, P>(
+    pub fn into_server<T, I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
-    ) -> impl for<'a> svc::NewService<
-        &'a I,
+    ) -> impl svc::NewService<
+        T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        A: transport::GetAddrs<I> + 'static,
-        A::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
+        B: Clone + 'static,
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -261,7 +258,6 @@ where
         let disable_detect = self.config.disable_protocol_detection_for_ports.clone();
         let require_id = self.config.require_identity_for_inbound_ports.clone();
         let config = self.config.proxy.clone();
-        let addrs = self.config.proxy.server.orig_dst_addrs.clone();
         self.clone()
             .push_http_router(profiles)
             .push_http_server()
@@ -297,11 +293,11 @@ where
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
                     .push_map_target(TcpAccept::port_skipped)
-                    .check_new_service::<A::Addrs, _>()
-                    .instrument(|_: &A::Addrs| debug_span!("forward"))
+                    .check_new_service::<T, _>()
+                    .instrument(|_: &T| debug_span!("forward"))
                     .into_inner(),
             )
-            .check_new_service::<A::Addrs, I>()
+            .check_new_service::<T, I>()
             .push_switch(
                 PreventLoop::from(server_port).to_switch(),
                 self.push_tcp_forward(server_port)
@@ -310,16 +306,10 @@ where
                     .instrument(|_: &_| debug_span!("direct"))
                     .into_inner(),
             )
-            .instrument(|a: &A::Addrs| {
+            .instrument(|a: &T| {
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
-            .instrument(|a: &A::Addrs| {
-                let Remote(ClientAddr(addr)) = a.param();
-                debug_span!("accept", client.addr = %addr)
-            })
-            .check_new_service::<A::Addrs, I>()
-            .push_request_filter(transport::AddrsFilter(addrs))
             .into_inner()
     }
 }
@@ -341,7 +331,7 @@ where
     fn check(&mut self, t: T) -> Result<Self::Request, Error> {
         let OrigDstAddr(addr) = t.param();
         if !self.0.contains(&addr.port()) {
-            Ok(svc::Either::A(t))
+            Ok(svc::Either::B(t))
         } else {
             Ok(svc::Either::B(t))
         }

@@ -18,7 +18,7 @@ use linkerd_app_core::{
 use tracing::Instrument;
 
 fn build_server<I>(
-    cfg: Config,
+    cfg: Config<support::transport::NoBind>,
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
