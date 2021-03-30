@@ -16,8 +16,9 @@ use crate::{
     inbound::target::{HttpAccept, Target, TcpAccept},
     svc::{self, Param},
 };
-use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
+use std::{net::SocketAddr, pin::Pin, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub struct Config<B> {
@@ -39,9 +40,6 @@ pub struct Addrs {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GetAdminAddrs(());
-
-#[derive(Debug, Default)]
-pub struct AdminHttpOnly(());
 
 // === impl Config ===
 
@@ -77,15 +75,17 @@ impl<B> Config<B> {
             )
             .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push(svc::Filter::<TcpAccept, _>::layer(
+            .push_map_target(
                 |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout<_>>, _)| {
                     match version {
-                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
-                        Ok(None) => Err(Error::from(AdminHttpOnly(()))),
-                        Err(timeout) => Err(Error::from(timeout)),
+                        Ok(Some(version)) => HttpAccept::from((version, tcp)),
+                        Ok(None) | Err(_) => {
+                            debug!("Failed to parse HTTP request; handling as HTTP/1");
+                            HttpAccept::from((http::Version::Http1, tcp))
+                        }
                     }
                 },
-            ))
+            )
             .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
@@ -105,17 +105,7 @@ impl<B> Config<B> {
     }
 }
 
-// === impl AdminHttpOnly ===
-
-impl fmt::Display for AdminHttpOnly {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("proxy admin server is HTTP-only")
-    }
-}
-
-impl std::error::Error for AdminHttpOnly {}
-
-// === impl AdminAddrs ===
+// === impl Addrs ===
 
 impl svc::Param<Local<ServerAddr>> for Addrs {
     fn param(&self) -> Local<ServerAddr> {
