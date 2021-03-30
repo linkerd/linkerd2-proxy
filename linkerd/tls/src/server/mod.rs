@@ -399,3 +399,12 @@ mod tests {
         client_task.await.expect("Client must not fail");
     }
 }
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use super::*;
+
+    pub fn fuzz_entry(input: &[u8]) {
+        let _ = client_hello::parse_sni(input);
+    }
+}
