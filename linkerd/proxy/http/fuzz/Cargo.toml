@@ -1,0 +1,27 @@
+
+[package]
+name = "linkerd-proxy-http-fuzz"
+version = "0.0.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tokio = { version = "1", features = [ "full"] }
+
+[dependencies.linkerd-proxy-http]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"
+test = false
+doc = false
