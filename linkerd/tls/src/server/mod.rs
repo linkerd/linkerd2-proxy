@@ -16,8 +16,8 @@ use std::{
     str::FromStr,
     sync::Arc,
     task::{Context, Poll},
-    time::Duration,
 };
+use tokio::time::{self, Duration};
 pub use tokio_rustls::server::TlsStream;
 use tower::util::ServiceExt;
 use tracing::{debug, trace, warn};
@@ -163,15 +163,10 @@ where
                 let config: Config = local.param();
                 let LocalId(local_id) = local.param();
 
-                let timeout = tokio::time::sleep(self.timeout);
+                // Detect the SNI from a ClientHello (or timeout).
+                let detect = time::timeout(self.timeout, detect_sni(io));
                 Box::pin(async move {
-                    // Detect the SNI from a ClientHello (or timeout).
-                    let (sni, io) = tokio::select! {
-                        res = detect_sni(io) => { res? }
-                        () = timeout => {
-                            return Err(DetectTimeout(()).into());
-                        }
-                    };
+                    let (sni, io) = detect.await.map_err(|_| DetectTimeout(()))??;
 
                     let (peer, io) = match sni {
                         // If we detected an SNI matching this proxy, terminate TLS.
