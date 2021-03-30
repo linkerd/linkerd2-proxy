@@ -5,7 +5,7 @@ use crate::core::{
     metrics::{self, FmtMetrics},
     serve, tls, trace,
     transport::listen,
-    Error, Never,
+    Error,
 };
 use crate::{
     http,
@@ -60,17 +60,17 @@ impl Config {
             )
             .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push(svc::Filter::<TcpAccept, _>::layer(
+            .push_map_target(
                 |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout<_>>, _)| {
                     match version {
-                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
+                        Ok(Some(version)) => HttpAccept::from((version, tcp)),
                         Ok(None) | Err(_) => {
                             debug!("Failed to parse HTTP request; handling as HTTP/1");
-                            Ok::<_, Never>(HttpAccept::from((http::Version::Http1, tcp)))
+                            HttpAccept::from((http::Version::Http1, tcp))
                         }
                     }
                 },
-            ))
+            )
             .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
