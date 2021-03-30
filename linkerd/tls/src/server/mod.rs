@@ -171,15 +171,17 @@ where
                     let (peer, io) = match sni {
                         // If we detected an SNI matching this proxy, terminate TLS.
                         Some(ServerId(id)) if id == local_id => {
+                            trace!("Identified local SNI");
                             let (peer, io) = handshake(config, io).await?;
                             (Conditional::Some(peer), EitherIo::Left(io))
                         }
                         // If we detected another SNI, continue proxying the
                         // opaque stream.
-                        Some(sni) => (
-                            Conditional::Some(ServerTls::Passthru { sni }),
-                            EitherIo::Right(io),
-                        ),
+                        Some(sni) => {
+                            debug!(%sni, "Identified foreign SNI");
+                            let peer = ServerTls::Passthru { sni };
+                            (Conditional::Some(peer), EitherIo::Right(io))
+                        }
                         // If no TLS was detected, continue proxying the stream.
                         None => (
                             Conditional::None(NoServerTls::NoClientHello),
@@ -207,7 +209,7 @@ where
     }
 }
 
-// Peek or buffer the provided stream to determine an SNI value.
+/// Peek or buffer the provided stream to determine an SNI value.
 async fn detect_sni<I>(mut io: I) -> io::Result<(Option<ServerId>, DetectIo<I>)>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin,
@@ -375,7 +377,7 @@ mod tests {
         let (mut client_io, server_io) = tokio::io::duplex(1024);
         let input = include_bytes!("testdata/curl-example-com-client-hello.bin");
         let len = input.len();
-        tokio::spawn(async move {
+        let client_task = tokio::spawn(async move {
             client_io
                 .write_all(&*input)
                 .await
@@ -393,5 +395,7 @@ mod tests {
             EitherIo::Left(_) => panic!("Detected IO should be buffered"),
             EitherIo::Right(io) => assert_eq!(io.prefix().len(), len, "All data must be buffered"),
         }
+
+        client_task.await.expect("Client must not fail");
     }
 }
