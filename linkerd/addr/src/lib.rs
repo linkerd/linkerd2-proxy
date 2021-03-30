@@ -263,7 +263,7 @@ mod tests {
 pub mod fuzz_logic {
     use super::*;
 
-    pub fn fuzz_addr_1(fuzz_data : &str) {
+    pub fn fuzz_addr_1(fuzz_data: &str) {
         if let Ok(addr) = Addr::from_str(fuzz_data) {
             addr.is_loopback();
             addr.to_http_authority();
@@ -277,4 +277,3 @@ pub mod fuzz_logic {
         }
     }
 }
-

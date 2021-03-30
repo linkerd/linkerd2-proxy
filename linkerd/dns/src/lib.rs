@@ -247,7 +247,6 @@ mod tests {
     }
 }
 
-
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
@@ -256,17 +255,16 @@ pub mod fuzz_logic {
 
     // Empty config resolver that we can use.
     impl ConfigureResolver for FuzzConfig {
-        fn configure_resolver(&self, _opts: &mut ResolverOpts) {
-        }
+        fn configure_resolver(&self, _opts: &mut ResolverOpts) {}
     }
 
     // Test the resolvers dont panic unexpectedly.
-    pub fn fuzz_entry(fuzz_data : &str) {
+    pub fn fuzz_entry(fuzz_data: &str) {
         if let Ok(_name) = Name::from_str(fuzz_data) {
-            let _fcon = FuzzConfig { };
+            let _fcon = FuzzConfig {};
             let _resolver = Resolver::from_system_config_with(&_fcon).unwrap();
             let a1 = async {
-                let _w =_resolver.resolve_a(&_name).await;
+                let _w = _resolver.resolve_a(&_name).await;
             };
             futures::executor::block_on(a1);
             let a2 = async {
