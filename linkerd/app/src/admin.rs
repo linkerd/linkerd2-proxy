@@ -5,7 +5,7 @@ use crate::core::{
     metrics::{self, FmtMetrics},
     serve, tls, trace,
     transport::listen,
-    Error,
+    Error, Never,
 };
 use crate::{
     http,
@@ -64,11 +64,10 @@ impl Config {
                 |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout<_>>, _)| {
                     match version {
                         Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
-                        Ok(None) => {
-                            debug!("Failed to parse HTTP request; handling as HTTP/1.1");
-                            Ok(HttpAccept::from((http::Version::Http1, tcp)))
+                        Ok(None) | Err(_) => {
+                            debug!("Failed to parse HTTP request; handling as HTTP/1");
+                            Ok::<_, Never>(HttpAccept::from((http::Version::Http1, tcp)))
                         }
-                        Err(timeout) => Err(Error::from(timeout)),
                     }
                 },
             ))
