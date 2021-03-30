@@ -258,3 +258,23 @@ mod tests {
         }
     }
 }
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use super::*;
+
+    pub fn fuzz_addr_1(fuzz_data : &str) {
+        if let Ok(addr) = Addr::from_str(fuzz_data) {
+            addr.is_loopback();
+            addr.to_http_authority();
+            addr.is_loopback();
+            addr.socket_addr();
+        }
+
+        if let Ok(name_addr) = NameAddr::from_str_and_port(fuzz_data, 1234) {
+            name_addr.port();
+            name_addr.as_http_authority();
+        }
+    }
+}
+
