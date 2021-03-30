@@ -269,3 +269,31 @@ mod tests {
         assert_eq!(&buf, b"12345");
     }
 }
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+	use super::*;
+    pub fn fuzz_entry(fuzz_data : &str, ran_data : &[u8]) {
+        if let Ok(name) = Name::from_str(fuzz_data) {
+            let _header = TransportHeader {
+                port: 4040,
+                name: Some(name),
+                protocol: Some(SessionProtocol::Http2),
+            };
+            let mut _rx = {
+                let mut buf = BytesMut::new();
+                buf.put_slice(ran_data);
+                buf.put_slice(ran_data);
+                _header.encode_prefaced(&mut buf).expect("must encode");
+                buf.put_slice(ran_data);
+                buf.put_slice(ran_data);
+                std::io::Cursor::new(buf.freeze())
+            };
+            let mut buf = BytesMut::new();
+            let a1 = async {
+                let _h = TransportHeader::read_prefaced(&mut _rx, &mut buf).await;
+            };
+            futures::executor::block_on(a1);
+        }
+    }
+}
