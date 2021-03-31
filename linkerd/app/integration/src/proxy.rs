@@ -1,6 +1,10 @@
 use super::*;
-use linkerd_app::Config;
+use linkerd_app::{
+    core::transport::{self, listen::Addrs},
+    Config,
+};
 use std::{future::Future, pin::Pin, task::Poll, thread};
+use tokio::net::TcpStream;
 use tracing::instrument::Instrument;
 
 pub fn new() -> Proxy {
@@ -44,6 +48,9 @@ pub struct Listening {
 
     thread: thread::JoinHandle<()>,
 }
+
+#[derive(Copy, Clone, Debug)]
+struct MockOrigDstAddr(SocketAddr);
 
 impl Proxy {
     /// Pass a customized support `Controller` for this proxy to use.
@@ -254,8 +261,8 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         );
     }
 
-    let out_orig_dst = transport::listen::MockOrigDstAddr(outbound.unwrap_or(controller.addr));
-    let in_orig_dst = transport::listen::MockOrigDstAddr(inbound.unwrap_or(controller.addr));
+    let out_orig_dst = mock_orig_dst(outbound.unwrap_or(controller.addr));
+    let in_orig_dst = mock_orig_dst(inbound.unwrap_or(controller.addr));
     let config = app::env::parse_config(&env).unwrap();
     let config = Config {
         outbound: config.outbound.with_orig_dst(out_orig_dst),
@@ -380,5 +387,23 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         shutdown: tx,
         terminated: term_rx,
         thread,
+    }
+}
+
+fn mock_orig_dst(
+    addr: SocketAddr,
+) -> impl Fn(&TcpStream) -> io::Result<Addrs> + Clone + Send + Sync + 'static {
+    use transport::{ClientAddr, Local, OrigDstAddr, Remote, ServerAddr};
+    move |tcp: &TcpStream| {
+        let server = Local(ServerAddr(tcp.local_addr()?));
+        let client = Remote(ClientAddr(tcp.peer_addr()?));
+        let orig_dst = OrigDstAddr(addr);
+        tracing::trace!(
+            server.addr = %server,
+            client.addr = %client,
+            orig.addr = ?orig_dst,
+            "Accepted (mock SO_ORIGINAL_DST)",
+        );
+        Ok(Addrs::new(server, client, orig_dst))
     }
 }

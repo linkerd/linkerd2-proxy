@@ -48,10 +48,6 @@ pub struct NoOrigDstAddr(());
 #[derive(Copy, Clone, Debug)]
 pub struct GetAddrsFn<F>(F);
 
-#[cfg(feature = "mock-orig-dst")]
-#[derive(Copy, Clone, Debug)]
-pub struct MockOrigDstAddr(pub SocketAddr);
-
 #[cfg(target_os = "linux")]
 pub use self::sys::SysOrigDstAddr as DefaultOrigDstAddr;
 
@@ -175,24 +171,6 @@ impl<T> GetAddrs<T> for NoOrigDstAddr {
         const NOT_SUPPORTED: &str = "SO_ORIGINAL_DST is not supported on this operating system";
         tracing::error!(message = NOT_SUPPORTED);
         Err(io::Error::new(io::ErrorKind::Other, NOT_SUPPORTED))
-    }
-}
-
-#[cfg(feature = "mock-orig-dst")]
-impl GetAddrs<TcpStream> for MockOrigDstAddr {
-    type Addrs = Addrs;
-
-    fn addrs(&self, tcp: &TcpStream) -> io::Result<Self::Addrs> {
-        let server = Local(ServerAddr(tcp.local_addr()?));
-        let client = Remote(ClientAddr(tcp.peer_addr()?));
-        let orig_dst = OrigDstAddr(self.0);
-        tracing::trace!(
-            server.addr = %server,
-            client.addr = %client,
-            orig.addr = ?orig_dst,
-            "Accepted (mock SO_ORIGINAL_DST)",
-        );
-        Ok(Addrs::new(server, client, orig_dst))
     }
 }
 
