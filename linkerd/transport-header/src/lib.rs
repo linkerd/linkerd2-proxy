@@ -270,6 +270,7 @@ mod tests {
     }
 }
 
+#[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
     pub fn fuzz_entry(fuzz_data: &str, ran_data: &[u8]) {
