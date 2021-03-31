@@ -542,7 +542,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
                 ),
                 inbound.proxy.server.bind.keepalive(),
-                crate::admin::GetAdminAddrs::new(),
+                crate::admin::Addrs::get_addrs(),
             ),
             h2_settings,
         },
@@ -591,7 +591,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 bind: BindTcp::new(
                     ListenAddr(addr),
                     inbound.proxy.server.bind.keepalive(),
-                    crate::admin::GetAdminAddrs::new(),
+                    crate::admin::Addrs::get_addrs(),
                 ),
                 h2_settings,
             },

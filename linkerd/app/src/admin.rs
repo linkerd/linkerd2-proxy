@@ -4,10 +4,7 @@ use crate::core::{
     detect, drain, errors, io,
     metrics::{self, FmtMetrics},
     serve, tls, trace,
-    transport::{
-        listen::{Bind, GetAddrs},
-        ClientAddr, Local, Remote, ServerAddr,
-    },
+    transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
 use crate::{
@@ -16,7 +13,7 @@ use crate::{
     inbound::target::{HttpAccept, Target, TcpAccept},
     svc::{self, Param},
 };
-use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
+use std::{net::SocketAddr, pin::Pin, time::Duration};
 use tokio::{net::TcpStream, sync::mpsc};
 use tracing::debug;
 
@@ -37,6 +34,8 @@ pub struct Addrs {
     server: Local<ServerAddr>,
     client: Remote<ClientAddr>,
 }
+
+pub type GetAddrs = fn(&TcpStream) -> io::Result<Addrs>;
 
 // === impl Config ===
 
@@ -102,7 +101,7 @@ impl<B> Config<B> {
     }
 }
 
-// === impl AdminAddrs ===
+// === impl Addrs ===
 
 impl svc::Param<Local<ServerAddr>> for Addrs {
     fn param(&self) -> Local<ServerAddr> {
@@ -116,24 +115,17 @@ impl svc::Param<Remote<ClientAddr>> for Addrs {
     }
 }
 
-// === impl GetAdminAddrs ===
-
-impl GetAdminAddrs {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl GetAddrs<TcpStream> for GetAdminAddrs {
-    type Addrs = Addrs;
-    fn addrs(&self, tcp: &TcpStream) -> io::Result<Self::Addrs> {
-        let server = Local(ServerAddr(tcp.local_addr()?));
-        let client = Remote(ClientAddr(tcp.peer_addr()?));
-        tracing::trace!(
-            server.addr = %server,
-            client.addr = %client,
-            "Accepted",
-        );
-        Ok(Addrs { server, client })
+impl Addrs {
+    pub fn get_addrs() -> GetAddrs {
+        |tcp: &TcpStream| {
+            let server = Local(ServerAddr(tcp.local_addr()?));
+            let client = Remote(ClientAddr(tcp.peer_addr()?));
+            tracing::trace!(
+                server.addr = %server,
+                client.addr = %client,
+                "Accepted (admin)",
+            );
+            Ok(Addrs { server, client })
+        }
     }
 }

@@ -10,7 +10,6 @@ pub mod oc_collector;
 pub mod tap;
 
 pub use self::metrics::Metrics;
-use admin::GetAdminAddrs;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
@@ -47,7 +46,7 @@ use tracing::{debug, info, info_span};
 /// The private listener routes requests to service-discovery-aware load-balancer.
 ///
 #[derive(Clone, Debug)]
-pub struct Config<BindProxy = BindTcp, BindAdmin = BindTcp<GetAdminAddrs>> {
+pub struct Config<BindProxy = BindTcp, BindAdmin = BindTcp<admin::GetAddrs>> {
     pub outbound: outbound::Config<BindProxy>,
     pub inbound: inbound::Config<BindProxy>,
     pub gateway: gateway::Config,
