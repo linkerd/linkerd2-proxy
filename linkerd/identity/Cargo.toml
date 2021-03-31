@@ -6,7 +6,7 @@ license = "Apache-2.0"
 edition = "2018"
 
 [features]
-default = ["rustls-tls"]
+default = []
 test-util = []
 rustls-tls = ["ring", "rustls"]
 openssl-tls = ["openssl"]
@@ -20,5 +20,5 @@ thiserror = "1.0"
 tracing = "0.1.2"
 untrusted = "0.7"
 webpki = "=0.21.4"
-openssl = { version = "0.10.32", optional = true }
-boring = { version = "1.1.2", optional = true }
+boring = { version = "1.1.4", optional = true, features = ["fips"]}
+openssl = { version = "0.10.33", optional = true }

@@ -14,6 +14,8 @@ use tracing::debug;
 #[cfg(feature = "boring-tls")]
 use {
     boring::{
+        version,
+        fips,
         ssl,
         ssl::{SslAcceptor, SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode},
         x509::store::X509StoreBuilder,
@@ -23,6 +25,8 @@ use {
 #[cfg(not(feature = "boring-tls"))]
 use {
     openssl::{
+        version,
+        fips,
         ssl,
         ssl::{Ssl, SslAcceptor, SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode},
         x509::store::X509StoreBuilder,
@@ -160,6 +164,12 @@ impl From<SslAcceptor> for TlsAcceptor {
 
 impl From<Arc<ServerConfig>> for TlsAcceptor {
     fn from(conf: Arc<ServerConfig>) -> Self {
+        println!("SSL Version {}", version::version());
+        match fips::enable(true) {
+            Err(err) => tracing::error!("FIPS mode can not be enabled {:?}", err),
+            _ => debug!("FIPS mode is enabled")
+        }
+
         println!("Setting up ssl acceptor with mozilla intermediate");
         let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
 

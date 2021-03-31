@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [features]
-default = ["rustls-tls"]
+default = []
 rustls-tls = ["linkerd-identity/rustls-tls", "rustls", "tokio-rustls"]
 openssl-tls = ["linkerd-identity/openssl-tls", "openssl", "tokio-openssl"]
 boring-tls = ["linkerd-identity/boring-tls", "boring", "tokio-boring"]
@@ -26,8 +26,8 @@ tokio = { version = "1", features = ["macros", "time"] }
 rustls = { version = "0.19", optional = true }
 tokio-rustls = { version = "0.22", optional = true }
 tokio-openssl = { version = "0.6.1", optional = true }
-openssl = { version = "0.10.32", optional = true }
-boring = { version = "1.1.2", optional = true }
+openssl = { version = "0.10.33", optional = true }
+boring = { version = "1.1.4", optional = true, features = ["fips"]}
 tokio-boring = { version = "2.1.1", optional = true }
 thiserror = "1.0"
 tower = "0.4.7"

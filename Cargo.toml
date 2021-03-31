@@ -70,3 +70,7 @@ debug = false
 trust-dns-proto = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
 trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
+boring = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
+boring-sys = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
+tokio-boring = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
+
