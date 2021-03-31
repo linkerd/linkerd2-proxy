@@ -697,14 +697,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     // Build the outbound server
     let mut server = build_server(cfg, profiles, resolver, connect);
 
-    let svc = server.new_service(orig_dst::Addrs {
-        orig_dst: OrigDstAddr(ep1),
-        inner: listen::Addrs {
-            server: Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
-            client: Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        },
-    });
-
+    let svc = server.new_service(addrs(ep1));
     let res = svc
         .oneshot(
             support::io()

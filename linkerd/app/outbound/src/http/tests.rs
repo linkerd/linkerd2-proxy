@@ -13,7 +13,7 @@ use linkerd_app_core::{
     io,
     svc::{self, NewService},
     tls,
-    transport::{addrs::*, listen, orig_dst},
+    transport::orig_dst,
     Error, NameAddr, ProxyRuntime,
 };
 use std::{
@@ -34,7 +34,7 @@ fn build_server<I>(
     resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
-    orig_dst::Addrs<listen::Addrs>,
+    orig_dst::Addrs,
     Service = impl tower::Service<
         I,
         Response = (),
@@ -421,16 +421,6 @@ async fn active_stacks_dont_idle_out() {
 
     client_bg.await.unwrap();
     proxy_bg.await.unwrap();
-}
-
-pub fn addrs(od: SocketAddr) -> orig_dst::Addrs {
-    orig_dst::Addrs {
-        orig_dst: OrigDstAddr(od),
-        inner: listen::Addrs {
-            server: Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
-            client: Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        },
-    }
 }
 
 async fn unmeshed_hello_world(
