@@ -1,7 +1,7 @@
 use crate::core::{
     admin, classify,
     config::ServerConfig,
-    detect, drain, errors, io,
+    detect, drain, errors,
     metrics::{self, FmtMetrics},
     serve,
     svc::{self, Param},
@@ -47,8 +47,7 @@ impl Config {
     where
         R: FmtMetrics + Clone + Send + 'static + Unpin,
         B: Bind<ServerConfig>,
-        B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>> + Clone,
-        B::Io: io::Peek + io::PeerAddr + Unpin,
+        B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
     {
         const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 

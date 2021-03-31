@@ -130,10 +130,7 @@ impl Inbound<()> {
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>>
             + svc::Param<Local<ServerAddr>>
-            + svc::Param<OrigDstAddr>
-            + Clone
-            + Send,
-        B::Io: io::Peek + io::PeerAddr + Debug + Unpin,
+            + svc::Param<OrigDstAddr>,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
         G: Clone + Send + Sync + Unpin + 'static,
         GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,

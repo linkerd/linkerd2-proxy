@@ -2,7 +2,7 @@ use futures::prelude::*;
 use indexmap::IndexSet;
 use linkerd_app_core::{
     config::ServerConfig,
-    drain, io,
+    drain,
     proxy::identity::LocalCrtKey,
     proxy::tap,
     serve,
@@ -11,7 +11,7 @@ use linkerd_app_core::{
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::{fmt, pin::Pin};
+use std::pin::Pin;
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -43,8 +43,7 @@ impl Config {
     ) -> Result<Tap, Error>
     where
         B: Bind<ServerConfig>,
-        B::Addrs: Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
-        B::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
+        B::Addrs: Param<Remote<ClientAddr>>,
     {
         let (registry, server) = tap::new();
         match self {

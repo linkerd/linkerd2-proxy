@@ -15,7 +15,7 @@ pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
-    dns, drain, io,
+    dns, drain,
     proxy::http,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -25,7 +25,7 @@ use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
-use std::{fmt, pin::Pin};
+use std::pin::Pin;
 use tokio::{sync::mpsc, time::Duration};
 use tracing::instrument::Instrument;
 use tracing::{debug, info, info_span};
@@ -89,27 +89,11 @@ impl Config {
     ) -> Result<App, Error>
     where
         BIn: Bind<ServerConfig> + 'static,
-        BIn::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
-        BIn::Addrs: Param<Remote<ClientAddr>>
-            + Param<Local<ServerAddr>>
-            + Param<OrigDstAddr>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
         BOut: Bind<ServerConfig> + 'static,
-        BOut::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
-        BOut::Addrs: Param<Remote<ClientAddr>>
-            + Param<Local<ServerAddr>>
-            + Param<OrigDstAddr>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
         BAdm: Bind<ServerConfig> + Clone + 'static,
-        BAdm::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
-        BAdm::Addrs:
-            Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone + Send + Sync + 'static,
+        BAdm::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {
         use metrics::FmtMetrics;
 

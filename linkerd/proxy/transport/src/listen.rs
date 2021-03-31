@@ -1,11 +1,9 @@
 use crate::{addrs::*, Keepalive};
 use futures::prelude::*;
+use linkerd_io as io;
 use linkerd_stack::Param;
-use std::{io, pin::Pin};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
+use std::{fmt, pin::Pin};
+use tokio::net::TcpStream;
 use tokio_stream::wrappers::TcpListenerStream;
 
 /// Binds a listener, producing a stream of incoming connections.
@@ -13,8 +11,16 @@ use tokio_stream::wrappers::TcpListenerStream;
 /// Typically, this represents binding a TCP socket. However, it may also be an
 /// stream of in-memory mock connections, for testing purposes.
 pub trait Bind<T> {
-    type Io: AsyncRead + AsyncWrite + Send + Sync + 'static;
-    type Addrs: Send + Sync + 'static;
+    type Io: io::AsyncRead
+        + io::AsyncWrite
+        + io::Peek
+        + io::PeerAddr
+        + fmt::Debug
+        + Unpin
+        + Send
+        + Sync
+        + 'static;
+    type Addrs: Clone + Send + Sync + 'static;
     type Incoming: Stream<Item = io::Result<(Self::Addrs, Self::Io)>> + Send + Sync + 'static;
 
     fn bind(self, params: &T) -> io::Result<Bound<Self::Incoming>>;

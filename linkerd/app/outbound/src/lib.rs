@@ -27,7 +27,7 @@ use linkerd_app_core::{
     transport::{addrs::*, listen::Bind},
     AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, fmt, future::Future, time::Duration};
+use std::{collections::HashMap, future::Future, time::Duration};
 use tracing::info;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -144,8 +144,7 @@ impl Outbound<()> {
     ) -> (Local<ServerAddr>, impl Future<Output = ()>)
     where
         B: Bind<ServerConfig>,
-        B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send,
-        B::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
+        B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
