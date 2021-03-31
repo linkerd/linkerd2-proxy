@@ -7,19 +7,20 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::Keepalive,
+    transport::{Keepalive, ListenAddr},
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
-pub fn default_config() -> Config<support::transport::NoBind> {
+pub fn default_config() -> Config {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                bind: support::transport::NoBind,
+                addr: ListenAddr(([0, 0, 0, 0], 0).into()),
+                keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {

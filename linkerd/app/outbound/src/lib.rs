@@ -15,7 +15,7 @@ pub mod tcp;
 pub(crate) mod test_util;
 
 use linkerd_app_core::{
-    config::ProxyConfig,
+    config::{ProxyConfig, ServerConfig},
     io, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -24,18 +24,18 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::{listen::Bind, BindTcp, ClientAddr, OrigDstAddr, Remote},
+    transport::{addrs::*, listen::Bind},
     AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, fmt, future::Future, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, fmt, future::Future, time::Duration};
 use tracing::info;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
 const EWMA_DECAY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug)]
-pub struct Config<B> {
-    pub proxy: ProxyConfig<B>,
+pub struct Config {
+    pub proxy: ProxyConfig,
     pub allow_discovery: AddrMatch,
 
     // In "ingress mode", we assume we are always routing HTTP requests and do
@@ -45,24 +45,14 @@ pub struct Config<B> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Outbound<S, B> {
-    config: Config<B>,
+pub struct Outbound<S> {
+    config: Config,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
-impl<B> Config<BindTcp<B>> {
-    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<BindTcp<A2>> {
-        Config {
-            allow_discovery: self.allow_discovery,
-            ingress_mode: self.ingress_mode,
-            proxy: self.proxy.with_orig_dst_addrs(orig_dst),
-        }
-    }
-}
-
-impl<B> Outbound<(), B> {
-    pub fn new(config: Config<B>, runtime: ProxyRuntime) -> Self {
+impl Outbound<()> {
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -70,7 +60,7 @@ impl<B> Outbound<(), B> {
         }
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Outbound<S, B> {
+    pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
         Outbound {
             config: self.config,
             runtime: self.runtime,
@@ -79,8 +69,8 @@ impl<B> Outbound<(), B> {
     }
 }
 
-impl<S, B> Outbound<S, B> {
-    pub fn config(&self) -> &Config<B> {
+impl<S> Outbound<S> {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 
@@ -96,7 +86,7 @@ impl<S, B> Outbound<S, B> {
         self.stack.into_inner()
     }
 
-    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service, B> {
+    pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         Outbound {
             config: self.config,
             runtime: self.runtime,
@@ -145,10 +135,15 @@ impl<S, B> Outbound<S, B> {
     }
 }
 
-impl<B> Outbound<(), B> {
-    pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
+impl Outbound<()> {
+    pub fn serve<B, P, R>(
+        self,
+        bind: B,
+        profiles: P,
+        resolve: R,
+    ) -> (Local<ServerAddr>, impl Future<Output = ()>)
     where
-        B: Bind + Clone + Send + Sync + 'static,
+        B: Bind<ServerConfig>,
         B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send,
         B::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
         R: Clone + Send + Sync + Unpin + 'static,
@@ -159,12 +154,8 @@ impl<B> Outbound<(), B> {
         P::Future: Send,
         P::Error: Send,
     {
-        let (listen_addr, listen) = self
-            .config
-            .proxy
-            .server
-            .bind
-            .bind()
+        let (listen_addr, listen) = bind
+            .bind(&self.config.proxy.server)
             .expect("Failed to bind outbound listener");
 
         let serve = async move {

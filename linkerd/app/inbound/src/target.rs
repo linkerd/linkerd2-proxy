@@ -71,21 +71,6 @@ impl TcpAccept {
             tls: Conditional::None(tls::NoServerTls::PortSkipped),
         }
     }
-
-    /// Returns a `TcpAccept` for the provided TLS metadata and addresses,
-    /// determining the target address from the server's local listener address
-    /// rather than a `SO_ORIGINAL_DST` address.
-    pub fn from_local_addr<T>((tls, addrs): tls::server::Meta<T>) -> Self
-    where
-        T: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
-    {
-        let Local(ServerAddr(target_addr)) = addrs.param();
-        Self {
-            target_addr,
-            client_addr: addrs.param(),
-            tls,
-        }
-    }
 }
 
 impl<T> From<tls::server::Meta<T>> for TcpAccept

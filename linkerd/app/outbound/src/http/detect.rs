@@ -5,7 +5,7 @@ use linkerd_app_core::{
 };
 use tracing::debug_span;
 
-impl<T, A> Outbound<T, A> {
+impl<T> Outbound<T> {
     pub fn push_detect_http<TSvc, H, HSvc, I>(
         self,
         http: H,
@@ -14,7 +14,6 @@ impl<T, A> Outbound<T, A> {
                 tcp::Logical,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
-        A,
     >
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,

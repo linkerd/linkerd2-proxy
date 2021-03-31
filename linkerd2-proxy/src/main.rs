@@ -3,7 +3,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "16289823"]
 
-use linkerd_app::{trace, Config};
+use linkerd_app::{core::transport::BindTcp, trace, Config};
 use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
@@ -28,8 +28,15 @@ fn main() {
     };
 
     rt::build().block_on(async move {
+        let bind = BindTcp::with_orig_dst();
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
-        let app = match async move { config.build(shutdown_tx, trace?).await }.await {
+        let app = match async move {
+            config
+                .build(bind, bind, BindTcp::default(), shutdown_tx, trace?)
+                .await
+        }
+        .await
+        {
             Ok(app) => app,
             Err(e) => {
                 eprintln!("Initialization failure: {}", e);

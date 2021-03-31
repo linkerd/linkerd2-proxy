@@ -10,7 +10,7 @@ use linkerd_app_core::{
 };
 use tracing::{debug_span, info_span};
 
-impl<B> Outbound<(), B> {
+impl Outbound<()> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
     /// Forwards TCP connections without discovery/routing (or mTLS).
@@ -27,7 +27,6 @@ impl<B> Outbound<(), B> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        B: Clone,
         T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,

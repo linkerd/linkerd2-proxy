@@ -52,7 +52,7 @@ pub struct ClientInfo {
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 
-impl<N, A> Inbound<N, A> {
+impl<N> Inbound<N> {
     /// Builds a stack that handles connections that target the proxy's inbound port
     /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
     /// the main proxy stack:
@@ -69,7 +69,6 @@ impl<N, A> Inbound<N, A> {
                 T,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
-        A,
     >
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,

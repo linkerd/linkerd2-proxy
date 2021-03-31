@@ -24,7 +24,6 @@ pub mod profile;
 pub mod resolver;
 pub mod service;
 pub mod track;
-pub mod transport;
 
 pub fn resolver<E>() -> resolver::Dst<E> {
     resolver::Resolver::default()
