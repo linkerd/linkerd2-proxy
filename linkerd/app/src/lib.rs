@@ -79,11 +79,11 @@ impl Config {
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build<BIn, BOut, BAdm>(
+    pub async fn build<BIn, BOut, BAdmin>(
         self,
         bind_in: BIn,
         bind_out: BOut,
-        bind_adm: BAdm,
+        bind_admin: BAdmin,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
     ) -> Result<App, Error>
@@ -92,8 +92,8 @@ impl Config {
         BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
         BOut: Bind<ServerConfig> + 'static,
         BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
-        BAdm: Bind<ServerConfig> + Clone + 'static,
-        BAdm::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
+        BAdmin: Bind<ServerConfig> + Clone + 'static,
+        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {
         use metrics::FmtMetrics;
 
@@ -120,7 +120,7 @@ impl Config {
         let (drain_tx, drain_rx) = drain::channel();
 
         let tap = {
-            let bind = bind_adm.clone();
+            let bind = bind_admin.clone();
             info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
         };
 
@@ -145,7 +145,7 @@ impl Config {
             let metrics = metrics.inbound.clone();
             info_span!("admin").in_scope(move || {
                 admin.build(
-                    bind_adm,
+                    bind_admin,
                     identity,
                     report,
                     metrics,
