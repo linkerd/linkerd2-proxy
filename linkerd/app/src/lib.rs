@@ -12,12 +12,20 @@ pub mod tap;
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
-use linkerd_app_core::{control::ControlAddr, dns, drain, proxy::http, svc, Error, ProxyRuntime};
+use linkerd_app_core::{
+    config::ServerConfig,
+    control::ControlAddr,
+    dns, drain,
+    proxy::http,
+    svc::Param,
+    transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    Error, ProxyRuntime,
+};
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
 use linkerd_channel::into_stream::IntoStream;
-use std::{net::SocketAddr, pin::Pin};
+use std::pin::Pin;
 use tokio::{sync::mpsc, time::Duration};
 use tracing::instrument::Instrument;
 use tracing::{debug, info, info_span};
@@ -53,9 +61,9 @@ pub struct App {
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,
-    inbound_addr: SocketAddr,
+    inbound_addr: Local<ServerAddr>,
     oc_collector: oc_collector::OcCollector,
-    outbound_addr: SocketAddr,
+    outbound_addr: Local<ServerAddr>,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
@@ -64,16 +72,29 @@ impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
     }
+}
 
+impl Config {
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build(
+    pub async fn build<BIn, BOut, BAdmin>(
         self,
+        bind_in: BIn,
+        bind_out: BOut,
+        bind_admin: BAdmin,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
-    ) -> Result<App, Error> {
+    ) -> Result<App, Error>
+    where
+        BIn: Bind<ServerConfig> + 'static,
+        BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BOut: Bind<ServerConfig> + 'static,
+        BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BAdmin: Bind<ServerConfig> + Clone + 'static,
+        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
+    {
         use metrics::FmtMetrics;
 
         let Config {
@@ -98,7 +119,11 @@ impl Config {
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+        let tap = {
+            let bind = bind_admin.clone();
+            info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
+        };
+
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
@@ -119,7 +144,15 @@ impl Config {
             let drain = drain_rx.clone();
             let metrics = metrics.inbound.clone();
             info_span!("admin").in_scope(move || {
-                admin.build(identity, report, metrics, log_level, drain, shutdown_tx)
+                admin.build(
+                    bind_admin,
+                    identity,
+                    report,
+                    metrics,
+                    log_level,
+                    drain,
+                    shutdown_tx,
+                )
             })?
         };
 
@@ -155,8 +188,9 @@ impl Config {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) = inbound.serve(dst.profiles.clone(), gateway_stack);
-        let (outbound_addr, outbound_serve) = outbound.serve(dst.profiles, dst.resolve);
+        let (inbound_addr, inbound_serve) =
+            inbound.serve(bind_in, dst.profiles.clone(), gateway_stack);
+        let (outbound_addr, outbound_serve) = outbound.serve(bind_out, dst.profiles, dst.resolve);
 
         let start_proxy = Box::pin(async move {
             tokio::spawn(outbound_serve.instrument(info_span!("outbound")));
@@ -178,19 +212,19 @@ impl Config {
 }
 
 impl App {
-    pub fn admin_addr(&self) -> SocketAddr {
+    pub fn admin_addr(&self) -> Local<ServerAddr> {
         self.admin.listen_addr
     }
 
-    pub fn inbound_addr(&self) -> SocketAddr {
+    pub fn inbound_addr(&self) -> Local<ServerAddr> {
         self.inbound_addr
     }
 
-    pub fn outbound_addr(&self) -> SocketAddr {
+    pub fn outbound_addr(&self) -> Local<ServerAddr> {
         self.outbound_addr
     }
 
-    pub fn tap_addr(&self) -> Option<SocketAddr> {
+    pub fn tap_addr(&self) -> Option<Local<ServerAddr>> {
         match self.tap {
             tap::Tap::Disabled { .. } => None,
             tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),

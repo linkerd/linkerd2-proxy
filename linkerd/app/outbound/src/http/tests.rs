@@ -13,7 +13,7 @@ use linkerd_app_core::{
     io,
     svc::{self, NewService},
     tls,
-    transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::orig_dst,
     Error, NameAddr, ProxyRuntime,
 };
 use std::{
@@ -34,7 +34,7 @@ fn build_server<I>(
     resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
-    listen::Addrs,
+    orig_dst::Addrs,
     Service = impl tower::Service<
         I,
         Response = (),
@@ -97,6 +97,7 @@ impl<I> svc::Service<I> for NoTcpBalancer {
     type Response = ();
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         unreachable!("no TCP load balancer should be created in this test!");
     }
@@ -114,7 +115,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
 
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
@@ -217,7 +218,7 @@ async fn meshed_hello_world() {
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
@@ -267,7 +268,7 @@ async fn stacks_idle_out() {
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let idle_timeout = Duration::from_millis(500);
-    let mut cfg = default_config(ep1);
+    let mut cfg = default_config();
     cfg.proxy.cache_max_idle_age = idle_timeout;
 
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -332,7 +333,7 @@ async fn active_stacks_dont_idle_out() {
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let idle_timeout = Duration::from_millis(500);
-    let mut cfg = default_config(ep1);
+    let mut cfg = default_config();
     cfg.proxy.cache_max_idle_age = idle_timeout;
 
     let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
@@ -422,14 +423,6 @@ async fn active_stacks_dont_idle_out() {
     proxy_bg.await.unwrap();
 }
 
-pub fn addrs(od: SocketAddr) -> listen::Addrs {
-    listen::Addrs::new(
-        Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
-        Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        Some(OrigDstAddr(od)),
-    )
-}
-
 async fn unmeshed_hello_world(
     server_settings: hyper::server::conn::Http,
     mut client_settings: ClientBuilder,
@@ -437,7 +430,7 @@ async fn unmeshed_hello_world(
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let cfg = default_config(ep1);
+    let cfg = default_config();
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn_boxed(ep1, hello_server(server_settings));
 

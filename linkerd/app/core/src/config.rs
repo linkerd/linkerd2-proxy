@@ -1,11 +1,15 @@
 pub use crate::exp_backoff::ExponentialBackoff;
-pub use crate::proxy::http::{h1, h2};
-pub use crate::transport::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, Keepalive, NoOrigDstAddr};
+use crate::{
+    proxy::http::{h1, h2},
+    svc::Param,
+    transport::{Keepalive, ListenAddr},
+};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
-pub struct ServerConfig<A = NoOrigDstAddr> {
-    pub bind: BindTcp<A>,
+pub struct ServerConfig {
+    pub addr: ListenAddr,
+    pub keepalive: Keepalive,
     pub h2_settings: h2::Settings,
 }
 
@@ -20,7 +24,7 @@ pub struct ConnectConfig {
 
 #[derive(Clone, Debug)]
 pub struct ProxyConfig {
-    pub server: ServerConfig<DefaultOrigDstAddr>,
+    pub server: ServerConfig,
     pub connect: ConnectConfig,
     pub buffer_capacity: usize,
     pub cache_max_idle_age: Duration,
@@ -31,11 +35,14 @@ pub struct ProxyConfig {
 
 // === impl ServerConfig ===
 
-impl<A: GetOrigDstAddr> ServerConfig<A> {
-    pub fn with_orig_dst_addr<B: GetOrigDstAddr>(self, orig_dst_addrs: B) -> ServerConfig<B> {
-        ServerConfig {
-            bind: self.bind.with_orig_dst_addr(orig_dst_addrs),
-            h2_settings: self.h2_settings,
-        }
+impl Param<ListenAddr> for ServerConfig {
+    fn param(&self) -> ListenAddr {
+        self.addr
+    }
+}
+
+impl Param<Keepalive> for ServerConfig {
+    fn param(&self) -> Keepalive {
+        self.keepalive
     }
 }

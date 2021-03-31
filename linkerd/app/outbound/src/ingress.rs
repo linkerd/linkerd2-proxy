@@ -5,10 +5,9 @@ use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
     tls,
-    transport::{self, OrigDstAddr},
+    transport::{self, ClientAddr, OrigDstAddr, Remote},
     Addr, AddrMatch, Error,
 };
-use std::convert::TryFrom;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -28,7 +27,7 @@ impl Outbound<()> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        T: Param<Option<OrigDstAddr>>,
+        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
@@ -136,7 +135,10 @@ impl Outbound<()> {
             ))
             .push(self.runtime.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-            .push_request_filter(|a: T| tcp::Accept::try_from(a.param()))
+            .push_map_target(|a: T| {
+                let orig_dst = Param::<OrigDstAddr>::param(&a);
+                tcp::Accept::from(orig_dst)
+            })
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
             .push(svc::BoxNewService::layer())

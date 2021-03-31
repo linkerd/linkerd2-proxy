@@ -1,26 +1,28 @@
-use crate::io;
-use crate::svc;
+use crate::{
+    io,
+    svc::{self, Param},
+    transport::{ClientAddr, Remote},
+};
 use futures::prelude::*;
 use linkerd_error::Error;
-use linkerd_proxy_transport::listen::Addrs;
 use tower::util::ServiceExt;
-use tracing::instrument::Instrument;
-use tracing::{debug, debug_span, info, warn};
+use tracing::{debug, debug_span, info, instrument::Instrument, warn};
 
 /// Spawns a task that binds an `L`-typed listener with an `A`-typed
 /// connection-accepting service.
 ///
 /// The task is driven until shutdown is signaled.
-pub async fn serve<M, A, I>(
-    listen: impl Stream<Item = std::io::Result<(Addrs, I)>>,
+pub async fn serve<M, S, I, A>(
+    listen: impl Stream<Item = std::io::Result<(A, I)>>,
     mut new_accept: M,
     shutdown: impl Future,
 ) where
     I: Send + 'static,
-    M: svc::NewService<Addrs, Service = A>,
-    A: tower::Service<io::ScopedIo<I>, Response = ()> + Send + 'static,
-    A::Error: Into<Error>,
-    A::Future: Send + 'static,
+    A: Param<Remote<ClientAddr>>,
+    M: svc::NewService<A, Service = S>,
+    S: tower::Service<io::ScopedIo<I>, Response = ()> + Send + 'static,
+    S::Error: Into<Error>,
+    S::Future: Send + 'static,
 {
     let accept = async move {
         futures::pin_mut!(listen);
@@ -38,7 +40,7 @@ pub async fn serve<M, A, I>(
                     };
 
                     // The local addr should be instrumented from the listener's context.
-                    let span = debug_span!("accept", client.addr = %addrs.client());
+                    let span = debug_span!("accept", client.addr = %addrs.param());
 
                     let accept = span.in_scope(|| new_accept.new_service(addrs));
 

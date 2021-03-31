@@ -21,16 +21,14 @@ use self::{
     target::{HttpAccept, TcpAccept},
 };
 use linkerd_app_core::{
-    config::{ConnectConfig, ProxyConfig},
+    config::{ConnectConfig, ProxyConfig, ServerConfig},
     detect, drain, io, metrics, profiles,
     proxy::tcp,
-    serve,
-    svc::{self, Param},
-    tls,
-    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
+    serve, svc, tls,
+    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
-use std::{convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr, time::Duration};
+use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -52,7 +50,7 @@ pub struct Inbound<S> {
     stack: svc::Stack<S>,
 }
 
-// === impl Config ===
+// === impl Inbound ===
 
 impl<S> Inbound<S> {
     pub fn config(&self) -> &Config {
@@ -89,7 +87,7 @@ impl Inbound<()> {
         }
     }
 
-    pub fn to_tcp_connect<T: Param<u16>>(
+    pub fn to_tcp_connect<T: svc::Param<u16>>(
         &self,
     ) -> Inbound<
         impl svc::Service<
@@ -122,35 +120,34 @@ impl Inbound<()> {
         }
     }
 
-    pub fn serve<G, GSvc, P>(
+    pub fn serve<B, G, GSvc, P>(
         self,
+        bind: B,
         profiles: P,
         gateway: G,
-    ) -> (SocketAddr, impl Future<Output = ()> + Send)
+    ) -> (Local<ServerAddr>, impl Future<Output = ()> + Send)
     where
+        B: Bind<ServerConfig>,
+        B::Addrs: svc::Param<Remote<ClientAddr>>
+            + svc::Param<Local<ServerAddr>>
+            + svc::Param<OrigDstAddr>,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
         G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<tokio::net::TcpStream>>, Response = ()>
-            + Send
-            + 'static,
+        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Error: Send,
         P::Future: Send,
     {
-        let (listen_addr, listen) = self
-            .config
-            .proxy
-            .server
-            .bind
-            .bind()
+        let (listen_addr, listen) = bind
+            .bind(&self.config.proxy.server)
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack = self
-                .to_tcp_connect()
-                .into_server(listen_addr.port(), profiles, gateway);
+            let stack =
+                self.to_tcp_connect()
+                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -218,7 +215,7 @@ where
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        T: Param<Remote<ClientAddr>> + Param<Option<OrigDstAddr>> + Clone + Send + 'static,
+        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -267,7 +264,7 @@ where
                     .stack
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
-                    .push_request_filter(TcpAccept::port_skipped)
+                    .push_map_target(TcpAccept::port_skipped)
                     .check_new_service::<T, _>()
                     .instrument(|_: &T| debug_span!("forward"))
                     .into_inner(),
@@ -282,13 +279,9 @@ where
                     .into_inner(),
             )
             .instrument(|a: &T| {
-                if let Some(OrigDstAddr(target_addr)) = a.param() {
-                    info_span!("server", port = target_addr.port())
-                } else {
-                    info_span!("server", port = %"<no original dst>")
-                }
+                let OrigDstAddr(target_addr) = a.param();
+                info_span!("server", port = target_addr.port())
             })
-            .check_new_service::<T, I>()
             .into_inner()
     }
 }
@@ -303,18 +296,12 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
 
 impl<T> svc::Predicate<T> for SkipByPort
 where
-    T: Param<Option<OrigDstAddr>>,
+    T: svc::Param<OrigDstAddr>,
 {
     type Request = svc::Either<T, T>;
 
     fn check(&mut self, t: T) -> Result<Self::Request, Error> {
-        let OrigDstAddr(addr) = t.param().ok_or_else(|| {
-            tracing::warn!("No SO_ORIGINAL_DST address found!");
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No SO_ORIGINAL_DST address found",
-            )
-        })?;
+        let OrigDstAddr(addr) = t.param();
         if !self.0.contains(&addr.port()) {
             Ok(svc::Either::A(t))
         } else {

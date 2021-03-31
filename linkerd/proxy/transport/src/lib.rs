@@ -4,11 +4,13 @@ pub mod addrs;
 mod connect;
 pub mod listen;
 pub mod metrics;
+pub mod orig_dst;
 
 pub use self::{
     addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr},
     connect::ConnectTcp,
-    listen::{BindTcp, DefaultOrigDstAddr, GetOrigDstAddr, NoOrigDstAddr},
+    listen::{Bind, BindTcp},
+    orig_dst::BindWithOrigDst,
 };
 use std::time::Duration;
 use tokio::net::TcpStream;

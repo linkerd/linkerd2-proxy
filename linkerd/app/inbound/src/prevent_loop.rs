@@ -44,17 +44,11 @@ impl PreventLoop {
     }
 }
 
-impl<T: Param<Option<OrigDstAddr>>> Predicate<T> for SwitchLoop {
+impl<T: Param<OrigDstAddr>> Predicate<T> for SwitchLoop {
     type Request = Either<T, T>;
 
     fn check(&mut self, addrs: T) -> Result<Either<T, T>, Error> {
-        let OrigDstAddr(addr) = addrs.param().ok_or_else(|| {
-            tracing::warn!("No SO_ORIGINAL_DST address found!");
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No SO_ORIGINAL_DST address found",
-            )
-        })?;
+        let OrigDstAddr(addr) = addrs.param();
         tracing::debug!(%addr, self.port);
         if addr.port() != self.port {
             Ok(Either::A(addrs))

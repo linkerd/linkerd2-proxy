@@ -31,9 +31,7 @@ FROM $RUST_IMAGE as build
 # When set, causes the proxy to be compiled in development mode.
 ARG PROXY_UNOPTIMIZED
 
-# Controls what features are enabled in the proxy. This is typically empty but
-# may be set to `mock-orig-dst` for profiling builds, or to `multithreaded` to
-# enable the multithreaded Tokio runtime.
+# Controls what features are enabled in the proxy.
 ARG PROXY_FEATURES
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \

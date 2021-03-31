@@ -7,25 +7,20 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{BindTcp, Keepalive, ListenAddr},
+    transport::{self, orig_dst, Keepalive, ListenAddr},
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 
-const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
-
-pub fn default_config(orig_dst: SocketAddr) -> Config {
+pub fn default_config() -> Config {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                bind: BindTcp::new(
-                    ListenAddr(SocketAddr::new(LOCALHOST.into(), 0)),
-                    Keepalive(None),
-                )
-                .with_orig_dst_addr(orig_dst.into()),
+                addr: ListenAddr(([0, 0, 0, 0], 0).into()),
+                keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {
@@ -64,4 +59,15 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
         drain,
     };
     (runtime, drain_tx)
+}
+
+pub fn addrs(od: SocketAddr) -> orig_dst::Addrs {
+    use transport::{addrs::*, listen};
+    orig_dst::Addrs {
+        orig_dst: OrigDstAddr(od),
+        inner: listen::Addrs {
+            server: Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
+            client: Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
+        },
+    }
 }

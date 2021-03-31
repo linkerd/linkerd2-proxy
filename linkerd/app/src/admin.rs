@@ -3,17 +3,18 @@ use crate::core::{
     config::ServerConfig,
     detect, drain, errors,
     metrics::{self, FmtMetrics},
-    serve, tls, trace,
-    transport::listen,
+    serve,
+    svc::{self, Param},
+    tls, trace,
+    transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
 use crate::{
     http,
     identity::LocalCrtKey,
     inbound::target::{HttpAccept, Target, TcpAccept},
-    svc,
 };
-use std::{net::SocketAddr, pin::Pin, time::Duration};
+use std::{pin::Pin, time::Duration};
 use tokio::sync::mpsc;
 use tracing::debug;
 
@@ -24,7 +25,7 @@ pub struct Config {
 }
 
 pub struct Admin {
-    pub listen_addr: SocketAddr,
+    pub listen_addr: Local<ServerAddr>,
     pub latch: admin::Latch,
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
@@ -32,8 +33,10 @@ pub struct Admin {
 // === impl Config ===
 
 impl Config {
-    pub fn build<R>(
+    #[allow(clippy::clippy::too_many_arguments)]
+    pub fn build<B, R>(
         self,
+        bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
         metrics: metrics::Proxy,
@@ -43,10 +46,12 @@ impl Config {
     ) -> Result<Admin, Error>
     where
         R: FmtMetrics + Clone + Send + 'static + Unpin,
+        B: Bind<ServerConfig>,
+        B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
     {
         const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 
-        let (listen_addr, listen) = self.server.bind.bind()?;
+        let (listen_addr, listen) = bind.bind(&self.server)?;
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, shutdown, trace);
@@ -76,8 +81,15 @@ impl Config {
                 http::DetectHttp::default(),
             ))
             .push(metrics.transport.layer_accept())
-            .push_map_target(TcpAccept::from_local_addr)
-            .check_new_clone::<tls::server::Meta<listen::Addrs>>()
+            .push_map_target(|(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
+                // TODO this should use an admin-specific target type.
+                let Local(ServerAddr(target_addr)) = addrs.param();
+                TcpAccept {
+                    tls,
+                    client_addr: addrs.param(),
+                    target_addr,
+                }
+            })
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();
 

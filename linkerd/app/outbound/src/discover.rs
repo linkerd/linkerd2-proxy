@@ -22,7 +22,7 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: Param<Option<OrigDstAddr>>,
+        T: Param<OrigDstAddr>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + 'static,
         NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,

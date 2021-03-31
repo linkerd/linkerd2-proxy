@@ -11,7 +11,9 @@ use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{
-    listen::Addrs, BindTcp, ConnectTcp, Keepalive, ListenAddr, Remote, ServerAddr,
+    addrs::*,
+    listen::{Addrs, Bind, BindTcp},
+    ConnectTcp, Keepalive, ListenAddr,
 };
 use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
@@ -156,12 +158,6 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        // Let the OS decide the port number and then return the resulting
-        // `SocketAddr` so the client can connect to it. This allows multiple
-        // tests to run at once, which wouldn't work if they all were bound on
-        // a fixed port.
-        let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-
         let mut detect = tls::NewDetectTls::new(
             server_tls.map(Tls),
             move |meta: tls::server::Meta<Addrs>| {
@@ -188,18 +184,16 @@ where
             std::time::Duration::from_secs(10),
         );
 
-        let (listen_addr, listen) = BindTcp::new(ListenAddr(addr), Keepalive(None))
-            .bind()
-            .expect("must bind");
+        let (listen_addr, listen) = BindTcp::default().bind(&Server).expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
-            let (meta, io) = listen
+            let (addrs, io) = listen
                 .next()
                 .await
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            let accept = detect.new_service(meta);
+            let accept = detect.new_service(addrs);
             accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
@@ -220,7 +214,7 @@ where
         let client = async move {
             let conn = tls::Client::layer(client_tls)
                 .layer(ConnectTcp::new(Keepalive(None)))
-                .oneshot(Target(server_addr, client_server_id.map(Into::into)))
+                .oneshot(Target(server_addr.into(), client_server_id.map(Into::into)))
                 .await;
             match conn {
                 Err(e) => {
@@ -306,11 +300,16 @@ const PING: &[u8] = b"ping";
 const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
+#[derive(Copy, Clone, Debug)]
+struct Server;
+
 #[derive(Clone)]
 struct Target(SocketAddr, tls::ConditionalClientTls);
 
 #[derive(Clone)]
 struct Tls(id::CrtKey);
+
+// === impl Target ===
 
 impl Param<Remote<ServerAddr>> for Target {
     fn param(&self) -> Remote<ServerAddr> {
@@ -323,6 +322,8 @@ impl Param<tls::ConditionalClientTls> for Target {
         self.1.clone()
     }
 }
+
+// === impl Tls ===
 
 impl Param<tls::client::Config> for Tls {
     fn param(&self) -> tls::client::Config {
@@ -339,5 +340,22 @@ impl Param<tls::server::Config> for Tls {
 impl Param<tls::LocalId> for Tls {
     fn param(&self) -> tls::LocalId {
         self.0.id().clone()
+    }
+}
+
+// === impl Server ===
+
+impl Param<ListenAddr> for Server {
+    fn param(&self) -> ListenAddr {
+        // Let the OS decide the port number and then return the resulting
+        // `SocketAddr` so the client can connect to it. This allows multiple
+        // tests to run at once, which wouldn't work if they all were bound on
+        // a fixed port.
+        ListenAddr(([127, 0, 0, 1], 0).into())
+    }
+}
+impl Param<Keepalive> for Server {
+    fn param(&self) -> Keepalive {
+        Keepalive(None)
     }
 }

@@ -71,7 +71,7 @@ async fn unmeshed_http1_hello_world() {
     profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
-    let cfg = default_config(accept.tcp.target_addr);
+    let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
@@ -118,7 +118,7 @@ async fn downgrade_origin_form() {
     profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
-    let cfg = default_config(accept.tcp.target_addr);
+    let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
@@ -166,7 +166,7 @@ async fn downgrade_absolute_form() {
     profile_tx.send(profile::Profile::default()).unwrap();
 
     // Build the outbound server
-    let cfg = default_config(accept.tcp.target_addr);
+    let cfg = default_config();
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;

@@ -3,7 +3,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![type_length_limit = "16289823"]
 
-use linkerd_app::{trace, Config};
+use linkerd_app::{core::transport::BindTcp, trace, Config};
 use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
@@ -14,22 +14,36 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod rt;
 
+const EX_USAGE: i32 = 64;
+
 fn main() {
-    let trace = trace::init();
+    let trace = match trace::init() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Invalid logging configuration: {}", e);
+            std::process::exit(EX_USAGE);
+        }
+    };
 
     // Load configuration from the environment without binding ports.
     let config = match Config::try_from_env() {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Invalid configuration: {}", e);
-            const EX_USAGE: i32 = 64;
             std::process::exit(EX_USAGE);
         }
     };
 
+    // Builds a runtime with the appropriate number of cores:
+    // `LINKERD2_PROXY_CORES` env or the number of available CPUs (as provided
+    // by cgroups, when possible).
     rt::build().block_on(async move {
         let (shutdown_tx, mut shutdown_rx) = mpsc::unbounded_channel();
-        let app = match async move { config.build(shutdown_tx, trace?).await }.await {
+        let bind = BindTcp::with_orig_dst();
+        let app = match config
+            .build(bind, bind, BindTcp::default(), shutdown_tx, trace)
+            .await
+        {
             Ok(app) => app,
             Err(e) => {
                 eprintln!("Initialization failure: {}", e);

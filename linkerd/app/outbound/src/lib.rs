@@ -15,7 +15,7 @@ pub mod tcp;
 pub(crate) mod test_util;
 
 use linkerd_app_core::{
-    config::ProxyConfig,
+    config::{ProxyConfig, ServerConfig},
     io, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
@@ -24,10 +24,10 @@ use linkerd_app_core::{
     serve,
     svc::{self, stack::Param},
     tls,
-    transport::OrigDstAddr,
+    transport::{addrs::*, listen::Bind},
     AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, future::Future, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, future::Future, time::Duration};
 use tracing::info;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -103,7 +103,8 @@ impl<S> Outbound<S> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        T: Param<Option<OrigDstAddr>>,
+        Self: Clone + 'static,
+        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,
@@ -135,8 +136,15 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub fn serve<P, R>(self, profiles: P, resolve: R) -> (SocketAddr, impl Future<Output = ()>)
+    pub fn serve<B, P, R>(
+        self,
+        bind: B,
+        profiles: P,
+        resolve: R,
+    ) -> (Local<ServerAddr>, impl Future<Output = ()>)
     where
+        B: Bind<ServerConfig>,
+        B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
@@ -145,12 +153,8 @@ impl Outbound<()> {
         P::Future: Send,
         P::Error: Send,
     {
-        let (listen_addr, listen) = self
-            .config
-            .proxy
-            .server
-            .bind
-            .bind()
+        let (listen_addr, listen) = bind
+            .bind(&self.config.proxy.server)
             .expect("Failed to bind outbound listener");
 
         let serve = async move {

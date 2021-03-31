@@ -9,11 +9,6 @@ description = """
 Transport-level implementations that rely on core proxy infrastructure
 """
 
-# This should probably be decomposed into smaller, decoupled crates.
-
-[features]
-mock-orig-dst  = []
-
 [dependencies]
 bytes = "1"
 futures = "0.3.9"
