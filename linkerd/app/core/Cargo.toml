@@ -12,9 +12,6 @@ This crate conglomerates proxy configuration, runtime administration, etc,
 independently of the inbound and outbound proxy logic.
 """
 
-[features]
-mock-orig-dst  = ["linkerd-proxy-transport/mock-orig-dst"]
-
 [dependencies]
 bytes = "1"
 http = "0.2"

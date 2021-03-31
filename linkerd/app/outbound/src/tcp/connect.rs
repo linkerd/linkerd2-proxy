@@ -25,14 +25,14 @@ pub struct PreventLoopback<S>(S);
 
 // === impl Outbound ===
 
-impl<A: Clone> Outbound<(), A> {
-    pub fn to_tcp_connect(&self) -> Outbound<PreventLoopback<ConnectTcp>, A> {
+impl Outbound<()> {
+    pub fn to_tcp_connect(&self) -> Outbound<PreventLoopback<ConnectTcp>> {
         let connect = PreventLoopback(ConnectTcp::new(self.config.proxy.connect.keepalive));
         self.clone().with_stack(connect)
     }
 }
 
-impl<C, A> Outbound<C, A> {
+impl<C> Outbound<C> {
     pub fn push_tcp_endpoint<T>(
         self,
     ) -> Outbound<
@@ -42,7 +42,6 @@ impl<C, A> Outbound<C, A> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-        A,
     >
     where
         T: svc::Param<Remote<ServerAddr>>
@@ -90,7 +89,6 @@ impl<C, A> Outbound<C, A> {
                 super::Endpoint,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
             > + Clone,
-        A,
     >
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,

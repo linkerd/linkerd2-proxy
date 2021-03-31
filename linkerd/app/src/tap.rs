@@ -11,14 +11,14 @@ use linkerd_app_core::{
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::{fmt, net::SocketAddr, pin::Pin};
+use std::{fmt, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
-pub enum Config<B> {
+pub enum Config {
     Disabled,
     Enabled {
-        config: ServerConfig<B>,
+        config: ServerConfig,
         permitted_client_ids: IndexSet<tls::server::ClientId>,
     },
 }
@@ -28,18 +28,22 @@ pub enum Tap {
         registry: tap::Registry,
     },
     Enabled {
-        listen_addr: SocketAddr,
+        listen_addr: Local<ServerAddr>,
         registry: tap::Registry,
         serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     },
 }
 
-impl<B> Config<B> {
-    pub fn build(self, identity: Option<LocalCrtKey>, drain: drain::Watch) -> Result<Tap, Error>
+impl Config {
+    pub fn build<B>(
+        self,
+        bind: B,
+        identity: Option<LocalCrtKey>,
+        drain: drain::Watch,
+    ) -> Result<Tap, Error>
     where
-        B: Bind + Clone + Send + Sync + 'static,
-        B::Addrs:
-            Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Clone + Send + Sync + 'static,
+        B: Bind<ServerConfig>,
+        B::Addrs: Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
         B::Io: io::Peek + io::PeerAddr + fmt::Debug + Unpin,
     {
         let (registry, server) = tap::new();
@@ -52,7 +56,7 @@ impl<B> Config<B> {
                 config,
                 permitted_client_ids,
             } => {
-                let (listen_addr, listen) = config.bind.bind()?;
+                let (listen_addr, listen) = bind.bind(&config)?;
                 let accept = svc::stack(server)
                     .push(svc::layer::mk(move |service| {
                         tap::AcceptPermittedClients::new(

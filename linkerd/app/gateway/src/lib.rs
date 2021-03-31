@@ -64,10 +64,10 @@ struct RefusedNoTarget(());
 struct RefusedNotResolved(NameAddr);
 
 #[allow(clippy::clippy::too_many_arguments)]
-pub fn stack<I, O, P, R, A>(
+pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
-    inbound: Inbound<(), A>,
-    outbound: Outbound<O, A>,
+    inbound: Inbound<()>,
+    outbound: Outbound<O>,
     profiles: P,
     resolve: R,
 ) -> impl svc::NewService<
@@ -78,7 +78,6 @@ pub fn stack<I, O, P, R, A>(
 > + Clone
        + Send
 where
-    A: Clone + Send + Sync + 'static,
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
     O: svc::Service<outbound::tcp::Connect, Error = io::Error>,

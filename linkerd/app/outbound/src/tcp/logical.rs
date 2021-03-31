@@ -12,7 +12,7 @@ use linkerd_app_core::{
 };
 use tracing::{debug, debug_span};
 
-impl<C, A> Outbound<C, A>
+impl<C> Outbound<C>
 where
     C: svc::Service<Endpoint> + Clone + Send + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
@@ -28,7 +28,6 @@ where
                 Logical,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
-        A,
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,

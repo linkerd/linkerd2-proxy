@@ -13,7 +13,7 @@ use linkerd_app_core::{
     io,
     svc::{self, NewService},
     tls,
-    transport::{listen, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{addrs::*, listen, orig_dst},
     Error, NameAddr, ProxyRuntime,
 };
 use std::{
@@ -27,14 +27,14 @@ use tokio::time;
 use tower::{Service, ServiceExt};
 use tracing::Instrument;
 
-fn build_server<I, A>(
-    cfg: Config<A>,
+fn build_server<I>(
+    cfg: Config,
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
-    listen::Addrs,
+    orig_dst::Addrs<listen::Addrs>,
     Service = impl tower::Service<
         I,
         Response = (),
@@ -46,15 +46,14 @@ fn build_server<I, A>(
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
-    A: Clone + 'static,
 {
     build_accept(cfg, rt, resolver, connect)
         .push_discover(profiles)
         .into_inner()
 }
 
-fn build_accept<I, A>(
-    cfg: Config<A>,
+fn build_accept<I>(
+    cfg: Config,
     rt: ProxyRuntime,
     resolver: resolver::Dst<resolver::Metadata>,
     connect: Connect<Endpoint>,
@@ -67,11 +66,9 @@ fn build_accept<I, A>(
         > + Clone
         + Send
         + 'static,
-    A,
 >
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
-    A: Clone + 'static,
 {
     let out = Outbound::new(cfg, rt);
     out.clone().with_stack(NoTcpBalancer).push_detect_http(
@@ -100,6 +97,7 @@ impl<I> svc::Service<I> for NoTcpBalancer {
     type Response = ();
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         unreachable!("no TCP load balancer should be created in this test!");
     }
@@ -425,12 +423,14 @@ async fn active_stacks_dont_idle_out() {
     proxy_bg.await.unwrap();
 }
 
-pub fn addrs(od: SocketAddr) -> listen::Addrs {
-    listen::Addrs::new(
-        Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
-        Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        OrigDstAddr(od),
-    )
+pub fn addrs(od: SocketAddr) -> orig_dst::Addrs {
+    orig_dst::Addrs {
+        orig_dst: OrigDstAddr(od),
+        inner: listen::Addrs {
+            server: Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
+            client: Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
+        },
+    }
 }
 
 async fn unmeshed_hello_world(

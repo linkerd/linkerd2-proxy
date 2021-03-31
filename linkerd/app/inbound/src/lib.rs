@@ -21,22 +21,20 @@ use self::{
     target::{HttpAccept, TcpAccept},
 };
 use linkerd_app_core::{
-    config::{ConnectConfig, ProxyConfig},
+    config::{ConnectConfig, ProxyConfig, ServerConfig},
     detect, drain, io, metrics, profiles,
     proxy::tcp,
-    serve,
-    svc::{self, Param},
-    tls,
-    transport::{self, listen::Bind, BindTcp, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    serve, svc, tls,
+    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
-use std::{convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr, time::Duration};
+use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
-pub struct Config<B> {
+pub struct Config {
     pub allow_discovery: NameMatch,
-    pub proxy: ProxyConfig<B>,
+    pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
     pub disable_protocol_detection_for_ports: SkipByPort,
     pub profile_idle_timeout: Duration,
@@ -46,30 +44,16 @@ pub struct Config<B> {
 pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 #[derive(Clone, Debug)]
-pub struct Inbound<S, B> {
-    config: Config<B>,
+pub struct Inbound<S> {
+    config: Config,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
-// === impl Config ===
-
-impl<B> Config<BindTcp<B>> {
-    pub fn with_orig_dst<A2>(self, orig_dst: A2) -> Config<BindTcp<A2>> {
-        Config {
-            allow_discovery: self.allow_discovery,
-            proxy: self.proxy.with_orig_dst_addrs(orig_dst),
-            require_identity_for_inbound_ports: self.require_identity_for_inbound_ports,
-            disable_protocol_detection_for_ports: self.disable_protocol_detection_for_ports,
-            profile_idle_timeout: self.profile_idle_timeout,
-        }
-    }
-}
-
 // === impl Inbound ===
 
-impl<S, B> Inbound<S, B> {
-    pub fn config(&self) -> &Config<B> {
+impl<S> Inbound<S> {
+    pub fn config(&self) -> &Config {
         &self.config
     }
 
@@ -86,8 +70,8 @@ impl<S, B> Inbound<S, B> {
     }
 }
 
-impl<B> Inbound<(), B> {
-    pub fn new(config: Config<B>, runtime: ProxyRuntime) -> Self {
+impl Inbound<()> {
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -95,7 +79,7 @@ impl<B> Inbound<(), B> {
         }
     }
 
-    pub fn with_stack<S>(self, stack: S) -> Inbound<S, B> {
+    pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
         Inbound {
             config: self.config,
             runtime: self.runtime,
@@ -103,7 +87,7 @@ impl<B> Inbound<(), B> {
         }
     }
 
-    pub fn to_tcp_connect<T: Param<u16>>(
+    pub fn to_tcp_connect<T: svc::Param<u16>>(
         &self,
     ) -> Inbound<
         impl svc::Service<
@@ -112,11 +96,7 @@ impl<B> Inbound<(), B> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-        B,
-    >
-    where
-        B: Clone,
-    {
+    > {
         let Self {
             config, runtime, ..
         } = self.clone();
@@ -140,16 +120,17 @@ impl<B> Inbound<(), B> {
         }
     }
 
-    pub fn serve<G, GSvc, P>(
+    pub fn serve<B, G, GSvc, P>(
         self,
+        bind: B,
         profiles: P,
         gateway: G,
-    ) -> (SocketAddr, impl Future<Output = ()> + Send)
+    ) -> (Local<ServerAddr>, impl Future<Output = ()> + Send)
     where
-        B: Bind + Clone + Send + Sync + 'static,
-        B::Addrs: Param<Remote<ClientAddr>>
-            + Param<Local<ServerAddr>>
-            + Param<OrigDstAddr>
+        B: Bind<ServerConfig>,
+        B::Addrs: svc::Param<Remote<ClientAddr>>
+            + svc::Param<Local<ServerAddr>>
+            + svc::Param<OrigDstAddr>
             + Clone
             + Send,
         B::Io: io::Peek + io::PeerAddr + Debug + Unpin,
@@ -162,18 +143,14 @@ impl<B> Inbound<(), B> {
         P::Error: Send,
         P::Future: Send,
     {
-        let (listen_addr, listen) = self
-            .config
-            .proxy
-            .server
-            .bind
-            .bind()
+        let (listen_addr, listen) = bind
+            .bind(&self.config.proxy.server)
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack = self
-                .to_tcp_connect()
-                .into_server(listen_addr.port(), profiles, gateway);
+            let stack =
+                self.to_tcp_connect()
+                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -182,7 +159,7 @@ impl<B> Inbound<(), B> {
     }
 }
 
-impl<C, B> Inbound<C, B>
+impl<C> Inbound<C>
 where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
@@ -197,7 +174,6 @@ where
                 TcpEndpoint,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
             > + Clone,
-        B,
     >
     where
         I: io::AsyncRead + io::AsyncWrite,
@@ -242,8 +218,7 @@ where
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     > + Clone
     where
-        B: Clone + 'static,
-        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
+        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -324,7 +299,7 @@ impl From<indexmap::IndexSet<u16>> for SkipByPort {
 
 impl<T> svc::Predicate<T> for SkipByPort
 where
-    T: Param<OrigDstAddr>,
+    T: svc::Param<OrigDstAddr>,
 {
     type Request = svc::Either<T, T>;
 
