@@ -8,8 +8,8 @@ use boring::{
     pkey::{PKey, Private},
     stack::Stack,
     x509::{
-        {X509, X509StoreContext, X509VerifyResult},
         store::{X509Store, X509StoreBuilder},
+        {X509StoreContext, X509VerifyResult, X509},
     },
 };
 #[cfg(not(feature = "boring-tls"))]
