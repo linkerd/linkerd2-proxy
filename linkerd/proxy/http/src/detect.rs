@@ -156,7 +156,6 @@ pub mod fuzz_logic {
         let a1 = async {
             use tokio_test::io;
 
-            debug!(read = ?std::str::from_utf8(input).unwrap());
             let mut buf = BytesMut::with_capacity(1024);
             let mut io = io::Builder::new().read(&input).build();
             let _kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
