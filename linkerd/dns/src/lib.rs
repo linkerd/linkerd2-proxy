@@ -258,19 +258,13 @@ pub mod fuzz_logic {
         fn configure_resolver(&self, _opts: &mut ResolverOpts) {}
     }
 
-    // Test the resolvers dont panic unexpectedly.
-    pub fn fuzz_entry(fuzz_data: &str) {
-        if let Ok(_name) = Name::from_str(fuzz_data) {
-            let _fcon = FuzzConfig {};
-            let _resolver = Resolver::from_system_config_with(&_fcon).unwrap();
-            let a1 = async {
-                let _w = _resolver.resolve_a(&_name).await;
-            };
-            futures::executor::block_on(a1);
-            let a2 = async {
-                let _w2 = _resolver.resolve_srv(&_name).await;
-            };
-            futures::executor::block_on(a2);
+    // Test the resolvers do not panic unexpectedly.
+    pub async fn fuzz_entry(fuzz_data: &str) {
+        if let Ok(name) = Name::from_str(fuzz_data) {
+            let fcon = FuzzConfig {};
+            let resolver = Resolver::from_system_config_with(&fcon).unwrap();
+            let _w = resolver.resolve_a(&name).await;
+            let _w2 = resolver.resolve_srv(&name).await;
         }
     }
 }
