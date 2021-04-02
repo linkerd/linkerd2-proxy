@@ -152,14 +152,11 @@ mod tests {
 pub mod fuzz_logic {
     use super::*;
 
-    pub fn fuzz_entry(input: &[u8]) {
-        let a1 = async {
-            use tokio_test::io;
+    pub async fn fuzz_entry(input: &[u8]) {
+        use tokio_test::io;
 
-            let mut buf = BytesMut::with_capacity(1024);
-            let mut io = io::Builder::new().read(&input).build();
-            let _kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
-        };
-        futures::executor::block_on(a1);
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut io = io::Builder::new().read(&input).build();
+        let _kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
     }
 }
