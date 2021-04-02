@@ -154,9 +154,9 @@ impl svc::Predicate<tcp::Logical> for SkipByProfile {
 
     fn check(&mut self, l: tcp::Logical) -> Result<Self::Request, Error> {
         if l.profile.borrow().opaque_protocol {
-            Ok(svc::Either::A(l))
-        } else {
             Ok(svc::Either::B(l))
+        } else {
+            Ok(svc::Either::A(l))
         }
     }
 }
