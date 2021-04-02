@@ -10,7 +10,7 @@ use crate::{
 use bytes::Bytes;
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
-    io,
+    io, profiles,
     svc::{self, NewService},
     tls,
     transport::orig_dst,
@@ -59,7 +59,7 @@ fn build_accept<I>(
     connect: Connect<Endpoint>,
 ) -> Outbound<
     impl svc::NewService<
-            crate::tcp::Logical,
+            (Option<profiles::Receiver>, crate::tcp::Accept),
             Service = impl tower::Service<I, Response = (), Error = Error, Future = impl Send>
                           + Send
                           + 'static,
@@ -71,13 +71,30 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let out = Outbound::new(cfg, rt);
-    out.clone().with_stack(NoTcpBalancer).push_detect_http(
-        out.with_stack(connect)
-            .push_http_endpoint()
-            .push_http_logical(resolver)
-            .push_http_server()
-            .into_inner(),
-    )
+    let connect = out.clone().with_stack(connect);
+    let http_endpoint = connect
+        .clone()
+        .push_http_endpoint()
+        .push_into_endpoint()
+        .push_http_server::<crate::http::Accept, _>()
+        .into_inner();
+    let endpoint = out
+        .clone()
+        .with_stack(NoTcpBalancer)
+        .push_detect_stack::<_, _, crate::tcp::Accept, _, _, _, _>(http_endpoint)
+        .into_inner();
+
+    let http = connect
+        .clone()
+        .push_http_endpoint()
+        .push_http_logical(resolver.clone())
+        .push_http_server()
+        .into_inner();
+
+    out.clone()
+        .with_stack(NoTcpBalancer)
+        .push_detect_http(http)
+        .push_logical(endpoint)
 }
 
 #[derive(Clone, Debug)]
