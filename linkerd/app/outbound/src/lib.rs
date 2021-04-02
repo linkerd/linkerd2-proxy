@@ -147,7 +147,7 @@ impl<S> Outbound<S> {
         self.push_tcp_endpoint()
             .push_tcp_logical(resolve)
             .push_detect_http(http)
-            .push_logical(endpoint)
+            .push_profile(endpoint)
             .push_discover(profiles)
             .into_inner()
     }

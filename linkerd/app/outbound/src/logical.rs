@@ -2,7 +2,7 @@ use crate::{tcp, Outbound};
 use linkerd_app_core::{profiles, svc, Error};
 
 impl<L> Outbound<L> {
-    pub fn push_logical<T, I, E, ESvc, LSvc>(
+    pub fn push_profile<T, I, E, ESvc, LSvc>(
         self,
         endpoint: E,
     ) -> Outbound<
