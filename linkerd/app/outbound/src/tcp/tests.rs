@@ -39,7 +39,7 @@ async fn plaintext_tcp() {
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
     let logical = Logical {
         orig_dst: OrigDstAddr(target_addr),
-        profile: Some(profile::only_default()),
+        profile: profile::only_default(),
         protocol: (),
     };
 
@@ -82,14 +82,14 @@ async fn tls_when_hinted() {
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls = Logical {
         orig_dst: OrigDstAddr(tls_addr),
-        profile: Some(profile::only_with_addr("tls:5550")),
+        profile: profile::only_with_addr("tls:5550"),
         protocol: (),
     };
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
     let plain = Logical {
         orig_dst: OrigDstAddr(plain_addr),
-        profile: Some(profile::only_with_addr("plain:5551")),
+        profile: profile::only_with_addr("plain:5551"),
         protocol: (),
     };
 
@@ -774,10 +774,17 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (rt, _) = runtime();
-    Outbound::new(cfg, rt)
-        .with_stack(connect)
+    let connect = Outbound::new(cfg, rt).with_stack(connect);
+    let endpoint = connect
+        .clone()
+        .push_tcp_forward()
+        .push_into_endpoint::<(), super::Accept>()
+        .push_detect_stack::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
+        .into_inner();
+    connect
         .push_tcp_logical(resolver)
         .push_detect_http(support::service::no_http())
+        .push_logical(endpoint)
         .push_discover(profiles)
         .into_inner()
 }
