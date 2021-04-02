@@ -24,7 +24,7 @@ pub struct Accept<P> {
 #[derive(Clone)]
 pub struct Logical<P> {
     pub orig_dst: OrigDstAddr,
-    pub profile: Option<profiles::Receiver>,
+    pub profile: profiles::Receiver,
     pub protocol: P,
 }
 
@@ -63,14 +63,14 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
 
 // === impl Logical ===
 
-impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
+impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
     fn from(
         (
             profile,
             Accept {
                 orig_dst, protocol, ..
             },
-        ): (Option<profiles::Receiver>, Accept<P>),
+        ): (profiles::Receiver, Accept<P>),
     ) -> Self {
         Self {
             profile,
@@ -81,9 +81,16 @@ impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
 }
 
 /// Used for traffic split
+impl<P> Param<profiles::Receiver> for Logical<P> {
+    fn param(&self) -> profiles::Receiver {
+        self.profile.clone()
+    }
+}
+
+// TODO(eliza): eventually we won't need this
 impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
     fn param(&self) -> Option<profiles::Receiver> {
-        self.profile.clone()
+        Some(self.profile.clone())
     }
 }
 
@@ -97,8 +104,9 @@ impl<P> Param<profiles::LookupAddr> for Logical<P> {
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         self.profile
-            .as_ref()
-            .and_then(|p| p.borrow().addr.clone())
+            .borrow()
+            .addr
+            .clone()
             .map(|LogicalAddr(a)| Addr::from(a))
             .unwrap_or_else(|| self.orig_dst.0.into())
     }
@@ -124,17 +132,7 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
         f.debug_struct("Logical")
             .field("orig_dst", &self.orig_dst)
             .field("protocol", &self.protocol)
-            .field(
-                "profile",
-                &format_args!(
-                    "{}",
-                    if self.profile.is_some() {
-                        "Some(..)"
-                    } else {
-                        "None"
-                    }
-                ),
-            )
+            .field("profile", &format_args!(".."))
             .finish()
     }
 }
@@ -144,12 +142,9 @@ impl<P> Logical<P> {
         reason: tls::NoClientTls,
     ) -> impl Fn(Self) -> Result<svc::Either<Self, Endpoint<P>>, Error> + Copy {
         move |logical: Self| {
-            let should_resolve = match logical.profile.as_ref() {
-                Some(p) => {
-                    let p = p.borrow();
-                    p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-                }
-                None => false,
+            let should_resolve = {
+                let p = logical.profile.borrow();
+                p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
             };
 
             if should_resolve {
@@ -177,14 +172,15 @@ impl<P> Param<ConcreteAddr> for Concrete<P> {
 }
 
 // === impl Endpoint ===
+impl<P> Endpoint<P> {
+    pub fn no_tls(reason: tls::NoClientTls) -> impl Fn(Accept<P>) -> Self {
+        move |accept| Self::from((reason, accept))
+    }
+}
 
 impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
     fn from((reason, logical): (tls::NoClientTls, Logical<P>)) -> Self {
-        match logical
-            .profile
-            .as_ref()
-            .and_then(|p| p.borrow().endpoint.clone())
-        {
+        match logical.profile.borrow().endpoint.clone() {
             None => Self {
                 addr: Remote(ServerAddr(logical.orig_dst.into())),
                 metadata: Metadata::default(),
@@ -205,7 +201,13 @@ impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
 
 impl<P> From<(tls::NoClientTls, Accept<P>)> for Endpoint<P> {
     fn from((reason, accept): (tls::NoClientTls, Accept<P>)) -> Self {
-        Self::from((reason, Logical::from((None, accept))))
+        Self {
+            addr: Remote(ServerAddr(accept.orig_dst.into())),
+            metadata: Metadata::default(),
+            tls: Conditional::None(reason),
+            logical_addr: accept.orig_dst.0.into(),
+            protocol: accept.protocol,
+        }
     }
 }
 

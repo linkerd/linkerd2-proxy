@@ -60,10 +60,14 @@ where
             Some(id) => id,
             None => return Gateway::NoIdentity,
         };
-
-        let dst = match profile.as_ref().and_then(|p| p.borrow().addr.clone()) {
-            Some(profiles::LogicalAddr(addr)) => addr,
+        let profile = match profile {
+            Some(profile) => profile,
             None => return Gateway::BadDomain(http.target.name().clone()),
+        };
+
+        let dst = match profile.borrow().addr.clone() {
+            Some(profiles::LogicalAddr(addr)) => addr,
+            _ => return Gateway::BadDomain(http.target.name().clone()),
         };
 
         // Create an outbound target using the resolved name and an address

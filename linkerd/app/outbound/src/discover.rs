@@ -24,7 +24,10 @@ impl<N> Outbound<N> {
     where
         T: Param<OrigDstAddr>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<tcp::Logical, Service = NSvc> + Clone + Send + 'static,
+        N: svc::NewService<(Option<profiles::Receiver>, tcp::Accept), Service = NSvc>
+            + Clone
+            + Send
+            + 'static,
         NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + 'static,
@@ -39,7 +42,6 @@ impl<N> Outbound<N> {
         let allow = AllowProfile(config.allow_discovery.clone().into());
 
         let stack = accept
-            .push_map_target(tcp::Logical::from)
             .push(profiles::discover::layer(profiles, allow))
             .push_on_response(
                 svc::layers()

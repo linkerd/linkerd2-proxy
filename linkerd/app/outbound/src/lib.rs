@@ -6,8 +6,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
 mod discover;
+pub mod endpoint;
 pub mod http;
-mod ingress;
+// mod ingress;
+pub mod logical;
 mod resolve;
 pub mod target;
 pub mod tcp;
@@ -119,6 +121,21 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
+        let http_endpoint = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_into_endpoint()
+            .push_http_server::<http::Accept, _>()
+            .into_inner();
+        let endpoint = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_tcp_forward()
+            .push_into_endpoint::<(), tcp::Accept>()
+            .push_detect_stack(http_endpoint)
+            .into_inner();
+
         let http = self
             .clone()
             .push_tcp_endpoint()
@@ -130,6 +147,7 @@ impl<S> Outbound<S> {
         self.push_tcp_endpoint()
             .push_tcp_logical(resolve)
             .push_detect_http(http)
+            .push_logical(endpoint)
             .push_discover(profiles)
             .into_inner()
     }
@@ -160,20 +178,21 @@ impl Outbound<()> {
         let serve = async move {
             if self.config.ingress_mode {
                 info!("Outbound routing in ingress-mode");
-                let tcp = self
-                    .to_tcp_connect()
-                    .push_tcp_endpoint()
-                    .push_tcp_forward()
-                    .into_inner();
-                let http = self
-                    .to_tcp_connect()
-                    .push_tcp_endpoint()
-                    .push_http_endpoint()
-                    .push_http_logical(resolve)
-                    .into_inner();
-                let stack = self.to_ingress(profiles, tcp, http);
-                let shutdown = self.runtime.drain.signaled();
-                serve::serve(listen, stack, shutdown).await;
+                todo!("ELIZA FINISH INGRESS LOL");
+            // let tcp = self
+            //     .to_tcp_connect()
+            //     .push_tcp_endpoint()
+            //     .push_tcp_forward()
+            //     .into_inner();
+            // let http = self
+            //     .to_tcp_connect()
+            //     .push_tcp_endpoint()
+            //     .push_http_endpoint()
+            //     .push_http_logical(resolve)
+            //     .into_inner();
+            // let stack = self.to_ingress(profiles, tcp, http);
+            // let shutdown = self.runtime.drain.signaled();
+            // serve::serve(listen, stack, shutdown).await;
             } else {
                 let stack = self.to_tcp_connect().into_server(resolve, profiles);
                 let shutdown = self.runtime.drain.signaled();

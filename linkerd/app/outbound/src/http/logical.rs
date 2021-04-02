@@ -175,12 +175,9 @@ impl<E> Outbound<E> {
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
             .push_switch(
                 move |logical: Logical| {
-                    let should_resolve = match logical.profile.as_ref() {
-                        Some(p) => {
-                            let p = p.borrow();
-                            p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-                        }
-                        None => false,
+                    let should_resolve = {
+                        let p = logical.profile.borrow();
+                        p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
                     };
 
                     if should_resolve {

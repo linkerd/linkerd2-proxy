@@ -116,8 +116,8 @@ where
         .push_tcp_logical(resolve.clone())
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
-            Some(rx) if rx.borrow().addr.is_some() => Ok(outbound::tcp::Logical {
-                profile: Some(rx),
+            Some(profile) if profile.borrow().addr.is_some() => Ok(outbound::tcp::Logical {
+                profile,
                 orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                 protocol: (),
             }),
