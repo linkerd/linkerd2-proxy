@@ -273,9 +273,7 @@ mod tests {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
-    pub async fn fuzz_entry(fuzz_name: &str,
-                            fuzz_port: u16,
-                            fuzz_proto: SessionProtocol) {
+    pub async fn fuzz_entry(fuzz_name: &str, fuzz_port: u16, fuzz_proto: SessionProtocol) {
         let header = TransportHeader {
             port: fuzz_port,
             name: Name::from_str(fuzz_name).ok(),
