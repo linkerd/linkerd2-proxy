@@ -273,24 +273,20 @@ mod tests {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
-    pub async fn fuzz_entry(fuzz_data: &str, ran_data: &[u8]) {
-        if let Ok(name) = Name::from_str(fuzz_data) {
-            let header = TransportHeader {
-                port: 4040,
-                name: Some(name),
-                protocol: Some(SessionProtocol::Http2),
-            };
-            let mut rx = {
-                let mut buf = BytesMut::new();
-                buf.put_slice(ran_data);
-                buf.put_slice(ran_data);
-                header.encode_prefaced(&mut buf).expect("must encode");
-                buf.put_slice(ran_data);
-                buf.put_slice(ran_data);
-                std::io::Cursor::new(buf.freeze())
-            };
+    pub async fn fuzz_entry(fuzz_name: &str,
+                            fuzz_port: u16,
+                            fuzz_proto: SessionProtocol) {
+        let header = TransportHeader {
+            port: fuzz_port,
+            name: Name::from_str(fuzz_name).ok(),
+            protocol: Some(fuzz_proto),
+        };
+        let mut rx = {
             let mut buf = BytesMut::new();
-            let _h = TransportHeader::read_prefaced(&mut rx, &mut buf).await;
-        }
+            header.encode_prefaced(&mut buf).expect("must encode");
+            std::io::Cursor::new(buf.freeze())
+        };
+        let mut buf = BytesMut::new();
+        let _h = TransportHeader::read_prefaced(&mut rx, &mut buf).await;
     }
 }
