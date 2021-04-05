@@ -88,8 +88,7 @@ impl<T> Outbound<T> {
             .push_map_target(HTgt::from)
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .push(svc::UnwrapOr::layer(
-                tcp.clone()
-                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
+                tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .check_new_service::<TTgt, _>()
                     .push_map_target(TTgt::from)
                     .check_new_service::<R, _>()

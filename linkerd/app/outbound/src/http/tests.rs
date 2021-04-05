@@ -91,8 +91,7 @@ where
         .push_http_server()
         .into_inner();
 
-    out.clone()
-        .with_stack(NoTcpBalancer)
+    out.with_stack(NoTcpBalancer)
         .push_detect_with_skip(http)
         .push_unwrap_logical(endpoint)
 }
