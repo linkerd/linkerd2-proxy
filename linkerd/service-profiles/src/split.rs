@@ -54,7 +54,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
     T: Clone + Param<LookupAddr> + Param<Receiver>,
-    N: NewService<(Option<ConcreteAddr>, T), Service = S> + Clone,
+    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
 {
@@ -76,7 +76,7 @@ where
         for Target { weight, addr } in targets.into_iter() {
             services.push(
                 addr.clone(),
-                new_service.new_service((Some(ConcreteAddr(addr.clone())), target.clone())),
+                new_service.new_service((ConcreteAddr(addr.clone()), target.clone())),
             );
             addrs.insert(addr);
             weights.push(weight);
@@ -100,7 +100,7 @@ impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
     T: Clone + Param<LookupAddr>,
-    N: NewService<(Option<ConcreteAddr>, T), Service = S> + Clone,
+    N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
     S::Error: Into<Error>,
@@ -140,7 +140,7 @@ where
                     debug!(%addr, "Creating target");
                     let svc = self
                         .new_service
-                        .new_service((Some(ConcreteAddr(addr.clone())), self.target.clone()));
+                        .new_service((ConcreteAddr(addr.clone()), self.target.clone()));
                     self.services.push(addr.clone(), svc);
                 } else {
                     trace!(%addr, "Target already exists");
