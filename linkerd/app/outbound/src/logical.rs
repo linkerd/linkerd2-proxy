@@ -2,7 +2,10 @@ use crate::{tcp, Outbound};
 use linkerd_app_core::{profiles, svc, Error};
 
 impl<L> Outbound<L> {
-    pub fn push_profile<T, I, E, ESvc, LSvc>(
+    /// Pushes a layer that unwraps the [`Logical`] address of a given target
+    /// from its profile resolution, or else falls back to the provided
+    /// per-endpoint service if there was no profile resolution for that target.
+    pub fn push_unwrap_logical<T, I, E, ESvc, LSvc>(
         self,
         endpoint: E,
     ) -> Outbound<
@@ -25,7 +28,7 @@ impl<L> Outbound<L> {
             runtime,
             stack: logical,
         } = self;
-        let stack = svc::stack(logical)
+        let stack = logical
             .push_map_target(tcp::Logical::from)
             .push(svc::UnwrapOr::layer(endpoint))
             .check_new_service::<(Option<profiles::Receiver>, T), _>();

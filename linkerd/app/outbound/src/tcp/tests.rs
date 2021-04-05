@@ -784,7 +784,7 @@ where
     connect
         .push_tcp_logical(resolver)
         .push_detect_http(support::service::no_http())
-        .push_profile(endpoint)
+        .push_unwrap_logical(endpoint)
         .push_discover(profiles)
         .into_inner()
 }

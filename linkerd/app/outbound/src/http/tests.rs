@@ -94,7 +94,7 @@ where
     out.clone()
         .with_stack(NoTcpBalancer)
         .push_detect_http(http)
-        .push_profile(endpoint)
+        .push_unwrap_logical(endpoint)
 }
 
 #[derive(Clone, Debug)]
