@@ -81,7 +81,7 @@ where
     let endpoint = out
         .clone()
         .with_stack(NoTcpBalancer)
-        .push_detect_stack::<_, _, crate::tcp::Accept, _, _, _, _>(http_endpoint)
+        .push_detect_http::<_, _, crate::tcp::Accept, _, _, _, _>(http_endpoint)
         .into_inner();
 
     let http = connect
@@ -93,7 +93,7 @@ where
 
     out.clone()
         .with_stack(NoTcpBalancer)
-        .push_detect_http(http)
+        .push_detect_with_skip(http)
         .push_unwrap_logical(endpoint)
 }
 

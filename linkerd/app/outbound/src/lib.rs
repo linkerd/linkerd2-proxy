@@ -24,7 +24,10 @@ use linkerd_app_core::{
         core::Resolve,
     },
     serve,
-    svc::{self, stack::Param},
+    svc::{
+        self,
+        stack::{self, Param},
+    },
     tls,
     transport::{addrs::*, listen::Bind},
     AddrMatch, Error, ProxyRuntime,
@@ -96,6 +99,18 @@ impl<S> Outbound<S> {
         }
     }
 
+    pub fn push_switch<P: Clone, U: Clone>(
+        self,
+        predicate: P,
+        other: U,
+    ) -> Outbound<stack::Filter<stack::NewEither<S, U>, P>> {
+        Outbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack: self.stack.push_switch(predicate, other),
+        }
+    }
+
     pub fn into_server<T, R, P, I>(
         self,
         resolve: R,
@@ -133,7 +148,7 @@ impl<S> Outbound<S> {
             .push_tcp_endpoint()
             .push_tcp_forward()
             .push_into_endpoint::<(), tcp::Accept>()
-            .push_detect_stack(http_endpoint)
+            .push_detect_http(http_endpoint)
             .into_inner();
 
         let http = self
@@ -146,7 +161,7 @@ impl<S> Outbound<S> {
 
         self.push_tcp_endpoint()
             .push_tcp_logical(resolve)
-            .push_detect_http(http)
+            .push_detect_with_skip(http)
             .push_unwrap_logical(endpoint)
             .push_discover(profiles)
             .into_inner()

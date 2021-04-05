@@ -779,11 +779,11 @@ where
         .clone()
         .push_tcp_forward()
         .push_into_endpoint::<(), super::Accept>()
-        .push_detect_stack::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
+        .push_detect_http::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
         .into_inner();
     connect
         .push_tcp_logical(resolver)
-        .push_detect_http(support::service::no_http())
+        .push_detect_with_skip(support::service::no_http())
         .push_unwrap_logical(endpoint)
         .push_discover(profiles)
         .into_inner()
