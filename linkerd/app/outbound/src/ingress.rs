@@ -3,10 +3,14 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
     io, profiles,
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+    },
     svc::{self, stack::Param},
     tls,
-    transport::{self, ClientAddr, OrigDstAddr, Remote},
-    Addr, AddrMatch, Error,
+    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
+    Addr, AddrMatch, Conditional, Error,
 };
 use tracing::{debug_span, info_span};
 
@@ -17,11 +21,12 @@ impl Outbound<()> {
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P>(
+    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P, R>(
         &self,
         profiles: P,
-        tcp: N,
-        http: H,
+        tcp: Outbound<N>,
+        http: Outbound<H>,
+        resolve: R,
     ) -> impl svc::NewService<
         T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
@@ -37,7 +42,7 @@ impl Outbound<()> {
             + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
+        H: svc::NewService<http::Endpoint, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
@@ -46,6 +51,14 @@ impl Outbound<()> {
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
+            + Clone
+            + Unpin
+            + Send
+            + Sync
+            + 'static,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
     {
         let Config {
             allow_discovery,
@@ -63,18 +76,30 @@ impl Outbound<()> {
         } = self.config.clone();
         let allow = AllowHttpProfile(allow_discovery);
 
-        let tcp = svc::stack(tcp)
+        let tcp = tcp
+            .into_stack()
             .push_on_response(drain::Retain::layer(self.runtime.drain.clone()))
             .push_map_target(|a: tcp::Accept| {
                 tcp::Endpoint::from((tls::NoClientTls::IngressNonHttp, a))
             })
             .into_inner();
 
-        svc::stack(http)
+        let http_endpoint = http
+            .clone()
+            .push_into_endpoint()
+            .into_stack()
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())
                     .push(svc::MapErrLayer::new(Into::into)),
+            )
+            .into_inner();
+        let http_logical = http.push_http_logical(resolve).into_inner();
+        svc::stack(http_logical)
+            .push_on_response(
+                svc::layers()
+                    .push(http::BoxRequest::layer())
+                    .push(svc::MapErrLayer::new(Into::<Error>::into)),
             )
             // Lookup the profile for the outbound HTTP target, if appropriate.
             //
@@ -85,6 +110,8 @@ impl Outbound<()> {
             // inner service to readiness even if new requests aren't
             // received.
             .push_map_target(http::Logical::from)
+            .push(svc::UnwrapOr::layer(http_endpoint))
+            .check_new_service::<(Option<profiles::Receiver>, Target), _>()
             .push(profiles::discover::layer(profiles, allow))
             .push_on_response(
                 svc::layers()
@@ -187,6 +214,25 @@ impl From<(profiles::Receiver, Target)> for http::Logical {
         Self {
             orig_dst,
             profile,
+            protocol: version,
+        }
+    }
+}
+
+impl From<(tls::NoClientTls, Target)> for http::Endpoint {
+    fn from((reason, Target { dst, version }): (tls::NoClientTls, Target)) -> Self {
+        // XXX This is a hack to fix caching when an dst-override is set.
+        let addr = if let Some(a) = dst.socket_addr() {
+            Remote(ServerAddr(a))
+        } else {
+            Remote(ServerAddr(([0, 0, 0, 0], dst.port()).into()))
+        };
+
+        Self {
+            addr,
+            metadata: Metadata::default(),
+            tls: Conditional::None(reason),
+            logical_addr: dst,
             protocol: version,
         }
     }

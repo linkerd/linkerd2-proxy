@@ -8,7 +8,7 @@
 mod discover;
 pub mod endpoint;
 pub mod http;
-// mod ingress;
+mod ingress;
 pub mod logical;
 mod resolve;
 pub mod target;
@@ -178,21 +178,14 @@ impl Outbound<()> {
         let serve = async move {
             if self.config.ingress_mode {
                 info!("Outbound routing in ingress-mode");
-                todo!("ELIZA FINISH INGRESS LOL");
-            // let tcp = self
-            //     .to_tcp_connect()
-            //     .push_tcp_endpoint()
-            //     .push_tcp_forward()
-            //     .into_inner();
-            // let http = self
-            //     .to_tcp_connect()
-            //     .push_tcp_endpoint()
-            //     .push_http_endpoint()
-            //     .push_http_logical(resolve)
-            //     .into_inner();
-            // let stack = self.to_ingress(profiles, tcp, http);
-            // let shutdown = self.runtime.drain.signaled();
-            // serve::serve(listen, stack, shutdown).await;
+                let tcp = self.to_tcp_connect().push_tcp_endpoint().push_tcp_forward();
+                let http = self
+                    .to_tcp_connect()
+                    .push_tcp_endpoint()
+                    .push_http_endpoint();
+                let stack = self.to_ingress(profiles, tcp, http, resolve.clone());
+                let shutdown = self.runtime.drain.signaled();
+                serve::serve(listen, stack, shutdown).await;
             } else {
                 let stack = self.to_tcp_connect().into_server(resolve, profiles);
                 let shutdown = self.runtime.drain.signaled();
