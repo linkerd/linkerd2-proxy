@@ -147,3 +147,16 @@ mod tests {
         assert_eq!(&buf[..], GARBAGE);
     }
 }
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use super::*;
+
+    pub async fn fuzz_entry(input: &[u8]) {
+        use tokio_test::io;
+
+        let mut buf = BytesMut::with_capacity(1024);
+        let mut io = io::Builder::new().read(&input).build();
+        let _kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
+    }
+}
