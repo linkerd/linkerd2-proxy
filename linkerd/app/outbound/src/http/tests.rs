@@ -85,7 +85,6 @@ where
         .into_inner();
 
     let http = connect
-        .clone()
         .push_http_endpoint()
         .push_http_logical(resolver.clone())
         .push_http_server()
