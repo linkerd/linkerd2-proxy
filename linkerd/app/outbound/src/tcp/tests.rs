@@ -37,10 +37,13 @@ async fn plaintext_tcp() {
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
+    let recv = profile::only_default();
+    let logical_addr = recv.borrow().addr.clone();
     let logical = Logical {
         orig_dst: OrigDstAddr(target_addr),
-        profile: Some(profile::only_default()),
+        profile: Some(recv),
         protocol: (),
+        logical_addr,
     };
 
     // Configure mock IO for the upstream "server". It will read "hello" and
@@ -80,17 +83,23 @@ async fn tls_when_hinted() {
     let _trace = support::trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
+    let tls_recv = profile::only_with_addr("tls:5550");
+    let tls_logical_addr = tls_recv.borrow().addr.clone();
     let tls = Logical {
         orig_dst: OrigDstAddr(tls_addr),
-        profile: Some(profile::only_with_addr("tls:5550")),
+        profile: Some(tls_recv),
         protocol: (),
+        logical_addr: tls_logical_addr,
     };
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
+    let plain_recv = profile::only_with_addr("plain:5551");
+    let plain_logical_addr = plain_recv.borrow().addr.clone();
     let plain = Logical {
         orig_dst: OrigDstAddr(plain_addr),
-        profile: Some(profile::only_with_addr("plain:5551")),
+        profile: Some(plain_recv),
         protocol: (),
+        logical_addr: plain_logical_addr,
     };
 
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
