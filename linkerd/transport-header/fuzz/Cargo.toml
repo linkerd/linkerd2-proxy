@@ -25,8 +25,15 @@ members = ["."]
 fuzzing = []
 
 [[bin]]
-name = "fuzz_target_1"
-path = "fuzz_targets/fuzz_target_1.rs"
+name = "fuzz_target_structured"
+path = "fuzz_targets/fuzz_target_structured.rs"
+test = false
+doc = false
+required-features = ["fuzzing"]
+
+[[bin]]
+name = "fuzz_target_raw"
+path = "fuzz_targets/fuzz_target_raw.rs"
 test = false
 doc = false
 required-features = ["fuzzing"]

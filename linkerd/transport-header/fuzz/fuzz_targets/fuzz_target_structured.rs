@@ -3,13 +3,13 @@ use libfuzzer_sys::fuzz_target;
 use libfuzzer_sys::arbitrary::Arbitrary;
 
 #[derive(Debug, Arbitrary)]
-pub struct AllocatorMethod {
-    pub data: Vec<u8>,
-    pub port: u16,
-    pub protocol: bool,
+struct TransportHeaderSpec {
+    data: Vec<u8>,
+    port: u16,
+    protocol: bool,
 }
 
-fuzz_target!(|inp: AllocatorMethod| {
+fuzz_target!(|inp: TransportHeaderSpec| {
     if let Ok(s) = std::str::from_utf8(&inp.data[..]) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let proto = if inp.protocol {
@@ -17,6 +17,6 @@ fuzz_target!(|inp: AllocatorMethod| {
         } else {
             linkerd_transport_header::SessionProtocol::Http1
         };
-        rt.block_on(linkerd_transport_header::fuzz_logic::fuzz_entry(s, inp.port, proto));
+        rt.block_on(linkerd_transport_header::fuzz_logic::fuzz_entry_structured(s, inp.port, proto));
     }
 });
