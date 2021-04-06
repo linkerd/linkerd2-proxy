@@ -10,7 +10,9 @@ use crate::{
     Config, Outbound,
 };
 use linkerd_app_core::{
-    io, svc,
+    io,
+    profiles::Receiver,
+    svc,
     svc::NewService,
     tls,
     transport::{addrs::*, listen, orig_dst},
@@ -37,14 +39,8 @@ async fn plaintext_tcp() {
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-    let recv = profile::only_default();
-    let logical_addr = recv.borrow().addr.clone();
-    let logical = Logical {
-        orig_dst: OrigDstAddr(target_addr),
-        profile: Some(recv),
-        protocol: (),
-        logical_addr,
-    };
+    let profile_recv = profile::only_default();
+    let logical = build_logical(target_addr, profile_recv);
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
@@ -84,23 +80,11 @@ async fn tls_when_hinted() {
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls_recv = profile::only_with_addr("tls:5550");
-    let tls_logical_addr = tls_recv.borrow().addr.clone();
-    let tls = Logical {
-        orig_dst: OrigDstAddr(tls_addr),
-        profile: Some(tls_recv),
-        protocol: (),
-        logical_addr: tls_logical_addr,
-    };
+    let tls = build_logical(tls_addr, tls_recv);
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
     let plain_recv = profile::only_with_addr("plain:5551");
-    let plain_logical_addr = plain_recv.borrow().addr.clone();
-    let plain = Logical {
-        orig_dst: OrigDstAddr(plain_addr),
-        profile: Some(plain_recv),
-        protocol: (),
-        logical_addr: plain_logical_addr,
-    };
+    let plain = build_logical(plain_addr, plain_recv);
 
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -830,4 +814,14 @@ where
         }
     }
     .instrument(span)
+}
+
+fn build_logical(addr: SocketAddr, profile_recv: Receiver) -> Logical {
+    let logical_addr = profile_recv.borrow().addr.clone();
+    Logical {
+        orig_dst: OrigDstAddr(addr),
+        profile: Some(profile_recv),
+        protocol: (),
+        logical_addr,
+    }
 }
