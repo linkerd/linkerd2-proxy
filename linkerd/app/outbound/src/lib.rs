@@ -136,42 +136,38 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
+        let tcp_endpoint = self.push_tcp_endpoint();
+        let http_endpoint = tcp_endpoint.clone().push_http_endpoint();
+
         // HTTP per-endpoint stack used when a profile is not discovered.
-        let http_endpoint = self
+        let http_no_profile = http_endpoint
             .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
             .push_into_endpoint()
             .push_http_server::<http::Accept, _>()
             .into_inner();
 
         // HTTP and TCP per-endpoint stack used when a profile is not discovered.
-        let endpoint = self
-            .clone()
-            .push_tcp_endpoint()
+        let no_profile = tcp_endpoint
             .push_tcp_forward()
             .push_into_endpoint::<(), tcp::Accept>()
             // If HTTP is detected, use the `http_endpoint` stack
-            .push_detect_http(http_endpoint)
+            .push_detect_http(http_no_profile)
             .into_inner();
 
         // HTTP stack for logical targets (with service profiles).
-        let http_logical = self
-            .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
+        let http_logical = http_endpoint
             .push_http_logical(resolve.clone())
             .push_http_server()
             .into_inner();
 
-        self.push_tcp_endpoint()
+        tcp_endpoint
             .push_tcp_logical(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
             .push_detect_with_skip(http_logical)
             // If a service profile was not discovered, fall back to the
             // per-endpoint stack.
-            .push_unwrap_logical(endpoint)
+            .push_unwrap_logical(no_profile)
             // Discover service profiles for each original dst address
             .push_discover(profiles)
             .into_inner()
