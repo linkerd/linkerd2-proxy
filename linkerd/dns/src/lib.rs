@@ -246,3 +246,25 @@ mod tests {
         assert!(Suffix::from_str("").is_err(), "suffix must not be empty");
     }
 }
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use super::*;
+    use std::str::FromStr;
+    pub struct FuzzConfig {}
+
+    // Empty config resolver that we can use.
+    impl ConfigureResolver for FuzzConfig {
+        fn configure_resolver(&self, _opts: &mut ResolverOpts) {}
+    }
+
+    // Test the resolvers do not panic unexpectedly.
+    pub async fn fuzz_entry(fuzz_data: &str) {
+        if let Ok(name) = Name::from_str(fuzz_data) {
+            let fcon = FuzzConfig {};
+            let resolver = Resolver::from_system_config_with(&fcon).unwrap();
+            let _w = resolver.resolve_a(&name).await;
+            let _w2 = resolver.resolve_srv(&name).await;
+        }
+    }
+}

@@ -7,7 +7,7 @@ use linkerd_identity as identity;
 pub mod balance;
 pub mod client;
 pub mod client_handle;
-mod detect;
+pub mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;

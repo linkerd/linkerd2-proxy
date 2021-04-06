@@ -116,11 +116,15 @@ where
         .push_tcp_logical(resolve.clone())
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
-            Some(profile) if profile.borrow().addr.is_some() => Ok(outbound::tcp::Logical {
-                profile,
-                orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
-                protocol: (),
-            }),
+            Some(profile) if profile.borrow().addr.is_some() => {
+                let logical_addr = profile.borrow().addr.clone();
+                Ok(outbound::tcp::Logical {
+                    profile,
+                    orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
+                    protocol: (),
+                    logical_addr,
+                })
+            }
             _ => Err(discovery_rejected()),
         })
         .push(profiles::discover::layer(profiles.clone(), {

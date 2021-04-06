@@ -25,6 +25,7 @@ pub struct Accept<P> {
 pub struct Logical<P> {
     pub orig_dst: OrigDstAddr,
     pub profile: profiles::Receiver,
+    pub logical_addr: Option<LogicalAddr>,
     pub protocol: P,
 }
 
@@ -72,10 +73,12 @@ impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
             },
         ): (profiles::Receiver, Accept<P>),
     ) -> Self {
+        let logical_addr = profile.borrow().addr.clone();
         Self {
             profile,
             orig_dst,
             protocol,
+            logical_addr,
         }
     }
 }
@@ -103,18 +106,18 @@ impl<P> Param<profiles::LookupAddr> for Logical<P> {
 
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
-        self.profile
-            .borrow()
-            .addr
-            .clone()
-            .map(|LogicalAddr(a)| Addr::from(a))
+        self.logical_addr
+            .as_ref()
+            .map(|LogicalAddr(a)| Addr::from(a.clone()))
             .unwrap_or_else(|| self.orig_dst.0.into())
     }
 }
 
 impl<P: PartialEq> PartialEq<Logical<P>> for Logical<P> {
     fn eq(&self, other: &Logical<P>) -> bool {
-        self.orig_dst == other.orig_dst && self.protocol == other.protocol
+        self.orig_dst == other.orig_dst
+            && self.logical_addr == other.logical_addr
+            && self.protocol == other.protocol
     }
 }
 
@@ -123,6 +126,7 @@ impl<P: Eq> Eq for Logical<P> {}
 impl<P: std::hash::Hash> std::hash::Hash for Logical<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.orig_dst.hash(state);
+        self.logical_addr.hash(state);
         self.protocol.hash(state);
     }
 }
@@ -133,6 +137,7 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
             .field("orig_dst", &self.orig_dst)
             .field("protocol", &self.protocol)
             .field("profile", &format_args!(".."))
+            .field("logical_addr", &self.logical_addr)
             .finish()
     }
 }

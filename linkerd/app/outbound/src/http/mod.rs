@@ -65,6 +65,7 @@ impl From<(Version, tcp::Logical)> for Logical {
             protocol,
             orig_dst: logical.orig_dst,
             profile: logical.profile,
+            logical_addr: logical.logical_addr,
         }
     }
 }
