@@ -183,11 +183,13 @@ impl From<(Option<profiles::Receiver>, Target)> for http::Logical {
         } else {
             OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
         };
+        let logical_addr = profile.as_ref().and_then(|p| p.borrow().addr.clone());
 
         Self {
             orig_dst,
             profile,
             protocol: version,
+            logical_addr,
         }
     }
 }
