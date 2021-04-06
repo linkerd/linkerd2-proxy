@@ -37,7 +37,7 @@ pub struct Target {
 #[derive(Clone, Debug)]
 pub struct Logical {
     target: Target,
-    profiles: Option<profiles::Receiver>,
+    profiles: profiles::Receiver,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -351,14 +351,14 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
 
 // === impl Logical ===
 
-impl From<(Option<profiles::Receiver>, Target)> for Logical {
-    fn from((profiles, target): (Option<profiles::Receiver>, Target)) -> Self {
+impl From<(profiles::Receiver, Target)> for Logical {
+    fn from((profiles, target): (profiles::Receiver, Target)) -> Self {
         Self { profiles, target }
     }
 }
 
 impl Param<Option<profiles::Receiver>> for Logical {
     fn param(&self) -> Option<profiles::Receiver> {
-        self.profiles.clone()
+        Some(self.profiles.clone())
     }
 }
