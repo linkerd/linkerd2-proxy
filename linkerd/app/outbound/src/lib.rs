@@ -164,8 +164,7 @@ impl<S> Outbound<S> {
             .push_http_server()
             .into_inner();
 
-        self.clone()
-            .push_tcp_endpoint()
+        self.push_tcp_endpoint()
             .push_tcp_logical(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
