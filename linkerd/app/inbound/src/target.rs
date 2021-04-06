@@ -357,8 +357,8 @@ impl From<(profiles::Receiver, Target)> for Logical {
     }
 }
 
-impl Param<Option<profiles::Receiver>> for Logical {
-    fn param(&self) -> Option<profiles::Receiver> {
-        Some(self.profiles.clone())
+impl Param<profiles::Receiver> for Logical {
+    fn param(&self) -> profiles::Receiver {
+        self.profiles.clone()
     }
 }

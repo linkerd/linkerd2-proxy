@@ -97,13 +97,6 @@ impl<P> Param<profiles::Receiver> for Logical<P> {
     }
 }
 
-// TODO(eliza): eventually we won't need this
-impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
-    fn param(&self) -> Option<profiles::Receiver> {
-        Some(self.profile.clone())
-    }
-}
-
 /// Used for default traffic split
 impl<P> Param<profiles::LookupAddr> for Logical<P> {
     fn param(&self) -> profiles::LookupAddr {
