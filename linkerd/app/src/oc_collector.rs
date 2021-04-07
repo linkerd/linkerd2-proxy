@@ -1,11 +1,11 @@
 use crate::{dns, identity::LocalCrtKey};
 use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
-use linkerd_channel::into_stream::IntoStream;
 use linkerd_opencensus::{self as opencensus, metrics, proto};
 use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, time::SystemTime};
 use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
 
 #[derive(Clone, Debug)]
@@ -54,7 +54,7 @@ impl Config {
                 let svc = inner.control.build(dns, client_metrics, identity);
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
-                let spans_rx = spans_rx.into_stream();
+                let spans_rx = ReceiverStream::new(spans_rx);
 
                 let task = {
                     use self::proto::agent::common::v1 as oc;

@@ -22,11 +22,11 @@ linkerd-app-core = { path = "./core" }
 linkerd-app-gateway = { path = "./gateway" }
 linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
-linkerd-channel = { path = "../channel" }
 linkerd-opencensus = { path = "../opencensus" }
 linkerd-error = { path = "../error" }
 regex = "1.0.0"
 tokio = { version = "1", features = ["rt"] }
+tokio-stream = { version = "0.1.5", features = ["time", "sync"] }
 tonic = { version = "0.4", default-features = false, features = ["prost"] }
 tower = "0.4"
 tracing = "0.1.23"

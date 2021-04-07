@@ -7,7 +7,6 @@ use futures::{
     FutureExt,
 };
 use http_body::Body as HttpBody;
-use linkerd_channel::into_stream::IntoStream;
 use linkerd_error::Error;
 use metrics::Registry;
 pub use opencensus_proto as proto;
@@ -17,6 +16,7 @@ use opencensus_proto::agent::trace::v1::{
 };
 use opencensus_proto::trace::v1::Span;
 use tokio::{sync::mpsc, time};
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, trace};
 
@@ -89,7 +89,7 @@ where
             // Drive both the response future and the export stream
             // simultaneously.
             tokio::select! {
-                res = svc.export(grpc::Request::new(rx.into_stream())) => match res {
+                res = svc.export(grpc::Request::new(ReceiverStream::new(rx))) => match res {
                     Ok(_rsp) => {
                         // The response future completed. Continue exporting spans until the
                         // stream stops accepting them.
