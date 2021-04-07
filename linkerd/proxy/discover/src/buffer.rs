@@ -119,7 +119,8 @@ impl<D> Future for Daemon<D>
 where
     D: discover::Discover,
     D::Error: Into<Error>,
-    discover::Change<D::Key, D::Service>: Send,
+    D::Service: Send + 'static,
+    D::Key: Send + 'static,
 {
     type Output = ();
 
