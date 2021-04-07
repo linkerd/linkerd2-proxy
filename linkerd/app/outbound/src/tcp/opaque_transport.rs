@@ -140,7 +140,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::target::Endpoint;
+    use crate::endpoint::Endpoint;
     use futures::future;
     use linkerd_app_core::{
         identity,
