@@ -1365,7 +1365,6 @@ dependencies = [
  "futures",
  "hex",
  "http",
- "linkerd-channel",
  "linkerd-error",
  "linkerd-stack",
  "rand",
