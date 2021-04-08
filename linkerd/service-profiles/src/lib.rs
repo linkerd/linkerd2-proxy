@@ -43,7 +43,7 @@ pub struct LogicalAddr(pub NameAddr);
 
 #[derive(Clone, Debug)]
 pub struct Target {
-    pub addr: Addr,
+    pub addr: NameAddr,
     pub weight: u32,
 }
 

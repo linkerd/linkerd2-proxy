@@ -1,6 +1,12 @@
-use crate::{endpoint::Endpoint, tcp, Accept, Outbound};
+use crate::{endpoint::Endpoint, tcp, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{profiles, svc, tls, transport::OrigDstAddr, Addr, Error};
+use linkerd_app_core::{
+    profiles,
+    svc::{self, stack, Param},
+    tls,
+    transport::OrigDstAddr,
+    Addr, Error,
+};
 pub use profiles::LogicalAddr;
 use tracing::debug;
 
@@ -8,7 +14,7 @@ use tracing::debug;
 pub struct Logical<P> {
     pub orig_dst: OrigDstAddr,
     pub profile: profiles::Receiver,
-    pub logical_addr: Option<LogicalAddr>,
+    pub logical_addr: LogicalAddr,
     pub protocol: P,
 }
 
@@ -18,26 +24,29 @@ pub struct Concrete<P> {
     pub logical: Logical<P>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct UnwrapLogical;
+
 // === impl Logical ===
 
-impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
-    fn from(
-        (
-            profile,
-            Accept {
-                orig_dst, protocol, ..
-            },
-        ): (profiles::Receiver, Accept<P>),
-    ) -> Self {
-        let logical_addr = profile.borrow().addr.clone();
-        Self {
-            profile,
-            orig_dst,
-            protocol,
-            logical_addr,
-        }
-    }
-}
+// impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
+//     fn from(
+//         (
+//             profile,
+//             Accept {
+//                 orig_dst, protocol, ..
+//             },
+//         ): (profiles::Receiver, Accept<P>),
+//     ) -> Self {
+//         let logical_addr = profile.borrow().addr.clone();
+//         Self {
+//             profile,
+//             orig_dst,
+//             protocol,
+//             logical_addr,
+//         }
+//     }
+// }
 
 /// Used for traffic split
 impl<P> svc::Param<profiles::Receiver> for Logical<P> {
@@ -53,12 +62,15 @@ impl<P> svc::Param<profiles::LookupAddr> for Logical<P> {
     }
 }
 
+impl<P> svc::Param<LogicalAddr> for Logical<P> {
+    fn param(&self) -> LogicalAddr {
+        self.logical_addr.clone()
+    }
+}
+
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
-        self.logical_addr
-            .as_ref()
-            .map(|LogicalAddr(a)| Addr::from(a.clone()))
-            .unwrap_or_else(|| self.orig_dst.0.into())
+        Addr::from(self.logical_addr.clone().0)
     }
 }
 
@@ -125,6 +137,29 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
     }
 }
 
+// === impl UnwrapLogical ===
+
+fn unwrap_logical<T>(
+    (profile, target): (Option<profiles::Receiver>, T),
+) -> Result<svc::Either<tcp::Logical, T>, Error>
+where
+    T: Param<OrigDstAddr>,
+{
+    let profile = profile.and_then(|profile| {
+        let logical_addr = profile.borrow().addr.clone()?;
+        Some((profile, logical_addr))
+    });
+    match profile {
+        Some((profile, logical_addr)) => Ok(svc::Either::A(tcp::Logical {
+            profile,
+            logical_addr,
+            orig_dst: target.param(),
+            protocol: (),
+        })),
+        None => Ok(svc::Either::B(target)),
+    }
+}
+
 // === impl Outbound ===
 
 impl<L> Outbound<L> {
@@ -141,13 +176,13 @@ impl<L> Outbound<L> {
             > + Clone,
     >
     where
-        tcp::Logical: From<(profiles::Receiver, T)>,
         L: svc::NewService<tcp::Logical, Service = LSvc> + Clone,
         LSvc: svc::Service<I, Response = (), Error = Error>,
         LSvc::Future: Send,
         E: svc::NewService<T, Service = ESvc> + Clone,
         ESvc: svc::Service<I, Response = (), Error = Error>,
         ESvc::Future: Send,
+        T: Param<OrigDstAddr>,
     {
         let Self {
             config,
@@ -155,8 +190,12 @@ impl<L> Outbound<L> {
             stack: logical,
         } = self;
         let stack = logical
-            .push_map_target(tcp::Logical::from)
-            .push(svc::UnwrapOr::layer(endpoint))
+            .push(svc::layer::mk(move |primary| {
+                svc::Filter::new(
+                    stack::NewEither::new(primary, endpoint.clone()),
+                    unwrap_logical,
+                )
+            }))
             .check_new_service::<(Option<profiles::Receiver>, T), _>();
         Outbound {
             config,
