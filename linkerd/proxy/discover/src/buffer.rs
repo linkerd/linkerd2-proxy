@@ -1,13 +1,13 @@
 use futures::{ready, Stream, TryFuture};
-use linkerd_channel as mpsc;
 use linkerd_error::{Error, Never};
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::{self, Sleep};
+use tokio_util::sync::PollSender;
 use tower::discover;
 use tracing::instrument::Instrument;
 use tracing::warn;
@@ -42,7 +42,7 @@ pub struct Daemon<D: discover::Discover> {
     discover: D,
     #[pin]
     disconnect_rx: oneshot::Receiver<Never>,
-    tx: mpsc::Sender<discover::Change<D::Key, D::Service>>,
+    tx: PollSender<discover::Change<D::Key, D::Service>>,
     #[pin]
     watchdog: Option<Sleep>,
     watchdog_timeout: Duration,
@@ -100,6 +100,7 @@ where
         let discover = ready!(this.future.try_poll(cx))?;
 
         let (tx, rx) = mpsc::channel(*this.capacity);
+        let tx = PollSender::new(tx);
         let (_disconnect_tx, disconnect_rx) = oneshot::channel();
         let fut = Daemon {
             discover,
@@ -114,24 +115,12 @@ where
     }
 }
 
-// impl<D> Daemon<D>
-// where
-//     D: discover::Discover,
-//     D::Error: Into<Error>,
-// {
-//     async fn run(self) {
-//         loop {
-//             tokio::select! {
-//                 _ = self.disconnect => return,
-
-//             }
-//         }
-//     }
-
 impl<D> Future for Daemon<D>
 where
     D: discover::Discover,
     D::Error: Into<Error>,
+    D::Service: Send + 'static,
+    D::Key: Send + 'static,
 {
     type Output = ();
 
@@ -147,7 +136,7 @@ where
             // The watchdog bounds the amount of time that the send buffer stays
             // full. This is designed to release the `discover` resources, i.e.
             // if we expect that the receiver has leaked.
-            match this.tx.poll_ready(cx) {
+            match this.tx.poll_send_done(cx) {
                 Poll::Ready(Ok(())) => {
                     this.watchdog.as_mut().set(None);
                 }
@@ -192,7 +181,7 @@ where
                 }
             };
 
-            this.tx.try_send(up).ok().expect("sender must be ready");
+            this.tx.start_send(up).ok().expect("sender must be ready");
         }
     }
 }
@@ -201,7 +190,7 @@ impl<K: std::hash::Hash + Eq, S> Stream for Discover<K, S> {
     type Item = Result<tower::discover::Change<K, S>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.project().rx.poll_next(cx) {
+        match self.project().rx.poll_recv(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(change)) => Poll::Ready(Some(Ok(change))),
             Poll::Ready(None) => Poll::Ready(None),

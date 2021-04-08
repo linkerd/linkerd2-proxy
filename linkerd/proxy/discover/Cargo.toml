@@ -12,11 +12,11 @@ Utilities to implement a Discover with the core Resolve type
 
 [dependencies]
 futures = "0.3.9"
-linkerd-channel = { path = "../../channel" }
 linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync", "time"] }
+tokio-util = "0.6.5"
 tracing = "0.1.23"
 pin-project = "1"
 
