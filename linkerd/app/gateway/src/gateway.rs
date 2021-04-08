@@ -65,7 +65,7 @@ where
             None => return Gateway::BadDomain(http.target.name().clone()),
         };
 
-        let addr = match profile.borrow().addr.clone() {
+        let logical_addr = match profile.borrow().addr.clone() {
             Some(addr) => addr,
             _ => return Gateway::BadDomain(http.target.name().clone()),
         };
@@ -77,8 +77,8 @@ where
         let svc = self.outbound.new_service(outbound::http::Logical {
             profile,
             protocol: http.version,
-            orig_dst: OrigDstAddr(([0, 0, 0, 0], addr.0.port()).into()),
-            logical_addr: Some(addr),
+            orig_dst: OrigDstAddr(([0, 0, 0, 0], logical_addr.0.port()).into()),
+            logical_addr,
         });
 
         Gateway::new(svc, http.target, local_id)

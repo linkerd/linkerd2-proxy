@@ -117,7 +117,11 @@ where
         .into_stack()
         .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
             Some(profile) if profile.borrow().addr.is_some() => {
-                let logical_addr = profile.borrow().addr.clone();
+                let logical_addr = profile
+                    .borrow()
+                    .addr
+                    .clone()
+                    .expect("if is_some returns true, this must be `Some`");
                 Ok(outbound::tcp::Logical {
                     profile,
                     orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),

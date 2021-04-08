@@ -7,7 +7,7 @@ pub use linkerd_app_core::proxy::{
 use linkerd_app_core::{
     profiles::{self, Profile},
     svc::Param,
-    Addr, Error,
+    Addr, Error, NameAddr,
 };
 use linkerd_channel::into_stream::{IntoStream, Streaming};
 use std::collections::HashMap;
@@ -20,23 +20,30 @@ use std::task::{Context, Poll};
 use tokio::sync::{mpsc, watch};
 
 #[derive(Debug)]
-pub struct Resolver<E> {
-    state: Arc<State<E>>,
+pub struct Resolver<A, E> {
+    state: Arc<State<A, E>>,
 }
 
-pub type Dst<E> = Resolver<DstReceiver<E>>;
+pub type Dst<E> = Resolver<NameAddr, DstReceiver<E>>;
 
-pub type Profiles = Resolver<Option<profiles::Receiver>>;
+pub type Profiles = Resolver<Addr, Option<profiles::Receiver>>;
+
+pub fn no_destinations<E>() -> NoDst<E> {
+    NoDst(std::marker::PhantomData)
+}
 
 #[derive(Debug, Clone)]
 pub struct DstSender<E>(mpsc::UnboundedSender<Result<Update<E>, Error>>);
 
 #[derive(Debug, Clone)]
-pub struct Handle<E>(Arc<State<E>>);
+pub struct NoDst<E>(std::marker::PhantomData<E>);
+
+#[derive(Debug, Clone)]
+pub struct Handle<A, E>(Arc<State<A, E>>);
 
 #[derive(Debug)]
-struct State<E> {
-    endpoints: Mutex<HashMap<Addr, E>>,
+struct State<A, E> {
+    endpoints: Mutex<HashMap<A, E>>,
     // Keep unused_senders open if they're not going to be used.
     unused_senders: Mutex<Vec<Box<dyn std::any::Any + Send + Sync + 'static>>>,
     only: AtomicBool,
@@ -47,7 +54,7 @@ pub type DstReceiver<E> = Streaming<mpsc::UnboundedReceiver<Result<Update<E>, Er
 #[derive(Debug)]
 pub struct SendFailed(());
 
-impl<E> Default for Resolver<E> {
+impl<A, E> Default for Resolver<A, E> {
     fn default() -> Self {
         Self {
             state: Arc::new(State {
@@ -59,19 +66,19 @@ impl<E> Default for Resolver<E> {
     }
 }
 
-impl<E> Resolver<E> {
-    pub fn with_handle() -> (Self, Handle<E>) {
+impl<A, E> Resolver<A, E> {
+    pub fn with_handle() -> (Self, Handle<A, E>) {
         let r = Self::default();
         let handle = r.handle();
         (r, handle)
     }
 
-    pub fn handle(&self) -> Handle<E> {
+    pub fn handle(&self) -> Handle<A, E> {
         Handle(self.state.clone())
     }
 }
 
-impl<E> Clone for Resolver<E> {
+impl<A, E> Clone for Resolver<A, E> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
@@ -81,7 +88,7 @@ impl<E> Clone for Resolver<E> {
 // === destination resolver ===
 
 impl<E> Dst<E> {
-    pub fn endpoint_tx(&self, addr: impl Into<Addr>) -> DstSender<E> {
+    pub fn endpoint_tx(&self, addr: impl Into<NameAddr>) -> DstSender<E> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.state
             .endpoints
@@ -91,7 +98,7 @@ impl<E> Dst<E> {
         DstSender(tx)
     }
 
-    pub fn endpoint_exists(self, target: impl Into<Addr>, addr: SocketAddr, meta: E) -> Self {
+    pub fn endpoint_exists(self, target: impl Into<NameAddr>, addr: SocketAddr, meta: E) -> Self {
         let mut tx = self.endpoint_tx(target);
         tx.add(vec![(addr, meta)]).unwrap();
         self
@@ -246,7 +253,7 @@ impl<E> DstSender<E> {
 
 // === impl Handle ===
 
-impl<E> Handle<E> {
+impl<A, E> Handle<A, E> {
     /// Returns `true` if all configured endpoints were resolved exactly once.
     pub fn is_empty(&self) -> bool {
         self.0.endpoints.lock().unwrap().is_empty()
@@ -255,5 +262,25 @@ impl<E> Handle<E> {
     /// Returns `true` if only the configured endpoints were resolved.
     pub fn only_configured(&self) -> bool {
         self.0.only.load(Ordering::Acquire)
+    }
+}
+
+// === impl Never ===
+
+impl<T: Param<ConcreteAddr>, E> tower::Service<T> for NoDst<E> {
+    type Response = DstReceiver<E>;
+    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+    type Error = Error;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let ConcreteAddr(addr) = target.param();
+        panic!(
+            "no destination resolutions were expected in this test, but tried to resolve {}",
+            addr
+        );
     }
 }

@@ -16,7 +16,7 @@ use linkerd_app_core::{
     svc::NewService,
     tls,
     transport::{addrs::*, listen, orig_dst},
-    Addr, Conditional, Error, IpMatch, NameAddr,
+    Conditional, Error, IpMatch, NameAddr,
 };
 use std::{
     future::Future,
@@ -55,10 +55,7 @@ async fn plaintext_tcp() {
     // Configure mock IO for the "client".
     let client_io = support::io().write(b"hello").read(b"world").build();
 
-    // Configure the mock destination resolver to just give us a single endpoint
-    // for the target, which always exists and has no metadata.
-    let resolver =
-        support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
+    let resolver = support::resolver::no_destinations();
 
     // Build the outbound TCP balancer stack.
     let cfg = default_config();
@@ -112,12 +109,12 @@ async fn tls_when_hinted() {
     // for the target, which always exists and has no metadata.
     let resolver = support::resolver()
         .endpoint_exists(
-            Addr::from_str("plain:5551").unwrap(),
+            NameAddr::from_str("plain:5551").unwrap(),
             plain_addr,
             Default::default(),
         )
         .endpoint_exists(
-            Addr::from_str("tls:5550").unwrap(),
+            NameAddr::from_str("tls:5550").unwrap(),
             tls_addr,
             support::resolver::Metadata::new(
                 Default::default(),
@@ -824,7 +821,11 @@ where
 }
 
 fn build_logical(addr: SocketAddr, profile_recv: Receiver) -> Logical {
-    let logical_addr = profile_recv.borrow().addr.clone();
+    let logical_addr = profile_recv
+        .borrow()
+        .addr
+        .clone()
+        .expect("cannot build a logical target for a profile without a logical addr");
     Logical {
         orig_dst: OrigDstAddr(addr),
         profile: profile_recv,

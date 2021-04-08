@@ -53,7 +53,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: Clone + Param<Option<LogicalAddr>> + Param<Receiver>,
+    T: Clone + Param<LogicalAddr> + Param<Receiver>,
     N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -64,9 +64,7 @@ where
         let rx: Receiver = target.param();
         let mut targets = rx.borrow().targets.clone();
         if targets.is_empty() {
-            let logical: Option<LogicalAddr> = target.param();
-            let LogicalAddr(addr) =
-                logical.unwrap_or_else(|| todo!("eliza: what do we do in this case?"));
+            let LogicalAddr(addr) = target.param();
             targets.push(Target { addr, weight: 1 })
         }
         trace!(?targets, "Building split service");

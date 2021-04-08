@@ -242,6 +242,12 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
     }
 }
 
+impl<P> Param<OrigDstAddr> for Accept<P> {
+    fn param(&self) -> OrigDstAddr {
+        self.orig_dst
+    }
+}
+
 fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
     metrics::StackLabels::outbound(proto, name)
 }

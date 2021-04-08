@@ -146,8 +146,11 @@ where
     T: Param<OrigDstAddr>,
 {
     let profile = profile.and_then(|profile| {
-        let logical_addr = profile.borrow().addr.clone()?;
-        Some((profile, logical_addr))
+        let logical_addr = profile.borrow().addr.clone();
+        if logical_addr.is_none() {
+            tracing::debug!(profile = ?profile.borrow(), "no logical address resolved for profile");
+        }
+        Some((profile, logical_addr?))
     });
     match profile {
         Some((profile, logical_addr)) => Ok(svc::Either::A(tcp::Logical {

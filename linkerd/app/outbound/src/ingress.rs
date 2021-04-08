@@ -211,12 +211,14 @@ impl From<(profiles::Receiver, Target)> for http::Logical {
             OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
         };
         let logical_addr = profile.borrow().addr.clone();
-
+        if logical_addr.is_none() {
+            tracing::debug!(?dst, ?version, "no logical address resolved");
+        }
         Self {
             orig_dst,
             profile,
             protocol: version,
-            logical_addr,
+            logical_addr: logical_addr.unwrap_or_else(|| todo!("eliza figure out")),
         }
     }
 }
