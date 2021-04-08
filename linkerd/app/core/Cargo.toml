@@ -22,7 +22,6 @@ indexmap = "1.0"
 ipnet = "2.0"
 linkerd-addr = { path = "../../addr" }
 linkerd-cache = { path = "../../cache" }
-linkerd-channel = { path = "../../channel" }
 linkerd-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
@@ -64,6 +63,7 @@ linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
+tokio-stream = { version = "0.1.5", features = ["time"] }
 tonic = { version = "0.4", default-features = false, features = ["prost"] }
 tracing = "0.1.23"
 pin-project = "1"

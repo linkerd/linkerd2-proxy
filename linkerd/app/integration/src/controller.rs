@@ -3,12 +3,12 @@ use super::*;
 use linkerd2_proxy_api::destination as pb;
 use linkerd2_proxy_api::net;
 use linkerd_app_core::proxy::http::trace;
-use linkerd_channel::into_stream::{IntoStream, Streaming};
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::{Bound, RangeBounds};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic as grpc;
 use tracing::instrument::Instrument;
 
@@ -26,13 +26,12 @@ pub fn identity() -> identity::Controller {
 
 pub type Labels = HashMap<String, String>;
 
-pub type DstReceiver = Streaming<mpsc::UnboundedReceiver<Result<pb::Update, grpc::Status>>>;
+pub type DstReceiver = UnboundedReceiverStream<Result<pb::Update, grpc::Status>>;
 
 #[derive(Clone, Debug)]
 pub struct DstSender(mpsc::UnboundedSender<Result<pb::Update, grpc::Status>>);
 
-pub type ProfileReceiver =
-    Streaming<mpsc::UnboundedReceiver<Result<pb::DestinationProfile, grpc::Status>>>;
+pub type ProfileReceiver = UnboundedReceiverStream<Result<pb::DestinationProfile, grpc::Status>>;
 
 #[derive(Clone, Debug)]
 pub struct ProfileSender(mpsc::UnboundedSender<Result<pb::DestinationProfile, grpc::Status>>);
@@ -76,6 +75,7 @@ impl Controller {
 
     pub fn destination_tx(&self, dest: impl Into<String>) -> DstSender {
         let (tx, rx) = mpsc::unbounded_channel();
+        let rx = UnboundedReceiverStream::new(rx);
         let mut path = dest.into();
         if !path.contains(':') {
             path.push_str(":80");
@@ -87,7 +87,7 @@ impl Controller {
         self.expect_dst_calls
             .lock()
             .unwrap()
-            .push_back(Dst::Call(dst, Ok(rx.into_stream())));
+            .push_back(Dst::Call(dst, Ok(rx)));
         DstSender(tx)
     }
 
@@ -139,6 +139,7 @@ impl Controller {
 
     pub fn profile_tx(&self, dest: impl Into<String>) -> ProfileSender {
         let (tx, rx) = mpsc::unbounded_channel();
+        let rx = UnboundedReceiverStream::new(rx);
         let mut path = dest.into();
         if !path.contains(':') {
             path.push_str(":80");
@@ -150,7 +151,7 @@ impl Controller {
         self.expect_profile_calls
             .lock()
             .unwrap()
-            .push_back((dst, rx.into_stream()));
+            .push_back((dst, rx));
         ProfileSender(tx)
     }
 

@@ -9,7 +9,6 @@ use linkerd_app_core::{
     svc::Param,
     Addr, Error,
 };
-use linkerd_channel::into_stream::{IntoStream, Streaming};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{
@@ -18,6 +17,7 @@ use std::sync::{
 };
 use std::task::{Context, Poll};
 use tokio::sync::{mpsc, watch};
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 #[derive(Debug)]
 pub struct Resolver<E> {
@@ -42,7 +42,7 @@ struct State<E> {
     only: AtomicBool,
 }
 
-pub type DstReceiver<E> = Streaming<mpsc::UnboundedReceiver<Result<Update<E>, Error>>>;
+pub type DstReceiver<E> = UnboundedReceiverStream<Result<Update<E>, Error>>;
 
 #[derive(Debug)]
 pub struct SendFailed(());
@@ -87,7 +87,7 @@ impl<E> Dst<E> {
             .endpoints
             .lock()
             .unwrap()
-            .insert(addr.into(), rx.into_stream());
+            .insert(addr.into(), UnboundedReceiverStream::new(rx));
         DstSender(tx)
     }
 
@@ -130,7 +130,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
                     .compare_and_swap(true, false, Ordering::Release);
                 let (tx, rx) = mpsc::unbounded_channel();
                 let _ = tx.send(Ok(Update::DoesNotExist));
-                rx.into_stream()
+                UnboundedReceiverStream::new(rx)
             });
 
         future::ok(res)

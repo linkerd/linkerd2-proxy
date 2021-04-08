@@ -10,7 +10,6 @@ members = [
     "linkerd/app/test",
     "linkerd/app",
     "linkerd/cache",
-    "linkerd/channel",
     "linkerd/concurrency-limit",
     "linkerd/conditional",
     "linkerd/detect",

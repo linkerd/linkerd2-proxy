@@ -5,7 +5,6 @@ mod service;
 
 pub use self::service::TraceContext;
 use bytes::Bytes;
-use linkerd_channel as mpsc;
 use linkerd_error::Error;
 use rand::Rng;
 use std::collections::HashMap;
@@ -39,18 +38,6 @@ pub trait SpanSink {
     fn is_enabled(&self) -> bool;
 
     fn try_send(&mut self, span: Span) -> Result<(), Error>;
-}
-
-impl SpanSink for mpsc::Sender<Span> {
-    #[inline]
-    fn is_enabled(&self) -> bool {
-        true
-    }
-
-    #[inline]
-    fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.try_send(span).map_err(Into::into)
-    }
 }
 
 impl<K: SpanSink> SpanSink for Option<K> {
