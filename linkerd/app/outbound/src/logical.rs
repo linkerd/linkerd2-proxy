@@ -8,7 +8,6 @@ use linkerd_app_core::{
     Addr, Error,
 };
 pub use profiles::LogicalAddr;
-use std::convert::TryFrom;
 use tracing::debug;
 
 #[derive(Clone)]
@@ -27,28 +26,21 @@ pub struct Concrete<P> {
 
 // === impl Logical ===
 
-impl<P> TryFrom<(profiles::Receiver, Accept<P>)> for Logical<P> {
-    type Error = ();
-    fn try_from(
+impl<P> From<(LogicalAddr, profiles::Receiver, Accept<P>)> for Logical<P> {
+    fn from(
         (
+            logical_addr,
             profile,
             Accept {
                 orig_dst, protocol, ..
             },
-        ): (profiles::Receiver, Accept<P>),
-    ) -> Result<Self, Self::Error> {
-        let addr = profile.borrow().addr.clone();
-        match addr {
-            Some(logical_addr) => Ok(Self {
-                profile,
-                orig_dst,
-                protocol,
-                logical_addr,
-            }),
-            None => {
-                tracing::debug!(%orig_dst, ?profile, "no logical address for profile");
-                return Err(());
-            }
+        ): (LogicalAddr, profiles::Receiver, Accept<P>),
+    ) -> Self {
+        Self {
+            profile,
+            orig_dst,
+            protocol,
+            logical_addr,
         }
     }
 }
@@ -148,13 +140,23 @@ fn unwrap_logical<T, P>(
     (profile, target): (Option<profiles::Receiver>, T),
 ) -> Result<svc::Either<Logical<P>, T>, Error>
 where
-    Logical<P>: TryFrom<(profiles::Receiver, T)>,
-    T: Clone,
+    Logical<P>: From<(LogicalAddr, profiles::Receiver, T)>,
 {
-    Ok(profile
-        .and_then(|profile| Logical::try_from((profile, target.clone())).ok())
-        .map(svc::Either::A)
-        .unwrap_or_else(|| svc::Either::B(target)))
+    let profile = match profile {
+        Some(profile) => profile,
+        None => {
+            debug!("No profile resolved for this target");
+            return Ok(svc::Either::B(target));
+        }
+    };
+    let addr = profile.borrow().addr.clone();
+    Ok(match addr {
+        Some(logical_addr) => svc::Either::A(Logical::from((logical_addr, profile, target))),
+        None => {
+            debug!(?profile, "No logical address for this profile");
+            svc::Either::B(target)
+        }
+    })
 }
 
 // === impl Outbound ===
@@ -178,15 +180,13 @@ impl<L> Outbound<L> {
             > + Clone,
     >
     where
-        Logical<P>: TryFrom<(profiles::Receiver, T)>,
+        Logical<P>: From<(LogicalAddr, profiles::Receiver, T)>,
         L: svc::NewService<Logical<P>, Service = LSvc> + Clone,
         LSvc: svc::Service<R, Error = Error>,
         LSvc::Future: Send,
         E: svc::NewService<T, Service = ESvc> + Clone,
         ESvc: svc::Service<R, Response = LSvc::Response, Error = Error>,
         ESvc::Future: Send,
-
-        T: Clone,
     {
         let Self {
             config,

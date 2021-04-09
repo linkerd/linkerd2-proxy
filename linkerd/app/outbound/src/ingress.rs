@@ -1,4 +1,4 @@
-use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
+use crate::{http, logical::LogicalAddr, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
@@ -12,7 +12,6 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Addr, AddrMatch, Conditional, Error,
 };
-use std::convert::TryFrom;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -202,29 +201,21 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
 
 // === impl Target ===
 
-impl TryFrom<(profiles::Receiver, Target)> for http::Logical {
-    type Error = ();
-    fn try_from(
-        (profile, Target { dst, version }): (profiles::Receiver, Target),
-    ) -> Result<Self, Self::Error> {
+impl From<(LogicalAddr, profiles::Receiver, Target)> for http::Logical {
+    fn from(
+        (logical_addr, profile, Target { dst, version }): (LogicalAddr, profiles::Receiver, Target),
+    ) -> Self {
         // XXX This is a hack to fix caching when an dst-override is set.
         let orig_dst = if let Some(a) = dst.socket_addr() {
             OrigDstAddr(a)
         } else {
             OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
         };
-        let logical_addr = profile.borrow().addr.clone();
-        match logical_addr {
-            Some(logical_addr) => Ok(Self {
-                orig_dst,
-                profile,
-                protocol: version,
-                logical_addr,
-            }),
-            None => {
-                tracing::debug!(?dst, ?version, "no logical address resolved");
-                Err(())
-            }
+        Self {
+            orig_dst,
+            profile,
+            protocol: version,
+            logical_addr,
         }
     }
 }
