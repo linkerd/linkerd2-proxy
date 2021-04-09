@@ -810,6 +810,7 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "tokio",
+ "tokio-util",
  "tower",
  "tracing",
 ]
