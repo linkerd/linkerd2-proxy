@@ -32,11 +32,18 @@ pub fn no_destinations<E>() -> NoDst<E> {
     NoDst(std::marker::PhantomData)
 }
 
+pub fn no_profiles() -> NoProfiles {
+    NoProfiles
+}
+
 #[derive(Debug, Clone)]
 pub struct DstSender<E>(mpsc::UnboundedSender<Result<Update<E>, Error>>);
 
 #[derive(Debug, Clone)]
 pub struct NoDst<E>(std::marker::PhantomData<E>);
+
+#[derive(Debug, Clone)]
+pub struct NoProfiles;
 
 #[derive(Debug, Clone)]
 pub struct Handle<A, E>(Arc<State<A, E>>);
@@ -265,7 +272,7 @@ impl<A, E> Handle<A, E> {
     }
 }
 
-// === impl Never ===
+// === impl NoDst ===
 
 impl<T: Param<ConcreteAddr>, E> tower::Service<T> for NoDst<E> {
     type Response = DstReceiver<E>;
@@ -280,6 +287,24 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for NoDst<E> {
         let ConcreteAddr(addr) = target.param();
         panic!(
             "no destination resolutions were expected in this test, but tried to resolve {}",
+            addr
+        );
+    }
+}
+
+impl<T: Param<profiles::LookupAddr>> tower::Service<T> for NoProfiles {
+    type Response = Option<profiles::Receiver>;
+    type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;
+    type Error = Error;
+
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, target: T) -> Self::Future {
+        let profiles::LookupAddr(addr) = target.param();
+        panic!(
+            "no profile resolutions were expected in this test, but tried to resolve {}",
             addr
         );
     }
