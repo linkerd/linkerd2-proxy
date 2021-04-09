@@ -720,12 +720,10 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 #[tokio::test(flavor = "current_thread")]
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
-    // connecting to that endpoint fails, the proxy will resolve a new endpoint
-    // for subsequent connections to the same original destination.
+    // connecting to that endpoint fails, the client connection will also be reset.
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let ep2 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
 
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
@@ -738,14 +736,12 @@ async fn profile_endpoint_propagates_conn_errors() {
     );
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect()
-        .endpoint_fn(ep1, |_| {
-            Err(Box::new(io::Error::new(
-                io::ErrorKind::ConnectionReset,
-                "i dont like you, go away",
-            )))
-        })
-        .endpoint(ep2, Connection::default());
+    let connect = support::connect().endpoint_fn(ep1, |_| {
+        Err(Box::new(io::Error::new(
+            io::ErrorKind::ConnectionReset,
+            "i dont like you, go away",
+        )))
+    });
 
     let profiles = profile::resolver();
     let profile_tx = profiles.profile_tx(ep1);
@@ -779,7 +775,7 @@ async fn profile_endpoint_propagates_conn_errors() {
         res.unwrap_err()
             .downcast_ref::<io::Error>()
             .map(io::Error::kind),
-        Some(io::ErrorKind::ConnectionReset)
+        Some(io::ErrorKind::ConnectionReset),
     );
 }
 
