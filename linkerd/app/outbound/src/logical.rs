@@ -1,13 +1,14 @@
-use crate::{endpoint::Endpoint, tcp, Outbound};
+use crate::{endpoint::Endpoint, Accept, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     profiles,
-    svc::{self, stack, Param},
+    svc::{self, stack},
     tls,
     transport::OrigDstAddr,
     Addr, Error,
 };
 pub use profiles::LogicalAddr;
+use std::convert::TryFrom;
 use tracing::debug;
 
 #[derive(Clone)]
@@ -24,29 +25,33 @@ pub struct Concrete<P> {
     pub logical: Logical<P>,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct UnwrapLogical;
-
 // === impl Logical ===
 
-// impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
-//     fn from(
-//         (
-//             profile,
-//             Accept {
-//                 orig_dst, protocol, ..
-//             },
-//         ): (profiles::Receiver, Accept<P>),
-//     ) -> Self {
-//         let logical_addr = profile.borrow().addr.clone();
-//         Self {
-//             profile,
-//             orig_dst,
-//             protocol,
-//             logical_addr,
-//         }
-//     }
-// }
+impl<P> TryFrom<(profiles::Receiver, Accept<P>)> for Logical<P> {
+    type Error = ();
+    fn try_from(
+        (
+            profile,
+            Accept {
+                orig_dst, protocol, ..
+            },
+        ): (profiles::Receiver, Accept<P>),
+    ) -> Result<Self, Self::Error> {
+        let addr = profile.borrow().addr.clone();
+        match addr {
+            Some(logical_addr) => Ok(Self {
+                profile,
+                orig_dst,
+                protocol,
+                logical_addr,
+            }),
+            None => {
+                tracing::debug!(%orig_dst, ?profile, "no logical address for profile");
+                return Err(());
+            }
+        }
+    }
+}
 
 /// Used for traffic split
 impl<P> svc::Param<profiles::Receiver> for Logical<P> {
@@ -139,28 +144,17 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 
 // === impl UnwrapLogical ===
 
-fn unwrap_logical<T>(
+fn unwrap_logical<T, P>(
     (profile, target): (Option<profiles::Receiver>, T),
-) -> Result<svc::Either<tcp::Logical, T>, Error>
+) -> Result<svc::Either<Logical<P>, T>, Error>
 where
-    T: Param<OrigDstAddr>,
+    Logical<P>: TryFrom<(profiles::Receiver, T)>,
+    T: Clone,
 {
-    let profile = profile.and_then(|profile| {
-        let logical_addr = profile.borrow().addr.clone();
-        if logical_addr.is_none() {
-            tracing::debug!(profile = ?profile.borrow(), "no logical address resolved for profile");
-        }
-        Some((profile, logical_addr?))
-    });
-    match profile {
-        Some((profile, logical_addr)) => Ok(svc::Either::A(tcp::Logical {
-            profile,
-            logical_addr,
-            orig_dst: target.param(),
-            protocol: (),
-        })),
-        None => Ok(svc::Either::B(target)),
-    }
+    Ok(profile
+        .and_then(|profile| Logical::try_from((profile, target.clone())).ok())
+        .map(svc::Either::A)
+        .unwrap_or_else(|| svc::Either::B(target)))
 }
 
 // === impl Outbound ===
@@ -169,23 +163,30 @@ impl<L> Outbound<L> {
     /// Pushes a layer that unwraps the [`Logical`] address of a given target
     /// from its profile resolution, or else falls back to the provided
     /// per-endpoint service if there was no profile resolution for that target.
-    pub fn push_unwrap_logical<T, I, E, ESvc, LSvc>(
+    pub fn push_unwrap_logical<T, E, R, ESvc, LSvc, P>(
         self,
         endpoint: E,
     ) -> Outbound<
         impl svc::NewService<
                 (Option<profiles::Receiver>, T),
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+                Service = impl svc::Service<
+                    R,
+                    Response = LSvc::Response,
+                    Error = Error,
+                    Future = impl Send,
+                >,
             > + Clone,
     >
     where
-        L: svc::NewService<tcp::Logical, Service = LSvc> + Clone,
-        LSvc: svc::Service<I, Response = (), Error = Error>,
+        Logical<P>: TryFrom<(profiles::Receiver, T)>,
+        L: svc::NewService<Logical<P>, Service = LSvc> + Clone,
+        LSvc: svc::Service<R, Error = Error>,
         LSvc::Future: Send,
         E: svc::NewService<T, Service = ESvc> + Clone,
-        ESvc: svc::Service<I, Response = (), Error = Error>,
+        ESvc: svc::Service<R, Response = LSvc::Response, Error = Error>,
         ESvc::Future: Send,
-        T: Param<OrigDstAddr>,
+
+        T: Clone,
     {
         let Self {
             config,

@@ -12,6 +12,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Addr, AddrMatch, Conditional, Error,
 };
+use std::convert::TryFrom;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -94,13 +95,12 @@ impl Outbound<()> {
                     .push(svc::MapErrLayer::new(Into::into)),
             )
             .into_inner();
-        let http_logical = http.push_http_logical(resolve).into_inner();
-        svc::stack(http_logical)
-            .push_on_response(
-                svc::layers()
-                    .push(http::BoxRequest::layer())
-                    .push(svc::MapErrLayer::new(Into::<Error>::into)),
-            )
+        let http_logical = http.push_http_logical(resolve).push_on_response(
+            svc::layers()
+                .push(http::BoxRequest::layer())
+                .push(svc::MapErrLayer::new(Into::<Error>::into)),
+        );
+        http_logical
             // Lookup the profile for the outbound HTTP target, if appropriate.
             //
             // This service is buffered because it needs to initialize the profile
@@ -109,8 +109,8 @@ impl Outbound<()> {
             // When this service is in failfast, ensure that we drive the
             // inner service to readiness even if new requests aren't
             // received.
-            .push_map_target(http::Logical::from)
-            .push(svc::UnwrapOr::layer(http_endpoint))
+            .push_unwrap_logical(http_endpoint)
+            .into_stack()
             .check_new_service::<(Option<profiles::Receiver>, Target), _>()
             .push(profiles::discover::layer(profiles, allow))
             .push_on_response(
@@ -202,8 +202,11 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
 
 // === impl Target ===
 
-impl From<(profiles::Receiver, Target)> for http::Logical {
-    fn from((profile, Target { dst, version }): (profiles::Receiver, Target)) -> Self {
+impl TryFrom<(profiles::Receiver, Target)> for http::Logical {
+    type Error = ();
+    fn try_from(
+        (profile, Target { dst, version }): (profiles::Receiver, Target),
+    ) -> Result<Self, Self::Error> {
         // XXX This is a hack to fix caching when an dst-override is set.
         let orig_dst = if let Some(a) = dst.socket_addr() {
             OrigDstAddr(a)
@@ -211,14 +214,17 @@ impl From<(profiles::Receiver, Target)> for http::Logical {
             OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
         };
         let logical_addr = profile.borrow().addr.clone();
-        if logical_addr.is_none() {
-            tracing::debug!(?dst, ?version, "no logical address resolved");
-        }
-        Self {
-            orig_dst,
-            profile,
-            protocol: version,
-            logical_addr: logical_addr.unwrap_or_else(|| todo!("eliza figure out")),
+        match logical_addr {
+            Some(logical_addr) => Ok(Self {
+                orig_dst,
+                profile,
+                protocol: version,
+                logical_addr,
+            }),
+            None => {
+                tracing::debug!(?dst, ?version, "no logical address resolved");
+                Err(())
+            }
         }
     }
 }

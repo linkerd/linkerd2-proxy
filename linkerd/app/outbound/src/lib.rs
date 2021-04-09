@@ -106,7 +106,7 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn push_switch<P: Clone, U: Clone>(
+    pub(crate) fn push_switch<P: Clone, U: Clone>(
         self,
         predicate: P,
         other: U,
@@ -116,6 +116,10 @@ impl<S> Outbound<S> {
             runtime: self.runtime,
             stack: self.stack.push_switch(predicate, other),
         }
+    }
+
+    pub(crate) fn push_on_response<L: Clone>(self, layer: L) -> Outbound<stack::OnResponse<L, S>> {
+        self.push(stack::OnResponseLayer::new(layer))
     }
 
     pub fn into_server<T, R, P, I>(
