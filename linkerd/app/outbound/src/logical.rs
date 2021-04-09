@@ -153,7 +153,7 @@ where
     Ok(match addr {
         Some(logical_addr) => svc::Either::A(Logical::from((logical_addr, profile, target))),
         None => {
-            debug!(?profile, "No logical address for this profile");
+            debug!(profile = ?*profile.borrow(), "No logical address for this profile");
             svc::Either::B(target)
         }
     })
