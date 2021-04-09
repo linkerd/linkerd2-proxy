@@ -34,14 +34,14 @@ pub struct Profile {
 }
 
 /// A profile lookup target.
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LookupAddr(pub Addr);
 
 /// A bound logical service address
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub struct LogicalAddr(pub NameAddr);
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Target {
     pub addr: NameAddr,
     pub weight: u32,
@@ -121,6 +121,12 @@ impl fmt::Display for LookupAddr {
     }
 }
 
+impl fmt::Debug for LookupAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "LookupAddr({})", self.0)
+    }
+}
+
 impl FromStr for LookupAddr {
     type Err = <Addr as FromStr>::Err;
 
@@ -149,6 +155,12 @@ impl fmt::Display for LogicalAddr {
     }
 }
 
+impl fmt::Debug for LogicalAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "LogicalAddr({})", self.0)
+    }
+}
+
 impl FromStr for LogicalAddr {
     type Err = <NameAddr as FromStr>::Err;
 
@@ -166,5 +178,16 @@ impl From<NameAddr> for LogicalAddr {
 impl Into<NameAddr> for LogicalAddr {
     fn into(self) -> NameAddr {
         self.0
+    }
+}
+
+// === impl Target ===
+
+impl fmt::Debug for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Target")
+            .field("addr", &format_args!("{}", self.addr))
+            .field("weight", &self.weight)
+            .finish()
     }
 }
