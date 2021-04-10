@@ -153,10 +153,19 @@ pub mod fuzz_logic {
     use super::*;
 
     pub async fn fuzz_entry(input: &[u8]) {
-        use tokio_test::io;
+        use tokio::io::AsyncWriteExt;
+
+        let (mut client, mut server) = tokio::io::duplex(input.len());
+
+        let mut buf = bytes::Bytes::copy_from_slice(input);
+        let write = tokio::spawn(async move { client.write_buf(&mut buf).await });
 
         let mut buf = BytesMut::with_capacity(1024);
-        let mut io = io::Builder::new().read(&input).build();
-        let _kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
+        let _kind = DetectHttp(()).detect(&mut server, &mut buf).await.unwrap();
+
+        write
+            .await
+            .expect("Spawn must succeed")
+            .expect("Write must succeed");
     }
 }
