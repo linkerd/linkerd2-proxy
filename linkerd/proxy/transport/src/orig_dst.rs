@@ -86,11 +86,11 @@ fn orig_dst_addr(sock: &TcpStream) -> io::Result<OrigDstAddr> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn orig_dst_addr(&self, _: &TcpStream) -> io::Result<OrigDstAddr> {
-    io::Error::new(
+fn orig_dst_addr(_: &TcpStream) -> io::Result<OrigDstAddr> {
+    Err(io::Error::new(
         io::ErrorKind::Other,
         "SO_ORIGINAL_DST not supported on this operating system",
-    )
+    ))
 }
 
 #[cfg(target_os = "linux")]
