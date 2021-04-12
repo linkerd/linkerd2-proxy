@@ -283,27 +283,35 @@ mod tests {
     }
 
     #[test]
-    fn to_http_authority_ipv4_port_80() {
+    fn to_http_authority_names_port_80() {
         test_to_http_authority(&[
             "localhost:80",
             "localhost.:80",
             "LocalhOsT.:80",
             "mlocalhost.:80",
             "localhost1.:80",
-            "127.0.0.1:80",
         ])
     }
 
     #[test]
-    fn to_http_authority_ipv4() {
+    fn to_http_authority_names() {
         test_to_http_authority(&[
             "localhost:9090",
             "localhost.:9090",
             "LocalhOsT.:9090",
             "mlocalhost.:9090",
             "localhost1.:9090",
-            "127.0.0.1:9090",
         ])
+    }
+
+    #[test]
+    fn to_http_authority_ipv4_port_80() {
+        test_to_http_authority(&["10.7.0.42:80", "127.0.0.1:80"])
+    }
+
+    #[test]
+    fn to_http_authority_ipv4() {
+        test_to_http_authority(&["10.7.0.42:9090", "127.0.0.1:9090"])
     }
 
     #[test]
