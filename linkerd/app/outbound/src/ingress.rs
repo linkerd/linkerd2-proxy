@@ -94,8 +94,10 @@ impl Outbound<()> {
                     .push(svc::MapErrLayer::new(Into::into)),
             )
             .into_inner();
-        let http_logical = http.push_http_logical(resolve).into_inner();
-        svc::stack(http_logical)
+
+        http
+            .push_http_logical(resolve)
+            .into_stack()
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())

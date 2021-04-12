@@ -67,7 +67,7 @@ where
 
         let addr = match profile.borrow().addr.clone() {
             Some(addr) => addr,
-            _ => return Gateway::BadDomain(http.target.name().clone()),
+            None => return Gateway::BadDomain(http.target.name().clone()),
         };
 
         // Create an outbound target using the resolved name and an address

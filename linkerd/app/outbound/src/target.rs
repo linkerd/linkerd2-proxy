@@ -177,6 +177,7 @@ impl<P> Param<ConcreteAddr> for Concrete<P> {
 }
 
 // === impl Endpoint ===
+
 impl<P> Endpoint<P> {
     pub fn no_tls(reason: tls::NoClientTls) -> impl Fn(Accept<P>) -> Self {
         move |accept| Self::from((reason, accept))
