@@ -2353,9 +2353,8 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98a0381b2864c2978db7f8e17c7b23cca5a3a5f99241076e13002261a8ecbabd"
+version = "0.20.1"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#6dfc6713fa4448bca3c691aab366a4bae683df65"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2371,15 +2370,15 @@ dependencies = [
  "rand",
  "smallvec",
  "thiserror",
+ "tinyvec",
  "tokio",
  "url",
 ]
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3072d18c10bd621cb00507d59cfab5517862285c353160366e37fbf4c74856e4"
+version = "0.20.1"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#6dfc6713fa4448bca3c691aab366a4bae683df65"
 dependencies = [
  "cfg-if",
  "futures-util",
