@@ -276,7 +276,7 @@ mod tests {
     fn test_to_http_authority(cases: &[&str]) {
         let width = cases.iter().map(|s| s.len()).max().unwrap_or(0);
         for host in cases {
-            print!("trying {:width$?} ... ", host, width = width);
+            print!("trying {:1$} ... ", host, width);
             Addr::from_str(host).unwrap().to_http_authority();
             println!("ok");
         }
