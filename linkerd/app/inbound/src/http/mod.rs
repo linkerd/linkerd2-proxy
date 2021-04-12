@@ -238,3 +238,122 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
     l.insert("direction".to_string(), "inbound".to_string());
     l
 }
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use crate::{
+        target::{HttpAccept, TcpAccept, TcpEndpoint},
+        test_util::{
+            support::{connect::Connect, http_util, profile, resolver},
+            *,
+        },
+        Config, Inbound,
+    };
+    use hyper::http;
+    use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
+    pub use linkerd_app_test as support;
+    use linkerd_app_test::*; //test_util::support::connect;
+
+    use linkerd_app_core::{
+        io::{self, BoxedIo},
+        proxy,
+        svc::{self, NewService, Param},
+        tls,
+        transport::{ClientAddr, Remote, ServerAddr},
+        Conditional, Error, NameAddr, ProxyRuntime,
+    };
+
+    pub async fn fuzz_entry_raw(_fuzz_data: &str, header_data_1: &str, header_data_2: &str) {
+        let mut server = hyper::server::conn::Http::new();
+        server.http1_only(true);
+        let mut client = ClientBuilder::new();
+        let accept = HttpAccept {
+            version: proxy::http::Version::Http1,
+            tcp: TcpAccept {
+                target_addr: ([127, 0, 0, 1], 5550).into(),
+                client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
+                tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+            },
+        };
+        let connect =
+            support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_fuzz_server(server));
+        let profiles = profile::resolver();
+        let profile_tx = profiles
+            .profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+        profile_tx.send(profile::Profile::default()).unwrap();
+
+        // Build the outbound server
+        let cfg = default_config();
+        let (rt, _shutdown) = runtime();
+        let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(accept);
+        let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+
+        if let Ok(req) = Request::builder()
+            .method(http::Method::POST)
+            .uri(_fuzz_data)
+            .header(header_data_1, header_data_2)
+            .body(Body::default())
+        {
+            let rsp = http_util::http_request(&mut client, req).await;
+            let _body = http_util::body_to_string(rsp.into_body()).await;
+
+            // Let's send one with a correct URL
+            let req2 = Request::builder()
+                .method(http::Method::GET)
+                .uri("http://foo.svc.cluster.local:5550")
+                .body(Body::default())
+                .unwrap();
+            let rsp2 = http_util::http_request(&mut client, req2).await;
+            let _body = http_util::body_to_string(rsp2.into_body()).await;
+        }
+
+        drop(client);
+        bg.await;
+    }
+
+    fn hello_fuzz_server(
+        http: hyper::server::conn::Http,
+    ) -> impl Fn(Remote<ServerAddr>) -> Result<BoxedIo, Error> {
+        move |_endpoint| {
+            let (client_io, server_io) = support::io::duplex(4096);
+            let hello_svc = hyper::service::service_fn(|_request: Request<Body>| async move {
+                Ok::<_, Error>(Response::new(Body::from("Hello world!")))
+            });
+            tokio::spawn(
+                http.serve_connection(server_io, hello_svc)
+                    .in_current_span(),
+            );
+            Ok(BoxedIo::new(client_io))
+        }
+    }
+
+    fn build_fuzz_server<I>(
+        cfg: Config,
+        rt: ProxyRuntime,
+        profiles: resolver::Profiles,
+        connect: Connect<Remote<ServerAddr>>,
+    ) -> impl svc::NewService<
+        HttpAccept,
+        Service = impl tower::Service<
+            I,
+            Response = (),
+            Error = impl Into<linkerd_app_core::Error>,
+            Future = impl Send + 'static,
+        > + Send
+                      + Clone,
+    > + Clone
+    where
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+    {
+        let connect = svc::stack(connect)
+            .push_map_target(|t: TcpEndpoint| {
+                Remote(ServerAddr(([127, 0, 0, 1], t.param()).into()))
+            })
+            .into_inner();
+        Inbound::new(cfg, rt)
+            .with_stack(connect)
+            .push_http_router(profiles)
+            .push_http_server()
+            .into_inner()
+    }
+}
