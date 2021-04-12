@@ -82,7 +82,18 @@ impl Addr {
         match self {
             Addr::Name(n) => n.as_http_authority(),
             Addr::Socket(ref a) if a.port() == 80 => {
-                http::uri::Authority::from_str(&a.ip().to_string()).unwrap_or_else(|err| {
+                let ip = if a.is_ipv4() {
+                    a.ip().to_string()
+                } else {
+                    // When IPv6 or later addresses are used in an authority,
+                    // they must be within square brackets. See
+                    // https://tools.ietf.org/html/rfc3986#section-3.2 for
+                    // details. The `fmt::Display` implementation of the
+                    // `Ipv6Addr` type does not include brackets, so we must add
+                    // them ourselves.
+                    format!("[{}]", a.ip())
+                };
+                http::uri::Authority::from_str(&ip).unwrap_or_else(|err| {
                     panic!("SocketAddr ({}) must be valid authority: {}", a, err)
                 })
             }
