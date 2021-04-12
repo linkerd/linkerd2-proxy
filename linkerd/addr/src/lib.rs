@@ -258,20 +258,55 @@ mod tests {
         }
     }
 
+    fn test_to_http_authority(cases: &[&str]) {
+        let width = cases.iter().map(|s| s.len()).max().unwrap_or(0);
+        for host in cases {
+            print!("trying {:width$?} ... ", host, width = width);
+            Addr::from_str(host).unwrap().to_http_authority();
+            println!("ok");
+        }
+    }
+
     #[test]
-    fn test_to_http_authority() {
-        let cases = &[
+    fn to_http_authority_ipv4_port_80() {
+        test_to_http_authority(&[
             "localhost:80",
             "localhost.:80",
             "LocalhOsT.:80",
             "mlocalhost.:80",
             "localhost1.:80",
             "127.0.0.1:80",
+        ])
+    }
+
+    #[test]
+    fn to_http_authority_ipv4() {
+        test_to_http_authority(&[
+            "localhost:9090",
+            "localhost.:9090",
+            "LocalhOsT.:9090",
+            "mlocalhost.:9090",
+            "localhost1.:9090",
+            "127.0.0.1:9090",
+        ])
+    }
+
+    #[test]
+    fn to_http_authority_ipv6_port_80() {
+        test_to_http_authority(&[
+            "[2001:0db8:0000:0000:0000:8a2e:0370:7334]:80",
+            "[2001:db8::8a2e:370:7334]:80",
             "[::1]:80",
-        ];
-        for host in cases {
-            Addr::from_str(host).unwrap().to_http_authority();
-        }
+        ])
+    }
+
+    #[test]
+    fn to_http_authority_ipv6() {
+        test_to_http_authority(&[
+            "[2001:0db8:0000:0000:0000:8a2e:0370:7334]:9090",
+            "[2001:db8::8a2e:370:7334]:9090",
+            "[::1]:9090",
+        ])
     }
 }
 
