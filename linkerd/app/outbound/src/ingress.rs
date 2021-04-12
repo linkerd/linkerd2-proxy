@@ -3,10 +3,7 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
     io, profiles,
-    proxy::{
-        api_resolve::{ConcreteAddr, Metadata},
-        core::Resolve,
-    },
+    proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
     transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
@@ -22,12 +19,11 @@ impl Outbound<()> {
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
-    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P, R>(
+    pub fn to_ingress<T, I, N, NSvc, H, HSvc, P>(
         &self,
         profiles: P,
-        tcp: Outbound<N>,
-        http: Outbound<H>,
-        resolve: R,
+        tcp: N,
+        http: H,
     ) -> impl svc::NewService<
         T,
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
@@ -43,7 +39,7 @@ impl Outbound<()> {
             + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        H: svc::NewService<http::Endpoint, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
+        H: svc::NewService<http::Logical, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
             + 'static,
@@ -52,14 +48,6 @@ impl Outbound<()> {
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
-            + Clone
-            + Unpin
-            + Send
-            + Sync
-            + 'static,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
     {
         let Config {
             allow_discovery,
@@ -77,16 +65,14 @@ impl Outbound<()> {
         } = self.config.clone();
         let allow = AllowHttpProfile(allow_discovery);
 
-        let tcp = tcp
-            .into_stack()
+        let tcp = svc::stack(tcp)
             .push_on_response(drain::Retain::layer(self.runtime.drain.clone()))
             .push_map_target(|a: tcp::Accept| {
                 tcp::Endpoint::from((tls::NoClientTls::IngressNonHttp, a))
             })
             .into_inner();
 
-        http.push_http_logical(resolve)
-            .into_stack()
+        svc::stack(http)
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())
