@@ -62,4 +62,6 @@ debug = false
 debug = false
 
 [patch.crates-io]
+trust-dns-proto = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
+trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
