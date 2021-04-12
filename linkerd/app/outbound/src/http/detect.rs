@@ -6,7 +6,8 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 impl<T> Outbound<T> {
-    /// Pushes a `DetectHttp` stack with a `SkipByProfile` layer.
+    /// Pushes a stack that detects HTTP, unless the service profile indicates
+    /// that this target uses an opaque protocol.
     pub fn push_detect_with_skip<TSvc, H, HSvc, I>(
         self,
         http: H,
@@ -36,7 +37,16 @@ impl<T> Outbound<T> {
         self.push_detect_http(http)
             // When the profile marks the target as opaque, we skip HTTP
             // detection and just use the TCP logical stack directly.
-            .push_switch(SkipByProfile, skipped)
+            .push_switch(
+                |l: tcp::Logical| -> Result<_, Error> {
+                    if l.profile.borrow().opaque_protocol {
+                        Ok(svc::Either::B(l))
+                    } else {
+                        Ok(svc::Either::A(l))
+                    }
+                },
+                skipped,
+            )
     }
 
     pub fn push_detect_http<R, TSvc, TTgt, H, HSvc, HTgt, I>(
@@ -106,23 +116,6 @@ impl<T> Outbound<T> {
             config,
             runtime,
             stack,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct SkipByProfile;
-
-// === impl SkipByProfile ===
-
-impl svc::Predicate<tcp::Logical> for SkipByProfile {
-    type Request = svc::Either<tcp::Logical, tcp::Logical>;
-
-    fn check(&mut self, l: tcp::Logical) -> Result<Self::Request, Error> {
-        if l.profile.borrow().opaque_protocol {
-            Ok(svc::Either::B(l))
-        } else {
-            Ok(svc::Either::A(l))
         }
     }
 }
