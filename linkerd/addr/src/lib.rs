@@ -82,11 +82,15 @@ impl Addr {
         match self {
             Addr::Name(n) => n.as_http_authority(),
             Addr::Socket(ref a) if a.port() == 80 => {
-                http::uri::Authority::from_str(&a.ip().to_string())
-                    .expect("SocketAddr must be valid authority")
+                http::uri::Authority::from_str(&a.ip().to_string()).unwrap_or_else(|err| {
+                    panic!("SocketAddr ({}) must be valid authority: {}", a, err)
+                })
             }
-            Addr::Socket(a) => http::uri::Authority::from_str(&a.to_string())
-                .expect("SocketAddr must be valid authority"),
+            Addr::Socket(a) => {
+                http::uri::Authority::from_str(&a.to_string()).unwrap_or_else(|err| {
+                    panic!("SocketAddr ({}) must be valid authority: {}", a, err)
+                })
+            }
         }
     }
 
