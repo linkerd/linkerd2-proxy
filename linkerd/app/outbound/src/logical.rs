@@ -1,6 +1,8 @@
 use crate::{tcp, Outbound};
 use linkerd_app_core::{profiles, svc};
 
+pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
+
 impl<L> Outbound<L> {
     /// Pushes a layer that unwraps the [`Logical`] address of a given target
     /// from its profile resolution, or else falls back to the provided
@@ -11,7 +13,7 @@ impl<L> Outbound<L> {
     ) -> Outbound<
         impl svc::NewService<
                 (Option<profiles::Receiver>, T),
-                Service = svc::stack::ResultService<svc::Either<L::Service, E::Service>>,
+                Service = UnwrapLogical<L::Service, E::Service>,
             > + Clone,
     >
     where
