@@ -95,8 +95,7 @@ impl Outbound<()> {
             )
             .into_inner();
 
-        http
-            .push_http_logical(resolve)
+        http.push_http_logical(resolve)
             .into_stack()
             .push_on_response(
                 svc::layers()
