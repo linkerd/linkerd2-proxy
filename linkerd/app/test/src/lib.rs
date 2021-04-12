@@ -1,6 +1,6 @@
 //! Shared infrastructure for integration tests
 
-#![deny(warnings, rust_2018_idioms)]
+//#![deny(warnings, rust_2018_idioms)]
 
 pub use futures::{future, FutureExt, TryFuture, TryFutureExt};
 
