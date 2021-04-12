@@ -257,6 +257,22 @@ mod tests {
             assert_eq!(a.is_loopback(), *expected_result, "{:?}", host)
         }
     }
+
+    #[test]
+    fn test_to_http_authority() {
+        let cases = &[
+            "localhost:80",
+            "localhost.:80",
+            "LocalhOsT.:80",
+            "mlocalhost.:80",
+            "localhost1.:80",
+            "127.0.0.1:80",
+            "[::1]:80",
+        ];
+        for host in cases {
+            Addr::from_str(host).unwrap().to_http_authority();
+        }
+    }
 }
 
 #[cfg(fuzzing)]
