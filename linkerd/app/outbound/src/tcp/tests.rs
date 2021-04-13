@@ -776,7 +776,7 @@ where
         .into_inner();
     connect
         .push_tcp_logical(resolver)
-        .push_detect_with_skip(support::service::no_http())
+        .push_detect_http(support::service::no_http::<crate::http::Logical>())
         .push_unwrap_logical(endpoint)
         .push_discover(profiles)
         .into_inner()

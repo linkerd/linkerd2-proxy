@@ -80,7 +80,7 @@ where
         .into_inner();
     let endpoint = out
         .clone()
-        .with_stack(NoTcpBalancer)
+        .with_stack(no_tcp_balancer::<crate::tcp::Accept>())
         .push_detect_http::<_, _, crate::tcp::Accept, _, _, _, _>(http_endpoint)
         .into_inner();
 
@@ -90,15 +90,19 @@ where
         .push_http_server()
         .into_inner();
 
-    out.with_stack(NoTcpBalancer)
-        .push_detect_with_skip(http)
+    out.with_stack(no_tcp_balancer::<crate::tcp::Logical>())
+        .push_detect_http(http)
         .push_unwrap_logical(endpoint)
 }
 
 #[derive(Clone, Debug)]
-struct NoTcpBalancer;
+struct NoTcpBalancer<T>(std::marker::PhantomData<fn(T)>);
 
-impl<T: std::fmt::Debug> svc::NewService<T> for NoTcpBalancer {
+fn no_tcp_balancer<T>() -> NoTcpBalancer<T> {
+    NoTcpBalancer(std::marker::PhantomData)
+}
+
+impl<T: std::fmt::Debug> svc::NewService<T> for NoTcpBalancer<T> {
     type Service = Self;
     fn new_service(&mut self, target: T) -> Self::Service {
         panic!(
@@ -108,7 +112,7 @@ impl<T: std::fmt::Debug> svc::NewService<T> for NoTcpBalancer {
     }
 }
 
-impl<I> svc::Service<I> for NoTcpBalancer {
+impl<T, I> svc::Service<I> for NoTcpBalancer<T> {
     type Response = ();
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;

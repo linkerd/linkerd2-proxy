@@ -168,7 +168,7 @@ impl<S> Outbound<S> {
             .push_tcp_logical(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
-            .push_detect_with_skip(http_logical)
+            .push_detect_http(http_logical)
             // If a service profile was not discovered, fall back to the
             // per-endpoint stack.
             .push_unwrap_logical(no_profile)

@@ -1,4 +1,4 @@
-use crate::tcp::opaque_transport;
+use crate::{http::SkipHttpDetection, tcp::opaque_transport};
 use linkerd_app_core::{
     metrics,
     profiles::{self, LogicalAddr},
@@ -62,6 +62,13 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
     }
 }
 
+// When a profile is not discovered, always enable protocol detection.
+impl Param<SkipHttpDetection> for Accept<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(false)
+    }
+}
+
 // === impl Logical ===
 
 impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
@@ -101,6 +108,13 @@ impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
 impl<P> Param<profiles::LookupAddr> for Logical<P> {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(self.addr())
+    }
+}
+
+// Used for skipping HTTP detection
+impl Param<SkipHttpDetection> for Logical<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(self.profile.borrow().opaque_protocol)
     }
 }
 
