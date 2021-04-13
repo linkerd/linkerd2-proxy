@@ -148,11 +148,13 @@ where
             .push_on_response(http_tracing::client(rt.span_sink.clone(), trace_labels()))
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
+
         let no_profile = target
             .clone()
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>()
             .into_inner();
+            
         // Attempts to discover a service profile for each logical target (as
         // informed by the request's headers). The stack is cached until a
         // request has not been received for `cache_max_idle_age`.
