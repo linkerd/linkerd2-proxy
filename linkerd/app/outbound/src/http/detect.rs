@@ -37,7 +37,7 @@ impl<N> Outbound<N> {
     {
         let Self {
             config,
-            runtime,
+            runtime: rt,
             stack: tcp,
         } = self;
         let ProxyConfig {
@@ -59,10 +59,7 @@ impl<N> Outbound<N> {
                     .push(svc::MapErrLayer::new(Into::into)),
             )
             .check_new_service::<HTgt, _>()
-            .push(http::NewServeHttp::layer(
-                h2_settings,
-                runtime.drain.clone(),
-            ))
+            .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
             .push_map_target(HTgt::from)
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .push(svc::UnwrapOr::layer(
@@ -96,7 +93,7 @@ impl<N> Outbound<N> {
 
         Outbound {
             config,
-            runtime,
+            runtime: rt,
             stack,
         }
     }
