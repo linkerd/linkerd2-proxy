@@ -1,5 +1,5 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::{resolve, target, Outbound};
+use crate::{endpoint, resolve, Outbound};
 use linkerd_app_core::{
     config, drain, io, profiles,
     proxy::{
@@ -58,10 +58,7 @@ where
             .check_service::<ConcreteAddr>()
             .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
             .push(svc::layer::mk(move |inner| {
-                map_endpoint::Resolve::new(
-                    target::EndpointFromMetadata { identity_disabled },
-                    inner,
-                )
+                map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
             }))
             .check_service::<Concrete>()
             .into_inner();

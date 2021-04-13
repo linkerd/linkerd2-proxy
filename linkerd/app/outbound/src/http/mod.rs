@@ -22,10 +22,10 @@ use linkerd_app_core::{
 };
 use std::{net::SocketAddr, str::FromStr, sync::Arc};
 
-pub type Accept = crate::target::Accept<Version>;
-pub type Logical = crate::target::Logical<Version>;
-pub type Concrete = crate::target::Concrete<Version>;
-pub type Endpoint = crate::target::Endpoint<Version>;
+pub type Accept = crate::Accept<Version>;
+pub type Logical = crate::logical::Logical<Version>;
+pub type Concrete = crate::logical::Concrete<Version>;
+pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
