@@ -7,10 +7,10 @@ use crate::{
     transport::ConnectTcp,
     Addr, Error,
 };
-use futures::{future::Either, StreamExt};
-use linkerd_channel::into_stream::IntoStream;
+use futures::future::Either;
 use std::fmt;
 use tokio::time;
+use tokio_stream::{wrappers::IntervalStream, StreamExt};
 use tracing::warn;
 
 #[derive(Clone, Debug)]
@@ -76,7 +76,9 @@ impl Config {
                     } = e.kind()
                     {
                         let ttl = time::Duration::from_secs(*ttl_secs as u64);
-                        return Ok(Either::Left(time::interval(ttl).into_stream().map(|_| ())));
+                        return Ok(Either::Left(
+                            IntervalStream::new(time::interval(ttl)).map(|_| ()),
+                        ));
                     }
                 }
 

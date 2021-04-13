@@ -30,9 +30,7 @@ pub struct FromMetadata {
 impl<E> Outbound<E> {
     pub fn push_into_endpoint<P, T>(
         self,
-    ) -> Outbound<
-        impl svc::NewService<T, Service = <E as svc::NewService<Endpoint<P>>>::Service> + Clone,
-    >
+    ) -> Outbound<impl svc::NewService<T, Service = E::Service> + Clone>
     where
         Endpoint<P>: From<(tls::NoClientTls, T)>,
         E: svc::NewService<Endpoint<P>> + Clone,

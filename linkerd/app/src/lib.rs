@@ -24,9 +24,11 @@ use linkerd_app_core::{
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
 use linkerd_app_outbound::{self as outbound, Outbound};
-use linkerd_channel::into_stream::IntoStream;
 use std::pin::Pin;
-use tokio::{sync::mpsc, time::Duration};
+use tokio::{
+    sync::mpsc,
+    time::{self, Duration},
+};
 use tracing::instrument::Instrument;
 use tracing::{debug, info, info_span};
 
@@ -318,14 +320,9 @@ impl App {
                             registry, serve, ..
                         } = tap
                         {
-                            tokio::spawn(
-                                registry
-                                    .clean(
-                                        tokio::time::interval(Duration::from_secs(60))
-                                            .into_stream(),
-                                    )
-                                    .instrument(info_span!("tap_clean")),
-                            );
+                            let clean = time::interval(Duration::from_secs(60));
+                            let clean = tokio_stream::wrappers::IntervalStream::new(clean);
+                            tokio::spawn(registry.clean(clean).instrument(info_span!("tap_clean")));
                             tokio::spawn(serve.instrument(info_span!("tap")));
                         }
 

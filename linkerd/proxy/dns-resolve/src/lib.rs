@@ -63,7 +63,7 @@ impl<T: Param<Addr>> tower::Service<T> for DnsResolve {
 }
 
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
-    use linkerd_channel::into_stream::IntoStream;
+    use tokio_stream::wrappers::ReceiverStream;
 
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.
@@ -103,5 +103,5 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
         .in_current_span(),
     );
 
-    Ok(Box::pin(rx.into_stream()))
+    Ok(Box::pin(ReceiverStream::new(rx)))
 }

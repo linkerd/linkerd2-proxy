@@ -15,6 +15,7 @@ pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
 
+use crate::http::SkipHttpDetection;
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     io, metrics, profiles,
@@ -23,10 +24,7 @@ use linkerd_app_core::{
         core::Resolve,
     },
     serve,
-    svc::{
-        self,
-        stack::{self, Param},
-    },
+    svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*, listen::Bind},
     AddrMatch, Conditional, Error, ProxyRuntime,
@@ -106,22 +104,6 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub(crate) fn push_switch<P: Clone, U: Clone>(
-        self,
-        predicate: P,
-        other: U,
-    ) -> Outbound<stack::Filter<stack::NewEither<S, U>, P>> {
-        Outbound {
-            config: self.config,
-            runtime: self.runtime,
-            stack: self.stack.push_switch(predicate, other),
-        }
-    }
-
-    pub(crate) fn push_on_response<L: Clone>(self, layer: L) -> Outbound<stack::OnResponse<L, S>> {
-        self.push(stack::OnResponseLayer::new(layer))
-    }
-
     pub fn into_server<T, R, P, I>(
         self,
         resolve: R,
@@ -179,7 +161,7 @@ impl<S> Outbound<S> {
             .push_tcp_logical(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
-            .push_detect_with_skip(http_logical)
+            .push_detect_http(http_logical)
             // If a service profile was not discovered, fall back to the
             // per-endpoint stack.
             .push_unwrap_logical(no_profile)
@@ -214,12 +196,18 @@ impl Outbound<()> {
         let serve = async move {
             if self.config.ingress_mode {
                 info!("Outbound routing in ingress-mode");
-                let tcp = self.to_tcp_connect().push_tcp_endpoint().push_tcp_forward();
+                let tcp = self
+                    .to_tcp_connect()
+                    .push_tcp_endpoint()
+                    .push_tcp_forward()
+                    .into_inner();
                 let http = self
                     .to_tcp_connect()
                     .push_tcp_endpoint()
-                    .push_http_endpoint();
-                let stack = self.to_ingress(profiles, tcp, http, resolve.clone());
+                    .push_http_endpoint()
+                    .push_http_logical(resolve)
+                    .into_inner();
+                let stack = self.to_ingress(profiles, tcp, http);
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             } else {
@@ -249,6 +237,13 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
 impl<P> Param<OrigDstAddr> for Accept<P> {
     fn param(&self) -> OrigDstAddr {
         self.orig_dst
+    }
+}
+
+// When a profile is not discovered, always enable protocol detection.
+impl Param<SkipHttpDetection> for Accept<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(false)
     }
 }
 

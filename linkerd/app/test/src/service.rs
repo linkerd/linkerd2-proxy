@@ -4,21 +4,21 @@ use crate::{
 };
 
 /// Returns a mock HTTP router that asserts that the HTTP router is never used.
-pub fn no_http() -> NoHttp {
-    NoHttp
+pub fn no_http<T>() -> NoHttp<T> {
+    NoHttp(std::marker::PhantomData)
 }
 
-#[derive(Clone)]
-pub struct NoHttp;
+#[derive(Clone, Copy, Debug)]
+pub struct NoHttp<T>(std::marker::PhantomData<fn(T)>);
 
-impl<T: std::fmt::Debug> svc::NewService<T> for NoHttp {
+impl<T: std::fmt::Debug> svc::NewService<T> for NoHttp<T> {
     type Service = Self;
     fn new_service(&mut self, target: T) -> Self::Service {
         panic!("the HTTP router should not be used in this test, but we tried to build a service for {:?}", target)
     }
 }
 
-impl svc::Service<http::Request<http::BoxBody>> for NoHttp {
+impl<T> svc::Service<http::Request<http::BoxBody>> for NoHttp<T> {
     type Response = http::Response<http::BoxBody>;
     type Error = Error;
     type Future = futures::future::Ready<Result<Self::Response, Self::Error>>;

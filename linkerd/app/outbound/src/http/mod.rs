@@ -7,6 +7,7 @@ mod server;
 #[cfg(test)]
 mod tests;
 
+pub use self::detect::SkipHttpDetection;
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;

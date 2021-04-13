@@ -29,3 +29,7 @@ path = "fuzz_targets/fuzz_target_1.rs"
 test = false
 doc = false
 required-features = ["fuzzing"]
+
+[patch.crates-io]
+trust-dns-proto = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
+trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }

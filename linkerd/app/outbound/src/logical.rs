@@ -1,4 +1,4 @@
-use crate::{endpoint::Endpoint, Accept, Outbound};
+use crate::{endpoint::Endpoint, http::SkipHttpDetection, Accept, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     profiles,
@@ -23,6 +23,8 @@ pub struct Concrete<P> {
     pub resolve: ConcreteAddr,
     pub logical: Logical<P>,
 }
+
+pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 // === impl Logical ===
 
@@ -62,6 +64,13 @@ impl<P> svc::Param<profiles::LookupAddr> for Logical<P> {
 impl<P> svc::Param<LogicalAddr> for Logical<P> {
     fn param(&self) -> LogicalAddr {
         self.logical_addr.clone()
+    }
+}
+
+// Used for skipping HTTP detection
+impl svc::Param<SkipHttpDetection> for Logical<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(self.profile.borrow().opaque_protocol)
     }
 }
 
@@ -169,15 +178,8 @@ impl<L> Outbound<L> {
         self,
         endpoint: E,
     ) -> Outbound<
-        impl svc::NewService<
-                (Option<profiles::Receiver>, T),
-                Service = impl svc::Service<
-                    R,
-                    Response = LSvc::Response,
-                    Error = Error,
-                    Future = impl Send,
-                >,
-            > + Clone,
+        impl svc::NewService<(Option<profiles::Receiver>, T), Service = UnwrapLogical<LSvc, ESvc>>
+            + Clone,
     >
     where
         Logical<P>: From<(LogicalAddr, profiles::Receiver, T)>,
