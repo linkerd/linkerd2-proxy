@@ -50,7 +50,6 @@ impl<N> Outbound<N> {
             .clone()
             .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
             .push_map_target(NTgt::from)
-            .check_new_service::<T, _>()
             .into_inner();
         let stack = svc::stack(http)
             .push_on_response(
@@ -64,9 +63,7 @@ impl<N> Outbound<N> {
             .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
             .push(svc::UnwrapOr::layer(
                 tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
-                    .check_new_service::<NTgt, _>()
                     .push_map_target(NTgt::from)
-                    .check_new_service::<T, _>()
                     .into_inner(),
             ))
             .check_new_service::<(Option<http::Version>, T), _>()
@@ -75,7 +72,6 @@ impl<N> Outbound<N> {
                 detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
-            .check_new_service::<T, _>()
             .push_switch(
                 // When the target is marked as as opaque, we skip HTTP
                 // detection and just use the TCP stack directly.
