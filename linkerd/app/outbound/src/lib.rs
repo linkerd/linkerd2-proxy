@@ -11,11 +11,11 @@ pub mod http;
 mod ingress;
 pub mod logical;
 mod resolve;
-pub mod target;
 pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
 
+use crate::http::SkipHttpDetection;
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     io, metrics, profiles,
@@ -29,8 +29,8 @@ use linkerd_app_core::{
         stack::{self, Param},
     },
     tls,
-    transport::{addrs::*, listen::Bind},
-    AddrMatch, Error, ProxyRuntime,
+    transport::{self, addrs::*, listen::Bind},
+    AddrMatch, Conditional, Error, ProxyRuntime,
 };
 use std::{collections::HashMap, future::Future, time::Duration};
 use tracing::info;
@@ -55,6 +55,14 @@ pub struct Outbound<S> {
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Accept<P> {
+    pub orig_dst: OrigDstAddr,
+    pub protocol: P,
+}
+
+// === impl Outbound ===
 
 impl Outbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
@@ -225,6 +233,26 @@ impl Outbound<()> {
         };
 
         (listen_addr, serve)
+    }
+}
+
+// === impl Accept ===
+
+impl<P> Param<transport::labels::Key> for Accept<P> {
+    fn param(&self) -> transport::labels::Key {
+        const NO_TLS: tls::ConditionalServerTls = Conditional::None(tls::NoServerTls::Loopback);
+        transport::labels::Key::accept(
+            transport::labels::Direction::Out,
+            NO_TLS,
+            self.orig_dst.into(),
+        )
+    }
+}
+
+// When a profile is not discovered, always enable protocol detection.
+impl Param<SkipHttpDetection> for Accept<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(false)
     }
 }
 
