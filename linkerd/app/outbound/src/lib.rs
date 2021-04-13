@@ -6,8 +6,10 @@
 #![deny(warnings, rust_2018_idioms)]
 
 mod discover;
+pub mod endpoint;
 pub mod http;
 mod ingress;
+pub mod logical;
 mod resolve;
 pub mod target;
 pub mod tcp;
@@ -22,7 +24,10 @@ use linkerd_app_core::{
         core::Resolve,
     },
     serve,
-    svc::{self, stack::Param},
+    svc::{
+        self,
+        stack::{self, Param},
+    },
     tls,
     transport::{addrs::*, listen::Bind},
     AddrMatch, Error, ProxyRuntime,
@@ -94,6 +99,18 @@ impl<S> Outbound<S> {
         }
     }
 
+    pub fn push_switch<P: Clone, U: Clone>(
+        self,
+        predicate: P,
+        other: U,
+    ) -> Outbound<stack::Filter<stack::NewEither<S, U>, P>> {
+        Outbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack: self.stack.push_switch(predicate, other),
+        }
+    }
+
     pub fn into_server<T, R, P, I>(
         self,
         resolve: R,
@@ -119,7 +136,27 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
-        let http = self
+        // HTTP per-endpoint stack used when a profile is not discovered.
+        let http_no_profile = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_into_endpoint()
+            .push_http_server::<http::Accept, _>()
+            .into_inner();
+
+        // HTTP and TCP per-endpoint stack used when a profile is not discovered.
+        let no_profile = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_tcp_forward()
+            .push_into_endpoint::<(), tcp::Accept>()
+            // If HTTP is detected, use the `http_endpoint` stack
+            .push_detect_http(http_no_profile)
+            .into_inner();
+
+        // HTTP stack for logical targets (with service profiles).
+        let http_logical = self
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
@@ -129,7 +166,13 @@ impl<S> Outbound<S> {
 
         self.push_tcp_endpoint()
             .push_tcp_logical(resolve)
-            .push_detect_http(http)
+            // Try to detect HTTP and use the `http_logical` stack, skipping
+            // detection if it's disabled by the service profile.
+            .push_detect_http(http_logical)
+            // If a service profile was not discovered, fall back to the
+            // per-endpoint stack.
+            .push_unwrap_logical(no_profile)
+            // Discover service profiles for each original dst address
             .push_discover(profiles)
             .into_inner()
     }

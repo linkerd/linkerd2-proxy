@@ -60,8 +60,12 @@ where
             Some(id) => id,
             None => return Gateway::NoIdentity,
         };
+        let profile = match profile {
+            Some(profile) => profile,
+            None => return Gateway::BadDomain(http.target.name().clone()),
+        };
 
-        let addr = match profile.as_ref().and_then(|p| p.borrow().addr.clone()) {
+        let addr = match profile.borrow().addr.clone() {
             Some(addr) => addr,
             None => return Gateway::BadDomain(http.target.name().clone()),
         };

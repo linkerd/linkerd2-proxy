@@ -767,10 +767,17 @@ where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
     let (rt, _) = runtime();
-    Outbound::new(cfg, rt)
-        .with_stack(connect)
+    let connect = Outbound::new(cfg, rt).with_stack(connect);
+    let endpoint = connect
+        .clone()
+        .push_tcp_forward()
+        .push_into_endpoint::<(), super::Accept>()
+        .push_detect_http::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
+        .into_inner();
+    connect
         .push_tcp_logical(resolver)
-        .push_detect_http(support::service::no_http())
+        .push_detect_http(support::service::no_http::<crate::http::Logical>())
+        .push_unwrap_logical(endpoint)
         .push_discover(profiles)
         .into_inner()
 }
@@ -820,7 +827,7 @@ fn build_logical(addr: SocketAddr, profile_recv: Receiver) -> Logical {
     let logical_addr = profile_recv.borrow().addr.clone();
     Logical {
         orig_dst: OrigDstAddr(addr),
-        profile: Some(profile_recv),
+        profile: profile_recv,
         protocol: (),
         logical_addr,
     }

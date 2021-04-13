@@ -3,11 +3,13 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
     io, profiles,
+    proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
-    transport::{self, ClientAddr, OrigDstAddr, Remote},
-    Addr, AddrMatch, Error,
+    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
+    Addr, AddrMatch, Conditional, Error,
 };
+use std::convert::TryFrom;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -74,7 +76,7 @@ impl Outbound<()> {
             .push_on_response(
                 svc::layers()
                     .push(http::BoxRequest::layer())
-                    .push(svc::MapErrLayer::new(Into::into)),
+                    .push(svc::MapErrLayer::new(Into::<Error>::into)),
             )
             // Lookup the profile for the outbound HTTP target, if appropriate.
             //
@@ -84,7 +86,8 @@ impl Outbound<()> {
             // When this service is in failfast, ensure that we drive the
             // inner service to readiness even if new requests aren't
             // received.
-            .push_map_target(http::Logical::from)
+            .push_request_filter(http::Logical::try_from)
+            .check_new_service::<(Option<profiles::Receiver>, Target), _>()
             .push(profiles::discover::layer(profiles, allow))
             .push_on_response(
                 svc::layers()
@@ -175,21 +178,45 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
 
 // === impl Target ===
 
-impl From<(Option<profiles::Receiver>, Target)> for http::Logical {
-    fn from((profile, Target { dst, version }): (Option<profiles::Receiver>, Target)) -> Self {
+impl TryFrom<(Option<profiles::Receiver>, Target)> for http::Logical {
+    type Error = ProfileRequired;
+    fn try_from(
+        (profile, Target { dst, version }): (Option<profiles::Receiver>, Target),
+    ) -> Result<Self, Self::Error> {
+        let profile = profile.ok_or(ProfileRequired)?;
+
         // XXX This is a hack to fix caching when an dst-override is set.
         let orig_dst = if let Some(a) = dst.socket_addr() {
             OrigDstAddr(a)
         } else {
             OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
         };
-        let logical_addr = profile.as_ref().and_then(|p| p.borrow().addr.clone());
+        let logical_addr = profile.borrow().addr.clone();
 
-        Self {
+        Ok(Self {
             orig_dst,
             profile,
             protocol: version,
             logical_addr,
+        })
+    }
+}
+
+impl From<(tls::NoClientTls, Target)> for http::Endpoint {
+    fn from((reason, Target { dst, version }): (tls::NoClientTls, Target)) -> Self {
+        // XXX This is a hack to fix caching when an dst-override is set.
+        let addr = if let Some(a) = dst.socket_addr() {
+            Remote(ServerAddr(a))
+        } else {
+            Remote(ServerAddr(([0, 0, 0, 0], dst.port()).into()))
+        };
+
+        Self {
+            addr,
+            metadata: Metadata::default(),
+            tls: Conditional::None(reason),
+            logical_addr: dst,
+            protocol: version,
         }
     }
 }
@@ -214,3 +241,16 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
         })
     }
 }
+
+// === impl ProfileRequired ===
+
+#[derive(Debug)]
+struct ProfileRequired;
+
+impl std::fmt::Display for ProfileRequired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad("ingress routing requires a service profile")
+    }
+}
+
+impl std::error::Error for ProfileRequired {}

@@ -1,4 +1,4 @@
-use crate::tcp::opaque_transport;
+use crate::{http::SkipHttpDetection, tcp::opaque_transport};
 use linkerd_app_core::{
     metrics,
     profiles::{self, LogicalAddr},
@@ -24,8 +24,8 @@ pub struct Accept<P> {
 #[derive(Clone)]
 pub struct Logical<P> {
     pub orig_dst: OrigDstAddr,
+    pub profile: profiles::Receiver,
     pub logical_addr: Option<LogicalAddr>,
-    pub profile: Option<profiles::Receiver>,
     pub protocol: P,
 }
 
@@ -62,18 +62,25 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
     }
 }
 
+// When a profile is not discovered, always enable protocol detection.
+impl Param<SkipHttpDetection> for Accept<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(false)
+    }
+}
+
 // === impl Logical ===
 
-impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
+impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
     fn from(
         (
             profile,
             Accept {
                 orig_dst, protocol, ..
             },
-        ): (Option<profiles::Receiver>, Accept<P>),
+        ): (profiles::Receiver, Accept<P>),
     ) -> Self {
-        let logical_addr = profile.as_ref().and_then(|p| p.borrow().addr.clone());
+        let logical_addr = profile.borrow().addr.clone();
         Self {
             profile,
             orig_dst,
@@ -84,9 +91,16 @@ impl<P> From<(Option<profiles::Receiver>, Accept<P>)> for Logical<P> {
 }
 
 /// Used for traffic split
+impl<P> Param<profiles::Receiver> for Logical<P> {
+    fn param(&self) -> profiles::Receiver {
+        self.profile.clone()
+    }
+}
+
+// TODO(eliza): eventually we won't need this
 impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
     fn param(&self) -> Option<profiles::Receiver> {
-        self.profile.clone()
+        Some(self.profile.clone())
     }
 }
 
@@ -94,6 +108,13 @@ impl<P> Param<Option<profiles::Receiver>> for Logical<P> {
 impl<P> Param<profiles::LookupAddr> for Logical<P> {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(self.addr())
+    }
+}
+
+// Used for skipping HTTP detection
+impl Param<SkipHttpDetection> for Logical<()> {
+    fn param(&self) -> SkipHttpDetection {
+        SkipHttpDetection(self.profile.borrow().opaque_protocol)
     }
 }
 
@@ -129,17 +150,7 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
         f.debug_struct("Logical")
             .field("orig_dst", &self.orig_dst)
             .field("protocol", &self.protocol)
-            .field(
-                "profile",
-                &format_args!(
-                    "{}",
-                    if self.profile.is_some() {
-                        "Some(..)"
-                    } else {
-                        "None"
-                    }
-                ),
-            )
+            .field("profile", &format_args!(".."))
             .field("logical_addr", &self.logical_addr)
             .finish()
     }
@@ -150,12 +161,9 @@ impl<P> Logical<P> {
         reason: tls::NoClientTls,
     ) -> impl Fn(Self) -> Result<svc::Either<Self, Endpoint<P>>, Error> + Copy {
         move |logical: Self| {
-            let should_resolve = match logical.profile.as_ref() {
-                Some(p) => {
-                    let p = p.borrow();
-                    p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-                }
-                None => false,
+            let should_resolve = {
+                let p = logical.profile.borrow();
+                p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
             };
 
             if should_resolve {
@@ -184,13 +192,15 @@ impl<P> Param<ConcreteAddr> for Concrete<P> {
 
 // === impl Endpoint ===
 
+impl<P> Endpoint<P> {
+    pub fn no_tls(reason: tls::NoClientTls) -> impl Fn(Accept<P>) -> Self {
+        move |accept| Self::from((reason, accept))
+    }
+}
+
 impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
     fn from((reason, logical): (tls::NoClientTls, Logical<P>)) -> Self {
-        match logical
-            .profile
-            .as_ref()
-            .and_then(|p| p.borrow().endpoint.clone())
-        {
+        match logical.profile.borrow().endpoint.clone() {
             None => Self {
                 addr: Remote(ServerAddr(logical.orig_dst.into())),
                 metadata: Metadata::default(),
@@ -211,7 +221,13 @@ impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
 
 impl<P> From<(tls::NoClientTls, Accept<P>)> for Endpoint<P> {
     fn from((reason, accept): (tls::NoClientTls, Accept<P>)) -> Self {
-        Self::from((reason, Logical::from((None, accept))))
+        Self {
+            addr: Remote(ServerAddr(accept.orig_dst.into())),
+            metadata: Metadata::default(),
+            tls: Conditional::None(reason),
+            logical_addr: accept.orig_dst.0.into(),
+            protocol: accept.protocol,
+        }
     }
 }
 
