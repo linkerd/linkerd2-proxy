@@ -251,9 +251,6 @@ pub mod fuzz_logic {
     };
     use hyper::http;
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
-    pub use linkerd_app_test as support;
-    use linkerd_app_test::*; //test_util::support::connect;
-
     use linkerd_app_core::{
         io::{self, BoxedIo},
         proxy,
@@ -262,8 +259,10 @@ pub mod fuzz_logic {
         transport::{ClientAddr, Remote, ServerAddr},
         Conditional, Error, NameAddr, ProxyRuntime,
     };
+    pub use linkerd_app_test as support;
+    use linkerd_app_test::*;
 
-    pub async fn fuzz_entry_raw(_fuzz_data: &str, header_data_1: &str, header_data_2: &str) {
+    pub async fn fuzz_entry_raw(uri: &str, header_data_1: &str, header_data_2: &str, is_get: bool) {
         let mut server = hyper::server::conn::Http::new();
         server.http1_only(true);
         let mut client = ClientBuilder::new();
@@ -288,9 +287,15 @@ pub mod fuzz_logic {
         let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(accept);
         let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
+        let http_method = if is_get {
+            http::Method::GET
+        } else {
+            http::Method::POST
+        };
+
         if let Ok(req) = Request::builder()
-            .method(http::Method::POST)
-            .uri(_fuzz_data)
+            .method(http_method)
+            .uri(uri)
             .header(header_data_1, header_data_2)
             .body(Body::default())
         {

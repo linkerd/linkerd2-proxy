@@ -7,7 +7,7 @@
 //! - Tap
 //! - Metric labeling
 
-//#![deny(warnings, rust_2018_idioms)]
+#![deny(warnings, rust_2018_idioms)]
 
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
