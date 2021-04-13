@@ -149,6 +149,11 @@ where
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
 
+        let no_profile = target
+            .clone()
+            .push_on_response(http::BoxResponse::layer())
+            .check_new_service::<Target, http::Request<_>>()
+            .into_inner();
         // Attempts to discover a service profile for each logical target (as
         // informed by the request's headers). The stack is cached until a
         // request has not been received for `cache_max_idle_age`.
@@ -173,6 +178,9 @@ where
                     .into_inner(),
             ))
             .push_map_target(Logical::from)
+            .push_on_response(http::BoxResponse::layer())
+            .check_new_service::<(profiles::Receiver, Target), _>()
+            .push(svc::UnwrapOr::layer(no_profile))
             .push(profiles::discover::layer(
                 profiles,
                 AllowProfile(config.allow_discovery.clone()),
@@ -191,7 +199,7 @@ where
                     .push_on_response(svc::layer::mk(svc::SpawnReady::new))
                     .into_inner(),
             )
-            .check_new_service::<Target, http::Request<http::BoxBody>>()
+            .check_new_service::<Target, http::Request<BoxBody>>()
             .push_on_response(
                 svc::layers()
                     .push(
