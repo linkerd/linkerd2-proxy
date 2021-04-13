@@ -10,7 +10,7 @@ use linkerd_app_core::{
     },
     svc, tls, Conditional, Error, Never,
 };
-use tracing::{debug, debug_span};
+use tracing::debug_span;
 
 impl<C> Outbound<C>
 where
@@ -104,17 +104,7 @@ where
             )
             .into_new_service()
             .push_map_target(Concrete::from)
-            // If there's no resolveable address, bypass the load balancer.
-            .push(svc::UnwrapOr::layer(
-                endpoint
-                    .clone()
-                    .push_map_target(move |logical: Logical| {
-                        debug!("No profile resolved");
-                        Endpoint::from((no_tls_reason, logical))
-                    })
-                    .into_inner(),
-            ))
-            .check_new_service::<(Option<ConcreteAddr>, Logical), I>()
+            .check_new_service::<(ConcreteAddr, Logical), I>()
             .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()

@@ -116,18 +116,6 @@ impl<E> Outbound<E> {
             // concrete address.
             .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
             .push_map_target(Concrete::from)
-            // If there's no resolveable address, bypass the load balancer.
-            .push(svc::UnwrapOr::layer(
-                endpoint
-                    .clone()
-                    .push_on_response(
-                        svc::layers()
-                            .push(http::BoxRequest::layer())
-                            .push(http::BoxResponse::layer()),
-                    )
-                    .push_map_target(move |l: Logical| Endpoint::from((no_tls_reason, l)))
-                    .into_inner(),
-            ))
             // Distribute requests over a distribution of balancers via a
             // traffic split.
             //
