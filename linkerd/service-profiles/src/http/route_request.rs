@@ -34,7 +34,7 @@ pub struct NewRouteRequest<M, N, R> {
 
 pub struct RouteRequest<T, S, N, R> {
     target: T,
-    rx: Option<Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>>,
+    rx: Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>,
     inner: S,
     new_route: N,
     http_routes: Vec<(RequestMatch, Route)>,
@@ -55,14 +55,14 @@ impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
 
 impl<T, M, N> NewService<T> for NewRouteRequest<M, N, N::Service>
 where
-    T: Clone + Param<Option<Receiver>>,
+    T: Clone + Param<Receiver>,
     M: NewService<T>,
     N: NewService<(Route, T)> + Clone,
 {
     type Service = RouteRequest<T, M::Service, N, N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let rx = target.param().map(crate::stream_profile);
+        let rx = crate::stream_profile(target.param());
         let inner = self.inner.new_service(target.clone());
         let default = self
             .new_route
@@ -94,11 +94,9 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
-        if let Some(rx) = self.rx.as_mut() {
-            while let Poll::Ready(Some(up)) = rx.as_mut().poll_next(cx) {
-                tracing::trace!(update = ?up, "updated profile");
-                update = Some(up);
-            }
+        while let Poll::Ready(Some(up)) = self.rx.as_mut().poll_next(cx) {
+            tracing::trace!(update = ?up, "updated profile");
+            update = Some(up);
         }
 
         // Every time the profile updates, rebuild the distribution, reusing
