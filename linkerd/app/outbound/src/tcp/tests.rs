@@ -16,7 +16,7 @@ use linkerd_app_core::{
     svc::NewService,
     tls,
     transport::{addrs::*, listen, orig_dst},
-    Addr, Conditional, Error, IpMatch, NameAddr,
+    Conditional, Error, IpMatch, NameAddr,
 };
 use std::{
     future::Future,
@@ -39,8 +39,63 @@ async fn plaintext_tcp() {
     // ports or anything. These will just be used so that the proxy has a socket
     // address to resolve, etc.
     let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-    let profile_recv = profile::only_default();
-    let logical = build_logical(target_addr, profile_recv);
+
+    // Configure mock IO for the upstream "server". It will read "hello" and
+    // then write "world".
+    let mut srv_io = support::io();
+    srv_io.write(b"hello\n").read(b"world");
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = support::connect().endpoint_fn(target_addr, move |endpoint: Endpoint| {
+        assert!(endpoint.tls.is_none());
+        Ok(srv_io.build())
+    });
+
+    // Build the outbound TCP balancer stack.
+    let mut server = Server::default()
+        .profiles(profile::resolver().profile(target_addr, Default::default()))
+        .connect(connect)
+        .build();
+    hello_world_client(target_addr, &mut server).await;
+}
+
+#[tokio::test]
+async fn plaintext_tcp_no_profile() {
+    let _trace = support::trace_init();
+
+    // Since all of the actual IO in this test is mocked out, we won't actually
+    // bind any of these addresses. Therefore, we don't need to use ephemeral
+    // ports or anything. These will just be used so that the proxy has a socket
+    // address to resolve, etc.
+    let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
+
+    // Configure mock IO for the upstream "server". It will read "hello" and
+    // then write "world".
+    let mut srv_io = support::io();
+    srv_io.write(b"hello\n").read(b"world");
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = support::connect().endpoint_fn(target_addr, move |endpoint: Endpoint| {
+        assert!(endpoint.tls.is_none());
+        Ok(srv_io.build())
+    });
+
+    // Build the outbound TCP balancer stack.
+    let mut server = Server::default()
+        .profiles(profile::resolver().no_profile(target_addr))
+        .connect(connect)
+        .build();
+    hello_world_client(target_addr, &mut server).await;
+}
+
+#[tokio::test]
+async fn logical_plaintext_tcp() {
+    let _trace = support::trace_init();
+
+    // Since all of the actual IO in this test is mocked out, we won't actually
+    // bind any of these addresses. Therefore, we don't need to use ephemeral
+    // ports or anything. These will just be used so that the proxy has a socket
+    // address to resolve, etc.
+    let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
+    let logical = logical_named(target_addr, "plain:666");
 
     // Configure mock IO for the upstream "server". It will read "hello" and
     // then write "world".
@@ -52,13 +107,14 @@ async fn plaintext_tcp() {
         Ok(srv_io.build())
     });
 
+    let resolver = support::resolver().endpoint_exists(
+        NameAddr::from_str("plain:666").unwrap(),
+        target_addr,
+        Default::default(),
+    );
+
     // Configure mock IO for the "client".
     let client_io = support::io().write(b"hello").read(b"world").build();
-
-    // Configure the mock destination resolver to just give us a single endpoint
-    // for the target, which always exists and has no metadata.
-    let resolver =
-        support::resolver().endpoint_exists(target_addr, target_addr, Default::default());
 
     // Build the outbound TCP balancer stack.
     let cfg = default_config();
@@ -75,16 +131,14 @@ async fn plaintext_tcp() {
 }
 
 #[tokio::test]
-async fn tls_when_hinted() {
+async fn logical_tls_when_hinted() {
     let _trace = support::trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let tls_recv = profile::only_with_addr("tls:5550");
-    let tls = build_logical(tls_addr, tls_recv);
+    let tls = logical_named(tls_addr, "tls:5550");
 
     let plain_addr = SocketAddr::new([0, 0, 0, 0].into(), 5551);
-    let plain_recv = profile::only_with_addr("plain:5551");
-    let plain = build_logical(plain_addr, plain_recv);
+    let plain = logical_named(plain_addr, "plain:5551");
 
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -112,12 +166,12 @@ async fn tls_when_hinted() {
     // for the target, which always exists and has no metadata.
     let resolver = support::resolver()
         .endpoint_exists(
-            Addr::from_str("plain:5551").unwrap(),
+            NameAddr::from_str("plain:5551").unwrap(),
             plain_addr,
             Default::default(),
         )
         .endpoint_exists(
-            Addr::from_str("tls:5550").unwrap(),
+            NameAddr::from_str("tls:5550").unwrap(),
             tls_addr,
             support::resolver::Metadata::new(
                 Default::default(),
@@ -157,7 +211,6 @@ async fn resolutions_are_reused() {
     let _trace = support::trace_init();
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
-    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
 
     // Build a mock "connector" that returns the upstream "server" IO.
@@ -186,7 +239,11 @@ async fn resolutions_are_reused() {
     let profile_state = profiles.handle();
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let mut server = Server::default()
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
 
     let conns = (0..10)
         .map(|number| {
@@ -235,7 +292,6 @@ async fn load_balances() {
         ),
     ];
 
-    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -276,7 +332,11 @@ async fn load_balances() {
     let resolve_state = resolver.handle();
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let mut server = Server::default()
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
 
     let conns = (0..10)
         .map(|i| {
@@ -329,7 +389,6 @@ async fn load_balancer_add_endpoints() {
         ),
     ];
 
-    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -367,7 +426,11 @@ async fn load_balancer_add_endpoints() {
         .expect("still listening");
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let mut server = Server::default()
+        .destinations(resolver)
+        .profiles(profiles)
+        .connect(connect)
+        .build();
 
     let mut conns = || {
         let conns = (0..10)
@@ -442,7 +505,6 @@ async fn load_balancer_remove_endpoints() {
         ),
     ];
 
-    let cfg = default_config();
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is valid");
@@ -480,8 +542,11 @@ async fn load_balancer_remove_endpoints() {
         .expect("still listening");
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
-
+    let mut server = Server::default()
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
     let mut conns = || {
         let conns = (0..10)
             .map(|i| {
@@ -585,7 +650,12 @@ async fn no_profiles_when_outside_search_nets() {
     let profile_state = profiles.handle();
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let mut server = Server::default()
+        .config(cfg)
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
 
     tokio::join! {
         hello_world_client(profile_addr, &mut server),
@@ -609,7 +679,6 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     let _trace = support::trace_init();
 
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let cfg = default_config();
     let meta = support::resolver::Metadata::new(
         Default::default(),
         support::resolver::ProtocolHint::Unknown,
@@ -634,7 +703,11 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     );
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let mut server = Server::default()
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
 
     hello_world_client(ep, &mut server).await;
 
@@ -647,14 +720,11 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 #[tokio::test(flavor = "current_thread")]
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
-    // connecting to that endpoint fails, the proxy will resolve a new endpoint
-    // for subsequent connections to the same original destination.
+    // connecting to that endpoint fails, the client connection will also be reset.
     let _trace = support::trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let ep2 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
 
-    let cfg = default_config();
     let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
         .expect("hostname is invalid");
     let meta = support::resolver::Metadata::new(
@@ -666,14 +736,12 @@ async fn profile_endpoint_propagates_conn_errors() {
     );
 
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect()
-        .endpoint_fn(ep1, |_| {
-            Err(Box::new(io::Error::new(
-                io::ErrorKind::ConnectionReset,
-                "i dont like you, go away",
-            )))
-        })
-        .endpoint(ep2, Connection::default());
+    let connect = support::connect().endpoint_fn(ep1, |_| {
+        Err(Box::new(io::Error::new(
+            io::ErrorKind::ConnectionReset,
+            "i dont like you, go away",
+        )))
+    });
 
     let profiles = profile::resolver();
     let profile_tx = profiles.profile_tx(ep1);
@@ -688,26 +756,26 @@ async fn profile_endpoint_propagates_conn_errors() {
     let resolver = support::resolver::<support::resolver::Metadata>();
 
     // Build the outbound server
-    let mut server = build_server(cfg, profiles, resolver, connect);
+    let mut server = Server::default()
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
 
+    // Since the connection attempt will fail, the mock IO should expect no
+    // actions to be performed.
+    // TODO(eliza): it would be nice if we could configure it to panic if it is
+    // ever read/written...but I don't think `tokio_test` currently supports
+    // that.
+    let client_io = support::io().build();
     let svc = server.new_service(addrs(ep1));
-    let res = svc
-        .oneshot(
-            support::io()
-                .read_error(io::Error::new(
-                    io::ErrorKind::ConnectionReset,
-                    "i dont like you, go away",
-                ))
-                .build(),
-        )
-        .await
-        .map_err(Into::into);
+    let res = svc.oneshot(client_io).await.map_err(Into::into);
     tracing::debug!(?res);
     assert_eq!(
         res.unwrap_err()
             .downcast_ref::<io::Error>()
             .map(io::Error::kind),
-        Some(io::ErrorKind::ConnectionReset)
+        Some(io::ErrorKind::ConnectionReset),
     );
 }
 
@@ -747,39 +815,122 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
     }
 }
 
-fn build_server<I>(
+struct Server<P = resolver::NoProfiles, D = resolver::NoDst<resolver::Metadata>> {
     cfg: Config,
-    profiles: resolver::Profiles,
-    resolver: resolver::Dst<resolver::Metadata>,
+    profiles: P,
+    resolver: D,
     connect: Connect<Endpoint>,
-) -> impl svc::NewService<
-    orig_dst::Addrs,
-    Service = impl tower::Service<
-        I,
-        Response = (),
-        Error = impl Into<Error>,
-        Future = impl Send + 'static,
+}
+
+impl<P, D> Server<P, D> {
+    fn config(self, cfg: Config) -> Self {
+        Self { cfg, ..self }
+    }
+
+    fn connect(self, connect: Connect<Endpoint>) -> Self {
+        Self { connect, ..self }
+    }
+
+    fn profiles<P2>(self, profiles: P2) -> Server<P2, D>
+    where
+        P2: tower::Service<profile::LookupAddr, Response = Option<profile::Receiver>, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        P2::Future: Unpin + Send + 'static,
+    {
+        Server {
+            cfg: self.cfg,
+            profiles,
+            resolver: self.resolver,
+            connect: self.connect,
+        }
+    }
+
+    fn destinations<D2>(self, resolver: D2) -> Server<P, D2>
+    where
+        D2: tower::Service<
+                resolver::ConcreteAddr,
+                Response = resolver::DstReceiver<resolver::Metadata>,
+                Error = Error,
+            > + Clone
+            + Send
+            + Sync
+            + 'static,
+        D2::Future: Unpin + Send + 'static,
+    {
+        Server {
+            cfg: self.cfg,
+            profiles: self.profiles,
+            resolver,
+            connect: self.connect,
+        }
+    }
+
+    fn build<I>(
+        self,
+    ) -> impl svc::NewService<
+        orig_dst::Addrs,
+        Service = impl tower::Service<
+            I,
+            Response = (),
+            Error = impl Into<Error>,
+            Future = impl Send + 'static,
+        > + Send
+                      + 'static,
     > + Send
-                  + 'static,
-> + Send
-       + 'static
-where
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
-{
-    let (rt, _) = runtime();
-    let connect = Outbound::new(cfg, rt).with_stack(connect);
-    let endpoint = connect
-        .clone()
-        .push_tcp_forward()
-        .push_into_endpoint::<(), super::Accept>()
-        .push_detect_http::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
-        .into_inner();
-    connect
-        .push_tcp_logical(resolver)
-        .push_detect_http(support::service::no_http::<crate::http::Logical>())
-        .push_unwrap_logical(endpoint)
-        .push_discover(profiles)
-        .into_inner()
+           + 'static
+    where
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+        P: tower::Service<profile::LookupAddr, Response = Option<profile::Receiver>, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        P::Future: Unpin + Send + 'static,
+        D: tower::Service<
+                resolver::ConcreteAddr,
+                Response = resolver::DstReceiver<resolver::Metadata>,
+                Error = Error,
+            > + Clone
+            + Send
+            + Sync
+            + 'static,
+        D::Future: Unpin + Send + 'static,
+    {
+        let Self {
+            cfg,
+            profiles,
+            resolver,
+            connect,
+        } = self;
+        let (rt, _) = runtime();
+        let connect = Outbound::new(cfg, rt).with_stack(connect);
+        let endpoint = connect
+            .clone()
+            .push_tcp_forward()
+            .push_into_endpoint::<(), super::Accept>()
+            .push_detect_http::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
+            .into_inner();
+        connect
+            .push_tcp_logical(resolver)
+            .push_detect_http(support::service::no_http::<crate::http::Logical>())
+            .push_unwrap_logical(endpoint)
+            .push_discover(profiles)
+            .into_inner()
+    }
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            cfg: default_config(),
+            profiles: resolver::no_profiles(),
+            resolver: resolver::no_destinations(),
+            connect: Connect::default(),
+        }
+    }
 }
 
 fn hello_world_client<N, S>(
@@ -823,12 +974,20 @@ where
     .instrument(span)
 }
 
-fn build_logical(addr: SocketAddr, profile_recv: Receiver) -> Logical {
-    let logical_addr = profile_recv.borrow().addr.clone();
+fn logical(addr: SocketAddr, profile_recv: Receiver) -> Logical {
+    let logical_addr = profile_recv
+        .borrow()
+        .addr
+        .clone()
+        .expect("cannot build a logical target for a profile without a logical addr");
     Logical {
         orig_dst: OrigDstAddr(addr),
         profile: profile_recv,
         protocol: (),
         logical_addr,
     }
+}
+
+fn logical_named(addr: SocketAddr, name: &str) -> Logical {
+    logical(addr, profile::only_with_addr(name))
 }

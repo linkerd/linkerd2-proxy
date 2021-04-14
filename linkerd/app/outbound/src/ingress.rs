@@ -191,7 +191,7 @@ impl TryFrom<(Option<profiles::Receiver>, Target)> for http::Logical {
         } else {
             OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
         };
-        let logical_addr = profile.borrow().addr.clone();
+        let logical_addr = profile.borrow().addr.clone().ok_or(ProfileRequired)?;
 
         Ok(Self {
             orig_dst,

@@ -3,7 +3,7 @@ use api::destination_client::DestinationClient;
 use futures::{future, prelude::*, ready, select_biased};
 use http_body::Body as HttpBody;
 use linkerd2_proxy_api::destination as api;
-use linkerd_addr::{Addr, NameAddr};
+use linkerd_addr::NameAddr;
 use linkerd_dns_name::Name;
 use linkerd_error::{Error, Recover};
 use linkerd_proxy_api_resolve::pb as resolve;
@@ -347,7 +347,7 @@ fn convert_dst_override(orig: api::WeightedDst) -> Option<Target> {
     if orig.weight == 0 {
         return None;
     }
-    let addr = Addr::from_str(orig.authority.as_str()).ok()?;
+    let addr = NameAddr::from_str(orig.authority.as_str()).ok()?;
     Some(Target {
         addr,
         weight: orig.weight,

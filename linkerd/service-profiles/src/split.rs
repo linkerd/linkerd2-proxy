@@ -1,7 +1,7 @@
-use crate::{LookupAddr, Profile, Receiver, Target};
+use crate::{LogicalAddr, Profile, Receiver, Target};
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
-use linkerd_addr::Addr;
+use linkerd_addr::NameAddr;
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::ConcreteAddr;
 use linkerd_stack::{layer, NewService, Param};
@@ -36,8 +36,8 @@ pub struct Split<T, N, S, Req> {
     target: T,
     new_service: N,
     distribution: WeightedIndex<u32>,
-    addrs: IndexSet<Addr>,
-    services: ReadyCache<Addr, S, Req>,
+    addrs: IndexSet<NameAddr>,
+    services: ReadyCache<NameAddr, S, Req>,
 }
 
 // === impl NewSplit ===
@@ -53,7 +53,7 @@ impl<N: Clone, S, Req> Clone for NewSplit<N, S, Req> {
 
 impl<T, N, S, Req> NewService<T> for NewSplit<N, S, Req>
 where
-    T: Clone + Param<LookupAddr> + Param<Receiver>,
+    T: Clone + Param<LogicalAddr> + Param<Receiver>,
     N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req>,
     S::Error: Into<Error>,
@@ -64,7 +64,7 @@ where
         let rx: Receiver = target.param();
         let mut targets = rx.borrow().targets.clone();
         if targets.is_empty() {
-            let LookupAddr(addr) = target.param();
+            let LogicalAddr(addr) = target.param();
             targets.push(Target { addr, weight: 1 })
         }
         trace!(?targets, "Building split service");
@@ -99,7 +99,7 @@ where
 impl<T, N, S, Req> tower::Service<Req> for Split<T, N, S, Req>
 where
     Req: Send + 'static,
-    T: Clone + Param<LookupAddr>,
+    T: Clone + Param<LogicalAddr>,
     N: NewService<(ConcreteAddr, T), Service = S> + Clone,
     S: tower::Service<Req> + Send + 'static,
     S::Response: Send + 'static,
@@ -120,7 +120,7 @@ where
         // services that existed in the prior state.
         if let Some(Profile { mut targets, .. }) = update {
             if targets.is_empty() {
-                let LookupAddr(addr) = self.target.param();
+                let LogicalAddr(addr) = self.target.param();
                 targets.push(Target { addr, weight: 1 })
             }
             debug!(?targets, "Updating");

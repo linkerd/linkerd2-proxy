@@ -1,4 +1,4 @@
-use crate::{endpoint::Endpoint, http::SkipHttpDetection, tcp, Accept, Outbound};
+use crate::{endpoint::Endpoint, http::SkipHttpDetection, Accept, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{profiles, svc, tls, transport::OrigDstAddr, Addr, Error};
 pub use profiles::LogicalAddr;
@@ -8,7 +8,7 @@ use tracing::debug;
 pub struct Logical<P> {
     pub orig_dst: OrigDstAddr,
     pub profile: profiles::Receiver,
-    pub logical_addr: Option<LogicalAddr>,
+    pub logical_addr: LogicalAddr,
     pub protocol: P,
 }
 
@@ -22,16 +22,16 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 // === impl Logical ===
 
-impl<P> From<(profiles::Receiver, Accept<P>)> for Logical<P> {
+impl<P> From<(LogicalAddr, profiles::Receiver, Accept<P>)> for Logical<P> {
     fn from(
         (
+            logical_addr,
             profile,
             Accept {
                 orig_dst, protocol, ..
             },
-        ): (profiles::Receiver, Accept<P>),
+        ): (LogicalAddr, profiles::Receiver, Accept<P>),
     ) -> Self {
-        let logical_addr = profile.borrow().addr.clone();
         Self {
             profile,
             orig_dst,
@@ -55,6 +55,12 @@ impl<P> svc::Param<profiles::LookupAddr> for Logical<P> {
     }
 }
 
+impl<P> svc::Param<LogicalAddr> for Logical<P> {
+    fn param(&self) -> LogicalAddr {
+        self.logical_addr.clone()
+    }
+}
+
 // Used for skipping HTTP detection
 impl svc::Param<SkipHttpDetection> for Logical<()> {
     fn param(&self) -> SkipHttpDetection {
@@ -64,10 +70,7 @@ impl svc::Param<SkipHttpDetection> for Logical<()> {
 
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
-        self.logical_addr
-            .as_ref()
-            .map(|LogicalAddr(a)| Addr::from(a.clone()))
-            .unwrap_or_else(|| self.orig_dst.0.into())
+        Addr::from(self.logical_addr.clone().0)
     }
 }
 
@@ -140,19 +143,21 @@ impl<L> Outbound<L> {
     /// Pushes a layer that unwraps the [`Logical`] address of a given target
     /// from its profile resolution, or else falls back to the provided
     /// per-endpoint service if there was no profile resolution for that target.
-    pub fn push_unwrap_logical<T, E>(
+    pub fn push_unwrap_logical<T, E, R, ESvc, LSvc, P>(
         self,
         endpoint: E,
     ) -> Outbound<
-        impl svc::NewService<
-                (Option<profiles::Receiver>, T),
-                Service = UnwrapLogical<L::Service, E::Service>,
-            > + Clone,
+        impl svc::NewService<(Option<profiles::Receiver>, T), Service = UnwrapLogical<LSvc, ESvc>>
+            + Clone,
     >
     where
-        tcp::Logical: From<(profiles::Receiver, T)>,
-        L: svc::NewService<tcp::Logical> + Clone,
-        E: svc::NewService<T> + Clone,
+        Logical<P>: From<(LogicalAddr, profiles::Receiver, T)>,
+        L: svc::NewService<Logical<P>, Service = LSvc> + Clone,
+        LSvc: svc::Service<R, Error = Error>,
+        LSvc::Future: Send,
+        E: svc::NewService<T, Service = ESvc> + Clone,
+        ESvc: svc::Service<R, Response = LSvc::Response, Error = Error>,
+        ESvc::Future: Send,
     {
         let Self {
             config,
@@ -160,8 +165,24 @@ impl<L> Outbound<L> {
             stack: logical,
         } = self;
         let stack = logical
-            .push_map_target(tcp::Logical::from)
-            .push(svc::UnwrapOr::layer(endpoint));
+            .push_switch(|(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Error>{
+                let profile = match profile {
+                    Some(profile) => profile,
+                    None => {
+                        debug!("No profile resolved for this target");
+                        return Ok(svc::Either::B(target));
+                    }
+                };
+                let addr = profile.borrow().addr.clone();
+                Ok(match addr {
+                    Some(logical_addr) => svc::Either::A(Logical::from((logical_addr, profile, target))),
+                    None => {
+                        debug!(profile = ?*profile.borrow(), "No logical address for this profile");
+                        svc::Either::B(target)
+                    }
+                })
+             }, endpoint)
+            .check_new_service::<(Option<profiles::Receiver>, T), _>();
         Outbound {
             config,
             runtime,

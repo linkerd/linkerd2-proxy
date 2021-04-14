@@ -24,10 +24,7 @@ use linkerd_app_core::{
         core::Resolve,
     },
     serve,
-    svc::{
-        self,
-        stack::{self, Param},
-    },
+    svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*, listen::Bind},
     AddrMatch, Conditional, Error, ProxyRuntime,
@@ -104,18 +101,6 @@ impl<S> Outbound<S> {
             config: self.config,
             runtime: self.runtime,
             stack: self.stack.push(layer),
-        }
-    }
-
-    pub fn push_switch<P: Clone, U: Clone>(
-        self,
-        predicate: P,
-        other: U,
-    ) -> Outbound<stack::Filter<stack::NewEither<S, U>, P>> {
-        Outbound {
-            config: self.config,
-            runtime: self.runtime,
-            stack: self.stack.push_switch(predicate, other),
         }
     }
 
@@ -246,6 +231,12 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
             NO_TLS,
             self.orig_dst.into(),
         )
+    }
+}
+
+impl<P> Param<OrigDstAddr> for Accept<P> {
+    fn param(&self) -> OrigDstAddr {
+        self.orig_dst
     }
 }
 
