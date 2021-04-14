@@ -1,5 +1,9 @@
-use super::{Concrete, Endpoint, Logical};
-use crate::{endpoint, logical, resolve, Outbound};
+use super::{Concrete, Endpoint};
+use crate::{
+    endpoint,
+    logical::{self, LogicalAddr},
+    resolve, Outbound,
+};
 use linkerd_app_core::{
     config, drain, io, profiles,
     proxy::{
@@ -25,7 +29,7 @@ where
         resolve: R,
     ) -> Outbound<
         impl svc::NewService<
-                Logical,
+                T,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
             > + Clone,
     >
@@ -35,6 +39,16 @@ where
         R::Resolution: Send,
         R::Future: Send + Unpin,
         Concrete: From<(ConcreteAddr, T)>,
+        Endpoint: From<(tls::NoClientTls, T)>,
+        T: svc::Param<LogicalAddr>
+            + svc::Param<profiles::Receiver>
+            + Clone
+            + std::fmt::Debug
+            + Eq
+            + std::hash::Hash
+            + Send
+            + Sync
+            + 'static,
     {
         let Self {
             config,
@@ -102,7 +116,7 @@ where
             )
             .into_new_service()
             .push_map_target(Concrete::from)
-            .check_new_service::<(ConcreteAddr, Logical), I>()
+            .check_new_service::<(ConcreteAddr, T), I>()
             .push(profiles::split::layer())
             .push_on_response(
                 svc::layers()
@@ -116,10 +130,10 @@ where
                     .push_spawn_buffer(buffer_capacity),
             )
             .push_cache(cache_max_idle_age)
-            .check_new_service::<Logical, I>()
+            .check_new_service::<T, I>()
             .push_switch(logical::or_endpoint(no_tls_reason), endpoint.into_inner())
-            .instrument(|_: &Logical| debug_span!("tcp"))
-            .check_new_service::<Logical, I>();
+            .instrument(|_: &T| debug_span!("tcp"))
+            .check_new_service::<T, I>();
 
         Outbound {
             config,

@@ -24,9 +24,6 @@ pub struct Concrete<P> {
     pub logical: Logical<P>,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct ShouldResolve(pub bool);
-
 pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 // === impl Logical ===
@@ -77,14 +74,6 @@ impl Param<SkipHttpDetection> for Logical<()> {
     }
 }
 
-impl<P> Param<ShouldResolve> for Logical<P> {
-    fn param(&self) -> ShouldResolve {
-        let p = self.profile.borrow();
-        let should_resolve = p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty());
-        ShouldResolve(should_resolve)
-    }
-}
-
 impl<P> Logical<P> {
     pub fn addr(&self) -> Addr {
         Addr::from(self.logical_addr.clone().0)
@@ -124,18 +113,20 @@ pub fn or_endpoint<T, P>(
     reason: tls::NoClientTls,
 ) -> impl Fn(T) -> Result<svc::Either<T, Endpoint<P>>, Error> + Copy
 where
-    T: Param<ShouldResolve> + Param<OrigDstAddr>,
+    T: Param<profiles::Receiver> + std::fmt::Debug,
     Endpoint<P>: From<(tls::NoClientTls, T)>,
 {
-    move |logical: T| {
-        let ShouldResolve(should_resolve) = logical.param();
-
+    move |target: T| {
+        let should_resolve = {
+            let profile = target.param();
+            let p = profile.borrow();
+            p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
+        };
         if should_resolve {
-            Ok(svc::Either::A(logical))
+            Ok(svc::Either::A(target))
         } else {
-            let OrigDstAddr(orig_dst) = logical.param();
-            debug!(%reason, %orig_dst, "Target is unresolveable");
-            Ok(svc::Either::B(Endpoint::from((reason, logical))))
+            debug!(%reason, ?target, "Target is unresolveable");
+            Ok(svc::Either::B(Endpoint::from((reason, target))))
         }
     }
 }
