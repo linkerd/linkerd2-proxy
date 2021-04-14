@@ -23,7 +23,7 @@ use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
     Inbound,
 };
-use linkerd_app_outbound::{self as outbound, Outbound};
+use linkerd_app_outbound::{self as outbound, logical::LogicalAddr, Outbound};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
@@ -34,6 +34,13 @@ use tracing::debug_span;
 #[derive(Clone, Debug, Default)]
 pub struct Config {
     pub allow_discovery: NameMatch,
+}
+
+#[derive(Clone)]
+struct Logical<P> {
+    profile: profiles::Receiver,
+    logical_addr: LogicalAddr,
+    protocol: P,
 }
 
 #[derive(Clone, Debug)]
@@ -118,6 +125,7 @@ where
         .push_tcp_endpoint()
         .push_tcp_logical(resolve.clone())
         .into_stack()
+        .check_new_service::<Logical<()>, _>()
         .push_request_filter(
             |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
                 let profile = p.ok_or_else(discovery_rejected)?;
@@ -126,9 +134,8 @@ where
                     .addr
                     .clone()
                     .ok_or_else(discovery_rejected)?;
-                Ok(outbound::tcp::Logical {
+                Ok(Logical {
                     profile,
-                    orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                     protocol: (),
                     logical_addr,
                 })
@@ -257,6 +264,52 @@ where
             legacy_http,
         )
         .into_inner()
+}
+// === impl Logical ===
+
+/// Used for traffic split
+impl<P> Param<profiles::Receiver> for Logical<P> {
+    fn param(&self) -> profiles::Receiver {
+        self.profile.clone()
+    }
+}
+
+/// Used for default traffic split
+impl<P> Param<profiles::LookupAddr> for Logical<P> {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.logical_addr.clone().0.into())
+    }
+}
+
+impl<P> Param<LogicalAddr> for Logical<P> {
+    fn param(&self) -> LogicalAddr {
+        self.logical_addr.clone()
+    }
+}
+
+impl<P: PartialEq> PartialEq<Logical<P>> for Logical<P> {
+    fn eq(&self, other: &Logical<P>) -> bool {
+        self.logical_addr == other.logical_addr && self.protocol == other.protocol
+    }
+}
+
+impl<P: Eq> Eq for Logical<P> {}
+
+impl<P: std::hash::Hash> std::hash::Hash for Logical<P> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.logical_addr.hash(state);
+        self.protocol.hash(state);
+    }
+}
+
+impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Logical")
+            .field("protocol", &self.protocol)
+            .field("profile", &format_args!(".."))
+            .field("logical_addr", &self.logical_addr)
+            .finish()
+    }
 }
 
 // === impl HttpTransportHeader ===
