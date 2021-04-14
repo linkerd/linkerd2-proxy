@@ -262,7 +262,7 @@ pub mod fuzz_logic {
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
 
-    pub async fn fuzz_entry_raw(uri: &str, header_data_1: &str, header_data_2: &str, is_get: bool) {
+    pub async fn fuzz_entry_raw(uri: &str, header_name: &str, header_value: &str, is_get: bool) {
         let mut server = hyper::server::conn::Http::new();
         server.http1_only(true);
         let mut client = ClientBuilder::new();
@@ -296,7 +296,7 @@ pub mod fuzz_logic {
         if let Ok(req) = Request::builder()
             .method(http_method)
             .uri(uri)
-            .header(header_data_1, header_data_2)
+            .header(header_name, header_value)
             .body(Body::default())
         {
             let rsp = http_util::http_request(&mut client, req).await;
