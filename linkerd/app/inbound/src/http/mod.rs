@@ -148,6 +148,7 @@ where
             .push_on_response(http_tracing::client(rt.span_sink.clone(), trace_labels()))
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
+
         let no_profile = target
             .clone()
             .push_on_response(http::BoxResponse::layer())
