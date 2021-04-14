@@ -115,22 +115,22 @@ where
         .push_tcp_endpoint()
         .push_tcp_logical(resolve.clone())
         .into_stack()
-        .push_request_filter(|(p, _): (Option<profiles::Receiver>, _)| match p {
-            Some(profile) if profile.borrow().addr.is_some() => {
+        .push_request_filter(
+            |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
+                let profile = p.ok_or_else(discovery_rejected)?;
                 let logical_addr = profile
                     .borrow()
                     .addr
                     .clone()
-                    .expect("if is_some returns true, this must be `Some`");
+                    .ok_or_else(discovery_rejected)?;
                 Ok(outbound::tcp::Logical {
                     profile,
                     orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                     protocol: (),
                     logical_addr,
                 })
-            }
-            _ => Err(discovery_rejected()),
-        })
+            },
+        )
         .push(profiles::discover::layer(profiles.clone(), {
             let allow = allow_discovery.clone();
             move |addr: NameAddr| {
