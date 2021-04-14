@@ -1,5 +1,5 @@
 use super::{Concrete, Endpoint, Logical};
-use crate::{endpoint, resolve, Outbound};
+use crate::{endpoint, logical, resolve, Outbound};
 use linkerd_app_core::{
     config, drain, io, profiles,
     proxy::{
@@ -20,7 +20,7 @@ where
     C::Future: Send,
 {
     /// Constructs a TCP load balancer.
-    pub fn push_tcp_logical<I, R>(
+    pub fn push_tcp_logical<T, I, R>(
         self,
         resolve: R,
     ) -> Outbound<
@@ -34,6 +34,7 @@ where
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
+        Concrete: From<(ConcreteAddr, T)>,
     {
         let Self {
             config,
@@ -116,7 +117,7 @@ where
             )
             .push_cache(cache_max_idle_age)
             .check_new_service::<Logical, I>()
-            .push_switch(Logical::or_endpoint(no_tls_reason), endpoint.into_inner())
+            .push_switch(logical::or_endpoint(no_tls_reason), endpoint.into_inner())
             .instrument(|_: &Logical| debug_span!("tcp"))
             .check_new_service::<Logical, I>();
 

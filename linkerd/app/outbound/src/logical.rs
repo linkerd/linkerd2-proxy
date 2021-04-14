@@ -1,6 +1,12 @@
 use crate::{endpoint::Endpoint, http::SkipHttpDetection, Accept, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{profiles, svc, tls, transport::OrigDstAddr, Addr, Error};
+use linkerd_app_core::{
+    profiles,
+    svc::{self, Param},
+    tls,
+    transport::OrigDstAddr,
+    Addr, Error,
+};
 pub use profiles::LogicalAddr;
 use tracing::debug;
 
@@ -17,6 +23,9 @@ pub struct Concrete<P> {
     pub resolve: ConcreteAddr,
     pub logical: Logical<P>,
 }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ShouldResolve(pub bool);
 
 pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
@@ -42,29 +51,37 @@ impl<P> From<(LogicalAddr, profiles::Receiver, Accept<P>)> for Logical<P> {
 }
 
 /// Used for traffic split
-impl<P> svc::Param<profiles::Receiver> for Logical<P> {
+impl<P> Param<profiles::Receiver> for Logical<P> {
     fn param(&self) -> profiles::Receiver {
         self.profile.clone()
     }
 }
 
 /// Used for default traffic split
-impl<P> svc::Param<profiles::LookupAddr> for Logical<P> {
+impl<P> Param<profiles::LookupAddr> for Logical<P> {
     fn param(&self) -> profiles::LookupAddr {
         profiles::LookupAddr(self.addr())
     }
 }
 
-impl<P> svc::Param<LogicalAddr> for Logical<P> {
+impl<P> Param<LogicalAddr> for Logical<P> {
     fn param(&self) -> LogicalAddr {
         self.logical_addr.clone()
     }
 }
 
 // Used for skipping HTTP detection
-impl svc::Param<SkipHttpDetection> for Logical<()> {
+impl Param<SkipHttpDetection> for Logical<()> {
     fn param(&self) -> SkipHttpDetection {
         SkipHttpDetection(self.profile.borrow().opaque_protocol)
+    }
+}
+
+impl<P> Param<ShouldResolve> for Logical<P> {
+    fn param(&self) -> ShouldResolve {
+        let p = self.profile.borrow();
+        let should_resolve = p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty());
+        ShouldResolve(should_resolve)
     }
 }
 
@@ -103,22 +120,22 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     }
 }
 
-impl<P> Logical<P> {
-    pub fn or_endpoint(
-        reason: tls::NoClientTls,
-    ) -> impl Fn(Self) -> Result<svc::Either<Self, Endpoint<P>>, Error> + Copy {
-        move |logical: Self| {
-            let should_resolve = {
-                let p = logical.profile.borrow();
-                p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-            };
+pub fn or_endpoint<T, P>(
+    reason: tls::NoClientTls,
+) -> impl Fn(T) -> Result<svc::Either<T, Endpoint<P>>, Error> + Copy
+where
+    T: Param<ShouldResolve> + Param<OrigDstAddr>,
+    Endpoint<P>: From<(tls::NoClientTls, T)>,
+{
+    move |logical: T| {
+        let ShouldResolve(should_resolve) = logical.param();
 
-            if should_resolve {
-                Ok(svc::Either::A(logical))
-            } else {
-                debug!(%reason, orig_dst = %logical.orig_dst, "Target is unresolveable");
-                Ok(svc::Either::B(Endpoint::from((reason, logical))))
-            }
+        if should_resolve {
+            Ok(svc::Either::A(logical))
+        } else {
+            let OrigDstAddr(orig_dst) = logical.param();
+            debug!(%reason, %orig_dst, "Target is unresolveable");
+            Ok(svc::Either::B(Endpoint::from((reason, logical))))
         }
     }
 }
@@ -131,7 +148,7 @@ impl<P> From<(ConcreteAddr, Logical<P>)> for Concrete<P> {
     }
 }
 
-impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
+impl<P> Param<ConcreteAddr> for Concrete<P> {
     fn param(&self) -> ConcreteAddr {
         self.resolve.clone()
     }
