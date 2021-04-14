@@ -181,7 +181,7 @@ impl<L> Outbound<L> {
                         svc::Either::B(target)
                     }
                 })
-             }, endpoint.clone())
+             }, endpoint)
             .check_new_service::<(Option<profiles::Receiver>, T), _>();
         Outbound {
             config,
