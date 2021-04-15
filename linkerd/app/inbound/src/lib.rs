@@ -11,7 +11,7 @@ pub mod http;
 mod prevent_loop;
 mod require_identity;
 pub mod target;
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
 pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};

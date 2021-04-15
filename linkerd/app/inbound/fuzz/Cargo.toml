@@ -1,0 +1,40 @@
+
+[package]
+name = "linkerd-app-inbound-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1",  features = ["derive"] }
+libfuzzer-sys = { version = "0.4.0", features = ["arbitrary-derive"] }
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "0.14.2", features = ["http1", "http2"] }
+http = "0.2"
+linkerd-app-core = { path = "../../core" }
+linkerd-app-test = { path = "../../test" }
+
+[dependencies.linkerd-app-inbound]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[features]
+test = []
+fuzzing = []
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"
+test = true
+doc = false
+required-features = ["fuzzing"]
+
+[patch.crates-io]
+webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21"}
