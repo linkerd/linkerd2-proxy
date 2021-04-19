@@ -24,7 +24,7 @@ pub trait ConfigureResolver {
 }
 
 #[derive(Debug, Clone, Error)]
-#[error("Invalid SRV record {:?}", self.0)]
+#[error("invalid SRV record {:?}", self.0)]
 struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
