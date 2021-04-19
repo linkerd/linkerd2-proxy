@@ -2,6 +2,7 @@ use crate::target::TcpAccept;
 use indexmap::IndexSet;
 use linkerd_app_core::{svc::stack::Predicate, tls, Conditional, Error};
 use std::sync::Arc;
+use thiserror::Error;
 
 /// A connection policy that fails connections that don't have a client identity
 /// if they target one of the configured local ports.
@@ -10,7 +11,8 @@ pub struct RequireIdentityForPorts {
     ports: Arc<IndexSet<u16>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("identity required")]
 pub struct IdentityRequired(());
 
 // === impl RequireIdentityForPorts ===
@@ -43,13 +45,3 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
         }
     }
 }
-
-// === impl IdentityRequired ===
-
-impl std::fmt::Display for IdentityRequired {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "identity required")
-    }
-}
-
-impl std::error::Error for IdentityRequired {}

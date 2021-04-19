@@ -1,10 +1,13 @@
+use thiserror::Error;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Version {
     Http1,
     H2,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("unsupported HTTP version {:?}", self.0)]
 pub struct Unsupported(http::Version);
 
 impl std::convert::TryFrom<http::Version> for Version {
@@ -27,11 +30,3 @@ impl std::fmt::Display for Version {
         }
     }
 }
-
-impl std::fmt::Display for Unsupported {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Unsupported HTTP version")
-    }
-}
-
-impl std::error::Error for Unsupported {}

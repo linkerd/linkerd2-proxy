@@ -4,7 +4,7 @@ use http::header::HeaderValue;
 use linkerd_error::Error;
 use rand::thread_rng;
 use std::convert::TryInto;
-use std::fmt;
+use thiserror::Error;
 use tracing::{trace, warn};
 
 const HTTP_TRACE_ID_HEADER: &str = "x-b3-traceid";
@@ -30,18 +30,9 @@ pub struct TraceContext {
     pub flags: Flags,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("unknown field ID {0}")]
 struct UnknownFieldId(u8);
-
-// === impl UnknownFieldId ===
-
-impl std::error::Error for UnknownFieldId {}
-
-impl fmt::Display for UnknownFieldId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Unknown field id {}", self.0)
-    }
-}
 
 // === impl TraceContext ===
 

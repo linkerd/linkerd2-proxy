@@ -1,11 +1,11 @@
 #![deny(warnings, rust_2018_idioms)]
-
 use linkerd_dns_name::Name;
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
     str::FromStr,
 };
+use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Addr {
@@ -19,12 +19,14 @@ pub struct NameAddr {
     port: u16,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// The host is not a valid DNS name or IP address.
+    #[error("address contains an invalid host")]
     InvalidHost,
 
     /// The port is missing.
+    #[error("address is missing a port")]
     MissingPort,
 }
 
@@ -238,19 +240,6 @@ impl fmt::Display for NameAddr {
         write!(f, "{}:{}", self.name.without_trailing_dot(), self.port)
     }
 }
-
-// === impl Error ===
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidHost => write!(f, "address contains an invalid host"),
-            Self::MissingPort => write!(f, "address is missing a port"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {

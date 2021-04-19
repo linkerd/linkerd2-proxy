@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
+use thiserror::Error;
 
 const SPAN_ID_LEN: usize = 8;
 
@@ -20,7 +21,8 @@ pub struct Id(Vec<u8>);
 #[derive(Debug, Default)]
 pub struct Flags(u8);
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("insufficient bytes when decoding binary header")]
 pub struct InsufficientBytes;
 
 #[derive(Debug)]
@@ -108,15 +110,5 @@ impl TryFrom<Bytes> for Flags {
 
     fn try_from(buf: Bytes) -> Result<Self, Self::Error> {
         buf.first().map(|b| Flags(*b)).ok_or(InsufficientBytes)
-    }
-}
-
-// === impl InsufficientBytes ===
-
-impl std::error::Error for InsufficientBytes {}
-
-impl fmt::Display for InsufficientBytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Insufficient bytes when decoding binary header")
     }
 }

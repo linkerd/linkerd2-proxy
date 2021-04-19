@@ -2,7 +2,8 @@ use linkerd_error::Error;
 use linkerd_opencensus::proto::trace::v1 as oc;
 use linkerd_stack::layer;
 use linkerd_trace_context::{self as trace_context, TraceContext};
-use std::{collections::HashMap, error, fmt, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
+use thiserror::Error;
 use tokio::sync::mpsc;
 
 pub type OpenCensusSink = Option<mpsc::Sender<oc::Span>>;
@@ -19,23 +20,12 @@ pub struct SpanConverter {
     labels: Labels,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("ID '{:?} should have {} bytes, but it has {}", self.id, self.expected_size, self.actual_size)]
 pub struct IdLengthError {
     id: Vec<u8>,
     expected_size: usize,
     actual_size: usize,
-}
-
-impl error::Error for IdLengthError {}
-
-impl fmt::Display for IdLengthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Id '{:?}' should have {} bytes but it has {}",
-            self.id, self.expected_size, self.actual_size
-        )
-    }
 }
 
 pub fn server<S>(

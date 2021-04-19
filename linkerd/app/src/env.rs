@@ -9,9 +9,8 @@ use crate::core::{
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
-use std::{
-    collections::HashMap, fmt, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration,
-};
+use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use thiserror::Error;
 use tracing::{debug, error, warn};
 
 /// The strings used to build a configuration.
@@ -26,23 +25,49 @@ pub trait Strings {
 pub struct Env;
 
 /// Errors produced when loading a `Config` struct.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum EnvError {
+    #[error("invalid environment variable")]
     InvalidEnvVar,
+    #[error("no destination service configured")]
     NoDestinationAddress,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Error, Eq, PartialEq)]
 pub enum ParseError {
+    #[error("not a valid duration")]
     NotADuration,
+    #[error("not a valid DNS domain suffix")]
     NotADomainSuffix,
-    NotABool,
-    NotANumber,
+    #[error("not a boolean value: {0}")]
+    NotABool(
+        #[from]
+        #[source]
+        std::str::ParseBoolError,
+    ),
+    #[error("not an integer: {0}")]
+    NotAnInteger(
+        #[from]
+        #[source]
+        std::num::ParseIntError,
+    ),
+    #[error("not a floating-point number: {0}")]
+    NotAFloat(
+        #[from]
+        #[source]
+        std::num::ParseFloatError,
+    ),
+    #[error("not a valid subnet mask")]
     NotANetwork,
+    #[error("host is not an IP address")]
     HostIsNotAnIpAddress,
+    #[error(transparent)]
     AddrError(addr::Error),
+    #[error("not a valid identity name")]
     NameError,
+    #[error("could not read token source")]
     InvalidTokenSource,
+    #[error("invalid trust anchors")]
     InvalidTrustAnchors,
 }
 
@@ -701,14 +726,15 @@ fn parse_tap_config(
 }
 
 fn parse_bool(s: &str) -> Result<bool, ParseError> {
-    s.parse().map_err(|_| ParseError::NotABool)
+    s.parse().map_err(Into::into)
 }
 
 fn parse_number<T>(s: &str) -> Result<T, ParseError>
 where
     T: FromStr,
+    ParseError: From<T::Err>,
 {
-    s.parse().map_err(|_| ParseError::NotANumber)
+    s.parse().map_err(Into::into)
 }
 
 fn parse_duration(s: &str) -> Result<Duration, ParseError> {
@@ -1037,17 +1063,6 @@ pub fn parse_identity_config<S: Strings>(
     }
 }
 
-impl fmt::Display for EnvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EnvError::InvalidEnvVar => write!(f, "invalid environment variable"),
-            EnvError::NoDestinationAddress => write!(f, "no destination service configured"),
-        }
-    }
-}
-
-impl ::std::error::Error for EnvError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1101,10 +1116,10 @@ mod tests {
 
     #[test]
     fn parse_duration_overflows_invalid() {
-        assert_eq!(
+        assert!(matches!(
             parse_duration("123456789012345678901234567890ms"),
-            Err(ParseError::NotANumber)
-        );
+            Err(ParseError::NotAnInteger(_))
+        ));
     }
 
     #[test]

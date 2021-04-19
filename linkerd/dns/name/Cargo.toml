@@ -9,3 +9,4 @@ publish = false
 [dependencies]
 webpki = "0.21"
 untrusted = "0.7"
+thiserror = "1.0"

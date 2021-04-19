@@ -9,6 +9,7 @@ use linkerd_app_core::{
     Conditional, Error, NameAddr, Never,
 };
 use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
+use thiserror::Error;
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -19,10 +20,12 @@ struct WithTransportHeaderAlpn(LocalCrtKey);
 #[derive(Debug, Default)]
 struct RefusedNoHeader;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("direct connections must be mutually authenticated")]
 pub struct RefusedNoIdentity(());
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("a named target must be provided on gateway connections")]
 struct RefusedNoTarget;
 
 /// Gateway connections come in two variants: those with a transport header, and
@@ -252,23 +255,3 @@ impl Into<Error> for RefusedNoHeader {
         ))
     }
 }
-
-// === impl RefusedNoIdentity ===
-
-impl std::fmt::Display for RefusedNoIdentity {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Direct connections must be mutually authenticated")
-    }
-}
-
-impl std::error::Error for RefusedNoIdentity {}
-
-// === impl RefusedNoTarget ===
-
-impl std::fmt::Display for RefusedNoTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "A named target must be provided on gateway connections")
-    }
-}
-
-impl std::error::Error for RefusedNoTarget {}

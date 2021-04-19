@@ -3,11 +3,11 @@
 use futures::Stream;
 use pin_project::pin_project;
 use rand::{rngs::SmallRng, thread_rng, SeedableRng};
-use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use thiserror::Error;
 use tokio::time;
 
 /// A jittered exponential backoff strategy.
@@ -37,7 +37,8 @@ pub struct ExponentialBackoffStream {
     sleeping: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("invalid backoff: {0}")]
 pub struct InvalidBackoff(&'static str);
 
 impl ExponentialBackoff {
@@ -135,14 +136,6 @@ impl Stream for ExponentialBackoffStream {
         }
     }
 }
-
-impl fmt::Display for InvalidBackoff {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl std::error::Error for InvalidBackoff {}
 
 #[cfg(test)]
 mod tests {

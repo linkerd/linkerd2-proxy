@@ -3,6 +3,7 @@
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use linkerd_error::Error;
 use std::{fmt, net};
+use thiserror::Error;
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 use trust_dns_resolver::{
@@ -22,7 +23,8 @@ pub trait ConfigureResolver {
     fn configure_resolver(&self, _: &mut ResolverOpts);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("Invalid SRV record {:?}", self.0)]
 struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
@@ -124,14 +126,6 @@ impl fmt::Debug for Resolver {
             .finish()
     }
 }
-
-impl fmt::Display for InvalidSrv {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid SRV record {:?}", self.0)
-    }
-}
-
-impl std::error::Error for InvalidSrv {}
 
 #[cfg(test)]
 mod tests {

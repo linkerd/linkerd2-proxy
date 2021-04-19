@@ -10,6 +10,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use tokio::time;
 use tower::util::ServiceExt;
 use tracing::{debug, info, trace};
@@ -24,6 +25,8 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
 
 pub type DetectResult<P> = Result<Option<P>, DetectTimeout<P>>;
 
+#[derive(Error)]
+#[error("{} protocol detection timed out after {:?}", std::any::type_name::<P>(), .0)]
 pub struct DetectTimeout<P>(time::Duration, std::marker::PhantomData<P>);
 
 #[derive(Copy, Clone, Debug)]
@@ -161,16 +164,3 @@ impl<P> fmt::Debug for DetectTimeout<P> {
             .finish()
     }
 }
-
-impl<P> fmt::Display for DetectTimeout<P> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} protocol detection timed out after {:?}",
-            std::any::type_name::<P>(),
-            self.0
-        )
-    }
-}
-
-impl<P> std::error::Error for DetectTimeout<P> {}
