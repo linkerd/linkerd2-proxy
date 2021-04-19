@@ -30,6 +30,9 @@ pub struct Admin {
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
 
+#[derive(Debug)]
+struct NonHttpClient(TcpAccept);
+
 // === impl Config ===
 
 impl Config {
@@ -65,14 +68,18 @@ impl Config {
             )
             .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push_map_target(
-                |(version, tcp): (Result<Option<http::Version>, detect::DetectTimeout<_>>, _)| {
+            .push_request_filter(
+                |(version, tcp): (
+                    Result<Option<http::Version>, detect::DetectTimeout<_>>,
+                    TcpAccept,
+                )| {
                     match version {
-                        Ok(Some(version)) => HttpAccept::from((version, tcp)),
-                        Ok(None) | Err(_) => {
-                            debug!("Failed to parse HTTP request; handling as HTTP/1");
-                            HttpAccept::from((http::Version::Http1, tcp))
+                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
+                        Err(_) => {
+                            debug!("HTTP detection timed out; handling as HTTP/1");
+                            Ok(HttpAccept::from((http::Version::Http1, tcp)))
                         }
+                        Ok(None) => Err(NonHttpClient(tcp)),
                     }
                 },
             )
@@ -101,3 +108,17 @@ impl Config {
         })
     }
 }
+
+// === impl NonHttpClient ===
+
+impl std::fmt::Display for NonHttpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Non-HTTP connection from {} (tls={:?})",
+            self.0.client_addr, self.0.tls
+        )
+    }
+}
+
+impl std::error::Error for NonHttpClient {}
