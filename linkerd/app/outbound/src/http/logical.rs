@@ -1,4 +1,4 @@
-use super::{normalize_uri, CanonicalDstHeader, CanonicalDstHeader, Concrete, Endpoint, Logical};
+use super::{normalize_uri, CanonicalDstHeader, Concrete, Endpoint};
 use crate::{endpoint, logical::LogicalAddr, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
     classify, config, dst, profiles,
@@ -10,7 +10,7 @@ use linkerd_app_core::{
     },
     retry,
     svc::{self, Param},
-    tls, Error, Never, DST_OVERRIDE_HEADER,
+    tls, Addr, Error, Never, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -194,7 +194,7 @@ where
     let LogicalAddr(target) = logical.param();
     dst::Route {
         route,
-        target,
+        target: Addr::from(target),
         direction: Direction::Out,
     }
 }

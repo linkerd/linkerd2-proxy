@@ -17,16 +17,17 @@ use linkerd_app_core::{
     tls,
     transport::OrigDstAddr,
     transport_header::SessionProtocol,
-    Error, NameAddr, NameMatch, Never,
+    Addr, Error, NameAddr, NameMatch, Never,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
     Inbound,
 };
-use linkerd_app_outbound::{self as outbound, logical::LogicalAddr, Outbound};
+use linkerd_app_outbound::{self as outbound, http::normalize_uri, logical::LogicalAddr, Outbound};
 use std::{
     convert::{TryFrom, TryInto},
     fmt,
+    str::FromStr,
 };
 use thiserror::Error;
 use tracing::debug_span;
@@ -313,11 +314,45 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     }
 }
 
+// === impl Logical<http::Version> ===
+
+impl From<(http::Version, Logical<()>)> for Logical<http::Version> {
+    fn from((protocol, logical): (http::Version, Logical<()>)) -> Self {
+        Self {
+            protocol,
+            profile: logical.profile,
+            logical_addr: logical.logical_addr,
+        }
+    }
+}
+
+impl Param<outbound::http::CanonicalDstHeader> for Logical<http::Version> {
+    fn param(&self) -> outbound::http::CanonicalDstHeader {
+        outbound::http::CanonicalDstHeader(Addr::from(self.logical_addr.0))
+    }
+}
+
+impl Param<http::Version> for Logical<http::Version> {
+    fn param(&self) -> http::Version {
+        self.protocol
+    }
+}
+
+impl Param<normalize_uri::DefaultAuthority> for Logical<http::Version> {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        use linkerd_app_core::proxy::http::uri;
+        normalize_uri::DefaultAuthority(Some(
+            uri::Authority::from_str(&self.logical_addr.to_string())
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
 // === impl HttpTransportHeader ===
 
-impl Param<http::normalize_uri::DefaultAuthority> for HttpTransportHeader {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(Some(self.target.as_http_authority()))
+impl Param<normalize_uri::DefaultAuthority> for HttpTransportHeader {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        normalize_uri::DefaultAuthority(Some(self.target.as_http_authority()))
     }
 }
 

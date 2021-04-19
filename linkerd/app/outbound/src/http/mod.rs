@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     dst,
-    profiles::{self, LogicalAddr},
+    profiles::LogicalAddr,
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
     tls,
