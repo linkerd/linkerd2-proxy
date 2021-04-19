@@ -31,7 +31,7 @@ pub struct Admin {
 }
 
 #[derive(Debug)]
-pub struct NonHttpClient(TcpAccept);
+struct NonHttpClient(TcpAccept);
 
 // === impl Config ===
 
