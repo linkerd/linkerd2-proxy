@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::net;
 use std::str::FromStr;
-use std::{error, fmt};
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub enum Match {
@@ -22,12 +22,17 @@ pub enum Match {
     Http(HttpMatch),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Error)]
 pub enum InvalidMatch {
+    #[error("missing required field")]
     Empty,
+    #[error("invalid port number")]
     InvalidPort,
+    #[error("invalid network address")]
     InvalidNetwork,
+    #[error("invalid http method")]
     InvalidHttpMethod,
+    #[error("invalid request scheme")]
     InvalidScheme,
 }
 
@@ -452,21 +457,3 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
 //         }
 //     }
 // }
-
-impl fmt::Display for InvalidMatch {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                InvalidMatch::Empty => "missing required field",
-                InvalidMatch::InvalidPort => "invalid port number",
-                InvalidMatch::InvalidNetwork => "invalid network address",
-                InvalidMatch::InvalidHttpMethod => "invalid http method",
-                InvalidMatch::InvalidScheme => "invalid request scheme",
-            }
-        )
-    }
-}
-
-impl error::Error for InvalidMatch {}

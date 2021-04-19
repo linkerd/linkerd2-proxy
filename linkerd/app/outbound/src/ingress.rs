@@ -8,6 +8,7 @@ use linkerd_app_core::{
     transport::{self, ClientAddr, OrigDstAddr, Remote},
     Addr, AddrMatch, Error,
 };
+use thiserror::Error;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -214,3 +215,9 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
         })
     }
 }
+
+// === impl ProfileRequired ===
+
+#[derive(Debug, Error)]
+#[error("ingress routing requires a service profile")]
+struct ProfileRequired;

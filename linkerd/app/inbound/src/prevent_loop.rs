@@ -4,6 +4,7 @@ use linkerd_app_core::{
     transport::addrs::OrigDstAddr,
     Error,
 };
+use thiserror::Error;
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
@@ -15,7 +16,8 @@ pub struct SwitchLoop {
     port: u16,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Error)]
+#[error("inbound connection must not target port {}", self.port)]
 pub struct LoopPrevented {
     port: u16,
 }
@@ -57,11 +59,3 @@ impl<T: Param<OrigDstAddr>> Predicate<T> for SwitchLoop {
         }
     }
 }
-
-impl std::fmt::Display for LoopPrevented {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "inbound connection must not target port {}", self.port)
-    }
-}
-
-impl std::error::Error for LoopPrevented {}

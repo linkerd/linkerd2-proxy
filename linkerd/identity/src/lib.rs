@@ -3,7 +3,8 @@
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
-use std::{convert::TryFrom, error::Error, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
+use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
+use thiserror::Error;
 use tracing::{debug, warn};
 
 #[cfg(any(test, feature = "test-util"))]
@@ -48,7 +49,8 @@ pub struct CrtKey {
 
 struct CertResolver(rustls::sign::CertifiedKey);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
 pub struct InvalidCrt(rustls::TLSError);
 
 /// A newtype for local server identities.
@@ -447,20 +449,6 @@ impl AsRef<Name> for LocalId {
 impl fmt::Display for LocalId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-// === impl InvalidCrt ===
-
-impl fmt::Display for InvalidCrt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Error for InvalidCrt {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.0.source()
     }
 }
 

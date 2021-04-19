@@ -5,11 +5,12 @@ use linkerd_error_metrics as metrics;
 use linkerd_error_respond as respond;
 pub use linkerd_error_respond::RespondLayer;
 use linkerd_proxy_http::{ClientHandle, HasH2Reason};
-use linkerd_timeout::{error::ResponseTimeout, FailFastError};
+use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use thiserror::Error;
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
 
@@ -28,7 +29,8 @@ pub struct LabelError(super::metrics::Direction);
 
 pub type Label = (super::metrics::Direction, Reason);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Error)]
+#[error("{}", self.message)]
 pub struct HttpError {
     http: http::StatusCode,
     grpc: Code,
@@ -453,11 +455,3 @@ impl HttpError {
         self.http
     }
 }
-
-impl std::fmt::Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
-impl std::error::Error for HttpError {}

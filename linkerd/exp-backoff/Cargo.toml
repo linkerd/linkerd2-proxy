@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 futures = "0.3.9"
 rand = { version = "0.8", features = ["small_rng"] }
+thiserror = "1.0"
 tokio = { version = "1", features = ["time"]}
 pin-project = "1"
 

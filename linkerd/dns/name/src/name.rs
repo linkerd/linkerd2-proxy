@@ -1,5 +1,6 @@
 use std::convert::TryFrom;
 use std::fmt;
+use thiserror::Error;
 
 /// A `Name` is guaranteed to be syntactically valid. The validity rules
 /// are specified in [RFC 5280 Section 7.2], except that underscores are also
@@ -7,7 +8,8 @@ use std::fmt;
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Name(webpki::DNSName);
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Error)]
+#[error("invalid DNS name")]
 pub struct InvalidName;
 
 impl Name {
@@ -74,14 +76,6 @@ impl AsRef<str> for Name {
         <webpki::DNSName as AsRef<str>>::as_ref(&self.0)
     }
 }
-
-impl std::fmt::Display for InvalidName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Invalid DNS name")
-    }
-}
-
-impl std::error::Error for InvalidName {}
 
 #[cfg(test)]
 mod tests {
