@@ -15,6 +15,7 @@ use crate::{
     inbound::target::{HttpAccept, Target, TcpAccept},
 };
 use std::{pin::Pin, time::Duration};
+use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::debug;
 
@@ -30,7 +31,8 @@ pub struct Admin {
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("non-HTTP connection from {} (tls={:?})", self.0.client_addr, self.0.tls)]
 struct NonHttpClient(TcpAccept);
 
 // === impl Config ===
@@ -108,17 +110,3 @@ impl Config {
         })
     }
 }
-
-// === impl NonHttpClient ===
-
-impl std::fmt::Display for NonHttpClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Non-HTTP connection from {} (tls={:?})",
-            self.0.client_addr, self.0.tls
-        )
-    }
-}
-
-impl std::error::Error for NonHttpClient {}

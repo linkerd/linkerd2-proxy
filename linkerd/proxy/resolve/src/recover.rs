@@ -8,8 +8,10 @@ use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use thiserror::Error;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("end of stream reached")]
 pub struct Eos(());
 
 #[derive(Clone, Debug)]
@@ -260,11 +262,3 @@ where
         }
     }
 }
-
-impl std::fmt::Display for Eos {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "end of stream reached")
-    }
-}
-
-impl std::error::Error for Eos {}

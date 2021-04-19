@@ -20,6 +20,7 @@ use http::uri::Authority;
 use linkerd_error::Error;
 use linkerd_stack::{layer, NewService, Param};
 use std::task::{Context, Poll};
+use thiserror::Error;
 use tracing::trace;
 
 #[derive(Clone, Debug)]
@@ -37,7 +38,8 @@ pub struct NormalizeUri<S> {
 #[derive(Clone, Debug)]
 pub struct DefaultAuthority(pub Option<Authority>);
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("failed to normalize URI because no authority could be determined")]
 pub struct NoAuthority(());
 
 /// Detects the original form of a request URI and inserts a `WasAbsoluteForm`
@@ -117,19 +119,6 @@ where
         future::Either::Left(self.inner.call(req).err_into())
     }
 }
-
-// === impl NoAuthority ===
-
-impl std::fmt::Display for NoAuthority {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "failed to normalize URI because no authority could be determined"
-        )
-    }
-}
-
-impl std::error::Error for NoAuthority {}
 
 // === impl MarkAbsoluteForm ===
 

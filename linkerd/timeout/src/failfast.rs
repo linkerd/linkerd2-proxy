@@ -10,6 +10,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use tokio::time::{self, Duration, Instant, Sleep};
 use tracing::{debug, info, trace, warn};
 
@@ -23,7 +24,8 @@ pub struct FailFast<S> {
 }
 
 /// An error representing that an operation timed out.
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("{} service in fail-fast", self.scope)]
 pub struct FailFastError {
     scope: &'static str,
 }
@@ -165,16 +167,6 @@ where
         }
     }
 }
-
-// === impl FailFastError ===
-
-impl std::fmt::Display for FailFastError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} service in fail-fast", self.scope)
-    }
-}
-
-impl std::error::Error for FailFastError {}
 
 #[cfg(test)]
 mod test {

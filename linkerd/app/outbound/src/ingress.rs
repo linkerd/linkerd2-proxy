@@ -10,6 +10,7 @@ use linkerd_app_core::{
     Addr, AddrMatch, Conditional, Error,
 };
 use std::convert::TryFrom;
+use thiserror::Error;
 use tracing::{debug_span, info_span};
 
 impl Outbound<()> {
@@ -244,13 +245,6 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
 
 // === impl ProfileRequired ===
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("ingress routing requires a service profile")]
 struct ProfileRequired;
-
-impl std::fmt::Display for ProfileRequired {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.pad("ingress routing requires a service profile")
-    }
-}
-
-impl std::error::Error for ProfileRequired {}

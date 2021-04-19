@@ -17,6 +17,7 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use tokio::time::{self, Duration};
 pub use tokio_rustls::server::TlsStream;
 use tower::util::ServiceExt;
@@ -80,7 +81,8 @@ pub struct NewDetectTls<L, A> {
     timeout: Duration,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error("TLS detection timed out")]
 pub struct DetectTimeout(());
 
 #[derive(Clone, Debug)]
@@ -308,14 +310,6 @@ fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
         }
     }
 }
-
-impl fmt::Display for DetectTimeout {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TLS detection timeout")
-    }
-}
-
-impl std::error::Error for DetectTimeout {}
 
 // === impl ClientId ===
 

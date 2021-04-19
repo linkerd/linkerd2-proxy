@@ -591,6 +591,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "linkerd-dns-name",
+ "thiserror",
 ]
 
 [[package]]
@@ -607,6 +608,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-opencensus",
  "regex",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -671,6 +673,7 @@ dependencies = [
  "procinfo",
  "prost-types",
  "regex",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -689,6 +692,7 @@ dependencies = [
  "linkerd-app-inbound",
  "linkerd-app-outbound",
  "linkerd-app-test",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -708,6 +712,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -760,6 +765,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-retry",
  "pin-project",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -828,6 +834,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-io",
  "linkerd-stack",
+ "thiserror",
  "tokio",
  "tower",
  "tracing",
@@ -841,6 +848,7 @@ dependencies = [
  "linkerd-dns-name",
  "linkerd-error",
  "pin-project",
+ "thiserror",
  "tokio",
  "tracing",
  "trust-dns-resolver",
@@ -850,6 +858,7 @@ dependencies = [
 name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
+ "thiserror",
  "untrusted",
  "webpki",
 ]
@@ -918,6 +927,7 @@ dependencies = [
  "pin-project",
  "quickcheck",
  "rand",
+ "thiserror",
  "tokio",
 ]
 
@@ -971,6 +981,7 @@ dependencies = [
  "linkerd-dns-name",
  "ring",
  "rustls",
+ "thiserror",
  "tracing",
  "untrusted",
  "webpki",
@@ -1113,6 +1124,7 @@ dependencies = [
  "linkerd-timeout",
  "pin-project",
  "rand",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -1147,6 +1159,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-core",
  "pin-project",
+ "thiserror",
  "tower",
  "tracing",
 ]
@@ -1172,6 +1185,7 @@ dependencies = [
  "pin-project",
  "prost-types",
  "rand",
+ "thiserror",
  "tokio",
  "tonic",
  "tower",
@@ -1316,6 +1330,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "pin-project",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -1338,6 +1353,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "rustls",
+ "thiserror",
  "tokio",
  "tokio-rustls",
  "tower",
@@ -1359,6 +1375,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "rand",
+ "thiserror",
  "tower",
  "tracing",
 ]

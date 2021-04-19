@@ -28,6 +28,7 @@ use std::{
     convert::{TryFrom, TryInto},
     fmt,
 };
+use thiserror::Error;
 use tracing::debug_span;
 
 #[derive(Clone, Debug, Default)]
@@ -57,10 +58,12 @@ struct HttpTarget {
     version: http::Version,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Error)]
+#[error("a named target must be provided on gateway connections")]
 struct RefusedNoTarget(());
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("the provided address could not be resolved: {}", self.0)]
 struct RefusedNotResolved(NameAddr);
 
 #[allow(clippy::clippy::too_many_arguments)]
@@ -283,7 +286,7 @@ impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, ClientInfo)> for
 
     fn try_from(
         (version, client): (Result<Option<http::Version>, E>, ClientInfo),
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, Self::Error> {
         match version {
             Ok(Some(version)) => Ok(Self { version, client }),
             Ok(None) => Err(RefusedNoTarget(()).into()),
@@ -342,23 +345,3 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpLegacy> {
         Err(RefusedNoTarget(()).into())
     }
 }
-
-// === impl RefusedNoTarget ===
-
-impl fmt::Display for RefusedNoTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "A named target must be provided on gateway connections")
-    }
-}
-
-impl std::error::Error for RefusedNoTarget {}
-
-// === impl RefusedNotResolved ===
-
-impl fmt::Display for RefusedNotResolved {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "The provided address could not be resolved: {}", self.0)
-    }
-}
-
-impl std::error::Error for RefusedNotResolved {}

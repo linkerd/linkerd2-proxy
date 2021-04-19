@@ -3,7 +3,7 @@ use linkerd_error::Error;
 use linkerd_http_classify as classify;
 pub use linkerd_http_classify::{CanClassify, NewClassify};
 use linkerd_proxy_http::HasH2Reason;
-use linkerd_timeout::error::ResponseTimeout;
+use linkerd_timeout::ResponseTimeout;
 use std::borrow::Cow;
 use tonic as grpc;
 use tracing::trace;
