@@ -1,24 +1,26 @@
-use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
-use crate::{endpoint, resolve, stack_labels, Outbound};
+use super::{normalize_uri, CanonicalDstHeader, CanonicalDstHeader, Concrete, Endpoint, Logical};
+use crate::{endpoint, logical::LogicalAddr, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, config, profiles,
+    classify, config, dst, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
         http,
         resolve::map_endpoint,
     },
-    retry, svc, tls, Error, Never, DST_OVERRIDE_HEADER,
+    retry,
+    svc::{self, Param},
+    tls, Error, Never, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
 impl<E> Outbound<E> {
-    pub fn push_http_logical<B, ESvc, R>(
+    pub fn push_http_logical<T, B, ESvc, R>(
         self,
         resolve: R,
     ) -> Outbound<
         impl svc::NewService<
-                Logical,
+                T,
                 Service = impl svc::Service<
                     http::Request<B>,
                     Response = http::Response<http::BoxBody>,
@@ -39,6 +41,14 @@ impl<E> Outbound<E> {
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
+        Concrete: From<(ConcreteAddr, T)>,
+        Endpoint: From<(tls::NoClientTls, T)>,
+        T: Param<LogicalAddr>
+            + Param<profiles::Receiver>
+            + Param<http::Version>
+            + Param<normalize_uri::DefaultAuthority>
+            + Param<CanonicalDstHeader>,
+        T: Clone + std::fmt::Debug + Eq + std::hash::Hash + Send + Sync + 'static,
     {
         let Self {
             config,
@@ -145,7 +155,7 @@ impl<E> Outbound<E> {
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::NewClassify::layer())
-                    .push_map_target(Logical::mk_route)
+                    .push_map_target(mk_route)
                     .into_inner(),
             ))
             // Strips headers that may be set by this proxy and add an outbound
@@ -157,29 +167,34 @@ impl<E> Outbound<E> {
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                     .push(http::BoxResponse::layer()),
             )
-            .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
+            .instrument(
+                |l: &T| debug_span!("logical", dst = %{ let LogicalAddr(dst) = l.param(); dst}),
+            )
             .push_switch(
-                move |logical: Logical| {
-                    let should_resolve = {
-                        let p = logical.profile.borrow();
-                        p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-                    };
-
-                    if should_resolve {
-                        Ok::<_, Never>(svc::Either::A(logical))
-                    } else {
-                        Ok(svc::Either::B(Endpoint::from((no_tls_reason, logical))))
-                    }
-                },
+                crate::logical::or_endpoint(no_tls_reason),
                 svc::stack(endpoint)
                     .push_on_response(http::BoxRequest::layer())
                     .into_inner(),
-            );
+            )
+            .check_new_service::<T, _>();
 
         Outbound {
             config,
             runtime: rt,
             stack,
         }
+    }
+}
+
+pub fn mk_route<T>((route, logical): (profiles::http::Route, T)) -> dst::Route
+where
+    T: Param<LogicalAddr>,
+{
+    use linkerd_app_core::metrics::Direction;
+    let LogicalAddr(target) = logical.param();
+    dst::Route {
+        route,
+        target,
+        direction: Direction::Out,
     }
 }

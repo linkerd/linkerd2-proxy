@@ -51,7 +51,7 @@ impl<O> NewGateway<O> {
 
 impl<O> svc::NewService<Target> for NewGateway<O>
 where
-    O: svc::NewService<outbound::http::Logical> + Send + Clone + 'static,
+    O: svc::NewService<crate::Logical<http::Version>> + Send + Clone + 'static,
 {
     type Service = Gateway<O::Service>;
 
@@ -74,10 +74,9 @@ where
         // including the original port. We don't know the IP of the target, so
         // we use an unroutable one.
         debug!("Creating outbound service");
-        let svc = self.outbound.new_service(outbound::http::Logical {
+        let svc = self.outbound.new_service(crate::Logical {
             profile,
             protocol: http.version,
-            orig_dst: OrigDstAddr(([0, 0, 0, 0], logical_addr.0.port()).into()),
             logical_addr,
         });
 

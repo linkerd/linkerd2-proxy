@@ -83,17 +83,6 @@ impl Param<Version> for Logical {
     }
 }
 
-impl Logical {
-    pub fn mk_route((route, logical): (profiles::http::Route, Self)) -> dst::Route {
-        use linkerd_app_core::metrics::Direction;
-        dst::Route {
-            route,
-            target: logical.addr(),
-            direction: Direction::Out,
-        }
-    }
-}
-
 impl Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         if let Some(LogicalAddr(a)) = self.profile.borrow().addr.as_ref() {
