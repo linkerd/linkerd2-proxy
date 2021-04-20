@@ -186,7 +186,7 @@ async fn profile_endpoint_propagates_conn_errors() {
     });
 
     let rsp = client
-        .ready_and()
+        .ready()
         .await
         .expect("Client must not fail")
         .call(
