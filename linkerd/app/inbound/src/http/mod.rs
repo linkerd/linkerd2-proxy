@@ -272,14 +272,14 @@ pub mod fuzz_logic {
     use linkerd_app_test::*;
 
     #[derive(Debug, Arbitrary)]
-    pub struct TransportHeaderSpec {
+    pub struct HttpRequestSpec {
         pub uri: Vec<u8>,
         pub header_name: Vec<u8>,
         pub header_value: Vec<u8>,
         pub http_method: bool,
     }
 
-    pub async fn fuzz_entry_raw(packets: Vec<TransportHeaderSpec>) {
+    pub async fn fuzz_entry_raw(requests: Vec<HttpRequestSpec>) {
         let mut server = hyper::server::conn::Http::new();
         server.http1_only(true);
         let mut client = ClientBuilder::new();
@@ -304,8 +304,8 @@ pub mod fuzz_logic {
         let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(accept);
         let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
-        // Now send all of the packets
-        for inp in packets.iter() {
+        // Now send all of the requests
+        for inp in requests.iter() {
             if let Ok(uri) = std::str::from_utf8(&inp.uri[..]) {
                 if let Ok(header_name) = std::str::from_utf8(&inp.header_name[..]) {
                     if let Ok(header_value) = std::str::from_utf8(&inp.header_value[..]) {
