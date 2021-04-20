@@ -7,7 +7,7 @@ mod tests;
 use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
-    detect, discovery_rejected, io, metrics, profiles,
+    detect, discovery_rejected, identity, io, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -267,6 +267,12 @@ impl Param<http::normalize_uri::DefaultAuthority> for HttpTransportHeader {
     }
 }
 
+impl Param<Option<identity::Name>> for HttpTransportHeader {
+    fn param(&self) -> Option<identity::Name> {
+        Some(self.client.client_id.clone().0)
+    }
+}
+
 impl Param<http::Version> for HttpTransportHeader {
     fn param(&self) -> http::Version {
         self.version
@@ -304,6 +310,12 @@ impl From<(http::Version, ClientInfo)> for HttpLegacy {
 impl Param<http::normalize_uri::DefaultAuthority> for HttpLegacy {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         http::normalize_uri::DefaultAuthority(None)
+    }
+}
+
+impl Param<Option<identity::Name>> for HttpLegacy {
+    fn param(&self) -> Option<identity::Name> {
+        Some(self.client.client_id.clone().0)
     }
 }
 

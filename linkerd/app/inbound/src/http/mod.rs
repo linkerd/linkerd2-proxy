@@ -10,11 +10,11 @@ pub use linkerd_app_core::proxy::http::{
 use linkerd_app_core::{
     classify,
     config::{ProxyConfig, ServerConfig},
-    dst, errors, http_tracing, io, profiles,
+    dst, errors, http_tracing, identity, io, profiles,
     proxy::{http, tap},
     reconnect,
     svc::{self, Param},
-    Error, DST_OVERRIDE_HEADER,
+    Error, DST_OVERRIDE_HEADER, L5D_IDENTITY_HEADER,
 };
 use tracing::debug_span;
 
@@ -31,7 +31,12 @@ impl<H> Inbound<H> {
             > + Clone,
     >
     where
-        T: Param<Version> + Param<http::normalize_uri::DefaultAuthority> + Clone + Send + 'static,
+        T: Param<Version>
+            + Param<http::normalize_uri::DefaultAuthority>
+            + Param<Option<identity::Name>>
+            + Clone
+            + Send
+            + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -60,6 +65,7 @@ impl<H> Inbound<H> {
             // `Client`. This must be below the `orig_proto::Downgrade` layer, since
             // the request may have been downgraded from a HTTP/2 orig-proto request.
             .push(http::NewNormalizeUri::layer())
+            .push(http::NewSetIdentityHeader::layer(L5D_IDENTITY_HEADER))
             .push_on_response(
                 svc::layers()
                     // Downgrades the protocol if upgraded by an outbound proxy.

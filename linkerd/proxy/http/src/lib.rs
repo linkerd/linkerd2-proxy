@@ -18,6 +18,7 @@ pub mod orig_proto;
 mod override_authority;
 mod retain;
 mod server;
+mod set_identity_header;
 pub mod strip_header;
 pub mod timeout;
 pub mod trace;
@@ -33,6 +34,7 @@ pub use self::{
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,
+    set_identity_header::NewSetIdentityHeader,
     timeout::MakeTimeoutLayer,
     version::Version,
 };

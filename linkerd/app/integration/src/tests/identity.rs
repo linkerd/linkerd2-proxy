@@ -468,3 +468,51 @@ mod require_id_header {
         }
     }
 }
+
+#[tokio::test]
+async fn identity_header_stripping() {
+    let _trace = trace_init();
+
+    let srv = server::http1()
+        .route("/ready", "Ready")
+        .route_fn("/check-identity", |req| -> Response<Bytes> {
+            return match req.headers().get("l5d-identity") {
+                Some(_) => Response::builder()
+                    .status(http::StatusCode::BAD_REQUEST)
+                    .body(Bytes::new())
+                    .unwrap(),
+                None => Response::builder()
+                    .status(http::StatusCode::OK)
+                    .body(Bytes::new())
+                    .unwrap(),
+            };
+        })
+        .run()
+        .await;
+
+    let proxy = proxy::new().inbound(srv).run().await;
+
+    let client = client::http1(proxy.inbound, "identity.test.svc.cluster.local");
+    assert_eventually!(
+        client
+            .request(client.request_builder("/ready").method("GET"))
+            .await
+            .unwrap()
+            .status()
+            == http::StatusCode::OK
+    );
+
+    assert_eq!(
+        client
+            .request(
+                client
+                    .request_builder("/check-identity")
+                    .method("GET")
+                    .header("l5d-identity", "spoof")
+            )
+            .await
+            .unwrap()
+            .status(),
+        http::StatusCode::OK
+    );
+}
