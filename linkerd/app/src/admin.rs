@@ -32,8 +32,12 @@ pub struct Admin {
 }
 
 #[derive(Debug, Error)]
-#[error("non-HTTP connection from {} (tls={:?})", self.0.client_addr, self.0.tls)]
-struct NonHttpClient(TcpAccept);
+#[error("non-HTTP connection from {}", self.0)]
+struct NonHttpClient(Remote<ClientAddr>);
+
+#[derive(Debug, Error)]
+#[error("Unexpected TLS connection to {} from {}", self.0, self.1)]
+struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
 
 // === impl Config ===
 
@@ -77,11 +81,39 @@ impl Config {
                 )| {
                     match version {
                         Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
-                        Err(_) => {
-                            debug!("HTTP detection timed out; handling as HTTP/1");
-                            Ok(HttpAccept::from((http::Version::Http1, tcp)))
+                        // If detection timed out, we can make an educated guess
+                        // at the proper behavior:
+                        // - If the connection was meshed, it was most likely
+                        //   transported over HTTP/2.
+                        // - If the connection was unmehsed, it was mostly
+                        //   likely HTTP/1.
+                        // - If we received some unexpected SNI, the client is
+                        //   mostly likely confused/stale.
+                        Err(_timeout) => {
+                            let version = match tcp.tls.clone() {
+                                tls::ConditionalServerTls::None(_) => http::Version::Http1,
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                    ..
+                                }) => http::Version::H2,
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Passthru {
+                                    sni,
+                                }) => {
+                                    debug_assert!(false, "If we know the stream is non-mesh TLS, we should be able to prove its not HTTP.");
+                                    return Err(Error::from(UnexpectedSni(sni, tcp.client_addr)));
+                                }
+                            };
+                            debug!(%version, "HTTP detection timed out; assuming HTTP");
+                            Ok(HttpAccept::from((version, tcp)))
                         }
-                        Ok(None) => Err(NonHttpClient(tcp)),
+                        // If the connection failed HTTP detection, check if we
+                        // detected TLS for another target. This might indicate
+                        // that the client is confused/stale.
+                        Ok(None) => match tcp.tls {
+                            tls::ConditionalServerTls::Some(tls::ServerTls::Passthru { sni }) => {
+                                Err(UnexpectedSni(sni, tcp.client_addr).into())
+                            }
+                            _ => Err(NonHttpClient(tcp.client_addr).into()),
+                        },
                     }
                 },
             )
