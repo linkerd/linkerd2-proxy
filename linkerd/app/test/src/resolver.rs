@@ -139,9 +139,7 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
             .unwrap_or_else(|| {
                 tracing::debug!(?addr, "no endpoint configured for");
                 // An unknown endpoint was resolved!
-                self.state
-                    .only
-                    .compare_and_swap(true, false, Ordering::Release);
+                self.state.only.store(false, Ordering::Release);
                 let (tx, rx) = mpsc::unbounded_channel();
                 let _ = tx.send(Ok(Update::DoesNotExist));
                 UnboundedReceiverStream::new(rx)
@@ -212,9 +210,7 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
             .unwrap_or_else(|| {
                 tracing::debug!(?addr, "no endpoint configured for");
                 // An unknown endpoint was resolved!
-                self.state
-                    .only
-                    .compare_and_swap(true, false, Ordering::Release);
+                self.state.only.store(false, Ordering::Release);
                 None
             });
 
