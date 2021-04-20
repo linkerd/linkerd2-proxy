@@ -273,23 +273,35 @@ mod tests {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use super::*;
-    pub async fn fuzz_entry_structured(
-        fuzz_name: &str,
-        fuzz_port: u16,
-        fuzz_proto: SessionProtocol,
-    ) {
-        let header = TransportHeader {
-            port: fuzz_port,
-            name: Name::from_str(fuzz_name).ok(),
-            protocol: Some(fuzz_proto),
-        };
-        let mut rx = {
+    use libfuzzer_sys::arbitrary::Arbitrary;
+
+    #[derive(Debug, Arbitrary)]
+    pub struct TransportHeaderSpec {
+        data: Vec<u8>,
+        port: u16,
+        protocol: bool,
+    }
+
+    pub async fn fuzz_entry_structured(transport_header: TransportHeaderSpec) {
+        if let Ok(fuzz_name) = std::str::from_utf8(&transport_header.data[..]) {
+            let fuzz_proto = if transport_header.protocol {
+                SessionProtocol::Http2
+            } else {
+                SessionProtocol::Http1
+            };
+            let header = TransportHeader {
+                port: transport_header.port,
+                name: Name::from_str(fuzz_name).ok(),
+                protocol: Some(fuzz_proto),
+            };
+            let mut rx = {
+                let mut buf = BytesMut::new();
+                header.encode_prefaced(&mut buf).expect("must encode");
+                std::io::Cursor::new(buf.freeze())
+            };
             let mut buf = BytesMut::new();
-            header.encode_prefaced(&mut buf).expect("must encode");
-            std::io::Cursor::new(buf.freeze())
-        };
-        let mut buf = BytesMut::new();
-        let _h = TransportHeader::read_prefaced(&mut rx, &mut buf).await;
+            let _h = TransportHeader::read_prefaced(&mut rx, &mut buf).await;
+        }
     }
 
     pub async fn fuzz_entry_raw(fuzz_data: &[u8]) {

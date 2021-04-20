@@ -21,6 +21,10 @@ tracing = "0.1.23"
 [build-dependencies]
 prost-build = { version = "0.7", default-features = false }
 
+[target.'cfg(fuzzing)'.dependencies]
+arbitrary = { version = "1",  features = ["derive"] }
+libfuzzer-sys = { version = "0.4.0", features = ["arbitrary-derive"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
 tokio-test = "0.4"
