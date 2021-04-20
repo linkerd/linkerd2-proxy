@@ -37,6 +37,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afddf7f520a80dbf76e6f50a35bca42a2331ef227a28b3b6dc5c2e2338d114b1"
 
 [[package]]
+name = "arbitrary"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "698b65a961a9d730fb45b6b0327e20207810c9f61ee421b082b27ba003f49e2b"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "async-stream"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -161,6 +170,17 @@ dependencies = [
  "adler32",
  "byteorder",
  "gzip-header",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df89dd0d075dea5cc5fdd6d5df6b8a61172a710b3efac1d6bdb9dd8b78f82c1a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -571,6 +591,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7282d924be3275cec7f6756ff4121987bc6481325397dde6ba3e7802b1a8b1c"
 
 [[package]]
+name = "libfuzzer-sys"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86c975d637bc2a2f99440932b731491fc34c7f785d239e38af3addd3c2fd0e46"
+dependencies = [
+ "arbitrary",
+ "cc",
+]
+
+[[package]]
 name = "libmimalloc-sys"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -700,11 +730,13 @@ dependencies = [
 name = "linkerd-app-inbound"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "bytes",
  "futures",
  "http",
  "hyper",
  "indexmap",
+ "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
@@ -1384,9 +1416,11 @@ dependencies = [
 name = "linkerd-transport-header"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "async-trait",
  "bytes",
  "futures",
+ "libfuzzer-sys",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-io",
