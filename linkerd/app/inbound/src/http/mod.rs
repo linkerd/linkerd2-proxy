@@ -259,6 +259,7 @@ pub mod fuzz_logic {
     };
     use hyper::http;
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
+    use libfuzzer_sys::arbitrary::Arbitrary;
     use linkerd_app_core::{
         io::{self, BoxedIo},
         proxy,
@@ -270,7 +271,15 @@ pub mod fuzz_logic {
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
 
-    pub async fn fuzz_entry_raw(uri: &str, header_name: &str, header_value: &str, is_get: bool) {
+    #[derive(Debug, Arbitrary)]
+    pub struct HttpRequestSpec {
+        pub uri: Vec<u8>,
+        pub header_name: Vec<u8>,
+        pub header_value: Vec<u8>,
+        pub http_method: bool,
+    }
+
+    pub async fn fuzz_entry_raw(requests: Vec<HttpRequestSpec>) {
         let mut server = hyper::server::conn::Http::new();
         server.http1_only(true);
         let mut client = ClientBuilder::new();
@@ -295,29 +304,29 @@ pub mod fuzz_logic {
         let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(accept);
         let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
-        let http_method = if is_get {
-            http::Method::GET
-        } else {
-            http::Method::POST
-        };
+        // Now send all of the requests
+        for inp in requests.iter() {
+            if let Ok(uri) = std::str::from_utf8(&inp.uri[..]) {
+                if let Ok(header_name) = std::str::from_utf8(&inp.header_name[..]) {
+                    if let Ok(header_value) = std::str::from_utf8(&inp.header_value[..]) {
+                        let http_method = if inp.http_method {
+                            http::Method::GET
+                        } else {
+                            http::Method::POST
+                        };
 
-        if let Ok(req) = Request::builder()
-            .method(http_method)
-            .uri(uri)
-            .header(header_name, header_value)
-            .body(Body::default())
-        {
-            let rsp = http_util::http_request(&mut client, req).await;
-            let _body = http_util::body_to_string(rsp.into_body()).await;
-
-            // Let's send one with a correct URL
-            let req2 = Request::builder()
-                .method(http::Method::GET)
-                .uri("http://foo.svc.cluster.local:5550")
-                .body(Body::default())
-                .unwrap();
-            let rsp2 = http_util::http_request(&mut client, req2).await;
-            let _body = http_util::body_to_string(rsp2.into_body()).await;
+                        if let Ok(req) = Request::builder()
+                            .method(http_method)
+                            .uri(uri)
+                            .header(header_name, header_value)
+                            .body(Body::default())
+                        {
+                            let rsp = http_util::http_request(&mut client, req).await;
+                            let _body = http_util::body_to_string(rsp.into_body()).await;
+                        }
+                    }
+                }
+            }
         }
 
         drop(client);
