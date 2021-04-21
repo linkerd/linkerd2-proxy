@@ -1017,7 +1017,6 @@ dependencies = [
  "rand",
  "thiserror",
  "tokio",
- "tokio-test",
  "tower",
  "tracing",
  "try-lock",
@@ -1273,11 +1272,9 @@ dependencies = [
 name = "linkerd-transport-header"
 version = "0.1.0"
 dependencies = [
- "arbitrary",
  "async-trait",
  "bytes",
  "futures",
- "libfuzzer-sys",
  "linkerd-dns-name",
  "linkerd-error",
  "linkerd-io",

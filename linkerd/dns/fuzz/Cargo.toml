@@ -9,26 +9,20 @@ edition = "2018"
 [package.metadata]
 cargo-fuzz = true
 
-[dependencies]
+[target.'cfg(fuzzing)'.dependencies]
 libfuzzer-sys = "0.4"
+linkerd-dns = { path = ".." }
 tokio = { version = "1", features = ["rt", "time", "io-util"] }
-
-[dependencies.linkerd-dns]
-path = ".."
 
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
-
-[features]
-fuzzing = []
 
 [[bin]]
 name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
 test = false
 doc = false
-required-features = ["fuzzing"]
 
 [patch.crates-io]
 trust-dns-proto = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }

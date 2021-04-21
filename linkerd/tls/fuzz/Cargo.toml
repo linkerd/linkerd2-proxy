@@ -9,25 +9,19 @@ edition = "2018"
 [package.metadata]
 cargo-fuzz = true
 
-[dependencies]
+[target.'cfg(fuzzing)'.dependencies]
 libfuzzer-sys = "0.4"
-
-[dependencies.linkerd-tls]
-path = ".."
+linkerd-tls = { path = ".." }
 
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
-
-[features]
-fuzzing = []
 
 [[bin]]
 name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
 test = false
 doc = false
-required-features = ["fuzzing"]
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21"}
