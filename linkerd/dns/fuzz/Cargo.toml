@@ -12,6 +12,8 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 tokio = { version = "1", features = ["rt", "time", "io-util"] }
+tracing = "0.1.23"
+tracing-subscriber = "0.2.17"
 
 [dependencies.linkerd-dns]
 path = ".."

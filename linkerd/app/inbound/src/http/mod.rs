@@ -270,8 +270,9 @@ pub mod fuzz_logic {
     };
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
+    use std::{fmt, str};
 
-    #[derive(Debug, Arbitrary)]
+    #[derive(Arbitrary)]
     pub struct HttpRequestSpec {
         pub uri: Vec<u8>,
         pub header_name: Vec<u8>,
@@ -377,5 +378,35 @@ pub mod fuzz_logic {
             .push_http_router(profiles)
             .push_http_server()
             .into_inner()
+    }
+
+    impl fmt::Debug for HttpRequestSpec {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            // Custom `Debug` impl that formats the URI, header name, and header
+            // value as strings if they are UTF-8, or falls back to raw bytes
+            // otherwise.
+            let mut dbg = f.debug_struct("HttpRequestSpec");
+            dbg.field("http_method", &self.http_method);
+
+            if let Ok(uri) = str::from_utf8(&self.uri[..]) {
+                dbg.field("uri", &uri);
+            } else {
+                dbg.field("uri", &self.uri);
+            }
+
+            if let Ok(name) = str::from_utf8(&self.header_name[..]) {
+                dbg.field("header_name", &name);
+            } else {
+                dbg.field("header_name", &self.header_name);
+            }
+
+            if let Ok(value) = str::from_utf8(&self.header_value[..]) {
+                dbg.field("header_value", &value);
+            } else {
+                dbg.field("header_value", &self.header_value);
+            }
+
+            dbg.finish()
+        }
     }
 }
