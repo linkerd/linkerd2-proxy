@@ -60,7 +60,7 @@ jobs:
       image: docker://rust:1.49.0-buster
     steps:
       - uses: actions/checkout@v2
-      - run: rustup component toolchain add nightly
+      - run: rustup toolchain add nightly
       # Iterate through all fuzz crates to ensure each compiles indpendently.
       - run: for d in $(find . -name fuzz | sort -r) ; do echo "# $d" ; (cd $d ; cargo +nightly fuzz build) ; done
       - run: git diff-index --quiet HEAD # Error if the repo isn't clean (i.e. because lockfiles were modified).
