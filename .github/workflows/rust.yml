@@ -54,7 +54,7 @@ jobs:
       - run: for d in $(for toml in $(find . -name Cargo.toml) ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
   build-fuzz:
-    timeout-minutes: 20
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     container:
       image: docker://rust:1.49.0-buster
