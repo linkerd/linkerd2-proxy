@@ -323,6 +323,7 @@ pub mod fuzz_logic {
                             .body(Body::default())
                         {
                             let rsp = http_util::http_request(&mut client, req).await;
+                            tracing::info!(?rsp);
                             let _body = http_util::body_to_string(rsp.into_body()).await;
                         }
                     }
@@ -331,7 +332,13 @@ pub mod fuzz_logic {
         }
 
         drop(client);
-        bg.await;
+        // It's okay if the background task returns an error, as this would
+        // indcate that the proxy closed the connection --- which it will do on
+        // invalid inputs. We want to ensure that the proxy doesn't crash in the
+        // face of these inputs, and the background task will panic in this
+        // case.
+        let res = bg.await;
+        tracing::info!(?res, "background tasks completed")
     }
 
     fn hello_fuzz_server(
