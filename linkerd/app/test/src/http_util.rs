@@ -36,7 +36,7 @@ impl Default for Server {
     }
 }
 
-pub async fn run_proxy<S>(mut server: S) -> (io::DuplexStream, JoinHandle<()>)
+pub async fn run_proxy<S>(mut server: S) -> (io::DuplexStream, JoinHandle<Result<(), Error>>)
 where
     S: tower::Service<io::DuplexStream> + Send + Sync + 'static,
     S::Error: Into<Error>,
@@ -56,7 +56,7 @@ where
         drop(server);
         tracing::debug!("dropped server");
         tracing::info!(?res, "proxy serve task complete");
-        res.expect("proxy failed");
+        res.map(|_| ())
     }
     .instrument(tracing::info_span!("proxy"));
     (client_io, tokio::spawn(proxy))
@@ -65,7 +65,7 @@ where
 pub async fn connect_client(
     client_settings: &mut ClientBuilder,
     io: io::DuplexStream,
-) -> (SendRequest<Body>, JoinHandle<()>) {
+) -> (SendRequest<Body>, JoinHandle<Result<(), Error>>) {
     let (client, conn) = client_settings
         .handshake(io)
         .await
@@ -73,7 +73,7 @@ pub async fn connect_client(
     let client_bg = conn
         .map(|res| {
             tracing::info!(?res, "Client background complete");
-            res.expect("client bg task failed");
+            res.map_err(Into::into)
         })
         .instrument(tracing::info_span!("client_bg"));
     (client, tokio::spawn(client_bg))
@@ -82,7 +82,7 @@ pub async fn connect_client(
 pub async fn connect_and_accept<S>(
     client_settings: &mut ClientBuilder,
     server: S,
-) -> (SendRequest<Body>, impl Future<Output = ()>)
+) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>)
 where
     S: tower::Service<io::DuplexStream> + Send + Sync + 'static,
     S::Error: Into<Error>,
@@ -93,11 +93,9 @@ where
     let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;
     let bg = async move {
-        let res = tokio::try_join! {
-            proxy,
-            client_bg,
-        };
-        res.unwrap();
+        proxy.await.expect("proxy background task panicked")?;
+        client_bg.await.expect("client background task panicked")?;
+        Ok(())
     };
     (client, bg)
 }

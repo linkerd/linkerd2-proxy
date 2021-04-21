@@ -18,6 +18,8 @@ http = "0.2"
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
 linkerd-app-test = { path = "../../test" }
+tracing = "0.1"
+tracing-subscriber = "0.2"
 
 # Prevent this from interfering with workspaces
 [workspace]

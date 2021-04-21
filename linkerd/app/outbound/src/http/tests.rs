@@ -278,7 +278,7 @@ async fn meshed_hello_world() {
     assert_eq!(body, "Hello world!");
 
     drop(client);
-    bg.await;
+    bg.await.expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -338,7 +338,7 @@ async fn stacks_idle_out() {
     assert_eq!(body, "Hello world!");
 
     drop(client);
-    bg.await;
+    bg.await.expect("background task failed");
 
     assert_eq!(handle.tracked_services(), 1);
     // wait for long enough to ensure that it _definitely_ idles out...
@@ -438,8 +438,14 @@ async fn active_stacks_dont_idle_out() {
     tokio::time::sleep(idle_timeout * 2).await;
     assert_eq!(handle.tracked_services(), 0);
 
-    client_bg.await.unwrap();
-    proxy_bg.await.unwrap();
+    client_bg
+        .await
+        .unwrap()
+        .expect("client background task failed");
+    proxy_bg
+        .await
+        .unwrap()
+        .expect("proxy background task failed");
 }
 
 async fn unmeshed_hello_world(
@@ -470,7 +476,7 @@ async fn unmeshed_hello_world(
     assert_eq!(body, "Hello world!");
 
     drop(client);
-    bg.await;
+    bg.await.expect("background task failed");
 }
 
 #[tracing::instrument]

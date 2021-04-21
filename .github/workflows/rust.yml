@@ -64,7 +64,7 @@ jobs:
       - run: cargo install cargo-fuzz
       # Iterate through all fuzz crates to ensure each compiles indpendently.
       - run: for d in $(find . -name fuzz | sort -r) ; do echo "# $d" ; (cd $d ; cargo +nightly fuzz build) ; done
-      - run: git diff-index --quiet HEAD # Error if the repo isn't clean (i.e. because lockfiles were modified).
+      - run: git diff-index HEAD # Error if the repo isn't clean (i.e. because lockfiles were modified).
 
   test:
     timeout-minutes: 15

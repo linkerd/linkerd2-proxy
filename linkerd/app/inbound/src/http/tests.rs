@@ -87,7 +87,7 @@ async fn unmeshed_http1_hello_world() {
     assert_eq!(body, "Hello world!");
 
     drop(client);
-    bg.await;
+    bg.await.expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -136,7 +136,7 @@ async fn downgrade_origin_form() {
     assert_eq!(body, "Hello world!");
 
     drop(client);
-    bg.await;
+    bg.await.expect("background task failed");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -184,7 +184,7 @@ async fn downgrade_absolute_form() {
     assert_eq!(body, "Hello world!");
 
     drop(client);
-    bg.await;
+    bg.await.expect("background task failed");
 }
 
 #[tracing::instrument]
