@@ -93,14 +93,8 @@ where
     let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;
     let bg = async move {
-        let proxy = async move { proxy.await.expect("proxy background task panicked") };
-        let client_bg = async move { client_bg.await.expect("client background task panicked") };
-        let res = tokio::join! {
-            proxy,
-            client_bg,
-        };
-        res.0?;
-        res.1?;
+        proxy.await.expect("proxy background task panicked")?;
+        client_bg.await.expect("client background task panicked")?;
         Ok(())
     };
     (client, bg)
