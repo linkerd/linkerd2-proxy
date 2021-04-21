@@ -37,7 +37,6 @@ pub mod control;
 pub mod dns;
 pub mod dst;
 pub mod errors;
-pub mod handle_time;
 pub mod http_tracing;
 pub mod metrics;
 pub mod proxy;
