@@ -97,7 +97,7 @@ impl Test {
             mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
 
         let new = NewGateway::new(
-            move |_: outbound::http::Logical| outbound.clone(),
+            move |_: crate::Logical<http::Version>| outbound.clone(),
             Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
         );
 
