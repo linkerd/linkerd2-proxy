@@ -1,6 +1,7 @@
 use super::Endpoint;
 
 use crate::{
+    logical::ConcreteAddr,
     test_util::{
         support::{connect::Connect, http_util, profile, resolver, track},
         *,
@@ -11,6 +12,7 @@ use bytes::Bytes;
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     io, profiles,
+    proxy::core::Resolve,
     svc::{self, NewService},
     tls,
     transport::orig_dst,
@@ -27,11 +29,11 @@ use tokio::time;
 use tower::{Service, ServiceExt};
 use tracing::Instrument;
 
-fn build_server<I>(
+fn build_server<I, R>(
     cfg: Config,
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
-    resolver: resolver::Dst<resolver::Metadata>,
+    resolver: R,
     connect: Connect<Endpoint>,
 ) -> impl svc::NewService<
     orig_dst::Addrs,
@@ -46,16 +48,19 @@ fn build_server<I>(
        + 'static
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    R: Resolve<ConcreteAddr, Endpoint = resolver::Metadata, Error = Error> + Clone + Send + 'static,
+    R::Resolution: Send,
+    R::Future: Send + Unpin,
 {
     build_accept(cfg, rt, resolver, connect)
         .push_discover(profiles)
         .into_inner()
 }
 
-fn build_accept<I>(
+fn build_accept<I, R>(
     cfg: Config,
     rt: ProxyRuntime,
-    resolver: resolver::Dst<resolver::Metadata>,
+    resolver: R,
     connect: Connect<Endpoint>,
 ) -> Outbound<
     impl svc::NewService<
@@ -69,6 +74,9 @@ fn build_accept<I>(
 >
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
+    R: Resolve<ConcreteAddr, Endpoint = resolver::Metadata, Error = Error> + Clone + Send + 'static,
+    R::Resolution: Send,
+    R::Future: Send + Unpin,
 {
     let out = Outbound::new(cfg, rt);
     let connect = out.clone().with_stack(connect);
@@ -270,6 +278,58 @@ async fn meshed_hello_world() {
     // Build the outbound server
     let (rt, _shutdown) = runtime();
     let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(ep1));
+    let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
+
+    let rsp = http_util::http_request(&mut client, Request::default()).await;
+    assert_eq!(rsp.status(), http::StatusCode::OK);
+    let body = http_util::body_to_string(rsp.into_body()).await;
+    assert_eq!(body, "Hello world!");
+
+    drop(client);
+    bg.await.expect("background task failed");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn profile_overrides_endpoint_no_logical() {
+    // Tests that when a profile is resolved with no logical name, but an
+    // endpoint override, the endpoint override is honored.`s`
+    let _trace = support::trace_init();
+
+    let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    let ep1 = SocketAddr::new([10, 62, 0, 42].into(), 5550);
+    let cfg = default_config();
+    let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+        .expect("hostname is invalid");
+    let meta = support::resolver::Metadata::new(
+        Default::default(),
+        support::resolver::ProtocolHint::Http2,
+        None,
+        Some(id.clone()),
+        None,
+    );
+
+    // Pretend the upstream is a proxy that supports proto upgrades...
+    let mut server_settings = hyper::server::conn::Http::new();
+    server_settings.http2_only(true);
+    let meta2 = meta.clone();
+    let connect = support::connect().endpoint_fn_boxed(ep1, move |endpoint: Endpoint| {
+        assert_eq!(endpoint.metadata, meta2);
+        hello_server(server_settings.clone())(endpoint)
+    });
+
+    let profiles = profile::resolver().profile(
+        orig_dst,
+        profile::Profile {
+            endpoint: Some((ep1, meta)),
+            ..Default::default()
+        },
+    );
+
+    let resolver = support::resolver::no_destinations();
+
+    // Build the outbound server
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(orig_dst));
     let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
 
     let rsp = http_util::http_request(&mut client, Request::default()).await;
