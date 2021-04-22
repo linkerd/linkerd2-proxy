@@ -39,8 +39,8 @@ where
         R::Resolution: Send,
         R::Future: Send + Unpin,
         Concrete<T>: From<(ConcreteAddr, T)>,
-        Endpoint: From<(tls::NoClientTls, T)>,
         T: svc::Param<LogicalAddr> + svc::Param<profiles::Receiver> + svc::Param<()>,
+        T: endpoint::ToEndpoint<()>,
         T: Clone + std::fmt::Debug + Eq + std::hash::Hash + Send + Sync + 'static,
     {
         let Self {

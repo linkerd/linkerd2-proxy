@@ -46,13 +46,13 @@ impl<E> Outbound<E> {
         R::Resolution: Send,
         R::Future: Send + Unpin,
         Concrete<T>: From<(ConcreteAddr, T)>,
-        Endpoint: From<(tls::NoClientTls, T)>,
         T: Param<LogicalAddr>
             + Param<profiles::Receiver>
             + Param<http::Version>
             + Param<normalize_uri::DefaultAuthority>
             + Param<CanonicalDstHeader>
             + Param<http::Version>,
+        T: endpoint::ToEndpoint<http::Version>,
         T: Clone + std::fmt::Debug + Eq + std::hash::Hash + Send + Sync + 'static,
     {
         let Self {

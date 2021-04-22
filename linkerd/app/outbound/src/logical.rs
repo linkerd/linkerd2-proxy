@@ -1,4 +1,8 @@
-use crate::{endpoint::Endpoint, http::SkipHttpDetection, Accept, Outbound};
+use crate::{
+    endpoint::{Endpoint, ToEndpoint},
+    http::SkipHttpDetection,
+    Accept, Outbound,
+};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     profiles,
@@ -111,10 +115,9 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
 
 pub fn or_endpoint<T, P>(
     reason: tls::NoClientTls,
-) -> impl Fn(T) -> Result<svc::Either<T, Endpoint<P>>, Error> + Copy
+) -> impl Fn(T) -> Result<svc::Either<T, Endpoint<P>>, <T as ToEndpoint<P>>::Error> + Copy
 where
-    T: Param<profiles::Receiver> + std::fmt::Debug,
-    Endpoint<P>: From<(tls::NoClientTls, T)>,
+    T: Param<profiles::Receiver> + ToEndpoint<P> + std::fmt::Debug,
 {
     move |target: T| {
         let should_resolve = {
@@ -126,7 +129,7 @@ where
             Ok(svc::Either::A(target))
         } else {
             debug!(%reason, ?target, "Target is unresolveable");
-            Ok(svc::Either::B(Endpoint::from((reason, target))))
+            Ok(svc::Either::B(target.to_endpoint(reason)?))
         }
     }
 }

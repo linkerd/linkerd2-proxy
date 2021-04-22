@@ -15,7 +15,6 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::OrigDstAddr,
     transport_header::SessionProtocol,
     Addr, Error, NameAddr, NameMatch, Never,
 };
@@ -126,48 +125,48 @@ where
         .push_tcp_endpoint()
         .push_tcp_logical::<Logical<()>, _, _>(resolve.clone())
         .into_stack()
-        .check_new_clone::<Logical<()>>();
-    tcp.push_request_filter(
-        |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
-            let profile = p.ok_or_else(discovery_rejected)?;
-            let logical_addr = profile
-                .borrow()
-                .addr
-                .clone()
-                .ok_or_else(discovery_rejected)?;
-            Ok(Logical {
-                profile,
-                protocol: (),
-                logical_addr,
-            })
-        } as fn(_) -> _,
-    )
-    .push(profiles::discover::layer(profiles.clone(), {
-        let allow = allow_discovery.clone();
-        move |addr: NameAddr| {
-            if allow.matches(addr.name()) {
-                Ok(profiles::LookupAddr(addr.into()))
-            } else {
-                Err(RefusedNotResolved(addr))
+        .check_new_service::<Logical<()>, _>()
+        .push_request_filter(
+            |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
+                let profile = p.ok_or_else(discovery_rejected)?;
+                let logical_addr = profile
+                    .borrow()
+                    .addr
+                    .clone()
+                    .ok_or_else(discovery_rejected)?;
+                Ok(Logical {
+                    profile,
+                    protocol: (),
+                    logical_addr,
+                })
+            } as fn(_) -> _,
+        )
+        .push(profiles::discover::layer(profiles.clone(), {
+            let allow = allow_discovery.clone();
+            move |addr: NameAddr| {
+                if allow.matches(addr.name()) {
+                    Ok(profiles::LookupAddr(addr.into()))
+                } else {
+                    Err(RefusedNotResolved(addr))
+                }
             }
-        }
-    }))
-    .check_new_clone::<NameAddr>()
-    .push_on_response(
-        svc::layers()
-            .push(
-                inbound
-                    .runtime()
-                    .metrics
-                    .stack
-                    .layer(metrics::StackLabels::inbound("tcp", "gateway")),
-            )
-            .push(svc::layer::mk(svc::SpawnReady::new))
-            .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
-            .push_spawn_buffer(buffer_capacity),
-    )
-    .push_cache(cache_max_idle_age)
-    .check_new_service::<NameAddr, I>();
+        }))
+        .check_new_service::<NameAddr, _>()
+        .push_on_response(
+            svc::layers()
+                .push(
+                    inbound
+                        .runtime()
+                        .metrics
+                        .stack
+                        .layer(metrics::StackLabels::inbound("tcp", "gateway")),
+                )
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .push_cache(cache_max_idle_age)
+        .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
     //
@@ -177,8 +176,9 @@ where
     let http = outbound
         .push_tcp_endpoint()
         .push_http_endpoint()
-        .push_http_logical(resolve)
+        .push_http_logical::<Logical<http::Version>, _, _, _>(resolve)
         .into_stack()
+        .check_new_service::<Logical<http::Version>, _>()
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
             if allow_discovery.matches(t.target.name()) {
@@ -227,6 +227,7 @@ where
             detect_protocol_timeout,
             http::DetectHttp::default(),
         ))
+        .check_new_service::<ClientInfo, _>()
         .into_inner();
 
     // When a transported connection is received, use the header's target to
@@ -240,6 +241,7 @@ where
         )
         .push_http_server()
         .into_stack()
+        .check_new_service::<HttpTransportHeader, _>()
         .push_switch(
             |GatewayTransportHeader {
                  target,
@@ -258,6 +260,7 @@ where
             },
             tcp.into_inner(),
         )
+        .check_new_service::<GatewayTransportHeader, _>()
         .push_switch(
             |gw| match gw {
                 GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
@@ -328,7 +331,7 @@ impl From<(http::Version, Logical<()>)> for Logical<http::Version> {
 
 impl Param<outbound::http::CanonicalDstHeader> for Logical<http::Version> {
     fn param(&self) -> outbound::http::CanonicalDstHeader {
-        outbound::http::CanonicalDstHeader(Addr::from(self.logical_addr.0))
+        outbound::http::CanonicalDstHeader(Addr::from(self.logical_addr.clone().0))
     }
 }
 
@@ -345,6 +348,35 @@ impl Param<normalize_uri::DefaultAuthority> for Logical<http::Version> {
             uri::Authority::from_str(&self.logical_addr.to_string())
                 .expect("Address must be a valid authority"),
         ))
+    }
+}
+
+// === impl Logical<Tcp> ===
+
+impl Param<()> for Logical<()> {
+    fn param(&self) -> () {}
+}
+
+impl<P> outbound::endpoint::ToEndpoint<P> for Logical<P> {
+    type Error = RefusedNoTarget;
+    fn to_endpoint(
+        self,
+        reason: tls::NoClientTls,
+    ) -> Result<outbound::endpoint::Endpoint<P>, Self::Error> {
+        use linkerd_app_core::transport::{Remote, ServerAddr};
+        let (addr, metadata) = self
+            .profile
+            .borrow()
+            .endpoint
+            .clone()
+            .ok_or(RefusedNoTarget(()))?;
+        Ok(outbound::endpoint::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            tls: outbound::endpoint::FromMetadata::<P>::client_tls(&metadata, reason),
+            metadata,
+            logical_addr: self.logical_addr.0.into(),
+            protocol: self.protocol,
+        })
     }
 }
 

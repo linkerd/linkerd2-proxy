@@ -9,7 +9,7 @@ use linkerd_app_core::{
     svc::{self, Param},
     tls,
     transport::{self, Remote, ServerAddr},
-    transport_header, Addr, Conditional,
+    transport_header, Addr, Conditional, Error, Never,
 };
 use std::net::SocketAddr;
 
@@ -26,6 +26,11 @@ pub struct Endpoint<P> {
 pub struct FromMetadata<P> {
     pub identity_disabled: bool,
     _protocol: std::marker::PhantomData<fn(P)>,
+}
+
+pub trait ToEndpoint<P> {
+    type Error: Into<Error>;
+    fn to_endpoint(self, no_tls: tls::NoClientTls) -> Result<Endpoint<P>, Self::Error>;
 }
 
 impl<E> Outbound<E> {
@@ -159,6 +164,28 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     }
 }
 
+impl<P> ToEndpoint<P> for crate::logical::Logical<P> {
+    type Error = Never;
+    fn to_endpoint(self, reason: tls::NoClientTls) -> Result<Endpoint<P>, Self::Error> {
+        Ok(match self.profile.borrow().endpoint.clone() {
+            None => Endpoint {
+                addr: Remote(ServerAddr(self.orig_dst.into())),
+                metadata: Metadata::default(),
+                tls: Conditional::None(reason),
+                logical_addr: self.addr(),
+                protocol: self.protocol,
+            },
+            Some((addr, metadata)) => Endpoint {
+                addr: Remote(ServerAddr(addr)),
+                tls: FromMetadata::<P>::client_tls(&metadata, reason),
+                metadata,
+                logical_addr: self.addr(),
+                protocol: self.protocol,
+            },
+        })
+    }
+}
+
 // === EndpointFromMetadata ===
 
 impl<P> FromMetadata<P> {
@@ -169,7 +196,7 @@ impl<P> FromMetadata<P> {
         }
     }
 
-    fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
+    pub fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with
         // a gateway, then set an ALPN value indicating support for a transport
         // header.
