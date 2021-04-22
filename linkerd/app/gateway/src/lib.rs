@@ -124,50 +124,50 @@ where
     let tcp = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_logical(resolve.clone())
+        .push_tcp_logical::<Logical<()>, _, _>(resolve.clone())
         .into_stack()
-        .check_new_clone::<Logical<()>>()
-        .push_request_filter(
-            |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
-                let profile = p.ok_or_else(discovery_rejected)?;
-                let logical_addr = profile
-                    .borrow()
-                    .addr
-                    .clone()
-                    .ok_or_else(discovery_rejected)?;
-                Ok(Logical {
-                    profile,
-                    protocol: (),
-                    logical_addr,
-                })
-            } as fn(_) -> _,
-        )
-        .push(profiles::discover::layer(profiles.clone(), {
-            let allow = allow_discovery.clone();
-            move |addr: NameAddr| {
-                if allow.matches(addr.name()) {
-                    Ok(profiles::LookupAddr(addr.into()))
-                } else {
-                    Err(RefusedNotResolved(addr))
-                }
+        .check_new_clone::<Logical<()>>();
+    tcp.push_request_filter(
+        |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
+            let profile = p.ok_or_else(discovery_rejected)?;
+            let logical_addr = profile
+                .borrow()
+                .addr
+                .clone()
+                .ok_or_else(discovery_rejected)?;
+            Ok(Logical {
+                profile,
+                protocol: (),
+                logical_addr,
+            })
+        } as fn(_) -> _,
+    )
+    .push(profiles::discover::layer(profiles.clone(), {
+        let allow = allow_discovery.clone();
+        move |addr: NameAddr| {
+            if allow.matches(addr.name()) {
+                Ok(profiles::LookupAddr(addr.into()))
+            } else {
+                Err(RefusedNotResolved(addr))
             }
-        }))
-        .check_new_clone::<NameAddr>()
-        .push_on_response(
-            svc::layers()
-                .push(
-                    inbound
-                        .runtime()
-                        .metrics
-                        .stack
-                        .layer(metrics::StackLabels::inbound("tcp", "gateway")),
-                )
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity),
-        )
-        .push_cache(cache_max_idle_age)
-        .check_new_service::<NameAddr, I>();
+        }
+    }))
+    .check_new_clone::<NameAddr>()
+    .push_on_response(
+        svc::layers()
+            .push(
+                inbound
+                    .runtime()
+                    .metrics
+                    .stack
+                    .layer(metrics::StackLabels::inbound("tcp", "gateway")),
+            )
+            .push(svc::layer::mk(svc::SpawnReady::new))
+            .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
+            .push_spawn_buffer(buffer_capacity),
+    )
+    .push_cache(cache_max_idle_age)
+    .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
     //

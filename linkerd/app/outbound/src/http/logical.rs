@@ -1,5 +1,9 @@
-use super::{normalize_uri, CanonicalDstHeader, Concrete, Endpoint};
-use crate::{endpoint, logical::LogicalAddr, resolve, stack_labels, Outbound};
+use super::{normalize_uri, CanonicalDstHeader, Endpoint};
+use crate::{
+    endpoint,
+    logical::{Concrete, LogicalAddr},
+    resolve, stack_labels, Outbound,
+};
 use linkerd_app_core::{
     classify, config, dst, profiles,
     proxy::{
@@ -41,13 +45,14 @@ impl<E> Outbound<E> {
         R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        Concrete: From<(ConcreteAddr, T)>,
+        Concrete<T>: From<(ConcreteAddr, T)>,
         Endpoint: From<(tls::NoClientTls, T)>,
         T: Param<LogicalAddr>
             + Param<profiles::Receiver>
             + Param<http::Version>
             + Param<normalize_uri::DefaultAuthority>
-            + Param<CanonicalDstHeader>,
+            + Param<CanonicalDstHeader>
+            + Param<http::Version>,
         T: Clone + std::fmt::Debug + Eq + std::hash::Hash + Send + Sync + 'static,
     {
         let Self {
@@ -74,11 +79,11 @@ impl<E> Outbound<E> {
         };
         let resolve = svc::stack(resolve.into_service())
             .check_service::<ConcreteAddr>()
-            .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
+            .push_request_filter(|c: Concrete<T>| Ok::<_, Never>(c.resolve))
             .push(svc::layer::mk(move |inner| {
-                map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
+                map_endpoint::Resolve::new(endpoint::FromMetadata::new(identity_disabled), inner)
             }))
-            .check_service::<Concrete>()
+            .check_service::<Concrete<T>>()
             .into_inner();
 
         let stack = endpoint
@@ -114,14 +119,14 @@ impl<E> Outbound<E> {
                     .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                     .push(http::BoxResponse::layer()),
             )
-            .check_make_service::<Concrete, http::Request<_>>()
+            .check_make_service::<Concrete<T>, http::Request<_>>()
             .push(svc::MapErrLayer::new(Into::into))
             // Drives the initial resolution via the service's readiness.
             .into_new_service()
             // The concrete address is only set when the profile could be
             // resolved. Endpoint resolution is skipped when there is no
             // concrete address.
-            .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
+            .instrument(|c: &Concrete<T>| debug_span!("concrete", addr = %c.resolve))
             .push_map_target(Concrete::from)
             // Distribute requests over a distribution of balancers via a
             // traffic split.

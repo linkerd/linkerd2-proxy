@@ -24,7 +24,7 @@ use std::{net::SocketAddr, str::FromStr, sync::Arc};
 
 pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
-pub type Concrete = crate::logical::Concrete<Version>;
+pub type Concrete = crate::logical::Concrete<Logical>;
 pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 #[derive(Clone, Debug)]
@@ -77,12 +77,6 @@ impl Param<CanonicalDstHeader> for Logical {
     }
 }
 
-impl Param<Version> for Logical {
-    fn param(&self) -> Version {
-        self.protocol
-    }
-}
-
 impl Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         if let Some(LogicalAddr(a)) = self.profile.borrow().addr.as_ref() {
@@ -96,6 +90,12 @@ impl Param<normalize_uri::DefaultAuthority> for Logical {
             uri::Authority::from_str(&self.orig_dst.to_string())
                 .expect("Address must be a valid authority"),
         ))
+    }
+}
+
+impl Param<Version> for Logical {
+    fn param(&self) -> Version {
+        self.protocol
     }
 }
 

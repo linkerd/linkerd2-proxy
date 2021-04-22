@@ -6,11 +6,8 @@ use linkerd_app_core::{
     profiles,
     proxy::http,
     svc::{self, layer},
-    tls,
-    transport::OrigDstAddr,
-    Error, NameAddr,
+    tls, Error, NameAddr,
 };
-use linkerd_app_outbound as outbound;
 use std::{
     future::Future,
     pin::Pin,

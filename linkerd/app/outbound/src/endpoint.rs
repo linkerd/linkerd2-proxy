@@ -1,5 +1,5 @@
 use crate::{
-    logical::{Concrete, Logical},
+    logical::{Concrete, Logical, LogicalAddr},
     tcp::opaque_transport,
     Accept, Outbound,
 };
@@ -23,8 +23,9 @@ pub struct Endpoint<P> {
 }
 
 #[derive(Copy, Clone)]
-pub struct FromMetadata {
+pub struct FromMetadata<P> {
     pub identity_disabled: bool,
+    _protocol: std::marker::PhantomData<fn(P)>,
 }
 
 impl<E> Outbound<E> {
@@ -76,7 +77,7 @@ impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
             },
             Some((addr, metadata)) => Self {
                 addr: Remote(ServerAddr(addr)),
-                tls: FromMetadata::client_tls(&metadata, reason),
+                tls: FromMetadata::<P>::client_tls(&metadata, reason),
                 metadata,
                 logical_addr: logical.addr(),
                 protocol: logical.protocol,
@@ -160,7 +161,14 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
 
 // === EndpointFromMetadata ===
 
-impl FromMetadata {
+impl<P> FromMetadata<P> {
+    pub fn new(identity_disabled: bool) -> Self {
+        Self {
+            identity_disabled,
+            _protocol: std::marker::PhantomData,
+        }
+    }
+
     fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with
         // a gateway, then set an ALPN value indicating support for a transport
@@ -187,12 +195,16 @@ impl FromMetadata {
     }
 }
 
-impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetadata {
+impl<P, L> MapEndpoint<Concrete<L>, Metadata> for FromMetadata<P>
+where
+    P: std::fmt::Debug,
+    L: Param<P> + Param<LogicalAddr> + std::fmt::Debug,
+{
     type Out = Endpoint<P>;
 
     fn map_endpoint(
         &self,
-        concrete: &Concrete<P>,
+        concrete: &Concrete<L>,
         addr: SocketAddr,
         metadata: Metadata,
     ) -> Self::Out {
@@ -206,8 +218,8 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
             addr: Remote(ServerAddr(addr)),
             tls,
             metadata,
-            logical_addr: concrete.logical.addr(),
-            protocol: concrete.logical.protocol,
+            logical_addr: Param::<LogicalAddr>::param(&concrete.logical).0.into(),
+            protocol: concrete.logical.param(),
         }
     }
 }

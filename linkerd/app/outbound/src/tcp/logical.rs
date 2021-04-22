@@ -1,7 +1,7 @@
-use super::{Concrete, Endpoint};
+use super::{Endpoint, Logical};
 use crate::{
     endpoint,
-    logical::{self, LogicalAddr},
+    logical::{self, Concrete, LogicalAddr},
     resolve, Outbound,
 };
 use linkerd_app_core::{
@@ -38,17 +38,10 @@ where
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        Concrete: From<(ConcreteAddr, T)>,
+        Concrete<T>: From<(ConcreteAddr, T)>,
         Endpoint: From<(tls::NoClientTls, T)>,
-        T: svc::Param<LogicalAddr>
-            + svc::Param<profiles::Receiver>
-            + Clone
-            + std::fmt::Debug
-            + Eq
-            + std::hash::Hash
-            + Send
-            + Sync
-            + 'static,
+        T: svc::Param<LogicalAddr> + svc::Param<profiles::Receiver> + svc::Param<()>,
+        T: Clone + std::fmt::Debug + Eq + std::hash::Hash + Send + Sync + 'static,
     {
         let Self {
             config,
@@ -71,11 +64,11 @@ where
         };
         let resolve = svc::stack(resolve.into_service())
             .check_service::<ConcreteAddr>()
-            .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
+            .push_request_filter(|c: Concrete<T>| Ok::<_, Never>(c.resolve))
             .push(svc::layer::mk(move |inner| {
-                map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
+                map_endpoint::Resolve::new(endpoint::FromMetadata::new(identity_disabled), inner)
             }))
-            .check_service::<Concrete>()
+            .check_service::<Concrete<T>>()
             .into_inner();
 
         let endpoint = connect
@@ -140,5 +133,15 @@ where
             runtime: rt,
             stack,
         }
+    }
+}
+
+// === impl TcpLogical ===
+
+// This is silly, but we need it so that the `From<Concrete<L>> for Endpoint<P>`
+// impl works...
+impl svc::Param<()> for Logical {
+    fn param(&self) -> () {
+        ()
     }
 }

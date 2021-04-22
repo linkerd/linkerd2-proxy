@@ -914,7 +914,7 @@ impl<P, D> Server<P, D> {
             .push_detect_http::<_, _, _, _, _, crate::http::Accept, _>(support::service::no_http())
             .into_inner();
         connect
-            .push_tcp_logical(resolver)
+            .push_tcp_logical::<crate::tcp::Logical, _, _>(resolver)
             .push_detect_http(support::service::no_http::<crate::http::Logical>())
             .push_unwrap_logical(endpoint)
             .push_discover(profiles)

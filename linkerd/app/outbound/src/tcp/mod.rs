@@ -10,7 +10,6 @@ use linkerd_app_core::{svc::Param, transport::OrigDstAddr, transport_header::Ses
 
 pub type Accept = crate::Accept<()>;
 pub type Logical = crate::logical::Logical<()>;
-pub type Concrete = crate::logical::Concrete<()>;
 pub type Endpoint = crate::endpoint::Endpoint<()>;
 
 impl From<OrigDstAddr> for Accept {

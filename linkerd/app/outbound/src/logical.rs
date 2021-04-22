@@ -19,9 +19,9 @@ pub struct Logical<P> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Concrete<P> {
+pub struct Concrete<T> {
     pub resolve: ConcreteAddr,
-    pub logical: Logical<P>,
+    pub logical: T,
 }
 
 pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
@@ -133,8 +133,8 @@ where
 
 // === impl Concrete ===
 
-impl<P> From<(ConcreteAddr, Logical<P>)> for Concrete<P> {
-    fn from((resolve, logical): (ConcreteAddr, Logical<P>)) -> Self {
+impl<T> From<(ConcreteAddr, T)> for Concrete<T> {
+    fn from((resolve, logical): (ConcreteAddr, T)) -> Self {
         Self { resolve, logical }
     }
 }

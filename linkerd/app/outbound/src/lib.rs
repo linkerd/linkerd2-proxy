@@ -153,12 +153,12 @@ impl<S> Outbound<S> {
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_http_logical(resolve.clone())
+            .push_http_logical::<crate::http::Logical, _, _, _>(resolve.clone())
             .push_http_server()
             .into_inner();
 
         self.push_tcp_endpoint()
-            .push_tcp_logical(resolve)
+            .push_tcp_logical::<crate::tcp::Logical, _, _>(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
             .push_detect_http(http_logical)

@@ -86,7 +86,7 @@ where
 
     let http = connect
         .push_http_endpoint()
-        .push_http_logical(resolver.clone())
+        .push_http_logical::<crate::http::Logical, _, _, _>(resolver.clone())
         .push_http_server()
         .into_inner();
 
