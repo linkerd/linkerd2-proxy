@@ -53,6 +53,20 @@ jobs:
       # Iterate through all subcrates to ensure each compiles indpendently.
       - run: for d in $(for toml in $(find . -name Cargo.toml) ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
+  build-fuzz:
+    timeout-minutes: 40
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.49.0-buster
+    steps:
+      - uses: actions/checkout@v2
+      - run: rustup toolchain add nightly
+      - run: cargo install cargo-fuzz
+      # Iterate through all fuzz crates to ensure each compiles indpendently.
+      - run: for d in $(find . -name fuzz | sort -r) ; do echo "# $d" ; (cd $d ; cargo +nightly fuzz build) ; done
+      # Error if the repo isn't clean (i.e. because lockfiles were modified).
+      - run: git status && git diff-index --quiet HEAD
+
   test:
     timeout-minutes: 15
     runs-on: ubuntu-latest
