@@ -192,14 +192,14 @@ impl Outbound<()> {
             .into_inner();
 
         let endpoint_override = tcp_forward
-            .push_detect_http::<endpoint::ProfileOverride<()>, _, _, _, _, _, _>(
+            .push_detect_http::<endpoint::ProfileOverride, _, _, _, _, _, _>(
                 http_endpoint
                     .clone()
                     .push_http_server::<http::Endpoint, _>()
                     .into_inner(),
             )
             .into_stack()
-            .check_new_service::<endpoint::ProfileOverride<()>, _>()
+            .check_new_service::<endpoint::ProfileOverride, _>()
             .into_inner();
 
         // HTTP stack for logical targets (with service profiles).

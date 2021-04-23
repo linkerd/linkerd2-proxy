@@ -28,11 +28,10 @@ pub struct Endpoint<P> {
 /// This has to be a type, rather than a tuple, so that we can implement
 /// `Param<SkipHttpDetection>` for it.
 #[derive(Clone, Debug)]
-pub struct ProfileOverride<P> {
-    endpoint: Endpoint<P>,
-    profile: profiles::Receiver,
+pub struct ProfileOverride {
+    endpoint: Endpoint<()>,
+    opaque_protocol: bool,
 }
-
 #[derive(Copy, Clone)]
 pub struct FromMetadata {
     pub identity_disabled: bool,
@@ -69,20 +68,20 @@ impl<E> Outbound<E> {
     }
 }
 impl<S> Outbound<S> {
-    pub fn push_endpoint_override<P, T, E, ESvc, SSvc, R>(
+    pub fn push_endpoint_override<T, E, ESvc, SSvc, R>(
         self,
         ep_override: E,
     ) -> Outbound<
         impl svc::NewService<(Option<profiles::Receiver>, T), Service = OrOverride<SSvc, ESvc>> + Clone,
     >
     where
-        E: svc::NewService<ProfileOverride<P>, Service = ESvc> + Clone,
+        E: svc::NewService<ProfileOverride, Service = ESvc> + Clone,
         S: svc::NewService<(Option<profiles::Receiver>, T), Service = SSvc> + Clone,
         SSvc: svc::Service<R, Error = Error>,
         SSvc::Future: Send,
         ESvc: svc::Service<R, Response = SSvc::Response, Error = Error>,
         ESvc::Future: Send,
-        T: std::fmt::Debug + Param<P>,
+        T: std::fmt::Debug,
     {
         let Self {
             config,
@@ -92,31 +91,32 @@ impl<S> Outbound<S> {
         let identity_disabled = runtime.identity.is_none();
         let stack = no_override.push_switch(
             move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Error> {
-                let profile = match profile {
+                let rx = match profile {
                     Some(profile) => profile,
                     None => return Ok(svc::Either::A((None, target))),
                 };
-                let maybe_endpoint = profile.borrow().endpoint.clone();
-
-                Ok(match maybe_endpoint {
-                    Some((addr, metadata)) => {
-                        tracing::debug!(%addr, ?metadata, ?target, "Using endpoint from profile override");
-                        let tls = if identity_disabled {
-                            tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
-                        } else {
-                            FromMetadata::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
-                        };
-                        let endpoint = Endpoint {
-                            addr: Remote(ServerAddr(addr)),
-                            tls,
-                            metadata,
-                            logical_addr: profile.borrow().addr.clone().map(|LogicalAddr(addr)| Addr::from(addr)).unwrap_or_else(|| Addr::from(addr)),
-                            protocol: target.param(),
-                        };
-                        svc::Either::B(ProfileOverride { profile, endpoint })
-                    },
-                    None => svc::Either::A((Some(profile), target)),
-                })
+                {
+                let profile = rx.borrow();
+                if let Some((addr, metadata)) = profile.endpoint.clone() {
+                    tracing::debug!(%addr, ?metadata, ?target, "Using endpoint from profile override");
+                    let tls = if identity_disabled {
+                        tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
+                    } else {
+                        FromMetadata::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
+                    };
+                    let logical_addr = profile.addr.clone().map(|LogicalAddr(addr)| Addr::from(addr)).unwrap_or_else(|| Addr::from(addr));
+                    let endpoint = Endpoint {
+                        addr: Remote(ServerAddr(addr)),
+                        tls,
+                        metadata,
+                        logical_addr,
+                        protocol: (),
+                    };
+                    let opaque_protocol = profile.opaque_protocol;
+                    return Ok(svc::Either::B(ProfileOverride { endpoint, opaque_protocol }));
+                }
+            };
+                Ok(svc::Either::A((Some(rx), target)))
             },
             ep_override,
         );
@@ -230,12 +230,6 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
     }
 }
 
-// impl From<(http::Version, ProfileOverride<()>)> for Endpoint<http::Version> {
-//     fn from((version, overridden): (http::Version, ProfileOverride<()>)) -> Self {
-//         Endpoint::from((version, overridden.endpoint))
-//     }
-// }
-
 // === EndpointFromMetadata ===
 
 impl FromMetadata {
@@ -290,15 +284,17 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
     }
 }
 
+// === ProfileOverride ===
+
 // Used for skipping HTTP detection for endpoint overrides
-impl svc::Param<SkipHttpDetection> for ProfileOverride<()> {
+impl svc::Param<SkipHttpDetection> for ProfileOverride {
     fn param(&self) -> SkipHttpDetection {
-        SkipHttpDetection(self.profile.borrow().opaque_protocol)
+        SkipHttpDetection(self.opaque_protocol)
     }
 }
 
-impl<P> From<ProfileOverride<P>> for Endpoint<P> {
-    fn from(ProfileOverride { endpoint, .. }: ProfileOverride<P>) -> Self {
+impl From<ProfileOverride> for Endpoint<()> {
+    fn from(ProfileOverride { endpoint, .. }: ProfileOverride) -> Self {
         endpoint
     }
 }
