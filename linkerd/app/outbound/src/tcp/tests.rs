@@ -717,66 +717,123 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     );
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn profile_endpoint_propagates_conn_errors() {
-    // This test asserts that when profile resolution returns an endpoint, and
-    // connecting to that endpoint fails, the client connection will also be reset.
-    let _trace = support::trace_init();
+mod profile_endpoint_override {
+    use super::*;
 
-    let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+    #[tokio::test(flavor = "current_thread")]
+    async fn propagates_conn_errors() {
+        // This test asserts that when profile resolution returns an endpoint, and
+        // connecting to that endpoint fails, the client connection will also be reset.
+        let _trace = support::trace_init();
 
-    let id_name = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-        .expect("hostname is invalid");
-    let meta = support::resolver::Metadata::new(
-        Default::default(),
-        support::resolver::ProtocolHint::Unknown,
-        None,
-        Some(id_name.clone()),
-        None,
-    );
+        let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
 
-    // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint_fn(ep1, |_| {
-        Err(Box::new(io::Error::new(
-            io::ErrorKind::ConnectionReset,
-            "i dont like you, go away",
-        )))
-    });
+        let id_name =
+            tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+                .expect("hostname is invalid");
+        let meta = support::resolver::Metadata::new(
+            Default::default(),
+            support::resolver::ProtocolHint::Unknown,
+            None,
+            Some(id_name.clone()),
+            None,
+        );
 
-    let profiles = profile::resolver();
-    let profile_tx = profiles.profile_tx(ep1);
-    profile_tx
-        .send(profile::Profile {
-            opaque_protocol: true,
-            endpoint: Some((ep1, meta.clone())),
-            ..Default::default()
-        })
-        .expect("still listening to profiles");
+        // Build a mock "connector" that returns the upstream "server" IO.
+        let connect = support::connect().endpoint_fn(ep1, |_| {
+            Err(Box::new(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "i dont like you, go away",
+            )))
+        });
 
-    let resolver = support::resolver::<support::resolver::Metadata>();
+        let profiles = profile::resolver();
+        let profile_tx = profiles.profile_tx(ep1);
+        profile_tx
+            .send(profile::Profile {
+                opaque_protocol: true,
+                endpoint: Some((ep1, meta.clone())),
+                ..Default::default()
+            })
+            .expect("still listening to profiles");
 
-    // Build the outbound server
-    let mut server = Server::default()
-        .profiles(profiles)
-        .destinations(resolver)
-        .connect(connect)
-        .build();
+        let resolver = support::resolver::<support::resolver::Metadata>();
 
-    // Since the connection attempt will fail, the mock IO should expect no
-    // actions to be performed.
-    // TODO(eliza): it would be nice if we could configure it to panic if it is
-    // ever read/written...but I don't think `tokio_test` currently supports
-    // that.
-    let client_io = support::io().build();
-    let svc = server.new_service(addrs(ep1));
-    let res = svc.oneshot(client_io).await.map_err(Into::into);
-    tracing::debug!(?res);
-    assert_eq!(
-        res.unwrap_err()
-            .downcast_ref::<io::Error>()
-            .map(io::Error::kind),
-        Some(io::ErrorKind::ConnectionReset),
-    );
+        // Build the outbound server
+        let mut server = Server::default()
+            .profiles(profiles)
+            .destinations(resolver)
+            .connect(connect)
+            .build();
+
+        // Since the connection attempt will fail, the mock IO should expect no
+        // actions to be performed.
+        // TODO(eliza): it would be nice if we could configure it to panic if it is
+        // ever read/written...but I don't think `tokio_test` currently supports
+        // that.
+        let client_io = support::io().build();
+        let svc = server.new_service(addrs(ep1));
+        let res = svc.oneshot(client_io).await.map_err(Into::into);
+        tracing::debug!(?res);
+        assert_eq!(
+            res.unwrap_err()
+                .downcast_ref::<io::Error>()
+                .map(io::Error::kind),
+            Some(io::ErrorKind::ConnectionReset),
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn uses_overridden_addr() {
+        let _trace = support::trace_init();
+
+        let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+        let ep1 = SocketAddr::new([10, 0, 0, 42].into(), 5550);
+
+        let id_name =
+            tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+                .expect("hostname is invalid");
+        let meta = support::resolver::Metadata::new(
+            Default::default(),
+            support::resolver::ProtocolHint::Unknown,
+            None,
+            Some(id_name.clone()),
+            None,
+        );
+
+        // Build a mock "connector" that returns the upstream "server" IO.
+        let meta2 = meta.clone();
+        let connect = support::connect().endpoint_fn(ep1, move |ep: Endpoint| {
+            assert_eq!(ep.metadata, meta2);
+            let io = support::io()
+                .write(b"hello")
+                .read(b"world")
+                .read_error(std::io::ErrorKind::ConnectionReset.into())
+                .build();
+            Ok(io)
+        });
+
+        let profiles = profile::resolver();
+        let profile_tx = profiles.profile_tx(orig_dst);
+        profile_tx
+            .send(profile::Profile {
+                opaque_protocol: true,
+                endpoint: Some((ep1, meta.clone())),
+                ..Default::default()
+            })
+            .expect("still listening to profiles");
+
+        let resolver = support::resolver::no_destinations::<support::resolver::Metadata>();
+
+        // Build the outbound server
+        let mut server = Server::default()
+            .profiles(profiles)
+            .destinations(resolver)
+            .connect(connect)
+            .build();
+
+        hello_world_client(orig_dst, &mut server).await
+    }
 }
 
 struct Connection {

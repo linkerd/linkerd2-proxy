@@ -1,7 +1,7 @@
 use super::Endpoint;
 
 use crate::{
-    logical::ConcreteAddr,
+    logical::{ConcreteAddr, LogicalAddr},
     test_util::{
         support::{connect::Connect, http_util, profile, resolver, track},
         *,
@@ -290,58 +290,6 @@ async fn meshed_hello_world() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn profile_overrides_endpoint_no_logical() {
-    // Tests that when a profile is resolved with no logical name, but an
-    // endpoint override, the endpoint override is honored.`s`
-    let _trace = support::trace_init();
-
-    let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-    let ep1 = SocketAddr::new([10, 62, 0, 42].into(), 5550);
-    let cfg = default_config();
-    let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
-        .expect("hostname is invalid");
-    let meta = support::resolver::Metadata::new(
-        Default::default(),
-        support::resolver::ProtocolHint::Http2,
-        None,
-        Some(id.clone()),
-        None,
-    );
-
-    // Pretend the upstream is a proxy that supports proto upgrades...
-    let mut server_settings = hyper::server::conn::Http::new();
-    server_settings.http2_only(true);
-    let meta2 = meta.clone();
-    let connect = support::connect().endpoint_fn_boxed(ep1, move |endpoint: Endpoint| {
-        assert_eq!(endpoint.metadata, meta2);
-        hello_server(server_settings.clone())(endpoint)
-    });
-
-    let profiles = profile::resolver().profile(
-        orig_dst,
-        profile::Profile {
-            endpoint: Some((ep1, meta)),
-            ..Default::default()
-        },
-    );
-
-    let resolver = support::resolver::no_destinations();
-
-    // Build the outbound server
-    let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(orig_dst));
-    let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
-
-    let rsp = http_util::http_request(&mut client, Request::default()).await;
-    assert_eq!(rsp.status(), http::StatusCode::OK);
-    let body = http_util::body_to_string(rsp.into_body()).await;
-    assert_eq!(body, "Hello world!");
-
-    drop(client);
-    bg.await.expect("background task failed");
-}
-
-#[tokio::test(flavor = "current_thread")]
 async fn stacks_idle_out() {
     let _trace = support::trace_init();
 
@@ -506,6 +454,78 @@ async fn active_stacks_dont_idle_out() {
         .await
         .unwrap()
         .expect("proxy background task failed");
+}
+
+mod profile_endpoint_override {
+    use super::*;
+
+    async fn test_endpoint_override(profile: profile::Profile) {
+        // Tests that when a profile is resolved with no logical name, but an
+        // endpoint override, the endpoint override is honored.`s`
+        let _trace = support::trace_init();
+
+        let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+        let ep1 = SocketAddr::new([10, 62, 0, 42].into(), 5550);
+        let cfg = default_config();
+        let id = tls::ServerId::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+            .expect("hostname is invalid");
+        let meta = support::resolver::Metadata::new(
+            Default::default(),
+            support::resolver::ProtocolHint::Http2,
+            None,
+            Some(id.clone()),
+            None,
+        );
+
+        // Pretend the upstream is a proxy that supports proto upgrades...
+        let mut server_settings = hyper::server::conn::Http::new();
+        server_settings.http2_only(true);
+        let meta2 = meta.clone();
+        let connect = support::connect().endpoint_fn_boxed(ep1, move |endpoint: Endpoint| {
+            assert_eq!(endpoint.metadata, meta2);
+            hello_server(server_settings.clone())(endpoint)
+        });
+
+        let profiles = profile::resolver().profile(
+            orig_dst,
+            profile::Profile {
+                endpoint: Some((ep1, meta)),
+                ..profile
+            },
+        );
+
+        let resolver = support::resolver::no_destinations();
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let server =
+            build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(orig_dst));
+        let (mut client, bg) =
+            http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
+
+        let rsp = http_util::http_request(&mut client, Request::default()).await;
+        assert_eq!(rsp.status(), http::StatusCode::OK);
+        let body = http_util::body_to_string(rsp.into_body()).await;
+        assert_eq!(body, "Hello world!");
+
+        drop(client);
+        bg.await.expect("background task failed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn no_logical_addr() {
+        test_endpoint_override(Default::default()).await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn with_logical_addr() {
+        let addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
+        let profile = profile::Profile {
+            addr: Some(LogicalAddr(addr)),
+            ..Default::default()
+        };
+        test_endpoint_override(profile).await;
+    }
 }
 
 async fn unmeshed_hello_world(
