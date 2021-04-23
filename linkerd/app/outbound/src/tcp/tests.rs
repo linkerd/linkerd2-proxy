@@ -1,5 +1,6 @@
 use super::{Endpoint, Logical};
 use crate::{
+    logical::LogicalAddr,
     test_util::{
         support::{
             connect::{Connect, ConnectFuture},
@@ -783,8 +784,7 @@ mod profile_endpoint_override {
         );
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn uses_overridden_addr() {
+    async fn test_endpoint_override(profile: profile::Profile) {
         let _trace = support::trace_init();
 
         let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
@@ -817,9 +817,8 @@ mod profile_endpoint_override {
         let profile_tx = profiles.profile_tx(orig_dst);
         profile_tx
             .send(profile::Profile {
-                opaque_protocol: true,
                 endpoint: Some((ep1, meta.clone())),
-                ..Default::default()
+                ..profile
             })
             .expect("still listening to profiles");
 
@@ -833,6 +832,41 @@ mod profile_endpoint_override {
             .build();
 
         hello_world_client(orig_dst, &mut server).await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn opaque_no_logical() {
+        test_endpoint_override(profile::Profile {
+            opaque_protocol: true,
+            ..Default::default()
+        })
+        .await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn opaque_with_logical_addr() {
+        let addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
+        let profile = profile::Profile {
+            addr: Some(LogicalAddr(addr)),
+            opaque_protocol: true,
+            ..Default::default()
+        };
+        test_endpoint_override(profile).await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn no_logical() {
+        test_endpoint_override(Default::default()).await
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn with_logical_addr() {
+        let addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
+        let profile = profile::Profile {
+            addr: Some(LogicalAddr(addr)),
+            ..Default::default()
+        };
+        test_endpoint_override(profile).await
     }
 }
 
