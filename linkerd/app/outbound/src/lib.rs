@@ -142,6 +142,8 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
+    /// Builds an outbound server stack with the provided HTTP and raw TCP
+    /// endpoint stacks.
     pub(crate) fn into_server_with<T, R, P, I, H, N>(
         self,
         resolve: R,
@@ -183,6 +185,7 @@ impl Outbound<()> {
             .into_inner();
 
         let tcp_forward = tcp_endpoint.clone().push_tcp_forward();
+
         // HTTP and TCP per-endpoint stack used when a profile is not discovered.
         let no_profile = tcp_forward
             .clone()
@@ -191,6 +194,8 @@ impl Outbound<()> {
             .push_detect_http(http_no_profile)
             .into_inner();
 
+        // HTTP and TCP per-endpoint stack used when the service profile
+        // has an endpoint override.
         let endpoint_override = tcp_forward
             .push_detect_http::<endpoint::ProfileOverride, _, _, _, _, _, _>(
                 http_endpoint
@@ -216,6 +221,9 @@ impl Outbound<()> {
             // If a service profile was not discovered, fall back to the
             // per-endpoint stack.
             .push_unwrap_logical(no_profile)
+            // If a service profile was discovered, and it contains an
+            // overridden endpoint, bypass the logical stack and forward
+            // directly to that endpoint.
             .push_endpoint_override(endpoint_override)
             // Discover service profiles for each original dst address
             .push_discover(profiles)

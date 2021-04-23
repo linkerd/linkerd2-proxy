@@ -66,21 +66,27 @@ impl<E> Outbound<E> {
             stack,
         }
     }
-}
-impl<S> Outbound<S> {
-    pub fn push_endpoint_override<T, E, ESvc, SSvc, R>(
+
+    /// Pushes a layer that checks if a discovered service profile contains an
+    /// endpoint override, and forwards directly to that endpoint (bypassing the
+    /// current stack) if one exists.
+    pub fn push_endpoint_override<T, O, R>(
         self,
-        ep_override: E,
+        ep_override: O,
     ) -> Outbound<
-        impl svc::NewService<(Option<profiles::Receiver>, T), Service = OrOverride<SSvc, ESvc>> + Clone,
+        impl svc::NewService<
+                (Option<profiles::Receiver>, T),
+                Service = OrOverride<E::Service, O::Service>,
+            > + Clone,
     >
     where
-        E: svc::NewService<ProfileOverride, Service = ESvc> + Clone,
-        S: svc::NewService<(Option<profiles::Receiver>, T), Service = SSvc> + Clone,
-        SSvc: svc::Service<R, Error = Error>,
-        SSvc::Future: Send,
-        ESvc: svc::Service<R, Response = SSvc::Response, Error = Error>,
-        ESvc::Future: Send,
+        E: svc::NewService<(Option<profiles::Receiver>, T)> + Clone,
+        E::Service: svc::Service<R, Error = Error>,
+        <E::Service as svc::Service<R>>::Future: Send,
+        O: svc::NewService<ProfileOverride> + Clone,
+        O::Service:
+            svc::Service<R, Response = <E::Service as svc::Service<R>>::Response, Error = Error>,
+        <O::Service as svc::Service<R>>::Future: Send,
         T: std::fmt::Debug,
     {
         let Self {
