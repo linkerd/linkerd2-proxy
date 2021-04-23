@@ -129,23 +129,33 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
+        let http_endpoint = self.clone().push_tcp_endpoint().push_http_endpoint();
+        let tcp_endpoint = self.clone().push_tcp_endpoint().push_tcp_forward();
         // HTTP per-endpoint stack used when a profile is not discovered.
-        let http_no_profile = self
+        let http_no_profile = http_endpoint
             .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
             .push_into_endpoint()
             .push_http_server::<http::Accept, _>()
             .into_inner();
 
         // HTTP and TCP per-endpoint stack used when a profile is not discovered.
-        let no_profile = self
+        let no_profile = tcp_endpoint
             .clone()
-            .push_tcp_endpoint()
-            .push_tcp_forward()
             .push_into_endpoint::<(), tcp::Accept>()
             // If HTTP is detected, use the `http_endpoint` stack
             .push_detect_http(http_no_profile)
+            .into_inner();
+
+        let endpoint_override = tcp_endpoint
+            .clone()
+            .push_detect_http::<endpoint::ProfileOverride<()>, _, _, _, _, _, _>(
+                http_endpoint
+                    .clone()
+                    .push_http_server::<http::Endpoint, _>()
+                    .into_inner(),
+            )
+            .into_stack()
+            .check_new_service::<endpoint::ProfileOverride<()>, _>()
             .into_inner();
 
         // HTTP stack for logical targets (with service profiles).
@@ -165,6 +175,7 @@ impl<S> Outbound<S> {
             // If a service profile was not discovered, fall back to the
             // per-endpoint stack.
             .push_unwrap_logical(no_profile)
+            .push_endpoint_override(endpoint_override)
             // Discover service profiles for each original dst address
             .push_discover(profiles)
             .into_inner()

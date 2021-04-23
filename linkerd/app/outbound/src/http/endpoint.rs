@@ -1,8 +1,11 @@
-use super::require_identity_on_endpoint::NewRequireIdentity;
+use super::{normalize_uri, require_identity_on_endpoint::NewRequireIdentity, Endpoint};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, config, http_tracing, metrics,
-    proxy::{http, tap},
+    proxy::{
+        http::{self, uri},
+        tap,
+    },
     reconnect, svc, tls, Error, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
 };
 use tokio::io;
@@ -76,6 +79,38 @@ impl<C> Outbound<C> {
             config,
             runtime: rt,
             stack,
+        }
+    }
+}
+
+impl svc::Param<normalize_uri::DefaultAuthority> for Endpoint {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        use std::str::FromStr;
+        normalize_uri::DefaultAuthority(Some(
+            uri::Authority::from_str(&self.logical_addr.to_string())
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
+impl svc::Param<http::Version> for Endpoint {
+    fn param(&self) -> http::Version {
+        self.protocol
+    }
+}
+
+impl<E> From<(http::Version, E)> for Endpoint
+where
+    E: Into<crate::tcp::Endpoint>,
+{
+    fn from((protocol, endpoint): (http::Version, E)) -> Self {
+        let endpoint = endpoint.into();
+        Self {
+            addr: endpoint.addr,
+            tls: endpoint.tls,
+            metadata: endpoint.metadata,
+            logical_addr: endpoint.logical_addr,
+            protocol,
         }
     }
 }
