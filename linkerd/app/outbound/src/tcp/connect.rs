@@ -27,7 +27,17 @@ pub struct PreventLoopback<S>(S);
 
 impl Outbound<()> {
     pub fn to_tcp_connect(&self) -> Outbound<PreventLoopback<ConnectTcp>> {
-        let connect = PreventLoopback(ConnectTcp::new(self.config.proxy.connect.keepalive));
+        self.to_tcp_connect_with(ConnectTcp::new(self.config.proxy.connect.keepalive))
+    }
+
+    pub fn to_tcp_connect_with<C>(&self, connect: C) -> Outbound<PreventLoopback<C>>
+    where
+        C: svc::Service<Connect, Error = io::Error> + Clone + Send + 'static,
+        C::Response: tls::HasNegotiatedProtocol,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C::Future: Send + 'static,
+    {
+        let connect = PreventLoopback(connect);
         self.clone().with_stack(connect)
     }
 }

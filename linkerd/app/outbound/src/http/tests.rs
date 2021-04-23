@@ -52,9 +52,12 @@ where
     R::Resolution: Send,
     R::Future: Send + Unpin,
 {
-    build_accept(cfg, rt, resolver, connect)
-        .push_discover(profiles)
-        .into_inner()
+    Outbound::new(cfg, rt).into_server_with(
+        resolver,
+        profiles,
+        connect,
+        support::connect::no_raw_tcp(),
+    )
 }
 
 fn build_accept<I, R>(

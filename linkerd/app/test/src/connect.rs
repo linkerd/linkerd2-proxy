@@ -26,6 +26,17 @@ pub struct Connect<E> {
 #[derive(Clone)]
 pub struct NoRawTcp;
 
+#[derive(Clone, Debug)]
+pub struct NoConnect(&'static str);
+
+pub fn no_raw_tcp() -> NoConnect {
+    NoConnect("raw TCP")
+}
+
+pub fn no_http() -> NoConnect {
+    NoConnect("HTTP")
+}
+
 impl<E> tower::Service<E> for Connect<E>
 where
     E: Clone + fmt::Debug + Param<Remote<ServerAddr>>,
@@ -57,19 +68,19 @@ where
     }
 }
 
-impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
+impl<E: fmt::Debug> tower::Service<E> for NoConnect {
     type Response = BoxedIo;
     type Future = Instrumented<ConnectFuture>;
     type Error = Error;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        panic!("no raw TCP connections expected in this test");
+        Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, endpoint: E) -> Self::Future {
         panic!(
-            "no raw TCP connections expected in this test, but tried to connect to {:?}",
-            endpoint
+            "no {} connections expected in this test, but the {} stack tried to connect to {:?}",
+            self.0, self.0, endpoint
         );
     }
 }

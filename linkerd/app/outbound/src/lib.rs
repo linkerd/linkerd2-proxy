@@ -129,8 +129,52 @@ impl<S> Outbound<S> {
         P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
-        let http_endpoint = self.clone().push_tcp_endpoint().push_http_endpoint();
-        let tcp_endpoint = self.clone().push_tcp_endpoint().push_tcp_forward();
+        let tcp_endpoint = self.clone().push_tcp_endpoint().into_inner();
+        let http_endpoint = self.clone().push_tcp_endpoint().into_inner();
+
+        Outbound::new(self.config, self.runtime).into_server_with(
+            resolve,
+            profiles,
+            http_endpoint,
+            tcp_endpoint,
+        )
+    }
+}
+
+impl Outbound<()> {
+    pub(crate) fn into_server_with<T, R, P, I, H, N>(
+        self,
+        resolve: R,
+        profiles: P,
+        http_endpoint: H,
+        tcp_endpoint: N,
+    ) -> impl svc::NewService<
+        T,
+        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+    >
+    where
+        Self: Clone + 'static,
+        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
+        R: Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + 'static,
+        P::Future: Send,
+        P::Error: Send,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+        H: svc::Service<http::Endpoint, Error = Error>,
+        H: Unpin + Clone + Send + Sync + 'static,
+        H::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        H::Future: Unpin + Send + 'static,
+        N: svc::Service<tcp::Endpoint, Error = Error>,
+        N: Unpin + Clone + Send + 'static,
+        N::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        N::Future: Send + 'static,
+    {
+        let tcp_endpoint = self.clone().with_stack(tcp_endpoint);
+        let http_endpoint = self.clone().with_stack(http_endpoint).push_http_endpoint();
+
         // HTTP per-endpoint stack used when a profile is not discovered.
         let http_no_profile = http_endpoint
             .clone()
@@ -138,16 +182,16 @@ impl<S> Outbound<S> {
             .push_http_server::<http::Accept, _>()
             .into_inner();
 
+        let tcp_forward = tcp_endpoint.clone().push_tcp_forward();
         // HTTP and TCP per-endpoint stack used when a profile is not discovered.
-        let no_profile = tcp_endpoint
+        let no_profile = tcp_forward
             .clone()
             .push_into_endpoint::<(), tcp::Accept>()
             // If HTTP is detected, use the `http_endpoint` stack
             .push_detect_http(http_no_profile)
             .into_inner();
 
-        let endpoint_override = tcp_endpoint
-            .clone()
+        let endpoint_override = tcp_forward
             .push_detect_http::<endpoint::ProfileOverride<()>, _, _, _, _, _, _>(
                 http_endpoint
                     .clone()
@@ -159,15 +203,12 @@ impl<S> Outbound<S> {
             .into_inner();
 
         // HTTP stack for logical targets (with service profiles).
-        let http_logical = self
-            .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
+        let http_logical = http_endpoint
             .push_http_logical(resolve.clone())
             .push_http_server()
             .into_inner();
 
-        self.push_tcp_endpoint()
+        tcp_endpoint
             .push_tcp_logical(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
@@ -180,9 +221,7 @@ impl<S> Outbound<S> {
             .push_discover(profiles)
             .into_inner()
     }
-}
 
-impl Outbound<()> {
     pub fn serve<B, P, R>(
         self,
         bind: B,
