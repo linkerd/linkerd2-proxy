@@ -204,6 +204,9 @@ impl Outbound<()> {
                     .into_inner(),
             )
             .into_stack()
+            .instrument(|ep: &endpoint::ProfileOverride| {
+                tracing::debug_span!("endpoint_override", addr = %ep.endpoint.addr)
+            })
             .check_new_service::<endpoint::ProfileOverride, _>()
             .into_inner();
 

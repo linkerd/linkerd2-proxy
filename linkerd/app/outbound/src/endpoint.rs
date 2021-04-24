@@ -29,7 +29,7 @@ pub struct Endpoint<P> {
 /// `Param<SkipHttpDetection>` for it.
 #[derive(Clone, Debug)]
 pub struct ProfileOverride {
-    endpoint: Endpoint<()>,
+    pub(crate) endpoint: Endpoint<()>,
     opaque_protocol: bool,
 }
 #[derive(Copy, Clone)]
