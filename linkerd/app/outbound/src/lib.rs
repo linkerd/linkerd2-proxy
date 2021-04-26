@@ -175,7 +175,7 @@ impl Outbound<()> {
         N::Future: Send + 'static,
     {
         let tcp_endpoint = self.clone().with_stack(tcp_endpoint);
-        let http_endpoint = self.clone().with_stack(http_endpoint).push_http_endpoint();
+        let http_endpoint = self.with_stack(http_endpoint).push_http_endpoint();
 
         // HTTP per-endpoint stack used when a profile is not discovered.
         let http_no_profile = http_endpoint

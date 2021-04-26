@@ -97,7 +97,7 @@ where
 
     let http = connect
         .push_http_endpoint()
-        .push_http_logical(resolver.clone())
+        .push_http_logical(resolver)
         .push_http_server()
         .into_inner();
 
