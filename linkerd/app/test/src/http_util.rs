@@ -1,5 +1,6 @@
 use crate::app_core::{io::BoxedIo, svc::Param, tls, Error};
 use crate::io;
+use crate::ContextError;
 use futures::FutureExt;
 use hyper::{
     body::HttpBody,
@@ -7,7 +8,6 @@ use hyper::{
     Body, Request, Response,
 };
 use std::{
-    fmt,
     future::Future,
     sync::{Arc, Mutex},
 };
@@ -93,8 +93,14 @@ where
     let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;
     let bg = async move {
-        proxy.await.expect("proxy background task panicked")?;
-        client_bg.await.expect("client background task panicked")?;
+        proxy
+            .await
+            .expect("proxy background task panicked")
+            .map_err(ContextError::ctx("proxy background task failed"))?;
+        client_bg
+            .await
+            .expect("client background task panicked")
+            .map_err(ContextError::ctx("client background task failed"))?;
         Ok(())
     };
     (client, bg)
@@ -104,31 +110,32 @@ where
 pub async fn http_request(
     client: &mut SendRequest<Body>,
     request: Request<Body>,
-) -> Response<Body> {
+) -> Result<Response<Body>, Error> {
     let rsp = client
         .ready()
         .await
-        .expect("Client must not fail")
+        .map_err(ContextError::ctx("HTTP client poll_ready failed"))?
         .call(request)
         .await
-        .expect("Request must succeed");
+        .map_err(ContextError::ctx("HTTP client request failed"))?;
 
     tracing::info!(?rsp);
 
-    rsp
+    Ok(rsp)
 }
 
-pub async fn body_to_string<T>(body: T) -> String
+pub async fn body_to_string<T>(body: T) -> Result<String, Error>
 where
     T: HttpBody,
-    T::Error: fmt::Debug,
+    T::Error: Into<Error>,
 {
     let body = hyper::body::to_bytes(body)
         .await
-        .expect("body stream completes successfully");
-    std::str::from_utf8(&body[..])
-        .expect("body is utf-8")
-        .to_owned()
+        .map_err(ContextError::ctx("HTTP response body stream failed"))?;
+    let body = std::str::from_utf8(&body[..])
+        .map_err(ContextError::ctx("converting body to string failed"))?
+        .to_owned();
+    Ok(body)
 }
 
 impl Server {

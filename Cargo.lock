@@ -818,6 +818,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "regex",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tokio-test",

@@ -131,7 +131,7 @@ impl Client {
             res.status(),
         );
         let stream = res.into_parts().1;
-        http_util::body_to_string(stream).await
+        http_util::body_to_string(stream).await.unwrap()
     }
 
     pub fn request(

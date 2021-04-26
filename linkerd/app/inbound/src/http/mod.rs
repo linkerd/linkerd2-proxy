@@ -324,7 +324,10 @@ pub mod fuzz_logic {
                         {
                             let rsp = http_util::http_request(&mut client, req).await;
                             tracing::info!(?rsp);
-                            let _body = http_util::body_to_string(rsp.into_body()).await;
+                            if let Ok(rsp) = rsp {
+                                let body = http_util::body_to_string(rsp.into_body()).await;
+                                tracing::info!(?body);
+                            }
                         }
                     }
                 }
