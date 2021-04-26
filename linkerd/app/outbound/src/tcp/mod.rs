@@ -35,7 +35,7 @@ impl Param<Option<SessionProtocol>> for Endpoint {
 }
 
 impl Param<()> for Accept {
-    fn param(&self) -> () {
+    fn param(&self) {
         self.protocol
     }
 }
