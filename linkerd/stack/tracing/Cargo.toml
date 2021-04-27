@@ -10,11 +10,6 @@ publish = false
 futures = "0.3.9"
 linkerd-error = { path = "../../error" }
 linkerd-stack = { path = ".." }
+tower = "0.4.7"
 tracing = "0.1.25"
 pin-project = "1"
-
-[dependencies.tower]
-version = "0.4"
-# disable tower's tracing `log` integration for performance reasons, since we
-# will consume tower's traces as traces.
-default-features = false

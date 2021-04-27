@@ -17,11 +17,6 @@ linkerd-error = { path = "../error" }
 linkerd-http-classify = { path = "../http-classify" }
 linkerd-metrics = { path = "../metrics" }
 linkerd-stack = { path = "../stack" } 
+tower = "0.4.7"
 tracing = "0.1.23"
 pin-project = "1"
-
-[dependencies.tower]
-version = "0.4"
-# disable tower's tracing `log` integration for performance reasons, since we
-# will consume tower's traces as traces.
-default-features = false
