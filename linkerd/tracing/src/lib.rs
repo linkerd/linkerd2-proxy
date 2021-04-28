@@ -123,7 +123,8 @@ impl Settings {
                     .event_format(fmt)
                     // Since we're using the JSON event formatter, we must also
                     // use the JSON field formatter.
-                    .fmt_fields(format::JsonFields::default());
+                    .fmt_fields(format::JsonFields::default())
+                    .with_ansi(false);
                 let registry = registry.with(tasks_layer);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()
@@ -135,7 +136,9 @@ impl Settings {
             _ => {
                 let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
                 let registry = registry.with(tasks_layer);
-                let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
+                let fmt = tracing_subscriber::fmt::layer()
+                    .event_format(fmt)
+                    .with_ansi(self.test);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()
                 } else {
