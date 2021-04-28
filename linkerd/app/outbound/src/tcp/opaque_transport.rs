@@ -149,7 +149,7 @@ mod test {
         tls,
         transport::{Remote, ServerAddr},
         transport_header::TransportHeader,
-        Addr, Conditional,
+        Conditional,
     };
     use pin_project::pin_project;
     use std::task::Context;
@@ -170,7 +170,7 @@ mod test {
                     tls::NoClientTls::NotProvidedByServiceDiscovery,
                 )),
             metadata,
-            logical_addr: Addr::Socket(([127, 0, 0, 2], 4321).into()),
+            logical_addr: None,
             protocol: (),
         }
     }
