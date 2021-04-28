@@ -86,11 +86,14 @@ impl<C> Outbound<C> {
 impl svc::Param<normalize_uri::DefaultAuthority> for Endpoint {
     fn param(&self) -> normalize_uri::DefaultAuthority {
         use std::str::FromStr;
-        let authority = self.logical_addr.as_ref().map(|logical| {
-            uri::Authority::from_str(&logical.to_string())
-                .expect("Address must be a valid authority")
-        });
-        normalize_uri::DefaultAuthority(authority)
+        let authority = self
+            .logical_addr
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| self.addr.to_string());
+        normalize_uri::DefaultAuthority(Some(
+            uri::Authority::from_str(&authority).expect("Address must be a valid authority"),
+        ))
     }
 }
 
