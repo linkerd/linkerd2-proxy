@@ -196,18 +196,19 @@ impl Outbound<()> {
 
         // HTTP and TCP per-endpoint stack used when the service profile
         // has an endpoint override.
-        let endpoint_override = tcp_forward
-            .push_detect_http::<endpoint::ProfileOverride, _, _, _, _, _, _>(
+        let profile_endpoint = tcp_forward
+            .push_detect_http::<endpoint::ProfileEndpoint, _, _, _, _, _, _>(
                 http_endpoint
                     .clone()
                     .push_http_server::<http::Endpoint, _>()
                     .into_inner(),
             )
             .into_stack()
-            .instrument(|ep: &endpoint::ProfileOverride| {
-                tracing::debug_span!("endpoint_override", addr = %ep.endpoint.addr)
+            .instrument(|ep: &endpoint::ProfileEndpoint| {
+                let addr: Remote<ServerAddr> = ep.param();
+                tracing::debug_span!("endpoint", %addr)
             })
-            .check_new_service::<endpoint::ProfileOverride, _>()
+            .check_new_service::<endpoint::ProfileEndpoint, _>()
             .into_inner();
 
         // HTTP stack for logical targets (with service profiles).
@@ -227,7 +228,7 @@ impl Outbound<()> {
             // If a service profile was discovered, and it contains an
             // overridden endpoint, bypass the logical stack and forward
             // directly to that endpoint.
-            .push_endpoint_override(endpoint_override)
+            .push_profile_endpoint(profile_endpoint)
             // Discover service profiles for each original dst address
             .push_discover(profiles)
             .into_inner()
