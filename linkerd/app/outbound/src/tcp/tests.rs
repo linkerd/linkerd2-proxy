@@ -718,7 +718,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
     );
 }
 
-mod profile_endpoint_override {
+mod profile_endpoin {
     use super::*;
 
     #[tokio::test(flavor = "current_thread")]
@@ -784,7 +784,10 @@ mod profile_endpoint_override {
         );
     }
 
-    async fn test_endpoint_override(profile: profile::Profile) {
+    /// Tests that when a service profile contains an endpoint, the proxy
+    /// forwards to that endpoint directly without performing destination
+    /// resolution or building a logical stack.
+    async fn test_profile_endpoint(profile: profile::Profile) {
         let _trace = support::trace_init();
 
         let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
@@ -834,15 +837,19 @@ mod profile_endpoint_override {
         hello_world_client(orig_dst, &mut server).await
     }
 
+    /// Forwarding to a profile endpoint when the profile does not have a
+    /// logical address and its' opaque protocol flag is set.
     #[tokio::test(flavor = "current_thread")]
     async fn opaque_no_logical() {
-        test_endpoint_override(profile::Profile {
+        test_profile_endpoint(profile::Profile {
             opaque_protocol: true,
             ..Default::default()
         })
         .await
     }
 
+    /// Forwarding to a profile endpoint when the profile includes a
+    /// logical address and its' opaque protocol flag is set.
     #[tokio::test(flavor = "current_thread")]
     async fn opaque_with_logical_addr() {
         let addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
@@ -851,14 +858,18 @@ mod profile_endpoint_override {
             opaque_protocol: true,
             ..Default::default()
         };
-        test_endpoint_override(profile).await
+        test_profile_endpoint(profile).await
     }
 
+    /// Forwarding to a profile endpoint when the profile does not have a
+    /// logical address and its' opaque protocol flag is not set.
     #[tokio::test(flavor = "current_thread")]
     async fn no_logical() {
-        test_endpoint_override(Default::default()).await
+        test_profile_endpoint(Default::default()).await
     }
 
+    /// Forwarding to a profile endpoint when the profile includes a
+    /// logical address and its' opaque protocol flag is not set.
     #[tokio::test(flavor = "current_thread")]
     async fn with_logical_addr() {
         let addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
@@ -866,7 +877,7 @@ mod profile_endpoint_override {
             addr: Some(LogicalAddr(addr)),
             ..Default::default()
         };
-        test_endpoint_override(profile).await
+        test_profile_endpoint(profile).await
     }
 }
 

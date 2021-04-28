@@ -459,12 +459,13 @@ async fn active_stacks_dont_idle_out() {
         .expect("proxy background task failed");
 }
 
-mod profile_endpoint_override {
+mod profile_endpoint {
     use super::*;
 
-    async fn test_endpoint_override(profile: profile::Profile) {
-        // Tests that when a profile is resolved with no logical name, but an
-        // endpoint override, the endpoint override is honored.`s`
+    /// Tests that when a service profile contains an endpoint, the proxy
+    /// forwards to that endpoint directly without performing destination
+    /// resolution or building a logical stack.
+    async fn test_profile_endpoint(profile: profile::Profile) {
         let _trace = support::trace_init();
 
         let orig_dst = SocketAddr::new([10, 0, 0, 41].into(), 5550);
@@ -515,11 +516,15 @@ mod profile_endpoint_override {
         bg.await.expect("background task failed");
     }
 
+    /// Test forwarding to profile endpoints when the profile does not contain a
+    /// logical address.
     #[tokio::test(flavor = "current_thread")]
     async fn no_logical_addr() {
-        test_endpoint_override(Default::default()).await
+        test_profile_endpoint(Default::default()).await
     }
 
+    /// Test forwarding to profile endpoints when the profile *does* contain a
+    /// logical address.
     #[tokio::test(flavor = "current_thread")]
     async fn with_logical_addr() {
         let addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
@@ -527,7 +532,7 @@ mod profile_endpoint_override {
             addr: Some(LogicalAddr(addr)),
             ..Default::default()
         };
-        test_endpoint_override(profile).await;
+        test_profile_endpoint(profile).await;
     }
 }
 
