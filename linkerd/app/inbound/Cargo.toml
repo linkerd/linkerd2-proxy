@@ -17,6 +17,7 @@ indexmap = "1.0"
 linkerd-app-core = { path = "../core" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
+tower = { version = "0.4.7", features = ["util"] }
 tracing = "0.1.23"
 
 [target.'cfg(fuzzing)'.dependencies]
@@ -24,15 +25,6 @@ hyper = { version = "0.14.2", features = ["http1", "http2"] }
 linkerd-app-test = { path = "../test" }
 arbitrary = { version = "1",  features = ["derive"] }
 libfuzzer-sys = { version = "0.4.0", features = ["arbitrary-derive"] }
-
-[dependencies.tower]
-version = "0.4"
-# disable tower's tracing `log` integration for performance reasons, since we
-# will consume tower's traces as traces.
-default-features = false
-features = [
-    "util",
-]
 
 [dev-dependencies]
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
