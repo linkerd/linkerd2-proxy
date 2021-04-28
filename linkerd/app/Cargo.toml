@@ -29,5 +29,5 @@ regex = "1.0.0"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt"] }
 tonic = { version = "0.4", default-features = false, features = ["prost"] }
-tower = "0.4"
+tower = "0.4.7"
 tracing = "0.1.23"

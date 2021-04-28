@@ -45,7 +45,7 @@ where
 {
     let (client_io, server_io) = io::duplex(4096);
     let f = server
-        .ready_and()
+        .ready()
         .await
         .map_err(Into::into)
         .expect("proxy server failed to become ready")
@@ -108,7 +108,7 @@ pub async fn http_request(
     request: Request<Body>,
 ) -> Response<Body> {
     let rsp = client
-        .ready_and()
+        .ready()
         .await
         .expect("Client must not fail")
         .call(request)

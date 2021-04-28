@@ -70,9 +70,7 @@ tracing = "0.1.23"
 pin-project = "1"
 
 [dependencies.tower]
-version = "0.4"
-# disable tower's tracing `log` integration for performance reasons, since we
-# will consume tower's traces as traces.
+version = "0.4.7"
 default-features = false
 features = [
     "buffer",

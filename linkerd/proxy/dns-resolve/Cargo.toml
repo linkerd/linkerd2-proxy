@@ -18,10 +18,5 @@ linkerd-dns = { path = "../../dns" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
+tower = "0.4.7"
 tracing = "0.1.9"
-
-[dependencies.tower]
-version = "0.4"
-# disable tower's tracing `log` integration for performance reasons, since we
-# will consume tower's traces as traces.
-default-features = false
