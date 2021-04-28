@@ -513,9 +513,11 @@ mod profile_endpoint {
         let (mut client, bg) =
             http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
 
-        let rsp = http_util::http_request(&mut client, Request::default()).await;
+        let rsp = http_util::http_request(&mut client, Request::default())
+            .await
+            .unwrap();
         assert_eq!(rsp.status(), http::StatusCode::OK);
-        let body = http_util::body_to_string(rsp.into_body()).await;
+        let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
         assert_eq!(body, "Hello world!");
 
         drop(client);
