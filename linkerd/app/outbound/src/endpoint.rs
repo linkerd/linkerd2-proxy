@@ -5,12 +5,13 @@ use crate::{
     Accept, Outbound,
 };
 use linkerd_app_core::{
-    metrics, profiles,
+    metrics,
+    profiles::{self, LogicalAddr},
     proxy::{api_resolve::Metadata, http, resolve::map_endpoint::MapEndpoint},
     svc::{self, Param},
     tls,
     transport::{self, Remote, ServerAddr},
-    transport_header, Addr, Conditional, Error,
+    transport_header, Conditional, Error,
 };
 use std::net::SocketAddr;
 
@@ -19,7 +20,7 @@ pub struct Endpoint<P> {
     pub addr: Remote<ServerAddr>,
     pub tls: tls::ConditionalClientTls,
     pub metadata: Metadata,
-    pub logical_addr: Addr,
+    pub logical_addr: Option<LogicalAddr>,
     pub protocol: P,
 }
 
@@ -136,14 +137,14 @@ impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
                 addr: Remote(ServerAddr(logical.orig_dst.into())),
                 metadata: Metadata::default(),
                 tls: Conditional::None(reason),
-                logical_addr: logical.addr(),
+                logical_addr: Some(logical.logical_addr),
                 protocol: logical.protocol,
             },
             Some((addr, metadata)) => Self {
                 addr: Remote(ServerAddr(addr)),
                 tls: FromMetadata::client_tls(&metadata, reason),
                 metadata,
-                logical_addr: logical.addr(),
+                logical_addr: Some(logical.logical_addr),
                 protocol: logical.protocol,
             },
         }
@@ -156,7 +157,7 @@ impl<P> From<(tls::NoClientTls, Accept<P>)> for Endpoint<P> {
             addr: Remote(ServerAddr(accept.orig_dst.into())),
             metadata: Metadata::default(),
             tls: Conditional::None(reason),
-            logical_addr: accept.orig_dst.0.into(),
+            logical_addr: None,
             protocol: accept.protocol,
         }
     }
@@ -199,11 +200,16 @@ impl<P> Param<transport::labels::Key> for Endpoint<P> {
 
 impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
+        let target_addr = self.addr.into();
+        let authority = self
+            .logical_addr
+            .as_ref()
+            .map(|LogicalAddr(a)| a.as_http_authority());
         metrics::OutboundEndpointLabels {
-            authority: Some(self.logical_addr.to_http_authority()),
+            authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.tls.clone(),
-            target_addr: self.addr.into(),
+            target_addr,
         }
     }
 }
@@ -271,7 +277,7 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
             addr: Remote(ServerAddr(addr)),
             tls,
             metadata,
-            logical_addr: concrete.logical.addr(),
+            logical_addr: Some(concrete.logical.logical_addr.clone()),
             protocol: concrete.logical.protocol,
         }
     }
@@ -301,7 +307,7 @@ impl ProfileEndpoint {
             addr: Remote(ServerAddr(addr)),
             tls,
             metadata,
-            logical_addr: addr.into(),
+            logical_addr: None,
             protocol: (),
         };
         Self {
