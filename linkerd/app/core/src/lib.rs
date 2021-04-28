@@ -80,13 +80,15 @@ pub fn is_discovery_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
     }
 }
 
-pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
+pub fn http_request_l5d_override_dst_name_addr<B>(
+    req: &http::Request<B>,
+) -> Result<NameAddr, addr::Error> {
     proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
         .ok_or_else(|| {
             tracing::trace!("{} not in request headers", DST_OVERRIDE_HEADER);
             addr::Error::InvalidHost
         })
-        .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
+        .and_then(|a| NameAddr::from_authority_with_default_port(&a, DEFAULT_PORT))
 }
 
 pub fn http_request_authority_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {

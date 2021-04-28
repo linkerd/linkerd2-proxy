@@ -1,13 +1,13 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_addr, http_tracing,
-    io, profiles,
+    detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_name_addr,
+    http_tracing, io, profiles,
     proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
     transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
-    Addr, AddrMatch, Conditional, Error,
+    AddrMatch, Conditional, Error, NameAddr,
 };
 use std::convert::TryFrom;
 use thiserror::Error;
@@ -156,7 +156,7 @@ struct AllowHttpProfile(AddrMatch);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Target {
-    dst: Addr,
+    dst: NameAddr,
     version: http::Version,
 }
 
@@ -169,8 +169,8 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
     type Request = profiles::LookupAddr;
 
     fn check(&mut self, Target { dst, .. }: Target) -> Result<profiles::LookupAddr, Error> {
-        if self.0.matches(&dst) {
-            Ok(profiles::LookupAddr(dst))
+        if self.0.names().matches(dst.name()) {
+            Ok(profiles::LookupAddr(dst.into()))
         } else {
             Err(discovery_rejected().into())
         }
@@ -185,14 +185,10 @@ impl TryFrom<(Option<profiles::Receiver>, Target)> for http::Logical {
         (profile, Target { dst, version }): (Option<profiles::Receiver>, Target),
     ) -> Result<Self, Self::Error> {
         let profile = profile.ok_or(ProfileRequired)?;
+        let logical_addr = profile.borrow().addr.clone().ok_or(ProfileRequired)?;
 
         // XXX This is a hack to fix caching when an dst-override is set.
-        let orig_dst = if let Some(a) = dst.socket_addr() {
-            OrigDstAddr(a)
-        } else {
-            OrigDstAddr(([0, 0, 0, 0], dst.port()).into())
-        };
-        let logical_addr = profile.borrow().addr.clone().ok_or(ProfileRequired)?;
+        let orig_dst = OrigDstAddr(([0, 0, 0, 0], dst.port()).into());
 
         Ok(Self {
             orig_dst,
@@ -206,11 +202,7 @@ impl TryFrom<(Option<profiles::Receiver>, Target)> for http::Logical {
 impl From<(tls::NoClientTls, Target)> for http::Endpoint {
     fn from((reason, Target { dst, version }): (tls::NoClientTls, Target)) -> Self {
         // XXX This is a hack to fix caching when an dst-override is set.
-        let addr = if let Some(a) = dst.socket_addr() {
-            Remote(ServerAddr(a))
-        } else {
-            Remote(ServerAddr(([0, 0, 0, 0], dst.port()).into()))
-        };
+        let addr = Remote(ServerAddr(([0, 0, 0, 0], dst.port()).into()));
 
         Self {
             addr,
@@ -234,8 +226,7 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
     type Key = Target;
 
     fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
-        let dst =
-            http_request_l5d_override_dst_addr(req).unwrap_or_else(|_| self.0.orig_dst.0.into());
+        let dst = http_request_l5d_override_dst_name_addr(req).map_err(|_| DstOverrideRequired)?;
         Ok(Target {
             dst,
             version: self.0.protocol,
@@ -248,3 +239,7 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for TargetPerRequest {
 #[derive(Debug, Error)]
 #[error("ingress routing requires a service profile")]
 struct ProfileRequired;
+
+#[derive(Debug, Error)]
+#[error("ingress routing requires the l5d-dst-override header")]
+struct DstOverrideRequired;
