@@ -283,9 +283,11 @@ async fn meshed_hello_world() {
     let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(ep1));
     let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
 
-    let rsp = http_util::http_request(&mut client, Request::default()).await;
+    let rsp = http_util::http_request(&mut client, Request::default())
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let body = http_util::body_to_string(rsp.into_body()).await;
+    let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
     drop(client);
@@ -343,9 +345,11 @@ async fn stacks_idle_out() {
 
     let server = svc.new_service(addrs(ep1));
     let (mut client, bg) = http_util::connect_and_accept(&mut ClientBuilder::new(), server).await;
-    let rsp = http_util::http_request(&mut client, Request::default()).await;
+    let rsp = http_util::http_request(&mut client, Request::default())
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let body = http_util::body_to_string(rsp.into_body()).await;
+    let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
     drop(client);
@@ -416,11 +420,13 @@ async fn active_stacks_dont_idle_out() {
 
     let (mut client, client_bg) =
         http_util::connect_client(&mut ClientBuilder::new(), client_io).await;
-    let rsp = http_util::http_request(&mut client, Request::default()).await;
+    let rsp = http_util::http_request(&mut client, Request::default())
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::OK);
     let body = http_util::body_to_string(rsp.into_body());
     let body_task = tokio::spawn(async move {
-        let body = body.await;
+        let body = body.await.unwrap();
         assert_eq!(body, "Hello world!");
     });
 
@@ -558,9 +564,11 @@ async fn unmeshed_hello_world(
     let server = build_server(cfg, rt, profiles, resolver, connect).new_service(addrs(ep1));
     let (mut client, bg) = http_util::connect_and_accept(&mut client_settings, server).await;
 
-    let rsp = http_util::http_request(&mut client, Request::default()).await;
+    let rsp = http_util::http_request(&mut client, Request::default())
+        .await
+        .unwrap();
     assert_eq!(rsp.status(), http::StatusCode::OK);
-    let body = http_util::body_to_string(rsp.into_body()).await;
+    let body = http_util::body_to_string(rsp.into_body()).await.unwrap();
     assert_eq!(body, "Hello world!");
 
     drop(client);
