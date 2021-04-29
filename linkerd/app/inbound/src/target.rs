@@ -1,14 +1,13 @@
 use indexmap::IndexMap;
 use linkerd_app_core::{
-    classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, metrics, profiles,
+    classify, dst, http_request_authority_addr, http_request_host_addr, metrics, profiles,
     proxy::{http, tap},
     stack_tracing,
     svc::{self, Param},
     tls,
     transport::{self, addrs::*},
     transport_header::TransportHeader,
-    Addr, Conditional, Error, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    Addr, Conditional, Error, CANONICAL_DST_HEADER,
 };
 use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
@@ -322,14 +321,6 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
                         a
                     })
                 })
-            })
-            .or_else(|| {
-                http_request_l5d_override_dst_addr(req)
-                    .ok()
-                    .map(|override_addr| {
-                        debug!("using {}", DST_OVERRIDE_HEADER);
-                        override_addr
-                    })
             })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
