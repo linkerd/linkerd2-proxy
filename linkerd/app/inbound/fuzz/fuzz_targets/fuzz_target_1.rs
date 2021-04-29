@@ -5,7 +5,7 @@ use {libfuzzer_sys::fuzz_target, linkerd_app_inbound::http::fuzz_logic::*};
 
 #[cfg(fuzzing)]
 fuzz_target!(|requests: Vec<HttpRequestSpec>| {
-    let _ = tracing_subscriber::fmt::try_init();
+    let _trace = linkerd_tracing::test::trace_init();
     tracing::info!(?requests, "running with input");
     if requests.len() == 0 {
         return;

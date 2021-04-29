@@ -1,4 +1,8 @@
 [workspace]
+# Cargo should not unify feature flags across dev-dependencies and build
+# dependencies. This will be the default behavior in Rust 2021.
+resolver = "2"
+
 members = [
     "hyper-balance",
     "linkerd/addr",

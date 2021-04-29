@@ -5,7 +5,7 @@ use {libfuzzer_sys::fuzz_target, linkerd_transport_header::fuzz_logic::*};
 
 #[cfg(fuzzing)]
 fuzz_target!(|inp: TransportHeaderSpec| {
-    let _ = tracing_subscriber::fmt::try_init();
+    let _trace = linkerd_tracing::test::trace_init();
     tracing::info!(spec = ?inp, "running with input");
 
     tokio::runtime::Runtime::new()
