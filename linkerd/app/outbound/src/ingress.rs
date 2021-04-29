@@ -6,7 +6,7 @@ use linkerd_app_core::{
     proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
-    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
+    transport::{self, OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Conditional, Error, NameAddr,
 };
 use std::convert::TryFrom;
@@ -30,7 +30,7 @@ impl Outbound<()> {
         Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
     >
     where
-        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Endpoint, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<io::PrefixedIo<transport::metrics::SensorIo<I>>, Response = ()>
