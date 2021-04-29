@@ -7,7 +7,7 @@ mod tests;
 use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
-    detect, discovery_rejected, io, metrics, profiles,
+    detect, io, metrics, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -17,7 +17,7 @@ use linkerd_app_core::{
     tls,
     transport::OrigDstAddr,
     transport_header::SessionProtocol,
-    Error, NameAddr, NameMatch, Never,
+    DiscoveryRejected, Error, NameAddr, NameMatch, Never,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
@@ -120,12 +120,11 @@ where
         .into_stack()
         .push_request_filter(
             |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
-                let profile = p.ok_or_else(discovery_rejected)?;
-                let logical_addr = profile
-                    .borrow()
-                    .addr
-                    .clone()
-                    .ok_or_else(discovery_rejected)?;
+                let profile =
+                    p.ok_or_else(|| DiscoveryRejected::message("no profile discovered"))?;
+                let logical_addr = profile.borrow().addr.clone().ok_or_else(|| {
+                    DiscoveryRejected::message("profile does not have a logical address")
+                })?;
                 Ok(outbound::tcp::Logical {
                     profile,
                     orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),

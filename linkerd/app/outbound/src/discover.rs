@@ -1,9 +1,9 @@
 use crate::{tcp, Outbound};
 use linkerd_app_core::{
-    discovery_rejected, io, profiles,
+    io, profiles,
     svc::{self, stack::Param},
     transport::{metrics::SensorIo, OrigDstAddr},
-    Error, IpMatch,
+    DiscoveryRejected, Error, IpMatch,
 };
 use std::convert::TryFrom;
 use tracing::info_span;
@@ -83,7 +83,7 @@ impl svc::stack::Predicate<tcp::Accept> for AllowProfile {
         if self.0.matches(a.orig_dst.0.ip()) {
             Ok(profiles::LookupAddr(a.orig_dst.0.into()))
         } else {
-            Err(discovery_rejected().into())
+            Err(DiscoveryRejected::from(self.0.clone()).into())
         }
     }
 }

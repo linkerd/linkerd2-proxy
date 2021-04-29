@@ -1,13 +1,12 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, drain, errors, http_request_l5d_override_dst_name_addr,
-    http_tracing, io, profiles,
+    detect, drain, errors, http_request_l5d_override_dst_name_addr, http_tracing, io, profiles,
     proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
     transport::{self, OrigDstAddr, Remote, ServerAddr},
-    AddrMatch, Conditional, Error, NameAddr,
+    AddrMatch, Conditional, DiscoveryRejected, Error, NameAddr,
 };
 use std::convert::TryFrom;
 use thiserror::Error;
@@ -172,7 +171,7 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
         if self.0.names().matches(dst.name()) {
             Ok(profiles::LookupAddr(dst.into()))
         } else {
-            Err(discovery_rejected().into())
+            Err(DiscoveryRejected::from(self.0.clone()).into())
         }
     }
 }
