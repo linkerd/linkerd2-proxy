@@ -20,7 +20,6 @@ tracing-log = "0.1.2"
 
 [dependencies.tracing-subscriber]
 version = "0.2.16"
-# we don't need `chrono` time formatting or ANSI colored output
 default-features = false
-features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
+features = ["ansi", "env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
 
