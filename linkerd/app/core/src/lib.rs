@@ -65,24 +65,6 @@ pub struct ProxyRuntime {
     pub drain: drain::Watch,
 }
 
-#[derive(Clone, Debug, Error)]
-pub enum DiscoveryRejected {
-    #[error("discovery rejected by control plane: {0}")]
-    Remote(
-        #[from]
-        #[source]
-        tonic::Status,
-    ),
-    #[error("discovery rejected: not in search networks ({0})")]
-    IpMatch(IpMatch),
-    #[error("discovery rejected: not in search DNS suffixes ({0})")]
-    NameMatch(NameMatch),
-    #[error("discovery rejected: not in search networks ({}) or DNS suffixes ({})", .0.nets(), .0.names())]
-    AddrMatch(AddrMatch),
-    #[error("discovery rejected: {0}")]
-    Message(&'static str),
-}
-
 pub fn http_request_l5d_override_dst_name_addr<B>(
     req: &http::Request<B>,
 ) -> Result<NameAddr, addr::Error> {
@@ -107,52 +89,4 @@ pub fn http_request_host_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::E
     h1::authority_from_host(req)
         .ok_or(addr::Error::InvalidHost)
         .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
-}
-
-// === impl DiscoveryRejected ===
-
-impl From<IpMatch> for DiscoveryRejected {
-    fn from(ips: IpMatch) -> Self {
-        Self::IpMatch(ips)
-    }
-}
-
-impl From<NameMatch> for DiscoveryRejected {
-    fn from(suffixes: NameMatch) -> Self {
-        Self::NameMatch(suffixes)
-    }
-}
-
-impl From<AddrMatch> for DiscoveryRejected {
-    fn from(addrs: AddrMatch) -> Self {
-        Self::AddrMatch(addrs)
-    }
-}
-
-impl DiscoveryRejected {
-    pub fn message(message: &'static str) -> Self {
-        Self::Message(message)
-    }
-
-    pub fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-        let mut current = Some(err);
-        while let Some(err) = current {
-            tracing::debug!(?err);
-            if err.is::<Self>() {
-                return true;
-            }
-
-            if let Some(status) = err.downcast_ref::<tonic::Status>() {
-                let code = status.code();
-                return
-                    // Address is not resolveable
-                    code == tonic::Code::InvalidArgument
-                    // Unexpected cluster state
-                    || code == tonic::Code::FailedPrecondition;
-            }
-
-            current = err.source();
-        }
-        false
-    }
 }

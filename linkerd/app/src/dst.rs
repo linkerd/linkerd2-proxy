@@ -1,9 +1,10 @@
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    metrics, profiles,
+    metrics,
+    profiles::{self, DiscoveryRejected},
     proxy::{api_resolve as api, identity::LocalCrtKey, resolve::recover},
-    DiscoveryRejected, Error, Recover,
+    Error, Recover,
 };
 use tonic::body::BoxBody;
 

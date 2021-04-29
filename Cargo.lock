@@ -1303,6 +1303,7 @@ dependencies = [
  "quickcheck",
  "rand",
  "regex",
+ "thiserror",
  "tokio",
  "tonic",
  "tower",

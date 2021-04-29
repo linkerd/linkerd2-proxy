@@ -1,9 +1,10 @@
 use crate::{tcp, Outbound};
 use linkerd_app_core::{
-    io, profiles,
+    io,
+    profiles::{self, DiscoveryRejected},
     svc::{self, stack::Param},
     transport::{metrics::SensorIo, OrigDstAddr},
-    DiscoveryRejected, Error, IpMatch,
+    Error, IpMatch,
 };
 use std::convert::TryFrom;
 use tracing::info_span;
@@ -80,10 +81,16 @@ impl svc::stack::Predicate<tcp::Accept> for AllowProfile {
     type Request = profiles::LookupAddr;
 
     fn check(&mut self, a: tcp::Accept) -> Result<profiles::LookupAddr, Error> {
-        if self.0.matches(a.orig_dst.0.ip()) {
-            Ok(profiles::LookupAddr(a.orig_dst.0.into()))
+        let addr = a.orig_dst.0;
+        if self.0.matches(addr.ip()) {
+            Ok(profiles::LookupAddr(addr.into()))
         } else {
-            Err(DiscoveryRejected::from(self.0.clone()).into())
+            tracing::debug!(
+                %addr,
+                networks = %self.0,
+                "Rejecting profile discovery, not in configured search networks",
+            );
+            Err(DiscoveryRejected::new("not in configured search networks").into())
         }
     }
 }

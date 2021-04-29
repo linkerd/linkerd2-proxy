@@ -1,12 +1,13 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, drain, errors, http_request_l5d_override_dst_name_addr, http_tracing, io, profiles,
+    detect, drain, errors, http_request_l5d_override_dst_name_addr, http_tracing, io,
+    profiles::{self, DiscoveryRejected},
     proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
     transport::{self, OrigDstAddr, Remote, ServerAddr},
-    AddrMatch, Conditional, DiscoveryRejected, Error, NameAddr,
+    AddrMatch, Conditional, Error, NameAddr,
 };
 use std::convert::TryFrom;
 use thiserror::Error;
@@ -171,7 +172,13 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
         if self.0.names().matches(dst.name()) {
             Ok(profiles::LookupAddr(dst.into()))
         } else {
-            Err(DiscoveryRejected::from(self.0.clone()).into())
+            tracing::debug!(
+                %dst,
+                suffixes = %self.0.names(),
+                networks = %self.0.nets(),
+                "Rejecting profile discovery, address not in configured search networks or DNS suffixes",
+            );
+            Err(DiscoveryRejected::new("not in configured ingress search addresses").into())
         }
     }
 }
