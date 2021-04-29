@@ -17,4 +17,4 @@ tracing = "0.1.23"
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["macros", "test-util", "time"] }
-tracing-subscriber = "0.2.16"
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }

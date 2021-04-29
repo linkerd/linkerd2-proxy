@@ -101,7 +101,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn no_profile() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let endpoint = |ep: tcp::Endpoint| {
             assert_eq!(ep.addr.as_ref().ip(), IpAddr::from([192, 0, 2, 20]));
@@ -124,7 +124,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn profile_endpoint() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let endpoint = |ep: tcp::Endpoint| {
             assert_eq!(ep.addr.as_ref().ip(), IpAddr::from([192, 0, 2, 10]));
@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn profile_logical() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let logical = |t: tcp::Logical| {
             assert_eq!(t.logical_addr.to_string(), "foo.example.com:3030");

@@ -33,9 +33,3 @@ tower = { version = "0.4.7", default-features = false}
 tracing = "0.1.23"
 tracing-subscriber = { version = "0.2.16", features = ["env-filter", "fmt"], default-features = false }
 thiserror = "1"
-
-[dev-dependencies.tracing-subscriber]
-version = "0.2.16"
-# turn on ANSI colors for tests :)
-default-features = false
-features = ["env-filter", "fmt", "smallvec", "ansi", "tracing-log", "json", "parking_lot"]

@@ -232,7 +232,7 @@ pub mod tests {
     /// Tests that socket errors cause HTTP clients to be disconnected.
     #[tokio::test(flavor = "current_thread")]
     async fn propagates_http_errors() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
         time::pause();
 
         let (rt, shutdown) = runtime();

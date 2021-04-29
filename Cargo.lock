@@ -126,18 +126,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "chrono"
-version = "0.4.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
-dependencies = [
- "libc",
- "num-integer",
- "num-traits",
- "winapi",
-]
-
-[[package]]
 name = "cmake"
 version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -744,12 +732,12 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
+ "linkerd-tracing",
  "thiserror",
  "tokio",
  "tokio-test",
  "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -767,6 +755,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-metrics",
+ "linkerd-tracing",
  "linkerd2-proxy-api",
  "regex",
  "rustls",
@@ -796,13 +785,13 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-retry",
+ "linkerd-tracing",
  "pin-project",
  "thiserror",
  "tokio",
  "tokio-test",
  "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -834,11 +823,11 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
+ "linkerd-tracing",
  "parking_lot",
  "tokio",
  "tower",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1154,6 +1143,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-timeout",
+ "linkerd-tracing",
  "pin-project",
  "rand",
  "thiserror",
@@ -1161,7 +1151,6 @@ dependencies = [
  "tokio-test",
  "tower",
  "tracing",
- "tracing-subscriber",
  "try-lock",
 ]
 
@@ -1324,13 +1313,13 @@ dependencies = [
  "dyn-clone",
  "futures",
  "linkerd-error",
+ "linkerd-tracing",
  "pin-project",
  "tokio",
  "tokio-test",
  "tower",
  "tower-test",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1385,13 +1374,13 @@ dependencies = [
  "linkerd-io",
  "linkerd-proxy-transport",
  "linkerd-stack",
+ "linkerd-tracing",
  "rustls",
  "thiserror",
  "tokio",
  "tokio-rustls",
  "tower",
  "tracing",
- "tracing-subscriber",
  "untrusted",
  "webpki",
 ]
@@ -1593,16 +1582,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f6bb902e437b6d86e03cce10a7e2af662292c5dfef23b65899ea3ac9354ad44"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "num-integer"
-version = "0.1.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2cc698a63b549a70bc047073d2949cce27cd1c7b0a4a862d08a8031bc2801db"
-dependencies = [
- "autocfg",
- "num-traits",
 ]
 
 [[package]]
@@ -2373,12 +2352,11 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ab8966ac3ca27126141f7999361cc97dd6fb4b71da04c02044fa9045d98bb96"
+checksum = "705096c6f83bf68ea5d357a6aa01829ddbdac531b357b45abeca842938085baa"
 dependencies = [
  "ansi_term",
- "chrono",
  "lazy_static",
  "matchers",
  "parking_lot",
