@@ -12,6 +12,7 @@ cargo-fuzz = true
 [target.'cfg(fuzzing)'.dependencies]
 libfuzzer-sys = "0.4"
 linkerd-proxy-http = { path = ".." }
+linkerd-tracing = { path = "../tracing" }
 tokio = { version = "1", features = ["full"] }
 
 # Prevent this from interfering with workspaces

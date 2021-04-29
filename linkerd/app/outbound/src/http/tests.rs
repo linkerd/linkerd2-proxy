@@ -16,6 +16,7 @@ use linkerd_app_core::{
     transport::orig_dst,
     Error, NameAddr, ProxyRuntime,
 };
+use linkerd_tracing::test::trace_init;
 use std::{
     net::SocketAddr,
     pin::Pin,
@@ -130,7 +131,7 @@ impl<T, I> svc::Service<I> for NoTcpBalancer<T> {
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
     // connecting to that endpoint fails, the client connection will also be reset.
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
 
@@ -234,7 +235,7 @@ async fn unmeshed_http2_hello_world() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn meshed_hello_world() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let cfg = default_config();
@@ -285,7 +286,7 @@ async fn meshed_hello_world() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn stacks_idle_out() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let idle_timeout = Duration::from_millis(500);
@@ -352,7 +353,7 @@ async fn stacks_idle_out() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn active_stacks_dont_idle_out() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let idle_timeout = Duration::from_millis(500);
@@ -458,7 +459,7 @@ async fn unmeshed_hello_world(
     server_settings: hyper::server::conn::Http,
     mut client_settings: ClientBuilder,
 ) {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let cfg = default_config();

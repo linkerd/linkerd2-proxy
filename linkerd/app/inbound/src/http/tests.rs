@@ -15,6 +15,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, Remote, ServerAddr},
     Conditional, Error, NameAddr, ProxyRuntime,
 };
+use linkerd_tracing::test::trace_init;
 use tracing::Instrument;
 
 fn build_server<I>(
@@ -50,7 +51,7 @@ async fn unmeshed_http1_hello_world() {
     let mut server = hyper::server::conn::Http::new();
     server.http1_only(true);
     let mut client = ClientBuilder::new();
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let accept = HttpAccept {
         version: proxy::http::Version::Http1,
@@ -97,7 +98,7 @@ async fn downgrade_origin_form() {
     server.http1_only(true);
     let mut client = ClientBuilder::new();
     client.http2_only(true);
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let accept = HttpAccept {
         version: proxy::http::Version::H2,
@@ -145,7 +146,7 @@ async fn downgrade_absolute_form() {
     server.http1_only(true);
     let mut client = ClientBuilder::new();
     client.http2_only(true);
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let accept = HttpAccept {
         version: proxy::http::Version::H2,

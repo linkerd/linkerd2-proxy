@@ -79,7 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn h2() {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         for read in &[H2_PREFACE, H2_AND_GARBAGE] {
             debug!(read = ?std::str::from_utf8(&read).unwrap());
@@ -92,7 +92,7 @@ mod tests {
 
     #[tokio::test]
     async fn http1() {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         for i in 1..SMALLEST_POSSIBLE_HTTP1_REQ.len() {
             debug!(read = ?std::str::from_utf8(&HTTP11_LINE[..i]).unwrap());
@@ -130,9 +130,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn unknown() {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let mut buf = BytesMut::with_capacity(1024);
         let mut io = io::Builder::new().read(b"foo.bar.blah\r\nbobo").build();

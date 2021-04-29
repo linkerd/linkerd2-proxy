@@ -26,7 +26,7 @@ use tower::{
 };
 use tracing::instrument::Instrument;
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
     let (client_result, server_result) = run_test(
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
@@ -49,7 +49,7 @@ async fn plaintext() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_works() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
     let client_tls = id::test_util::BAR_NS1.validate().unwrap();
@@ -79,7 +79,7 @@ async fn proxy_to_proxy_tls_works() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
 
@@ -140,18 +140,12 @@ where
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
-    {
-        use tracing_subscriber::{fmt, EnvFilter};
-        let sub = fmt::Subscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
-            .finish();
-        let _ = tracing::subscriber::set_global_default(sub);
-    }
-
     let (client_tls, client_server_id) = match client_tls {
         Conditional::Some((crtkey, name)) => (Some(Tls(crtkey)), Conditional::Some(name)),
         Conditional::None(reason) => (None, Conditional::None(reason)),
     };
+
+    let _trace = linkerd_tracing::test::trace_init();
 
     // A future that will receive a single connection.
     let (server, server_addr, server_result) = {

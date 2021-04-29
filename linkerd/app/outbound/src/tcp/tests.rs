@@ -18,6 +18,7 @@ use linkerd_app_core::{
     transport::{addrs::*, listen, orig_dst},
     Conditional, Error, IpMatch, NameAddr,
 };
+use linkerd_tracing::test::trace_init;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -32,7 +33,7 @@ use tracing::instrument::Instrument;
 
 #[tokio::test]
 async fn plaintext_tcp() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     // Since all of the actual IO in this test is mocked out, we won't actually
     // bind any of these addresses. Therefore, we don't need to use ephemeral
@@ -60,7 +61,7 @@ async fn plaintext_tcp() {
 
 #[tokio::test]
 async fn plaintext_tcp_no_profile() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     // Since all of the actual IO in this test is mocked out, we won't actually
     // bind any of these addresses. Therefore, we don't need to use ephemeral
@@ -88,7 +89,7 @@ async fn plaintext_tcp_no_profile() {
 
 #[tokio::test]
 async fn logical_plaintext_tcp() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     // Since all of the actual IO in this test is mocked out, we won't actually
     // bind any of these addresses. Therefore, we don't need to use ephemeral
@@ -132,7 +133,7 @@ async fn logical_plaintext_tcp() {
 
 #[tokio::test]
 async fn logical_tls_when_hinted() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let tls_addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let tls = logical_named(tls_addr, "tls:5550");
@@ -208,7 +209,7 @@ async fn logical_tls_when_hinted() {
 
 #[tokio::test]
 async fn resolutions_are_reused() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let addr = SocketAddr::new([0, 0, 0, 0].into(), 5550);
     let svc_addr = NameAddr::from_str("foo.ns1.svc.example.com:5550").unwrap();
@@ -274,7 +275,7 @@ async fn resolutions_are_reused() {
 
 #[tokio::test]
 async fn load_balances() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
@@ -371,7 +372,7 @@ async fn load_balances() {
 
 #[tokio::test]
 async fn load_balancer_add_endpoints() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
@@ -487,7 +488,7 @@ async fn load_balancer_add_endpoints() {
 
 #[tokio::test]
 async fn load_balancer_remove_endpoints() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let addr = SocketAddr::new([10, 0, 142, 80].into(), 5550);
     let endpoints = &[
@@ -594,7 +595,7 @@ async fn load_balancer_remove_endpoints() {
 
 #[tokio::test]
 async fn no_profiles_when_outside_search_nets() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let profile_addr = SocketAddr::new([10, 0, 0, 42].into(), 5550);
     let no_profile_addr = SocketAddr::new([126, 32, 5, 18].into(), 5550);
@@ -676,7 +677,7 @@ async fn no_profiles_when_outside_search_nets() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn no_discovery_when_profile_has_an_endpoint() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep = SocketAddr::new([10, 0, 0, 41].into(), 5550);
     let meta = support::resolver::Metadata::new(
@@ -721,7 +722,7 @@ async fn no_discovery_when_profile_has_an_endpoint() {
 async fn profile_endpoint_propagates_conn_errors() {
     // This test asserts that when profile resolution returns an endpoint, and
     // connecting to that endpoint fails, the client connection will also be reset.
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let ep1 = SocketAddr::new([10, 0, 0, 41].into(), 5550);
 

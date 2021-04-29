@@ -6,6 +6,10 @@ license = "Apache-2.0"
 edition = "2018"
 publish = false
 
+[features]
+default = []
+ansi = ["tracing-subscriber/ansi"]
+
 [dependencies]
 bytes = "1"
 html-escape = "0.2.5"

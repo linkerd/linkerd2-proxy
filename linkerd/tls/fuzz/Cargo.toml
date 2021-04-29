@@ -12,6 +12,7 @@ cargo-fuzz = true
 [target.'cfg(fuzzing)'.dependencies]
 libfuzzer-sys = "0.4"
 linkerd-tls = { path = ".." }
+linkerd-tracing = { path = "../../tracing" }
 
 # Prevent this from interfering with workspaces
 [workspace]
