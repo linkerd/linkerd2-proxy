@@ -42,9 +42,6 @@ pub enum NoClientTls {
     /// doesn't need or support TLS.
     Loopback,
 
-    // Discovery is not performed for non-HTTP connections when in "ingress mode".
-    IngressNonHttp,
-
     /// The destination service didn't give us the identity, which is its way
     /// of telling us that we shouldn't do TLS for this endpoint.
     NotProvidedByServiceDiscovery,
@@ -198,7 +195,6 @@ impl fmt::Display for NoClientTls {
             Self::NotProvidedByServiceDiscovery => {
                 write!(f, "not_provided_by_service_discovery")
             }
-            Self::IngressNonHttp => write!(f, "ingress_non_http"),
         }
     }
 }
