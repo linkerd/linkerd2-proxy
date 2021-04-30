@@ -42,10 +42,8 @@ struct IngressHttpOnly;
 impl<H> Outbound<H> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
-    /// Forwards TCP connections without discovery/routing (or mTLS).
-    ///
     /// This is only intended for Ingress configurations, where we assume all
-    /// outbound traffic is either HTTP or TLS'd by the ingress proxy.
+    /// outbound traffic is HTTP.
     pub fn into_ingress<T, I, HSvc, P>(
         self,
         profiles: P,
