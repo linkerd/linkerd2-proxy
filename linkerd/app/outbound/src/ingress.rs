@@ -129,10 +129,10 @@ impl<H> Outbound<H> {
         )
         .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
         .push(http::NewServeHttp::layer(h2_settings, rt.drain))
-        .push_map_target(http::Accept::from)
-        .push(svc::UnwrapOr::layer(
-            svc::Fail::<_, IngressHttpOnly>::default(),
-        ))
+        .push_request_filter(|(http, accept): (Option<http::Version>, _)| {
+            http.map(|h| http::Accept::from((h, accept)))
+                .ok_or(IngressHttpOnly)
+        })
         .push_cache(cache_max_idle_age)
         .push_map_target(detect::allow_timeout)
         .push(detect::NewDetectService::layer(
