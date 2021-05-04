@@ -74,6 +74,11 @@ This project is for everyone. We ask that our users and contributors take a few
 minutes to review our [code of conduct][coc].
 
 
+## Security
+
+A third party security audit focused on fuzzing Linkerd2-proxy was performed by Ada Logics in 2021. The full report is available [here](docs/linkerd2-proxy-fuzzing-report.pdf)
+
+
 ## License
 
 linkerd2-proxy is copyright 2018 the linkerd2-proxy authors. All rights reserved.
