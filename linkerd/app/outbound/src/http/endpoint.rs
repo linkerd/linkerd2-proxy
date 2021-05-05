@@ -70,7 +70,10 @@ impl<C> Outbound<C> {
                 "host",
                 CANONICAL_DST_HEADER,
             ]))
-            .push_on_response(http::BoxResponse::layer());
+            .push_on_response(http::BoxResponse::layer())
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,

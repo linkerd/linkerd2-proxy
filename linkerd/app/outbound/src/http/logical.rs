@@ -30,13 +30,18 @@ impl<E> Outbound<E> {
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
         B::Data: Send + 'static,
-        E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + 'static,
+        E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
+            + Sync
             + 'static,
         ESvc::Error: Into<Error>,
         ESvc::Future: Send,
-        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata> + Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {
@@ -174,7 +179,10 @@ impl<E> Outbound<E> {
                 svc::stack(endpoint)
                     .push_on_response(http::BoxRequest::layer())
                     .into_inner(),
-            );
+            )
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,

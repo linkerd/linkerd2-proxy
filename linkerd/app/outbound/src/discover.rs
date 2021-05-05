@@ -27,10 +27,11 @@ impl<N> Outbound<N> {
         N: svc::NewService<(Option<profiles::Receiver>, tcp::Accept), Service = NSvc>
             + Clone
             + Send
+            + Sync
             + 'static,
         NSvc: svc::Service<SensorIo<I>, Response = (), Error = Error> + Send + 'static,
         NSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
     {
@@ -61,6 +62,9 @@ impl<N> Outbound<N> {
             .push_cache(config.proxy.cache_max_idle_age)
             .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
             .push_request_filter(|addrs: T| tcp::Accept::try_from(addrs.param()))
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>();
 
         Outbound {

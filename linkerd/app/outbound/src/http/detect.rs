@@ -22,12 +22,12 @@ impl<N> Outbound<N> {
     >
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        N: svc::NewService<NTgt, Service = NSvc> + Clone + Send + 'static,
+        N: svc::NewService<NTgt, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<io::EitherIo<I, io::PrefixedIo<I>>, Response = ()> + Send + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         NTgt: From<T> + 'static,
-        H: svc::NewService<HTgt, Service = HSvc> + Clone + Send + 'static,
+        H: svc::NewService<HTgt, Service = HSvc> + Clone + Send + Sync + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
         HSvc: Clone + Send + Sync + Unpin + 'static,
         HSvc::Error: Into<Error>,
@@ -85,7 +85,10 @@ impl<N> Outbound<N> {
                 },
                 skipped,
             )
-            .check_new_service::<T, _>();
+            .check_new_service::<T, _>()
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,

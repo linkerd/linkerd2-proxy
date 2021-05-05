@@ -31,9 +31,14 @@ where
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
+        C: Send + Sync + 'static,
     {
         let Self {
             config,
@@ -118,7 +123,10 @@ where
             .check_new_service::<Logical, I>()
             .push_switch(Logical::or_endpoint(no_tls_reason), endpoint.into_inner())
             .instrument(|_: &Logical| debug_span!("tcp"))
-            .check_new_service::<Logical, I>();
+            .check_new_service::<Logical, I>()
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,
