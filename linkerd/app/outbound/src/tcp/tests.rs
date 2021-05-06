@@ -675,6 +675,47 @@ async fn no_profiles_when_outside_search_nets() {
     );
 }
 
+#[tokio::test]
+async fn forwards_when_profile_rejected() {
+    let _trace = support::trace_init();
+
+    let profile_addr = SocketAddr::new([10, 0, 0, 42].into(), 5550);
+    let cfg = default_config();
+
+    // Build a mock "connector" that returns the upstream "server" IO.
+    let connect = support::connect().endpoint_fn(profile_addr, move |endpoint: Endpoint| {
+        assert_eq!(endpoint.tls, Conditional::None(tls::NoClientTls::Disabled));
+        let io = support::io()
+            .write(b"hello")
+            .read(b"world")
+            .read_error(std::io::ErrorKind::ConnectionReset.into())
+            .build();
+        Ok(io)
+    });
+
+    let resolver = support::resolver::no_destinations();
+    let profiles = support::profiles().no_profile(profile_addr);
+    let profile_state = profiles.handle();
+
+    // Build the outbound server
+    let mut server = Server::default()
+        .config(cfg)
+        .profiles(profiles)
+        .destinations(resolver)
+        .connect(connect)
+        .build();
+
+    tokio::join! {
+        hello_world_client(profile_addr, &mut server),
+    };
+
+    assert!(profile_state.is_empty());
+    assert!(
+        profile_state.only_configured(),
+        "profiles outside the search networks were resolved"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn no_discovery_when_profile_has_an_endpoint() {
     let _trace = trace_init();

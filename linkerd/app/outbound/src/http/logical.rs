@@ -33,7 +33,6 @@ impl<E> Outbound<E> {
         E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
             + Send
-            + Sync
             + 'static,
         ESvc::Error: Into<Error>,
         ESvc::Future: Send,

@@ -19,7 +19,10 @@ impl<C> Outbound<C> {
                     Error = Error,
                     Future = impl Send,
                 >,
-            > + Clone,
+            > + Clone
+            + Send
+            + Sync
+            + 'static,
     >
     where
         T: Clone + Send + Sync + 'static,
@@ -33,7 +36,7 @@ impl<C> Outbound<C> {
         C: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
-        C::Future: Send + Unpin,
+        C::Future: Send + Unpin + 'static,
     {
         let Self {
             config,
@@ -70,10 +73,7 @@ impl<C> Outbound<C> {
                 "host",
                 CANONICAL_DST_HEADER,
             ]))
-            .push_on_response(http::BoxResponse::layer())
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
-            .push(svc::BoxNewService::layer());
+            .push_on_response(http::BoxResponse::layer());
 
         Outbound {
             config,
