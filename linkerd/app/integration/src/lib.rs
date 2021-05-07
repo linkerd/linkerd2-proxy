@@ -41,6 +41,9 @@ pub use tower::Service;
 pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
+#[cfg(test)]
+pub use linkerd_tracing::test::trace_init;
+
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &str = "RUST_TEST_PATIENCE_MS";
 pub const DEFAULT_TEST_PATIENCE: Duration = Duration::from_millis(15);

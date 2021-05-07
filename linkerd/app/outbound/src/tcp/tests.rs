@@ -677,7 +677,7 @@ async fn no_profiles_when_outside_search_nets() {
 
 #[tokio::test]
 async fn forwards_when_profile_rejected() {
-    let _trace = support::trace_init();
+    let _trace = trace_init();
 
     let profile_addr = SocketAddr::new([10, 0, 0, 42].into(), 5550);
     let cfg = default_config();

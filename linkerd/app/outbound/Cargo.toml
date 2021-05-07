@@ -12,7 +12,6 @@ Configures and runs the outbound proxy
 [features]
 default = []
 allow-loopback = []
-test-subscriber = []
 
 [dependencies]
 bytes = "1"
