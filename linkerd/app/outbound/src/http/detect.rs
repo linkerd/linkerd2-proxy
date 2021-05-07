@@ -88,7 +88,8 @@ impl<N> Outbound<N> {
             .check_new_service::<T, _>()
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
-            .push(svc::BoxNewService::layer());
+            .push(svc::BoxNewService::layer())
+            .push_on_response(svc::BoxService::layer());
 
         Outbound {
             config,

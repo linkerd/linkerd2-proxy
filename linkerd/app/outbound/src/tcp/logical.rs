@@ -126,7 +126,8 @@ where
             .check_new_service::<Logical, I>()
             // Boxing is necessary purely to limit the link-time overhead of
             // having enormous types.
-            .push(svc::BoxNewService::layer());
+            .push(svc::BoxNewService::layer())
+            .push_on_response(svc::BoxService::layer());
 
         Outbound {
             config,
