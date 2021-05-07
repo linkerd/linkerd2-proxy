@@ -1,7 +1,7 @@
 //! Configures and runs the outbound proxy.
 //!
-//! The outound proxy is responsible for routing traffic from the local
-//! application to external network endpoints.
+//! The outbound proxy is responsible for routing traffic from the local application to external
+//! network endpoints.
 
 #![deny(warnings, rust_2018_idioms)]
 
@@ -15,7 +15,7 @@ pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
 
-use crate::http::SkipHttpDetection;
+use self::{endpoint::Endpoint, logical::Logical};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     io, metrics, profiles,
@@ -27,7 +27,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*, listen::Bind},
-    AddrMatch, Conditional, Error, ProxyRuntime,
+    AddrMatch, Conditional, Error, Never, ProxyRuntime,
 };
 use std::{collections::HashMap, future::Future, time::Duration};
 use tracing::info;
@@ -96,6 +96,14 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
+    fn no_tls_reason(&self) -> tls::NoClientTls {
+        if self.runtime.identity.is_none() {
+            tls::NoClientTls::Disabled
+        } else {
+            tls::NoClientTls::NotProvidedByServiceDiscovery
+        }
+    }
+
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
         Outbound {
             config: self.config,
@@ -104,17 +112,18 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn into_server<T, R, P, I>(
+    pub fn push_proxy<T, R, I>(
         self,
         resolve: R,
-        profiles: P,
-    ) -> impl svc::NewService<
-        T,
-        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+    ) -> Outbound<
+        impl svc::NewService<
+                (Option<profiles::Receiver>, T),
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
     >
     where
         Self: Clone + 'static,
-        T: Param<OrigDstAddr> + Param<Remote<ClientAddr>> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         S: Clone + Send + Sync + Unpin + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error>,
         S::Response: tls::HasNegotiatedProtocol,
@@ -124,28 +133,23 @@ impl<S> Outbound<S> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + 'static,
-        P::Future: Send,
-        P::Error: Send,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
     {
         // HTTP per-endpoint stack used when a profile is not discovered.
-        let http_no_profile = self
+        let http_endpoint = self
             .clone()
             .push_tcp_endpoint()
             .push_http_endpoint()
-            .push_into_endpoint()
-            .push_http_server::<http::Accept, _>()
+            .push_http_server::<http::Endpoint, _>()
             .into_inner();
 
         // HTTP and TCP per-endpoint stack used when a profile is not discovered.
-        let no_profile = self
+        let endpoint = self
             .clone()
             .push_tcp_endpoint()
             .push_tcp_forward()
-            .push_into_endpoint::<(), tcp::Accept>()
             // If HTTP is detected, use the `http_endpoint` stack
-            .push_detect_http(http_no_profile)
+            .push_detect_http(http_endpoint)
             .into_inner();
 
         // HTTP stack for logical targets (with service profiles).
@@ -157,17 +161,57 @@ impl<S> Outbound<S> {
             .push_http_server()
             .into_inner();
 
-        self.push_tcp_endpoint()
+        let no_tls_reason = self.no_tls_reason();
+        let Outbound {
+            config,
+            runtime,
+            stack: accept,
+        } = self
+            .push_tcp_endpoint()
             .push_tcp_logical(resolve)
             // Try to detect HTTP and use the `http_logical` stack, skipping
             // detection if it's disabled by the service profile.
-            .push_detect_http(http_logical)
-            // If a service profile was not discovered, fall back to the
-            // per-endpoint stack.
-            .push_unwrap_logical(no_profile)
-            // Discover service profiles for each original dst address
-            .push_discover(profiles)
-            .into_inner()
+            .push_detect_http(http_logical);
+
+        let stack = accept.push_switch(
+            move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
+                if let Some(rx) = profile {
+                    let profiles::Profile {
+                        ref addr,
+                        ref endpoint,
+                        opaque_protocol,
+                        ..
+                    } = *rx.borrow();
+
+                    if let Some((addr, metadata)) = endpoint.clone() {
+                        return Ok(svc::Either::B(Endpoint::from_metadata(
+                            addr,
+                            metadata,
+                            no_tls_reason,
+                            opaque_protocol,
+                        )));
+                    }
+                    if let Some(logical_addr) = addr.clone() {
+                        return Ok(svc::Either::A(Logical::new(
+                            logical_addr,
+                            rx.clone(),
+                            target.param(),
+                        )));
+                    }
+                }
+                Ok(svc::Either::B(Endpoint::forward(
+                    target.param(),
+                    no_tls_reason,
+                )))
+            },
+            endpoint,
+        );
+
+        Outbound {
+            config,
+            runtime,
+            stack,
+        }
     }
 }
 
@@ -205,7 +249,11 @@ impl Outbound<()> {
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             } else {
-                let stack = self.to_tcp_connect().into_server(resolve, profiles);
+                let stack = self
+                    .to_tcp_connect()
+                    .push_proxy(resolve)
+                    .push_discover(profiles)
+                    .into_inner();
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             }
@@ -231,13 +279,6 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
 impl<P> Param<OrigDstAddr> for Accept<P> {
     fn param(&self) -> OrigDstAddr {
         self.orig_dst
-    }
-}
-
-// When a profile is not discovered, always enable protocol detection.
-impl Param<SkipHttpDetection> for Accept<()> {
-    fn param(&self) -> SkipHttpDetection {
-        SkipHttpDetection(false)
     }
 }
 

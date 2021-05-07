@@ -85,11 +85,14 @@ impl<H> Outbound<H> {
         } = config;
         let allow = AllowHttpProfile(allow_discovery);
 
-        http.push_on_response(
-            svc::layers()
-                .push(http::BoxRequest::layer())
-                .push(svc::MapErrLayer::new(Into::<Error>::into)),
-        )
+        let logical = http
+            .check_new_service::<http::Logical, http::Request<http::BoxBody>>()
+            .push_on_response(
+                svc::layers()
+                    .push(http::BoxRequest::layer())
+                    .push(svc::MapErrLayer::new(Into::<Error>::into)),
+            );
+
         // Lookup the profile for the outbound HTTP target, if appropriate.
         //
         // This service is buffered because it needs to initialize the profile
@@ -98,58 +101,59 @@ impl<H> Outbound<H> {
         // When this service is in failfast, ensure that we drive the
         // inner service to readiness even if new requests aren't
         // received.
-        .push_request_filter(http::Logical::try_from)
-        .check_new_service::<(Option<profiles::Receiver>, Target), _>()
-        .push(profiles::discover::layer(profiles, allow))
-        .push_on_response(
-            svc::layers()
-                .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
-                .push(svc::layer::mk(svc::SpawnReady::new))
-                .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
-                .push_spawn_buffer(buffer_capacity),
-        )
-        .push_cache(cache_max_idle_age)
-        .push_on_response(http::Retain::layer())
-        .instrument(|t: &Target| info_span!("target", dst = %t.dst))
-        // Obtain a new inner service for each request (fom the above cache).
-        //
-        // Note that the router service is always ready, so the `FailFast` layer
-        // need not use a `SpawnReady` to drive the service to ready.
-        .push(svc::NewRouter::layer(TargetPerRequest::accept))
-        .push(http::NewNormalizeUri::layer())
-        .push_on_response(
-            svc::layers()
-                .push(http::MarkAbsoluteForm::layer())
-                .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
-                .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                .push(rt.metrics.http_errors.clone())
-                .push(errors::layer())
-                .push(http_tracing::server(rt.span_sink, trace_labels()))
-                .push(http::BoxResponse::layer()),
-        )
-        .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
-        .push(http::NewServeHttp::layer(h2_settings, rt.drain))
-        .push_request_filter(|(http, accept): (Option<http::Version>, _)| {
-            http.map(|h| http::Accept::from((h, accept)))
-                .ok_or(IngressHttpOnly)
-        })
-        .push_cache(cache_max_idle_age)
-        .push_map_target(detect::allow_timeout)
-        .push(detect::NewDetectService::layer(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
-        ))
-        .push(rt.metrics.transport.layer_accept())
-        .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
-        .push_map_target(|a: T| {
-            let orig_dst = Param::<OrigDstAddr>::param(&a);
-            tcp::Accept::from(orig_dst)
-        })
-        // Boxing is necessary purely to limit the link-time overhead of
-        // having enormous types.
-        .push(svc::BoxNewService::layer())
-        .check_new_service::<T, I>()
-        .into_inner()
+        logical
+            .push_request_filter(http::Logical::try_from)
+            .check_new_service::<(Option<profiles::Receiver>, Target), _>()
+            .push(profiles::discover::layer(profiles, allow))
+            .push_on_response(
+                svc::layers()
+                    .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
+                    .push(svc::layer::mk(svc::SpawnReady::new))
+                    .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
+                    .push_spawn_buffer(buffer_capacity),
+            )
+            .push_cache(cache_max_idle_age)
+            .push_on_response(http::Retain::layer())
+            .instrument(|t: &Target| info_span!("target", dst = %t.dst))
+            // Obtain a new inner service for each request (fom the above cache).
+            //
+            // Note that the router service is always ready, so the `FailFast` layer
+            // need not use a `SpawnReady` to drive the service to ready.
+            .push(svc::NewRouter::layer(TargetPerRequest::accept))
+            .push(http::NewNormalizeUri::layer())
+            .push_on_response(
+                svc::layers()
+                    .push(http::MarkAbsoluteForm::layer())
+                    .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
+                    .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
+                    .push(rt.metrics.http_errors.clone())
+                    .push(errors::layer())
+                    .push(http_tracing::server(rt.span_sink, trace_labels()))
+                    .push(http::BoxResponse::layer()),
+            )
+            .instrument(|a: &http::Accept| debug_span!("http", v = %a.protocol))
+            .push(http::NewServeHttp::layer(h2_settings, rt.drain))
+            .push_request_filter(|(http, accept): (Option<http::Version>, _)| {
+                http.map(|h| http::Accept::from((h, accept)))
+                    .ok_or(IngressHttpOnly)
+            })
+            .push_cache(cache_max_idle_age)
+            .push_map_target(detect::allow_timeout)
+            .push(detect::NewDetectService::layer(
+                detect_protocol_timeout,
+                http::DetectHttp::default(),
+            ))
+            .push(rt.metrics.transport.layer_accept())
+            .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
+            .push_map_target(|a: T| {
+                let orig_dst = Param::<OrigDstAddr>::param(&a);
+                tcp::Accept::from(orig_dst)
+            })
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer())
+            .check_new_service::<T, I>()
+            .into_inner()
     }
 }
 
@@ -200,6 +204,8 @@ impl From<(tls::NoClientTls, Target)> for http::Endpoint {
             tls: Conditional::None(reason),
             logical_addr: None,
             protocol: version,
+            // The endpoint is HTTP and definitely not opaque.
+            opaque_protocol: false,
         }
     }
 }

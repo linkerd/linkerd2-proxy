@@ -1,15 +1,11 @@
-use crate::{
-    logical::{Concrete, Logical},
-    tcp::opaque_transport,
-    Accept, Outbound,
-};
+use crate::{http, logical::Concrete, tcp::opaque_transport};
 use linkerd_app_core::{
     metrics,
     profiles::LogicalAddr,
-    proxy::{api_resolve::Metadata, http, resolve::map_endpoint::MapEndpoint},
-    svc::{self, Param},
+    proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
+    svc::Param,
     tls,
-    transport::{self, Remote, ServerAddr},
+    transport::{self, addrs::*},
     transport_header, Conditional,
 };
 use std::net::SocketAddr;
@@ -21,6 +17,7 @@ pub struct Endpoint<P> {
     pub metadata: Metadata,
     pub logical_addr: Option<LogicalAddr>,
     pub protocol: P,
+    pub opaque_protocol: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -28,72 +25,33 @@ pub struct FromMetadata {
     pub identity_disabled: bool,
 }
 
-impl<E> Outbound<E> {
-    pub fn push_into_endpoint<P, T>(
-        self,
-    ) -> Outbound<impl svc::NewService<T, Service = E::Service> + Clone>
-    where
-        Endpoint<P>: From<(tls::NoClientTls, T)>,
-        E: svc::NewService<Endpoint<P>> + Clone,
-    {
-        let Self {
-            config,
-            runtime,
-            stack: endpoint,
-        } = self;
-        let identity_disabled = runtime.identity.is_none();
-        let no_tls_reason = if identity_disabled {
-            tls::NoClientTls::Disabled
-        } else {
-            tls::NoClientTls::NotProvidedByServiceDiscovery
-        };
-        let stack =
-            svc::stack(endpoint).push_map_target(move |t| Endpoint::<P>::from((no_tls_reason, t)));
-        Outbound {
-            config,
-            runtime,
-            stack,
-        }
-    }
-}
-
 // === impl Endpoint ===
 
-impl<P> Endpoint<P> {
-    pub fn no_tls(reason: tls::NoClientTls) -> impl Fn(Accept<P>) -> Self {
-        move |accept| Self::from((reason, accept))
-    }
-}
-
-impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
-    fn from((reason, logical): (tls::NoClientTls, Logical<P>)) -> Self {
-        match logical.profile.borrow().endpoint.clone() {
-            None => Self {
-                addr: Remote(ServerAddr(logical.orig_dst.into())),
-                metadata: Metadata::default(),
-                tls: Conditional::None(reason),
-                logical_addr: Some(logical.logical_addr),
-                protocol: logical.protocol,
-            },
-            Some((addr, metadata)) => Self {
-                addr: Remote(ServerAddr(addr)),
-                tls: FromMetadata::client_tls(&metadata, reason),
-                metadata,
-                logical_addr: Some(logical.logical_addr),
-                protocol: logical.protocol,
-            },
-        }
-    }
-}
-
-impl<P> From<(tls::NoClientTls, Accept<P>)> for Endpoint<P> {
-    fn from((reason, accept): (tls::NoClientTls, Accept<P>)) -> Self {
+impl Endpoint<()> {
+    pub(crate) fn forward(addr: OrigDstAddr, reason: tls::NoClientTls) -> Self {
         Self {
-            addr: Remote(ServerAddr(accept.orig_dst.into())),
+            addr: Remote(ServerAddr(addr.into())),
             metadata: Metadata::default(),
             tls: Conditional::None(reason),
             logical_addr: None,
-            protocol: accept.protocol,
+            opaque_protocol: false,
+            protocol: (),
+        }
+    }
+
+    pub(crate) fn from_metadata(
+        addr: SocketAddr,
+        metadata: Metadata,
+        reason: tls::NoClientTls,
+        opaque_protocol: bool,
+    ) -> Self {
+        Self {
+            addr: Remote(ServerAddr(addr)),
+            tls: FromMetadata::client_tls(&metadata, reason),
+            metadata,
+            logical_addr: None,
+            opaque_protocol,
+            protocol: (),
         }
     }
 }
@@ -107,6 +65,16 @@ impl<P> Param<Remote<ServerAddr>> for Endpoint<P> {
 impl<P> Param<tls::ConditionalClientTls> for Endpoint<P> {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
+    }
+}
+
+impl<P> Param<Option<http::detect::Skip>> for Endpoint<P> {
+    fn param(&self) -> Option<http::detect::Skip> {
+        if self.opaque_protocol {
+            Some(http::detect::Skip)
+        } else {
+            None
+        }
     }
 }
 
@@ -214,6 +182,9 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
             metadata,
             logical_addr: Some(concrete.logical.logical_addr.clone()),
             protocol: concrete.logical.protocol,
+            // XXX We never do protocol detection after resolving a concrete address to endpoints.
+            // We should differentiate these target types statically.
+            opaque_protocol: false,
         }
     }
 }

@@ -1,4 +1,4 @@
-mod detect;
+pub mod detect;
 mod endpoint;
 pub mod logical;
 mod require_identity_on_endpoint;
@@ -7,7 +7,6 @@ mod server;
 #[cfg(test)]
 mod tests;
 
-pub use self::detect::SkipHttpDetection;
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
@@ -96,21 +95,50 @@ impl Logical {
 
 impl Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
-        if let Some(LogicalAddr(a)) = self.profile.borrow().addr.as_ref() {
-            return normalize_uri::DefaultAuthority(Some(
-                uri::Authority::from_str(&a.to_string())
-                    .expect("Address must be a valid authority"),
-            ));
-        }
-
-        normalize_uri::DefaultAuthority(Some(
-            uri::Authority::from_str(&self.orig_dst.to_string())
+        return normalize_uri::DefaultAuthority(Some(
+            uri::Authority::from_str(&self.logical_addr.to_string())
                 .expect("Address must be a valid authority"),
-        ))
+        ));
     }
 }
 
 // === impl Endpoint ===
+
+impl From<(Version, tcp::Endpoint)> for Endpoint {
+    fn from((protocol, ep): (Version, tcp::Endpoint)) -> Self {
+        Self {
+            protocol,
+            addr: ep.addr,
+            tls: ep.tls,
+            metadata: ep.metadata,
+            logical_addr: ep.logical_addr,
+            // If we know an HTTP version, the protocol must not be opaque.
+            opaque_protocol: false,
+        }
+    }
+}
+
+impl Param<normalize_uri::DefaultAuthority> for Endpoint {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        if let Some(LogicalAddr(ref a)) = self.logical_addr {
+            normalize_uri::DefaultAuthority(Some(
+                uri::Authority::from_str(&a.to_string())
+                    .expect("Address must be a valid authority"),
+            ))
+        } else {
+            normalize_uri::DefaultAuthority(Some(
+                uri::Authority::from_str(&self.addr.to_string())
+                    .expect("Address must be a valid authority"),
+            ))
+        }
+    }
+}
+
+impl Param<Version> for Endpoint {
+    fn param(&self) -> Version {
+        self.protocol
+    }
+}
 
 impl Param<client::Settings> for Endpoint {
     fn param(&self) -> client::Settings {

@@ -8,7 +8,7 @@ use linkerd_app_core::{
         http,
         resolve::map_endpoint,
     },
-    retry, svc, tls, Error, Never, DST_OVERRIDE_HEADER,
+    retry, svc, Error, Never, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
 
@@ -57,11 +57,6 @@ impl<E> Outbound<E> {
             endpoint.instrument(|e: &Endpoint| debug_span!("endpoint", server.addr = %e.addr));
 
         let identity_disabled = rt.identity.is_none();
-        let no_tls_reason = if identity_disabled {
-            tls::NoClientTls::Disabled
-        } else {
-            tls::NoClientTls::NotProvidedByServiceDiscovery
-        };
         let resolve = svc::stack(resolve.into_service())
             .check_service::<ConcreteAddr>()
             .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
@@ -157,24 +152,7 @@ impl<E> Outbound<E> {
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                     .push(http::BoxResponse::layer()),
             )
-            .instrument(|l: &Logical| debug_span!("logical", dst = %l.addr()))
-            .push_switch(
-                move |logical: Logical| {
-                    let should_resolve = {
-                        let p = logical.profile.borrow();
-                        p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-                    };
-
-                    if should_resolve {
-                        Ok::<_, Never>(svc::Either::A(logical))
-                    } else {
-                        Ok(svc::Either::B(Endpoint::from((no_tls_reason, logical))))
-                    }
-                },
-                svc::stack(endpoint)
-                    .push_on_response(http::BoxRequest::layer())
-                    .into_inner(),
-            );
+            .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr));
 
         Outbound {
             config,

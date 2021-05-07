@@ -1,6 +1,6 @@
-use crate::{endpoint::Endpoint, http::SkipHttpDetection, Accept, Outbound};
+use crate::{http, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{profiles, svc, tls, transport::OrigDstAddr, Addr, Error};
+use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Addr, Error};
 pub use profiles::LogicalAddr;
 use tracing::debug;
 
@@ -22,21 +22,17 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 
 // === impl Logical ===
 
-impl<P> From<(LogicalAddr, profiles::Receiver, Accept<P>)> for Logical<P> {
-    fn from(
-        (
-            logical_addr,
-            profile,
-            Accept {
-                orig_dst, protocol, ..
-            },
-        ): (LogicalAddr, profiles::Receiver, Accept<P>),
+impl Logical<()> {
+    pub(crate) fn new(
+        logical_addr: LogicalAddr,
+        profile: profiles::Receiver,
+        orig_dst: OrigDstAddr,
     ) -> Self {
         Self {
             profile,
             orig_dst,
-            protocol,
             logical_addr,
+            protocol: (),
         }
     }
 }
@@ -62,9 +58,13 @@ impl<P> svc::Param<LogicalAddr> for Logical<P> {
 }
 
 // Used for skipping HTTP detection
-impl svc::Param<SkipHttpDetection> for Logical<()> {
-    fn param(&self) -> SkipHttpDetection {
-        SkipHttpDetection(self.profile.borrow().opaque_protocol)
+impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
+    fn param(&self) -> Option<http::detect::Skip> {
+        if self.profile.borrow().opaque_protocol {
+            Some(http::detect::Skip)
+        } else {
+            None
+        }
     }
 }
 
@@ -100,26 +100,6 @@ impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
             .field("profile", &format_args!(".."))
             .field("logical_addr", &self.logical_addr)
             .finish()
-    }
-}
-
-impl<P> Logical<P> {
-    pub fn or_endpoint(
-        reason: tls::NoClientTls,
-    ) -> impl Fn(Self) -> Result<svc::Either<Self, Endpoint<P>>, Error> + Copy {
-        move |logical: Self| {
-            let should_resolve = {
-                let p = logical.profile.borrow();
-                p.endpoint.is_none() && (p.addr.is_some() || !p.targets.is_empty())
-            };
-
-            if should_resolve {
-                Ok(svc::Either::A(logical))
-            } else {
-                debug!(%reason, orig_dst = %logical.orig_dst, "Target is unresolveable");
-                Ok(svc::Either::B(Endpoint::from((reason, logical))))
-            }
-        }
     }
 }
 
