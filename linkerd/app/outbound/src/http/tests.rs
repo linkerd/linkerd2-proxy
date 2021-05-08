@@ -1,6 +1,7 @@
 use super::Endpoint;
 
 use crate::{
+    tcp,
     test_util::{
         support::{connect::Connect, http_util, profile, resolver, track},
         *,
@@ -32,7 +33,7 @@ fn build_server<I>(
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     resolver: resolver::Dst<resolver::Metadata>,
-    connect: Connect<Endpoint>,
+    connect: Connect<tcp::Connect>,
 ) -> impl svc::NewService<
     orig_dst::Addrs,
     Service = impl tower::Service<
@@ -56,7 +57,7 @@ fn build_accept<I>(
     cfg: Config,
     rt: ProxyRuntime,
     resolver: resolver::Dst<resolver::Metadata>,
-    connect: Connect<Endpoint>,
+    connect: Connect<tcp::Connect>,
 ) -> Outbound<
     impl svc::NewService<
             (Option<profiles::Receiver>, crate::tcp::Accept),
@@ -70,29 +71,9 @@ fn build_accept<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Unpin + Send + 'static,
 {
-    let out = Outbound::new(cfg, rt);
-    let connect = out.clone().with_stack(connect);
-    let http_endpoint = connect
-        .clone()
-        .push_http_endpoint()
-        .push_into_endpoint()
-        .push_http_server::<crate::http::Accept, _>()
-        .into_inner();
-    let endpoint = out
-        .clone()
-        .with_stack(no_tcp_balancer::<crate::tcp::Accept>())
-        .push_detect_http::<_, _, crate::tcp::Accept, _, _, _, _>(http_endpoint)
-        .into_inner();
-
-    let http = connect
-        .push_http_endpoint()
-        .push_http_logical(resolver.clone())
-        .push_http_server()
-        .into_inner();
-
-    out.with_stack(no_tcp_balancer::<crate::tcp::Logical>())
-        .push_detect_http(http)
-        .push_unwrap_logical(endpoint)
+    Outbound::new(cfg, rt)
+        .with_stack(connect)
+        .push_logical(resolver)
 }
 
 #[derive(Clone, Debug)]
