@@ -1,3 +1,5 @@
+#![cfg(feature = "disabled")]
+
 use super::{Endpoint, Logical};
 use crate::{
     test_util::{

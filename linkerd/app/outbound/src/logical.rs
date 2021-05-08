@@ -1,8 +1,14 @@
-use crate::{http, Outbound};
+use crate::{http, tcp, Outbound};
 pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
-use linkerd_app_core::{profiles, svc, transport::OrigDstAddr, Addr, Error};
+use linkerd_app_core::{
+    io, profiles,
+    proxy::{api_resolve::Metadata, core::Resolve},
+    svc, tls,
+    transport::OrigDstAddr,
+    Addr, Error,
+};
 pub use profiles::LogicalAddr;
-use tracing::debug;
+use std::fmt;
 
 #[derive(Clone)]
 pub struct Logical<P> {
@@ -119,54 +125,39 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 
 // === impl Outbound ===
 
-impl<L> Outbound<L> {
-    /// Pushes a layer that unwraps the [`Logical`] address of a given target
-    /// from its profile resolution, or else falls back to the provided
-    /// per-endpoint service if there was no profile resolution for that target.
-    pub fn push_unwrap_logical<T, E, R, ESvc, LSvc, P>(
+impl<C> Outbound<C> {
+    pub fn push_logical<R, I>(
         self,
-        endpoint: E,
+        resolve: R,
     ) -> Outbound<
-        impl svc::NewService<(Option<profiles::Receiver>, T), Service = UnwrapLogical<LSvc, ESvc>>
-            + Clone,
+        impl svc::NewService<
+                tcp::Logical,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
     >
     where
-        Logical<P>: From<(LogicalAddr, profiles::Receiver, T)>,
-        L: svc::NewService<Logical<P>, Service = LSvc> + Clone,
-        LSvc: svc::Service<R, Error = Error>,
-        LSvc::Future: Send,
-        E: svc::NewService<T, Service = ESvc> + Clone,
-        ESvc: svc::Service<R, Response = LSvc::Response, Error = Error>,
-        ESvc::Future: Send,
+        Self: Clone + 'static,
+        C: Clone + Send + Sync + Unpin + 'static,
+        C: svc::Service<tcp::Connect, Error = io::Error>,
+        C::Response:
+            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C::Future: Send + Unpin,
+        R: Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R::Resolution: Send,
+        R::Future: Send + Unpin,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
     {
-        let Self {
-            config,
-            runtime,
-            stack: logical,
-        } = self;
-        let stack = logical
-            .push_switch(|(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Error>{
-                let profile = match profile {
-                    Some(profile) => profile,
-                    None => {
-                        debug!("No profile resolved for this target");
-                        return Ok(svc::Either::B(target));
-                    }
-                };
-                let addr = profile.borrow().addr.clone();
-                Ok(match addr {
-                    Some(logical_addr) => svc::Either::A(Logical::from((logical_addr, profile, target))),
-                    None => {
-                        debug!(profile = ?*profile.borrow(), "No logical address for this profile");
-                        svc::Either::B(target)
-                    }
-                })
-             }, endpoint)
-            .check_new_service::<(Option<profiles::Receiver>, T), _>();
-        Outbound {
-            config,
-            runtime,
-            stack,
-        }
+        let http = self
+            .clone()
+            .push_tcp_endpoint()
+            .push_http_endpoint()
+            .push_http_logical(resolve.clone())
+            .push_http_server()
+            .into_inner();
+
+        self.push_tcp_endpoint()
+            .push_tcp_logical(resolve)
+            .push_detect_http(http)
     }
 }

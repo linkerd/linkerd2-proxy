@@ -1,14 +1,13 @@
-use crate::{http, logical::Concrete, tcp::opaque_transport};
+use crate::{http, logical::Concrete, tcp, Outbound};
 use linkerd_app_core::{
-    metrics,
+    io, metrics,
     profiles::LogicalAddr,
     proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
-    svc::Param,
-    tls,
+    svc, tls,
     transport::{self, addrs::*},
-    transport_header, Conditional,
+    transport_header, Conditional, Error,
 };
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
@@ -56,19 +55,19 @@ impl Endpoint<()> {
     }
 }
 
-impl<P> Param<Remote<ServerAddr>> for Endpoint<P> {
+impl<P> svc::Param<Remote<ServerAddr>> for Endpoint<P> {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
     }
 }
 
-impl<P> Param<tls::ConditionalClientTls> for Endpoint<P> {
+impl<P> svc::Param<tls::ConditionalClientTls> for Endpoint<P> {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
     }
 }
 
-impl<P> Param<Option<http::detect::Skip>> for Endpoint<P> {
+impl<P> svc::Param<Option<http::detect::Skip>> for Endpoint<P> {
     fn param(&self) -> Option<http::detect::Skip> {
         if self.opaque_protocol {
             Some(http::detect::Skip)
@@ -78,15 +77,15 @@ impl<P> Param<Option<http::detect::Skip>> for Endpoint<P> {
     }
 }
 
-impl<P> Param<Option<opaque_transport::PortOverride>> for Endpoint<P> {
-    fn param(&self) -> Option<opaque_transport::PortOverride> {
+impl<P> svc::Param<Option<tcp::opaque_transport::PortOverride>> for Endpoint<P> {
+    fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
         self.metadata
             .opaque_transport_port()
-            .map(opaque_transport::PortOverride)
+            .map(tcp::opaque_transport::PortOverride)
     }
 }
 
-impl<P> Param<Option<http::AuthorityOverride>> for Endpoint<P> {
+impl<P> svc::Param<Option<http::AuthorityOverride>> for Endpoint<P> {
     fn param(&self) -> Option<http::AuthorityOverride> {
         self.metadata
             .authority_override()
@@ -95,13 +94,13 @@ impl<P> Param<Option<http::AuthorityOverride>> for Endpoint<P> {
     }
 }
 
-impl<P> Param<transport::labels::Key> for Endpoint<P> {
+impl<P> svc::Param<transport::labels::Key> for Endpoint<P> {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundConnect(self.param())
     }
 }
 
-impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
+impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         let target_addr = self.addr.into();
         let authority = self
@@ -117,9 +116,9 @@ impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     }
 }
 
-impl<P> Param<metrics::EndpointLabels> for Endpoint<P> {
+impl<P> svc::Param<metrics::EndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::EndpointLabels {
-        Param::<metrics::OutboundEndpointLabels>::param(self).into()
+        svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
     }
 }
 
@@ -186,5 +185,105 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
             // We should differentiate these target types statically.
             opaque_protocol: false,
         }
+    }
+}
+
+// === Outbound ===
+
+impl<S> Outbound<S> {
+    pub fn push_endpoint<I>(
+        self,
+    ) -> Outbound<
+        impl svc::NewService<
+                tcp::Endpoint,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
+    >
+    where
+        Self: Clone + 'static,
+        S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
+        S::Response:
+            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        S::Future: Send + Unpin,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
+    {
+        let http = self
+            .clone()
+            .push_tcp_endpoint::<http::Endpoint>()
+            .push_http_endpoint()
+            .push_http_server()
+            .into_inner();
+
+        self.push_tcp_endpoint()
+            .push_tcp_forward()
+            .push_detect_http(http)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::test_util::*;
+    use hyper::{client::conn::Builder as ClientBuilder, Body, Request};
+    use linkerd_app_core::svc::{NewService, Service, ServiceExt};
+    use tokio::time;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn propagates_http_errors() {
+        // This test asserts that when profile resolution returns an endpoint, and
+        // connecting to that endpoint fails, the client connection will also be reset.
+        let _trace = support::trace_init();
+
+        let (rt, shutdown) = runtime();
+
+        let (mut client, task) = {
+            let addr = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+            let stack = Outbound::new(default_config(), rt)
+                // Fails connection attempts
+                .with_stack(support::connect().endpoint_fn(addr, |_| {
+                    Err(io::Error::new(
+                        io::ErrorKind::ConnectionReset,
+                        "i don't like you, go away",
+                    ))
+                }))
+                .push_endpoint()
+                .into_inner()
+                .new_service(tcp::Endpoint::forward(
+                    OrigDstAddr(addr),
+                    tls::NoClientTls::Disabled,
+                ));
+
+            let (client_io, server_io) = support::io::duplex(4096);
+            tokio::spawn(async move {
+                let res = stack.oneshot(server_io).err_into::<Error>().await;
+                tracing::info!(?res, "Server complete");
+                res
+            });
+
+            let (client, conn) = ClientBuilder::new()
+                .handshake(client_io)
+                .await
+                .expect("Client must connect");
+
+            let task = tokio::spawn(async move {
+                let res = conn.await;
+                tracing::info!(?res, "Client connection complete");
+                res
+            });
+
+            (client, task)
+        };
+
+        let req = Request::builder().body(Body::default()).unwrap();
+        let rsp = client.ready().await.unwrap().call(req).await.unwrap();
+        tracing::info!(?rsp);
+        assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+
+        time::timeout(time::Duration::from_secs(10), task)
+            .await
+            .expect("Timeout")
+            .expect("Client task must not fail")
+            .expect("Client must close gracefully");
+        drop((client, shutdown));
     }
 }

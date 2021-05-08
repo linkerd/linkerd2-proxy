@@ -95,10 +95,10 @@ impl Logical {
 
 impl Param<normalize_uri::DefaultAuthority> for Logical {
     fn param(&self) -> normalize_uri::DefaultAuthority {
-        return normalize_uri::DefaultAuthority(Some(
+        normalize_uri::DefaultAuthority(Some(
             uri::Authority::from_str(&self.logical_addr.to_string())
                 .expect("Address must be a valid authority"),
-        ));
+        ))
     }
 }
 

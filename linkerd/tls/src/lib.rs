@@ -91,6 +91,13 @@ impl<I: HasNegotiatedProtocol> HasNegotiatedProtocol for io::ScopedIo<I> {
     }
 }
 
+impl HasNegotiatedProtocol for io::BoxedIo {
+    #[inline]
+    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        None
+    }
+}
+
 impl<L, R> HasNegotiatedProtocol for io::EitherIo<L, R>
 where
     L: HasNegotiatedProtocol,

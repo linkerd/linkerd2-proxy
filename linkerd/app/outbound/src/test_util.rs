@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use crate::Config;
 pub use futures::prelude::*;
 pub use ipnet::IpNet;

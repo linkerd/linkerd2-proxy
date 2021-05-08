@@ -112,78 +112,9 @@ impl<S> Outbound<S> {
         }
     }
 
-    pub fn push_logical<R, I>(
+    pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
-        resolve: R,
-    ) -> Outbound<
-        impl svc::NewService<
-                tcp::Logical,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-            > + Clone,
-    >
-    where
-        Self: Clone + 'static,
-        S: Clone + Send + Sync + Unpin + 'static,
-        S: svc::Service<tcp::Connect, Error = io::Error>,
-        S::Response:
-            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        S::Future: Send + Unpin,
-        R: Clone + Send + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
-        R::Resolution: Send,
-        R::Future: Send + Unpin,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
-    {
-        // HTTP stack for logical targets (with service profiles).
-        let http_logical = self
-            .clone()
-            .push_tcp_endpoint()
-            .push_http_endpoint()
-            .push_http_logical(resolve.clone())
-            .push_http_server()
-            .into_inner();
-
-        self.push_tcp_endpoint()
-            .push_tcp_logical(resolve)
-            // Try to detect HTTP and use the `http_logical` stack, skipping
-            // detection if it's disabled by the service profile.
-            .push_detect_http(http_logical)
-    }
-
-    pub fn push_endpoint<I>(
-        self,
-    ) -> Outbound<
-        impl svc::NewService<
-                tcp::Endpoint,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-            > + Clone,
-    >
-    where
-        Self: Clone + 'static,
-        S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
-        S::Response:
-            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        S::Future: Send + Unpin,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
-    {
-        // HTTP per-endpoint stack used when a profile is not discovered.
-        let http = self
-            .clone()
-            .push_tcp_endpoint::<http::Endpoint>()
-            .push_http_endpoint()
-            .push_http_server()
-            .into_inner();
-
-        // HTTP and TCP per-endpoint stack used when a profile is not discovered.
-        self.push_tcp_endpoint()
-            .push_tcp_forward()
-            // If HTTP is detected, use the `http_endpoint` stack
-            .push_detect_http(http)
-    }
-
-    pub fn push_logical_switch<T, I, E, ESvc, SSvc>(
-        self,
-        endpoint: E,
+        logical: N,
     ) -> Outbound<
         impl svc::NewService<
                 (Option<profiles::Receiver>, T),
@@ -194,21 +125,21 @@ impl<S> Outbound<S> {
         Self: Clone + 'static,
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
-        S: svc::NewService<tcp::Logical, Service = SSvc> + Clone,
+        N: svc::NewService<tcp::Logical, Service = NSvc> + Clone,
+        NSvc: svc::Service<I, Response = (), Error = Error>,
+        NSvc::Future: Send,
+        S: svc::NewService<tcp::Endpoint, Service = SSvc> + Clone,
         SSvc: svc::Service<I, Response = (), Error = Error>,
         SSvc::Future: Send,
-        E: svc::NewService<tcp::Endpoint, Service = ESvc> + Clone,
-        ESvc: svc::Service<I, Response = (), Error = Error>,
-        ESvc::Future: Send,
     {
         let no_tls_reason = self.no_tls_reason();
         let Self {
             config,
             runtime,
-            stack: logical,
+            stack: endpoint,
         } = self;
 
-        let stack = logical.push_switch(
+        let stack = endpoint.push_switch(
             move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
                 if let Some(rx) = profile {
                     let profiles::Profile {
@@ -219,7 +150,7 @@ impl<S> Outbound<S> {
                     } = *rx.borrow();
 
                     if let Some((addr, metadata)) = endpoint.clone() {
-                        return Ok(svc::Either::B(Endpoint::from_metadata(
+                        return Ok(svc::Either::A(Endpoint::from_metadata(
                             addr,
                             metadata,
                             no_tls_reason,
@@ -228,7 +159,7 @@ impl<S> Outbound<S> {
                     }
 
                     if let Some(logical_addr) = addr.clone() {
-                        return Ok(svc::Either::A(Logical::new(
+                        return Ok(svc::Either::B(Logical::new(
                             logical_addr,
                             rx.clone(),
                             target.param(),
@@ -236,12 +167,12 @@ impl<S> Outbound<S> {
                     }
                 }
 
-                Ok(svc::Either::B(Endpoint::forward(
+                Ok(svc::Either::A(Endpoint::forward(
                     target.param(),
                     no_tls_reason,
                 )))
             },
-            endpoint,
+            logical,
         );
 
         Outbound {
@@ -286,15 +217,14 @@ impl Outbound<()> {
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             } else {
+                let logical = self.to_tcp_connect().push_logical(resolve);
                 let endpoint = self.to_tcp_connect().push_endpoint();
-                let stack = self
-                    .to_tcp_connect()
-                    .push_logical(resolve)
-                    .push_logical_switch(endpoint.into_inner())
+                let server = endpoint
+                    .push_switch_logical(logical.into_inner())
                     .push_discover(profiles)
                     .into_inner();
                 let shutdown = self.runtime.drain.signaled();
-                serve::serve(listen, stack, shutdown).await;
+                serve::serve(listen, server, shutdown).await;
             }
         };
 
