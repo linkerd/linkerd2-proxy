@@ -231,8 +231,6 @@ pub mod tests {
     /// Tests that socket errors cause HTTP clients to be disconnected.
     #[tokio::test(flavor = "current_thread")]
     async fn propagates_http_errors() {
-        // This test asserts that when profile resolution returns an endpoint, and
-        // connecting to that endpoint fails, the client connection will also be reset.
         let _trace = support::trace_init();
         time::pause();
 
@@ -263,7 +261,12 @@ pub mod tests {
             });
 
             let (client, conn) = ClientBuilder::new().handshake(client_io).await.unwrap();
-            (client, tokio::spawn(conn))
+            let client_task = tokio::spawn(async move {
+                let res = conn.await;
+                tracing::info!(?res, "Client complete");
+                res
+            });
+            (client, client_task)
         };
 
         let status = {

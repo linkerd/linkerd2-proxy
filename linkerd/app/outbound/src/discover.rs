@@ -104,6 +104,73 @@ mod tests {
     };
     use tokio::time;
 
+    /// Tests that the discover stack propagates errors to the caller.
+    #[tokio::test(flavor = "current_thread")]
+    async fn errors_propagate() {
+        let _trace = support::trace_init();
+        time::pause(); // Run the test with a mocked clock.
+
+        let addr = SocketAddr::new([192, 0, 2, 22].into(), 2220);
+
+        // Mock an inner stack with a service that fails, tracking the number of services built &
+        // held.
+        let new_count = Arc::new(AtomicUsize::new(0));
+        let (handle, stack) = {
+            let new_count = new_count.clone();
+            support::track::new_service(move |_| {
+                new_count.fetch_add(1, Ordering::SeqCst);
+                svc::mk(move |_: SensorIo<io::DuplexStream>| {
+                    future::err::<(), Error>(
+                        io::Error::from(io::ErrorKind::ConnectionRefused).into(),
+                    )
+                })
+            })
+        };
+
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+
+        // Create a profile stack that uses the tracked inner stack, configured to drop cached
+        // service after `idle_timeout`.
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(stack)
+            .push_discover(profiles)
+            .into_inner();
+
+        assert_eq!(
+            new_count.load(Ordering::SeqCst),
+            0,
+            "no services have been created yet"
+        );
+        assert_eq!(
+            handle.tracked_services(),
+            0,
+            "no services have been created yet"
+        );
+
+        // Instantiate a service from the stack so that it instantiates the tracked inner service.
+        //
+        // The discover stack's buffer does not drive profile resolution (or the inner service)
+        // until the service is called?! So we drive this all on a background ask that gets canceled
+        // to drop the service reference.
+        let svc = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+        let task = spawn_conn(svc);
+        // We have to let some time pass for the buffer to drive the profile to readiness.
+        time::advance(time::Duration::from_millis(100)).await;
+        assert_eq!(
+            new_count.load(Ordering::SeqCst),
+            1,
+            "exactly one service has been created"
+        );
+        assert_eq!(
+            handle.tracked_services(),
+            1,
+            "there should be exactly one service"
+        );
+
+        task.await.unwrap().expect_err("service must fail");
+    }
+
     /// Tests that the discover stack caches resolutions for each unique destination address.
     ///
     /// This test obtains a service, drops it obtains the service again, and then drops it again,
@@ -228,25 +295,17 @@ mod tests {
         );
     }
 
-    fn spawn_conn(
-        mut svc: impl Service<
-                io::DuplexStream,
-                Response = (),
-                Error = Error,
-                Future = impl std::future::Future + Send,
-            > + Send
-            + 'static,
-    ) -> tokio::task::JoinHandle<()> {
-        // Hold the service in the task, even though the call can't actually complete.
-        //
-        // We can't use `oneshot`, as we want to ensure we hold the service reference while
-        // blocking on the call.
+    fn spawn_conn<S>(mut svc: S) -> tokio::task::JoinHandle<Result<(), Error>>
+    where
+        S: Service<io::DuplexStream, Response = (), Error = Error> + Send + 'static,
+        S::Future: Send,
+    {
         tokio::spawn(async move {
-            let svc = svc.ready().await.unwrap();
+            let svc = svc.ready().await?;
             let (server_io, _client_io) = io::duplex(1);
-            svc.call(server_io).await;
+            svc.call(server_io).await?;
             drop(svc);
-            unreachable!("call cannot complete")
+            Ok(())
         })
     }
 }
