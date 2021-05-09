@@ -1,4 +1,4 @@
-#![allow(warnings)]
+#![cfg(target_os = "disabled")]
 
 use super::Endpoint;
 use crate::{
@@ -60,7 +60,6 @@ impl<T, I> svc::Service<I> for NoTcpBalancer<T> {
     }
 }
 
-#[cfg(target_os = "disabled")]
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http1_hello_world() {
     let mut server = hyper::server::conn::Http::new();
@@ -69,7 +68,6 @@ async fn unmeshed_http1_hello_world() {
     unmeshed_hello_world(server, client).await;
 }
 
-#[cfg(target_os = "disabled")]
 #[tokio::test(flavor = "current_thread")]
 async fn unmeshed_http2_hello_world() {
     let mut server = hyper::server::conn::Http::new();
@@ -79,7 +77,6 @@ async fn unmeshed_http2_hello_world() {
     unmeshed_hello_world(server, client).await;
 }
 
-#[cfg(target_os = "disabled")]
 #[tokio::test(flavor = "current_thread")]
 async fn meshed_hello_world() {
     let _trace = support::trace_init();
@@ -131,7 +128,6 @@ async fn meshed_hello_world() {
     bg.await.expect("background task failed");
 }
 
-#[cfg(feature = "disabled")]
 async fn unmeshed_hello_world(
     server_settings: hyper::server::conn::Http,
     mut client_settings: ClientBuilder,

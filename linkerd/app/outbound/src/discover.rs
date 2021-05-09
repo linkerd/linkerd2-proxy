@@ -94,9 +94,12 @@ impl<N> Outbound<N> {
 mod tests {
     use super::*;
     use crate::test_util::*;
-    use linkerd_app_core::svc::{NewService, Service, ServiceExt};
+    use linkerd_app_core::{
+        svc::{NewService, Service, ServiceExt},
+        AddrMatch,
+    };
     use std::{
-        net::SocketAddr,
+        net::{IpAddr, SocketAddr},
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
@@ -297,6 +300,51 @@ mod tests {
         );
 
         time::resume();
+    }
+
+    /// Tests that the discover stack avoids resolutions when the stack is not configured to permit
+    /// resolutions.
+    #[tokio::test(flavor = "current_thread")]
+    async fn no_profiles_when_outside_search_nets() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 22].into(), 2222);
+
+        // XXX we should assert that the resolver isn't even invoked, but the mocked resolver
+        // doesn't support that right now. So, instead, we return a profile for resolutions to
+        // and assert (below) that no profile is provided.
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+
+        // Mock an inner stack with a service that asserts that no profile is built.
+        let stack = |(profile, _): (Option<profiles::Receiver>, _)| {
+            assert!(profile.is_none(), "profile must not resolve");
+            svc::mk(move |_: SensorIo<io::DuplexStream>| future::ok::<(), Error>(()))
+        };
+
+        // Create a profile stack that uses the tracked inner stack, configured to drop cached
+        // service after `idle_timeout`.
+        let cfg = {
+            let mut cfg = default_config();
+            // Permits resolutions for only 192.0.2.66/32.
+            cfg.allow_discovery = AddrMatch::new(
+                None,
+                Some(ipnet::IpNet::from(IpAddr::from([192, 0, 2, 66]))),
+            );
+            cfg
+        };
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(cfg, rt)
+            .with_stack(stack)
+            .push_discover(profiles)
+            .into_inner();
+
+        // Instantiate a service from the stack so that it instantiates the tracked inner service.
+        //
+        // The discover stack's buffer does not drive profile resolution (or the inner service)
+        // until the service is called?! So we drive this all on a background ask that gets canceled
+        // to drop the service reference.
+        let svc = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+        spawn_conn(svc).await.unwrap().expect("must not fail");
     }
 
     fn spawn_conn<S>(mut svc: S) -> tokio::task::JoinHandle<Result<(), Error>>
