@@ -277,6 +277,7 @@ pub mod tests {
         assert_eq!(status, http::StatusCode::BAD_GATEWAY);
 
         // Ensure the client task completes, indicating that it has been disconnected.
+        time::resume();
         time::timeout(time::Duration::from_secs(10), task)
             .await
             .expect("Timeout")
