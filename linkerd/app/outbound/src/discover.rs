@@ -169,6 +169,8 @@ mod tests {
         );
 
         task.await.unwrap().expect_err("service must fail");
+
+        time::resume();
     }
 
     /// Tests that the discover stack caches resolutions for each unique destination address.
@@ -293,6 +295,8 @@ mod tests {
             0,
             "the service should have been dropped"
         );
+
+        time::resume();
     }
 
     fn spawn_conn<S>(mut svc: S) -> tokio::task::JoinHandle<Result<(), Error>>

@@ -75,3 +75,93 @@ impl<S> Outbound<S> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+    use linkerd_app_core::{
+        proxy::api_resolve::Metadata,
+        svc::{NewService, ServiceExt},
+        NameAddr,
+    };
+    use std::net::SocketAddr;
+    use thiserror::Error;
+
+    #[derive(Debug, Error, Default)]
+    #[error("wrong stack built")]
+    struct WrongStack;
+
+    fn addr() -> SocketAddr {
+        SocketAddr::new([192, 0, 2, 20].into(), 2020)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn no_profile() {
+        let _trace = support::trace_init();
+
+        let endpoint =
+            |_: tcp::Endpoint| svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()));
+
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(endpoint)
+            .push_switch_logical(svc::Fail::<_, WrongStack>::default())
+            .into_inner();
+
+        let svc = stack.new_service((None, OrigDstAddr(addr())));
+        let (server_io, _client_io) = io::duplex(1);
+        svc.oneshot(server_io).await.expect("service must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn profile_endpoint() {
+        let _trace = support::trace_init();
+
+        let endpoint =
+            |_: tcp::Endpoint| svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()));
+
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(endpoint)
+            .push_switch_logical(svc::Fail::<_, WrongStack>::default())
+            .into_inner();
+
+        let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {
+            endpoint: Some((addr(), Metadata::default())),
+            // logical addr does not influence use of endpoint
+            addr: Some(profiles::LogicalAddr(
+                NameAddr::from_str_and_port("foo.example.com", 2020).unwrap(),
+            )),
+            ..Default::default()
+        });
+
+        let svc = stack.new_service((Some(profile), OrigDstAddr(addr())));
+        let (server_io, _client_io) = io::duplex(1);
+        svc.oneshot(server_io).await.expect("service must succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn profile_logical() {
+        let _trace = support::trace_init();
+
+        let logical = |_: tcp::Logical| svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()));
+
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(svc::Fail::<_, WrongStack>::default())
+            .push_switch_logical(logical)
+            .into_inner();
+
+        let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {
+            addr: Some(profiles::LogicalAddr(
+                NameAddr::from_str_and_port("foo.example.com", 2020).unwrap(),
+            )),
+            ..Default::default()
+        });
+
+        let svc = stack.new_service((Some(profile), OrigDstAddr(addr())));
+        let (server_io, _client_io) = io::duplex(1);
+        svc.oneshot(server_io).await.expect("service must succeed");
+    }
+}
