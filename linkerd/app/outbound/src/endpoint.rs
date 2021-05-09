@@ -228,11 +228,13 @@ pub mod tests {
     use linkerd_app_core::svc::{NewService, Service, ServiceExt};
     use tokio::time;
 
+    /// Tests that socket errors cause HTTP clients to be disconnected.
     #[tokio::test(flavor = "current_thread")]
     async fn propagates_http_errors() {
         // This test asserts that when profile resolution returns an endpoint, and
         // connecting to that endpoint fails, the client connection will also be reset.
         let _trace = support::trace_init();
+        time::pause();
 
         let (rt, shutdown) = runtime();
 
@@ -264,11 +266,14 @@ pub mod tests {
             (client, tokio::spawn(conn))
         };
 
-        let req = Request::builder().body(Body::default()).unwrap();
-        let rsp = client.ready().await.unwrap().call(req).await.unwrap();
-        tracing::info!(?rsp);
-        assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+        let status = {
+            let req = Request::builder().body(Body::default()).unwrap();
+            let rsp = client.ready().await.unwrap().call(req).await.unwrap();
+            rsp.status()
+        };
+        assert_eq!(status, http::StatusCode::BAD_GATEWAY);
 
+        // Ensure the client task completes, indicating that it has been disconnected.
         time::timeout(time::Duration::from_secs(10), task)
             .await
             .expect("Timeout")

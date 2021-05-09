@@ -18,7 +18,12 @@ impl<N> Outbound<N> {
     ) -> Outbound<
         impl svc::NewService<
             T,
-            Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            Service = impl svc::Service<
+                I,
+                Response = (),
+                Error = Error,
+                Future = impl std::future::Future + Send,
+            > + Clone,
         >,
     >
     where
@@ -101,10 +106,10 @@ mod tests {
     };
     use tokio::time;
 
-    // The discover stack caches resolutions for each unique destination address.
-    //
-    // This test obtains a service, drops it obtains the service again, and then drops it again,
-    // testing that only one service is built and that it is dropped after an idle timeout.
+    /// Tests that the discover stack caches resolutions for each unique destination address.
+    ///
+    /// This test obtains a service, drops it obtains the service again, and then drops it again,
+    /// testing that only one service is built and that it is dropped after an idle timeout.
     #[tokio::test(flavor = "current_thread")]
     async fn caches_profiles_until_idle() {
         let _trace = support::trace_init();
@@ -138,7 +143,6 @@ mod tests {
             .push_discover(profiles)
             .into_inner();
 
-        // The service hasn't yet been created.
         assert_eq!(
             new_count.load(Ordering::SeqCst),
             0,
@@ -151,12 +155,17 @@ mod tests {
         );
 
         // Instantiate a service from the stack so that it instantiates the tracked inner service.
-        let svc0 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
-        // XXX The discover stack's buffer does not drive profile resolution (or the inner service)
-        // until the service is called?! So we have to
+        let mut svc0 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+        // The discover stack's buffer does not drive profile resolution (or the inner service)
+        // until the service is called?! So we drive this all on a background ask that gets canceled
+        // to drop the service reference.
         let task = tokio::spawn(async move {
             let (server_io, _client_io) = io::duplex(1);
-            svc0.oneshot(server_io).await
+            // We can't use `oneshot`, as we want to ensure we hold the service reference while
+            // blocking on the call.
+            let s = svc0.ready().await.unwrap();
+            s.call(server_io).await;
+            unreachable!("call cannot complete")
         });
         // We have to let some time pass for the buffer to drive the profile to readiness.
         time::advance(time::Duration::from_millis(100)).await;
