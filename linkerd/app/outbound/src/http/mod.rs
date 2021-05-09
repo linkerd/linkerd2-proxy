@@ -4,9 +4,6 @@ pub mod logical;
 mod require_identity_on_endpoint;
 mod server;
 
-#[cfg(test)]
-mod tests;
-
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;

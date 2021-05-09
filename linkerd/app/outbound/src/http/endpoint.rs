@@ -79,3 +79,198 @@ impl<C> Outbound<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{http, test_util::*, transport::addrs::*};
+    use linkerd_app_core::{
+        io,
+        proxy::api_resolve::Metadata,
+        svc::{NewService, ServiceExt},
+        Never,
+    };
+    use std::net::SocketAddr;
+
+    /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
+    #[tokio::test(flavor = "current_thread")]
+    async fn http11_forward() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+
+        let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
+            let (client_io, server_io) = io::duplex(4096);
+            let svc = hyper::service::service_fn(|req: http::Request<_>| {
+                tracing::debug!(?req);
+                assert_eq!(req.version(), ::http::Version::HTTP_11);
+                assert!(
+                    req.headers().get("l5d-orig-proto").is_none(),
+                    "l5d-orig-proto must not be set"
+                );
+
+                let rsp = http::Response::builder()
+                    .status(http::StatusCode::NO_CONTENT)
+                    .body(hyper::Body::default())
+                    .unwrap();
+                future::ok::<_, Never>(rsp)
+            });
+
+            tokio::spawn(
+                hyper::server::conn::Http::new()
+                    .http1_only(true)
+                    .serve_connection(server_io, svc),
+            );
+
+            Ok(io::BoxedIo::new(client_io))
+        });
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(connect)
+            .push_http_endpoint::<_, http::BoxBody>()
+            .into_inner();
+
+        let svc = stack.new_service(http::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            protocol: http::Version::Http1,
+            logical_addr: None,
+            opaque_protocol: false,
+            tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+            metadata: Metadata::default(),
+        });
+
+        let req = http::Request::builder()
+            .version(::http::Version::HTTP_11)
+            .uri("http://foo.example.com")
+            .body(http::BoxBody::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.unwrap();
+        assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+    }
+
+    /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
+    #[tokio::test(flavor = "current_thread")]
+    async fn http2_forward() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
+
+        let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
+            let (client_io, server_io) = io::duplex(4096);
+            let svc = hyper::service::service_fn(|req: http::Request<_>| {
+                tracing::debug!(?req);
+                assert_eq!(req.version(), ::http::Version::HTTP_2);
+                assert!(
+                    req.headers().get("l5d-orig-proto").is_none(),
+                    "l5d-orig-proto must not be set"
+                );
+
+                let rsp = http::Response::builder()
+                    .status(http::StatusCode::NO_CONTENT)
+                    .body(hyper::Body::default())
+                    .unwrap();
+                future::ok::<_, Never>(rsp)
+            });
+
+            tokio::spawn(
+                hyper::server::conn::Http::new()
+                    .http2_only(true)
+                    .serve_connection(server_io, svc),
+            );
+
+            Ok(io::BoxedIo::new(client_io))
+        });
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(connect)
+            .push_http_endpoint::<_, http::BoxBody>()
+            .into_inner();
+
+        let svc = stack.new_service(http::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            protocol: http::Version::H2,
+            logical_addr: None,
+            opaque_protocol: false,
+            tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+            metadata: Metadata::default(),
+        });
+
+        let req = http::Request::builder()
+            .version(::http::Version::HTTP_2)
+            .uri("http://foo.example.com")
+            .body(http::BoxBody::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.unwrap();
+        assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+    }
+
+    /// Tests that the the HTTP endpoint stack uses endpoint metadata to initiate HTTP/2 protocol
+    /// upgrading.
+    #[tokio::test(flavor = "current_thread")]
+    async fn orig_proto_upgrade() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+
+        // Pretend the upstream is a proxy that supports proto upgrades...
+        let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
+            let (client_io, server_io) = io::duplex(4096);
+            let svc = hyper::service::service_fn(|req: http::Request<_>| {
+                tracing::debug!(?req);
+                assert_eq!(req.version(), ::http::Version::HTTP_2);
+                let orig_proto = req
+                    .headers()
+                    .get("l5d-orig-proto")
+                    .expect("l5d-orig-proto must be set");
+                assert_eq!(orig_proto, "HTTP/1.1");
+
+                let rsp = http::Response::builder()
+                    .status(http::StatusCode::NO_CONTENT)
+                    .body(hyper::Body::default())
+                    .unwrap();
+                future::ok::<_, Never>(rsp)
+            });
+
+            tokio::spawn(
+                hyper::server::conn::Http::new()
+                    .http2_only(true)
+                    .serve_connection(server_io, svc),
+            );
+
+            Ok(io::BoxedIo::new(client_io))
+        });
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(connect)
+            .push_http_endpoint::<_, http::BoxBody>()
+            .into_inner();
+
+        let svc = stack.new_service(http::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            protocol: http::Version::Http1,
+            logical_addr: None,
+            opaque_protocol: false,
+            tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+            metadata: Metadata::new(
+                Default::default(),
+                support::resolver::ProtocolHint::Http2,
+                None,
+                None,
+                None,
+            ),
+        });
+
+        let req = http::Request::builder()
+            .uri("http://foo.example.com")
+            .body(http::BoxBody::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.unwrap();
+        assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+    }
+}

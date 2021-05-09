@@ -156,7 +156,7 @@ mod test {
 
     fn ep(metadata: Metadata) -> Endpoint<()> {
         Endpoint::from_metadata(
-            ([127, 0, 0, 2], 4321).into(),
+            ([127, 0, 0, 2], 4321),
             metadata,
             tls::NoClientTls::NotProvidedByServiceDiscovery,
             false,

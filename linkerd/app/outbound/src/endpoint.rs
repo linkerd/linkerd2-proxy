@@ -39,13 +39,13 @@ impl Endpoint<()> {
     }
 
     pub(crate) fn from_metadata(
-        addr: SocketAddr,
+        addr: impl Into<SocketAddr>,
         metadata: Metadata,
         reason: tls::NoClientTls,
         opaque_protocol: bool,
     ) -> Self {
         Self {
-            addr: Remote(ServerAddr(addr)),
+            addr: Remote(ServerAddr(addr.into())),
             tls: FromMetadata::client_tls(&metadata, reason),
             metadata,
             logical_addr: None,

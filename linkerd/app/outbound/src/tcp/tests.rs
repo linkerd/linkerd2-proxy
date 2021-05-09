@@ -32,6 +32,7 @@ use std::{
 use tower::ServiceExt;
 use tracing::instrument::Instrument;
 
+// XXX unclear what this tests
 #[tokio::test]
 async fn plaintext_tcp() {
     let _trace = support::trace_init();
@@ -60,6 +61,7 @@ async fn plaintext_tcp() {
     hello_world_client(target_addr, &mut server).await;
 }
 
+// TODO Should be a TCP endpoint stack test
 #[tokio::test]
 async fn plaintext_tcp_no_profile() {
     let _trace = support::trace_init();
@@ -88,6 +90,7 @@ async fn plaintext_tcp_no_profile() {
     hello_world_client(target_addr, &mut server).await;
 }
 
+// TODO Should be a TCP logical stack test
 #[tokio::test]
 async fn logical_plaintext_tcp() {
     let _trace = support::trace_init();
@@ -132,6 +135,7 @@ async fn logical_plaintext_tcp() {
         .expect("conn should succeed");
 }
 
+// TODO Should be a TCP logical stack test
 #[tokio::test]
 async fn resolutions_are_reused() {
     let _trace = support::trace_init();
@@ -198,6 +202,7 @@ async fn resolutions_are_reused() {
     );
 }
 
+// TODO Should be a TCP logical stack test
 #[tokio::test]
 async fn load_balances() {
     let _trace = support::trace_init();
@@ -295,6 +300,7 @@ async fn load_balances() {
     );
 }
 
+// TODO Should be a TCP logical stack test
 #[tokio::test]
 async fn load_balancer_add_endpoints() {
     let _trace = support::trace_init();
@@ -411,6 +417,7 @@ async fn load_balancer_add_endpoints() {
     );
 }
 
+// TODO Should be a TCP logical stack test
 #[tokio::test]
 async fn load_balancer_remove_endpoints() {
     let _trace = support::trace_init();
