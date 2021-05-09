@@ -100,29 +100,7 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
         let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
-            let (client_io, server_io) = io::duplex(4096);
-            let svc = hyper::service::service_fn(|req: http::Request<_>| {
-                tracing::debug!(?req);
-                assert_eq!(req.version(), ::http::Version::HTTP_11);
-                assert!(
-                    req.headers().get("l5d-orig-proto").is_none(),
-                    "l5d-orig-proto must not be set"
-                );
-
-                let rsp = http::Response::builder()
-                    .status(http::StatusCode::NO_CONTENT)
-                    .body(hyper::Body::default())
-                    .unwrap();
-                future::ok::<_, Never>(rsp)
-            });
-
-            tokio::spawn(
-                hyper::server::conn::Http::new()
-                    .http1_only(true)
-                    .serve_connection(server_io, svc),
-            );
-
-            Ok(io::BoxedIo::new(client_io))
+            serve(::http::Version::HTTP_11, None)
         });
 
         // Build the outbound server
@@ -158,29 +136,7 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
 
         let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
-            let (client_io, server_io) = io::duplex(4096);
-            let svc = hyper::service::service_fn(|req: http::Request<_>| {
-                tracing::debug!(?req);
-                assert_eq!(req.version(), ::http::Version::HTTP_2);
-                assert!(
-                    req.headers().get("l5d-orig-proto").is_none(),
-                    "l5d-orig-proto must not be set"
-                );
-
-                let rsp = http::Response::builder()
-                    .status(http::StatusCode::NO_CONTENT)
-                    .body(hyper::Body::default())
-                    .unwrap();
-                future::ok::<_, Never>(rsp)
-            });
-
-            tokio::spawn(
-                hyper::server::conn::Http::new()
-                    .http2_only(true)
-                    .serve_connection(server_io, svc),
-            );
-
-            Ok(io::BoxedIo::new(client_io))
+            serve(::http::Version::HTTP_2, None)
         });
 
         // Build the outbound server
@@ -218,30 +174,7 @@ mod test {
 
         // Pretend the upstream is a proxy that supports proto upgrades...
         let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
-            let (client_io, server_io) = io::duplex(4096);
-            let svc = hyper::service::service_fn(|req: http::Request<_>| {
-                tracing::debug!(?req);
-                assert_eq!(req.version(), ::http::Version::HTTP_2);
-                let orig_proto = req
-                    .headers()
-                    .get("l5d-orig-proto")
-                    .expect("l5d-orig-proto must be set");
-                assert_eq!(orig_proto, "HTTP/1.1");
-
-                let rsp = http::Response::builder()
-                    .status(http::StatusCode::NO_CONTENT)
-                    .body(hyper::Body::default())
-                    .unwrap();
-                future::ok::<_, Never>(rsp)
-            });
-
-            tokio::spawn(
-                hyper::server::conn::Http::new()
-                    .http2_only(true)
-                    .serve_connection(server_io, svc),
-            );
-
-            Ok(io::BoxedIo::new(client_io))
+            serve(::http::Version::HTTP_2, Some("HTTP/1.1"))
         });
 
         // Build the outbound server
@@ -272,5 +205,39 @@ mod test {
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+    }
+
+    fn serve(
+        version: ::http::Version,
+        orig_proto: Option<&'static str>,
+    ) -> io::Result<io::BoxedIo> {
+        let svc = hyper::service::service_fn(move |req: http::Request<_>| {
+            tracing::debug!(?req);
+            assert_eq!(req.version(), version);
+            assert_eq!(
+                req.headers()
+                    .get("l5d-orig-proto")
+                    .and_then(|v| v.to_str().ok()),
+                orig_proto,
+                "l5d-orig-proto must not be set"
+            );
+
+            let rsp = http::Response::builder()
+                .status(http::StatusCode::NO_CONTENT)
+                .body(hyper::Body::default())
+                .unwrap();
+            future::ok::<_, Never>(rsp)
+        });
+
+        let mut http = hyper::server::conn::Http::new();
+        match version {
+            ::http::Version::HTTP_10 | ::http::Version::HTTP_11 => http.http1_only(true),
+            ::http::Version::HTTP_2 => http.http2_only(true),
+            _ => unreachable!("unsupported HTTP version {:?}", version),
+        };
+
+        let (client_io, server_io) = io::duplex(4096);
+        tokio::spawn(http.serve_connection(server_io, svc));
+        Ok(io::BoxedIo::new(client_io))
     }
 }
