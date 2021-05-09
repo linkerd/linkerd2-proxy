@@ -13,7 +13,9 @@ pub use self::{
 };
 pub use std::io::*;
 use std::net::SocketAddr;
-pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+pub use tokio::io::{
+    duplex, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf,
+};
 pub use tokio_util::io::{poll_read_buf, poll_write_buf};
 
 pub type Poll<T> = std::task::Poll<Result<T>>;

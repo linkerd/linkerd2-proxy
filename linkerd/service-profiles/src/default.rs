@@ -34,6 +34,7 @@ where
     }
 
     fn call(&mut self, dst: T) -> Self::Future {
+        tracing::trace!("Fetching profile");
         self.0.get_profile(dst).or_else(|e| {
             let err = e.into();
             if let Some(status) = err.downcast_ref::<tonic::Status>() {
@@ -41,6 +42,8 @@ where
                     debug!("Handling rejected discovery");
                     return future::ok(None);
                 }
+            } else {
+                debug!(%err, "Failed");
             }
 
             future::err(err)

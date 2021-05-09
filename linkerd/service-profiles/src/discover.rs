@@ -2,6 +2,7 @@ use super::{default::RecoverDefault, GetProfile, GetProfileService, Receiver};
 use futures::prelude::*;
 use linkerd_stack::{layer, Filter, FutureService, NewService, Predicate};
 use std::{future::Future, pin::Pin};
+use tracing::trace;
 
 type Service<F, G, M> = Discover<RecoverDefault<Filter<GetProfileService<G>, F>>, M>;
 
@@ -40,10 +41,11 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let mut inner = self.inner.clone();
-        FutureService::new(Box::pin(
-            self.get_profile
-                .get_profile(target.clone())
-                .map_ok(move |rx| inner.new_service((rx, target))),
-        ))
+        let fut = self.get_profile.get_profile(target.clone());
+        trace!("Fetching profile");
+        FutureService::new(Box::pin(fut.map_ok(move |rx| {
+            trace!(has_profile = rx.is_some(), "Building service");
+            inner.new_service((rx, target))
+        })))
     }
 }

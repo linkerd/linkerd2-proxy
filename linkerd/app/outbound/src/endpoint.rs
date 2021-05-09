@@ -260,18 +260,8 @@ pub mod tests {
                 res
             });
 
-            let (client, conn) = ClientBuilder::new()
-                .handshake(client_io)
-                .await
-                .expect("Client must connect");
-
-            let task = tokio::spawn(async move {
-                let res = conn.await;
-                tracing::info!(?res, "Client connection complete");
-                res
-            });
-
-            (client, task)
+            let (client, conn) = ClientBuilder::new().handshake(client_io).await.unwrap();
+            (client, tokio::spawn(conn))
         };
 
         let req = Request::builder().body(Body::default()).unwrap();
