@@ -82,26 +82,26 @@ mod tests {
     use crate::test_util::*;
     use linkerd_app_core::{
         proxy::api_resolve::Metadata,
-        svc::{NewService, ServiceExt},
+        svc::{NewService, Param, ServiceExt},
         NameAddr,
     };
-    use std::net::SocketAddr;
+    use std::net::{IpAddr, SocketAddr};
     use thiserror::Error;
 
     #[derive(Debug, Error, Default)]
     #[error("wrong stack built")]
     struct WrongStack;
 
-    fn addr() -> SocketAddr {
-        SocketAddr::new([192, 0, 2, 20].into(), 2020)
-    }
-
     #[tokio::test(flavor = "current_thread")]
     async fn no_profile() {
         let _trace = support::trace_init();
 
-        let endpoint =
-            |_: tcp::Endpoint| svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()));
+        let endpoint = |ep: tcp::Endpoint| {
+            assert_eq!(ep.addr.as_ref().ip(), IpAddr::from([192, 0, 2, 20]));
+            assert_eq!(ep.addr.as_ref().port(), 2020);
+            assert!(!ep.opaque_protocol);
+            svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))
+        };
 
         let (rt, _shutdown) = runtime();
         let mut stack = Outbound::new(default_config(), rt)
@@ -109,7 +109,8 @@ mod tests {
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
 
-        let svc = stack.new_service((None, OrigDstAddr(addr())));
+        let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
+        let svc = stack.new_service((None, orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -118,8 +119,12 @@ mod tests {
     async fn profile_endpoint() {
         let _trace = support::trace_init();
 
-        let endpoint =
-            |_: tcp::Endpoint| svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()));
+        let endpoint = |ep: tcp::Endpoint| {
+            assert_eq!(ep.addr.as_ref().ip(), IpAddr::from([192, 0, 2, 10]));
+            assert_eq!(ep.addr.as_ref().port(), 1010);
+            assert!(ep.opaque_protocol);
+            svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))
+        };
 
         let (rt, _shutdown) = runtime();
         let mut stack = Outbound::new(default_config(), rt)
@@ -128,15 +133,20 @@ mod tests {
             .into_inner();
 
         let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {
-            endpoint: Some((addr(), Metadata::default())),
+            endpoint: Some((
+                SocketAddr::new([192, 0, 2, 10].into(), 1010),
+                Metadata::default(),
+            )),
+            opaque_protocol: true,
             // logical addr does not influence use of endpoint
             addr: Some(profiles::LogicalAddr(
-                NameAddr::from_str_and_port("foo.example.com", 2020).unwrap(),
+                NameAddr::from_str_and_port("foo.example.com", 3030).unwrap(),
             )),
             ..Default::default()
         });
 
-        let svc = stack.new_service((Some(profile), OrigDstAddr(addr())));
+        let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
+        let svc = stack.new_service((Some(profile), orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -145,7 +155,13 @@ mod tests {
     async fn profile_logical() {
         let _trace = support::trace_init();
 
-        let logical = |_: tcp::Logical| svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()));
+        let logical = |t: tcp::Logical| {
+            assert_eq!(t.logical_addr.to_string(), "foo.example.com:3030");
+            assert_eq!(t.orig_dst.as_ref().port(), 2020);
+            let skip: Option<crate::http::detect::Skip> = t.param();
+            assert!(skip.is_some());
+            svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))
+        };
 
         let (rt, _shutdown) = runtime();
         let mut stack = Outbound::new(default_config(), rt)
@@ -155,12 +171,14 @@ mod tests {
 
         let (_tx, profile) = tokio::sync::watch::channel(profiles::Profile {
             addr: Some(profiles::LogicalAddr(
-                NameAddr::from_str_and_port("foo.example.com", 2020).unwrap(),
+                NameAddr::from_str_and_port("foo.example.com", 3030).unwrap(),
             )),
+            opaque_protocol: true,
             ..Default::default()
         });
 
-        let svc = stack.new_service((Some(profile), OrigDstAddr(addr())));
+        let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
+        let svc = stack.new_service((Some(profile), orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
