@@ -90,12 +90,10 @@ impl<N> Outbound<N> {
     }
 }
 
-#[allow(unused_imports)]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_util::*;
-    use hyper::{client::conn::Builder as ClientBuilder, Body, Request};
     use linkerd_app_core::svc::{NewService, Service, ServiceExt};
     use std::{
         net::SocketAddr,
@@ -113,15 +111,14 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn caches_profiles_until_idle() {
         let _trace = support::trace_init();
-        time::pause();
+        time::pause(); // Run the test with a mocked clock.
 
-        let addr = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+        let addr = SocketAddr::new([192, 0, 2, 22].into(), 5550);
         let idle_timeout = time::Duration::from_secs(1);
         let sleep_time = idle_timeout + time::Duration::from_millis(1);
 
-        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
-
-        // Mock an inner stack with a service that never returns.
+        // Mock an inner stack with a service that never returns, tracking the number of services
+        // built & held.
         let new_count = Arc::new(AtomicUsize::new(0));
         let (handle, stack) = {
             let new_count = new_count.clone();
@@ -131,7 +128,10 @@ mod tests {
             })
         };
 
-        // Create a profile stack that uses the tracked inner stack.
+        let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
+
+        // Create a profile stack that uses the tracked inner stack, configured to drop cached
+        // service after `idle_timeout`.
         let cfg = {
             let mut cfg = default_config();
             cfg.proxy.cache_max_idle_age = idle_timeout;
@@ -155,18 +155,12 @@ mod tests {
         );
 
         // Instantiate a service from the stack so that it instantiates the tracked inner service.
-        let mut svc0 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+        //
         // The discover stack's buffer does not drive profile resolution (or the inner service)
         // until the service is called?! So we drive this all on a background ask that gets canceled
         // to drop the service reference.
-        let task = tokio::spawn(async move {
-            let (server_io, _client_io) = io::duplex(1);
-            // We can't use `oneshot`, as we want to ensure we hold the service reference while
-            // blocking on the call.
-            let s = svc0.ready().await.unwrap();
-            s.call(server_io).await;
-            unreachable!("call cannot complete")
-        });
+        let svc0 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
+        let task0 = spawn_conn(svc0);
         // We have to let some time pass for the buffer to drive the profile to readiness.
         time::advance(time::Duration::from_millis(100)).await;
         assert_eq!(
@@ -180,15 +174,18 @@ mod tests {
             "there should be exactly one service"
         );
 
-        // Rebuild the stack as we cancel the pending task (so the original reference is dropped).
-        // Let some time pass and ensure the service hasn't been dropped from the stack.
+        // Abort the pending task (simulating a disconnect from a client) and obtain the cached
+        // service from the stack.
+        task0.abort();
         let svc1 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
-        task.abort();
+        let task1 = spawn_conn(svc1);
+        // Let some time pass and ensure the service hasn't been dropped from the stack (because the
+        // task is still running).
         time::sleep(sleep_time).await;
         assert_eq!(
             new_count.load(Ordering::SeqCst),
             1,
-            "one service has been created"
+            "only one service has been created"
         );
         assert_eq!(
             handle.tracked_services(),
@@ -196,12 +193,12 @@ mod tests {
             "the service should be retained"
         );
 
-        // Finally, drop the service reference and ensure the service is dropped from the cache.
-        drop(svc1);
+        // Cancel the task and ensure the cached service is dropped after the idle timeout expires.
+        task1.abort();
         assert_eq!(
             handle.tracked_services(),
             1,
-            "the service should have been dropped"
+            "the service should be retained for an idle timeout"
         );
         time::sleep(sleep_time).await;
         assert_eq!(
@@ -210,20 +207,46 @@ mod tests {
             "the service should have been dropped"
         );
 
-        // Obtaining the service again creates a new inner stack.
+        // When another stack is built for the same target, we create a new service (because the
+        // prior service has been idled out).
         let svc2 = stack.new_service(tcp::Accept::from(OrigDstAddr(addr)));
-        let task = tokio::spawn(async move {
-            let (server_io, _client_io) = io::duplex(1);
-            svc2.oneshot(server_io).await
-        });
+        let task2 = spawn_conn(svc2);
         // We have to let some time pass for the buffer to drive the profile to readiness.
         time::advance(time::Duration::from_millis(100)).await;
         assert_eq!(
             new_count.load(Ordering::SeqCst),
             2,
-            "two services have been created"
+            "exactly two services should be created"
         );
         assert_eq!(handle.tracked_services(), 1, "the service should be active");
-        task.abort();
+        task2.abort();
+        time::sleep(sleep_time).await;
+        assert_eq!(
+            handle.tracked_services(),
+            0,
+            "the service should have been dropped"
+        );
+    }
+
+    fn spawn_conn(
+        mut svc: impl Service<
+                io::DuplexStream,
+                Response = (),
+                Error = Error,
+                Future = impl std::future::Future + Send,
+            > + Send
+            + 'static,
+    ) -> tokio::task::JoinHandle<()> {
+        // Hold the service in the task, even though the call can't actually complete.
+        //
+        // We can't use `oneshot`, as we want to ensure we hold the service reference while
+        // blocking on the call.
+        tokio::spawn(async move {
+            let svc = svc.ready().await.unwrap();
+            let (server_io, _client_io) = io::duplex(1);
+            svc.call(server_io).await;
+            drop(svc);
+            unreachable!("call cannot complete")
+        })
     }
 }
