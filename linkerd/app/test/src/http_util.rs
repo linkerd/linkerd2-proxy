@@ -1,4 +1,4 @@
-use crate::app_core::{io::BoxedIo, svc::Param, tls, Error};
+use crate::app_core::{svc::Param, tls, Error};
 use crate::io;
 use crate::ContextError;
 use futures::FutureExt;
@@ -156,7 +156,7 @@ impl Server {
         }
     }
 
-    pub fn run<E>(self) -> impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static
+    pub fn run<E>(self) -> impl (FnMut(E) -> io::Result<io::BoxedIo>) + Send + 'static
     where
         E: std::fmt::Debug,
         E: Param<tls::ConditionalClientTls>,
@@ -176,7 +176,7 @@ impl Server {
                 }
             });
             tokio::spawn(settings.serve_connection(server_io, svc).in_current_span());
-            Ok(BoxedIo::new(client_io))
+            Ok(io::BoxedIo::new(client_io))
         }
     }
 }

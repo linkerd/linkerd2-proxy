@@ -737,10 +737,7 @@ async fn profile_endpoint_propagates_conn_errors() {
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn(ep1, |_| {
-        Err(Box::new(io::Error::new(
-            io::ErrorKind::ConnectionReset,
-            "i dont like you, go away",
-        )))
+        Err(io::Error::from(io::ErrorKind::ConnectionReset))
     });
 
     let profiles = profile::resolver();
