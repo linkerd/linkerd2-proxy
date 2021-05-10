@@ -265,7 +265,7 @@ pub mod fuzz_logic {
         svc::{self, NewService, Param},
         tls,
         transport::{ClientAddr, Remote, ServerAddr},
-        Conditional, Error, NameAddr, ProxyRuntime,
+        Conditional, NameAddr, ProxyRuntime,
     };
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
