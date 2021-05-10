@@ -18,12 +18,7 @@ impl<N> Outbound<N> {
     ) -> Outbound<
         impl svc::NewService<
             T,
-            Service = impl svc::Service<
-                I,
-                Response = (),
-                Error = Error,
-                Future = impl std::future::Future + Send,
-            > + Clone,
+            Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
