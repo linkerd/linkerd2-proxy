@@ -15,7 +15,7 @@ pub use linkerd_conditional::Conditional;
 pub use linkerd_detect as detect;
 pub use linkerd_dns;
 pub use linkerd_drain as drain;
-pub use linkerd_error::{Error, Never, Recover, Result};
+pub use linkerd_error::{Error, Never, Recover};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_identity as identity;

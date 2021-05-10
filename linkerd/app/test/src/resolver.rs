@@ -126,10 +126,11 @@ impl<T: Param<ConcreteAddr>, E> tower::Service<T> for Dst<E> {
         let span = tracing::trace_span!("mock_resolver", ?addr);
         let _e = span.enter();
 
-        tracing::trace!(%addr, "Resolving");
-        let mut endpoints = self.state.endpoints.lock().unwrap();
-        tracing::trace!(addrs = ?endpoints.keys().cloned().collect::<Vec<_>>());
-        let res = endpoints
+        let res = self
+            .state
+            .endpoints
+            .lock()
+            .unwrap()
             .remove(&addr)
             .map(|x| {
                 tracing::trace!("found endpoint for target");
@@ -196,16 +197,18 @@ impl<T: Param<profiles::LookupAddr>> tower::Service<T> for Profiles {
         let span = tracing::trace_span!("mock_profile", ?addr);
         let _e = span.enter();
 
-        let mut profiles = self.state.endpoints.lock().unwrap();
-        tracing::trace!(profiles = ?profiles.keys().cloned().collect::<Vec<_>>(), "Looking up");
-        let res = profiles
+        let res = self
+            .state
+            .endpoints
+            .lock()
+            .unwrap()
             .remove(&addr)
             .map(|x| {
-                tracing::trace!("found profile for addr");
+                tracing::trace!("found endpoint for addr");
                 x
             })
             .unwrap_or_else(|| {
-                tracing::debug!(?addr, "no profile configured for");
+                tracing::debug!(?addr, "no endpoint configured for");
                 // An unknown endpoint was resolved!
                 self.state.only.store(false, Ordering::Release);
                 None

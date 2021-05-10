@@ -185,7 +185,6 @@ mod tests {
     };
     use std::net::SocketAddr;
 
-    // TODO Should be a TCP endpoint stack test
     #[tokio::test]
     async fn forward() {
         let _trace = support::trace_init();
