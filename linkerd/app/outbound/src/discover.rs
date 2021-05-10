@@ -348,9 +348,8 @@ mod tests {
         S::Future: Send,
     {
         tokio::spawn(async move {
-            let svc = svc.ready().await?;
             let (server_io, _client_io) = io::duplex(1);
-            svc.call(server_io).await?;
+            svc.ready().await?.call(server_io).await?;
             drop(svc);
             Ok(())
         })

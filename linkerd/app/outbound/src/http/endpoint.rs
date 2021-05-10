@@ -92,7 +92,7 @@ mod test {
     };
     use std::net::SocketAddr;
 
-    static WAS_ORIG_PROTO: &'static str = "request-orig-proto";
+    static WAS_ORIG_PROTO: &str = "request-orig-proto";
 
     /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
     #[tokio::test(flavor = "current_thread")]
