@@ -147,10 +147,10 @@ async fn profile_endpoint_propagates_conn_errors() {
 
     // Build a mock "connector" that returns the upstream "server" IO.
     let connect = support::connect().endpoint_fn(ep1, |_| {
-        Err(Box::new(io::Error::new(
+        Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "i dont like you, go away",
-        )))
+        ))
     });
 
     let profiles = profile::resolver();
@@ -488,9 +488,7 @@ async fn unmeshed_hello_world(
 }
 
 #[tracing::instrument]
-fn hello_server(
-    http: hyper::server::conn::Http,
-) -> impl Fn(Endpoint) -> Result<io::BoxedIo, Error> {
+fn hello_server(http: hyper::server::conn::Http) -> impl Fn(Endpoint) -> io::Result<io::BoxedIo> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
         let _e = span.enter();
@@ -498,7 +496,7 @@ fn hello_server(
         let (client_io, server_io) = support::io::duplex(4096);
         let hello_svc = hyper::service::service_fn(|request: Request<Body>| async move {
             tracing::info!(?request);
-            Ok::<_, Error>(Response::new(Body::from("Hello world!")))
+            Ok::<_, io::Error>(Response::new(Body::from("Hello world!")))
         });
         tokio::spawn(
             http.serve_connection(server_io, hello_svc)
