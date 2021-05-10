@@ -252,7 +252,7 @@ where
                 config.detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
-            .push_on_response(svc::BoxService::layer())
+            // .push_on_response(svc::BoxService::layer())
             .push_request_filter(require_id)
             .push(self.runtime.metrics.transport.layer_accept())
             .push_request_filter(TcpAccept::try_from)
@@ -261,6 +261,7 @@ where
                 config.detect_protocol_timeout,
             ))
             .instrument(|_: &_| debug_span!("proxy"))
+            .push_on_response(svc::BoxService::layer())
             .push_switch(
                 disable_detect,
                 self.clone()
@@ -275,7 +276,6 @@ where
                     .push(svc::BoxNewService::layer())
                     .into_inner(),
             )
-            .push_on_response(svc::BoxService::layer())
             .check_new_service::<T, I>()
             .push_switch(
                 PreventLoop::from(server_port).to_switch(),
@@ -291,7 +291,7 @@ where
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
-            .push_on_response(svc::BoxService::layer())
+            // .push_on_response(svc::BoxService::layer())
             .into_inner()
     }
 }

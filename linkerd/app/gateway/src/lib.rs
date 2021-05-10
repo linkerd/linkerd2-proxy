@@ -118,8 +118,7 @@ where
         .push_tcp_endpoint()
         .push_tcp_logical(resolve.clone())
         .into_stack()
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
+        // .push_on_response(svc::BoxService::layer())
         .push_request_filter(
             |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
                 let profile = p.ok_or_else(discovery_rejected)?;
@@ -160,8 +159,6 @@ where
                 .push_spawn_buffer(buffer_capacity),
         )
         .push_cache(cache_max_idle_age)
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
         .check_new_service::<NameAddr, I>();
 
     // Cache an HTTP gateway service for each destination and HTTP version.
@@ -201,9 +198,7 @@ where
             svc::layers()
                 .push(http::Retain::layer())
                 .push(http::BoxResponse::layer()),
-        )
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer());
+        );
 
     // When handling gateway connections from older clients that do not
     // support the transport header, do protocol detection and route requests
@@ -224,8 +219,6 @@ where
             detect_protocol_timeout,
             http::DetectHttp::default(),
         ))
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
         .into_inner();
 
     // When a transported connection is received, use the header's target to
@@ -259,8 +252,6 @@ where
             },
             tcp.into_inner(),
         )
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
         .push_switch(
             |gw| match gw {
                 GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
