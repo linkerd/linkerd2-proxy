@@ -115,22 +115,22 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        svc::{self, NewService, ServiceExt},
-        test_util::*,
-    };
+    use crate::test_util::*;
+    use io::AsyncWriteExt;
     use linkerd_app_core::{
         io::{self, AsyncReadExt},
         profiles::{LogicalAddr, Profile},
+        svc::{self, timeout::FailFastError, NewService, ServiceExt},
         transport::addrs::*,
     };
     use std::net::SocketAddr;
+    use tokio::time;
 
     /// Tests that the logical stack forwards connections to services with a single endpoint.
     #[tokio::test]
     async fn forward() {
         let _trace = support::trace_init();
-        tokio::time::pause(); // Ensure timeouts can't fire.
+        time::pause();
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
@@ -186,11 +186,15 @@ mod tests {
 
     /// Tests that the logical stack forwards connections to services with an arbitrary number of
     /// endpoints.
-    #[cfg(feature = "todo")]
+    ///
+    /// - Initially one endpoint is used.
+    /// - Then, another endpoint is introduced and we confirm that we use both.
+    /// - Then, the first endpoint is removed and we confirm that we only use the second.
+    /// - Then, all endpoints are removed and we confirm that we hit fail-fast error.
     #[tokio::test]
     async fn balances() {
         let _trace = support::trace_init();
-        //tokio::time::pause(); // Ensure timeouts can't fire.
+        time::pause();
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
@@ -210,70 +214,119 @@ mod tests {
         let ep1_addr = SocketAddr::new([192, 0, 2, 31].into(), 3333);
         let resolve = support::resolver();
         let resolved = resolve.handle();
-
         let mut resolve_tx = resolve.endpoint_tx(logical_addr);
-        resolve_tx
-            .add(Some((ep0_addr, Default::default())))
-            .unwrap();
 
-        // Build the TCP logical stack with a mocked connector.
+        // Build the TCP logical stack with a mocked endpoint stack that alters its response stream
+        // based on the address.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let svc = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| match ep.addr {
                 Remote(ServerAddr(addr)) if addr == ep0_addr => {
-                    tracing::info!(%addr, "writing ep0");
+                    tracing::debug!(%addr, "writing ep0");
                     let mut io = support::io();
-                    io.write(b"msg0");
+                    io.write(b"who r u?").read(b"ep0");
                     future::ok::<_, support::io::Error>(io.build())
                 }
                 Remote(ServerAddr(addr)) if addr == ep1_addr => {
-                    tracing::info!(%addr, "writing ep1");
+                    tracing::debug!(%addr, "writing ep1");
                     let mut io = support::io();
-                    io.write(b"msg1");
+                    io.write(b"who r u?").read(b"ep1");
                     future::ok::<_, support::io::Error>(io.build())
                 }
                 addr => unreachable!("unexpected endpoint: {}", addr),
             }))
             .push_tcp_logical(resolve)
-            .into_inner();
+            .into_inner()
+            .new_service(logical);
 
-        let svc = stack.new_service(logical.clone());
+        // We add a single endpoint to the balancer and it is used:
 
-        // XXX this times out for some reason.
-        let (mut client_io, server_io) = io::duplex(100);
-        tokio::spawn(svc.clone().oneshot(server_io));
-        let mut buf = [0u8, 5];
-        tokio::time::timeout(
-            tokio::time::Duration::from_secs(10),
-            client_io.read(&mut buf),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert_eq!(std::str::from_utf8(&buf).unwrap(), "msg0");
+        resolve_tx
+            .add(Some((ep0_addr, Default::default())))
+            .unwrap();
+        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        let (io, task) = spawn_io();
+        svc.clone().oneshot(io).await.unwrap();
+        let msg = task.await.unwrap().unwrap();
+        assert_eq!(msg, "ep0");
 
-        // Add an endpoint to the balancer and ensure it eventually is used.
+        // When we add a second endpoint, traffic is sent to both endpoints:
+
         resolve_tx
             .add(Some((ep1_addr, Default::default())))
             .unwrap();
-
+        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
         let mut seen0 = false;
         let mut seen1 = false;
-        while !(seen0 && seen1) {
-            let (mut client_io, server_io) = io::duplex(100);
-            tokio::spawn(svc.clone().oneshot(server_io));
-            let mut buf = [0u8, 5];
-            client_io.read(&mut buf).await.unwrap();
-            match std::str::from_utf8(&buf) {
-                Ok("msg0") => {
+        for i in 1..=100 {
+            let (io, task) = spawn_io();
+            svc.clone().oneshot(io).await.unwrap();
+            let msg = task.await.unwrap().unwrap();
+            match msg.as_str() {
+                "ep0" => {
                     seen0 = true;
                 }
-                Ok("msg1") => {
+                "ep1" => {
                     seen1 = true;
                 }
-                _ => unreachable!("unexpected read"),
+                msg => unreachable!("unexpected read: {}", msg),
             }
-            assert!(resolved.only_configured(), "Resolution not reused")
+            assert!(resolved.only_configured(), "Resolution must be reused");
+            if seen0 && seen1 {
+                tracing::info!("Both endpoints observed after {} iters", i);
+                break;
+            }
+            if i % 10 == 0 {
+                tracing::debug!("iters={} ep0={} ep1={}", i, seen0, seen1);
+            }
         }
+        assert!(
+            seen0 && seen1,
+            "Both endpoints must be used; ep0={} ep1={}",
+            seen0,
+            seen1
+        );
+
+        // When we remove the ep0, all traffic goes to ep1:
+
+        resolve_tx.remove(Some(ep0_addr)).unwrap();
+        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        for _ in 1..=100 {
+            let (io, task) = spawn_io();
+            svc.clone().oneshot(io).await.unwrap();
+            let msg = task.await.unwrap().unwrap();
+            assert_eq!(msg, "ep1", "Communicating with a defunct endpoint");
+            assert!(resolved.only_configured(), "Resolution must be reused");
+        }
+
+        // Empty load balancers hit fail-fast errors:
+
+        resolve_tx.remove(Some(ep1_addr)).unwrap();
+        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        let (io, task) = spawn_io();
+        let err = svc
+            .clone()
+            .oneshot(io)
+            .await
+            .expect_err("Empty balancer must timeout");
+        task.abort();
+        assert!(err.downcast_ref::<FailFastError>().is_some());
+        assert!(resolved.only_configured(), "Resolution must be reused");
+    }
+
+    /// Balancer test helper that runs client I/O on a task.
+    fn spawn_io() -> (
+        io::DuplexStream,
+        tokio::task::JoinHandle<io::Result<String>>,
+    ) {
+        let (mut client_io, server_io) = io::duplex(100);
+        let task = tokio::spawn(async move {
+            client_io.write_all(b"who r u?").await?;
+
+            let mut buf = String::with_capacity(100);
+            client_io.read_to_string(&mut buf).await?;
+            Ok(buf)
+        });
+        (server_io, task)
     }
 }
