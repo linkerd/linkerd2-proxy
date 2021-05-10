@@ -92,6 +92,8 @@ mod test {
     };
     use std::net::SocketAddr;
 
+    static WAS_ORIG_PROTO: &'static str = "request-orig-proto";
+
     /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
     #[tokio::test(flavor = "current_thread")]
     async fn http11_forward() {
@@ -99,9 +101,8 @@ mod test {
 
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
-        let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
-            serve(::http::Version::HTTP_11, None)
-        });
+        let connect = support::connect()
+            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_11));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -126,6 +127,7 @@ mod test {
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+        assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
     }
 
     /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
@@ -135,9 +137,8 @@ mod test {
 
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
 
-        let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
-            serve(::http::Version::HTTP_2, None)
-        });
+        let connect = support::connect()
+            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -162,6 +163,7 @@ mod test {
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+        assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
     }
 
     /// Tests that the the HTTP endpoint stack uses endpoint metadata to initiate HTTP/2 protocol
@@ -173,9 +175,8 @@ mod test {
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
         // Pretend the upstream is a proxy that supports proto upgrades...
-        let connect = support::connect().endpoint_fn_boxed(addr, |_: http::Endpoint| {
-            serve(::http::Version::HTTP_2, Some("HTTP/1.1"))
-        });
+        let connect = support::connect()
+            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
@@ -200,33 +201,78 @@ mod test {
         });
 
         let req = http::Request::builder()
+            .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+        assert_eq!(
+            rsp.headers()
+                .get(WAS_ORIG_PROTO)
+                .and_then(|v| v.to_str().ok()),
+            Some("HTTP/1.1")
+        );
     }
 
-    fn serve(
-        version: ::http::Version,
-        orig_proto: Option<&'static str>,
-    ) -> io::Result<io::BoxedIo> {
+    /// Tests that the the HTTP endpoint stack uses endpoint metadata to initiate HTTP/2 protocol
+    /// upgrading.
+    #[tokio::test(flavor = "current_thread")]
+    async fn orig_proto_http2_noop() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+
+        // Pretend the upstream is a proxy that supports proto upgrades...
+        let connect = support::connect()
+            .endpoint_fn_boxed(addr, |_: http::Endpoint| serve(::http::Version::HTTP_2));
+
+        // Build the outbound server
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(connect)
+            .push_http_endpoint::<_, http::BoxBody>()
+            .into_inner();
+
+        let svc = stack.new_service(http::Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            protocol: http::Version::H2,
+            logical_addr: None,
+            opaque_protocol: false,
+            tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
+            metadata: Metadata::new(
+                Default::default(),
+                support::resolver::ProtocolHint::Http2,
+                None,
+                None,
+                None,
+            ),
+        });
+
+        let req = http::Request::builder()
+            .version(::http::Version::HTTP_2)
+            .uri("http://foo.example.com")
+            .body(http::BoxBody::default())
+            .unwrap();
+        let rsp = svc.oneshot(req).await.unwrap();
+        assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
+        assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
+    }
+
+    fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
         let svc = hyper::service::service_fn(move |req: http::Request<_>| {
             tracing::debug!(?req);
-            assert_eq!(req.version(), version);
-            assert_eq!(
-                req.headers()
-                    .get("l5d-orig-proto")
-                    .and_then(|v| v.to_str().ok()),
-                orig_proto,
-                "l5d-orig-proto must not be set"
-            );
-
             let rsp = http::Response::builder()
-                .status(http::StatusCode::NO_CONTENT)
-                .body(hyper::Body::default())
-                .unwrap();
-            future::ok::<_, Never>(rsp)
+                .version(version)
+                .status(http::StatusCode::NO_CONTENT);
+            let rsp = req
+                .headers()
+                .get("l5d-orig-proto")
+                .into_iter()
+                .fold(rsp, |rsp, orig_proto| {
+                    rsp.header(WAS_ORIG_PROTO, orig_proto)
+                });
+            future::ok::<_, Never>(rsp.body(hyper::Body::default()).unwrap())
         });
 
         let mut http = hyper::server::conn::Http::new();
