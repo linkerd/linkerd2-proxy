@@ -1,4 +1,4 @@
-#![cfg(feature = "disabled")]
+#![allow(dead_code, unused_imports)]
 
 use super::{Endpoint, Logical};
 use crate::{
@@ -33,6 +33,7 @@ use tower::ServiceExt;
 use tracing::instrument::Instrument;
 
 // XXX unclear what this tests
+#[cfg(feature = "disabled")]
 #[tokio::test]
 async fn plaintext_tcp() {
     let _trace = support::trace_init();
@@ -61,36 +62,8 @@ async fn plaintext_tcp() {
     hello_world_client(target_addr, &mut server).await;
 }
 
-// TODO Should be a TCP endpoint stack test
-#[tokio::test]
-async fn plaintext_tcp_no_profile() {
-    let _trace = support::trace_init();
-
-    // Since all of the actual IO in this test is mocked out, we won't actually
-    // bind any of these addresses. Therefore, we don't need to use ephemeral
-    // ports or anything. These will just be used so that the proxy has a socket
-    // address to resolve, etc.
-    let target_addr = SocketAddr::new([0, 0, 0, 0].into(), 666);
-
-    // Configure mock IO for the upstream "server". It will read "hello" and
-    // then write "world".
-    let mut srv_io = support::io();
-    srv_io.write(b"hello\n").read(b"world");
-    // Build a mock "connector" that returns the upstream "server" IO.
-    let connect = support::connect().endpoint_fn(target_addr, move |endpoint: Endpoint| {
-        assert!(endpoint.tls.is_none());
-        Ok(srv_io.build())
-    });
-
-    // Build the outbound TCP balancer stack.
-    let mut server = Server::default()
-        .profiles(profile::resolver().no_profile(target_addr))
-        .connect(connect)
-        .build();
-    hello_world_client(target_addr, &mut server).await;
-}
-
 // TODO Should be a TCP logical stack test
+#[cfg(feature = "disabled")]
 #[tokio::test]
 async fn logical_plaintext_tcp() {
     let _trace = support::trace_init();
@@ -136,6 +109,7 @@ async fn logical_plaintext_tcp() {
 }
 
 // TODO Should be a TCP logical stack test
+#[cfg(feature = "disabled")]
 #[tokio::test]
 async fn resolutions_are_reused() {
     let _trace = support::trace_init();
@@ -203,6 +177,7 @@ async fn resolutions_are_reused() {
 }
 
 // TODO Should be a TCP logical stack test
+#[cfg(feature = "disabled")]
 #[tokio::test]
 async fn load_balances() {
     let _trace = support::trace_init();
@@ -301,6 +276,7 @@ async fn load_balances() {
 }
 
 // TODO Should be a TCP logical stack test
+#[cfg(feature = "disabled")]
 #[tokio::test]
 async fn load_balancer_add_endpoints() {
     let _trace = support::trace_init();
@@ -418,6 +394,7 @@ async fn load_balancer_add_endpoints() {
 }
 
 // TODO Should be a TCP logical stack test
+#[cfg(feature = "disabled")]
 #[tokio::test]
 async fn load_balancer_remove_endpoints() {
     let _trace = support::trace_init();
@@ -561,6 +538,7 @@ impl Into<Box<dyn FnMut(Endpoint) -> ConnectFuture + Send + 'static>> for Connec
     }
 }
 
+#[cfg(feature = "disabled")]
 struct Server<P = resolver::NoProfiles, D = resolver::NoDst<resolver::Metadata>> {
     cfg: Config,
     profiles: P,
@@ -568,6 +546,7 @@ struct Server<P = resolver::NoProfiles, D = resolver::NoDst<resolver::Metadata>>
     connect: Connect<Endpoint>,
 }
 
+#[cfg(feature = "disabled")]
 impl<P, D> Server<P, D> {
     fn config(self, cfg: Config) -> Self {
         Self { cfg, ..self }
@@ -668,6 +647,7 @@ impl<P, D> Server<P, D> {
     }
 }
 
+#[cfg(feature = "disabled")]
 impl Default for Server {
     fn default() -> Self {
         Self {

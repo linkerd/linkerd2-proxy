@@ -175,3 +175,39 @@ impl svc::Param<tls::ConditionalClientTls> for Connect {
         self.tls.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        svc::{self, NewService, ServiceExt},
+        test_util::*,
+    };
+    use std::net::SocketAddr;
+
+    // TODO Should be a TCP endpoint stack test
+    #[tokio::test]
+    async fn forward() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(svc::mk(move |a: SocketAddr| {
+                assert_eq!(a, addr);
+                let mut io = support::io();
+                io.write(b"hello").read(b"world");
+                future::ok::<_, support::io::Error>(io.build())
+            }))
+            .push_tcp_forward()
+            .into_inner();
+
+        let mut io = support::io();
+        io.read(b"hello").write(b"world");
+        stack
+            .new_service(addr)
+            .oneshot(io.build())
+            .await
+            .expect("forward must complete successfully");
+    }
+}

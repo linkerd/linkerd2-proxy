@@ -110,3 +110,21 @@ where
         }
     }
 }
+
+#[cfg(feature = "disabled")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        svc::{self, NewService, ServiceExt},
+        test_util::*,
+    };
+    use std::net::SocketAddr;
+
+    #[tokio::test]
+    async fn forward_single_endpoint() {
+        let (rt, _shutdown) = runtime();
+        let stack = Outbound::new(default_config(), rt).with_stack(svc::mk(|_| future::pending()));
+        todo!();
+    }
+}
