@@ -215,8 +215,7 @@ mod test {
         );
     }
 
-    /// Tests that the the HTTP endpoint stack uses endpoint metadata to initiate HTTP/2 protocol
-    /// upgrading.
+    /// Tests that the the HTTP endpoint stack ignores protocol upgrade hinting for HTTP/2 traffic.
     #[tokio::test(flavor = "current_thread")]
     async fn orig_proto_http2_noop() {
         let _trace = support::trace_init();
@@ -259,6 +258,8 @@ mod test {
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
     }
 
+    /// Helper server that reads the l5d-orig-proto header on requests and uses it to set the header
+    /// value in `WAS_ORIG_PROTO`.
     fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
         let svc = hyper::service::service_fn(move |req: http::Request<_>| {
             tracing::debug!(?req);
