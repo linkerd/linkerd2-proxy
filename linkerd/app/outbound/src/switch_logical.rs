@@ -6,7 +6,7 @@ impl<S> Outbound<S> {
     /// Wraps an endpoint stack to switch to an alternate logical stack when an appropriate profile
     /// is provided:
     ///
-    /// - When a profile include endpoint information, it is used to build an endpoint stack;
+    /// - When a profile includes endpoint information, it is used to build an endpoint stack;
     /// - Otherwise, if the profile indicates the target is logical, a logical stack is built;
     /// - Otherwise, we assume the target is not part of the mesh and we should connect to the
     ///   original destination.
