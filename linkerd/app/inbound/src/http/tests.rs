@@ -8,12 +8,11 @@ use crate::{
 };
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
-    io::{self, BoxedIo},
-    proxy,
+    io, proxy,
     svc::{self, NewService, Param},
     tls,
     transport::{ClientAddr, Remote, ServerAddr},
-    Conditional, Error, NameAddr, ProxyRuntime,
+    Conditional, NameAddr, ProxyRuntime,
 };
 use linkerd_tracing::test::trace_init;
 use tracing::Instrument;
@@ -191,7 +190,7 @@ async fn downgrade_absolute_form() {
 #[tracing::instrument]
 fn hello_server(
     http: hyper::server::conn::Http,
-) -> impl Fn(Remote<ServerAddr>) -> Result<BoxedIo, Error> {
+) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
         let _e = span.enter();
@@ -199,12 +198,12 @@ fn hello_server(
         let (client_io, server_io) = support::io::duplex(4096);
         let hello_svc = hyper::service::service_fn(|request: Request<Body>| async move {
             tracing::info!(?request);
-            Ok::<_, Error>(Response::new(Body::from("Hello world!")))
+            Ok::<_, io::Error>(Response::new(Body::from("Hello world!")))
         });
         tokio::spawn(
             http.serve_connection(server_io, hello_svc)
                 .in_current_span(),
         );
-        Ok(BoxedIo::new(client_io))
+        Ok(io::BoxedIo::new(client_io))
     }
 }

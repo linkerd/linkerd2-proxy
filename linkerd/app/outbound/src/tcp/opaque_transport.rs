@@ -149,30 +149,18 @@ mod test {
         tls,
         transport::{Remote, ServerAddr},
         transport_header::TransportHeader,
-        Conditional,
     };
     use pin_project::pin_project;
     use std::task::Context;
     use tower::util::{service_fn, ServiceExt};
 
     fn ep(metadata: Metadata) -> Endpoint<()> {
-        Endpoint {
-            addr: Remote(ServerAddr(([127, 0, 0, 2], 4321).into())),
-            tls: metadata
-                .identity()
-                .map(|id| {
-                    Conditional::Some(tls::ClientTls {
-                        server_id: id.clone(),
-                        alpn: Some(tls::client::AlpnProtocols(vec![PROTOCOL.into()])),
-                    })
-                })
-                .unwrap_or(Conditional::None(
-                    tls::NoClientTls::NotProvidedByServiceDiscovery,
-                )),
+        Endpoint::from_metadata(
+            ([127, 0, 0, 2], 4321),
             metadata,
-            logical_addr: None,
-            protocol: (),
-        }
+            tls::NoClientTls::NotProvidedByServiceDiscovery,
+            false,
+        )
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -7,11 +7,11 @@ use linkerd_app_core::{
         http::{h1, h2},
         tap,
     },
-    transport::{self, orig_dst, Keepalive, ListenAddr},
+    transport::{Keepalive, ListenAddr},
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 pub fn default_config() -> Config {
     Config {
@@ -59,15 +59,4 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
         drain,
     };
     (runtime, drain_tx)
-}
-
-pub fn addrs(od: SocketAddr) -> orig_dst::Addrs {
-    use transport::{addrs::*, listen};
-    orig_dst::Addrs {
-        orig_dst: OrigDstAddr(od),
-        inner: listen::Addrs {
-            server: Local(ServerAddr(([127, 0, 0, 1], 4140).into())),
-            client: Remote(ClientAddr(([127, 0, 0, 1], 666).into())),
-        },
-    }
 }

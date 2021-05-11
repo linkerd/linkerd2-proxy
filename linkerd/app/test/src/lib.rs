@@ -14,7 +14,7 @@ pub use tokio::sync::oneshot;
 pub use tower::Service;
 pub use tracing::*;
 pub mod io {
-    pub use tokio::io::*;
+    pub use linkerd_app_core::io::*;
     pub use tokio_test::io::*;
 }
 
