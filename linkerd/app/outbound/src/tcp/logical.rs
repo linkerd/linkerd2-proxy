@@ -276,7 +276,7 @@ mod tests {
                 break;
             }
             if i % 10 == 0 {
-                tracing::debug!("iters={} ep0={} ep1={}", i, seen0, seen1);
+                tracing::debug!(iters = i, ep0 = seen0, ep1 = seen1);
             }
         }
         assert!(

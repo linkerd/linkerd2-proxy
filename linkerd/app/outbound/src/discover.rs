@@ -45,7 +45,6 @@ impl<N> Outbound<N> {
             .push(profiles::discover::layer(
                 profiles,
                 move |a: tcp::Accept| {
-                    println!("Profile: {:?}", a);
                     let OrigDstAddr(addr) = a.orig_dst;
                     if allow.matches_ip(addr.ip()) {
                         debug!("Allowing profile lookup");
@@ -127,8 +126,7 @@ mod tests {
 
         let profiles = support::profile::resolver().profile(addr, profiles::Profile::default());
 
-        // Create a profile stack that uses the tracked inner stack, configured to drop cached
-        // service after `idle_timeout`.
+        // Create a profile stack that uses the tracked inner stack.
         let (rt, _shutdown) = runtime();
         let mut stack = Outbound::new(default_config(), rt)
             .with_stack(stack)
@@ -293,8 +291,6 @@ mod tests {
             0,
             "the service should have been dropped"
         );
-
-        time::resume();
     }
 
     /// Tests that the discover stack avoids resolutions when the stack is not configured to permit
@@ -316,8 +312,8 @@ mod tests {
             svc::mk(move |_: SensorIo<io::DuplexStream>| future::ok::<(), Error>(()))
         };
 
-        // Create a profile stack that uses the tracked inner stack, configured to drop cached
-        // service after `idle_timeout`.
+        // Create a profile stack that uses the tracked inner stack, configured to only do profile
+
         let cfg = {
             let mut cfg = default_config();
             // Permits resolutions for only 192.0.2.66/32.
