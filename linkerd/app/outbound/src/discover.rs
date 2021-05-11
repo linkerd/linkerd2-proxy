@@ -165,8 +165,6 @@ mod tests {
         );
 
         task.await.unwrap().expect_err("service must fail");
-
-        time::resume();
     }
 
     /// Tests that the discover stack caches resolutions for each unique destination address.
