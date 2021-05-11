@@ -61,11 +61,7 @@ impl<S> Outbound<S> {
                     // Otherwise, if the profile provides a (named) logical address, then we build a
                     // logical stack so we apply routes, traffic splits, and load balancing.
                     if let Some(logical_addr) = addr.clone() {
-                        return Ok(svc::Either::B(Logical::new(
-                            logical_addr,
-                            rx.clone(),
-                            target.param(),
-                        )));
+                        return Ok(svc::Either::B(Logical::new(logical_addr, rx.clone())));
                     }
                 }
 
@@ -168,7 +164,6 @@ mod tests {
 
         let logical = |t: tcp::Logical| {
             assert_eq!(t.logical_addr.to_string(), "foo.example.com:3030");
-            assert_eq!(t.orig_dst.as_ref().port(), 2020);
             let skip: Option<crate::http::detect::Skip> = t.param();
             assert!(skip.is_some());
             svc::mk(|_: io::DuplexStream| future::ok::<(), Error>(()))

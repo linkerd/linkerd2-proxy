@@ -3,16 +3,13 @@ pub use linkerd_app_core::proxy::api_resolve::ConcreteAddr;
 use linkerd_app_core::{
     io, profiles,
     proxy::{api_resolve::Metadata, core::Resolve},
-    svc, tls,
-    transport::OrigDstAddr,
-    Addr, Error,
+    svc, tls, Addr, Error,
 };
 pub use profiles::LogicalAddr;
 use std::fmt;
 
 #[derive(Clone)]
 pub struct Logical<P> {
-    pub orig_dst: OrigDstAddr,
     pub profile: profiles::Receiver,
     pub logical_addr: LogicalAddr,
     pub protocol: P,
@@ -29,14 +26,9 @@ pub type UnwrapLogical<L, E> = svc::stack::ResultService<svc::Either<L, E>>;
 // === impl Logical ===
 
 impl Logical<()> {
-    pub(crate) fn new(
-        logical_addr: LogicalAddr,
-        profile: profiles::Receiver,
-        orig_dst: OrigDstAddr,
-    ) -> Self {
+    pub(crate) fn new(logical_addr: LogicalAddr, profile: profiles::Receiver) -> Self {
         Self {
             profile,
-            orig_dst,
             logical_addr,
             protocol: (),
         }
@@ -82,9 +74,7 @@ impl<P> Logical<P> {
 
 impl<P: PartialEq> PartialEq<Logical<P>> for Logical<P> {
     fn eq(&self, other: &Logical<P>) -> bool {
-        self.orig_dst == other.orig_dst
-            && self.logical_addr == other.logical_addr
-            && self.protocol == other.protocol
+        self.logical_addr == other.logical_addr && self.protocol == other.protocol
     }
 }
 
@@ -92,7 +82,6 @@ impl<P: Eq> Eq for Logical<P> {}
 
 impl<P: std::hash::Hash> std::hash::Hash for Logical<P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.orig_dst.hash(state);
         self.logical_addr.hash(state);
         self.protocol.hash(state);
     }
@@ -101,7 +90,6 @@ impl<P: std::hash::Hash> std::hash::Hash for Logical<P> {
 impl<P: std::fmt::Debug> std::fmt::Debug for Logical<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Logical")
-            .field("orig_dst", &self.orig_dst)
             .field("protocol", &self.protocol)
             .field("profile", &format_args!(".."))
             .field("logical_addr", &self.logical_addr)

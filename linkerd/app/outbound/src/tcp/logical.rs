@@ -138,7 +138,6 @@ mod tests {
             ..Default::default()
         });
         let logical = Logical {
-            orig_dst: OrigDstAddr(SocketAddr::new([192, 0, 2, 2].into(), 2222)),
             profile,
             logical_addr: logical_addr.clone(),
             protocol: (),
@@ -202,7 +201,6 @@ mod tests {
             ..Default::default()
         });
         let logical = Logical {
-            orig_dst: OrigDstAddr(SocketAddr::new([192, 0, 2, 2].into(), 2222)),
             profile,
             logical_addr: logical_addr.clone(),
             protocol: (),
