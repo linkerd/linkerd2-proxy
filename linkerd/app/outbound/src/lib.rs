@@ -1,7 +1,6 @@
 //! Configures and runs the outbound proxy.
 //!
-//! The outbound proxy is responsible for routing traffic from the local application to external
-//! network endpoints.
+//! The outbound proxy is responsible for routing traffic from the local application to other hosts.
 
 #![deny(warnings, rust_2018_idioms)]
 
