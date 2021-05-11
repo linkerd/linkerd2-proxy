@@ -1,18 +1,13 @@
-use crate::{
-    logical::{Concrete, Logical},
-    tcp::opaque_transport,
-    Accept, Outbound,
-};
+use crate::{http, logical::Concrete, tcp, Outbound};
 use linkerd_app_core::{
-    metrics,
+    io, metrics,
     profiles::LogicalAddr,
-    proxy::{api_resolve::Metadata, http, resolve::map_endpoint::MapEndpoint},
-    svc::{self, Param},
-    tls,
-    transport::{self, Remote, ServerAddr},
-    transport_header, Conditional,
+    proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
+    svc, tls,
+    transport::{self, addrs::*},
+    transport_header, Conditional, Error,
 };
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
@@ -21,6 +16,7 @@ pub struct Endpoint<P> {
     pub metadata: Metadata,
     pub logical_addr: Option<LogicalAddr>,
     pub protocol: P,
+    pub opaque_protocol: bool,
 }
 
 #[derive(Copy, Clone)]
@@ -28,97 +24,68 @@ pub struct FromMetadata {
     pub identity_disabled: bool,
 }
 
-impl<E> Outbound<E> {
-    pub fn push_into_endpoint<P, T>(
-        self,
-    ) -> Outbound<impl svc::NewService<T, Service = E::Service> + Clone>
-    where
-        Endpoint<P>: From<(tls::NoClientTls, T)>,
-        E: svc::NewService<Endpoint<P>> + Clone,
-    {
-        let Self {
-            config,
-            runtime,
-            stack: endpoint,
-        } = self;
-        let identity_disabled = runtime.identity.is_none();
-        let no_tls_reason = if identity_disabled {
-            tls::NoClientTls::Disabled
-        } else {
-            tls::NoClientTls::NotProvidedByServiceDiscovery
-        };
-        let stack =
-            svc::stack(endpoint).push_map_target(move |t| Endpoint::<P>::from((no_tls_reason, t)));
-        Outbound {
-            config,
-            runtime,
-            stack,
-        }
-    }
-}
-
 // === impl Endpoint ===
 
-impl<P> Endpoint<P> {
-    pub fn no_tls(reason: tls::NoClientTls) -> impl Fn(Accept<P>) -> Self {
-        move |accept| Self::from((reason, accept))
-    }
-}
-
-impl<P> From<(tls::NoClientTls, Logical<P>)> for Endpoint<P> {
-    fn from((reason, logical): (tls::NoClientTls, Logical<P>)) -> Self {
-        match logical.profile.borrow().endpoint.clone() {
-            None => Self {
-                addr: Remote(ServerAddr(logical.orig_dst.into())),
-                metadata: Metadata::default(),
-                tls: Conditional::None(reason),
-                logical_addr: Some(logical.logical_addr),
-                protocol: logical.protocol,
-            },
-            Some((addr, metadata)) => Self {
-                addr: Remote(ServerAddr(addr)),
-                tls: FromMetadata::client_tls(&metadata, reason),
-                metadata,
-                logical_addr: Some(logical.logical_addr),
-                protocol: logical.protocol,
-            },
-        }
-    }
-}
-
-impl<P> From<(tls::NoClientTls, Accept<P>)> for Endpoint<P> {
-    fn from((reason, accept): (tls::NoClientTls, Accept<P>)) -> Self {
+impl Endpoint<()> {
+    pub(crate) fn forward(addr: OrigDstAddr, reason: tls::NoClientTls) -> Self {
         Self {
-            addr: Remote(ServerAddr(accept.orig_dst.into())),
+            addr: Remote(ServerAddr(addr.into())),
             metadata: Metadata::default(),
             tls: Conditional::None(reason),
             logical_addr: None,
-            protocol: accept.protocol,
+            opaque_protocol: false,
+            protocol: (),
+        }
+    }
+
+    pub(crate) fn from_metadata(
+        addr: impl Into<SocketAddr>,
+        metadata: Metadata,
+        reason: tls::NoClientTls,
+        opaque_protocol: bool,
+    ) -> Self {
+        Self {
+            addr: Remote(ServerAddr(addr.into())),
+            tls: FromMetadata::client_tls(&metadata, reason),
+            metadata,
+            logical_addr: None,
+            opaque_protocol,
+            protocol: (),
         }
     }
 }
 
-impl<P> Param<Remote<ServerAddr>> for Endpoint<P> {
+impl<P> svc::Param<Remote<ServerAddr>> for Endpoint<P> {
     fn param(&self) -> Remote<ServerAddr> {
         self.addr
     }
 }
 
-impl<P> Param<tls::ConditionalClientTls> for Endpoint<P> {
+impl<P> svc::Param<tls::ConditionalClientTls> for Endpoint<P> {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
     }
 }
 
-impl<P> Param<Option<opaque_transport::PortOverride>> for Endpoint<P> {
-    fn param(&self) -> Option<opaque_transport::PortOverride> {
-        self.metadata
-            .opaque_transport_port()
-            .map(opaque_transport::PortOverride)
+impl<P> svc::Param<Option<http::detect::Skip>> for Endpoint<P> {
+    fn param(&self) -> Option<http::detect::Skip> {
+        if self.opaque_protocol {
+            Some(http::detect::Skip)
+        } else {
+            None
+        }
     }
 }
 
-impl<P> Param<Option<http::AuthorityOverride>> for Endpoint<P> {
+impl<P> svc::Param<Option<tcp::opaque_transport::PortOverride>> for Endpoint<P> {
+    fn param(&self) -> Option<tcp::opaque_transport::PortOverride> {
+        self.metadata
+            .opaque_transport_port()
+            .map(tcp::opaque_transport::PortOverride)
+    }
+}
+
+impl<P> svc::Param<Option<http::AuthorityOverride>> for Endpoint<P> {
     fn param(&self) -> Option<http::AuthorityOverride> {
         self.metadata
             .authority_override()
@@ -127,13 +94,13 @@ impl<P> Param<Option<http::AuthorityOverride>> for Endpoint<P> {
     }
 }
 
-impl<P> Param<transport::labels::Key> for Endpoint<P> {
+impl<P> svc::Param<transport::labels::Key> for Endpoint<P> {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::OutboundConnect(self.param())
     }
 }
 
-impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
+impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
         let target_addr = self.addr.into();
         let authority = self
@@ -149,9 +116,9 @@ impl<P> Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     }
 }
 
-impl<P> Param<metrics::EndpointLabels> for Endpoint<P> {
+impl<P> svc::Param<metrics::EndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::EndpointLabels {
-        Param::<metrics::OutboundEndpointLabels>::param(self).into()
+        svc::Param::<metrics::OutboundEndpointLabels>::param(self).into()
     }
 }
 
@@ -214,6 +181,108 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
             metadata,
             logical_addr: Some(concrete.logical.logical_addr.clone()),
             protocol: concrete.logical.protocol,
+            // XXX We never do protocol detection after resolving a concrete address to endpoints.
+            // We should differentiate these target types statically.
+            opaque_protocol: false,
         }
+    }
+}
+
+// === Outbound ===
+
+impl<S> Outbound<S> {
+    pub fn push_endpoint<I>(
+        self,
+    ) -> Outbound<
+        impl svc::NewService<
+                tcp::Endpoint,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
+    >
+    where
+        Self: Clone + 'static,
+        S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
+        S::Response:
+            tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        S::Future: Send + Unpin,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
+    {
+        let http = self
+            .clone()
+            .push_tcp_endpoint::<http::Endpoint>()
+            .push_http_endpoint()
+            .push_http_server()
+            .into_inner();
+
+        self.push_tcp_endpoint()
+            .push_tcp_forward()
+            .push_detect_http(http)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::test_util::*;
+    use hyper::{client::conn::Builder as ClientBuilder, Body, Request};
+    use linkerd_app_core::svc::{NewService, Service, ServiceExt};
+    use tokio::time;
+
+    /// Tests that socket errors cause HTTP clients to be disconnected.
+    #[tokio::test(flavor = "current_thread")]
+    async fn propagates_http_errors() {
+        let _trace = support::trace_init();
+        time::pause();
+
+        let (rt, shutdown) = runtime();
+
+        let (mut client, task) = {
+            let addr = SocketAddr::new([10, 0, 0, 41].into(), 5550);
+            let stack = Outbound::new(default_config(), rt)
+                // Fails connection attempts
+                .with_stack(support::connect().endpoint_fn(addr, |_| {
+                    Err(io::Error::new(
+                        io::ErrorKind::ConnectionReset,
+                        "i don't like you, go away",
+                    ))
+                }))
+                .push_endpoint()
+                .into_inner()
+                .new_service(tcp::Endpoint::forward(
+                    OrigDstAddr(addr),
+                    tls::NoClientTls::Disabled,
+                ));
+
+            let (client_io, server_io) = support::io::duplex(4096);
+            tokio::spawn(async move {
+                let res = stack.oneshot(server_io).err_into::<Error>().await;
+                tracing::info!(?res, "Server complete");
+                res
+            });
+
+            let (client, conn) = ClientBuilder::new().handshake(client_io).await.unwrap();
+            let client_task = tokio::spawn(async move {
+                let res = conn.await;
+                tracing::info!(?res, "Client complete");
+                res
+            });
+            (client, client_task)
+        };
+
+        let status = {
+            let req = Request::builder().body(Body::default()).unwrap();
+            let rsp = client.ready().await.unwrap().call(req).await.unwrap();
+            rsp.status()
+        };
+        assert_eq!(status, http::StatusCode::BAD_GATEWAY);
+
+        // Ensure the client task completes, indicating that it has been disconnected.
+        time::resume();
+        time::timeout(time::Duration::from_secs(10), task)
+            .await
+            .expect("Timeout")
+            .expect("Client task must not fail")
+            .expect("Client must close gracefully");
+        drop((client, shutdown));
     }
 }

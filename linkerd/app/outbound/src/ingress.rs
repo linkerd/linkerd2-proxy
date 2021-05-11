@@ -172,16 +172,12 @@ impl svc::stack::Predicate<Target> for AllowHttpProfile {
 impl TryFrom<(Option<profiles::Receiver>, Target)> for http::Logical {
     type Error = ProfileRequired;
     fn try_from(
-        (profile, Target { dst, version }): (Option<profiles::Receiver>, Target),
+        (profile, Target { version, .. }): (Option<profiles::Receiver>, Target),
     ) -> Result<Self, Self::Error> {
         let profile = profile.ok_or(ProfileRequired)?;
         let logical_addr = profile.borrow().addr.clone().ok_or(ProfileRequired)?;
 
-        // XXX This is a hack to fix caching when an dst-override is set.
-        let orig_dst = OrigDstAddr(([0, 0, 0, 0], dst.port()).into());
-
         Ok(Self {
-            orig_dst,
             profile,
             protocol: version,
             logical_addr,
@@ -200,6 +196,8 @@ impl From<(tls::NoClientTls, Target)> for http::Endpoint {
             tls: Conditional::None(reason),
             logical_addr: None,
             protocol: version,
+            // The endpoint is HTTP and definitely not opaque.
+            opaque_protocol: false,
         }
     }
 }
