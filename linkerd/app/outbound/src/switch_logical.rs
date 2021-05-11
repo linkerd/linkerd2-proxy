@@ -4,7 +4,12 @@ use std::fmt;
 
 impl<S> Outbound<S> {
     /// Wraps an endpoint stack to switch to an alternate logical stack when an appropriate profile
-    /// is provided.
+    /// is provided:
+    ///
+    /// - When a profile include endpoint information, it is used to build an endpoint stack;
+    /// - Otherwise, if the profile indicates the target is logical, a logical stack is built;
+    /// - Otherwise, we assume the target is not part of the mesh and we should connect to the
+    ///   original destination.
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
@@ -42,6 +47,8 @@ impl<S> Outbound<S> {
                         ..
                     } = *rx.borrow();
 
+                    // If the profile provides an endpoint, then the target is single endpoint and
+                    // not a logical/load-balanced service.
                     if let Some((addr, metadata)) = endpoint.clone() {
                         return Ok(svc::Either::A(Endpoint::from_metadata(
                             addr,
@@ -51,6 +58,8 @@ impl<S> Outbound<S> {
                         )));
                     }
 
+                    // Otherwise, if the profile provides a (named) logical address, then we build a
+                    // logical stack so we apply routes, traffic splits, and load balancing.
                     if let Some(logical_addr) = addr.clone() {
                         return Ok(svc::Either::B(Logical::new(
                             logical_addr,
@@ -60,6 +69,8 @@ impl<S> Outbound<S> {
                     }
                 }
 
+                // If there was no profile or it didn't include any useful metadata, create a bare
+                // endpoint from the original destination address.
                 Ok(svc::Either::A(Endpoint::forward(
                     target.param(),
                     no_tls_reason,
