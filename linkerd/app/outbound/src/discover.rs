@@ -310,7 +310,8 @@ mod tests {
             svc::mk(move |_: SensorIo<io::DuplexStream>| future::ok::<(), Error>(()))
         };
 
-        // Create a profile stack that uses the tracked inner stack, configured to only do profile
+        // Create a profile stack that uses the tracked inner stack, configured to never actually do
+        // profile resolutions for the IP being tested.
 
         let cfg = {
             let mut cfg = default_config();
