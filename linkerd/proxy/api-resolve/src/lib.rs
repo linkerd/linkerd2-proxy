@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 #![recursion_limit = "512"]
 
 use linkerd2_proxy_api as api;

@@ -42,10 +42,10 @@ pub struct Ms(Duration);
 #[derive(Debug, Default, Clone)]
 pub struct Us(Duration);
 
-impl Into<u64> for Us {
-    fn into(self) -> u64 {
+impl From<Us> for u64 {
+    fn from(Us(us): Us) -> u64 {
         use std::convert::TryInto;
-        self.0.as_micros().try_into().unwrap_or_else(|_| {
+        us.as_micros().try_into().unwrap_or_else(|_| {
             // These measurements should never be long enough to overflow
             tracing::warn!("Duration::as_micros would overflow u64");
             std::u64::MAX
@@ -65,12 +65,11 @@ impl Default for Histogram<Us> {
     }
 }
 
-impl Into<u64> for Ms {
-    fn into(self) -> u64 {
-        self.0
-            .as_secs()
+impl From<Ms> for u64 {
+    fn from(Ms(ms): Ms) -> u64 {
+        ms.as_secs()
             .saturating_mul(1_000)
-            .saturating_add(u64::from(self.0.subsec_nanos()) / 1_000_000)
+            .saturating_add(u64::from(ms.subsec_nanos()) / 1_000_000)
     }
 }
 

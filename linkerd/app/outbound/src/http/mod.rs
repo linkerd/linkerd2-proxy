@@ -28,11 +28,11 @@ pub struct CanonicalDstHeader(pub Addr);
 
 // === impl CanonicalDstHeader ===
 
-impl Into<HeaderPair> for CanonicalDstHeader {
-    fn into(self) -> HeaderPair {
+impl From<CanonicalDstHeader> for HeaderPair {
+    fn from(CanonicalDstHeader(dst): CanonicalDstHeader) -> HeaderPair {
         HeaderPair(
             HeaderName::from_static(CANONICAL_DST_HEADER),
-            HeaderValue::from_str(&self.0.to_string()).expect("addr must be a valid header"),
+            HeaderValue::from_str(&dst.to_string()).expect("addr must be a valid header"),
         )
     }
 }

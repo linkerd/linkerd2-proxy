@@ -1,6 +1,7 @@
 //! The main entrypoint for the proxy.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 #![type_length_limit = "16289823"]
 
 use linkerd_app::{core::transport::BindTcp, trace, Config};

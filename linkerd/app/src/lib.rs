@@ -1,6 +1,7 @@
 //! Configures and executes the proxy
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub mod admin;
 pub mod dst;

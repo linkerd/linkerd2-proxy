@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use ring::error::KeyRejected;
 use ring::rand;
@@ -135,9 +136,9 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl<'t> Into<webpki::DNSNameRef<'t>> for &'t LocalId {
-    fn into(self) -> webpki::DNSNameRef<'t> {
-        (&self.0).into()
+impl<'t> From<&'t LocalId> for webpki::DNSNameRef<'t> {
+    fn from(LocalId(ref name): &'t LocalId) -> webpki::DNSNameRef<'t> {
+        name.into()
     }
 }
 
@@ -165,9 +166,9 @@ impl TryFrom<&[u8]> for Name {
     }
 }
 
-impl<'t> Into<webpki::DNSNameRef<'t>> for &'t Name {
-    fn into(self) -> webpki::DNSNameRef<'t> {
-        self.0.as_ref().into()
+impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
+    fn from(Name(ref name): &'t Name) -> webpki::DNSNameRef<'t> {
+        name.as_ref().into()
     }
 }
 
@@ -328,9 +329,9 @@ impl Crt {
     }
 }
 
-impl Into<LocalId> for &'_ Crt {
-    fn into(self) -> LocalId {
-        self.id.clone()
+impl From<&'_ Crt> for LocalId {
+    fn from(crt: &Crt) -> LocalId {
+        crt.id.clone()
     }
 }
 
@@ -434,9 +435,9 @@ impl From<Name> for LocalId {
     }
 }
 
-impl Into<Name> for LocalId {
-    fn into(self) -> Name {
-        self.0
+impl From<LocalId> for Name {
+    fn from(LocalId(name): LocalId) -> Name {
+        name
     }
 }
 

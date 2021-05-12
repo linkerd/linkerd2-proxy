@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use linkerd_error::Error;
@@ -214,10 +215,7 @@ mod tests {
         ] {
             let n = Name::from_str(name).unwrap();
             let s = Suffix::from_str(suffix).unwrap();
-            assert!(
-                s.contains(&n),
-                format!("{} should contain {}", suffix, name)
-            );
+            assert!(s.contains(&n), "{} should contain {}", suffix, name);
         }
     }
 
@@ -231,10 +229,7 @@ mod tests {
         ] {
             let n = Name::from_str(name).unwrap();
             let s = Suffix::from_str(suffix).unwrap();
-            assert!(
-                !s.contains(&n),
-                format!("{} should not contain {}", suffix, name)
-            );
+            assert!(!s.contains(&n), "{} should not contain {}", suffix, name);
         }
 
         assert!(Suffix::from_str("").is_err(), "suffix must not be empty");

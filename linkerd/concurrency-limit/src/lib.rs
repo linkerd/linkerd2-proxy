@@ -5,6 +5,7 @@
 //! this layer.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_stack::layer;
 use pin_project::pin_project;

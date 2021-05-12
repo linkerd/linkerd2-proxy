@@ -4,6 +4,7 @@
 //! endpoints inbound to the local application.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 mod allow_discovery;
 pub mod direct;

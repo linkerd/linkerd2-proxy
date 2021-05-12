@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 mod propagation;
 mod service;
@@ -64,9 +65,9 @@ impl Id {
     }
 }
 
-impl Into<Vec<u8>> for Id {
-    fn into(self) -> Vec<u8> {
-        self.0
+impl From<Id> for Vec<u8> {
+    fn from(Id(bytes): Id) -> Vec<u8> {
+        bytes
     }
 }
 

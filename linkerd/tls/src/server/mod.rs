@@ -319,9 +319,9 @@ impl From<id::Name> for ClientId {
     }
 }
 
-impl Into<id::Name> for ClientId {
-    fn into(self) -> id::Name {
-        self.0
+impl From<ClientId> for id::Name {
+    fn from(ClientId(name): ClientId) -> id::Name {
+        name
     }
 }
 

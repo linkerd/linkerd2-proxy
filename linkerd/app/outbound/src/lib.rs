@@ -3,6 +3,7 @@
 //! The outbound proxy is responsible for routing traffic from the local application to other hosts.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 mod discover;
 pub mod endpoint;

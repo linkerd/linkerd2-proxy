@@ -68,15 +68,15 @@ impl From<NameMatch> for AddrMatch {
     }
 }
 
-impl Into<IpMatch> for AddrMatch {
-    fn into(self) -> IpMatch {
-        self.nets
+impl From<AddrMatch> for IpMatch {
+    fn from(addrs: AddrMatch) -> Self {
+        addrs.nets
     }
 }
 
-impl Into<NameMatch> for AddrMatch {
-    fn into(self) -> NameMatch {
-        self.names
+impl From<AddrMatch> for NameMatch {
+    fn from(addrs: AddrMatch) -> Self {
+        addrs.names
     }
 }
 

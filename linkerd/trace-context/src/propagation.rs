@@ -138,6 +138,9 @@ fn parse_grpc_trace_context_field(
     Ok(())
 }
 
+// This code looks significantly weirder if some of the elements are added using
+// the `vec![]` macro, despite clippy's suggestions otherwise...
+#[allow(clippy::vec_init_then_push)]
 fn increment_grpc_span_id<B>(request: &mut http::Request<B>, context: &TraceContext) -> Id {
     let span_id = Id::new_span_id(&mut thread_rng());
 

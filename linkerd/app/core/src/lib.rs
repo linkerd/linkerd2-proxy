@@ -8,6 +8,7 @@
 //! - Metric labeling
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
