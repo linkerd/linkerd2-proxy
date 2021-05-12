@@ -1,7 +1,7 @@
 use ipnet::IpNet;
 use linkerd_addr::Addr;
 use linkerd_dns::{Name, Suffix};
-use std::{net::IpAddr, sync::Arc};
+use std::{fmt, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug, Default)]
 pub struct AddrMatch {
@@ -93,6 +93,12 @@ impl NameMatch {
     }
 }
 
+impl fmt::Display for NameMatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.0.iter().map(Display)).finish()
+    }
+}
+
 // === impl IpMatch ===
 
 impl IpMatch {
@@ -107,5 +113,21 @@ impl IpMatch {
             (IpNet::V6(net), IpAddr::V6(ip)) => net.contains(&ip),
             _ => false,
         })
+    }
+}
+
+impl fmt::Display for IpMatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.0.iter().map(Display)).finish()
+    }
+}
+
+// Helper to use the `Display` formatter for `IpAddr`/`dns::Suffix` with
+// `debug_set`.
+struct Display<'a, T>(&'a T);
+
+impl<T: fmt::Display> fmt::Debug for Display<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self.0, f)
     }
 }

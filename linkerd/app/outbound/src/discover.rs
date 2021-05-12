@@ -1,6 +1,6 @@
 use crate::{tcp, Outbound};
 use linkerd_app_core::{
-    discovery_rejected, io, profiles,
+    io, profiles,
     svc::{self, stack::Param},
     transport::{metrics::SensorIo, OrigDstAddr},
     Error,
@@ -50,8 +50,14 @@ impl<N> Outbound<N> {
                         debug!("Allowing profile lookup");
                         Ok(profiles::LookupAddr(addr.into()))
                     } else {
-                        debug!("Skipping profile lookup");
-                        Err(discovery_rejected())
+                        tracing::debug!(
+                            %addr,
+                            networks = %allow.nets(),
+                            "Profile discovery not in configured search networks",
+                        );
+                        Err(profiles::DiscoveryRejected::new(
+                            "not in configured search networks",
+                        ))
                     }
                 },
             ))

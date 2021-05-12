@@ -1160,6 +1160,7 @@ dependencies = [
  "pin-project",
  "rand",
  "regex",
+ "thiserror",
  "tokio",
  "tonic",
  "tower",

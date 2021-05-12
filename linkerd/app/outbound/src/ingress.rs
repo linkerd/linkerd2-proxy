@@ -1,8 +1,7 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, discovery_rejected, errors, http_request_l5d_override_dst_name_addr, http_tracing, io,
-    profiles,
+    detect, errors, http_request_l5d_override_dst_name_addr, http_tracing, io, profiles,
     proxy::api_resolve::Metadata,
     svc::{self, stack::Param},
     tls,
@@ -83,8 +82,8 @@ impl<H> Outbound<H> {
                 },
             ..
         } = config;
-        let allow = AllowHttpProfile(allow_discovery);
 
+        let profile_domains = allow_discovery.names().clone();
         http.push_on_response(
             svc::layers()
                 .push(http::BoxRequest::layer())
@@ -92,15 +91,29 @@ impl<H> Outbound<H> {
         )
         // Lookup the profile for the outbound HTTP target, if appropriate.
         //
-        // This service is buffered because it needs to initialize the profile
-        // resolution and a failfast is instrumented in case it becomes
-        // unavailable
-        // When this service is in failfast, ensure that we drive the
-        // inner service to readiness even if new requests aren't
-        // received.
+        // This service is buffered because it needs to initialize the profile resolution and a
+        // fail-fast is instrumented in case it becomes unavailable. When this service is in
+        // fail-fast, ensure that we drive the inner service to readiness even if new requests
+        // aren't received.
         .push_request_filter(http::Logical::try_from)
         .check_new_service::<(Option<profiles::Receiver>, Target), _>()
-        .push(profiles::discover::layer(profiles, allow))
+        .push(profiles::discover::layer(
+            profiles,
+            move |target: Target| {
+                if profile_domains.matches(target.dst.name()) {
+                    Ok(profiles::LookupAddr(target.dst.into()))
+                } else {
+                    tracing::debug!(
+                        name = %target.dst.name(),
+                        domains = %profile_domains,
+                        "Address not in a configured domain",
+                    );
+                    Err(profiles::DiscoveryRejected::new(
+                        "not in configured ingress search addresses",
+                    ))
+                }
+            },
+        ))
         .push_on_response(
             svc::layers()
                 .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
@@ -150,20 +163,6 @@ impl<H> Outbound<H> {
         .push(svc::BoxNewService::layer())
         .check_new_service::<T, I>()
         .into_inner()
-    }
-}
-
-// === AllowHttpProfile ===
-
-impl svc::stack::Predicate<Target> for AllowHttpProfile {
-    type Request = profiles::LookupAddr;
-
-    fn check(&mut self, Target { dst, .. }: Target) -> Result<profiles::LookupAddr, Error> {
-        if self.0.names().matches(dst.name()) {
-            Ok(profiles::LookupAddr(dst.into()))
-        } else {
-            Err(discovery_rejected().into())
-        }
     }
 }
 
