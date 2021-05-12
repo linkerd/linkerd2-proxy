@@ -31,9 +31,14 @@ where
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Clone + Send + 'static,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>
+            + Clone
+            + Send
+            + Sync
+            + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
+        C: Send + Sync + 'static,
     {
         let Self {
             config,
@@ -101,7 +106,10 @@ where
             .push_cache(cache_max_idle_age)
             .check_new_service::<Logical, I>()
             .instrument(|_: &Logical| debug_span!("tcp"))
-            .check_new_service::<Logical, I>();
+            .check_new_service::<Logical, I>()
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,
