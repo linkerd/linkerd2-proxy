@@ -1,6 +1,7 @@
 //! Utilities for composing Tower Services.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 mod box_future;
 mod box_new_service;

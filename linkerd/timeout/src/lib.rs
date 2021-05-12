@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 use linkerd_error::Error;
 use linkerd_stack::Proxy;
 use pin_project::pin_project;
