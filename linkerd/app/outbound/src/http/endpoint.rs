@@ -19,7 +19,10 @@ impl<C> Outbound<C> {
                     Error = Error,
                     Future = impl Send,
                 >,
-            > + Clone,
+            > + Clone
+            + Send
+            + Sync
+            + 'static,
     >
     where
         T: Clone + Send + Sync + 'static,
@@ -33,7 +36,7 @@ impl<C> Outbound<C> {
         C: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
-        C::Future: Send + Unpin,
+        C::Future: Send + Unpin + 'static,
     {
         let Self {
             config,

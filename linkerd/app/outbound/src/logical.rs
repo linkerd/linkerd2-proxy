@@ -131,10 +131,11 @@ impl<C> Outbound<C> {
             tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Future: Send + Unpin,
         R: Clone + Send + 'static,
-        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+        R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: fmt::Debug + Send + Sync + Unpin + 'static,
     {
         let http = self
             .clone()
