@@ -247,8 +247,8 @@ impl svc::Param<tls::LocalId> for WithTransportHeaderAlpn {
 
 // === impl RefusedNoHeader ===
 
-impl Into<Error> for RefusedNoHeader {
-    fn into(self) -> Error {
+impl From<RefusedNoHeader> for Error {
+    fn from(_: RefusedNoHeader) -> Error {
         Error::from(io::Error::new(
             io::ErrorKind::ConnectionRefused,
             "Non-transport-header connection refused",
