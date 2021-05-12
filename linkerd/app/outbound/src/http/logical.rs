@@ -36,11 +36,8 @@ impl<E> Outbound<E> {
             + 'static,
         ESvc::Error: Into<Error>,
         ESvc::Future: Send,
-        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>
-            + Clone
-            + Send
-            + Sync
-            + 'static,
+        R: Resolve<ConcreteAddr, Error = Error, Endpoint = Metadata>,
+        R: Clone + Send + Sync + 'static,
         R::Resolution: Send,
         R::Future: Send + Unpin,
     {

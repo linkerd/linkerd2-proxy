@@ -205,14 +205,8 @@ impl<S> Outbound<S> {
         S::Response:
             tls::HasNegotiatedProtocol + io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         S::Future: Send + Unpin,
-        I: io::AsyncRead
-            + io::AsyncWrite
-            + io::PeerAddr
-            + fmt::Debug
-            + Send
-            + Sync
-            + Unpin
-            + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: fmt::Debug + Send + Sync + Unpin + 'static,
     {
         let http = self
             .clone()

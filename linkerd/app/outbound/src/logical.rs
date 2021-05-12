@@ -134,14 +134,8 @@ impl<C> Outbound<C> {
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error> + Sync,
         R::Resolution: Send,
         R::Future: Send + Unpin,
-        I: io::AsyncRead
-            + io::AsyncWrite
-            + io::PeerAddr
-            + fmt::Debug
-            + Send
-            + Sync
-            + Unpin
-            + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: fmt::Debug + Send + Sync + Unpin + 'static,
     {
         let http = self
             .clone()
