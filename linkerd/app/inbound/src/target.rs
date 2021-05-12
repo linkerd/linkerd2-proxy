@@ -1,6 +1,7 @@
 use indexmap::IndexMap;
 use linkerd_app_core::{
-    classify, dst, http_request_authority_addr, http_request_host_addr, metrics, profiles,
+    classify, dst, http_request_authority_addr, http_request_host_addr, identity, metrics,
+    profiles,
     proxy::{http, tap},
     stack_tracing,
     svc::{self, Param},
@@ -122,6 +123,21 @@ impl Param<http::normalize_uri::DefaultAuthority> for HttpAccept {
             http::uri::Authority::from_str(&self.tcp.target_addr.to_string())
                 .expect("Address must be a valid authority"),
         ))
+    }
+}
+
+impl Param<Option<identity::Name>> for HttpAccept {
+    fn param(&self) -> Option<identity::Name> {
+        self.tcp
+            .tls
+            .value()
+            .and_then(|server_tls| match server_tls {
+                tls::ServerTls::Established {
+                    client_id: Some(id),
+                    ..
+                } => Some(id.clone().0),
+                _ => None,
+            })
     }
 }
 
