@@ -57,7 +57,7 @@ mod code {
 
     mk_err_enum! {
         /// Taken from `errno.h`.
-        #[allow(non_camel_case_types)]
+        #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
         #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
         enum Code from i32 {
             1 => EPERM,
