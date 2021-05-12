@@ -1,6 +1,6 @@
 use linkerd_app_core::{identity, proxy::http, svc};
 use std::task::{Context, Poll};
-use tracing::debug;
+use tracing::{debug, trace};
 
 const HEADER_NAME: &str = "l5d-client-id";
 
@@ -60,7 +60,7 @@ where
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         let prior = if let Some(id) = self.value.clone() {
-            debug!(header = %HEADER_NAME, ?id, "Setting identity header");
+            trace!(header = %HEADER_NAME, ?id, "Setting identity header");
             req.headers_mut().insert(HEADER_NAME, id)
         } else {
             req.headers_mut().remove(HEADER_NAME)
