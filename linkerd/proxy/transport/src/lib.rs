@@ -18,9 +18,9 @@ use tokio::net::TcpStream;
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Keepalive(pub Option<Duration>);
 
-impl Into<Option<Duration>> for Keepalive {
-    fn into(self) -> Option<Duration> {
-        self.0
+impl From<Keepalive> for Option<Duration> {
+    fn from(Keepalive(duration): Keepalive) -> Option<Duration> {
+        duration
     }
 }
 

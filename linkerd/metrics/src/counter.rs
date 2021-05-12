@@ -50,15 +50,15 @@ impl<F: Factor> Counter<F> {
     }
 }
 
-impl<F: Factor> Into<f64> for &Counter<F> {
-    fn into(self) -> f64 {
-        self.value()
+impl<F: Factor> From<&Counter<F>> for f64 {
+    fn from(counter: &Counter<F>) -> f64 {
+        counter.value()
     }
 }
 
-impl<F> Into<u64> for &Counter<F> {
-    fn into(self) -> u64 {
-        self.0.load(Ordering::Acquire)
+impl<F> From<&Counter<F>> for u64 {
+    fn from(Counter(ref counter, _): &Counter<F>) -> u64 {
+        counter.load(Ordering::Acquire)
     }
 }
 

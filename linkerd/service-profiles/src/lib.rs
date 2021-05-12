@@ -154,9 +154,9 @@ impl From<Addr> for LookupAddr {
     }
 }
 
-impl Into<Addr> for LookupAddr {
-    fn into(self) -> Addr {
-        self.0
+impl From<LookupAddr> for Addr {
+    fn from(LookupAddr(addr): LookupAddr) -> Addr {
+        addr
     }
 }
 
@@ -188,9 +188,9 @@ impl From<NameAddr> for LogicalAddr {
     }
 }
 
-impl Into<NameAddr> for LogicalAddr {
-    fn into(self) -> NameAddr {
-        self.0
+impl From<LogicalAddr> for NameAddr {
+    fn from(LogicalAddr(na): LogicalAddr) -> NameAddr {
+        na
     }
 }
 

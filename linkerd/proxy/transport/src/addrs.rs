@@ -124,9 +124,9 @@ impl<T: AsRef<SocketAddr>> AsRef<SocketAddr> for Local<T> {
     }
 }
 
-impl<T: Into<SocketAddr>> Into<SocketAddr> for Local<T> {
-    fn into(self) -> SocketAddr {
-        self.0.into()
+impl<T: Into<SocketAddr>> From<Local<T>> for SocketAddr {
+    fn from(Local(addr): Local<T>) -> SocketAddr {
+        addr.into()
     }
 }
 
@@ -144,9 +144,9 @@ impl<T: AsRef<SocketAddr>> AsRef<SocketAddr> for Remote<T> {
     }
 }
 
-impl<T: Into<SocketAddr>> Into<SocketAddr> for Remote<T> {
-    fn into(self) -> SocketAddr {
-        self.0.into()
+impl<T: Into<SocketAddr>> From<Remote<T>> for SocketAddr {
+    fn from(Remote(addr): Remote<T>) -> SocketAddr {
+        addr.into()
     }
 }
 

@@ -305,7 +305,7 @@ mod tests {
             Ok(())
         }
 
-        const EXPECTED: &'static [&'static str] = &[
+        const EXPECTED: &[&str] = &[
             "# HELP basic A simple summary",
             "# TYPE basic summary",
             "basic{quantile=\"0\"} 1",

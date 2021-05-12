@@ -129,7 +129,8 @@ mod tests {
         enum Class {
             Good,
             Bad,
-        };
+        }
+
         impl FmtLabels for Class {
             fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 use std::fmt::Display;

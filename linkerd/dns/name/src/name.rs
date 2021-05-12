@@ -59,15 +59,15 @@ impl<'a> std::str::FromStr for Name {
     }
 }
 
-impl Into<webpki::DNSName> for Name {
-    fn into(self) -> webpki::DNSName {
-        self.0
+impl From<Name> for webpki::DNSName {
+    fn from(Name(name): Name) -> webpki::DNSName {
+        name
     }
 }
 
-impl<'t> Into<webpki::DNSNameRef<'t>> for &'t Name {
-    fn into(self) -> webpki::DNSNameRef<'t> {
-        self.0.as_ref()
+impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
+    fn from(Name(ref name): &'t Name) -> webpki::DNSNameRef<'t> {
+        name.as_ref()
     }
 }
 
