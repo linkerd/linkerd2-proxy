@@ -215,10 +215,12 @@ fn h2_error(err: &Error) -> String {
 
 impl Class {
     pub(super) fn is_failure(&self) -> bool {
-        matches!(self,
+        matches!(
+            self,
             Class::Default(SuccessOrFailure::Failure)
-            | Class::Grpc(SuccessOrFailure::Failure, _)
-            | Class::Stream(SuccessOrFailure::Failure, _))
+                | Class::Grpc(SuccessOrFailure::Failure, _)
+                | Class::Stream(SuccessOrFailure::Failure, _)
+        )
     }
 }
 
