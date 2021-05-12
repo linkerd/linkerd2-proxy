@@ -252,7 +252,6 @@ where
                 config.detect_protocol_timeout,
                 http::DetectHttp::default(),
             ))
-            // .push_on_response(svc::BoxService::layer())
             .push_request_filter(require_id)
             .push(self.runtime.metrics.transport.layer_accept())
             .push_request_filter(TcpAccept::try_from)

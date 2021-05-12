@@ -117,7 +117,6 @@ where
         .push_tcp_endpoint()
         .push_tcp_logical(resolve.clone())
         .into_stack()
-        // .push_on_response(svc::BoxService::layer())
         .push_request_filter(
             |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
                 let profile = p.ok_or_else(discovery_rejected)?;
