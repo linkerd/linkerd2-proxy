@@ -414,15 +414,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-dns-name"
-version = "0.1.0"
-dependencies = [
- "thiserror",
- "untrusted",
- "webpki",
-]
-
-[[package]]
 name = "linkerd-drain"
 version = "0.1.0"
 dependencies = [
@@ -465,19 +456,6 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "tower",
-]
-
-[[package]]
-name = "linkerd-identity"
-version = "0.1.0"
-dependencies = [
- "linkerd-dns-name",
- "ring",
- "rustls",
- "thiserror",
- "tracing",
- "untrusted",
- "webpki",
 ]
 
 [[package]]
@@ -524,7 +502,6 @@ dependencies = [
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
- "linkerd-identity",
  "linkerd-io",
  "linkerd-proxy-transport",
  "linkerd-stack",

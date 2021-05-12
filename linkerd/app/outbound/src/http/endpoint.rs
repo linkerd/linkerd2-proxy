@@ -1,9 +1,9 @@
-use super::require_identity_on_endpoint::NewRequireIdentity;
+use super::require_id_header;
 use crate::Outbound;
 use linkerd_app_core::{
     classify, config, http_tracing, metrics,
     proxy::{http, tap},
-    reconnect, svc, tls, Error, CANONICAL_DST_HEADER, L5D_REQUIRE_ID,
+    reconnect, svc, tls, Error, CANONICAL_DST_HEADER,
 };
 use tokio::io;
 
@@ -67,8 +67,7 @@ impl<C> Outbound<C> {
                 rt.span_sink.clone(),
                 crate::trace_labels(),
             ))
-            .push_on_response(http::strip_header::request::layer(L5D_REQUIRE_ID))
-            .push(NewRequireIdentity::layer())
+            .push(require_id_header::NewRequireIdentity::layer())
             .push(http::NewOverrideAuthority::layer(vec![
                 "host",
                 CANONICAL_DST_HEADER,

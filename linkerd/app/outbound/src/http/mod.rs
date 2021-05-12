@@ -1,7 +1,7 @@
 pub mod detect;
 mod endpoint;
 pub mod logical;
-mod require_identity_on_endpoint;
+mod require_id_header;
 mod server;
 
 use crate::tcp;

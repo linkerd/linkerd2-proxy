@@ -52,7 +52,6 @@ pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
-pub const L5D_REQUIRE_ID: &str = "l5d-require-id";
 
 const DEFAULT_PORT: u16 = 80;
 
