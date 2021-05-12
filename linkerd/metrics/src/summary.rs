@@ -339,6 +339,19 @@ mod tests {
         const ROTATE_INTERVAL: time::Duration = time::Duration::from_secs(10);
         let s = Summary::<()>::new_resizable(WINDOWS, WINDOWS * ROTATE_INTERVAL, 5).unwrap();
 
+        macro_rules! assert_float_eq {
+            ($a:expr, $b:expr) => {
+                assert!(
+                    ($a - $b).abs() < std::f64::EPSILON,
+                    "assertion failed: {} == {}\n\tleft: {:?}\n\tright:{:?}",
+                    stringify!($a),
+                    stringify!($b),
+                    $a,
+                    $b
+                )
+            };
+        }
+
         s.record_n(1, 5_000).unwrap();
         s.record_n(2, 5_000).unwrap();
         {
@@ -346,8 +359,8 @@ mod tests {
             assert_eq!(h.value_at_quantile(0.5), 1);
             assert_eq!(h.len(), 10000);
         }
-        assert_eq!(s.count.value(), 10000.0);
-        assert_eq!(s.sum.value(), 15_000.0);
+        assert_float_eq!(s.count.value(), 10000.0);
+        assert_float_eq!(s.sum.value(), 15_000.0);
 
         time::sleep(ROTATE_INTERVAL).await;
 
@@ -358,8 +371,8 @@ mod tests {
             assert_eq!(h.value_at_quantile(0.5), 2);
             assert_eq!(h.len(), 20000);
         }
-        assert_eq!(s.count.value(), 20000.0);
-        assert_eq!(s.sum.value(), 35_002.0);
+        assert_float_eq!(s.count.value(), 20000.0);
+        assert_float_eq!(s.sum.value(), 35_002.0);
 
         time::sleep(ROTATE_INTERVAL).await;
 
@@ -369,8 +382,8 @@ mod tests {
             assert_eq!(h.value_at_quantile(0.5), 3);
             assert_eq!(h.len(), 20000);
         }
-        assert_eq!(s.count.value(), 30000.0);
-        assert_eq!(s.sum.value(), 75_002.0);
+        assert_float_eq!(s.count.value(), 30000.0);
+        assert_float_eq!(s.sum.value(), 75_002.0);
 
         time::sleep(2 * ROTATE_INTERVAL).await;
 
@@ -380,7 +393,7 @@ mod tests {
             assert_eq!(h.value_at_quantile(0.5), 1);
             assert_eq!(h.len(), 10000);
         }
-        assert_eq!(s.count.value(), 40000.0);
-        assert_eq!(s.sum.value(), 85_002.0);
+        assert_float_eq!(s.count.value(), 40000.0);
+        assert_float_eq!(s.sum.value(), 85_002.0);
     }
 }
