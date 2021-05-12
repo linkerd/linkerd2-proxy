@@ -265,6 +265,7 @@ mod test {
 
     /// Helper server that reads the l5d-orig-proto header on requests and uses it to set the header
     /// value in `WAS_ORIG_PROTO`.
+    #[allow(clippy::unnecessary_wraps)]
     fn serve(version: ::http::Version) -> io::Result<io::BoxedIo> {
         let svc = hyper::service::service_fn(move |req: http::Request<_>| {
             tracing::debug!(?req);
