@@ -1,3 +1,8 @@
+mod set_identity_header;
+#[cfg(test)]
+mod tests;
+
+use self::set_identity_header::NewSetIdentityHeader;
 use crate::{
     allow_discovery::AllowProfile,
     target::{self, HttpAccept, HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
@@ -14,12 +19,9 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     svc::{self, Param},
-    Error, DST_OVERRIDE_HEADER, L5D_IDENTITY_HEADER,
+    Error, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
-
-#[cfg(test)]
-mod tests;
 
 impl<H> Inbound<H> {
     pub fn push_http_server<T, I, HSvc>(
@@ -65,7 +67,7 @@ impl<H> Inbound<H> {
             // `Client`. This must be below the `orig_proto::Downgrade` layer, since
             // the request may have been downgraded from a HTTP/2 orig-proto request.
             .push(http::NewNormalizeUri::layer())
-            .push(http::NewSetIdentityHeader::layer(L5D_IDENTITY_HEADER))
+            .push(NewSetIdentityHeader::layer())
             .push_on_response(
                 svc::layers()
                     // Downgrades the protocol if upgraded by an outbound proxy.
