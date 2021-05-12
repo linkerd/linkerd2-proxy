@@ -267,12 +267,11 @@ pub mod fuzz_logic {
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
     use libfuzzer_sys::arbitrary::Arbitrary;
     use linkerd_app_core::{
-        io::{self, BoxedIo},
-        proxy,
+        io, proxy,
         svc::{self, NewService, Param},
         tls,
         transport::{ClientAddr, Remote, ServerAddr},
-        Conditional, Error, NameAddr, ProxyRuntime,
+        Conditional, NameAddr, ProxyRuntime,
     };
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
@@ -352,17 +351,17 @@ pub mod fuzz_logic {
 
     fn hello_fuzz_server(
         http: hyper::server::conn::Http,
-    ) -> impl Fn(Remote<ServerAddr>) -> Result<BoxedIo, Error> {
+    ) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
         move |_endpoint| {
             let (client_io, server_io) = support::io::duplex(4096);
             let hello_svc = hyper::service::service_fn(|_request: Request<Body>| async move {
-                Ok::<_, Error>(Response::new(Body::from("Hello world!")))
+                Ok::<_, io::Error>(Response::new(Body::from("Hello world!")))
             });
             tokio::spawn(
                 http.serve_connection(server_io, hello_svc)
                     .in_current_span(),
             );
-            Ok(BoxedIo::new(client_io))
+            Ok(io::BoxedIo::new(client_io))
         }
     }
 

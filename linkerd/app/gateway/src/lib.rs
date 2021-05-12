@@ -7,7 +7,8 @@ mod tests;
 use self::gateway::NewGateway;
 use linkerd_app_core::{
     config::ProxyConfig,
-    detect, discovery_rejected, identity, io, metrics, profiles,
+    detect, identity, io, metrics,
+    profiles::{self, DiscoveryRejected},
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -15,7 +16,6 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::OrigDstAddr,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch, Never,
 };
@@ -120,15 +120,16 @@ where
         .into_stack()
         .push_request_filter(
             |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
-                let profile = p.ok_or_else(discovery_rejected)?;
-                let logical_addr = profile
-                    .borrow()
-                    .addr
-                    .clone()
-                    .ok_or_else(discovery_rejected)?;
+                let profile = p.ok_or_else(|| {
+                    DiscoveryRejected::new("no profile discovered for gateway target")
+                })?;
+                let logical_addr = profile.borrow().addr.clone().ok_or_else(|| {
+                    DiscoveryRejected::new(
+                        "profile for gateway target does not have a logical address",
+                    )
+                })?;
                 Ok(outbound::tcp::Logical {
                     profile,
-                    orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                     protocol: (),
                     logical_addr,
                 })
@@ -217,8 +218,7 @@ where
         .push(detect::NewDetectService::layer(
             detect_protocol_timeout,
             http::DetectHttp::default(),
-        ))
-        .into_inner();
+        ));
 
     // When a transported connection is received, use the header's target to
     // drive routing.
@@ -231,6 +231,8 @@ where
         )
         .push_http_server()
         .into_stack()
+        .push_on_response(svc::BoxService::layer())
+        .push(svc::BoxNewService::layer())
         .push_switch(
             |GatewayTransportHeader {
                  target,
@@ -247,14 +249,19 @@ where
                 })),
                 None => Ok::<_, Never>(svc::Either::B(target)),
             },
-            tcp.into_inner(),
+            tcp.push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+                .into_inner(),
         )
         .push_switch(
             |gw| match gw {
                 GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
                 GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
             },
-            legacy_http,
+            legacy_http
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+                .into_inner(),
         )
         .into_inner()
 }

@@ -29,6 +29,8 @@ pub use linkerd_tls as tls;
 pub use linkerd_tracing as trace;
 pub use linkerd_transport_header as transport_header;
 
+use thiserror::Error;
+
 mod addr_match;
 pub mod admin;
 pub mod classify;
@@ -50,7 +52,6 @@ pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
-pub const L5D_REQUIRE_ID: &str = "l5d-require-id";
 pub const L5D_IDENTITY_HEADER: &str = "l5d-identity";
 
 const DEFAULT_PORT: u16 = 80;
@@ -62,23 +63,6 @@ pub struct ProxyRuntime {
     pub tap: proxy::tap::Registry,
     pub span_sink: http_tracing::OpenCensusSink,
     pub drain: drain::Watch,
-}
-
-pub fn discovery_rejected() -> tonic::Status {
-    tonic::Status::new(tonic::Code::InvalidArgument, "Discovery rejected")
-}
-
-pub fn is_discovery_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-    if let Some(status) = err.downcast_ref::<tonic::Status>() {
-        // Address is not resolveable
-        status.code() == tonic::Code::InvalidArgument
-            // Unexpected cluster state
-            || status.code() == tonic::Code::FailedPrecondition
-    } else if let Some(err) = err.source() {
-        is_discovery_rejected(err)
-    } else {
-        false
-    }
 }
 
 pub fn http_request_l5d_override_dst_name_addr<B>(

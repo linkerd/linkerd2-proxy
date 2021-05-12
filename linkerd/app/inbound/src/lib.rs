@@ -234,6 +234,7 @@ where
             .push_http_router(profiles)
             .push_http_server()
             .stack
+            .push_on_response(svc::BoxService::layer())
             .push_map_target(HttpAccept::from)
             .push(svc::UnwrapOr::layer(
                 // When HTTP detection fails, forward the connection to the
@@ -242,6 +243,8 @@ where
                     .push_tcp_forward(server_port)
                     .stack
                     .push_map_target(TcpEndpoint::from)
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
                     .into_inner(),
             ))
             .push_map_target(detect::allow_timeout)
@@ -257,6 +260,7 @@ where
                 config.detect_protocol_timeout,
             ))
             .instrument(|_: &_| debug_span!("proxy"))
+            .push_on_response(svc::BoxService::layer())
             .push_switch(
                 disable_detect,
                 self.clone()
@@ -267,6 +271,8 @@ where
                     .push_map_target(TcpAccept::port_skipped)
                     .check_new_service::<T, _>()
                     .instrument(|_: &T| debug_span!("forward"))
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
                     .into_inner(),
             )
             .check_new_service::<T, I>()
@@ -276,6 +282,8 @@ where
                     .push_direct(gateway)
                     .stack
                     .instrument(|_: &_| debug_span!("direct"))
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
                     .into_inner(),
             )
             .instrument(|a: &T| {

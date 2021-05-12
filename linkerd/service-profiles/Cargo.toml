@@ -27,6 +27,7 @@ tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 async-stream = "0.3"
 tonic = { version = "0.4", default-features = false }
 tower = { version = "0.4.7", features = [ "ready-cache", "retry", "util"] }
+thiserror = "1"
 tracing = "0.1.23"
 pin-project = "1"
 

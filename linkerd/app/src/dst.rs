@@ -1,7 +1,8 @@
 use linkerd_app_core::{
     control, dns,
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
-    is_discovery_rejected, metrics, profiles,
+    metrics,
+    profiles::{self, DiscoveryRejected},
     proxy::{api_resolve as api, identity::LocalCrtKey, resolve::recover},
     Error, Recover,
 };
@@ -56,7 +57,7 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
     type Backoff = ExponentialBackoffStream;
 
     fn recover(&self, error: Error) -> Result<Self::Backoff, Error> {
-        if is_discovery_rejected(&*error) {
+        if DiscoveryRejected::is_rejected(&*error) {
             return Err(error);
         }
 

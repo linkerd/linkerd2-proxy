@@ -35,15 +35,13 @@ where
 
     fn call(&mut self, dst: T) -> Self::Future {
         self.0.get_profile(dst).or_else(|e| {
-            let err = e.into();
-            if let Some(status) = err.downcast_ref::<tonic::Status>() {
-                if status.code() == tonic::Code::InvalidArgument {
-                    debug!("Handling rejected discovery");
-                    return future::ok(None);
-                }
+            let error: Error = e.into();
+            if crate::DiscoveryRejected::is_rejected(error.as_ref()) {
+                debug!(%error, "Handling rejected discovery");
+                return future::ok(None);
             }
 
-            future::err(err)
+            future::err(error)
         })
     }
 }

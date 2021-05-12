@@ -12,6 +12,7 @@ use std::{
     str::FromStr,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
@@ -49,6 +50,18 @@ pub struct Target {
 
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
+
+#[derive(Clone, Debug, Error)]
+pub enum DiscoveryRejected {
+    #[error("discovery rejected by control plane: {0}")]
+    Remote(
+        #[from]
+        #[source]
+        tonic::Status,
+    ),
+    #[error("discovery rejected: {0}")]
+    Message(&'static str),
+}
 
 /// Watches a destination's Profile.
 pub trait GetProfile<T> {
@@ -189,5 +202,34 @@ impl fmt::Debug for Target {
             .field("addr", &format_args!("{}", self.addr))
             .field("weight", &self.weight)
             .finish()
+    }
+}
+
+// === impl DiscoveryRejected ===
+
+impl DiscoveryRejected {
+    pub fn new(message: &'static str) -> Self {
+        Self::Message(message)
+    }
+
+    pub fn is_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
+        let mut current = Some(err);
+        while let Some(err) = current {
+            if err.is::<Self>() {
+                return true;
+            }
+
+            if let Some(status) = err.downcast_ref::<tonic::Status>() {
+                let code = status.code();
+                return
+                    // Address is not resolveable
+                    code == tonic::Code::InvalidArgument
+                    // Unexpected cluster state
+                    || code == tonic::Code::FailedPrecondition;
+            }
+
+            current = err.source();
+        }
+        false
     }
 }

@@ -17,7 +17,7 @@ impl<N> Outbound<N> {
     >
     where
         T: svc::Param<http::normalize_uri::DefaultAuthority>,
-        N: svc::NewService<T, Service = NSvc> + Clone + Send + 'static,
+        N: svc::NewService<T, Service = NSvc> + Clone + Send + Sync + 'static,
         NSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>,
         NSvc: Send + 'static,
         NSvc::Error: Into<Error>,
@@ -62,7 +62,10 @@ impl<N> Outbound<N> {
             .push(http::NewNormalizeUri::layer())
             // Record when a HTTP/1 URI originated in absolute form
             .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
-            .check_new_service::<T, http::Request<http::BoxBody>>();
+            .check_new_service::<T, http::Request<http::BoxBody>>()
+            // Boxing is necessary purely to limit the link-time overhead of
+            // having enormous types.
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,
