@@ -36,9 +36,9 @@ impl AsRef<SocketAddr> for ClientAddr {
     }
 }
 
-impl Into<SocketAddr> for ClientAddr {
-    fn into(self) -> SocketAddr {
-        self.0
+impl From<ClientAddr> for SocketAddr {
+    fn from(ClientAddr(addr): ClientAddr) -> SocketAddr {
+        addr
     }
 }
 
@@ -56,9 +56,9 @@ impl AsRef<SocketAddr> for ListenAddr {
     }
 }
 
-impl Into<SocketAddr> for ListenAddr {
-    fn into(self) -> SocketAddr {
-        self.0
+impl From<ListenAddr> for SocketAddr {
+    fn from(ListenAddr(addr): ListenAddr) -> SocketAddr {
+        addr
     }
 }
 
@@ -84,9 +84,9 @@ impl AsRef<SocketAddr> for ServerAddr {
     }
 }
 
-impl Into<SocketAddr> for ServerAddr {
-    fn into(self) -> SocketAddr {
-        self.0
+impl From<ServerAddr> for SocketAddr {
+    fn from(ServerAddr(addr): ServerAddr) -> SocketAddr {
+        addr
     }
 }
 
@@ -104,9 +104,9 @@ impl AsRef<SocketAddr> for OrigDstAddr {
     }
 }
 
-impl Into<SocketAddr> for OrigDstAddr {
-    fn into(self) -> SocketAddr {
-        self.0
+impl From<OrigDstAddr> for SocketAddr {
+    fn from(OrigDstAddr(addr): OrigDstAddr) -> SocketAddr {
+        addr
     }
 }
 

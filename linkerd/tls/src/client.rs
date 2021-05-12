@@ -160,9 +160,9 @@ impl From<id::Name> for ServerId {
     }
 }
 
-impl Into<id::Name> for ServerId {
-    fn into(self) -> id::Name {
-        self.0
+impl From<ServerId> for id::Name {
+    fn from(ServerId(name): ServerId) -> id::Name {
+        name
     }
 }
 
