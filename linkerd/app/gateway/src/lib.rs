@@ -16,7 +16,6 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
-    transport::OrigDstAddr,
     transport_header::SessionProtocol,
     Error, NameAddr, NameMatch, Never,
 };
@@ -131,7 +130,6 @@ where
                 })?;
                 Ok(outbound::tcp::Logical {
                     profile,
-                    orig_dst: OrigDstAddr(std::net::SocketAddr::from(([0, 0, 0, 0], 0))),
                     protocol: (),
                     logical_addr,
                 })

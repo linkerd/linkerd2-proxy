@@ -82,17 +82,18 @@ impl<C> Outbound<C> {
         }
     }
 
-    pub fn push_tcp_forward<I>(
+    pub fn push_tcp_forward<T, I>(
         self,
     ) -> Outbound<
         impl svc::NewService<
-                super::Endpoint,
+                T,
                 Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
             > + Clone,
     >
     where
+        T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        C: svc::Service<super::Endpoint> + Clone + Send + 'static,
+        C: svc::Service<T> + Clone + Send + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
         C::Future: Send,
@@ -107,7 +108,7 @@ impl<C> Outbound<C> {
             .push_make_thunk()
             .push_on_response(super::Forward::layer())
             .instrument(|_: &_| debug_span!("tcp.forward"))
-            .check_new_service::<super::Endpoint, I>();
+            .check_new_service::<T, I>();
 
         Outbound {
             config,
@@ -172,5 +173,40 @@ impl svc::Param<Remote<ServerAddr>> for Connect {
 impl svc::Param<tls::ConditionalClientTls> for Connect {
     fn param(&self) -> tls::ConditionalClientTls {
         self.tls.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        svc::{self, NewService, ServiceExt},
+        test_util::*,
+    };
+    use std::net::SocketAddr;
+
+    #[tokio::test]
+    async fn forward() {
+        let _trace = support::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(svc::mk(move |a: SocketAddr| {
+                assert_eq!(a, addr);
+                let mut io = support::io();
+                io.write(b"hello").read(b"world");
+                future::ok::<_, support::io::Error>(io.build())
+            }))
+            .push_tcp_forward()
+            .into_inner();
+
+        let mut io = support::io();
+        io.read(b"hello").write(b"world");
+        stack
+            .new_service(addr)
+            .oneshot(io.build())
+            .await
+            .expect("forward must complete successfully");
     }
 }

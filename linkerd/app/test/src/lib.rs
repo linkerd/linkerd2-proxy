@@ -16,7 +16,7 @@ pub use tracing::*;
 pub use tracing_subscriber::prelude::*;
 
 pub mod io {
-    pub use tokio::io::*;
+    pub use linkerd_app_core::io::*;
     pub use tokio_test::io::*;
 }
 
