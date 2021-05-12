@@ -90,11 +90,11 @@ where
                         };
                         return future::Either::Left(future::err(e.into()));
                     } else {
-                        trace!(id = %require_id, "Identity required by header");
+                        trace!(required = %require_id, "Identity required by header");
                     }
                 }
                 Conditional::None(_) => {
-                    debug!(id = %require_id, "Identity required by header not satisfied");
+                    debug!(required = %require_id, "Identity required by header not satisfied");
                     let e = IdentityRequired {
                         required: require_id.into(),
                         found: None,
