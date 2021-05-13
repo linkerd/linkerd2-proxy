@@ -1,9 +1,6 @@
 name: Rust PR
 
 on:
-  push:
-    branches:
-      - master
   pull_request: {}
 
 jobs:
@@ -50,22 +47,8 @@ jobs:
       image: docker://rust:1.52.1-buster
     steps:
       - uses: actions/checkout@v2
-      # Iterate through all subcrates to ensure each compiles indpendently.
-      - run: for d in $(for toml in $(find . -name Cargo.toml) ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
-
-  build-fuzz:
-    timeout-minutes: 40
-    runs-on: ubuntu-latest
-    container:
-      image: docker://rust:1.52.1-buster
-    steps:
-      - uses: actions/checkout@v2
-      - run: rustup toolchain add nightly
-      - run: cargo install cargo-fuzz
-      # Iterate through all fuzz crates to ensure each compiles indpendently.
-      - run: for d in $(find . -name fuzz | sort -r) ; do echo "# $d" ; (cd $d ; cargo +nightly fuzz build) ; done
-      # Error if the repo isn't clean (i.e. because lockfiles were modified).
-      - run: git status && git diff-index --quiet HEAD
+      # Iterate through all (non-fuzzer) sub-crates to ensure each compiles independently.
+      - run: for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
   test:
     timeout-minutes: 15
@@ -73,3 +56,26 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: make test
+
+  fuzzers:
+    timeout-minutes: 40
+    runs-on: ubuntu-latest
+    container:
+      image: docker://rust:1.52.1-buster
+    strategy:
+      matrix:
+        dir:
+          - addr
+          - app/inbound
+          - dns
+          - proxy/http
+          - tls
+          - transport-header
+    steps:
+      - uses: actions/checkout@v2
+      - run: rustup toolchain add nightly
+      - run: cargo install cargo-fuzz
+      # Iterate through all fuzz crates to ensure each compiles independently.
+      - run: cd linkerd/${{matrix.dir}}/fuzz && cargo +nightly fuzz build
+      # Error if the repo isn't clean (i.e. because lock files were modified).
+      - run: git status && git diff-index --quiet HEAD
