@@ -30,6 +30,16 @@ jobs:
       with:
         command: check ${{ matrix.checks }}
 
+  build-release:
+    name: "cargo build --release"
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: make build
+        env:
+          CARGO_RELEASE: true
+
   clippy:
     timeout-minutes: 5
     runs-on: ubuntu-latest
