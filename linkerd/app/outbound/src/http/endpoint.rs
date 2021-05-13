@@ -72,7 +72,12 @@ impl<C> Outbound<C> {
                 "host",
                 CANONICAL_DST_HEADER,
             ]))
-            .push_on_response(http::BoxResponse::layer());
+            .push_on_response(
+                svc::layers()
+                    .push(http::BoxResponse::layer())
+                    .push(svc::BoxService::layer()),
+            )
+            .push(svc::BoxNewService::layer());
 
         Outbound {
             config,

@@ -284,13 +284,13 @@ where
                     .stack
                     .instrument(|_: &_| debug_span!("direct"))
                     .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
                     .into_inner(),
             )
             .instrument(|a: &T| {
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
+            .push(svc::BoxNewService::layer())
             .into_inner()
     }
 }
