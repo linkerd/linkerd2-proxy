@@ -32,14 +32,14 @@ linkerd-tracing = { path = "../../tracing" }
 regex = "1"
 socket2 = "0.3.12"
 rustls = "0.19"
-tokio = { version = "1", features = ["io-util", "net", "rt", "macros"]}
+tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
 tokio-stream = { version = "0.1.5", features = ["sync"] }
 tokio-rustls = "0.22"
-tower = { version = "0.4.7", default-features = false}
+tower = { version = "0.4.7", default-features = false }
 tonic = { version = "0.4", default-features = false }
 tracing = "0.1.23"
 webpki = "0.21"
-tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt"]}
+tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt"] }
 
 [dev-dependencies]
 flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
