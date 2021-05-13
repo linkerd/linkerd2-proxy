@@ -208,9 +208,8 @@ where
 }
 
 #[cfg(test)]
-#[tokio::test]
+#[tokio::test(flavor = "current_thread")]
 async fn test_idle_retain() {
-    let _ = tracing_subscriber::fmt::try_init();
     time::pause();
 
     let idle = time::Duration::from_secs(10);

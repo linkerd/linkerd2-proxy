@@ -114,7 +114,7 @@ mod tests {
     /// Tests that the discover stack propagates errors to the caller.
     #[tokio::test(flavor = "current_thread")]
     async fn errors_propagate() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
         time::pause(); // Run the test with a mocked clock.
 
         let addr = SocketAddr::new([192, 0, 2, 22].into(), 2220);
@@ -183,7 +183,7 @@ mod tests {
     /// testing that only one service is built and that it is dropped after an idle timeout.
     #[tokio::test(flavor = "current_thread")]
     async fn caches_profiles_until_idle() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
         time::pause(); // Run the test with a mocked clock.
 
         let addr = SocketAddr::new([192, 0, 2, 22].into(), 5550);
@@ -305,7 +305,7 @@ mod tests {
     /// resolutions.
     #[tokio::test(flavor = "current_thread")]
     async fn no_profiles_when_outside_search_nets() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let addr = SocketAddr::new([192, 0, 2, 22].into(), 2222);
 

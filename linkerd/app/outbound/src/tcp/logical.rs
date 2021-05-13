@@ -136,7 +136,7 @@ mod tests {
     /// Tests that the logical stack forwards connections to services with a single endpoint.
     #[tokio::test]
     async fn forward() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
         time::pause();
 
         // We create a logical target to be resolved to endpoints.
@@ -199,7 +199,7 @@ mod tests {
     /// - Then, all endpoints are removed and we confirm that we hit fail-fast error.
     #[tokio::test]
     async fn balances() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
         time::pause();
 
         // We create a logical target to be resolved to endpoints.

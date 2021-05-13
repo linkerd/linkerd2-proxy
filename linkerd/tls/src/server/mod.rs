@@ -364,9 +364,9 @@ mod tests {
     use super::*;
     use std::str::FromStr;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn detect_buffered() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let (mut client_io, server_io) = tokio::io::duplex(1024);
         let input = include_bytes!("testdata/curl-example-com-client-hello.bin");

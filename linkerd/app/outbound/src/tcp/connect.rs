@@ -190,7 +190,7 @@ mod tests {
 
     #[tokio::test]
     async fn forward() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
         let (rt, _shutdown) = runtime();

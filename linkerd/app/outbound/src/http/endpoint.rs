@@ -99,7 +99,7 @@ mod test {
     /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
     #[tokio::test(flavor = "current_thread")]
     async fn http11_forward() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
@@ -135,7 +135,7 @@ mod test {
     /// Tests that the the HTTP endpoint stack forwards connections without HTTP upgrading.
     #[tokio::test(flavor = "current_thread")]
     async fn http2_forward() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2042);
 
@@ -172,7 +172,7 @@ mod test {
     /// upgrading.
     #[tokio::test(flavor = "current_thread")]
     async fn orig_proto_upgrade() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 
@@ -220,7 +220,7 @@ mod test {
     /// Tests that the the HTTP endpoint stack ignores protocol upgrade hinting for HTTP/2 traffic.
     #[tokio::test(flavor = "current_thread")]
     async fn orig_proto_http2_noop() {
-        let _trace = support::trace_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
 

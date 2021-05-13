@@ -302,7 +302,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         (dispatch, app_core::trace::Handle::disabled())
     } else {
         eprintln!("test did not set a tracing dispatcher, creating a new one for the proxy");
-        super::trace_subscriber()
+        linkerd_tracing::test::trace_subscriber(linkerd_tracing::test::DEFAULT_LOG)
     };
 
     let (running_tx, running_rx) = oneshot::channel();
