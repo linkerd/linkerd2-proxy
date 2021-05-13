@@ -4,8 +4,8 @@ pub use crate::proxy::http;
 use crate::{cache, Error};
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
-    NewRouter, NewService, Param, Predicate, UnwrapOr,
+    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, Fail, Filter,
+    MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
@@ -19,11 +19,7 @@ use tower::{
     make::MakeService,
 };
 pub use tower::{
-    layer::Layer,
-    service_fn as mk,
-    spawn_ready::SpawnReady,
-    util::{Either, MapErrLayer},
-    Service, ServiceExt,
+    layer::Layer, service_fn as mk, spawn_ready::SpawnReady, util::MapErrLayer, Service, ServiceExt,
 };
 
 pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;

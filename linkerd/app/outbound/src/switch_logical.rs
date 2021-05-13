@@ -25,10 +25,10 @@ impl<S> Outbound<S> {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<tcp::Logical, Service = NSvc> + Clone,
         NSvc: svc::Service<I, Response = (), Error = Error>,
-        NSvc::Future: Send,
+        NSvc::Future: Send + 'static,
         S: svc::NewService<tcp::Endpoint, Service = SSvc> + Clone,
         SSvc: svc::Service<I, Response = (), Error = Error>,
-        SSvc::Future: Send,
+        SSvc::Future: Send + 'static,
     {
         let no_tls_reason = self.no_tls_reason();
         let Self {
