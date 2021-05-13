@@ -76,6 +76,6 @@ jobs:
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
       # Iterate through all fuzz crates to ensure each compiles independently.
-      - run: cd linkerd/{{matrix.dir}}/fuzz && cargo +nightly fuzz build
+      - run: cd linkerd/${{matrix.dir}}/fuzz && cargo +nightly fuzz build
       # Error if the repo isn't clean (i.e. because lock files were modified).
       - run: git status && git diff-index --quiet HEAD
