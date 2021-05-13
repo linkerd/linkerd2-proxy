@@ -14,7 +14,7 @@ libfuzzer-sys = "0.4"
 linkerd-dns = { path = ".." }
 tokio = { version = "1", features = ["rt", "time", "io-util"] }
 tracing = "0.1.23"
-linkerd-tracing = { path = "../tracing", features = ["ansi"] }
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 
 # Prevent this from interfering with workspaces
 [workspace]
