@@ -17,15 +17,10 @@ impl<E> Outbound<E> {
         self,
         resolve: R,
     ) -> Outbound<
-        impl svc::NewService<
-                Logical,
-                Service = impl svc::Service<
-                    http::Request<B>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                >,
-            > + Clone,
+        svc::BoxNewService<
+            Logical,
+            svc::BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>,
+        >,
     >
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
@@ -109,6 +104,7 @@ impl<E> Outbound<E> {
             // concrete address.
             .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
             .push_map_target(Concrete::from)
+            .push(svc::BoxNewService::layer())
             // Distribute requests over a distribution of balancers via a
             // traffic split.
             //
@@ -154,8 +150,6 @@ impl<E> Outbound<E> {
                     .push(http::BoxResponse::layer()),
             )
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());
 

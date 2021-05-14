@@ -85,15 +85,15 @@ impl<C> Outbound<C> {
     pub fn push_tcp_forward<T, I>(
         self,
     ) -> Outbound<
-        impl svc::NewService<
-                T,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-            > + Clone,
+        svc::BoxNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
     >
     where
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-        C: svc::Service<T> + Clone + Send + 'static,
+        C: svc::Service<T> + Clone + Send + Sync + 'static,
         C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
         C::Error: Into<Error>,
         C::Future: Send,
@@ -108,6 +108,7 @@ impl<C> Outbound<C> {
             .push_make_thunk()
             .push_on_response(super::Forward::layer())
             .instrument(|_: &_| debug_span!("tcp.forward"))
+            .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>();
 
         Outbound {

@@ -24,10 +24,10 @@ where
         self,
         resolve: R,
     ) -> Outbound<
-        impl svc::NewService<
-                Logical,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-            > + Clone,
+        svc::BoxNewService<
+            Logical,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
     >
     where
         I: io::AsyncRead + io::AsyncWrite + std::fmt::Debug + Send + Unpin + 'static,
@@ -90,6 +90,7 @@ where
             )
             .into_new_service()
             .push_map_target(Concrete::from)
+            .push(svc::BoxNewService::layer())
             .check_new_service::<(ConcreteAddr, Logical), I>()
             .push(profiles::split::layer())
             .push_on_response(
@@ -107,8 +108,6 @@ where
             .check_new_service::<Logical, I>()
             .instrument(|_: &Logical| debug_span!("tcp"))
             .check_new_service::<Logical, I>()
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
             .push(svc::BoxNewService::layer());
 
         Outbound {

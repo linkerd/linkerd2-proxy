@@ -67,12 +67,7 @@ impl<N> Inbound<N> {
     pub fn push_direct<T, I, NSvc, G, GSvc>(
         self,
         gateway: G,
-    ) -> Inbound<
-        impl svc::NewService<
-                T,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-            > + Clone,
-    >
+    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -158,11 +153,14 @@ impl<N> Inbound<N> {
             // Build a ClientInfo target for each accepted connection. Refuse the
             // connection if it doesn't include an mTLS identity.
             .push_request_filter(ClientInfo::try_from)
+            .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(
                 rt.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
-            .check_new_service::<T, I>();
+            .check_new_service::<T, I>()
+            .push_on_response(svc::BoxService::layer())
+            .push(svc::BoxNewService::layer());
 
         Inbound {
             config,

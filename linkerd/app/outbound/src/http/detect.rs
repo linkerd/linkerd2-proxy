@@ -14,12 +14,7 @@ impl<N> Outbound<N> {
     pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(
         self,
         http: H,
-    ) -> Outbound<
-        impl svc::NewService<
-                T,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-            > + Clone,
-    >
+    ) -> Outbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,
@@ -66,8 +61,10 @@ impl<N> Outbound<N> {
                 tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                     .into_inner(),
             ))
+            .push_on_response(svc::BoxService::layer())
             .check_new_service::<(Option<http::Version>, T), _>()
             .push_map_target(detect::allow_timeout)
+            .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(
                 detect_protocol_timeout,
                 http::DetectHttp::default(),
@@ -85,8 +82,7 @@ impl<N> Outbound<N> {
                 skipped,
             )
             .check_new_service::<T, _>()
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
+            .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());
 
         Outbound {

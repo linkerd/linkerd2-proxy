@@ -67,20 +67,14 @@ struct RefusedNoTarget(());
 #[error("the provided address could not be resolved: {}", self.0)]
 struct RefusedNotResolved(NameAddr);
 
-#[allow(clippy::clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn stack<I, O, P, R>(
     Config { allow_discovery }: Config,
     inbound: Inbound<()>,
     outbound: Outbound<O>,
     profiles: P,
     resolve: R,
-) -> impl svc::NewService<
-    GatewayConnection,
-    Service = impl svc::Service<I, Response = (), Error = impl Into<Error>, Future = impl Send>
-                  + Send
-                  + 'static,
-> + Clone
-       + Send
+) -> svc::BoxNewService<GatewayConnection, svc::BoxService<I, (), Error>>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
@@ -199,7 +193,8 @@ where
             svc::layers()
                 .push(http::Retain::layer())
                 .push(http::BoxResponse::layer()),
-        );
+        )
+        .push(svc::BoxNewService::layer());
 
     // When handling gateway connections from older clients that do not
     // support the transport header, do protocol detection and route requests
@@ -216,6 +211,7 @@ where
         .push_http_server()
         .into_stack()
         .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
+        .push(svc::BoxNewService::layer())
         .push(detect::NewDetectService::layer(
             detect_protocol_timeout,
             http::DetectHttp::default(),
@@ -259,11 +255,10 @@ where
                 GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
                 GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
             },
-            legacy_http
-                .push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
-                .into_inner(),
+            legacy_http.into_inner(),
         )
+        .push_on_response(svc::BoxService::layer())
+        .push(svc::BoxNewService::layer())
         .into_inner()
 }
 
