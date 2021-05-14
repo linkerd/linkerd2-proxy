@@ -2,18 +2,19 @@
 
 pub use crate::proxy::http;
 use crate::{cache, Error};
-pub use linkerd_buffer as buffer;
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, Fail, Filter, NewRouter, NewService, Predicate, UnwrapOr,
+    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
+    NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
-pub use linkerd_stack_tracing::{InstrumentMake, InstrumentMakeLayer};
+pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,
 };
 use tower::{
+    buffer::{Buffer as TowerBuffer, BufferLayer},
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
@@ -24,6 +25,8 @@ pub use tower::{
     util::{Either, MapErrLayer},
     Service, ServiceExt,
 };
+
+pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -69,23 +72,23 @@ impl<L> Layers<L> {
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
-    pub fn push_spawn_buffer<Req, Rsp>(
+    pub fn push_spawn_buffer<Req>(
         self,
         capacity: usize,
-    ) -> Layers<Pair<L, buffer::SpawnBufferLayer<Req, Rsp>>>
+    ) -> Layers<Pair<Pair<L, BoxServiceLayer<Req>>, BufferLayer<Req>>>
     where
         Req: Send + 'static,
-        Rsp: Send + 'static,
     {
-        self.push(buffer::SpawnBufferLayer::new(capacity))
+        self.push(BoxServiceLayer::new())
+            .push(BufferLayer::new(capacity))
     }
 
     pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
         self.push(stack::OnResponseLayer::new(layer))
     }
 
-    pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, InstrumentMakeLayer<G>>> {
-        self.push(InstrumentMakeLayer::new(get_span))
+    pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
+        self.push(NewInstrumentLayer::new(get_span))
     }
 }
 
@@ -119,12 +122,12 @@ impl<S> Stack<S> {
         self.push(layer::mk(stack::MakeThunk::new))
     }
 
-    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<InstrumentMake<G, S>> {
-        self.push(InstrumentMakeLayer::new(get_span))
+    pub fn instrument<G: Clone>(self, get_span: G) -> Stack<NewInstrument<G, S>> {
+        self.push(NewInstrumentLayer::new(get_span))
     }
 
-    pub fn instrument_from_target(self) -> Stack<InstrumentMake<(), S>> {
-        self.push(InstrumentMakeLayer::from_target())
+    pub fn instrument_from_target(self) -> Stack<NewInstrument<(), S>> {
+        self.push(NewInstrumentLayer::from_target())
     }
 
     /// Wraps an inner `MakeService` to be a `NewService`.
@@ -133,15 +136,19 @@ impl<S> Stack<S> {
     }
 
     /// Buffer requests when when the next layer is out of capacity.
-    pub fn spawn_buffer<Req, Rsp>(self, capacity: usize) -> Stack<buffer::Buffer<Req, Rsp>>
+    pub fn spawn_buffer<Req, Rsp>(
+        self,
+        capacity: usize,
+    ) -> Stack<Buffer<Req, S::Response, S::Error>>
     where
         Req: Send + 'static,
-        Rsp: Send + 'static,
-        S: Service<Req, Response = Rsp> + Send + 'static,
-        S::Error: Into<Error> + Send + Sync,
+        S: Service<Req> + Send + 'static,
+        S::Response: Send + 'static,
+        S::Error: Into<Error> + Send + Sync + 'static,
         S::Future: Send,
     {
-        self.push(buffer::SpawnBufferLayer::new(capacity))
+        self.push(BoxServiceLayer::new())
+            .push(BufferLayer::new(capacity))
     }
 
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given
@@ -154,8 +161,8 @@ impl<S> Stack<S> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
 
-    pub fn push_http_insert_target(self) -> Stack<http::insert::target::NewService<S>> {
-        self.push(http::insert::target::layer())
+    pub fn push_http_insert_target<P>(self) -> Stack<http::insert::NewInsert<P, S>> {
+        self.push(http::insert::NewInsert::layer())
     }
 
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>

@@ -11,6 +11,7 @@ Configures and runs the outbound proxy
 
 [features]
 default = []
+allow-loopback = []
 test-subscriber = []
 
 [dependencies]
@@ -21,25 +22,17 @@ indexmap = "1.0"
 linkerd-app-core = { path = "../core" }
 linkerd-identity = { path = "../../identity" }
 linkerd-retry = { path = "../../retry" }
-tokio = { version = "1", features = ["sync"]}
-tracing = "0.1.22"
+thiserror = "1.0"
+tokio = { version = "1", features = ["sync"] }
+tower = { version = "0.4.7", features = ["util"] }
+tracing = "0.1.23"
 pin-project = "1"
-
-[dependencies.tower]
-version = "0.4"
-# disable tower's tracing `log` integration for performance reasons, since we
-# will consume tower's traces as traces.
-default-features = false
-features = [
-    "util",
-]
 
 [dev-dependencies]
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
 ipnet = "2.0"
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
-tokio = { version = "1", features = ["full", "macros"]}
+tokio = { version = "1", features = ["full", "macros"] }
 tokio-test = "0.4"
-tracing-futures = "0.2"
-tracing-subscriber = "0.2"
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }

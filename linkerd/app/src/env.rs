@@ -4,14 +4,13 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::BindTcp,
+    transport::{Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
-use std::{
-    collections::HashMap, fmt, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration,
-};
+use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use thiserror::Error;
 use tracing::{debug, error, warn};
 
 /// The strings used to build a configuration.
@@ -26,23 +25,49 @@ pub trait Strings {
 pub struct Env;
 
 /// Errors produced when loading a `Config` struct.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum EnvError {
+    #[error("invalid environment variable")]
     InvalidEnvVar,
+    #[error("no destination service configured")]
     NoDestinationAddress,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Error, Eq, PartialEq)]
 pub enum ParseError {
+    #[error("not a valid duration")]
     NotADuration,
+    #[error("not a valid DNS domain suffix")]
     NotADomainSuffix,
-    NotABool,
-    NotANumber,
+    #[error("not a boolean value: {0}")]
+    NotABool(
+        #[from]
+        #[source]
+        std::str::ParseBoolError,
+    ),
+    #[error("not an integer: {0}")]
+    NotAnInteger(
+        #[from]
+        #[source]
+        std::num::ParseIntError,
+    ),
+    #[error("not a floating-point number: {0}")]
+    NotAFloat(
+        #[from]
+        #[source]
+        std::num::ParseFloatError,
+    ),
+    #[error("not a valid subnet mask")]
     NotANetwork,
+    #[error("host is not an IP address")]
     HostIsNotAnIpAddress,
+    #[error(transparent)]
     AddrError(addr::Error),
+    #[error("not a valid identity name")]
     NameError,
+    #[error("could not read token source")]
     InvalidTokenSource,
+    #[error("invalid trust anchors")]
     InvalidTrustAnchors,
 }
 
@@ -51,15 +76,6 @@ pub const ENV_OUTBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_LISTEN_ADDR"
 pub const ENV_INBOUND_LISTEN_ADDR: &str = "LINKERD2_PROXY_INBOUND_LISTEN_ADDR";
 pub const ENV_CONTROL_LISTEN_ADDR: &str = "LINKERD2_PROXY_CONTROL_LISTEN_ADDR";
 pub const ENV_ADMIN_LISTEN_ADDR: &str = "LINKERD2_PROXY_ADMIN_LISTEN_ADDR";
-
-// When compiled with the `mock-orig-dst` flag, these environment variables are required to
-// configure the proxy's behavior.
-
-#[cfg(feature = "mock-orig-dst")]
-pub const ENV_INBOUND_ORIG_DST_ADDR: &str = "LINKERD2_PROXY_INBOUND_ORIG_DST_ADDR";
-
-#[cfg(feature = "mock-orig-dst")]
-pub const ENV_OUTBOUND_ORIG_DST_ADDR: &str = "LINKERD2_PROXY_OUTBOUND_ORIG_DST_ADDR";
 
 pub const ENV_METRICS_RETAIN_IDLE: &str = "LINKERD2_PROXY_METRICS_RETAIN_IDLE";
 
@@ -262,12 +278,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let inbound_connect_keepalive = parse(strings, ENV_INBOUND_CONNECT_KEEPALIVE, parse_duration);
     let outbound_connect_keepalive = parse(strings, ENV_OUTBOUND_CONNECT_KEEPALIVE, parse_duration);
 
-    #[cfg(feature = "mock-orig-dst")]
-    let (inbound_mock_orig_dst, outbound_mock_orig_dst) = (
-        parse(strings, ENV_INBOUND_ORIG_DST_ADDR, parse_socket_addr),
-        parse(strings, ENV_OUTBOUND_ORIG_DST_ADDR, parse_socket_addr),
-    );
-
     let inbound_disable_ports = parse(
         strings,
         ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
@@ -360,43 +370,23 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let buffer_capacity = buffer_capacity?.unwrap_or(DEFAULT_BUFFER_CAPACITY);
 
-    #[cfg(feature = "mock-orig-dst")]
-    let (inbound_orig_dst, outbound_orig_dst) = (
-        inbound_mock_orig_dst?
-            .map(DefaultOrigDstAddr::from)
-            .ok_or_else(|| {
-                error!("{} must be specified", ENV_INBOUND_ORIG_DST_ADDR);
-                EnvError::NoDestinationAddress
-            })?,
-        outbound_mock_orig_dst?
-            .map(DefaultOrigDstAddr::from)
-            .ok_or_else(|| {
-                error!("{} must be specified", ENV_OUTBOUND_ORIG_DST_ADDR);
-                EnvError::NoDestinationAddress
-            })?,
-    );
-
-    #[cfg(not(feature = "mock-orig-dst"))]
-    let (inbound_orig_dst, outbound_orig_dst): (DefaultOrigDstAddr, DefaultOrigDstAddr) =
-        Default::default();
-
     let dst_profile_suffixes = dst_profile_suffixes?
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
 
-    let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
-
     let outbound = {
-        let keepalive = outbound_accept_keepalive?;
-        let bind = BindTcp::new(
+        let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
+
+        let addr = ListenAddr(
             outbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
-            keepalive,
         );
+        let keepalive = Keepalive(outbound_accept_keepalive?);
         let server = ServerConfig {
-            bind: bind.with_orig_dst_addr(outbound_orig_dst),
+            addr,
+            keepalive,
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
         };
@@ -404,7 +394,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             outbound_max_idle_per_endoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
-        let keepalive = outbound_connect_keepalive?;
+        let keepalive = Keepalive(outbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
             timeout: outbound_connect_timeout?.unwrap_or(DEFAULT_OUTBOUND_CONNECT_TIMEOUT),
@@ -414,7 +404,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
             h1_settings: h1::PoolSettings {
@@ -429,6 +419,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
         outbound::Config {
+            ingress_mode,
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
             proxy: ProxyConfig {
                 server,
@@ -448,16 +439,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let inbound = {
-        let keepalive = inbound_accept_keepalive?;
-        let bind = BindTcp::new(
+        let addr = ListenAddr(
             inbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
-            keepalive,
         );
+        let keepalive = Keepalive(inbound_accept_keepalive?);
         let server = ServerConfig {
-            bind: bind.with_orig_dst_addr(inbound_orig_dst),
+            addr,
+            keepalive,
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
         };
@@ -465,7 +456,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
             inbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
-        let keepalive = inbound_connect_keepalive?;
+        let keepalive = Keepalive(inbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
             timeout: inbound_connect_timeout?.unwrap_or(DEFAULT_INBOUND_CONNECT_TIMEOUT),
@@ -475,7 +466,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
             h2_settings: h2::Settings {
-                keepalive_timeout: keepalive,
+                keepalive_timeout: keepalive.into(),
                 ..h2_settings
             },
             h1_settings: h1::PoolSettings {
@@ -502,7 +493,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
         // Ensure that connections thaat directly target the inbound port are
         // secured (unless identity is disabled).
-        let inbound_port = server.bind.bind_addr().port();
+        let inbound_port = server.addr.as_ref().port();
         if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
             debug!(
                 "Adding {} to {}",
@@ -561,11 +552,11 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
-            bind: BindTcp::new(
+            addr: ListenAddr(
                 admin_listener_addr?
                     .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
-                inbound.proxy.server.bind.keepalive(),
             ),
+            keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
     };
@@ -610,7 +601,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|(addr, ids)| super::tap::Config::Enabled {
             permitted_client_ids: ids,
             config: ServerConfig {
-                bind: BindTcp::new(addr, inbound.proxy.server.bind.keepalive()),
+                addr: ListenAddr(addr),
+                keepalive: inbound.proxy.server.keepalive,
                 h2_settings,
             },
         })
@@ -645,7 +637,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         outbound,
         gateway,
         inbound,
-        ingress_mode,
     })
 }
 
@@ -735,14 +726,15 @@ fn parse_tap_config(
 }
 
 fn parse_bool(s: &str) -> Result<bool, ParseError> {
-    s.parse().map_err(|_| ParseError::NotABool)
+    s.parse().map_err(Into::into)
 }
 
 fn parse_number<T>(s: &str) -> Result<T, ParseError>
 where
     T: FromStr,
+    ParseError: From<T::Err>,
 {
-    s.parse().map_err(|_| ParseError::NotANumber)
+    s.parse().map_err(Into::into)
 }
 
 fn parse_duration(s: &str) -> Result<Duration, ParseError> {
@@ -1071,17 +1063,6 @@ pub fn parse_identity_config<S: Strings>(
     }
 }
 
-impl fmt::Display for EnvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EnvError::InvalidEnvVar => write!(f, "invalid environment variable"),
-            EnvError::NoDestinationAddress => write!(f, "no destination service configured"),
-        }
-    }
-}
-
-impl ::std::error::Error for EnvError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1135,10 +1116,10 @@ mod tests {
 
     #[test]
     fn parse_duration_overflows_invalid() {
-        assert_eq!(
+        assert!(matches!(
             parse_duration("123456789012345678901234567890ms"),
-            Err(ParseError::NotANumber)
-        );
+            Err(ParseError::NotAnInteger(_))
+        ));
     }
 
     #[test]

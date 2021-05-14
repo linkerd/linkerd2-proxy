@@ -1,14 +1,14 @@
 use indexmap::IndexMap;
 use linkerd_app_core::{
-    classify, dst, http_request_authority_addr, http_request_host_addr,
-    http_request_l5d_override_dst_addr, metrics, profiles,
+    classify, dst, http_request_authority_addr, http_request_host_addr, identity, metrics,
+    profiles,
     proxy::{http, tap},
     stack_tracing,
-    svc::{self, stack::Param},
+    svc::{self, Param},
     tls,
-    transport::{self, listen},
+    transport::{self, addrs::*},
     transport_header::TransportHeader,
-    Addr, Conditional, CANONICAL_DST_HEADER, DST_OVERRIDE_HEADER,
+    Addr, Conditional, Error, CANONICAL_DST_HEADER,
 };
 use std::{convert::TryInto, net::SocketAddr, str::FromStr, sync::Arc};
 use tracing::debug;
@@ -16,8 +16,14 @@ use tracing::debug;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpAccept {
     pub target_addr: SocketAddr,
-    pub client_addr: SocketAddr,
+    pub client_addr: Remote<ClientAddr>,
     pub tls: tls::ConditionalServerTls,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct HttpAccept {
+    pub tcp: TcpAccept,
+    pub version: http::Version,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -31,7 +37,7 @@ pub struct Target {
 #[derive(Clone, Debug)]
 pub struct Logical {
     target: Target,
-    profiles: Option<profiles::Receiver>,
+    profiles: profiles::Receiver,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -48,26 +54,34 @@ pub struct TcpEndpoint {
 
 #[derive(Clone, Debug)]
 pub struct RequestTarget {
-    accept: TcpAccept,
+    accept: HttpAccept,
 }
 
 // === impl TcpAccept ===
 
 impl TcpAccept {
-    pub fn port_skipped(tcp: listen::Addrs) -> Self {
+    pub fn port_skipped<T>(tcp: T) -> Self
+    where
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
+    {
+        let OrigDstAddr(target_addr) = tcp.param();
         Self {
-            target_addr: tcp.target_addr(),
-            client_addr: tcp.peer(),
+            target_addr,
+            client_addr: tcp.param(),
             tls: Conditional::None(tls::NoServerTls::PortSkipped),
         }
     }
 }
 
-impl From<tls::server::Meta<listen::Addrs>> for TcpAccept {
-    fn from((tls, addrs): tls::server::Meta<listen::Addrs>) -> Self {
+impl<T> From<tls::server::Meta<T>> for TcpAccept
+where
+    T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
+{
+    fn from((tls, addrs): tls::server::Meta<T>) -> Self {
+        let OrigDstAddr(target_addr) = addrs.param();
         Self {
-            target_addr: addrs.target_addr(),
-            client_addr: addrs.peer(),
+            target_addr,
+            client_addr: addrs.param(),
             tls,
         }
     }
@@ -86,6 +100,44 @@ impl Param<transport::labels::Key> for TcpAccept {
             self.tls.clone(),
             self.target_addr,
         )
+    }
+}
+
+// === impl HttpAccept ===
+
+impl From<(http::Version, TcpAccept)> for HttpAccept {
+    fn from((version, tcp): (http::Version, TcpAccept)) -> Self {
+        Self { version, tcp }
+    }
+}
+
+impl Param<http::Version> for HttpAccept {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl Param<http::normalize_uri::DefaultAuthority> for HttpAccept {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(
+            http::uri::Authority::from_str(&self.tcp.target_addr.to_string())
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
+impl Param<Option<identity::Name>> for HttpAccept {
+    fn param(&self) -> Option<identity::Name> {
+        self.tcp
+            .tls
+            .value()
+            .and_then(|server_tls| match server_tls {
+                tls::ServerTls::Established {
+                    client_id: Some(id),
+                    ..
+                } => Some(id.clone().0),
+                _ => None,
+            })
     }
 }
 
@@ -143,9 +195,9 @@ impl Param<transport::labels::Key> for TcpEndpoint {
 
 // Needed by `linkerd_app_test::Connect`
 #[cfg(test)]
-impl Into<SocketAddr> for TcpEndpoint {
-    fn into(self) -> SocketAddr {
-        SocketAddr::from(([127, 0, 0, 1], self.port))
+impl From<TcpEndpoint> for SocketAddr {
+    fn from(ep: TcpEndpoint) -> SocketAddr {
+        SocketAddr::from(([127, 0, 0, 1], ep.port))
     }
 }
 
@@ -161,9 +213,26 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
-impl Param<profiles::LogicalAddr> for Target {
-    fn param(&self) -> profiles::LogicalAddr {
-        profiles::LogicalAddr(self.dst.clone())
+impl From<HttpAccept> for Target {
+    fn from(HttpAccept { version, tcp }: HttpAccept) -> Self {
+        Self {
+            dst: tcp.target_addr.into(),
+            target_addr: tcp.target_addr,
+            http_version: version,
+            tls: tcp.tls,
+        }
+    }
+}
+
+impl From<Logical> for Target {
+    fn from(Logical { target, .. }: Logical) -> Self {
+        target
+    }
+}
+
+impl Param<profiles::LookupAddr> for Target {
+    fn param(&self) -> profiles::LookupAddr {
+        profiles::LookupAddr(self.dst.clone())
     }
 }
 
@@ -194,13 +263,15 @@ impl classify::CanClassify for Target {
 
 impl tap::Inspect for Target {
     fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
-        req.extensions().get::<TcpAccept>().map(|s| s.client_addr)
+        req.extensions()
+            .get::<HttpAccept>()
+            .map(|s| s.tcp.client_addr.into())
     }
 
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {
         req.extensions()
-            .get::<TcpAccept>()
-            .map(|s| s.tls.clone())
+            .get::<HttpAccept>()
+            .map(|s| s.tcp.tls.clone())
             .unwrap_or_else(|| Conditional::None(tls::NoServerTls::Disabled))
     }
 
@@ -246,8 +317,8 @@ impl stack_tracing::GetSpan<()> for Target {
 
 // === impl RequestTarget ===
 
-impl From<TcpAccept> for RequestTarget {
-    fn from(accept: TcpAccept) -> Self {
+impl From<HttpAccept> for RequestTarget {
+    fn from(accept: HttpAccept) -> Self {
         Self { accept }
     }
 }
@@ -255,7 +326,7 @@ impl From<TcpAccept> for RequestTarget {
 impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
     type Key = Target;
 
-    fn recognize(&self, req: &http::Request<A>) -> Self::Key {
+    fn recognize(&self, req: &http::Request<A>) -> Result<Self::Key, Error> {
         let dst = req
             .headers()
             .get(CANONICAL_DST_HEADER)
@@ -267,46 +338,34 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
                     })
                 })
             })
-            .or_else(|| {
-                http_request_l5d_override_dst_addr(req)
-                    .ok()
-                    .map(|override_addr| {
-                        debug!("using {}", DST_OVERRIDE_HEADER);
-                        override_addr
-                    })
-            })
             .or_else(|| http_request_authority_addr(req).ok())
             .or_else(|| http_request_host_addr(req).ok())
-            .unwrap_or_else(|| self.accept.target_addr.into());
+            .unwrap_or_else(|| self.accept.tcp.target_addr.into());
 
-        Target {
+        Ok(Target {
             dst,
-            target_addr: self.accept.target_addr,
-            tls: self.accept.tls.clone(),
+            target_addr: self.accept.tcp.target_addr,
+            tls: self.accept.tcp.tls.clone(),
+            // The HttpAccept target version reflects the inbound transport
+            // protocol, but it may have changed due to orig-proto downgrading.
             http_version: req
                 .version()
                 .try_into()
                 .expect("HTTP version must be valid"),
-        }
-    }
-}
-
-impl From<Logical> for Target {
-    fn from(Logical { target, .. }: Logical) -> Self {
-        target
+        })
     }
 }
 
 // === impl Logical ===
 
-impl From<(Option<profiles::Receiver>, Target)> for Logical {
-    fn from((profiles, target): (Option<profiles::Receiver>, Target)) -> Self {
+impl From<(profiles::Receiver, Target)> for Logical {
+    fn from((profiles, target): (profiles::Receiver, Target)) -> Self {
         Self { profiles, target }
     }
 }
 
-impl Param<Option<profiles::Receiver>> for Logical {
-    fn param(&self) -> Option<profiles::Receiver> {
+impl Param<profiles::Receiver> for Logical {
+    fn param(&self) -> profiles::Receiver {
         self.profiles.clone()
     }
 }

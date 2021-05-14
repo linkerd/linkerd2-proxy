@@ -805,7 +805,7 @@ macro_rules! http1_tests {
             let srv = server::http1()
                 .route_async("/", |req| async move {
                     assert_eq!(req.headers()["transfer-encoding"], "chunked");
-                    let body = http_util::body_to_string(req.into_body()).await;
+                    let body = http_util::body_to_string(req.into_body()).await.unwrap();
                     assert_eq!(body, "hello");
                     Ok::<_, std::io::Error>(
                         Response::builder()
@@ -830,7 +830,7 @@ macro_rules! http1_tests {
 
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["transfer-encoding"], "chunked");
-            let body = http_util::body_to_string(resp.into_body()).await;
+            let body = http_util::body_to_string(resp.into_body()).await.unwrap();
             assert_eq!(body, "world");
 
             // ensure panics from the server are propagated
@@ -1011,7 +1011,7 @@ macro_rules! http1_tests {
             assert_eq!(resp.status(), StatusCode::OK);
             assert_eq!(resp.headers()["content-length"], "55");
 
-            let body = http_util::body_to_string(resp.into_body()).await;
+            let body = http_util::body_to_string(resp.into_body()).await.unwrap();
 
             assert_eq!(body, "");
 
@@ -1076,7 +1076,7 @@ macro_rules! http1_tests {
                     v
                 );
 
-                let body = http_util::body_to_string(resp.into_body()).await;
+                let body = http_util::body_to_string(resp.into_body()).await.unwrap();
 
                 assert_eq!(body, "body till eof", "HTTP/{} body", v);
             }

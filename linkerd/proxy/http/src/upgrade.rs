@@ -12,8 +12,8 @@ use std::fmt;
 use std::mem;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use tracing::instrument::Instrument;
 use tracing::{debug, info, trace};
-use tracing_futures::Instrument;
 use try_lock::TryLock;
 
 /// A type inserted into `http::Extensions` to bridge together HTTP Upgrades.
@@ -139,7 +139,7 @@ impl Drop for Inner {
             let both_upgrades = async move {
                 let (server_conn, client_conn) = tokio::try_join!(server_upgrade, client_upgrade)?;
                 trace!("HTTP upgrade successful");
-                if let Err(e) = Duplex::new(server_conn, client_conn).await {
+                if let Err(e) = Duplex::new(client_conn, server_conn).await {
                     info!("tcp duplex error: {}", e)
                 }
                 Ok::<(), ()>(())

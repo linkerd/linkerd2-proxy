@@ -1,0 +1,33 @@
+[package]
+name = "linkerd-transport-header-fuzz"
+version = "0.0.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[target.'cfg(fuzzing)'.dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = { version = "0.4.0", features = ["arbitrary-derive"] }
+linkerd-transport-header = { path = ".." }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1.23"
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_target_structured"
+path = "fuzz_targets/fuzz_target_structured.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_target_raw"
+path = "fuzz_targets/fuzz_target_raw.rs"
+test = false
+doc = false

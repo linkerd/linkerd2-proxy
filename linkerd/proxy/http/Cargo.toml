@@ -19,7 +19,7 @@ h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 httparse = "1.2"
-hyper = { version ="0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
+hyper = { version = "0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
 hyper-balance = { path = "../../../hyper-balance" }
 indexmap = "1.0"
 linkerd-detect = { path = "../../detect" }
@@ -27,19 +27,21 @@ linkerd-drain = { path = "../../drain" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http-box" }
-linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-proxy-transport = { path = "../transport" }
 linkerd-stack = { path = "../../stack" }
 linkerd-timeout = { path = "../../timeout" }
 rand = "0.8"
+thiserror = "1.0"
 tokio = { version = "1", features = ["time", "rt"] }
-tower = { version = "0.4.1", default-features = false, features = ["balance", "load", "discover"] }
-tracing = "0.1.22"
-tracing-futures = "0.2"
+tower = { version = "0.4.7", default-features = false, features = ["balance", "load", "discover"] }
+tracing = "0.1.23"
 try-lock = "0.2"
 pin-project = "1"
 
+[target.'cfg(fuzzing)'.dependencies]
+tokio-test = "0.4"
+
 [dev-dependencies]
 tokio-test = "0.4"
-tracing-subscriber = "0.2"
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }

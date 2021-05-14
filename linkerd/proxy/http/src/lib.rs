@@ -1,13 +1,13 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 use http::header::AsHeaderName;
 use http::uri::Authority;
 use linkerd_error::Error;
-use linkerd_identity as identity;
 
 pub mod balance;
 pub mod client;
 pub mod client_handle;
-mod detect;
+pub mod detect;
 mod glue;
 pub mod h1;
 pub mod h2;
@@ -29,17 +29,22 @@ pub use self::{
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,
-    normalize_uri::NewNormalizeUri,
-    override_authority::{CanOverrideAuthority, NewOverrideAuthority},
+    normalize_uri::{MarkAbsoluteForm, NewNormalizeUri},
+    override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,
     timeout::MakeTimeoutLayer,
     version::Version,
 };
-pub use http::{header, uri, Request, Response, StatusCode};
+pub use http::{
+    header::{self, HeaderName, HeaderValue},
+    uri, Request, Response, StatusCode,
+};
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
-use std::str::FromStr;
+
+#[derive(Clone, Debug)]
+pub struct HeaderPair(pub HeaderName, pub HeaderValue);
 
 pub trait HasH2Reason {
     fn h2_reason(&self) -> Option<::h2::Reason>;
@@ -72,24 +77,6 @@ pub fn authority_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<
 where
     K: AsHeaderName,
 {
-    header_value_from_request(req, header, |s: &str| s.parse::<Authority>().ok())
-}
-
-pub fn identity_from_header<B, K>(req: &http::Request<B>, header: K) -> Option<identity::Name>
-where
-    K: AsHeaderName,
-{
-    header_value_from_request(req, header, |s: &str| identity::Name::from_str(s).ok())
-}
-
-fn header_value_from_request<B, K, F, T>(
-    req: &http::Request<B>,
-    header: K,
-    try_from: F,
-) -> Option<T>
-where
-    K: AsHeaderName,
-    F: FnOnce(&str) -> Option<T>,
-{
-    req.headers().get(header)?.to_str().ok().and_then(try_from)
+    let v = req.headers().get(header)?;
+    v.to_str().ok()?.parse().ok()
 }

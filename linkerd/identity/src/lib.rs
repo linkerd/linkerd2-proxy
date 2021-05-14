@@ -1,9 +1,11 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
-use std::{convert::TryFrom, error::Error, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
+use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
+use thiserror::Error;
 use tracing::{debug, warn};
 
 #[cfg(any(test, feature = "test-util"))]
@@ -48,7 +50,8 @@ pub struct CrtKey {
 
 struct CertResolver(rustls::sign::CertifiedKey);
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
 pub struct InvalidCrt(rustls::TLSError);
 
 /// A newtype for local server identities.
@@ -62,7 +65,10 @@ const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
     rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
 const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
     rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
-const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
+const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[
+    rustls::ProtocolVersion::TLSv1_2,
+    rustls::ProtocolVersion::TLSv1_3,
+];
 
 // === impl Csr ===
 
@@ -130,9 +136,9 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl<'t> Into<webpki::DNSNameRef<'t>> for &'t LocalId {
-    fn into(self) -> webpki::DNSNameRef<'t> {
-        (&self.0).into()
+impl<'t> From<&'t LocalId> for webpki::DNSNameRef<'t> {
+    fn from(LocalId(ref name): &'t LocalId) -> webpki::DNSNameRef<'t> {
+        name.into()
     }
 }
 
@@ -160,9 +166,9 @@ impl TryFrom<&[u8]> for Name {
     }
 }
 
-impl<'t> Into<webpki::DNSNameRef<'t>> for &'t Name {
-    fn into(self) -> webpki::DNSNameRef<'t> {
-        self.0.as_ref().into()
+impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
+    fn from(Name(ref name): &'t Name) -> webpki::DNSNameRef<'t> {
+        name.as_ref().into()
     }
 }
 
@@ -323,9 +329,9 @@ impl Crt {
     }
 }
 
-impl Into<LocalId> for &'_ Crt {
-    fn into(self) -> LocalId {
-        self.id.clone()
+impl From<&'_ Crt> for LocalId {
+    fn from(crt: &Crt) -> LocalId {
+        crt.id.clone()
     }
 }
 
@@ -429,9 +435,9 @@ impl From<Name> for LocalId {
     }
 }
 
-impl Into<Name> for LocalId {
-    fn into(self) -> Name {
-        self.0
+impl From<LocalId> for Name {
+    fn from(LocalId(name): LocalId) -> Name {
+        name
     }
 }
 
@@ -444,20 +450,6 @@ impl AsRef<Name> for LocalId {
 impl fmt::Display for LocalId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-// === impl InvalidCrt ===
-
-impl fmt::Display for InvalidCrt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Error for InvalidCrt {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.0.source()
     }
 }
 

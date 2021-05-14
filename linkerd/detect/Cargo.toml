@@ -9,10 +9,10 @@ publish = false
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-futures = "0.3.9"
 linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 tokio = { version = "1", features = ["time"] }
-tower = "0.4"
-tracing = "0.1.22"
+thiserror = "1.0"
+tower = "0.4.7"
+tracing = "0.1.23"

@@ -7,7 +7,7 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tracing::info_span;
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 use webpki::{DNSName, DNSNameRef};
 
 type ClientError = hyper::Error;
@@ -131,7 +131,7 @@ impl Client {
             res.status(),
         );
         let stream = res.into_parts().1;
-        http_util::body_to_string(stream).await
+        http_util::body_to_string(stream).await.unwrap()
     }
 
     pub fn request(

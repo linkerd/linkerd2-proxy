@@ -1,6 +1,7 @@
 //! Layer to map service errors into responses.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 use futures::{ready, TryFuture};
 use linkerd_error::Error;
 use pin_project::pin_project;

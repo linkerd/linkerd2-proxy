@@ -19,7 +19,7 @@ tower = { version = "0.4.3", features = ["filter", "util"] }
 tracing = "0.1"
 
 [dev-dependencies]
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tower-test = "0.4"
 tokio-test = "0.4"
-tracing-subscriber = "0.2.14"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }

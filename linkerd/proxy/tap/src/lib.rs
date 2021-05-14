@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 use indexmap::IndexMap;
 use linkerd_tls as tls;

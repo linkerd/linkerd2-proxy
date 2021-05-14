@@ -1,186 +1,362 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
-mod config;
 mod gateway;
-mod make;
-
-pub use self::config::Config;
-
 #[cfg(test)]
-mod test {
-    use super::*;
-    use linkerd_app_core::{
-        dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls,
-        Conditional, Error, NameAddr, NameMatch, Never,
-    };
-    use linkerd_app_inbound::target as inbound;
-    use linkerd_app_test as support;
-    use std::{net::SocketAddr, str::FromStr};
-    use tower::util::{service_fn, ServiceExt};
-    use tower_test::mock;
+mod tests;
 
-    #[tokio::test]
-    async fn gateway() {
-        assert_eq!(
-            Test::default().run().await.unwrap().status(),
-            http::StatusCode::NO_CONTENT
-        );
-    }
+use self::gateway::NewGateway;
+use linkerd_app_core::{
+    config::ProxyConfig,
+    detect, identity, io, metrics,
+    profiles::{self, DiscoveryRejected},
+    proxy::{
+        api_resolve::{ConcreteAddr, Metadata},
+        core::Resolve,
+        http,
+    },
+    svc::{self, Param},
+    tls,
+    transport_header::SessionProtocol,
+    Error, NameAddr, NameMatch, Never,
+};
+use linkerd_app_inbound::{
+    direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
+    Inbound,
+};
+use linkerd_app_outbound::{self as outbound, Outbound};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt,
+};
+use thiserror::Error;
+use tracing::debug_span;
 
-    #[tokio::test]
-    async fn bad_domain() {
-        let test = Test {
-            suffix: "bad.example.com",
-            ..Default::default()
-        };
-        let status = test
-            .run()
-            .await
-            .unwrap_err()
-            .downcast_ref::<HttpError>()
-            .unwrap()
-            .status();
-        assert_eq!(status, http::StatusCode::NOT_FOUND);
-    }
+#[derive(Clone, Debug, Default)]
+pub struct Config {
+    pub allow_discovery: NameMatch,
+}
 
-    #[tokio::test]
-    async fn no_authority() {
-        let test = Test {
-            dst_name: None,
-            ..Default::default()
-        };
-        let status = test
-            .run()
-            .await
-            .unwrap_err()
-            .downcast_ref::<HttpError>()
-            .unwrap()
-            .status();
-        assert_eq!(status, http::StatusCode::NOT_FOUND);
-    }
+#[derive(Clone, Debug)]
+struct HttpLegacy {
+    client: ClientInfo,
+    version: http::Version,
+}
 
-    #[tokio::test]
-    async fn no_identity() {
-        let tls = Conditional::Some(tls::ServerTls::Established {
-            client_id: None,
-            negotiated_protocol: None,
-        });
-        let test = Test {
-            tls,
-            ..Default::default()
-        };
-        let status = test
-            .run()
-            .await
-            .unwrap_err()
-            .downcast_ref::<HttpError>()
-            .unwrap()
-            .status();
-        assert_eq!(status, http::StatusCode::FORBIDDEN);
-    }
+#[derive(Clone, Debug)]
+struct HttpTransportHeader {
+    target: NameAddr,
+    client: ClientInfo,
+    version: http::Version,
+}
 
-    #[tokio::test]
-    async fn forward_loop() {
-        let test = Test {
-            orig_fwd: Some(
-                "by=gateway.id.test;for=client.id.test;host=dst.test.example.com:4321;proto=https",
-            ),
-            ..Default::default()
-        };
-        let status = test
-            .run()
-            .await
-            .unwrap_err()
-            .downcast_ref::<HttpError>()
-            .unwrap()
-            .status();
-        assert_eq!(status, http::StatusCode::LOOP_DETECTED);
-    }
+#[derive(Clone, Debug)]
+struct RouteHttp<T>(T);
 
-    struct Test {
-        suffix: &'static str,
-        dst_name: Option<&'static str>,
-        tls: tls::ConditionalServerTls,
-        orig_fwd: Option<&'static str>,
-    }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct HttpTarget {
+    target: NameAddr,
+    version: http::Version,
+}
 
-    impl Default for Test {
-        fn default() -> Self {
-            Self {
-                suffix: "test.example.com",
-                dst_name: Some("dst.test.example.com:4321"),
-                tls: Conditional::Some(tls::ServerTls::Established {
-                    client_id: Some(tls::ClientId::from_str("client.id.test").unwrap()),
-                    negotiated_protocol: None,
-                }),
-                orig_fwd: None,
+#[derive(Debug, Default, Error)]
+#[error("a named target must be provided on gateway connections")]
+struct RefusedNoTarget(());
+
+#[derive(Debug, Error)]
+#[error("the provided address could not be resolved: {}", self.0)]
+struct RefusedNotResolved(NameAddr);
+
+#[allow(clippy::too_many_arguments)]
+pub fn stack<I, O, P, R>(
+    Config { allow_discovery }: Config,
+    inbound: Inbound<()>,
+    outbound: Outbound<O>,
+    profiles: P,
+    resolve: R,
+) -> svc::BoxNewService<GatewayConnection, svc::BoxService<I, (), Error>>
+where
+    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
+    O: Clone + Send + Sync + Unpin + 'static,
+    O: svc::Service<outbound::tcp::Connect, Error = io::Error>,
+    O::Response:
+        io::AsyncRead + io::AsyncWrite + tls::HasNegotiatedProtocol + Send + Unpin + 'static,
+    O::Future: Send + Unpin + 'static,
+    P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+    P::Future: Send + 'static,
+    P::Error: Send,
+    R: Clone + Send + Sync + Unpin + 'static,
+    R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
+    R::Resolution: Send,
+    R::Future: Send + Unpin,
+{
+    let ProxyConfig {
+        buffer_capacity,
+        cache_max_idle_age,
+        detect_protocol_timeout,
+        dispatch_timeout,
+        ..
+    } = inbound.config().proxy.clone();
+    let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
+
+    // For each gatewayed connection that is *not* HTTP, use the target from the
+    // transport header to lookup a service profile. If the profile includes a
+    // resolvable service name, then continue with TCP endpoint resolution,
+    // balancing, and forwarding. An invalid original destination address is
+    // used so that service discovery is *required* to provide a valid endpoint.
+    //
+    // TODO: We should use another target type that actually reflects
+    // reality. But the outbound stack is currently pretty tightly
+    // coupled to its target types.
+    let tcp = outbound
+        .clone()
+        .push_tcp_endpoint()
+        .push_tcp_logical(resolve.clone())
+        .into_stack()
+        .push_request_filter(
+            |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
+                let profile = p.ok_or_else(|| {
+                    DiscoveryRejected::new("no profile discovered for gateway target")
+                })?;
+                let logical_addr = profile.borrow().addr.clone().ok_or_else(|| {
+                    DiscoveryRejected::new(
+                        "profile for gateway target does not have a logical address",
+                    )
+                })?;
+                Ok(outbound::tcp::Logical {
+                    profile,
+                    protocol: (),
+                    logical_addr,
+                })
+            },
+        )
+        .push(profiles::discover::layer(profiles.clone(), {
+            let allow = allow_discovery.clone();
+            move |addr: NameAddr| {
+                if allow.matches(addr.name()) {
+                    Ok(profiles::LookupAddr(addr.into()))
+                } else {
+                    Err(RefusedNotResolved(addr))
+                }
             }
+        }))
+        .push_on_response(
+            svc::layers()
+                .push(
+                    inbound
+                        .runtime()
+                        .metrics
+                        .stack
+                        .layer(metrics::StackLabels::inbound("tcp", "gateway")),
+                )
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(svc::FailFast::layer("TCP Gateway", dispatch_timeout))
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .push_cache(cache_max_idle_age)
+        .check_new_service::<NameAddr, I>();
+
+    // Cache an HTTP gateway service for each destination and HTTP version.
+    //
+    // The client's ID is set as a request extension, as required by the
+    // gateway. This permits gateway services (and profile resolutions) to be
+    // cached per target, shared across clients.
+    let http = outbound
+        .push_tcp_endpoint()
+        .push_http_endpoint()
+        .push_http_logical(resolve)
+        .into_stack()
+        .push(NewGateway::layer(local_id))
+        .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
+            if allow_discovery.matches(t.target.name()) {
+                Ok(profiles::LookupAddr(t.target.into()))
+            } else {
+                Err(RefusedNotResolved(t.target))
+            }
+        }))
+        .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
+        .push_on_response(
+            svc::layers()
+                .push(
+                    inbound
+                        .runtime()
+                        .metrics
+                        .stack
+                        .layer(metrics::StackLabels::inbound("http", "gateway")),
+                )
+                .push(svc::layer::mk(svc::SpawnReady::new))
+                .push(svc::FailFast::layer("Gateway", dispatch_timeout))
+                .push_spawn_buffer(buffer_capacity),
+        )
+        .push_cache(cache_max_idle_age)
+        .push_on_response(
+            svc::layers()
+                .push(http::Retain::layer())
+                .push(http::BoxResponse::layer()),
+        )
+        .push(svc::BoxNewService::layer());
+
+    // When handling gateway connections from older clients that do not
+    // support the transport header, do protocol detection and route requests
+    // based on each request's URI.
+    //
+    // Non-HTTP connections are refused.
+    let legacy_http = inbound
+        .clone()
+        .with_stack(
+            http.clone()
+                .push(svc::NewRouter::layer(RouteHttp))
+                .push_http_insert_target::<tls::ClientId>(),
+        )
+        .push_http_server()
+        .into_stack()
+        .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
+        .push(svc::BoxNewService::layer())
+        .push(detect::NewDetectService::layer(
+            detect_protocol_timeout,
+            http::DetectHttp::default(),
+        ));
+
+    // When a transported connection is received, use the header's target to
+    // drive routing.
+    inbound
+        .with_stack(
+            // A router is needed so that we use each request's HTTP version
+            // (i.e. after serverside orig-proto downgrading).
+            http.push(svc::NewRouter::layer(RouteHttp))
+                .push_http_insert_target::<tls::ClientId>(),
+        )
+        .push_http_server()
+        .into_stack()
+        .push_on_response(svc::BoxService::layer())
+        .push(svc::BoxNewService::layer())
+        .push_switch(
+            |GatewayTransportHeader {
+                 target,
+                 protocol,
+                 client,
+             }| match protocol {
+                Some(proto) => Ok(svc::Either::A(HttpTransportHeader {
+                    target,
+                    client,
+                    version: match proto {
+                        SessionProtocol::Http1 => http::Version::Http1,
+                        SessionProtocol::Http2 => http::Version::H2,
+                    },
+                })),
+                None => Ok::<_, Never>(svc::Either::B(target)),
+            },
+            tcp.push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+                .into_inner(),
+        )
+        .push_switch(
+            |gw| match gw {
+                GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
+                GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
+            },
+            legacy_http.into_inner(),
+        )
+        .push_on_response(svc::BoxService::layer())
+        .push(svc::BoxNewService::layer())
+        .into_inner()
+}
+
+// === impl HttpTransportHeader ===
+
+impl Param<http::normalize_uri::DefaultAuthority> for HttpTransportHeader {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(Some(self.target.as_http_authority()))
+    }
+}
+
+impl Param<Option<identity::Name>> for HttpTransportHeader {
+    fn param(&self) -> Option<identity::Name> {
+        Some(self.client.client_id.clone().0)
+    }
+}
+
+impl Param<http::Version> for HttpTransportHeader {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl Param<tls::ClientId> for HttpTransportHeader {
+    fn param(&self) -> tls::ClientId {
+        self.client.client_id.clone()
+    }
+}
+
+// === impl HttpLegacy ===
+
+impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, ClientInfo)> for HttpLegacy {
+    type Error = Error;
+
+    fn try_from(
+        (version, client): (Result<Option<http::Version>, E>, ClientInfo),
+    ) -> Result<Self, Self::Error> {
+        match version {
+            Ok(Some(version)) => Ok(Self { version, client }),
+            Ok(None) => Err(RefusedNoTarget(()).into()),
+            Err(e) => Err(e.into()),
         }
     }
+}
 
-    impl Test {
-        async fn run(self) -> Result<http::Response<http::BoxBody>, Error> {
-            let Self {
-                suffix,
-                dst_name,
-                tls,
-                orig_fwd,
-            } = self;
+impl From<(http::Version, ClientInfo)> for HttpLegacy {
+    fn from((version, client): (http::Version, ClientInfo)) -> Self {
+        Self { version, client }
+    }
+}
 
-            let (outbound, mut handle) =
-                mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
-            let mut make_gateway = {
-                let profiles = service_fn(move |na: NameAddr| async move {
-                    let rx = support::profile::only(profiles::Profile {
-                        name: Some(na.name().clone()),
-                        ..profiles::Profile::default()
-                    });
-                    Ok::<_, Never>(Some(rx))
-                });
-                let allow_discovery = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
-                Config { allow_discovery }.build(
-                    move |_: _| outbound.clone(),
-                    profiles,
-                    Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
-                )
-            };
+impl Param<http::normalize_uri::DefaultAuthority> for HttpLegacy {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(None)
+    }
+}
 
-            let target_addr = SocketAddr::from(([127, 0, 0, 1], 4143));
-            let target = inbound::Target {
-                target_addr,
-                tls,
-                dst: dst_name
-                    .map(|n| NameAddr::from_str(n).unwrap().into())
-                    .unwrap_or_else(|| target_addr.into()),
-                http_version: http::Version::Http1,
-            };
-            let gateway = make_gateway.new_service(target);
+impl Param<Option<identity::Name>> for HttpLegacy {
+    fn param(&self) -> Option<identity::Name> {
+        Some(self.client.client_id.clone().0)
+    }
+}
 
-            let bg = tokio::spawn(async move {
-                handle.allow(1);
-                let (req, rsp) = handle.next_request().await.unwrap();
-                assert_eq!(
-                    req.headers().get(http::header::FORWARDED).unwrap(),
-                    "by=gateway.id.test;for=client.id.test;host=dst.test.example.com:4321;proto=https"
-                );
-                rsp.send_response(
-                    http::Response::builder()
-                        .status(http::StatusCode::NO_CONTENT)
-                        .body(Default::default())
-                        .unwrap(),
-                );
-            });
+impl Param<http::Version> for HttpLegacy {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
 
-            let req = http::Request::builder()
-                .uri(format!("http://{}", dst_name.unwrap_or("127.0.0.1:4321")));
-            let req = orig_fwd
-                .into_iter()
-                .fold(req, |req, fwd| req.header(http::header::FORWARDED, fwd))
-                .body(Default::default())
-                .unwrap();
-            let rsp = gateway.oneshot(req).await.map_err(Into::into)?;
-            bg.await?;
-            Ok(rsp)
+impl Param<tls::ClientId> for HttpLegacy {
+    fn param(&self) -> tls::ClientId {
+        self.client.client_id.clone()
+    }
+}
+
+// === impl RouteHttp ===
+
+impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpTransportHeader> {
+    type Key = HttpTarget;
+
+    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
+        let target = self.0.target.clone();
+        let version = req.version().try_into()?;
+        Ok(HttpTarget { target, version })
+    }
+}
+
+impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpLegacy> {
+    type Key = HttpTarget;
+
+    fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
+        let version = req.version().try_into()?;
+
+        if let Some(a) = req.uri().authority() {
+            let target = NameAddr::from_authority_with_default_port(a, 80)?;
+            return Ok(HttpTarget { target, version });
         }
+
+        Err(RefusedNoTarget(()).into())
     }
 }

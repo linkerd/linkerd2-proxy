@@ -10,7 +10,7 @@ use linkerd_app_core::{
 };
 use std::future::Future;
 use std::pin::Pin;
-use tracing::debug;
+use tracing::Instrument;
 
 // The Disabled case is extraordinarily rare.
 #[allow(clippy::large_enum_variant)]
@@ -52,10 +52,11 @@ impl Config {
                 // Save to be spawned on an auxiliary runtime.
                 let task = {
                     let addr = addr.clone();
-                    Box::pin(async move {
-                        debug!(peer.addr = ?addr, "running");
-                        daemon.run(svc).await
-                    })
+                    Box::pin(
+                        daemon
+                            .run(svc)
+                            .instrument(tracing::debug_span!("identity_daemon", peer.addr = %addr)),
+                    )
                 };
 
                 Ok(Identity::Enabled { addr, local, task })

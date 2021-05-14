@@ -1,6 +1,7 @@
 //! Shared infrastructure for integration tests
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 #![recursion_limit = "256"]
 #![type_length_limit = "16289823"]
 // It's not clear where this originates.
@@ -23,6 +24,7 @@ pub use linkerd_app::{
     core::{drain, Addr},
 };
 pub use linkerd_app_test::*;
+pub use linkerd_tracing::test::*;
 use socket2::Socket;
 pub use std::collections::HashMap;
 use std::fmt;
@@ -39,7 +41,6 @@ pub use tokio::sync::oneshot;
 pub use tonic as grpc;
 pub use tower::Service;
 pub use tracing::*;
-pub use tracing_subscriber::prelude::*;
 
 /// Environment variable for overriding the test patience.
 pub const ENV_TEST_PATIENCE_MS: &str = "RUST_TEST_PATIENCE_MS";

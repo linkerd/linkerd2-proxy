@@ -1,17 +1,18 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
-pub use self::layer::TraceContext;
+mod propagation;
+mod service;
+
+pub use self::service::TraceContext;
 use bytes::Bytes;
-use linkerd_channel as mpsc;
 use linkerd_error::Error;
 use rand::Rng;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::time::SystemTime;
-
-pub mod layer;
-mod propagation;
+use thiserror::Error;
 
 const SPAN_ID_LEN: usize = 8;
 
@@ -21,7 +22,8 @@ pub struct Id(Vec<u8>);
 #[derive(Debug, Default)]
 pub struct Flags(u8);
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("insufficient bytes when decoding binary header")]
 pub struct InsufficientBytes;
 
 #[derive(Debug)]
@@ -36,12 +38,20 @@ pub struct Span {
 }
 
 pub trait SpanSink {
+    fn is_enabled(&self) -> bool;
+
     fn try_send(&mut self, span: Span) -> Result<(), Error>;
 }
 
-impl SpanSink for mpsc::Sender<Span> {
+impl<K: SpanSink> SpanSink for Option<K> {
+    #[inline]
+    fn is_enabled(&self) -> bool {
+        self.as_ref().map(SpanSink::is_enabled).unwrap_or(false)
+    }
+
+    #[inline]
     fn try_send(&mut self, span: Span) -> Result<(), Error> {
-        self.try_send(span).map_err(Into::into)
+        self.as_mut().expect("Must be enabled").try_send(span)
     }
 }
 
@@ -55,9 +65,9 @@ impl Id {
     }
 }
 
-impl Into<Vec<u8>> for Id {
-    fn into(self) -> Vec<u8> {
-        self.0
+impl From<Id> for Vec<u8> {
+    fn from(Id(bytes): Id) -> Vec<u8> {
+        bytes
     }
 }
 
@@ -101,15 +111,5 @@ impl TryFrom<Bytes> for Flags {
 
     fn try_from(buf: Bytes) -> Result<Self, Self::Error> {
         buf.first().map(|b| Flags(*b)).ok_or(InsufficientBytes)
-    }
-}
-
-// === impl InsufficientBytes ===
-
-impl std::error::Error for InsufficientBytes {}
-
-impl fmt::Display for InsufficientBytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Insufficient bytes when decoding binary header")
     }
 }

@@ -48,6 +48,10 @@ impl Handle {
         }
     }
 
+    // This returns a Result for consistency with other methods that are
+    // fallible, and the return value will have to be wrapped anyway...but
+    // clippy doesn't know that
+    #[allow(clippy::unnecessary_wraps)]
     fn rsp(status: http::StatusCode, body: impl Into<Body>) -> Result<http::Response<Body>, Error> {
         Ok(http::Response::builder()
             .status(status)

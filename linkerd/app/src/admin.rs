@@ -3,13 +3,21 @@ use crate::core::{
     config::ServerConfig,
     detect, drain, errors,
     metrics::{self, FmtMetrics},
-    serve, tls, trace,
-    transport::listen,
-    Addr, Error,
+    serve,
+    svc::{self, Param},
+    tls, trace,
+    transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
+    Error,
 };
-use crate::{http, identity::LocalCrtKey, inbound, svc};
-use std::{fmt, net::SocketAddr, pin::Pin, time::Duration};
+use crate::{
+    http,
+    identity::LocalCrtKey,
+    inbound::target::{HttpAccept, Target, TcpAccept},
+};
+use std::{pin::Pin, time::Duration};
+use thiserror::Error;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -18,17 +26,26 @@ pub struct Config {
 }
 
 pub struct Admin {
-    pub listen_addr: SocketAddr,
+    pub listen_addr: Local<ServerAddr>,
     pub latch: admin::Latch,
-    pub serve: Pin<Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'static>>,
+    pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
 
-#[derive(Debug, Default)]
-pub struct AdminHttpOnly(());
+#[derive(Debug, Error)]
+#[error("non-HTTP connection from {}", self.0)]
+struct NonHttpClient(Remote<ClientAddr>);
+
+#[derive(Debug, Error)]
+#[error("Unexpected TLS connection to {} from {}", self.0, self.1)]
+struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
+
+// === impl Config ===
 
 impl Config {
-    pub fn build<R>(
+    #[allow(clippy::clippy::too_many_arguments)]
+    pub fn build<B, R>(
         self,
+        bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
         metrics: metrics::Proxy,
@@ -37,11 +54,13 @@ impl Config {
         shutdown: mpsc::UnboundedSender<()>,
     ) -> Result<Admin, Error>
     where
-        R: FmtMetrics + Clone + Send + 'static + Unpin,
+        R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
+        B: Bind<ServerConfig>,
+        B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
     {
         const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
 
-        let (listen_addr, listen) = self.server.bind.bind()?;
+        let (listen_addr, listen) = bind.bind(&self.server)?;
 
         let (ready, latch) = admin::Readiness::new();
         let admin = admin::Admin::new(report, ready, shutdown, trace);
@@ -53,28 +72,67 @@ impl Config {
                     .push(errors::layer())
                     .push(http::BoxResponse::layer()),
             )
-            .push(svc::stack::MapTargetLayer::new(|(http_version, tcp)| {
-                let inbound::TcpAccept {
-                    target_addr, tls, ..
-                } = tcp;
-                inbound::Target {
-                    dst: Addr::Socket(target_addr),
-                    target_addr,
-                    http_version,
-                    tls,
-                }
-            }))
+            .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
-            .push(svc::UnwrapOr::layer(
-                svc::Fail::<_, AdminHttpOnly>::default(),
-            ))
-            .push(detect::NewDetectService::timeout(
+            .push_request_filter(
+                |(version, tcp): (
+                    Result<Option<http::Version>, detect::DetectTimeout<_>>,
+                    TcpAccept,
+                )| {
+                    match version {
+                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
+                        // If detection timed out, we can make an educated guess
+                        // at the proper behavior:
+                        // - If the connection was meshed, it was most likely
+                        //   transported over HTTP/2.
+                        // - If the connection was unmehsed, it was mostly
+                        //   likely HTTP/1.
+                        // - If we received some unexpected SNI, the client is
+                        //   mostly likely confused/stale.
+                        Err(_timeout) => {
+                            let version = match tcp.tls.clone() {
+                                tls::ConditionalServerTls::None(_) => http::Version::Http1,
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                    ..
+                                }) => http::Version::H2,
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Passthru {
+                                    sni,
+                                }) => {
+                                    debug_assert!(false, "If we know the stream is non-mesh TLS, we should be able to prove its not HTTP.");
+                                    return Err(Error::from(UnexpectedSni(sni, tcp.client_addr)));
+                                }
+                            };
+                            debug!(%version, "HTTP detection timed out; assuming HTTP");
+                            Ok(HttpAccept::from((version, tcp)))
+                        }
+                        // If the connection failed HTTP detection, check if we
+                        // detected TLS for another target. This might indicate
+                        // that the client is confused/stale.
+                        Ok(None) => match tcp.tls {
+                            tls::ConditionalServerTls::Some(tls::ServerTls::Passthru { sni }) => {
+                                Err(UnexpectedSni(sni, tcp.client_addr).into())
+                            }
+                            _ => Err(NonHttpClient(tcp.client_addr).into()),
+                        },
+                    }
+                },
+            )
+            .push(svc::BoxNewService::layer())
+            .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
             ))
             .push(metrics.transport.layer_accept())
-            .push_map_target(inbound::TcpAccept::from)
-            .check_new_clone::<tls::server::Meta<listen::Addrs>>()
+            .push_map_target(|(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
+                // TODO this should use an admin-specific target type.
+                let Local(ServerAddr(target_addr)) = addrs.param();
+                TcpAccept {
+                    tls,
+                    client_addr: addrs.param(),
+                    target_addr,
+                }
+            })
+            .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();
 
@@ -86,11 +144,3 @@ impl Config {
         })
     }
 }
-
-impl fmt::Display for AdminHttpOnly {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("proxy admin server is HTTP-only")
-    }
-}
-
-impl std::error::Error for AdminHttpOnly {}

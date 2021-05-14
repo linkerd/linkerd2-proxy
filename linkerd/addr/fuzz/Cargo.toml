@@ -1,0 +1,23 @@
+[package]
+name = "linkerd-addr-fuzz"
+version = "0.0.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[target.'cfg(fuzzing)'.dependencies]
+libfuzzer-sys = "0.4"
+linkerd-addr = { path = ".." }
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+tracing = "0.1.23"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"

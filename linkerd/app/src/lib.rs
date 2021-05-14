@@ -1,6 +1,7 @@
 //! Configures and executes the proxy
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub mod admin;
 pub mod dst;
@@ -13,22 +14,24 @@ pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
+    config::ServerConfig,
     control::ControlAddr,
     dns, drain,
     proxy::http,
-    serve,
-    svc::{self, stack::Param},
-    Error,
+    svc::Param,
+    transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
-pub(crate) use linkerd_app_inbound as inbound;
-use linkerd_app_outbound as outbound;
-use linkerd_channel::into_stream::IntoStream;
-use std::{net::SocketAddr, pin::Pin};
-use tokio::{sync::mpsc, time::Duration};
-
-use tracing::{debug, error, info, info_span};
-use tracing_futures::Instrument;
+use linkerd_app_inbound::{self as inbound, Inbound};
+use linkerd_app_outbound::{self as outbound, Outbound};
+use std::pin::Pin;
+use tokio::{
+    sync::mpsc,
+    time::{self, Duration},
+};
+use tracing::instrument::Instrument;
+use tracing::{debug, info, info_span};
 
 /// Spawns a sidecar proxy.
 ///
@@ -48,11 +51,6 @@ pub struct Config {
     pub inbound: inbound::Config,
     pub gateway: gateway::Config,
 
-    // In "ingress mode", we assume we are always routing HTTP requests and do
-    // not perform per-target-address discovery. Non-HTTP connections are
-    // forwarded without discovery/routing/mTLS.
-    pub ingress_mode: bool,
-
     pub dns: dns::Config,
     pub identity: identity::Config,
     pub dst: dst::Config,
@@ -66,9 +64,9 @@ pub struct App {
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,
-    inbound_addr: SocketAddr,
+    inbound_addr: Local<ServerAddr>,
     oc_collector: oc_collector::OcCollector,
-    outbound_addr: SocketAddr,
+    outbound_addr: Local<ServerAddr>,
     start_proxy: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     tap: tap::Tap,
 }
@@ -77,16 +75,29 @@ impl Config {
     pub fn try_from_env() -> Result<Self, env::EnvError> {
         env::Env.try_config()
     }
+}
 
+impl Config {
     /// Build an application.
     ///
     /// It is currently required that this be run on a Tokio runtime, since some
     /// services are created eagerly and must spawn tasks to do so.
-    pub async fn build(
+    pub async fn build<BIn, BOut, BAdmin>(
         self,
+        bind_in: BIn,
+        bind_out: BOut,
+        bind_admin: BAdmin,
         shutdown_tx: mpsc::UnboundedSender<()>,
         log_level: trace::Handle,
-    ) -> Result<App, Error> {
+    ) -> Result<App, Error>
+    where
+        BIn: Bind<ServerConfig> + 'static,
+        BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BOut: Bind<ServerConfig> + 'static,
+        BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BAdmin: Bind<ServerConfig> + Clone + 'static,
+        BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
+    {
         use metrics::FmtMetrics;
 
         let Config {
@@ -99,7 +110,6 @@ impl Config {
             outbound,
             gateway,
             tap,
-            ingress_mode,
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
@@ -108,11 +118,15 @@ impl Config {
 
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
-        let report = report.and_then(identity.metrics());
+        let report = identity.metrics().and_then(report);
 
         let (drain_tx, drain_rx) = drain::channel();
 
-        let tap = info_span!("tap").in_scope(|| tap.build(identity.local(), drain_rx.clone()))?;
+        let tap = {
+            let bind = bind_admin.clone();
+            info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
+        };
+
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
@@ -133,126 +147,57 @@ impl Config {
             let drain = drain_rx.clone();
             let metrics = metrics.inbound.clone();
             info_span!("admin").in_scope(move || {
-                admin.build(identity, report, metrics, log_level, drain, shutdown_tx)
+                admin.build(
+                    bind_admin,
+                    identity,
+                    report,
+                    metrics,
+                    log_level,
+                    drain,
+                    shutdown_tx,
+                )
             })?
         };
 
         let dst_addr = dst.addr.clone();
 
-        let (inbound_addr, inbound_listen) = inbound.proxy.server.bind.bind()?;
-        let inbound_metrics = metrics.inbound;
+        let inbound = Inbound::new(
+            inbound,
+            ProxyRuntime {
+                identity: identity.local(),
+                metrics: metrics.inbound,
+                tap: tap.registry(),
+                span_sink: oc_collector.span_sink(),
+                drain: drain_rx.clone(),
+            },
+        );
 
-        let (outbound_addr, outbound_listen) = outbound.proxy.server.bind.bind()?;
-        let outbound_metrics = metrics.outbound;
+        let outbound = Outbound::new(
+            outbound,
+            ProxyRuntime {
+                identity: identity.local(),
+                metrics: metrics.outbound,
+                tap: tap.registry(),
+                span_sink: oc_collector.span_sink(),
+                drain: drain_rx,
+            },
+        );
 
-        let local_identity = identity.local();
-        let tap_registry = tap.registry();
-        let oc_span_sink = oc_collector.span_sink();
+        let gateway_stack = gateway::stack(
+            gateway,
+            inbound.clone(),
+            outbound.to_tcp_connect(),
+            dst.profiles.clone(),
+            dst.resolve.clone(),
+        );
+
+        let (inbound_addr, inbound_serve) =
+            inbound.serve(bind_in, dst.profiles.clone(), gateway_stack);
+        let (outbound_addr, outbound_serve) = outbound.serve(bind_out, dst.profiles, dst.resolve);
 
         let start_proxy = Box::pin(async move {
-            let span = info_span!("outbound");
-            let _outbound = span.enter();
-
-            info!(listen.addr = %outbound_addr, ingress_mode);
-
-            let outbound_http = outbound::http::logical::stack(
-                &outbound.proxy,
-                outbound::http::endpoint::stack(
-                    &outbound.proxy.connect,
-                    local_identity.as_ref().map(|l| l.id()),
-                    outbound::tcp::connect::stack(
-                        &outbound.proxy.connect,
-                        outbound_addr.port(),
-                        local_identity.clone(),
-                        &outbound_metrics,
-                    ),
-                    tap_registry.clone(),
-                    outbound_metrics.clone(),
-                    oc_span_sink.clone(),
-                ),
-                dst.resolve.clone(),
-                outbound_metrics.clone(),
-            );
-
-            let connect = outbound::tcp::connect::stack(
-                &outbound.proxy.connect,
-                outbound_addr.port(),
-                local_identity.clone(),
-                &outbound_metrics,
-            );
-            if ingress_mode {
-                tokio::spawn(
-                    serve::serve(
-                        outbound_listen,
-                        outbound::ingress::stack(
-                            &outbound,
-                            dst.profiles.clone(),
-                            outbound::tcp::connect::forward(connect),
-                            outbound_http.clone(),
-                            &outbound_metrics,
-                            oc_span_sink.clone(),
-                            drain_rx.clone(),
-                        ),
-                        drain_rx.clone().signaled(),
-                    )
-                    .map_err(|e| panic!("outbound failed: {}", e))
-                    .instrument(span.clone()),
-                );
-            } else {
-                tokio::spawn(
-                    serve::serve(
-                        outbound_listen,
-                        outbound::server::stack(
-                            &outbound,
-                            dst.profiles.clone(),
-                            dst.resolve,
-                            connect,
-                            outbound_http.clone(),
-                            outbound_metrics,
-                            oc_span_sink.clone(),
-                            drain_rx.clone(),
-                        ),
-                        drain_rx.clone().signaled(),
-                    )
-                    .map_err(|e| panic!("outbound failed: {}", e))
-                    .instrument(span.clone()),
-                );
-            }
-            drop(_outbound);
-
-            let span = info_span!("inbound");
-            let _inbound = span.enter();
-            info!(listen.addr = %inbound_addr);
-
-            let http_gateway = gateway.build(
-                outbound_http,
-                dst.profiles.clone(),
-                local_identity.as_ref().map(Param::param),
-            );
-
-            let connect = inbound::tcp_connect(&inbound.proxy.connect);
-            tokio::spawn(
-                serve::serve(
-                    inbound_listen,
-                    inbound.build(
-                        inbound_addr,
-                        local_identity,
-                        connect,
-                        svc::stack(http_gateway)
-                            .push_on_response(http::BoxRequest::layer())
-                            .into_inner(),
-                        dst.profiles,
-                        tap_registry,
-                        inbound_metrics,
-                        oc_span_sink,
-                        drain_rx.clone(),
-                    ),
-                    drain_rx.signaled(),
-                )
-                .map_err(|e| panic!("inbound failed: {}", e))
-                .instrument(span.clone()),
-            );
-            drop(_inbound);
+            tokio::spawn(outbound_serve.instrument(info_span!("outbound")));
+            tokio::spawn(inbound_serve.instrument(info_span!("inbound")));
         });
 
         Ok(App {
@@ -270,19 +215,19 @@ impl Config {
 }
 
 impl App {
-    pub fn admin_addr(&self) -> SocketAddr {
+    pub fn admin_addr(&self) -> Local<ServerAddr> {
         self.admin.listen_addr
     }
 
-    pub fn inbound_addr(&self) -> SocketAddr {
+    pub fn inbound_addr(&self) -> Local<ServerAddr> {
         self.inbound_addr
     }
 
-    pub fn outbound_addr(&self) -> SocketAddr {
+    pub fn outbound_addr(&self) -> Local<ServerAddr> {
         self.outbound_addr
     }
 
-    pub fn tap_addr(&self) -> Option<SocketAddr> {
+    pub fn tap_addr(&self) -> Option<Local<ServerAddr>> {
         match self.tap {
             tap::Tap::Disabled { .. } => None,
             tap::Tap::Enabled { listen_addr, .. } => Some(listen_addr),
@@ -347,7 +292,6 @@ impl App {
                         tokio::spawn(
                             admin
                                 .serve
-                                .map_err(|e| panic!("admin server died: {}", e))
                                 .instrument(info_span!("admin", listen.addr = %admin.listen_addr)),
                         );
 
@@ -377,19 +321,10 @@ impl App {
                             registry, serve, ..
                         } = tap
                         {
-                            tokio::spawn(
-                                registry
-                                    .clean(
-                                        tokio::time::interval(Duration::from_secs(60))
-                                            .into_stream(),
-                                    )
-                                    .instrument(info_span!("tap_clean")),
-                            );
-                            tokio::spawn(
-                                serve
-                                    .map_err(|error| error!(%error, "server died"))
-                                    .instrument(info_span!("tap")),
-                            );
+                            let clean = time::interval(Duration::from_secs(60));
+                            let clean = tokio_stream::wrappers::IntervalStream::new(clean);
+                            tokio::spawn(registry.clean(clean).instrument(info_span!("tap_clean")));
+                            tokio::spawn(serve.instrument(info_span!("tap")));
                         }
 
                         if let oc_collector::OcCollector::Enabled(oc) = oc_collector {

@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 use hyper::body::HttpBody;
 use pin_project::pin_project;

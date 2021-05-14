@@ -97,6 +97,7 @@ impl Daemon {
             config,
         } = self;
 
+        debug!("Identity daemon running");
         let mut curr_expiry = UNIX_EPOCH;
         let mut client = api::identity_client::IdentityClient::new(client);
 
@@ -133,7 +134,7 @@ impl Daemon {
 
                                     match config.trust_anchors.certify(key, crt) {
                                         Err(e) => {
-                                            error!("Received invalid ceritficate: {}", e);
+                                            error!("Received invalid certificate: {}", e);
                                         }
                                         Ok(crt_key) => {
                                             debug!("daemon certified until {:?}", expiry);

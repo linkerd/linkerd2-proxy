@@ -1,9 +1,11 @@
 //! Utilities for composing Tower Services.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 mod box_future;
 mod box_new_service;
+mod box_service;
 mod either;
 mod fail;
 mod fail_on_error;
@@ -22,6 +24,7 @@ mod unwrap_or;
 pub use self::{
     box_future::BoxFuture,
     box_new_service::BoxNewService,
+    box_service::{BoxService, BoxServiceLayer},
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
@@ -36,7 +39,10 @@ pub use self::{
     switch_ready::{NewSwitchReady, SwitchReady},
     unwrap_or::UnwrapOr,
 };
-pub use tower::util::{future_service, FutureService};
+pub use tower::{
+    util::{future_service, FutureService, ServiceExt},
+    Service,
+};
 
 /// Describes a stack target that can produce `T` typed parameters.
 ///

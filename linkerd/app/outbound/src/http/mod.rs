@@ -1,39 +1,80 @@
-pub mod endpoint;
+pub mod detect;
+mod endpoint;
 pub mod logical;
-mod require_identity_on_endpoint;
-
-#[cfg(test)]
-mod tests;
+mod require_id_header;
+mod server;
 
 use crate::tcp;
 use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    dst, profiles,
-    proxy::{
-        api_resolve::ProtocolHint,
-        http::{self, CanOverrideAuthority, ClientHandle},
-        tap,
-    },
-    svc::stack::Param,
+    dst,
+    profiles::{self, LogicalAddr},
+    proxy::{api_resolve::ProtocolHint, tap},
+    svc::Param,
     tls,
     transport_header::SessionProtocol,
-    Conditional,
+    Addr, Conditional, CANONICAL_DST_HEADER,
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, str::FromStr, sync::Arc};
 
-pub type Accept = crate::target::Accept<http::Version>;
-pub type Logical = crate::target::Logical<http::Version>;
-pub type Concrete = crate::target::Concrete<http::Version>;
-pub type Endpoint = crate::target::Endpoint<http::Version>;
+pub type Accept = crate::Accept<Version>;
+pub type Logical = crate::logical::Logical<Version>;
+pub type Concrete = crate::logical::Concrete<Version>;
+pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
-impl From<(http::Version, tcp::Logical)> for Logical {
-    fn from((protocol, logical): (http::Version, tcp::Logical)) -> Self {
+#[derive(Clone, Debug)]
+pub struct CanonicalDstHeader(pub Addr);
+
+// === impl CanonicalDstHeader ===
+
+impl From<CanonicalDstHeader> for HeaderPair {
+    fn from(CanonicalDstHeader(dst): CanonicalDstHeader) -> HeaderPair {
+        HeaderPair(
+            HeaderName::from_static(CANONICAL_DST_HEADER),
+            HeaderValue::from_str(&dst.to_string()).expect("addr must be a valid header"),
+        )
+    }
+}
+
+// === impl Accept ===
+
+impl Param<Version> for Accept {
+    fn param(&self) -> Version {
+        self.protocol
+    }
+}
+
+impl Param<normalize_uri::DefaultAuthority> for Accept {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        normalize_uri::DefaultAuthority(Some(
+            uri::Authority::from_str(&self.orig_dst.to_string())
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
+// === impl Logical ===
+
+impl From<(Version, tcp::Logical)> for Logical {
+    fn from((protocol, logical): (Version, tcp::Logical)) -> Self {
         Self {
             protocol,
-            orig_dst: logical.orig_dst,
             profile: logical.profile,
+            logical_addr: logical.logical_addr,
         }
+    }
+}
+
+impl Param<CanonicalDstHeader> for Logical {
+    fn param(&self) -> CanonicalDstHeader {
+        CanonicalDstHeader(self.addr())
+    }
+}
+
+impl Param<Version> for Logical {
+    fn param(&self) -> Version {
+        self.protocol
     }
 }
 
@@ -48,13 +89,60 @@ impl Logical {
     }
 }
 
-impl Param<http::client::Settings> for Endpoint {
-    fn param(&self) -> http::client::Settings {
-        match self.concrete.logical.protocol {
-            http::Version::H2 => http::client::Settings::H2,
-            http::Version::Http1 => match self.metadata.protocol_hint() {
-                ProtocolHint::Unknown => http::client::Settings::Http1,
-                ProtocolHint::Http2 => http::client::Settings::OrigProtoUpgrade,
+impl Param<normalize_uri::DefaultAuthority> for Logical {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        normalize_uri::DefaultAuthority(Some(
+            uri::Authority::from_str(&self.logical_addr.to_string())
+                .expect("Address must be a valid authority"),
+        ))
+    }
+}
+
+// === impl Endpoint ===
+
+impl From<(Version, tcp::Endpoint)> for Endpoint {
+    fn from((protocol, ep): (Version, tcp::Endpoint)) -> Self {
+        Self {
+            protocol,
+            addr: ep.addr,
+            tls: ep.tls,
+            metadata: ep.metadata,
+            logical_addr: ep.logical_addr,
+            // If we know an HTTP version, the protocol must not be opaque.
+            opaque_protocol: false,
+        }
+    }
+}
+
+impl Param<normalize_uri::DefaultAuthority> for Endpoint {
+    fn param(&self) -> normalize_uri::DefaultAuthority {
+        if let Some(LogicalAddr(ref a)) = self.logical_addr {
+            normalize_uri::DefaultAuthority(Some(
+                uri::Authority::from_str(&a.to_string())
+                    .expect("Address must be a valid authority"),
+            ))
+        } else {
+            normalize_uri::DefaultAuthority(Some(
+                uri::Authority::from_str(&self.addr.to_string())
+                    .expect("Address must be a valid authority"),
+            ))
+        }
+    }
+}
+
+impl Param<Version> for Endpoint {
+    fn param(&self) -> Version {
+        self.protocol
+    }
+}
+
+impl Param<client::Settings> for Endpoint {
+    fn param(&self) -> client::Settings {
+        match self.protocol {
+            Version::H2 => client::Settings::H2,
+            Version::Http1 => match self.metadata.protocol_hint() {
+                ProtocolHint::Unknown => client::Settings::Http1,
+                ProtocolHint::Http2 => client::Settings::OrigProtoUpgrade,
             },
         }
     }
@@ -62,55 +150,44 @@ impl Param<http::client::Settings> for Endpoint {
 
 impl Param<Option<SessionProtocol>> for Endpoint {
     fn param(&self) -> Option<SessionProtocol> {
-        match self.concrete.logical.protocol {
-            http::Version::H2 => Some(SessionProtocol::Http2),
-            http::Version::Http1 => Some(SessionProtocol::Http1),
+        match self.protocol {
+            Version::H2 => Some(SessionProtocol::Http2),
+            Version::Http1 => match self.metadata.protocol_hint() {
+                ProtocolHint::Http2 => Some(SessionProtocol::Http2),
+                ProtocolHint::Unknown => Some(SessionProtocol::Http1),
+            },
         }
     }
 }
 
-// Used to set the l5d-canonical-dst header.
-impl From<&'_ Logical> for http::header::HeaderValue {
-    fn from(target: &'_ Logical) -> Self {
-        http::header::HeaderValue::from_str(&target.addr().to_string())
-            .expect("addr must be a valid header")
-    }
-}
-
-impl CanOverrideAuthority for Endpoint {
-    fn override_authority(&self) -> Option<http::uri::Authority> {
-        self.metadata.authority_override().cloned()
-    }
-}
-
 impl tap::Inspect for Endpoint {
-    fn src_addr<B>(&self, req: &http::Request<B>) -> Option<SocketAddr> {
+    fn src_addr<B>(&self, req: &Request<B>) -> Option<SocketAddr> {
         req.extensions().get::<ClientHandle>().map(|c| c.addr)
     }
 
-    fn src_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalServerTls {
+    fn src_tls<B>(&self, _: &Request<B>) -> tls::ConditionalServerTls {
         Conditional::None(tls::NoServerTls::Loopback)
     }
 
-    fn dst_addr<B>(&self, _: &http::Request<B>) -> Option<SocketAddr> {
-        Some(self.addr)
+    fn dst_addr<B>(&self, _: &Request<B>) -> Option<SocketAddr> {
+        Some(self.addr.into())
     }
 
-    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
+    fn dst_labels<B>(&self, _: &Request<B>) -> Option<&IndexMap<String, String>> {
         Some(self.metadata.labels())
     }
 
-    fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
+    fn dst_tls<B>(&self, _: &Request<B>) -> tls::ConditionalClientTls {
         self.tls.clone()
     }
 
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<Arc<IndexMap<String, String>>> {
         req.extensions()
             .get::<dst::Route>()
             .map(|r| r.route.labels().clone())
     }
 
-    fn is_outbound<B>(&self, _: &http::Request<B>) -> bool {
+    fn is_outbound<B>(&self, _: &Request<B>) -> bool {
         true
     }
 }

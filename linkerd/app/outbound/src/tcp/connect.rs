@@ -1,121 +1,216 @@
-use super::opaque_transport::OpaqueTransport;
-use crate::target::Endpoint;
+use super::opaque_transport::{self, OpaqueTransport};
+use crate::Outbound;
+use futures::future;
 use linkerd_app_core::{
-    config::ConnectConfig,
-    io, metrics,
-    proxy::identity::LocalCrtKey,
+    io,
+    proxy::http,
     svc, tls,
-    transport::{ConnectAddr, ConnectTcp},
+    transport::{self, ConnectTcp, Remote, ServerAddr},
     transport_header::SessionProtocol,
     Error,
 };
+use std::task::{Context, Poll};
 use tracing::debug_span;
 
-// Establishes connections to remote peers (for both TCP forwarding and HTTP
-// proxying).
-pub fn stack<P>(
-    config: &ConnectConfig,
-    server_port: u16,
-    local_identity: Option<LocalCrtKey>,
-    metrics: &metrics::Proxy,
-) -> impl svc::Service<
-    Endpoint<P>,
-    Response = impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-    Error = Error,
-    Future = impl Send,
-> + Clone
-where
-    Endpoint<P>: svc::stack::Param<Option<SessionProtocol>> + svc::stack::Param<ConnectAddr>,
-{
-    let identity_disabled = local_identity.is_none();
-    svc::stack(ConnectTcp::new(config.keepalive))
-        // Initiates mTLS if the target is configured with identity. The
-        // endpoint configures ALPN when there is an opaque transport hint OR
-        // when an authority override is present (indicating the target is a
-        // remote cluster gateway).
-        .push(tls::Client::layer(local_identity))
-        // Encodes a transport header if the established connection is TLS'd and
-        // ALPN negotiation indicates support.
-        .push(OpaqueTransport::layer())
-        // Limits the time we wait for a connection to be established.
-        .push_timeout(config.timeout)
-        .push(svc::stack::BoxFuture::layer())
-        .push(metrics.transport.layer_connect())
-        .push_map_target(move |e: Endpoint<P>| {
-            if identity_disabled {
-                e.identity_disabled()
-            } else {
-                e
-            }
-        })
-        .push_request_filter(PreventLoop { port: server_port })
-        .into_inner()
-}
-
-pub fn forward<P, I, C>(
-    connect: C,
-) -> impl svc::NewService<
-    Endpoint<P>,
-    Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-> + Clone
-where
-    P: Clone + Send + 'static,
-    I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
-    C: svc::Service<Endpoint<P>> + Clone + Send + 'static,
-    C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
-    C::Error: Into<Error>,
-    C::Future: Send,
-{
-    svc::stack(connect)
-        .push_make_thunk()
-        .push_on_response(super::Forward::layer())
-        .instrument(|_: &Endpoint<P>| debug_span!("tcp.forward"))
-        .check_new_service::<Endpoint<P>, I>()
-        .into_inner()
-}
-
-/// A connection policy that fails connections that target the outbound listener.
-#[derive(Clone)]
-struct PreventLoop {
-    port: u16,
-}
-
 #[derive(Clone, Debug)]
-struct LoopPrevented {
-    port: u16,
+pub struct Connect {
+    pub addr: Remote<ServerAddr>,
+    pub tls: tls::ConditionalClientTls,
 }
 
-// === impl PreventLoop ===
+/// Prevents outbound connections on the loopback interface, unless the
+/// `allow-loopback` feature is enabled.
+#[derive(Clone, Debug)]
+pub struct PreventLoopback<S>(S);
 
-impl<P> svc::stack::Predicate<Endpoint<P>> for PreventLoop {
-    type Request = Endpoint<P>;
+// === impl Outbound ===
 
-    fn check(&mut self, ep: Endpoint<P>) -> Result<Endpoint<P>, Error> {
-        let addr = ep.addr;
+impl Outbound<()> {
+    pub fn to_tcp_connect(&self) -> Outbound<PreventLoopback<ConnectTcp>> {
+        let connect = PreventLoopback(ConnectTcp::new(self.config.proxy.connect.keepalive));
+        self.clone().with_stack(connect)
+    }
+}
 
-        tracing::trace!(%addr, self.port, "PreventLoop");
-        if addr.ip().is_loopback() && addr.port() == self.port {
-            return Err(LoopPrevented { port: self.port }.into());
+impl<C> Outbound<C> {
+    pub fn push_tcp_endpoint<T>(
+        self,
+    ) -> Outbound<
+        impl svc::Service<
+                T,
+                Response = impl io::AsyncRead + io::AsyncWrite + Send + Unpin,
+                Error = Error,
+                Future = impl Send,
+            > + Clone,
+    >
+    where
+        T: svc::Param<Remote<ServerAddr>>
+            + svc::Param<tls::ConditionalClientTls>
+            + svc::Param<Option<opaque_transport::PortOverride>>
+            + svc::Param<Option<http::AuthorityOverride>>
+            + svc::Param<Option<SessionProtocol>>
+            + svc::Param<transport::labels::Key>,
+        C: svc::Service<Connect, Error = io::Error> + Clone + Send + 'static,
+        C::Response: tls::HasNegotiatedProtocol,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C::Future: Send + 'static,
+    {
+        let Self {
+            config,
+            runtime: rt,
+            stack: connect,
+        } = self;
+
+        let stack = connect
+            // Initiates mTLS if the target is configured with identity. The
+            // endpoint configures ALPN when there is an opaque transport hint OR
+            // when an authority override is present (indicating the target is a
+            // remote cluster gateway).
+            .push(tls::Client::layer(rt.identity.clone()))
+            // Encodes a transport header if the established connection is TLS'd and
+            // ALPN negotiation indicates support.
+            .push(OpaqueTransport::layer())
+            // Limits the time we wait for a connection to be established.
+            .push_timeout(config.proxy.connect.timeout)
+            .push(svc::stack::BoxFuture::layer())
+            .push(rt.metrics.transport.layer_connect());
+
+        Outbound {
+            config,
+            runtime: rt,
+            stack,
+        }
+    }
+
+    pub fn push_tcp_forward<T, I>(
+        self,
+    ) -> Outbound<
+        svc::BoxNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
+    >
+    where
+        T: Clone + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
+        C: svc::Service<T> + Clone + Send + Sync + 'static,
+        C::Response: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin,
+        C::Error: Into<Error>,
+        C::Future: Send,
+    {
+        let Self {
+            config,
+            runtime,
+            stack: connect,
+        } = self;
+
+        let stack = connect
+            .push_make_thunk()
+            .push_on_response(super::Forward::layer())
+            .instrument(|_: &_| debug_span!("tcp.forward"))
+            .push(svc::BoxNewService::layer())
+            .check_new_service::<T, I>();
+
+        Outbound {
+            config,
+            runtime,
+            stack,
+        }
+    }
+}
+
+// === impl PreventLoopback ===
+
+impl<S> PreventLoopback<S> {
+    #[cfg(not(feature = "allow-loopback"))]
+    fn check_loopback(Remote(ServerAddr(addr)): Remote<ServerAddr>) -> io::Result<()> {
+        if addr.ip().is_loopback() {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                "Outbound proxy cannot initiate connections on the loopback interface",
+            ));
         }
 
-        Ok(ep)
+        Ok(())
+    }
+
+    #[cfg(feature = "allow-loopback")]
+    // the Result is necessary to have the same type signature regardless of
+    // whether or not the `allow-loopback` feature is enabled...
+    #[allow(clippy::unnecessary_wraps)]
+    fn check_loopback(_: Remote<ServerAddr>) -> io::Result<()> {
+        Ok(())
     }
 }
 
-// === impl LoopPrevented ===
+impl<T, S> svc::Service<T> for PreventLoopback<S>
+where
+    T: svc::Param<Remote<ServerAddr>>,
+    S: svc::Service<T, Error = io::Error>,
+{
+    type Response = S::Response;
+    type Error = io::Error;
+    type Future = future::Either<S::Future, future::Ready<io::Result<S::Response>>>;
 
-pub fn is_loop(err: &(dyn std::error::Error + 'static)) -> bool {
-    err.is::<LoopPrevented>() || err.source().map(is_loop).unwrap_or(false)
-}
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.0.poll_ready(cx)
+    }
 
-impl std::fmt::Display for LoopPrevented {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "outbound requests must not target localhost:{}",
-            self.port
-        )
+    fn call(&mut self, ep: T) -> Self::Future {
+        if let Err(e) = Self::check_loopback(ep.param()) {
+            return future::Either::Right(future::err(e));
+        }
+
+        future::Either::Left(self.0.call(ep))
     }
 }
 
-impl std::error::Error for LoopPrevented {}
+// === impl Connect ===
+
+impl svc::Param<Remote<ServerAddr>> for Connect {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.addr
+    }
+}
+
+impl svc::Param<tls::ConditionalClientTls> for Connect {
+    fn param(&self) -> tls::ConditionalClientTls {
+        self.tls.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        svc::{self, NewService, ServiceExt},
+        test_util::*,
+    };
+    use std::net::SocketAddr;
+
+    #[tokio::test]
+    async fn forward() {
+        let _trace = linkerd_tracing::test::trace_init();
+
+        let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
+        let (rt, _shutdown) = runtime();
+        let mut stack = Outbound::new(default_config(), rt)
+            .with_stack(svc::mk(move |a: SocketAddr| {
+                assert_eq!(a, addr);
+                let mut io = support::io();
+                io.write(b"hello").read(b"world");
+                future::ok::<_, support::io::Error>(io.build())
+            }))
+            .push_tcp_forward()
+            .into_inner();
+
+        let mut io = support::io();
+        io.read(b"hello").write(b"world");
+        stack
+            .new_service(addr)
+            .oneshot(io.build())
+            .await
+            .expect("forward must complete successfully");
+    }
+}

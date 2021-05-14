@@ -30,9 +30,9 @@ impl From<u64> for Gauge {
     }
 }
 
-impl Into<u64> for Gauge {
-    fn into(self) -> u64 {
-        self.value()
+impl From<Gauge> for u64 {
+    fn from(gauge: Gauge) -> u64 {
+        gauge.value()
     }
 }
 

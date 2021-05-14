@@ -186,9 +186,9 @@ mod tests {
     use tokio_test::{assert_pending, assert_ready_err, assert_ready_ok};
     use tower_test::mock;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn primary_first() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);
@@ -208,9 +208,9 @@ mod tests {
         call.await.expect("call succeeds");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn primary_becomes_ready() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);
@@ -235,9 +235,9 @@ mod tests {
         call.await.expect("call succeeds");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn primary_times_out() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);
@@ -266,9 +266,9 @@ mod tests {
         call.await.expect("call succeeds");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn primary_times_out_and_becomes_ready() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);
@@ -321,9 +321,9 @@ mod tests {
         call.await.expect("call succeeds");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn delays_dont_add_up() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);
@@ -384,9 +384,9 @@ mod tests {
         call.await.expect("call succeeds");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn propagates_primary_errors() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);
@@ -405,9 +405,9 @@ mod tests {
         assert_ready_err!(switch.poll_ready());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn propagates_secondary_errors() {
-        let _ = tracing_subscriber::fmt::try_init();
+        let _trace = linkerd_tracing::test::trace_init();
 
         time::pause();
         let dur = time::Duration::from_millis(100);

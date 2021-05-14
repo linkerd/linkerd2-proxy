@@ -1,18 +1,29 @@
 use crate::target::Target;
-use linkerd_app_core::{discovery_rejected, svc::stack::Predicate, Error, NameAddr, NameMatch};
+use linkerd_app_core::{
+    profiles::{DiscoveryRejected, LookupAddr},
+    svc::stack::Predicate,
+    Error, NameMatch,
+};
 
 #[derive(Clone, Debug)]
 pub struct AllowProfile(pub NameMatch);
 
 impl Predicate<Target> for AllowProfile {
-    type Request = NameAddr;
+    type Request = LookupAddr;
 
-    fn check(&mut self, target: Target) -> Result<NameAddr, Error> {
-        let addr = target.dst.into_name_addr().ok_or_else(discovery_rejected)?;
+    fn check(&mut self, target: Target) -> Result<LookupAddr, Error> {
+        let addr = target.dst.into_name_addr().ok_or_else(|| {
+            DiscoveryRejected::new("inbound profile discovery requires DNS names")
+        })?;
         if self.0.matches(addr.name()) {
-            Ok(addr)
+            Ok(LookupAddr(addr.into()))
         } else {
-            Err(discovery_rejected().into())
+            tracing::debug!(
+                %addr,
+                suffixes = %self.0,
+                "Rejecting discovery, address not in configured DNS suffixes",
+            );
+            Err(DiscoveryRejected::new("address not in search DNS suffixes").into())
         }
     }
 }

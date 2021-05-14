@@ -1,144 +1,113 @@
-use futures::TryFuture;
-use linkerd_stack::{NewService, Proxy};
+use linkerd_stack::{layer, NewService, Proxy};
 use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
 use std::task::{Context, Poll};
+use tracing::instrument::{Instrument as _, Instrumented};
 use tracing::{trace, Span};
-use tracing_futures::{Instrument as _, Instrumented};
 
 /// A strategy for creating spans based on a service's target.
 pub trait GetSpan<T> {
     fn get_span(&self, target: &T) -> tracing::Span;
 }
 
-/// A middleware that instruments tracing for stacks.
 #[derive(Clone, Debug)]
-pub struct InstrumentMakeLayer<G> {
+pub struct NewInstrumentLayer<G> {
     get_span: G,
 }
 
 /// Instruments a `MakeService` or `NewService` stack.
 #[derive(Clone, Debug)]
-pub struct InstrumentMake<G, M> {
+pub struct NewInstrument<G, N> {
     get_span: G,
-    make: M,
+    inner: N,
 }
 
-/// Instruments a service produced by `InstrumentMake`.
+/// Instruments a service produced by `NewInstrument`.
 #[pin_project]
-#[derive(Clone, Debug)]
-pub struct Instrument<S> {
-    span: Span,
+#[derive(Debug)]
+pub struct Instrument<T, G, S> {
+    target: T,
+    /// When this is a `Service` (and not a `Proxy`), we consider the `poll_ready`
+    /// calls that drive the service to readiness and the `call` future that
+    /// consumes that readiness to be part of one logical span (so, for example,
+    /// we track time waiting for readiness as part of the request span's idle
+    /// time).
+    ///
+    /// Therefore, we hang onto one instance of the span that's created when we
+    /// are first polled after having been called, and take that span instance
+    /// in `call`.
+    current_span: Option<Span>,
+    get_span: G,
     #[pin]
     inner: S,
 }
 
-// === impl InstrumentMakeLayer ===
+// === impl NewInstrumentLayer ===
 
-impl<G> InstrumentMakeLayer<G> {
+impl<G> NewInstrumentLayer<G> {
     pub fn new(get_span: G) -> Self {
         Self { get_span }
     }
 }
 
-impl InstrumentMakeLayer<()> {
+impl NewInstrumentLayer<()> {
     pub fn from_target() -> Self {
         Self::new(())
     }
 }
 
-impl<G: Clone, M> tower::layer::Layer<M> for InstrumentMakeLayer<G> {
-    type Service = InstrumentMake<G, M>;
+impl<G: Clone, N> layer::Layer<N> for NewInstrumentLayer<G> {
+    type Service = NewInstrument<G, N>;
 
-    fn layer(&self, make: M) -> Self::Service {
-        Self::Service {
-            make,
+    fn layer(&self, inner: N) -> Self::Service {
+        NewInstrument {
+            inner,
             get_span: self.get_span.clone(),
         }
     }
 }
 
-// === impl InstrumentMake ===
+// === impl NewInstrument ===
 
-impl<T, G, N> NewService<T> for InstrumentMake<G, N>
-where
-    G: GetSpan<T>,
-    N: NewService<T>,
-{
-    type Service = Instrument<N::Service>;
-
-    fn new_service(&mut self, target: T) -> Self::Service {
-        let span = self.get_span.get_span(&target);
-        let inner = span.in_scope(move || {
-            trace!("new");
-            self.make.new_service(target)
-        });
-        Instrument { inner, span }
+impl<G: Clone, N> NewInstrument<G, N> {
+    pub fn layer(get_span: G) -> NewInstrumentLayer<G> {
+        NewInstrumentLayer::new(get_span)
     }
 }
 
-impl<T, G, M> tower::Service<T> for InstrumentMake<G, M>
+impl<T, G, N> NewService<T> for NewInstrument<G, N>
 where
-    G: GetSpan<T>,
-    M: tower::Service<T>,
+    T: Clone,
+    G: GetSpan<T> + Clone,
+    N: NewService<T>,
 {
-    type Response = Instrument<M::Response>;
-    type Error = M::Error;
-    type Future = Instrument<M::Future>;
+    type Service = Instrument<T, G, N::Service>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let ready = self.make.poll_ready(cx);
-        match ready {
-            Poll::Pending => trace!(ready = false, "make"),
-            Poll::Ready(ref res) => trace!(ready = true, ok = res.is_ok(), "make"),
+    fn new_service(&mut self, target: T) -> Self::Service {
+        let _span = self.get_span.get_span(&target).entered();
+        trace!("new");
+        let inner = self.inner.new_service(target.clone());
+        Instrument {
+            inner,
+            target,
+            current_span: None,
+            get_span: self.get_span.clone(),
         }
-        ready
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let span = self.get_span.get_span(&target);
-        let inner = span.in_scope(|| {
-            trace!("make");
-            self.make.call(target)
-        });
-        Instrument { inner, span }
     }
 }
 
 // === impl Instrument ===
 
-impl<F> Future for Instrument<F>
-where
-    F: TryFuture,
-{
-    type Output = Result<Instrument<F::Ok>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let _enter = this.span.enter();
-
-        trace!("making");
-        match this.inner.try_poll(cx)? {
-            Poll::Pending => {
-                trace!(ready = false);
-                Poll::Pending
-            }
-            Poll::Ready(inner) => {
-                trace!(ready = true);
-                let svc = Instrument {
-                    inner,
-                    span: this.span.clone(),
-                };
-                Poll::Ready(Ok(svc))
-            }
-        }
+impl<T, G: GetSpan<T>, S> Instrument<T, G, S> {
+    #[inline]
+    fn get_span(&self) -> Span {
+        self.get_span.get_span(&self.target)
     }
 }
 
-impl<Req, S, P> Proxy<Req, S> for Instrument<P>
+impl<Req, S, T, G, P> Proxy<Req, S> for Instrument<T, G, P>
 where
     Req: std::fmt::Debug,
+    G: GetSpan<T>,
     P: Proxy<Req, S>,
     S: tower::Service<P::Request>,
 {
@@ -148,15 +117,16 @@ where
     type Future = Instrumented<P::Future>;
 
     fn proxy(&self, svc: &mut S, request: Req) -> Self::Future {
-        let _enter = self.span.enter();
+        let span = self.get_span().entered();
         trace!(?request, "proxy");
-        self.inner.proxy(svc, request).instrument(self.span.clone())
+        self.inner.proxy(svc, request).instrument(span.exit())
     }
 }
 
-impl<Req, S> tower::Service<Req> for Instrument<S>
+impl<Req, T, G, S> tower::Service<Req> for Instrument<T, G, S>
 where
     Req: std::fmt::Debug,
+    G: GetSpan<T>,
     S: tower::Service<Req>,
 {
     type Response = S::Response;
@@ -164,7 +134,15 @@ where
     type Future = Instrumented<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let _enter = self.span.enter();
+        // These need to be borrowed individually, or else the
+        // `get_or_insert_with` closure will borrow *all* of `self` while
+        // `self.current_span` is borrowed mutably... T_T
+        let get_span = &self.get_span;
+        let target = &self.target;
+        let _enter = self
+            .current_span
+            .get_or_insert_with(|| get_span.get_span(target))
+            .enter();
 
         let ready = self.inner.poll_ready(cx);
         match ready {
@@ -175,10 +153,40 @@ where
     }
 
     fn call(&mut self, request: Req) -> Self::Future {
-        let _enter = self.span.enter();
+        let span = self
+            .current_span
+            .take()
+            // NOTE(eliza): if `current_span` is `None` here, we were called
+            // before  being driven to readiness, which is invalid --- we're
+            // permitted to panic here, so we could unwrap this. But, it's not
+            // important...we can just make a new span, so I thought it was
+            // better to err on the side of not panicking.
+            .unwrap_or_else(|| self.get_span())
+            .entered();
 
         trace!(?request, "service");
-        self.inner.call(request).instrument(self.span.clone())
+        self.inner.call(request).instrument(span.exit())
+    }
+}
+
+impl<T, G, S> Clone for Instrument<T, G, S>
+where
+    T: Clone,
+    G: Clone,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        // Manually implement `Clone` so that each clone of an instrumented
+        // service has its own "current span" state, since each clone of the
+        // inner service will have its own independent readiness state.
+        Self {
+            target: self.target.clone(),
+            inner: self.inner.clone(),
+            get_span: self.get_span.clone(),
+            // If this is a `Service`, the clone will construct its own span
+            // when it's first driven to readiness.
+            current_span: None,
+        }
     }
 }
 
@@ -196,11 +204,5 @@ where
 impl<T: GetSpan<()>> GetSpan<T> for () {
     fn get_span(&self, t: &T) -> tracing::Span {
         t.get_span(&())
-    }
-}
-
-impl<T> GetSpan<T> for tracing::Span {
-    fn get_span(&self, _: &T) -> tracing::Span {
-        self.clone()
     }
 }

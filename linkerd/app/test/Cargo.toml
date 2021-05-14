@@ -22,20 +22,14 @@ h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
-linkerd-channel = { path = "../../channel" }
-linkerd-app-core = { path = "../core", features = ["mock-orig-dst"] }
+linkerd-app-core = { path = "../core" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 regex = "1"
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync"]}
 tokio-test = "0.4"
-tower = { version = "0.4.1", default-features = false}
-tracing = "0.1.22"
-tracing-futures = "0.2"
-tracing-subscriber = "0.2.11"
-
-[dev-dependencies.tracing-subscriber]
-version = "0.2.14"
-# turn on ANSI colors for tests :)
-default-features = false
-features = ["env-filter", "fmt", "smallvec", "ansi", "tracing-log", "json", "parking_lot"]
+tokio-stream = { version = "0.1.5", features = ["sync"] }
+tower = { version = "0.4.7", default-features = false}
+tracing = "0.1.23"
+tracing-subscriber = { version = "0.2.16", features = ["env-filter", "fmt"], default-features = false }
+thiserror = "1"

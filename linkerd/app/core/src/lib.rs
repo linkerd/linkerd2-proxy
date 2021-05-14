@@ -8,6 +8,7 @@
 //! - Metric labeling
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_access_log as access_log;
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
@@ -27,9 +28,10 @@ pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
 pub use linkerd_tls as tls;
-pub use linkerd_trace_context::TraceContext;
 pub use linkerd_tracing as trace;
 pub use linkerd_transport_header as transport_header;
+
+use thiserror::Error;
 
 mod addr_match;
 pub mod admin;
@@ -39,12 +41,11 @@ pub mod control;
 pub mod dns;
 pub mod dst;
 pub mod errors;
-pub mod handle_time;
+pub mod http_tracing;
 pub mod metrics;
 pub mod proxy;
 pub mod retry;
 pub mod serve;
-pub mod spans;
 pub mod svc;
 pub mod telemetry;
 pub mod transport;
@@ -53,31 +54,27 @@ pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 pub const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
-pub const L5D_REQUIRE_ID: &str = "l5d-require-id";
 
 const DEFAULT_PORT: u16 = 80;
 
-pub fn discovery_rejected() -> tonic::Status {
-    tonic::Status::new(tonic::Code::InvalidArgument, "Discovery rejected")
+#[derive(Clone, Debug)]
+pub struct ProxyRuntime {
+    pub identity: Option<proxy::identity::LocalCrtKey>,
+    pub metrics: metrics::Proxy,
+    pub tap: proxy::tap::Registry,
+    pub span_sink: http_tracing::OpenCensusSink,
+    pub drain: drain::Watch,
 }
 
-pub fn is_discovery_rejected(err: &(dyn std::error::Error + 'static)) -> bool {
-    if let Some(status) = err.downcast_ref::<tonic::Status>() {
-        status.code() == tonic::Code::InvalidArgument
-    } else if let Some(err) = err.source() {
-        is_discovery_rejected(err)
-    } else {
-        false
-    }
-}
-
-pub fn http_request_l5d_override_dst_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {
+pub fn http_request_l5d_override_dst_name_addr<B>(
+    req: &http::Request<B>,
+) -> Result<NameAddr, addr::Error> {
     proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
         .ok_or_else(|| {
             tracing::trace!("{} not in request headers", DST_OVERRIDE_HEADER);
             addr::Error::InvalidHost
         })
-        .and_then(|a| Addr::from_authority_and_default_port(&a, DEFAULT_PORT))
+        .and_then(|a| NameAddr::from_authority_with_default_port(&a, DEFAULT_PORT))
 }
 
 pub fn http_request_authority_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {

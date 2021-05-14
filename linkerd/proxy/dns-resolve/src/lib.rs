@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 use futures::{future, prelude::*, stream};
 use linkerd_addr::{Addr, NameAddr};
@@ -12,8 +13,8 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::sync::mpsc;
+use tracing::instrument::Instrument;
 use tracing::{debug, trace};
-use tracing_futures::Instrument;
 
 /// A Resolver that attempts to lookup targets via DNS.
 ///
@@ -54,7 +55,8 @@ impl<T: Param<Addr>> tower::Service<T> for DnsResolve {
             Addr::Name(na) => Box::pin(resolution(self.dns.clone(), na).in_current_span()),
             Addr::Socket(sa) => {
                 let eps = vec![(sa, ())];
-                let updates: UpdateStream = Box::pin(stream::iter(Some(Ok(Update::Reset(eps)))));
+                let updates: UpdateStream =
+                    Box::pin(stream::iter(Some(Ok(Update::Reset(eps)))).chain(stream::pending()));
                 Box::pin(future::ok(updates))
             }
         }
@@ -62,7 +64,7 @@ impl<T: Param<Addr>> tower::Service<T> for DnsResolve {
 }
 
 async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Error> {
-    use linkerd_channel::into_stream::IntoStream;
+    use tokio_stream::wrappers::ReceiverStream;
 
     // Don't return a stream before the initial resolution completes. Then,
     // spawn a task to drive the continued resolution.
@@ -102,5 +104,5 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
         .in_current_span(),
     );
 
-    Ok(Box::pin(rx.into_stream()))
+    Ok(Box::pin(ReceiverStream::new(rx)))
 }

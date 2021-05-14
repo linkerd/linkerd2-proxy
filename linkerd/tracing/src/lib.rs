@@ -1,7 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 mod level;
 mod tasks;
+pub mod test;
 mod uptime;
 
 use self::uptime::Uptime;
@@ -34,16 +36,27 @@ pub fn init() -> Result<Handle, Error> {
         .format(log_format)
         .build();
 
-    // Set up log compatibility.
-    init_log_compat()?;
     // Set the default subscriber.
     tracing::dispatcher::set_global_default(dispatch)?;
+
+    // Set up log compatibility.
+    init_log_compat()?;
 
     Ok(handle)
 }
 
+#[inline]
+pub(crate) fn update_max_level() {
+    use tracing::level_filters::LevelFilter;
+    use tracing_log::{log, AsLog};
+    log::set_max_level(LevelFilter::current().as_log());
+}
+
 pub fn init_log_compat() -> Result<(), Error> {
-    tracing_log::LogTracer::init().map_err(Error::from)
+    tracing_log::LogTracer::init()?;
+    // Set the initial max `log` level based on the subscriber settings.
+    update_max_level();
+    Ok(())
 }
 
 #[derive(Debug, Default)]

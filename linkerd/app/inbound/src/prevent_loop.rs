@@ -1,17 +1,23 @@
 use crate::TcpEndpoint;
 use linkerd_app_core::{
-    svc::stack::{Either, Predicate},
-    transport::listen::Addrs,
+    svc::stack::{Either, Param, Predicate},
+    transport::addrs::OrigDstAddr,
     Error,
 };
+use thiserror::Error;
 
 /// A connection policy that drops
 #[derive(Copy, Clone, Debug)]
 pub struct PreventLoop {
     port: u16,
 }
-
 #[derive(Copy, Clone, Debug)]
+pub struct SwitchLoop {
+    port: u16,
+}
+
+#[derive(Copy, Clone, Debug, Error)]
+#[error("inbound connection must not target port {}", self.port)]
 pub struct LoopPrevented {
     port: u16,
 }
@@ -34,11 +40,17 @@ impl Predicate<TcpEndpoint> for PreventLoop {
     }
 }
 
-impl Predicate<Addrs> for PreventLoop {
-    type Request = Either<Addrs, Addrs>;
+impl PreventLoop {
+    pub fn to_switch(self) -> SwitchLoop {
+        SwitchLoop { port: self.port }
+    }
+}
 
-    fn check(&mut self, addrs: Addrs) -> Result<Either<Addrs, Addrs>, Error> {
-        let addr = addrs.target_addr();
+impl<T: Param<OrigDstAddr>> Predicate<T> for SwitchLoop {
+    type Request = Either<T, T>;
+
+    fn check(&mut self, addrs: T) -> Result<Either<T, T>, Error> {
+        let OrigDstAddr(addr) = addrs.param();
         tracing::debug!(%addr, self.port);
         if addr.port() != self.port {
             Ok(Either::A(addrs))
@@ -47,15 +59,3 @@ impl Predicate<Addrs> for PreventLoop {
         }
     }
 }
-
-impl std::fmt::Display for LoopPrevented {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "inbound requests must not target localhost:{}",
-            self.port
-        )
-    }
-}
-
-impl std::error::Error for LoopPrevented {}

@@ -1,5 +1,6 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_error::Recover;
 use linkerd_stack::{layer, NewService};

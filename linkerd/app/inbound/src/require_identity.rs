@@ -2,11 +2,7 @@ use crate::target::TcpAccept;
 use indexmap::IndexSet;
 use linkerd_app_core::{svc::stack::Predicate, tls, Conditional, Error};
 use std::sync::Arc;
-
-/// A connection policy that fails direct connections that don't have a client
-/// identity.
-#[derive(Clone, Debug)]
-pub struct RequireIdentityForDirect;
+use thiserror::Error;
 
 /// A connection policy that fails connections that don't have a client identity
 /// if they target one of the configured local ports.
@@ -15,24 +11,9 @@ pub struct RequireIdentityForPorts {
     ports: Arc<IndexSet<u16>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("identity required")]
 pub struct IdentityRequired(());
-
-// === impl RequireIdentityForDirect ===
-
-impl Predicate<TcpAccept> for RequireIdentityForDirect {
-    type Request = TcpAccept;
-
-    fn check(&mut self, meta: TcpAccept) -> Result<TcpAccept, Error> {
-        tracing::debug!(tls = ?meta.tls);
-        match meta.tls {
-            Conditional::Some(tls::ServerTls::Established {
-                client_id: Some(_), ..
-            }) => Ok(meta),
-            _ => Err(IdentityRequired(()).into()),
-        }
-    }
-}
 
 // === impl RequireIdentityForPorts ===
 
@@ -64,13 +45,3 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
         }
     }
 }
-
-// === impl IdentityRequired ===
-
-impl std::fmt::Display for IdentityRequired {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "identity required")
-    }
-}
-
-impl std::error::Error for IdentityRequired {}

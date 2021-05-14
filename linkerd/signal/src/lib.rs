@@ -1,6 +1,7 @@
 //! Unix signal handling for the proxy binary.
 
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 /// Returns a `Future` that completes when the proxy should start to shutdown.
 pub async fn shutdown() {
@@ -39,7 +40,6 @@ mod imp {
 
 #[cfg(not(unix))]
 mod imp {
-    use futures::prelude::*;
     use tracing::info;
 
     pub(super) async fn shutdown() {
@@ -47,7 +47,10 @@ mod imp {
         // isn't our expected deployment target. This implementation allows
         // developers on Windows to simulate proxy graceful shutdown
         // by pressing Ctrl-C.
-        tokio::signal::ctrl_c().recv().await;
+        tokio::signal::windows::ctrl_c()
+            .expect("Failed to register signal handler")
+            .recv()
+            .await;
         info!(
             // use target to remove 'imp' from output
             target: "linkerd_proxy::signal",

@@ -13,7 +13,6 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use tokio::net::TcpStream;
 use tower::Service;
 
 #[derive(Clone, Debug)]
@@ -64,7 +63,10 @@ impl AcceptPermittedClients {
     }
 }
 
-impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClients {
+impl<T, I> Service<Connection<T, I>> for AcceptPermittedClients
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+{
     type Response = ServeFuture;
     type Error = Error;
     type Future = future::Ready<Result<Self::Response, Self::Error>>;
@@ -73,7 +75,7 @@ impl<T> Service<Connection<T, io::ScopedIo<TcpStream>>> for AcceptPermittedClien
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, conn: Connection<T, io::ScopedIo<TcpStream>>) -> Self::Future {
+    fn call(&mut self, conn: Connection<T, I>) -> Self::Future {
         match conn {
             ((Conditional::Some(tls), _), io) => {
                 if let tls::ServerTls::Established {

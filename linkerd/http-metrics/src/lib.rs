@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use self::{requests::Requests, retries::Retries};
 use linkerd_metrics::{LastUpdate, Store};

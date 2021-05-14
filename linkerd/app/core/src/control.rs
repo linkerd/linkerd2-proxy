@@ -2,12 +2,16 @@ use crate::{
     classify, config, control, dns, metrics,
     proxy::http,
     reconnect,
-    svc::{self, stack::Param, NewService},
+    svc::{self, NewService, Param},
     tls,
     transport::ConnectTcp,
     Addr, Error,
 };
+use futures::future::Either;
 use std::fmt;
+use tokio::time;
+use tokio_stream::{wrappers::IntervalStream, StreamExt};
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -39,7 +43,7 @@ type BalanceBody =
 
 type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
-pub type Client<B> = linkerd_buffer::Buffer<http::Request<B>, http::Response<RspBody>>;
+pub type Client<B> = svc::Buffer<http::Request<B>, http::Response<RspBody>, Error>;
 
 impl Config {
     pub fn build<B, L>(
@@ -51,19 +55,45 @@ impl Config {
     where
         B: http::HttpBody + Send + 'static,
         B::Data: Send,
-        B::Error: Into<Error> + Send + Sync,
+        B::Error: Into<Error> + Send + Sync + 'static,
         L: Clone + Param<tls::client::Config> + Send + 'static,
     {
-        let backoff = {
+        let connect_backoff = {
             let backoff = self.connect.backoff;
             move |_| Ok(backoff.stream())
         };
+
+        // When a DNS resolution fails, log the error and use the TTL, if there
+        // is one, to drive re-resolution attempts.
+        let resolve_backoff = {
+            let backoff = self.connect.backoff;
+            move |error: Error| {
+                warn!(%error, "Failed to resolve control-plane component");
+                if let Some(e) = error.downcast_ref::<dns::ResolveError>() {
+                    if let dns::ResolveErrorKind::NoRecordsFound {
+                        negative_ttl: Some(ttl_secs),
+                        ..
+                    } = e.kind()
+                    {
+                        let ttl = time::Duration::from_secs(*ttl_secs as u64);
+                        return Ok(Either::Left(
+                            IntervalStream::new(time::interval(ttl)).map(|_| ()),
+                        ));
+                    }
+                }
+
+                // If the error didn't give us a TTL, use the default jittered
+                // backoff.
+                Ok(Either::Right(backoff.stream()))
+            }
+        };
+
         svc::stack(ConnectTcp::new(self.connect.keepalive))
             .push(tls::Client::layer(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push(reconnect::layer(backoff))
-            .push(self::resolve::layer(dns, backoff))
+            .push(reconnect::layer(connect_backoff))
+            .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()
             .push(metrics.to_layer::<classify::Response, _>())
@@ -201,9 +231,9 @@ mod balance {
 mod client {
     use crate::{
         proxy::http,
-        svc::{self, stack::Param},
+        svc::{self, Param},
         tls,
-        transport::ConnectAddr,
+        transport::{Remote, ServerAddr},
     };
     use linkerd_proxy_http::h2::Settings as H2Settings;
     use std::{
@@ -230,9 +260,9 @@ mod client {
 
     // === impl Target ===
 
-    impl Param<ConnectAddr> for Target {
-        fn param(&self) -> ConnectAddr {
-            ConnectAddr(self.addr)
+    impl Param<Remote<ServerAddr>> for Target {
+        fn param(&self) -> Remote<ServerAddr> {
+            Remote(ServerAddr(self.addr))
         }
     }
 

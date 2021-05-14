@@ -13,12 +13,14 @@ indexmap = "1.0"
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }
-tower = { version = "0.4.1", default-features = false }
-tracing = "0.1.22"
+thiserror = "1.0"
+tokio = { version = "1", features = ["sync"] }
+tower = { version = "0.4.7", default-features = false }
+tracing = "0.1.23"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
-tower = { version = "0.4.1", default-features = false, features = ["util"] }
+tower = { version = "0.4.7", default-features = false, features = ["util"] }
 tower-test = "0.4"
 linkerd-app-test = { path = "../test" }

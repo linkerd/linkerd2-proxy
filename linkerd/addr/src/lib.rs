@@ -1,11 +1,12 @@
 #![deny(warnings, rust_2018_idioms)]
-
+#![allow(clippy::inconsistent_struct_constructor)]
 use linkerd_dns_name::Name;
 use std::{
     fmt,
     net::{IpAddr, SocketAddr},
     str::FromStr,
 };
+use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Addr {
@@ -19,12 +20,14 @@ pub struct NameAddr {
     port: u16,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 pub enum Error {
     /// The host is not a valid DNS name or IP address.
+    #[error("address contains an invalid host")]
     InvalidHost,
 
     /// The port is missing.
+    #[error("address is missing a port")]
     MissingPort,
 }
 
@@ -82,11 +85,26 @@ impl Addr {
         match self {
             Addr::Name(n) => n.as_http_authority(),
             Addr::Socket(ref a) if a.port() == 80 => {
-                http::uri::Authority::from_str(&a.ip().to_string())
-                    .expect("SocketAddr must be valid authority")
+                let ip = if a.is_ipv4() {
+                    a.ip().to_string()
+                } else {
+                    // When IPv6 or later addresses are used in an authority,
+                    // they must be within square brackets. See
+                    // https://tools.ietf.org/html/rfc3986#section-3.2 for
+                    // details. The `fmt::Display` implementation of the
+                    // `Ipv6Addr` type does not include brackets, so we must add
+                    // them ourselves.
+                    format!("[{}]", a.ip())
+                };
+                http::uri::Authority::from_str(&ip).unwrap_or_else(|err| {
+                    panic!("SocketAddr ({}) must be valid authority: {}", a, err)
+                })
             }
-            Addr::Socket(a) => http::uri::Authority::from_str(&a.to_string())
-                .expect("SocketAddr must be valid authority"),
+            Addr::Socket(a) => {
+                http::uri::Authority::from_str(&a.to_string()).unwrap_or_else(|err| {
+                    panic!("SocketAddr ({}) must be valid authority: {}", a, err)
+                })
+            }
         }
     }
 
@@ -242,6 +260,84 @@ mod tests {
         for (host, expected_result) in cases {
             let a = Addr::from_str(host).unwrap();
             assert_eq!(a.is_loopback(), *expected_result, "{:?}", host)
+        }
+    }
+
+    fn test_to_http_authority(cases: &[&str]) {
+        let width = cases.iter().map(|s| s.len()).max().unwrap_or(0);
+        for host in cases {
+            print!("trying {:1$} ... ", host, width);
+            Addr::from_str(host).unwrap().to_http_authority();
+            println!("ok");
+        }
+    }
+
+    #[test]
+    fn to_http_authority_names_port_80() {
+        test_to_http_authority(&[
+            "localhost:80",
+            "localhost.:80",
+            "LocalhOsT.:80",
+            "mlocalhost.:80",
+            "localhost1.:80",
+        ])
+    }
+
+    #[test]
+    fn to_http_authority_names() {
+        test_to_http_authority(&[
+            "localhost:9090",
+            "localhost.:9090",
+            "LocalhOsT.:9090",
+            "mlocalhost.:9090",
+            "localhost1.:9090",
+        ])
+    }
+
+    #[test]
+    fn to_http_authority_ipv4_port_80() {
+        test_to_http_authority(&["10.7.0.42:80", "127.0.0.1:80"])
+    }
+
+    #[test]
+    fn to_http_authority_ipv4() {
+        test_to_http_authority(&["10.7.0.42:9090", "127.0.0.1:9090"])
+    }
+
+    #[test]
+    fn to_http_authority_ipv6_port_80() {
+        test_to_http_authority(&[
+            "[2001:0db8:0000:0000:0000:8a2e:0370:7334]:80",
+            "[2001:db8::8a2e:370:7334]:80",
+            "[::1]:80",
+        ])
+    }
+
+    #[test]
+    fn to_http_authority_ipv6() {
+        test_to_http_authority(&[
+            "[2001:0db8:0000:0000:0000:8a2e:0370:7334]:9090",
+            "[2001:db8::8a2e:370:7334]:9090",
+            "[::1]:9090",
+        ])
+    }
+}
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use super::*;
+
+    pub fn fuzz_addr_1(fuzz_data: &str) {
+        if let Ok(addr) = Addr::from_str(fuzz_data) {
+            addr.is_loopback();
+            addr.to_http_authority();
+            addr.is_loopback();
+            addr.socket_addr();
+        }
+
+        if let Ok(name_addr) = NameAddr::from_str_and_port(fuzz_data, 1234) {
+            name_addr.port();
+            name_addr.as_http_authority();
         }
     }
 }

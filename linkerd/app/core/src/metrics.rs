@@ -3,7 +3,7 @@ pub use crate::{
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
     proxy::identity,
     stack_metrics,
-    svc::stack::Param,
+    svc::Param,
     telemetry, tls,
     transport::{
         self,
@@ -27,7 +27,7 @@ pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
 
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Proxy {
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
@@ -38,6 +38,7 @@ pub struct Proxy {
     pub transport: transport::Metrics,
 }
 
+#[derive(Clone, Debug)]
 pub struct Metrics {
     pub inbound: Proxy,
     pub outbound: Proxy,

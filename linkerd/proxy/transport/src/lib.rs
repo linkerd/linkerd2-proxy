@@ -1,16 +1,29 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
-use std::time::Duration;
-use tokio::net::TcpStream;
-
+pub mod addrs;
 mod connect;
 pub mod listen;
 pub mod metrics;
+pub mod orig_dst;
 
 pub use self::{
-    connect::{ConnectAddr, ConnectTcp},
-    listen::{BindTcp, DefaultOrigDstAddr, NoOrigDstAddr, OrigDstAddr},
+    addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    connect::ConnectTcp,
+    listen::{Bind, BindTcp},
+    orig_dst::BindWithOrigDst,
 };
+use std::time::Duration;
+use tokio::net::TcpStream;
+
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Keepalive(pub Option<Duration>);
+
+impl From<Keepalive> for Option<Duration> {
+    fn from(Keepalive(duration): Keepalive) -> Option<Duration> {
+        duration
+    }
+}
 
 // Misc.
 

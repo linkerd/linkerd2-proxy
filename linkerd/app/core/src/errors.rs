@@ -4,12 +4,13 @@ use linkerd_error::Error;
 use linkerd_error_metrics as metrics;
 use linkerd_error_respond as respond;
 pub use linkerd_error_respond::RespondLayer;
-use linkerd_proxy_http::{client_handle::Close, ClientHandle, HasH2Reason};
-use linkerd_timeout::{error::ResponseTimeout, FailFastError};
+use linkerd_proxy_http::{ClientHandle, HasH2Reason};
+use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use thiserror::Error;
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
 
@@ -28,7 +29,8 @@ pub struct LabelError(super::metrics::Direction);
 
 pub type Label = (super::metrics::Direction, Reason);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Error)]
+#[error("{}", self.message)]
 pub struct HttpError {
     http: http::StatusCode,
     grpc: Code,
@@ -55,7 +57,7 @@ pub struct NewRespond(());
 pub struct Respond {
     version: http::Version,
     is_grpc: bool,
-    close: Option<Close>,
+    client: Option<ClientHandle>,
 }
 
 #[pin_project(project = ResponseBodyProj)]
@@ -142,10 +144,9 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
     type Respond = Respond;
 
     fn new_respond(&self, req: &http::Request<ReqB>) -> Self::Respond {
-        let close = req
-            .extensions()
-            .get::<ClientHandle>()
-            .map(|h| h.close.clone());
+        let client = req.extensions().get::<ClientHandle>().cloned();
+        debug_assert!(client.is_some(), "Missing client handle");
+
         match req.version() {
             http::Version::HTTP_2 => {
                 let is_grpc = req
@@ -155,13 +156,13 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
                     .unwrap_or(false);
                 Respond {
                     is_grpc,
-                    close,
+                    client,
                     version: http::Version::HTTP_2,
                 }
             }
             version => Respond {
                 version,
-                close,
+                client,
                 is_grpc: false,
             },
         }
@@ -181,7 +182,15 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                 _ => ResponseBody::NonGrpc(b),
             })),
             Err(error) => {
-                warn!("Failed to proxy request: {}", error);
+                let addr = self
+                    .client
+                    .as_ref()
+                    .map(|ClientHandle { ref addr, .. }| *addr)
+                    .unwrap_or_else(|| {
+                        debug!("Missing client address");
+                        ([0, 0, 0, 0], 0).into()
+                    });
+                warn!(client.addr = %addr, "Failed to proxy request: {}", error);
 
                 if self.version == http::Version::HTTP_2 {
                     if let Some(reset) = error.h2_reason() {
@@ -191,11 +200,9 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                 }
 
                 // Gracefully teardown the server-side connection.
-                if should_teardown_connection(&*error) {
-                    if let Some(c) = self.close.as_ref() {
-                        debug!("Closing server-side connection");
-                        c.close();
-                    }
+                if let Some(ClientHandle { ref close, .. }) = self.client.as_ref() {
+                    debug!("Closing server-side connection");
+                    close.close();
                 }
 
                 if self.is_grpc {
@@ -220,16 +227,6 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     .expect("error response must be valid"))
             }
         }
-    }
-}
-
-fn should_teardown_connection(error: &(dyn std::error::Error + 'static)) -> bool {
-    if error.is::<ResponseTimeout>() || error.is::<tower::timeout::error::Elapsed>() {
-        false
-    } else if let Some(e) = error.source() {
-        should_teardown_connection(e)
-    } else {
-        true
     }
 }
 
@@ -458,11 +455,3 @@ impl HttpError {
         self.http
     }
 }
-
-impl std::fmt::Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
-impl std::error::Error for HttpError {}

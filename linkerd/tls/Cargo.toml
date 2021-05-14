@@ -17,17 +17,17 @@ linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 rustls = "0.19"
-tokio = { version = "1", features = ["macros", "time"]}
+thiserror = "1.0"
+tokio = { version = "1", features = ["macros", "time"] }
 tokio-rustls = "0.22"
-tower = "0.4"
-tracing = "0.1.22"
+tower = "0.4.7"
+tracing = "0.1.23"
 webpki = "0.21"
 untrusted = "0.7"
 
 [dev-dependencies]
 linkerd-identity = { path = "../identity", features = ["test-util"] }
 linkerd-proxy-transport = { path = "../proxy/transport" }
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
-tower = { version = "0.4.1", default-features = false, features = ["util"] }
-tracing-futures = "0.2"
-tracing-subscriber = "0.2.14"
+tower = { version = "0.4.7", default-features = false, features = ["util"] }

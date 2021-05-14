@@ -1,4 +1,6 @@
 use crate::{layer, NewService};
+use futures::{future, TryFutureExt};
+use linkerd_error::Error;
 use std::task::{Context, Poll};
 use tower::util::{Oneshot, ServiceExt};
 
@@ -6,7 +8,7 @@ use tower::util::{Oneshot, ServiceExt};
 pub trait RecognizeRoute<T> {
     type Key: Clone;
 
-    fn recognize(&self, t: &T) -> Self::Key;
+    fn recognize(&self, t: &T) -> Result<Self::Key, Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -61,29 +63,39 @@ where
     K: RecognizeRoute<Req>,
     N: NewService<K::Key, Service = S>,
     S: tower::Service<Req>,
+    S::Error: Into<Error>,
 {
     type Response = S::Response;
-    type Error = S::Error;
-    type Future = Oneshot<S, Req>;
+    type Error = Error;
+    type Future = future::Either<
+        future::ErrInto<Oneshot<S, Req>, Error>,
+        future::Ready<Result<S::Response, Error>>,
+    >;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    #[inline]
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
-        let key = self.recognize.recognize(&req);
-        self.inner.new_service(key).oneshot(req)
+        match self.recognize.recognize(&req) {
+            Ok(key) => {
+                let svc = self.inner.new_service(key);
+                future::Either::Left(svc.oneshot(req).err_into::<Error>())
+            }
+            Err(e) => future::Either::Right(future::err(e)),
+        }
     }
 }
 
 impl<T, K, F> RecognizeRoute<T> for F
 where
     K: Clone,
-    F: Fn(&T) -> K,
+    F: Fn(&T) -> Result<K, Error>,
 {
     type Key = K;
 
-    fn recognize(&self, t: &T) -> Self::Key {
+    fn recognize(&self, t: &T) -> Result<Self::Key, Error> {
         (self)(t)
     }
 }

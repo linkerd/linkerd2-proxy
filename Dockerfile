@@ -17,11 +17,11 @@
 #     :; docker buildx build . --load
 
 # Please make changes via update-rust-version.sh
-ARG RUST_IMAGE=rust:1.49.0-buster
+ARG RUST_IMAGE=rust:1.52.1-buster
 
 # Use an arbitrary ~recent edge release image to get the proxy
-# identity-initializing wrapper.
-ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-21.1.2
+# identity-initializing and linkerd-await wrappers.
+ARG RUNTIME_IMAGE=ghcr.io/linkerd/proxy:edge-21.4.5
 
 # Build the proxy, leveraging (new, experimental) cache mounting.
 #
@@ -31,9 +31,7 @@ FROM $RUST_IMAGE as build
 # When set, causes the proxy to be compiled in development mode.
 ARG PROXY_UNOPTIMIZED
 
-# Controls what features are enabled in the proxy. This is typically empty but
-# may be set to `mock-orig-dst` for profiling builds, or to `multithreaded` to
-# enable the multithreaded Tokio runtime.
+# Controls what features are enabled in the proxy.
 ARG PROXY_FEATURES
 
 RUN --mount=type=cache,target=/var/lib/apt/lists \
@@ -43,7 +41,7 @@ RUN --mount=type=cache,target=/var/lib/apt/lists \
 WORKDIR /usr/src/linkerd2-proxy
 COPY . .
 RUN --mount=type=cache,target=target \
-  --mount=type=cache,from=rust:1.49.0-buster,source=/usr/local/cargo,target=/usr/local/cargo \
+  --mount=type=cache,from=rust:1.52.1-buster,source=/usr/local/cargo,target=/usr/local/cargo \
   mkdir -p /out && \
   if [ -n "$PROXY_UNOPTIMIZED" ]; then \
   (cd linkerd2-proxy && /usr/bin/time -v cargo build --locked --features="$PROXY_FEATURES") && \

@@ -1,8 +1,10 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use linkerd_error::Error;
 use std::{fmt, net};
+use thiserror::Error;
 use tokio::time::{self, Instant};
 use tracing::{debug, trace};
 use trust_dns_resolver::{
@@ -22,15 +24,11 @@ pub trait ConfigureResolver {
     fn configure_resolver(&self, _: &mut ResolverOpts);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
+#[error("invalid SRV record {:?}", self.0)]
 struct InvalidSrv(rdata::SRV);
 
 impl Resolver {
-    // When the DNS library does not return a TTL, we must assume one to prevent
-    // tight-looping. In practice, default kubernetes configs appear to have a
-    // 5s TTL, so we mirror that default here.
-    const DEFAULT_TTL: std::time::Duration = std::time::Duration::from_secs(5);
-
     /// Construct a new `Resolver` from environment variables and system
     /// configuration.
     ///
@@ -83,42 +81,22 @@ impl Resolver {
         name: &Name,
     ) -> Result<(Vec<net::IpAddr>, time::Sleep), ResolveError> {
         debug!(%name, "resolve_a");
-        match self.dns.lookup_ip(name.as_ref()).await {
-            Ok(lookup) => {
-                let valid_until = Instant::from_std(lookup.valid_until());
-                let ips = lookup.iter().collect::<Vec<_>>();
-                Ok((ips, time::sleep_until(valid_until)))
-            }
-            Err(e) => Self::handle_error(e),
-        }
+        let lookup = self.dns.lookup_ip(name.as_ref()).await?;
+        let valid_until = Instant::from_std(lookup.valid_until());
+        let ips = lookup.iter().collect::<Vec<_>>();
+        Ok((ips, time::sleep_until(valid_until)))
     }
 
     async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
         debug!(%name, "resolve_srv");
-        match self.dns.srv_lookup(name.as_ref()).await {
-            Ok(srv) => {
-                let valid_until = Instant::from_std(srv.as_lookup().valid_until());
-                let addrs = srv
-                    .into_iter()
-                    .map(Self::srv_to_socket_addr)
-                    .collect::<Result<_, InvalidSrv>>()?;
-                debug!(?addrs);
-                Ok((addrs, time::sleep_until(valid_until)))
-            }
-            Err(e) => Self::handle_error(e).map_err(Into::into),
-        }
-    }
-
-    fn handle_error<T>(e: ResolveError) -> Result<(Vec<T>, time::Sleep), ResolveError> {
-        match e.kind() {
-            ResolveErrorKind::NoRecordsFound { negative_ttl, .. } => {
-                let expiry = negative_ttl
-                    .map(|t| std::time::Duration::from_secs(t as u64))
-                    .unwrap_or(Self::DEFAULT_TTL);
-                Ok((vec![], time::sleep(expiry)))
-            }
-            _ => Err(e),
-        }
+        let srv = self.dns.srv_lookup(name.as_ref()).await?;
+        let valid_until = Instant::from_std(srv.as_lookup().valid_until());
+        let addrs = srv
+            .into_iter()
+            .map(Self::srv_to_socket_addr)
+            .collect::<Result<_, InvalidSrv>>()?;
+        debug!(?addrs);
+        Ok((addrs, time::sleep_until(valid_until)))
     }
 
     // XXX We need to convert the SRV records to an IP addr manually,
@@ -149,14 +127,6 @@ impl fmt::Debug for Resolver {
             .finish()
     }
 }
-
-impl fmt::Display for InvalidSrv {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Invalid SRV record {:?}", self.0)
-    }
-}
-
-impl std::error::Error for InvalidSrv {}
 
 #[cfg(test)]
 mod tests {
@@ -245,10 +215,7 @@ mod tests {
         ] {
             let n = Name::from_str(name).unwrap();
             let s = Suffix::from_str(suffix).unwrap();
-            assert!(
-                s.contains(&n),
-                format!("{} should contain {}", suffix, name)
-            );
+            assert!(s.contains(&n), "{} should contain {}", suffix, name);
         }
     }
 
@@ -262,12 +229,31 @@ mod tests {
         ] {
             let n = Name::from_str(name).unwrap();
             let s = Suffix::from_str(suffix).unwrap();
-            assert!(
-                !s.contains(&n),
-                format!("{} should not contain {}", suffix, name)
-            );
+            assert!(!s.contains(&n), "{} should not contain {}", suffix, name);
         }
 
         assert!(Suffix::from_str("").is_err(), "suffix must not be empty");
+    }
+}
+
+#[cfg(fuzzing)]
+pub mod fuzz_logic {
+    use super::*;
+    use std::str::FromStr;
+    pub struct FuzzConfig {}
+
+    // Empty config resolver that we can use.
+    impl ConfigureResolver for FuzzConfig {
+        fn configure_resolver(&self, _opts: &mut ResolverOpts) {}
+    }
+
+    // Test the resolvers do not panic unexpectedly.
+    pub async fn fuzz_entry(fuzz_data: &str) {
+        if let Ok(name) = Name::from_str(fuzz_data) {
+            let fcon = FuzzConfig {};
+            let resolver = Resolver::from_system_config_with(&fcon).unwrap();
+            let _w = resolver.resolve_a(&name).await;
+            let _w2 = resolver.resolve_srv(&name).await;
+        }
     }
 }

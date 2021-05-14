@@ -2,8 +2,7 @@ use futures::{ready, TryFuture};
 use linkerd_errno::Errno;
 use linkerd_io as io;
 use linkerd_metrics::{
-    latency, metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, Histogram, LastUpdate,
-    Metric, Store,
+    metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, LastUpdate, Metric, Store,
 };
 use linkerd_stack::{layer, NewService, Param};
 use pin_project::pin_project;
@@ -24,8 +23,7 @@ metrics! {
     tcp_read_bytes_total: Counter { "Total count of bytes read from peers" },
     tcp_write_bytes_total: Counter { "Total count of bytes written to peers" },
 
-    tcp_close_total: Counter { "Total count of closed connections" },
-    tcp_connection_duration_ms: Histogram<latency::Ms> { "Connection lifetimes" }
+    tcp_close_total: Counter { "Total count of closed connections" }
 }
 
 pub fn new<K: Eq + Hash + FmtLabels>(retain_idle: Duration) -> (Registry<K>, Report<K>) {
@@ -106,7 +104,6 @@ struct Eos(Option<Errno>);
 #[derive(Debug, Default)]
 struct EosMetrics {
     close_total: Counter,
-    connection_duration: Histogram<latency::Ms>,
 }
 
 /// Tracks the state of a single instance of `Io` throughout its lifetime.
@@ -336,11 +333,6 @@ impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
         tcp_close_total.fmt_help(f)?;
         Self::fmt_eos_by(&*metrics, f, tcp_close_total, |e| &e.close_total)?;
 
-        tcp_connection_duration_ms.fmt_help(f)?;
-        Self::fmt_eos_by(&*metrics, f, tcp_connection_duration_ms, |e| {
-            &e.connection_duration
-        })?;
-
         metrics.retain_since(Instant::now() - self.retain_idle);
 
         Ok(())
@@ -383,7 +375,6 @@ impl io::Sensor for Sensor {
     }
 
     fn record_close(&mut self, eos: Option<Errno>) {
-        let duration = self.opened_at.elapsed();
         // When closed, the metrics structure is dropped so that no further
         // updates can occur (i.e. so that an additional close won't be recorded
         // on Drop).
@@ -396,7 +387,6 @@ impl io::Sensor for Sensor {
                 .entry(Eos(eos))
                 .or_insert_with(EosMetrics::default);
             class.close_total.incr();
-            class.connection_duration.add(duration);
             by_eos.last_update = Instant::now();
         }
     }

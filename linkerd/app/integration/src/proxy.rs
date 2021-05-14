@@ -1,6 +1,12 @@
 use super::*;
-use std::{future::Future, pin::Pin, task::Poll, thread};
-use tracing_futures::Instrument;
+use app_core::transport::OrigDstAddr;
+use linkerd_app_core::{
+    svc::Param,
+    transport::{listen, orig_dst, Keepalive, ListenAddr},
+};
+use std::{future::Future, net::SocketAddr, pin::Pin, task::Poll, thread};
+use tokio::net::TcpStream;
+use tracing::instrument::Instrument;
 
 pub fn new() -> Proxy {
     Proxy::default()
@@ -26,6 +32,9 @@ pub struct Proxy {
     shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
+#[derive(Copy, Clone, Debug)]
+struct MockOrigDst(Option<SocketAddr>);
+
 pub struct Listening {
     pub tap: Option<SocketAddr>,
     pub inbound: SocketAddr,
@@ -43,6 +52,35 @@ pub struct Listening {
 
     thread: thread::JoinHandle<()>,
 }
+
+// === impl MockOrigDst ===
+
+impl<T> listen::Bind<T> for MockOrigDst
+where
+    T: Param<Keepalive> + Param<ListenAddr>,
+{
+    type Addrs = orig_dst::Addrs;
+    type Io = tokio::net::TcpStream;
+    type Incoming = Pin<
+        Box<dyn Stream<Item = io::Result<(orig_dst::Addrs, TcpStream)>> + Send + Sync + 'static>,
+    >;
+
+    fn bind(self, params: &T) -> io::Result<listen::Bound<Self::Incoming>> {
+        let (bound, incoming) = listen::BindTcp::default().bind(params)?;
+        let addr = self.0;
+        let incoming = Box::pin(incoming.map(move |res| {
+            let (inner, tcp) = res?;
+            let orig_dst = addr
+                .map(OrigDstAddr)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No mocked SO_ORIG_DST"))?;
+            let addrs = orig_dst::Addrs { inner, orig_dst };
+            Ok((addrs, tcp))
+        }));
+        Ok((bound, incoming))
+    }
+}
+
+// === impl Proxy ===
 
 impl Proxy {
     /// Pass a customized support `Controller` for this proxy to use.
@@ -200,16 +238,6 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         env.put(app::env::ENV_OUTBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
     }
 
-    // If a given server is missing, use the admin server as a substitute.
-    env.put(
-        app::env::ENV_INBOUND_ORIG_DST_ADDR,
-        inbound.unwrap_or(controller.addr).to_string(),
-    );
-    env.put(
-        app::env::ENV_OUTBOUND_ORIG_DST_ADDR,
-        outbound.unwrap_or(controller.addr).to_string(),
-    );
-
     if random_ports {
         env.put(app::env::ENV_INBOUND_LISTEN_ADDR, "127.0.0.1:0".to_owned());
         env.put(app::env::ENV_CONTROL_LISTEN_ADDR, "127.0.0.1:0".to_owned());
@@ -264,6 +292,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     }
 
     let config = app::env::parse_config(&env).unwrap();
+
     let dispatch = tracing::Dispatch::default();
     let (trace, trace_handle) = if dispatch
         .downcast_ref::<tracing_subscriber::fmt::TestWriter>()
@@ -273,7 +302,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         (dispatch, app_core::trace::Handle::disabled())
     } else {
         eprintln!("test did not set a tracing dispatcher, creating a new one for the proxy");
-        super::trace_subscriber()
+        linkerd_tracing::test::trace_subscriber(linkerd_tracing::test::DEFAULT_LOG)
     };
 
     let (running_tx, running_rx) = oneshot::channel();
@@ -301,9 +330,12 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                     .build()
                     .expect("proxy")
                     .block_on(async move {
+                        let bind_in = MockOrigDst(inbound);
+                        let bind_out = MockOrigDst(outbound);
+                        let bind_adm = listen::BindTcp::default();
                         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
                         let main = config
-                            .build(shutdown_tx, trace_handle)
+                            .build(bind_in, bind_out, bind_adm, shutdown_tx, trace_handle)
                             .await
                             .expect("config");
 
@@ -358,14 +390,13 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         outbound.addr = ?outbound_addr,
         outbound.orig_dst = ?outbound.as_ref(),
         metrics.addr = ?metrics_addr,
-        "proxy running",
     );
 
     Listening {
-        tap: tap_addr,
-        inbound: inbound_addr,
-        outbound: outbound_addr,
-        metrics: metrics_addr,
+        tap: tap_addr.map(Into::into),
+        inbound: inbound_addr.into(),
+        outbound: outbound_addr.into(),
+        metrics: metrics_addr.into(),
 
         outbound_server: proxy.outbound_server,
         inbound_server: proxy.inbound_server,

@@ -13,8 +13,8 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::io::{AsyncRead, AsyncWrite};
+use tracing::instrument::Instrument;
 use tracing::{debug, debug_span, trace_span};
-use tracing_futures::Instrument;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Settings {

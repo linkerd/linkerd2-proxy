@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 use linkerd_error::Error;
 use linkerd_stack::Proxy;
 use pin_project::pin_project;
@@ -6,9 +7,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use thiserror::Error;
 use tokio::time;
 
-pub mod error;
 mod failfast;
 
 pub use self::failfast::{FailFast, FailFastError};
@@ -25,6 +26,11 @@ pub enum TimeoutFuture<F> {
     Passthru(#[pin] F),
     Timeout(#[pin] time::Timeout<F>, Duration),
 }
+
+/// An error representing that an operation timed out.
+#[derive(Debug, Error)]
+#[error("response timed out after {:?}", self.0)]
+pub struct ResponseTimeout(pub(crate) Duration);
 
 // === impl Timeout ===
 
@@ -98,8 +104,8 @@ where
             TimeoutFutureProj::Timeout(f, duration) => {
                 // If the `timeout` future failed, the error is aways "elapsed";
                 // errors from the underlying future will be in the success arm.
-                let ready = futures::ready!(f.poll(cx))
-                    .map_err(|_| error::ResponseTimeout(*duration).into());
+                let ready =
+                    futures::ready!(f.poll(cx)).map_err(|_| ResponseTimeout(*duration).into());
                 // If the inner future failed but the timeout was not elapsed,
                 // then `ready` will be an `Ok(Err(e))`, so we need to convert
                 // the inner error as well.
@@ -107,5 +113,14 @@ where
                 Poll::Ready(ready)
             }
         }
+    }
+}
+
+// === impl ResponseTimeout ===
+
+impl ResponseTimeout {
+    /// Get the amount of time waited until this error was triggered.
+    pub fn duration(&self) -> Duration {
+        self.0
     }
 }

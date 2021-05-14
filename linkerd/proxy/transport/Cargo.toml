@@ -9,13 +9,7 @@ description = """
 Transport-level implementations that rely on core proxy infrastructure
 """
 
-# This should probably be decomposed into smaller, decoupled crates.
-
-[features]
-mock-orig-dst  = []
-
 [dependencies]
-async-stream = "0.3"
 bytes = "1"
 futures = "0.3.9"
 linkerd-errno = { path = "../../errno" }
@@ -26,8 +20,9 @@ linkerd-stack = { path = "../../stack" }
 pin-project = "1"
 socket2 = "0.3"
 tokio = { version = "1", features = ["macros", "net"] }
+tokio-stream = { version = "0.1", features = ["net"] }
 tower = { version = "0.4", features = ["make"] }
-tracing = "0.1.22"
+tracing = "0.1.23"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

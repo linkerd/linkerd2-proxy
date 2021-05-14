@@ -3,17 +3,18 @@ pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
     dns::Suffix,
-    exp_backoff,
-    proxy::http::{h1, h2},
-    transport::BindTcp,
-    NameMatch,
+    drain, exp_backoff, metrics,
+    proxy::{
+        http::{h1, h2},
+        tap,
+    },
+    transport::{Keepalive, ListenAddr},
+    NameMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
-const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
-
-pub fn default_config(orig_dst: SocketAddr) -> Config {
+pub fn default_config() -> Config {
     let cluster_local = "svc.cluster.local."
         .parse::<Suffix>()
         .expect("`svc.cluster.local.` suffix is definitely valid");
@@ -21,12 +22,12 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
         allow_discovery: NameMatch::new(Some(cluster_local)),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
-                bind: BindTcp::new(SocketAddr::new(LOCALHOST.into(), 0), None)
-                    .with_orig_dst_addr(orig_dst.into()),
+                addr: ListenAddr(([0, 0, 0, 0], 0).into()),
+                keepalive: Keepalive(None),
                 h2_settings: h2::Settings::default(),
             },
             connect: config::ConnectConfig {
-                keepalive: None,
+                keepalive: Keepalive(None),
                 timeout: Duration::from_secs(1),
                 backoff: exp_backoff::ExponentialBackoff::new(
                     Duration::from_millis(100),
@@ -50,4 +51,18 @@ pub fn default_config(orig_dst: SocketAddr) -> Config {
         disable_protocol_detection_for_ports: SkipByPort::from(indexmap::IndexSet::default()),
         profile_idle_timeout: Duration::from_millis(500),
     }
+}
+
+pub fn runtime() -> (ProxyRuntime, drain::Signal) {
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    let (drain_tx, drain) = drain::channel();
+    let (tap, _) = tap::new();
+    let runtime = ProxyRuntime {
+        identity: None,
+        metrics: metrics.outbound,
+        tap,
+        span_sink: None,
+        drain,
+    };
+    (runtime, drain_tx)
 }

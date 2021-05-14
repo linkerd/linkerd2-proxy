@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_identity::LocalId;
 use linkerd_io as io;
@@ -42,9 +43,9 @@ impl NegotiatedProtocolRef<'_> {
     }
 }
 
-impl Into<NegotiatedProtocol> for NegotiatedProtocolRef<'_> {
-    fn into(self) -> NegotiatedProtocol {
-        self.to_owned()
+impl From<NegotiatedProtocolRef<'_>> for NegotiatedProtocol {
+    fn from(protocol: NegotiatedProtocolRef<'_>) -> NegotiatedProtocol {
+        protocol.to_owned()
     }
 }
 
@@ -102,5 +103,13 @@ where
             io::EitherIo::Left(l) => l.negotiated_protocol(),
             io::EitherIo::Right(r) => r.negotiated_protocol(),
         }
+    }
+}
+
+/// Needed for tests.
+impl HasNegotiatedProtocol for io::BoxedIo {
+    #[inline]
+    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        None
     }
 }

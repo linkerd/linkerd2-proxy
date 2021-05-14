@@ -13,7 +13,9 @@ pub use self::{
 };
 pub use std::io::*;
 use std::net::SocketAddr;
-pub use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+pub use tokio::io::{
+    duplex, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf,
+};
 pub use tokio_util::io::{poll_read_buf, poll_write_buf};
 
 pub type Poll<T> = std::task::Poll<Result<T>>;
@@ -37,6 +39,13 @@ pub trait Peek {
 impl Peek for tokio::net::TcpStream {
     async fn peek(&self, buf: &mut [u8]) -> Result<usize> {
         tokio::net::TcpStream::peek(self, buf).await
+    }
+}
+
+#[async_trait::async_trait]
+impl Peek for tokio::io::DuplexStream {
+    async fn peek(&self, _: &mut [u8]) -> Result<usize> {
+        Ok(0)
     }
 }
 
@@ -71,7 +80,6 @@ impl PeerAddr for tokio_test::io::Mock {
     }
 }
 
-#[cfg(feature = "tokio-test")]
 impl PeerAddr for tokio::io::DuplexStream {
     fn peer_addr(&self) -> Result<SocketAddr> {
         Ok(([0, 0, 0, 0], 0).into())

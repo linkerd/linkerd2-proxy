@@ -10,7 +10,11 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Never;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use linkerd_proxy_transport::{listen::Addrs, BindTcp, ConnectAddr, ConnectTcp};
+use linkerd_proxy_transport::{
+    addrs::*,
+    listen::{Addrs, Bind, BindTcp},
+    ConnectTcp, Keepalive, ListenAddr,
+};
 use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
 use std::future::Future;
@@ -20,16 +24,17 @@ use tower::{
     layer::Layer,
     util::{service_fn, ServiceExt},
 };
-use tracing_futures::Instrument;
+use tracing::instrument::Instrument;
 
-#[test]
-fn plaintext() {
+#[tokio::test(flavor = "current_thread")]
+async fn plaintext() {
     let (client_result, server_result) = run_test(
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
         |conn| write_then_read(conn, PING),
         None,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
-    );
+    )
+    .await;
     assert_eq!(
         client_result.tls,
         Some(Conditional::None(
@@ -44,8 +49,8 @@ fn plaintext() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[test]
-fn proxy_to_proxy_tls_works() {
+#[tokio::test(flavor = "current_thread")]
+async fn proxy_to_proxy_tls_works() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
     let client_tls = id::test_util::BAR_NS1.validate().unwrap();
     let server_id = tls::ServerId(server_tls.name().clone());
@@ -54,7 +59,8 @@ fn proxy_to_proxy_tls_works() {
         |conn| write_then_read(conn, PING),
         Some(server_tls),
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
-    );
+    )
+    .await;
     assert_eq!(
         client_result.tls,
         Some(Conditional::Some(tls::ClientTls {
@@ -73,8 +79,8 @@ fn proxy_to_proxy_tls_works() {
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
 
-#[test]
-fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
+#[tokio::test(flavor = "current_thread")]
+async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let server_tls = id::test_util::FOO_NS1.validate().unwrap();
 
     // Misuse the client's identity instead of the server's identity. Any
@@ -89,7 +95,8 @@ fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
         |conn| write_then_read(conn, PING),
         Some(server_tls),
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
-    );
+    )
+    .await;
 
     // The server's connection will succeed with the TLS client hello passed
     // through, because the SNI doesn't match its identity.
@@ -114,7 +121,7 @@ struct Transported<I, R> {
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
-fn run_test<C, CF, CR, S, SF, SR>(
+async fn run_test<C, CF, CR, S, SF, SR>(
     client_tls: Conditional<(id::CrtKey, tls::ServerId), tls::NoClientTls>,
     client: C,
     server_tls: Option<id::CrtKey>,
@@ -133,31 +140,17 @@ where
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
-    {
-        use tracing_subscriber::{fmt, EnvFilter};
-        let sub = fmt::Subscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
-            .finish();
-        let _ = tracing::subscriber::set_global_default(sub);
-    }
-
     let (client_tls, client_server_id) = match client_tls {
         Conditional::Some((crtkey, name)) => (Some(Tls(crtkey)), Conditional::Some(name)),
         Conditional::None(reason) => (None, Conditional::None(reason)),
     };
 
+    let _trace = linkerd_tracing::test::trace_init();
+
     // A future that will receive a single connection.
     let (server, server_addr, server_result) = {
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
-
-        // Let the OS decide the port number and then return the resulting
-        // `SocketAddr` so the client can connect to it. This allows multiple
-        // tests to run at once, which wouldn't work if they all were bound on
-        // a fixed port.
-        let addr = "127.0.0.1:0".parse::<SocketAddr>().unwrap();
-
-        let (listen_addr, listen) = BindTcp::new(addr, None).bind().expect("must bind");
 
         let mut detect = tls::NewDetectTls::new(
             server_tls.map(Tls),
@@ -185,15 +178,16 @@ where
             std::time::Duration::from_secs(10),
         );
 
+        let (listen_addr, listen) = BindTcp::default().bind(&Server).expect("must bind");
         let server = async move {
             futures::pin_mut!(listen);
-            let (meta, io) = listen
+            let (addrs, io) = listen
                 .next()
                 .await
                 .expect("listen failed")
                 .expect("listener closed");
             tracing::debug!("incoming connection");
-            let accept = detect.new_service(meta);
+            let accept = detect.new_service(addrs);
             accept.oneshot(io).await.expect("connection failed");
             tracing::debug!("done");
         }
@@ -213,8 +207,8 @@ where
         let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {
             let conn = tls::Client::layer(client_tls)
-                .layer(ConnectTcp::new(None))
-                .oneshot(Target(server_addr, client_server_id.map(Into::into)))
+                .layer(ConnectTcp::new(Keepalive(None)))
+                .oneshot(Target(server_addr.into(), client_server_id.map(Into::into)))
                 .await;
             match conn {
                 Err(e) => {
@@ -237,9 +231,7 @@ where
         (client, receiver)
     };
 
-    tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(futures::future::join(server, client).map(|_| ()));
+    futures::future::join(server, client).await;
 
     let client_result = client_result.try_recv().expect("client complete");
 
@@ -302,15 +294,20 @@ const PING: &[u8] = b"ping";
 const PONG: &[u8] = b"pong";
 const START_OF_TLS: &[u8] = &[22, 3, 1]; // ContentType::handshake version 3.1
 
+#[derive(Copy, Clone, Debug)]
+struct Server;
+
 #[derive(Clone)]
 struct Target(SocketAddr, tls::ConditionalClientTls);
 
 #[derive(Clone)]
 struct Tls(id::CrtKey);
 
-impl Param<ConnectAddr> for Target {
-    fn param(&self) -> ConnectAddr {
-        ConnectAddr(self.0)
+// === impl Target ===
+
+impl Param<Remote<ServerAddr>> for Target {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(self.0))
     }
 }
 
@@ -319,6 +316,8 @@ impl Param<tls::ConditionalClientTls> for Target {
         self.1.clone()
     }
 }
+
+// === impl Tls ===
 
 impl Param<tls::client::Config> for Tls {
     fn param(&self) -> tls::client::Config {
@@ -335,5 +334,22 @@ impl Param<tls::server::Config> for Tls {
 impl Param<tls::LocalId> for Tls {
     fn param(&self) -> tls::LocalId {
         self.0.id().clone()
+    }
+}
+
+// === impl Server ===
+
+impl Param<ListenAddr> for Server {
+    fn param(&self) -> ListenAddr {
+        // Let the OS decide the port number and then return the resulting
+        // `SocketAddr` so the client can connect to it. This allows multiple
+        // tests to run at once, which wouldn't work if they all were bound on
+        // a fixed port.
+        ListenAddr(([127, 0, 0, 1], 0).into())
+    }
+}
+impl Param<Keepalive> for Server {
+    fn param(&self) -> Keepalive {
+        Keepalive(None)
     }
 }

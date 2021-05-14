@@ -1,4 +1,7 @@
-use linkerd_app_core::{io::BoxedIo, svc::stack::Param, transport::ConnectAddr, Error};
+use linkerd_app_core::{
+    svc::Param,
+    transport::{Remote, ServerAddr},
+};
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
@@ -6,12 +9,16 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use tokio_test::io;
-use tracing_futures::{Instrument, Instrumented};
+use tracing::instrument::{Instrument, Instrumented};
+
+mod io {
+    pub use linkerd_app_core::io::*;
+    pub use tokio_test::io::*;
+}
 
 type ConnectFn<E> = Box<dyn FnMut(E) -> ConnectFuture + Send>;
 
-pub type ConnectFuture = Pin<Box<dyn Future<Output = Result<BoxedIo, Error>> + Send + 'static>>;
+pub type ConnectFuture = Pin<Box<dyn Future<Output = io::Result<io::BoxedIo>> + Send + 'static>>;
 
 #[derive(Clone)]
 pub struct Connect<E> {
@@ -23,18 +30,18 @@ pub struct NoRawTcp;
 
 impl<E> tower::Service<E> for Connect<E>
 where
-    E: Clone + fmt::Debug + Param<ConnectAddr>,
+    E: Clone + fmt::Debug + Param<Remote<ServerAddr>>,
 {
-    type Response = BoxedIo;
+    type Response = io::BoxedIo;
     type Future = Instrumented<ConnectFuture>;
-    type Error = Error;
+    type Error = io::Error;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, endpoint: E) -> Self::Future {
-        let ConnectAddr(addr) = endpoint.param();
+        let Remote(ServerAddr(addr)) = endpoint.param();
         let span = tracing::info_span!("connect", %addr);
         let f = span.in_scope(|| {
             tracing::trace!("connecting...");
@@ -53,9 +60,9 @@ where
 }
 
 impl<E: fmt::Debug> tower::Service<E> for NoRawTcp {
-    type Response = BoxedIo;
+    type Response = io::BoxedIo;
     type Future = Instrumented<ConnectFuture>;
-    type Error = Error;
+    type Error = io::Error;
 
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         panic!("no raw TCP connections expected in this test");
@@ -93,7 +100,7 @@ impl<E: fmt::Debug> Connect<E> {
     pub fn endpoint_fn_boxed(
         self,
         endpoint: impl Into<SocketAddr>,
-        mut on_connect: impl (FnMut(E) -> Result<BoxedIo, Error>) + Send + 'static,
+        mut on_connect: impl (FnMut(E) -> io::Result<io::BoxedIo>) + Send + 'static,
     ) -> Self {
         self.endpoints.lock().unwrap().insert(
             endpoint.into(),
@@ -108,9 +115,9 @@ impl<E: fmt::Debug> Connect<E> {
     pub fn endpoint_fn(
         self,
         endpoint: impl Into<SocketAddr>,
-        mut on_connect: impl (FnMut(E) -> Result<io::Mock, Error>) + Send + 'static,
+        mut on_connect: impl (FnMut(E) -> io::Result<io::Mock>) + Send + 'static,
     ) -> Self {
-        self.endpoint_fn_boxed(endpoint, move |ep| on_connect(ep).map(BoxedIo::new))
+        self.endpoint_fn_boxed(endpoint, move |ep| on_connect(ep).map(io::BoxedIo::new))
     }
 
     pub fn endpoint_builder(

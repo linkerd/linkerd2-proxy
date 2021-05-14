@@ -1,0 +1,31 @@
+
+[package]
+name = "linkerd-dns-fuzz"
+version = "0.0.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[target.'cfg(fuzzing)'.dependencies]
+libfuzzer-sys = "0.4"
+linkerd-dns = { path = ".." }
+tokio = { version = "1", features = ["rt", "time", "io-util"] }
+tracing = "0.1.23"
+linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_target_1"
+path = "fuzz_targets/fuzz_target_1.rs"
+test = false
+doc = false
+
+[patch.crates-io]
+trust-dns-proto = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
+trust-dns-resolver = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
