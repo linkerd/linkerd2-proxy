@@ -12,8 +12,8 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: EmbarkStudios/cargo-deny-action@202e2b23300c1ef90c9d7389a0bc5b34c05c0fe4
+    - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
+    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d # v1.2.6
       with:
         command: check bans licenses sources
 
@@ -24,7 +24,7 @@ jobs:
     container:
       image: docker://rust:1.52.1-buster
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
       - run: rustup component add clippy
       - run: make lint
 
@@ -35,7 +35,7 @@ jobs:
     container:
       image: docker://rust:1.52.1-buster
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
       - run: for d in $(for toml in $(find . -mindepth 2 -name Cargo.toml -not -path '*/fuzz/*') ; do echo ${toml%/*} ; done | sort -r ) ; do echo "# $d" ; (cd $d ; cargo check --all-targets) ; done
 
   # Enforce automated formatting.
@@ -45,7 +45,7 @@ jobs:
     container:
       image: docker://rust:1.52.1-buster
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
       - run: rustup component add rustfmt
       - run: make check-fmt
 
@@ -54,5 +54,5 @@ jobs:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
       - run: make test
