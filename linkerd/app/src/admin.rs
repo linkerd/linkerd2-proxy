@@ -54,7 +54,7 @@ impl Config {
         shutdown: mpsc::UnboundedSender<()>,
     ) -> Result<Admin, Error>
     where
-        R: FmtMetrics + Clone + Send + 'static + Unpin,
+        R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
     {
@@ -117,6 +117,7 @@ impl Config {
                     }
                 },
             )
+            .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(
                 DETECT_TIMEOUT,
                 http::DetectHttp::default(),
@@ -131,6 +132,7 @@ impl Config {
                     target_addr,
                 }
             })
+            .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
             .into_inner();
 

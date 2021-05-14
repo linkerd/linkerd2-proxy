@@ -27,10 +27,10 @@ impl<H> Inbound<H> {
     pub fn push_http_server<T, I, HSvc>(
         self,
     ) -> Inbound<
-        impl svc::NewService<
-                T,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-            > + Clone,
+        svc::BoxNewService<
+            T,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
     >
     where
         T: Param<Version>
@@ -89,7 +89,8 @@ impl<H> Inbound<H> {
             )
             .check_new_service::<T, http::Request<_>>()
             .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
-            .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()));
+            .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
+            .push(svc::BoxNewService::layer());
 
         Inbound {
             config,
@@ -110,15 +111,15 @@ where
         self,
         profiles: P,
     ) -> Inbound<
-        impl svc::NewService<
-                HttpAccept,
-                Service = impl svc::Service<
+        svc::BoxNewService<
+            HttpAccept,
+            impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
                     Error = Error,
                     Future = impl Send,
                 > + Clone,
-            > + Clone,
+        >,
     >
     where
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
@@ -225,9 +226,6 @@ where
                     .push(http::Retain::layer())
                     .push(http::BoxResponse::layer()),
             )
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
-            .push(svc::BoxNewService::layer())
             .check_new_service::<Target, http::Request<http::BoxBody>>()
             // Removes the override header after it has been used to
             // determine a request target.
@@ -235,9 +233,11 @@ where
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()
+            .push(svc::BoxNewService::layer())
             .push(svc::NewRouter::layer(RequestTarget::from))
             // Used by tap.
-            .push_http_insert_target::<HttpAccept>();
+            .push_http_insert_target::<HttpAccept>()
+            .push(svc::BoxNewService::layer());
 
         Inbound {
             config,

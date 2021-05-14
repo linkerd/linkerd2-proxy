@@ -117,12 +117,7 @@ impl<C> Outbound<C> {
     pub fn push_logical<R, I>(
         self,
         resolve: R,
-    ) -> Outbound<
-        impl svc::NewService<
-                tcp::Logical,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-            > + Clone,
-    >
+    ) -> Outbound<svc::BoxNewService<tcp::Logical, svc::BoxService<I, (), Error>>>
     where
         Self: Clone + 'static,
         C: Clone + Send + Sync + Unpin + 'static,

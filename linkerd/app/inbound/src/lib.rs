@@ -137,7 +137,7 @@ impl Inbound<()> {
         GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
     {
@@ -168,10 +168,10 @@ where
         self,
         server_port: u16,
     ) -> Inbound<
-        impl svc::NewService<
-                TcpEndpoint,
-                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-            > + Clone,
+        svc::BoxNewService<
+            TcpEndpoint,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+        >,
     >
     where
         I: io::AsyncRead + io::AsyncWrite,
@@ -197,6 +197,7 @@ where
                     .push(drain::Retain::layer(rt.drain.clone())),
             )
             .instrument(|_: &_| debug_span!("tcp"))
+            .push(svc::BoxNewService::layer())
             .check_new::<TcpEndpoint>();
 
         Inbound {
@@ -211,10 +212,7 @@ where
         server_port: u16,
         profiles: P,
         gateway: G,
-    ) -> impl svc::NewService<
-        T,
-        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-    > + Clone
+    ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
@@ -224,7 +222,7 @@ where
         GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
     {
@@ -235,7 +233,6 @@ where
             .push_http_router(profiles)
             .push_http_server()
             .stack
-            .push_on_response(svc::BoxService::layer())
             .push_map_target(HttpAccept::from)
             .push(svc::UnwrapOr::layer(
                 // When HTTP detection fails, forward the connection to the
@@ -245,10 +242,11 @@ where
                     .stack
                     .push_map_target(TcpEndpoint::from)
                     .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
                     .into_inner(),
             ))
+            .push_on_response(svc::BoxService::layer())
             .push_map_target(detect::allow_timeout)
+            .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(
                 config.detect_protocol_timeout,
                 http::DetectHttp::default(),
@@ -256,12 +254,12 @@ where
             .push_request_filter(require_id)
             .push(self.runtime.metrics.transport.layer_accept())
             .push_request_filter(TcpAccept::try_from)
+            .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
             ))
             .instrument(|_: &_| debug_span!("proxy"))
-            .push_on_response(svc::BoxService::layer())
             .push_switch(
                 disable_detect,
                 self.clone()
@@ -272,24 +270,24 @@ where
                     .push_map_target(TcpAccept::port_skipped)
                     .check_new_service::<T, _>()
                     .instrument(|_: &T| debug_span!("forward"))
-                    .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
                     .into_inner(),
             )
             .check_new_service::<T, I>()
+            .push_on_response(svc::BoxService::layer())
+            .push(svc::BoxNewService::layer())
             .push_switch(
                 PreventLoop::from(server_port).to_switch(),
                 self.push_tcp_forward(server_port)
                     .push_direct(gateway)
                     .stack
                     .instrument(|_: &_| debug_span!("direct"))
-                    .push_on_response(svc::BoxService::layer())
                     .into_inner(),
             )
             .instrument(|a: &T| {
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
+            .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .into_inner()
     }

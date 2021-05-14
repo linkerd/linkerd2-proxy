@@ -11,18 +11,10 @@ impl<C> Outbound<C> {
     pub fn push_http_endpoint<T, B>(
         self,
     ) -> Outbound<
-        impl svc::NewService<
-                T,
-                Service = impl svc::Service<
-                    http::Request<B>,
-                    Response = http::Response<http::BoxBody>,
-                    Error = Error,
-                    Future = impl Send,
-                >,
-            > + Clone
-            + Send
-            + Sync
-            + 'static,
+        svc::BoxNewService<
+            T,
+            svc::BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>,
+        >,
     >
     where
         T: Clone + Send + Sync + 'static,

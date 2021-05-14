@@ -75,6 +75,7 @@ impl Config {
                         }
                     }))
                     .check_new_service::<tls::server::Meta<B::Addrs>, _>()
+                    .push(svc::BoxNewService::layer())
                     .push(tls::NewDetectTls::layer(
                         identity,
                         std::time::Duration::from_secs(1),

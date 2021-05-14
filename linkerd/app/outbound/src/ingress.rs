@@ -46,10 +46,7 @@ impl<H> Outbound<H> {
     pub fn into_ingress<T, I, HSvc, P>(
         self,
         profiles: P,
-    ) -> impl svc::NewService<
-        T,
-        Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
-    >
+    ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
@@ -124,6 +121,7 @@ impl<H> Outbound<H> {
         .push_cache(cache_max_idle_age)
         .push_on_response(http::Retain::layer())
         .instrument(|t: &Target| info_span!("target", dst = %t.dst))
+        .push(svc::BoxNewService::layer())
         // Obtain a new inner service for each request (fom the above cache).
         //
         // Note that the router service is always ready, so the `FailFast` layer
@@ -148,6 +146,7 @@ impl<H> Outbound<H> {
         })
         .push_cache(cache_max_idle_age)
         .push_map_target(detect::allow_timeout)
+        .push(svc::BoxNewService::layer())
         .push(detect::NewDetectService::layer(
             detect_protocol_timeout,
             http::DetectHttp::default(),
@@ -158,10 +157,8 @@ impl<H> Outbound<H> {
             let orig_dst = Param::<OrigDstAddr>::param(&a);
             tcp::Accept::from(orig_dst)
         })
-        // Boxing is necessary purely to limit the link-time overhead of
-        // having enormous types.
-        .push(svc::BoxNewService::layer())
         .push_on_response(svc::BoxService::layer())
+        .push(svc::BoxNewService::layer())
         .check_new_service::<T, I>()
         .into_inner()
     }

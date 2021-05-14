@@ -16,9 +16,9 @@ impl<N> Outbound<N> {
         self,
         profiles: P,
     ) -> Outbound<
-        impl svc::NewService<
+        svc::BoxNewService<
             T,
-            Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
+            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
@@ -81,8 +81,6 @@ impl<N> Outbound<N> {
             .push_cache(config.proxy.cache_max_idle_age)
             .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
             .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-            // Boxing is necessary purely to limit the link-time overhead of
-            // having enormous types.
             .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>();
 
