@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use std::marker::PhantomData;
+use tracing::subscriber::Interest;
 use tracing::{Id, Metadata, Subscriber};
 use tracing_subscriber::{
     fmt::{
@@ -33,7 +34,7 @@ impl Default for AccessLogWriter<fn() -> io::Stdout, DefaultFields> {
 
 impl<W: MakeWriter, F> AccessLogWriter<W, F> {
     #[inline(always)]
-    fn cares_about(&self, meta: &'static Metadata<'static>) -> bool {
+    fn cares_about(&self, meta: &Metadata<'_>) -> bool {
         meta.target() == "access_log"
     }
 
@@ -61,6 +62,17 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
     F: for<'writer> FormatFields<'writer> + 'static,
 {
+    fn register_callsite(&self, metadata: &'static Metadata<'static>) -> Interest {
+        if self.cares_about(metadata) {
+            return Interest::always();
+        }
+        Interest::never()
+    }
+
+    fn enabled(&self, metadata: &Metadata<'_>, _: Context<'_, S>) -> bool {
+        self.cares_about(metadata)
+    }
+
     fn on_close(&self, id: Id, ctx: Context<'_, S>) {
         if let Some(span) = ctx.span(&id) {
             if self.cares_about(span.metadata()) {

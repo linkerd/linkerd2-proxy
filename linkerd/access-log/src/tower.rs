@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tracing::{field, span, Level, Span};
 
-/// A tower layer that associates a tokio-tracing Span with each request
+/// A tower layer that associates a `tracing` `Span` with each request
 #[derive(Clone)]
 pub struct AccessLogLayer {}
 
@@ -37,24 +37,55 @@ impl<Svc> tower::layer::Layer<Svc> for AccessLogLayer {
     }
 }
 
-impl<Svc, B1, B2> tower::Service<http::Request<B1>> for AccessLogContext<Svc>
+impl<S, B1, B2> tower::Service<http::Request<B1>> for AccessLogContext<S>
 where
-    Svc: tower::Service<http::Request<B1>, Response = http::Response<B2>>,
+    S: tower::Service<http::Request<B1>, Response = http::Response<B2>>,
 {
-    type Response = Svc::Response;
-    type Error = Svc::Error;
-    type Future = AccessLogFuture<Svc::Future>;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = AccessLogFuture<S::Future>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Svc::Error>> {
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, request: http::Request<B1>) -> Self::Future {
-        let span: Span = span!(target: "access_log", Level::TRACE, "http",
-            timestamp=field::Empty, processing_ns=field::Empty, total_ns=field::Empty,
-            method=field::Empty, uri=field::Empty, version=field::Empty, user_agent=field::Empty,
-            host=field::Empty, trace_id=field::Empty, status=field::Empty,
-            request_bytes=field::Empty, response_bytes=field::Empty);
+        let get_header = |name: &str| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|x| x.to_str().ok())
+                .unwrap_or_default()
+        };
+
+        let trace_id = || {
+            request
+                .headers()
+                .get("x-b3-traceid")
+                .or_else(|| request.headers().get("X-Request-ID"))
+                .or_else(|| request.headers().get("X-Amzn-Trace-Id"))
+                .and_then(|x| x.to_str().ok())
+                .unwrap_or_default()
+        };
+
+        let timestamp = chrono::Utc::now().format_with_items(
+            [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
+        );
+
+        let span = span!(target: "access_log", Level::TRACE, "http",
+            %timestamp,
+            processing_ns=field::Empty,
+            total_ns=field::Empty,
+            method=&request.method().as_str(),
+            uri=&field::display(&request.uri()),
+            version=&field::debug(&request.version()),
+            user_agent=get_header("User-Agent"),
+            host=get_header("Host"),
+            trace_id=trace_id(),
+            status=field::Empty,
+            request_bytes=get_header("Content-Length"),
+            response_bytes=field::Empty
+        );
 
         if span.is_disabled() {
             return AccessLogFuture {
@@ -62,42 +93,6 @@ where
                 inner: self.inner.call(request),
             };
         }
-
-        // Delay formatting to avoid an intermediate `String`
-        let delayed_format = chrono::Utc::now().format_with_items(
-            [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
-        );
-
-        span.record("timestamp", &field::display(&delayed_format));
-        span.record("method", &request.method().as_str());
-        span.record("uri", &field::display(&request.uri()));
-        span.record("version", &field::debug(&request.version()));
-
-        request
-            .headers()
-            .get("Host")
-            .and_then(|x| x.to_str().ok())
-            .map(|x| span.record("host", &x));
-
-        request
-            .headers()
-            .get("User-Agent")
-            .and_then(|x| x.to_str().ok())
-            .map(|x| span.record("user_agent", &x));
-
-        request
-            .headers()
-            .get("Content-Length")
-            .and_then(|x| x.to_str().ok())
-            .map(|x| span.record("request_bytes", &x));
-
-        request
-            .headers()
-            .get("x-b3-traceid")
-            .or_else(|| request.headers().get("X-Request-ID"))
-            .or_else(|| request.headers().get("X-Amzn-Trace-Id"))
-            .and_then(|x| x.to_str().ok())
-            .map(|x| span.record("trace_id", &x));
 
         AccessLogFuture {
             data: Some(ResponseFutureInner {
