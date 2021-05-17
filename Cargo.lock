@@ -645,8 +645,8 @@ dependencies = [
  "chrono",
  "futures",
  "http",
+ "linkerd-stack",
  "pin-project",
- "tower",
  "tracing",
  "tracing-subscriber",
 ]
