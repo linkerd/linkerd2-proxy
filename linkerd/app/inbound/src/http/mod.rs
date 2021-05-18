@@ -20,6 +20,7 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     svc::{self, Param},
+    transport::{ClientAddr, Remote},
     Error, DST_OVERRIDE_HEADER,
 };
 use tracing::debug_span;
@@ -36,7 +37,8 @@ impl<H> Inbound<H> {
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
-            + Param<Option<identity::Name>>,
+            + Param<Option<identity::Name>>
+            + Param<Remote<ClientAddr>>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -82,13 +84,13 @@ impl<H> Inbound<H> {
                     .push(rt.metrics.http_errors.clone())
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
-                    .push(AccessLogLayer::new())
                     .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                     // Record when an HTTP/1 URI was in absolute form
                     .push(http::normalize_uri::MarkAbsoluteForm::layer())
                     .push(http::BoxRequest::layer())
                     .push(http::BoxResponse::layer()),
             )
+            .push(AccessLogLayer::new())
             .check_new_service::<T, http::Request<_>>()
             .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
             .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))

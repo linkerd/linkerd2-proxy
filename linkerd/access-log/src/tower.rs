@@ -1,9 +1,14 @@
 use futures::TryFuture;
+use linkerd_identity as identity;
+use linkerd_proxy_transport::{ClientAddr, Remote};
+use linkerd_stack as svc;
 use pin_project::pin_project;
 use std::future::Future;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use svc::{NewService, Param};
 use tracing::{field, span, Level, Span};
 
 /// A tower layer that associates a `tracing` `Span` with each request
@@ -13,7 +18,15 @@ pub struct AccessLogLayer {}
 #[derive(Clone)]
 pub struct AccessLogContext<S> {
     inner: S,
+    client_addr: SocketAddr,
+    client_id: Option<identity::Name>,
 }
+
+#[derive(Clone)]
+pub struct NewAccessLog<S> {
+    inner: S,
+}
+
 struct ResponseFutureInner {
     span: Span,
     start: Instant,
@@ -28,17 +41,35 @@ pub struct AccessLogFuture<F> {
     inner: F,
 }
 
-impl<Svc> tower::layer::Layer<Svc> for AccessLogLayer {
-    type Service = AccessLogContext<Svc>;
+impl<N> svc::layer::Layer<N> for AccessLogLayer {
+    type Service = NewAccessLog<N>;
 
-    fn layer(&self, inner: Svc) -> Self::Service {
+    fn layer(&self, inner: N) -> Self::Service {
         Self::Service { inner }
     }
 }
 
-impl<S, B1, B2> tower::Service<http::Request<B1>> for AccessLogContext<S>
+impl<S, T> NewService<T> for NewAccessLog<S>
 where
-    S: tower::Service<http::Request<B1>, Response = http::Response<B2>>,
+    T: Param<Option<identity::Name>> + Param<Remote<ClientAddr>>,
+    S: NewService<T>,
+{
+    type Service = AccessLogContext<S::Service>;
+    fn new_service(&mut self, target: T) -> Self::Service {
+        let Remote(ClientAddr(client_addr)) = target.param();
+        let client_id = target.param();
+        let inner = self.inner.new_service(target);
+        AccessLogContext {
+            inner,
+            client_addr,
+            client_id,
+        }
+    }
+}
+
+impl<S, B1, B2> svc::Service<http::Request<B1>> for AccessLogContext<S>
+where
+    S: svc::Service<http::Request<B1>, Response = http::Response<B2>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -73,6 +104,8 @@ where
 
         let span = span!(target: "access_log", Level::TRACE, "http",
             %timestamp,
+            client.addr = %self.client_addr,
+            client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or_default(),
             processing_ns=field::Empty,
             total_ns=field::Empty,
             method=request.method().as_str(),
