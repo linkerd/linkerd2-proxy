@@ -10,7 +10,7 @@ use self::uptime::Uptime;
 use hyper::body::HttpBody;
 use linkerd_access_log::tracing::AccessLogWriter;
 use linkerd_error::Error;
-use std::{env, str, sync::Arc};
+use std::{env, fs, path::PathBuf, str, sync::Arc};
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -18,6 +18,7 @@ use tracing_subscriber::{fmt::format, prelude::*};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
+const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
 const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
@@ -63,18 +64,33 @@ pub fn init_log_compat() -> Result<(), Error> {
 pub struct Settings {
     filter: Option<String>,
     format: Option<String>,
+    access_log: Option<PathBuf>,
     test: bool,
 }
 
 impl Settings {
     pub fn from_env() -> Self {
+        use std::str::FromStr;
+
         let mut settings = Settings::default();
         if let Ok(filter) = env::var(ENV_LOG_LEVEL) {
             settings = settings.filter(filter);
         }
+
         if let Ok(format) = env::var(ENV_LOG_FORMAT) {
             settings = settings.format(format);
         }
+
+        if let Ok(access_log) = env::var(ENV_ACCESS_LOG) {
+            match PathBuf::from_str(&access_log) {
+                Ok(access_log) => settings = settings.access_log(access_log),
+                Err(e) => eprintln!(
+                    "{} ({:?}) was not a path: {}",
+                    ENV_ACCESS_LOG, access_log, e
+                ),
+            }
+        }
+
         settings
     }
 
@@ -88,6 +104,13 @@ impl Settings {
     pub fn format(self, format: impl Into<String>) -> Self {
         Self {
             format: Some(format.into()),
+            ..self
+        }
+    }
+
+    pub fn access_log(self, access_log: impl Into<PathBuf>) -> Self {
+        Self {
+            access_log: Some(access_log.into()),
             ..self
         }
     }
@@ -109,10 +132,33 @@ impl Settings {
         let filter = tracing_subscriber::EnvFilter::new(filter);
         let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
         let level = level::Handle::new(level);
-        let registry = tracing_subscriber::registry().with(filter);
 
-        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        let access_log = AccessLogWriter::new().with_writer(non_blocking);
+        let (access_log, flush_guard) = if let Some((access_log, flush_guard)) =
+            self.access_log.and_then(|path| {
+                let file = fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(&path)
+                    .map_err(|e| {
+                        eprintln!(
+                            "failed to create access log: {} ({}={})",
+                            e,
+                            ENV_ACCESS_LOG,
+                            path.display()
+                        )
+                    })
+                    .ok()?;
+                eprintln!("writing access log to {:?}", file);
+                let (non_blocking, guard) = tracing_appender::non_blocking(file);
+                let access_log = AccessLogWriter::new().with_writer(non_blocking);
+                Some((access_log, guard))
+            }) {
+            (Some(access_log), Some(flush_guard))
+        } else {
+            (None, None)
+        };
+
+        let registry = tracing_subscriber::registry().with(filter).with(access_log);
 
         let (dispatch, tasks) = match format.to_uppercase().as_ref() {
             "JSON" => {
@@ -131,7 +177,7 @@ impl Settings {
                     // Since we're using the JSON event formatter, we must also
                     // use the JSON field formatter.
                     .fmt_fields(format::JsonFields::default());
-                let registry = registry.with(tasks_layer).with(access_log);
+                let registry = registry.with(tasks_layer);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()
                 } else {
@@ -141,7 +187,7 @@ impl Settings {
             }
             _ => {
                 let (tasks, tasks_layer) = TasksLayer::<format::DefaultFields>::new();
-                let registry = registry.with(tasks_layer).with(access_log);
+                let registry = registry.with(tasks_layer);
                 let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
                 let dispatch = if self.test {
                     registry.with(fmt.with_test_writer()).into()
@@ -157,7 +203,7 @@ impl Settings {
             Handle(Inner::Enabled {
                 level,
                 tasks: tasks::Handle { tasks },
-                flush_guard: Arc::new(guard),
+                flush_guard: flush_guard.map(Arc::new),
             }),
         )
     }
@@ -172,7 +218,7 @@ enum Inner {
     Enabled {
         level: level::Handle,
         tasks: tasks::Handle,
-        flush_guard: Arc<WorkerGuard>,
+        flush_guard: Option<Arc<WorkerGuard>>,
     },
 }
 

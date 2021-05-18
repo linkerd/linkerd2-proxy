@@ -11,10 +11,9 @@ use tracing::{field, span, Level, Span};
 pub struct AccessLogLayer {}
 
 #[derive(Clone)]
-pub struct AccessLogContext<Svc> {
-    inner: Svc,
+pub struct AccessLogContext<S> {
+    inner: S,
 }
-
 struct ResponseFutureInner {
     span: Span,
     start: Instant,
@@ -76,7 +75,7 @@ where
             %timestamp,
             processing_ns=field::Empty,
             total_ns=field::Empty,
-            method=&request.method().as_str(),
+            method=request.method().as_str(),
             uri=&field::display(&request.uri()),
             version=&field::debug(&request.version()),
             user_agent=get_header("User-Agent"),
