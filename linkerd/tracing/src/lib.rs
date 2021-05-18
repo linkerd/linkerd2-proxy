@@ -130,11 +130,11 @@ impl Settings {
             .with_timer(Uptime::starting_now())
             .with_thread_ids(!self.test);
         let filter = tracing_subscriber::EnvFilter::new(filter);
-        let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
-        let level = level::Handle::new(level);
 
-        let (access_log, flush_guard) = if let Some((access_log, flush_guard)) =
+        let (access_log, flush_guard, filter) = if let Some((access_log, flush_guard)) =
             self.access_log.and_then(|path| {
+                // Create the access log file, or open it in append-only mode if
+                // it already exists.
                 let file = fs::OpenOptions::new()
                     .append(true)
                     .create(true)
@@ -148,16 +148,29 @@ impl Settings {
                         )
                     })
                     .ok()?;
+
+                // If we successfully created or opened the access log file,
+                // build the access log layer.
                 eprintln!("writing access log to {:?}", file);
                 let (non_blocking, guard) = tracing_appender::non_blocking(file);
                 let access_log = AccessLogWriter::new().with_writer(non_blocking);
+
                 Some((access_log, guard))
             }) {
-            (Some(access_log), Some(flush_guard))
+            // Also, ensure that the `tracing` filter configuration will
+            // always enable the access log spans.
+            let filter = filter.add_directive(
+                "access_log=trace"
+                    .parse()
+                    .expect("hard-coded filter directive should always parse"),
+            );
+            (Some(access_log), Some(flush_guard), filter)
         } else {
-            (None, None)
+            (None, None, filter)
         };
 
+        let (filter, level) = tracing_subscriber::reload::Layer::new(filter);
+        let level = level::Handle::new(level);
         let registry = tracing_subscriber::registry().with(filter).with(access_log);
 
         let (dispatch, tasks) = match format.to_uppercase().as_ref() {
