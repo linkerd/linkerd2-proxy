@@ -160,7 +160,7 @@ impl Settings {
             // Also, ensure that the `tracing` filter configuration will
             // always enable the access log spans.
             let filter = filter.add_directive(
-                "access_log=trace"
+                "access_log=info"
                     .parse()
                     .expect("hard-coded filter directive should always parse"),
             );

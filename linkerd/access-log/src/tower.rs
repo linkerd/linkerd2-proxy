@@ -102,7 +102,7 @@ where
             [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
         );
 
-        let span = span!(target: "access_log", Level::TRACE, "http",
+        let span = span!(target: "access_log", Level::INFO, "http",
             %timestamp,
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or_default(),
