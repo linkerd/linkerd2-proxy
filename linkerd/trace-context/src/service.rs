@@ -98,9 +98,8 @@ where
                     let mut sink = self.sink.clone();
                     let span_name = req
                         .uri()
-                        .path_and_query()
-                        .map(|pq| pq.as_str().to_owned())
-                        .unwrap_or_default();
+                        .path()
+                        .to_owned();
                     return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
                         // Emit the completed span with the response metadata.
                         let span = Span {
