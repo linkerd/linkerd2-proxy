@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use http::{HeaderMap, HeaderValue};
 use http_body::Body;
 use linkerd_error::Error;
@@ -6,7 +7,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 pub struct BoxBody {
-    inner: Pin<Box<dyn Body<Data = Data, Error = Error> + Send + 'static>>,
+    inner: Pin<Box<dyn Body<Data = Bytes, Error = Error> + Send + 'static>>,
 }
 
 #[pin_project]
@@ -16,7 +17,7 @@ pub struct Data {
 }
 
 #[pin_project]
-struct Inner<B: Body>(#[pin] B);
+struct Inner<B: Body<Data = Bytes>>(#[pin] B);
 
 struct NoBody;
 
@@ -31,8 +32,7 @@ impl Default for BoxBody {
 impl BoxBody {
     pub fn new<B>(inner: B) -> Self
     where
-        B: Body + Send + 'static,
-        B::Data: Send + 'static,
+        B: Body<Data = Bytes> + Send + 'static,
         B::Error: Into<Error>,
     {
         Self {
@@ -42,7 +42,7 @@ impl BoxBody {
 }
 
 impl Body for BoxBody {
-    type Data = Data;
+    type Data = Bytes;
     type Error = Error;
 
     fn is_end_stream(&self) -> bool {
@@ -88,11 +88,10 @@ impl bytes::Buf for Data {
 
 impl<B> Body for Inner<B>
 where
-    B: Body,
-    B::Data: Send + 'static,
+    B: Body<Data = Bytes>,
     B::Error: Into<Error>,
 {
-    type Data = Data;
+    type Data = Bytes;
     type Error = Error;
 
     fn is_end_stream(&self) -> bool {
@@ -104,11 +103,7 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let opt = futures::ready!(self.project().0.poll_data(cx));
-        Poll::Ready(opt.map(|res| {
-            res.map_err(Into::into).map(|buf| Data {
-                inner: Box::new(buf),
-            })
-        }))
+        Poll::Ready(opt.map(|res| res.map_err(Into::into)))
     }
 
     fn poll_trailers(
@@ -130,7 +125,7 @@ impl std::fmt::Debug for BoxBody {
 }
 
 impl Body for NoBody {
-    type Data = Data;
+    type Data = Bytes;
     type Error = Error;
 
     fn is_end_stream(&self) -> bool {

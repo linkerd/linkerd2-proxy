@@ -18,8 +18,7 @@ impl<S> BoxResponse<S> {
 impl<S, Req, B> tower::Service<Req> for BoxResponse<S>
 where
     S: tower::Service<Req, Response = http::Response<B>>,
-    B: http_body::Body + Send + 'static,
-    B::Data: Send + 'static,
+    B: http_body::Body<Data = bytes::Bytes> + Send + 'static,
     B::Error: Into<Error> + 'static,
 {
     type Response = http::Response<BoxBody>;

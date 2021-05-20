@@ -25,8 +25,7 @@ impl<S: Clone, B> Clone for BoxRequest<S, B> {
 
 impl<S, B> tower::Service<http::Request<B>> for BoxRequest<S, B>
 where
-    B: http_body::Body + Send + 'static,
-    B::Data: Send + 'static,
+    B: http_body::Body<Data = bytes::Bytes> + Send + 'static,
     B::Error: Into<Error>,
     S: tower::Service<http::Request<BoxBody>>,
 {
