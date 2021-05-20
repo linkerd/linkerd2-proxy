@@ -1,8 +1,9 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, Bytes};
 use http::HeaderMap;
 use http_body::Body;
 use pin_project::{pin_project, pinned_drop};
 use std::{
+    collections::VecDeque,
     marker::PhantomData,
     mem,
     pin::Pin,
@@ -22,6 +23,11 @@ pub struct BufBody<B> {
     inner: Inner<B>,
 }
 
+pub enum Data<B: Buf> {
+    Initial(B),
+    Replay(VecDeque<Bytes>),
+}
+
 #[pin_project(project = InnerProj)]
 enum Inner<B> {
     Initial(#[pin] InitialBody<B>),
@@ -32,7 +38,7 @@ enum Inner<B> {
 struct InitialBody<B> {
     #[pin]
     body: B,
-    buf: BytesMut,
+    bufs: VecDeque<Bytes>,
     trailers: Option<HeaderMap>,
     shared: Arc<Mutex<Option<BodyState<B>>>>,
 }
@@ -59,7 +65,7 @@ impl<B: Body> BufBody<B> {
         Self {
             inner: Inner::Initial(InitialBody {
                 body,
-                buf: BytesMut::new(),
+                bufs: VecDeque::new(),
                 trailers: None,
                 shared: Arc::new(Mutex::new(None)),
             }),
@@ -79,9 +85,8 @@ impl<B: Body> BufBody<B> {
 impl<B> Body for BufBody<B>
 where
     B: Body,
-    B::Data: Buf + Send,
 {
-    type Data = Box<dyn Buf + Send>;
+    type Data = Data<B::Data>;
     type Error = B::Error;
 
     fn poll_data(
@@ -124,9 +129,8 @@ where
 impl<B> Body for InitialBody<B>
 where
     B: Body,
-    B::Data: Buf + Send,
 {
-    type Data = Box<dyn Buf + Send>;
+    type Data = Data<B::Data>;
     type Error = B::Error;
 
     fn poll_data(
@@ -134,17 +138,16 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
-        let buf = this.buf;
+        let bufs = this.bufs;
         let opt = futures::ready!(this.body.poll_data(cx)).map(|res| {
             res.map(|mut data| {
                 let len = data.remaining();
-                buf.reserve(len);
-                // `copy_to_bytes` is necessary here to avoid advancing `data`'s
-                // internal cursor, so that we can return it and read the same data
-                // from it again...
-                buf.put(data.copy_to_bytes(len));
+                // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
+                // internally be a cheap refcount bump almost all of the time.
+                bufs.push_back(data.copy_to_bytes(len));
                 debug_assert_eq!(data.remaining(), len);
-                Box::new(data)
+                // Return the original `data`
+                data
             })
         });
         Poll::Ready(opt)
@@ -261,6 +264,29 @@ impl<B: Body> Body for ReplayBody<B> {
     }
 }
 
+impl<B: Buf> Buf for Data<B> {
+    fn remaining(&self) -> usize {
+        match self {
+            Data::Initial(x) => x.remaining(),
+            Data::Replay(_) => todo!(),
+        }
+    }
+
+    fn chunk(&self) -> &[u8] {
+        match self {
+            Data::Initial(x) => x.chunk(),
+            Data::Replay(_) => todo!(),
+        }
+    }
+
+    fn advance(&mut self, amt: usize) {
+        match self {
+            Data::Initial(x) => x.advance(amt),
+            Data::Replay(_) => todo!(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,3 +319,5 @@ mod tests {
             .to_owned()
     }
 }
+
+// ===
