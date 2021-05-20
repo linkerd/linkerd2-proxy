@@ -12,3 +12,7 @@ linkerd-stack = { path = "../stack" }
 tower = { version = "0.4.7", default-features = false, features = ["retry", "util"] }
 tracing = "0.1.23"
 pin-project = "1"
+bytes = "1"
+http-body = "0.4"
+http = "0.2"
+futures = { version = "0.3", default-features = false }

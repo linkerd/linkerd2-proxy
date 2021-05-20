@@ -1263,6 +1263,10 @@ dependencies = [
 name = "linkerd-retry"
 version = "0.1.0"
 dependencies = [
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
  "linkerd-error",
  "linkerd-stack",
  "pin-project",
