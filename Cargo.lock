@@ -1267,9 +1267,11 @@ dependencies = [
  "futures",
  "http",
  "http-body",
+ "hyper",
  "linkerd-error",
  "linkerd-stack",
  "pin-project",
+ "tokio",
  "tower",
  "tracing",
 ]

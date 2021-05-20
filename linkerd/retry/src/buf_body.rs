@@ -79,9 +79,9 @@ impl<B: Body> BufBody<B> {
 impl<B> Body for BufBody<B>
 where
     B: Body,
-    Box<dyn Buf + Send + Sync + 'static>: From<B::Data>,
+    B::Data: Buf + Send,
 {
-    type Data = Box<dyn Buf + Send + Sync + 'static>;
+    type Data = Box<dyn Buf + Send>;
     type Error = B::Error;
 
     fn poll_data(
@@ -124,9 +124,9 @@ where
 impl<B> Body for InitialBody<B>
 where
     B: Body,
-    Box<dyn Buf + Send + Sync + 'static>: From<B::Data>,
+    B::Data: Buf + Send,
 {
-    type Data = Box<dyn Buf + Send + Sync + 'static>;
+    type Data = Box<dyn Buf + Send>;
     type Error = B::Error;
 
     fn poll_data(
@@ -135,19 +135,18 @@ where
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.project();
         let buf = this.buf;
-        let opt: Option<Result<Self::Data, Self::Error>> = futures::ready!(this.body.poll_data(cx))
-            .map(|res| {
-                res.map(|mut data| {
-                    let len = data.remaining();
-                    buf.reserve(len);
-                    // `copy_to_bytes` is necessary here to avoid advancing `data`'s
-                    // internal cursor, so that we can return it and read the same data
-                    // from it again...
-                    buf.put(data.copy_to_bytes(len));
-                    debug_assert_eq!(data.remaining(), len);
-                    Box::from(data)
-                })
-            });
+        let opt = futures::ready!(this.body.poll_data(cx)).map(|res| {
+            res.map(|mut data| {
+                let len = data.remaining();
+                buf.reserve(len);
+                // `copy_to_bytes` is necessary here to avoid advancing `data`'s
+                // internal cursor, so that we can return it and read the same data
+                // from it again...
+                buf.put(data.copy_to_bytes(len));
+                debug_assert_eq!(data.remaining(), len);
+                Box::new(data)
+            })
+        });
         Poll::Ready(opt)
     }
 
@@ -259,5 +258,38 @@ impl<B: Body> Body for ReplayBody<B> {
                 hint
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn basically_works() {
+        let (mut tx, body) = hyper::Body::channel();
+        let mut initial_body = BufBody::new(body);
+        let mut replay_body = initial_body
+            .try_clone()
+            .expect("this is the first clone and should therefore succeed");
+
+        tx.send_data("hello world".into());
+        drop(tx);
+
+        let initial = body_to_string(initial_body).await;
+        assert_eq!()
+    }
+
+    async fn body_to_string<T>(body: T) -> String
+    where
+        T: http_body::Body,
+        T::Error: std::fmt::Debug,
+    {
+        let body = hyper::body::to_bytes(body)
+            .await
+            .expect("body should not fail");
+        std::str::from_utf8(&body[..])
+            .expect("body should be utf-8")
+            .to_owned()
     }
 }

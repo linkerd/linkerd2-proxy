@@ -16,3 +16,7 @@ bytes = "1"
 http-body = "0.4"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros"]}
+hyper = "0.14"
