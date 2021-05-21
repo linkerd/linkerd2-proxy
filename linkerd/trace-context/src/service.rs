@@ -96,10 +96,7 @@ where
                     let start = SystemTime::now();
                     let req_labels = Self::request_labels(&req);
                     let mut sink = self.sink.clone();
-                    let span_name = req
-                        .uri()
-                        .path()
-                        .to_owned();
+                    let span_name = req.uri().path().to_owned();
                     return Either::Right(Box::pin(self.inner.call(req).map_ok(move |rsp| {
                         // Emit the completed span with the response metadata.
                         let span = Span {
