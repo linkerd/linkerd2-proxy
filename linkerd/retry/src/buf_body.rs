@@ -239,7 +239,13 @@ impl<B: Body> Body for ReplayBody<B> {
         _: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut().state();
-        Poll::Ready(this.body.take().map(|bytes| Ok(Data::Replay(bytes))))
+        Poll::Ready(this.body.take().and_then(|bytes| {
+            if bytes.has_remaining() {
+                Some(Ok(Data::Replay(bytes)))
+            } else {
+                None
+            }
+        }))
     }
 
     fn poll_trailers(
@@ -447,6 +453,35 @@ mod tests {
         while replay.data().await.is_some() {
             // do nothing
         }
+        let replay_tlrs = replay.trailers().await.expect("trailers should not error");
+        assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
+    }
+
+    #[tokio::test]
+    async fn trailers_only() {
+        let Test {
+            mut tx,
+            mut initial,
+            mut replay,
+        } = Test::new();
+
+        let mut tlrs = HeaderMap::new();
+        tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
+        tlrs.insert("x-foo", HeaderValue::from_str("bar").unwrap());
+
+        tx.send_trailers(tlrs.clone())
+            .await
+            .expect("rx is not dropped");
+        drop(tx);
+
+        assert!(dbg!(initial.data().await).is_none(), "no data in body");
+        let initial_tlrs = initial.trailers().await.expect("trailers should not error");
+        assert_eq!(initial_tlrs.as_ref(), Some(&tlrs));
+
+        // drop the initial body to send the data to the replay
+        drop(initial);
+
+        assert!(dbg!(replay.data().await).is_none(), "no data in body");
         let replay_tlrs = replay.trailers().await.expect("trailers should not error");
         assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
     }
