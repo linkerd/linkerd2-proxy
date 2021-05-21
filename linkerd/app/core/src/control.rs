@@ -93,6 +93,9 @@ impl Config {
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
             .push(reconnect::layer(connect_backoff))
+            // Ensure individual endpoints are driven to readiness so that the balancer need not
+            // drive them all directly.
+            .push_on_response(svc::layer::mk(svc::SpawnReady::new))
             .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()
