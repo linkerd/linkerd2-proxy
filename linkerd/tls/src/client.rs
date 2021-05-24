@@ -45,6 +45,9 @@ pub enum NoClientTls {
     /// The destination service didn't give us the identity, which is its way
     /// of telling us that we shouldn't do TLS for this endpoint.
     NotProvidedByServiceDiscovery,
+
+    /// No discovery was attempted.
+    IngressWithoutOverride,
 }
 
 /// A stack paramater that indicates whether the target server endpoint has a
@@ -194,6 +197,9 @@ impl fmt::Display for NoClientTls {
             Self::Loopback => write!(f, "loopback"),
             Self::NotProvidedByServiceDiscovery => {
                 write!(f, "not_provided_by_service_discovery")
+            }
+            Self::IngressWithoutOverride => {
+                write!(f, "ingress_without_override")
             }
         }
     }

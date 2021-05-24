@@ -142,8 +142,7 @@ impl Outbound<()> {
                     .to_tcp_connect()
                     .push_tcp_endpoint()
                     .push_http_endpoint()
-                    .push_http_logical(resolve)
-                    .into_ingress(profiles);
+                    .into_ingress(profiles, resolve);
                 let shutdown = self.runtime.drain.signaled();
                 serve::serve(listen, stack, shutdown).await;
             } else {
