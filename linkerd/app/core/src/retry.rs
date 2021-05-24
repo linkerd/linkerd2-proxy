@@ -148,22 +148,38 @@ impl<B: HttpBody> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody
     fn clone_request(
         req: &http::Request<buf_body::BufBody<B>>,
     ) -> Option<http::Request<buf_body::BufBody<B>>> {
-        let content_length_ok = |req: &http::Request<_>| {
+        let content_length = |req: &http::Request<_>| {
             req.headers()
                 .get(http::header::CONTENT_LENGTH)
-                .and_then(|value| {
-                    let length = value.to_str().ok()?.parse::<usize>().ok()?;
-                    Some(length > buf_body::BufBody::<B>::MAX_BUF)
-                })
-                .unwrap_or(true)
+                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
         };
 
-        // TODO(eliza): maybe log how we made the retry decision here?
-        if (!req.body().is_end_stream() && req.method() != http::Method::POST)
-            || content_length_ok(&req)
+        // Requests without bodies can always be retried, as we will not need to
+        // buffer the body. If the request *does* have a body, retry it if and
+        // only if:
+        // - the request is a POST
+        // - the request contains a `content-length` header,
+        // - the content length is >= 64 kb,
+        let has_body = !req.body().is_end_stream();
+        let method = req.method();
+        if has_body
+            && (method != http::Method::POST
+                || content_length(&req).unwrap_or(usize::MAX) > buf_body::BufBody::<B>::MAX_BUF)
         {
+            tracing::trace!(
+                req.has_body = has_body,
+                req.method = %method,
+                req.content_length = ?content_length(&req),
+                "not retryable",
+            );
             return None;
         }
+        tracing::trace!(
+            req.has_body = has_body,
+            req.method = %method,
+            req.content_length = ?content_length(&req),
+            "retryable",
+        );
 
         let mut clone = http::Request::new(req.body().try_clone()?);
         *clone.method_mut() = req.method().clone();
