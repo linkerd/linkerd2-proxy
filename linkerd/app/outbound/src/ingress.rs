@@ -9,7 +9,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{OrigDstAddr, Remote, ServerAddr},
-    AddrMatch, Error, NameAddr,
+    AddrMatch, Error, NameAddr, Never,
 };
 use thiserror::Error;
 use tracing::{debug_span, info_span};
@@ -18,8 +18,8 @@ use tracing::{debug_span, info_span};
 struct AllowHttpProfile(AddrMatch);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Http {
-    target: Target,
+struct Http<T> {
+    target: T,
     version: http::Version,
 }
 
@@ -72,7 +72,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             stack: http_logical,
         } = self.clone().push_http_logical(resolve);
 
-        let http_endpoint = self.into_inner();
+        let http_endpoint = self.into_stack();
 
         let Config {
             allow_discovery,
@@ -90,62 +90,45 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
         } = config;
         let profile_domains = allow_discovery.names().clone();
 
-        // Route requests with destinations that can be discovered via the `l5d-dst-override` header
-        // through a logical stack and route requests without the `l5d-dst-override` header through
-        // the endpoint stack.
         http_logical
-            .push_switch(
-                |(profile, Http { target, version }): (Option<profiles::Receiver>, _)| {
-                    // If the target did not include an override header, build an endpoint stack
-                    // with the original destination address (ignoring all headers, etc).
-                    if let Target::Forward(OrigDstAddr(addr)) = target {
-                        return Ok(svc::Either::B(http::Endpoint {
-                            addr: Remote(ServerAddr(addr)),
-                            metadata: Metadata::default(),
-                            logical_addr: None,
-                            protocol: version,
-                            opaque_protocol: false,
-                            tls: tls::ConditionalClientTls::None(
-                                tls::NoClientTls::IngressWithoutOverride,
-                            ),
-                        }));
-                    }
-
-                    // Otherwise, if a profile was discovered, use it to build a logical stack.
+            // If a profile was discovered, use it to build a logical stack. Otherwise, the override
+            // header was present but no profile information could be discovered, so fail the
+            // request.
+            .push_request_filter(
+                |(profile, http): (Option<profiles::Receiver>, Http<NameAddr>)| {
                     if let Some(profile) = profile {
                         let addr = profile.borrow().addr.clone();
                         if let Some(logical_addr) = addr {
-                            return Ok(svc::Either::A(http::Logical {
+                            return Ok(http::Logical {
                                 profile,
                                 logical_addr,
-                                protocol: version,
-                            }));
+                                protocol: http.version,
+                            });
                         }
                     }
 
-                    // Otherwise, the override header was present but no profile information could
-                    // be discovered, so fail the request.
                     Err(ProfileRequired)
                 },
-                http_endpoint,
             )
-            .push(profiles::discover::layer(profiles, move |h: Http| {
-                // Lookup the profile if the override header was set and it is in the configured
-                // profile domains. Otherwise, profile discovery is skipped.
-                if let Target::Override(dst) = h.target {
-                    if profile_domains.matches(dst.name()) {
-                        return Ok(profiles::LookupAddr(dst.into()));
+            .push(profiles::discover::layer(
+                profiles,
+                move |h: Http<NameAddr>| {
+                    // Lookup the profile if the override header was set and it is in the configured
+                    // profile domains. Otherwise, profile discovery is skipped.
+                    if profile_domains.matches(h.target.name()) {
+                        return Ok(profiles::LookupAddr(h.target.into()));
                     }
-                }
 
-                tracing::debug!(
-                    domains = %profile_domains,
-                    "Address not in a configured domain",
-                );
-                Err(profiles::DiscoveryRejected::new(
-                    "not in configured ingress search addresses",
-                ))
-            }))
+                    tracing::debug!(
+                        dst = %h.target,
+                        domains = %profile_domains,
+                        "Address not in a configured domain",
+                    );
+                    Err(profiles::DiscoveryRejected::new(
+                        "not in configured ingress search addresses",
+                    ))
+                },
+            ))
             // This service is buffered because it needs to initialize the profile resolution and a
             // fail-fast is instrumented in case it becomes unavailable. When this service is in
             // fail-fast, ensure that we drive the inner service to readiness even if new requests
@@ -161,12 +144,33 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             .push_on_response(
                 svc::layers()
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                    .push(http::Retain::layer()),
+                    .push(http::Retain::layer())
+                    .push(http::BoxResponse::layer()),
             )
-            .instrument(|h: &Http| match h.target {
-                Target::Forward(_) => info_span!("forward"),
-                Target::Override(ref dst) => info_span!("override", %dst),
-            })
+            .instrument(|h: &Http<NameAddr>| info_span!("override", dst = %h.target))
+            // Route requests with destinations that can be discovered via the `l5d-dst-override`
+            // header through the (load balanced) logical stack. Route requests without the header
+            // through the endpoint stack.
+            .push_switch(
+                |Http { target, version }: Http<Target>| match target {
+                    Target::Override(target) => {
+                        Ok::<_, Never>(svc::Either::A(Http { target, version }))
+                    }
+                    Target::Forward(OrigDstAddr(addr)) => Ok(svc::Either::B(http::Endpoint {
+                        addr: Remote(ServerAddr(addr)),
+                        metadata: Metadata::default(),
+                        logical_addr: None,
+                        protocol: version,
+                        opaque_protocol: false,
+                        tls: tls::ConditionalClientTls::None(
+                            tls::NoClientTls::IngressWithoutOverride,
+                        ),
+                    })),
+                },
+                http_endpoint
+                    .instrument(|_: &_| info_span!("forward"))
+                    .into_inner(),
+            )
             .push(svc::BoxNewService::layer())
             // Obtain a new inner service for each request (fom the above cache).
             .push(svc::NewRouter::layer(
