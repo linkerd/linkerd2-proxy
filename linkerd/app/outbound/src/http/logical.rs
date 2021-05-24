@@ -23,7 +23,7 @@ impl<E> Outbound<E> {
         >,
     >
     where
-        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
+        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Unpin + Send + 'static,
         B::Data: Send + 'static,
         E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>

@@ -143,7 +143,7 @@ impl WithBody {
     pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 }
 
-impl<B: HttpBody> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody {
+impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody {
     fn clone_request(
         req: &http::Request<buf_body::BufBody<B>>,
     ) -> Option<http::Request<buf_body::BufBody<B>>> {

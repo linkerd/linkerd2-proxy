@@ -4,11 +4,9 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
 use linkerd_stack as svc;
-use pin_project::{pin_project, pinned_drop};
 use std::{
     collections::VecDeque,
     io::IoSlice,
-    marker::PhantomData,
     mem,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -24,10 +22,8 @@ use std::{
 ///
 /// The buffered data can then be used to retry the request if the original
 /// request fails.
-#[pin_project]
 #[derive(Debug)]
-pub struct BufBody<B> {
-    #[pin]
+pub struct BufBody<B: Body + Default> {
     inner: Inner<B>,
 }
 
@@ -57,17 +53,14 @@ pub struct WrapBody<S> {
     inner: S,
 }
 
-#[pin_project(project = InnerProj)]
 #[derive(Debug)]
-enum Inner<B> {
-    Initial(#[pin] InitialBody<B>),
-    Replay(#[pin] ReplayBody<B>),
+enum Inner<B: Body + Default> {
+    Initial(InitialBody<B>),
+    Replay(ReplayBody<B>),
 }
 
-#[pin_project(PinnedDrop)]
 #[derive(Debug)]
-struct InitialBody<B> {
-    #[pin]
+struct InitialBody<B: Body + Default> {
     body: B,
     bufs: BufList,
     trailers: Option<HeaderMap>,
@@ -78,10 +71,9 @@ struct InitialBody<B> {
 struct BodyState<B> {
     body: Option<BufList>,
     trailers: Option<HeaderMap>,
-    _b: PhantomData<fn(B)>,
+    rest: Option<B>,
 }
 
-#[pin_project]
 #[derive(Debug)]
 enum ReplayBody<B> {
     Waiting(Arc<Mutex<Option<BodyState<B>>>>),
@@ -91,7 +83,7 @@ enum ReplayBody<B> {
 
 // === impl BufBody ===
 
-impl<B: Body> BufBody<B> {
+impl<B: Body + Default> BufBody<B> {
     /// Wraps an initial `Body` in a `BufBody`.
     pub fn new(body: B) -> Self {
         Self {
@@ -117,7 +109,7 @@ impl<B: Body> BufBody<B> {
 
 impl<B> Body for BufBody<B>
 where
-    B: Body,
+    B: Body + Unpin + Default,
 {
     type Data = Data;
     type Error = B::Error;
@@ -126,9 +118,9 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        match self.project().inner.project() {
-            InnerProj::Initial(body) => body.poll_data(cx),
-            InnerProj::Replay(body) => body.poll_data(cx),
+        match self.get_mut().inner {
+            Inner::Initial(ref mut body) => Pin::new(body).poll_data(cx),
+            Inner::Replay(ref mut body) => Pin::new(body).poll_data(cx),
         }
     }
 
@@ -136,9 +128,9 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        match self.project().inner.project() {
-            InnerProj::Initial(body) => body.poll_trailers(cx),
-            InnerProj::Replay(body) => body.poll_trailers(cx),
+        match self.get_mut().inner {
+            Inner::Initial(ref mut body) => Pin::new(body).poll_trailers(cx),
+            Inner::Replay(ref mut body) => Pin::new(body).poll_trailers(cx),
         }
     }
 
@@ -167,7 +159,7 @@ impl<S> WrapBody<S> {
 
 impl<P, B, S> svc::Proxy<http::Request<B>, S> for WrapBody<P>
 where
-    B: Body,
+    B: Body + Unpin + Default,
     P: svc::Proxy<http::Request<BufBody<B>>, S>,
     P::Error: Into<linkerd_error::Error>,
     S: svc::Service<P::Request>,
@@ -184,7 +176,7 @@ where
 
 impl<S, B> svc::Service<http::Request<B>> for WrapBody<S>
 where
-    B: Body,
+    B: Body + Unpin + Default,
     S::Error: Into<linkerd_error::Error>,
     S: svc::Service<http::Request<BufBody<B>>>,
 {
@@ -205,7 +197,7 @@ where
 
 impl<B> Body for InitialBody<B>
 where
-    B: Body,
+    B: Body + Unpin + Default,
 {
     type Data = Data;
     type Error = B::Error;
@@ -214,9 +206,9 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let this = self.project();
-        let bufs = this.bufs;
-        let opt = futures::ready!(this.body.poll_data(cx)).map(|res| {
+        let this = self.get_mut();
+        let bufs = &mut this.bufs;
+        let opt = futures::ready!(Pin::new(&mut this.body).poll_data(cx)).map(|res| {
             res.map(|mut data| {
                 let len = data.remaining();
                 // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
@@ -237,9 +229,9 @@ where
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        let this = self.project();
-        let buffered_trailers = this.trailers;
-        let res = futures::ready!(this.body.poll_trailers(cx)).map(|trailers| {
+        let this = self.get_mut();
+        let buffered_trailers = &mut this.trailers;
+        let res = futures::ready!(Pin::new(&mut this.body).poll_trailers(cx)).map(|trailers| {
             *buffered_trailers = trailers.clone();
             trailers
         });
@@ -255,16 +247,20 @@ where
     }
 }
 
-#[pinned_drop]
-impl<B> PinnedDrop for InitialBody<B> {
-    fn drop(self: Pin<&mut Self>) {
-        let this = self.project();
-        let body = std::mem::take(this.bufs);
-        if let Ok(mut shared) = this.shared.lock() {
+impl<B: Body + Default> Drop for InitialBody<B> {
+    fn drop(&mut self) {
+        let body = mem::take(&mut self.bufs);
+        let rest = if self.body.is_end_stream() {
+            None
+        } else {
+            Some(mem::take(&mut self.body))
+        };
+
+        if let Ok(mut shared) = self.shared.lock() {
             *shared = Some(BodyState {
                 body: Some(body),
-                trailers: this.trailers.take(),
-                _b: PhantomData,
+                trailers: self.trailers.take(),
+                rest,
             });
         }
     }
@@ -298,47 +294,90 @@ impl<B> ReplayBody<B> {
     }
 }
 
-impl<B: Body> Body for ReplayBody<B> {
+impl<B: Body + Unpin> Body for ReplayBody<B> {
     type Data = Data;
     type Error = B::Error;
 
     fn poll_data(
         self: Pin<&mut Self>,
-        _: &mut Context<'_>,
+        cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut().state();
-        Poll::Ready(this.body.take().and_then(|bytes| {
+
+        // If we haven't replayed the buffer yet, return it.
+        if let Some(bytes) = this.body.take() {
             if bytes.has_remaining() {
-                Some(Ok(Data::Replay(bytes)))
-            } else {
-                None
+                return Poll::Ready(Some(Ok(Data::Replay(bytes))));
             }
-        }))
+        }
+
+        // If there's more data in the initial body, poll that...
+        if let Some(rest) = this.rest.as_mut() {
+            return Pin::new(rest).poll_data(cx).map(|some| {
+                some.map(|ok| {
+                    ok.map(|mut data| Data::Initial(data.copy_to_bytes(data.remaining())))
+                })
+            });
+        }
+
+        // Otherwise, guess we're done!
+        Poll::Ready(None)
     }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
-        _: &mut Context<'_>,
+        cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         let this = self.get_mut().state();
-        Poll::Ready(Ok(this.trailers.take()))
+
+        if let Some(trailers) = this.trailers.take() {
+            return Poll::Ready(Ok(Some(trailers)));
+        }
+
+        if let Some(rest) = this.rest.as_mut() {
+            return Pin::new(rest).poll_trailers(cx);
+        }
+
+        Poll::Ready(Ok(None))
     }
 
     fn is_end_stream(&self) -> bool {
         match self {
             ReplayBody::Ready(BodyState {
                 body: Some(ref body),
+                rest,
                 ..
-            }) => !body.has_remaining(),
+            }) => {
+                !body.has_remaining()
+                    && rest
+                        .as_ref()
+                        .map(|body| body.is_end_stream())
+                        .unwrap_or(true)
+            }
             _ => false,
         }
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
-            ReplayBody::Ready(BodyState { ref body, .. }) => http_body::SizeHint::with_exact(
-                body.as_ref().map(Buf::remaining).unwrap_or(0) as u64,
+            ReplayBody::Ready(BodyState {
+                ref body,
+                rest: None,
+                ..
+            }) => http_body::SizeHint::with_exact(
+                body.as_ref().map(Buf::remaining).unwrap_or(0) as u64
             ),
+            ReplayBody::Ready(BodyState {
+                ref body,
+                rest: Some(ref rest),
+                ..
+            }) => {
+                let mut hint = rest.size_hint();
+                let buffered = body.as_ref().map(Buf::remaining).unwrap_or(0) as u64;
+                hint.set_lower(hint.lower() + buffered);
+                hint.set_upper(hint.upper().unwrap_or(0) + buffered);
+                hint
+            }
             _ => http_body::SizeHint::default(),
         }
     }
@@ -561,21 +600,23 @@ mod tests {
         tx.send_data("hello".into())
             .await
             .expect("rx is not dropped");
+        assert_eq!(chunk(&mut initial).await, String::from("hello"));
+
         tx.send_data(" world".into())
             .await
             .expect("rx is not dropped");
-
-        assert_eq!(chunk(&mut initial).await, String::from("hello"));
         assert_eq!(chunk(&mut initial).await, String::from(" world"));
 
         // drop the initial body to send the data to the replay
         drop(initial);
 
-        let _ = tx.send_data(", have lots of fun".into()).await;
-        let _ = tx.send_trailers(HeaderMap::new()).await;
+        tokio::spawn(async move {
+            let _ = tx.send_data(", have lots of fun".into()).await;
+            let _ = tx.send_trailers(HeaderMap::new()).await;
+        });
 
         assert_eq!(
-            string(hyper::body::aggregate(replay).await.unwrap()),
+            dbg!(string(hyper::body::aggregate(replay).await.unwrap())),
             String::from("hello world, have lots of fun")
         );
     }
@@ -605,7 +646,9 @@ mod tests {
     where
         T: http_body::Body + Unpin,
     {
-        string(body.data().await.unwrap().map_err(|_| ()).unwrap())
+        dbg!("wait for chunk");
+        let chunk = string(body.data().await.unwrap().map_err(|_| ()).unwrap());
+        dbg!(chunk)
     }
 
     fn string(mut data: impl Buf) -> String {
