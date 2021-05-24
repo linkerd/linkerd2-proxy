@@ -175,6 +175,27 @@ async fn retry_uses_budget() {
 }
 
 #[tokio::test]
+async fn retry_with_small_post_bodies() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .response_failure(500..600)
+                .retryable(true)
+        ],
+        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        with_client: |client: client::Client| async move {
+            let req = client.request_builder("/0.5")
+                .method("POST")
+                .body("req has a body".into())
+                .unwrap();
+            let res = client.request_body(req).await;
+            assert_eq!(res.status(), 533);
+        }
+    }
+}
+
+#[tokio::test]
 async fn does_not_retry_if_request_does_not_match() {
     profile_test! {
         routes: [
@@ -211,7 +232,7 @@ async fn does_not_retry_if_earlier_response_class_is_success() {
 }
 
 #[tokio::test]
-async fn does_not_retry_if_request_has_body() {
+async fn does_not_retry_with_body_if_not_post() {
     profile_test! {
         routes: [
             controller::route()
@@ -222,7 +243,7 @@ async fn does_not_retry_if_request_has_body() {
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| async move {
             let req = client.request_builder("/0.5")
-                .method("POST")
+                .method("PUT")
                 .body("req has a body".into())
                 .unwrap();
             let res = client.request_body(req).await;

@@ -3,6 +3,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
+use linkerd_stack as svc;
 use pin_project::{pin_project, pinned_drop};
 use std::{
     collections::VecDeque,
@@ -21,6 +22,7 @@ use std::{
 /// The buffered data can then be used to retry the request if the original
 /// request fails.
 #[pin_project]
+#[derive(Debug)]
 pub struct BufBody<B> {
     #[pin]
     inner: Inner<B>,
@@ -33,12 +35,14 @@ pub enum Data {
 }
 
 #[pin_project(project = InnerProj)]
+#[derive(Debug)]
 enum Inner<B> {
     Initial(#[pin] InitialBody<B>),
     Replay(#[pin] ReplayBody<B>),
 }
 
 #[pin_project(PinnedDrop)]
+#[derive(Debug)]
 struct InitialBody<B> {
     #[pin]
     body: B,
@@ -47,6 +51,7 @@ struct InitialBody<B> {
     shared: Arc<Mutex<Option<BodyState<B>>>>,
 }
 
+#[derive(Debug)]
 struct BodyState<B> {
     body: Option<BufList>,
     trailers: Option<HeaderMap>,
@@ -54,6 +59,7 @@ struct BodyState<B> {
 }
 
 #[pin_project]
+#[derive(Debug)]
 enum ReplayBody<B> {
     Waiting(Arc<Mutex<Option<BodyState<B>>>>),
     Ready(BodyState<B>),
@@ -63,6 +69,11 @@ enum ReplayBody<B> {
 #[derive(Debug, Default)]
 pub struct BufList {
     bufs: VecDeque<Bytes>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct WrapBody<S> {
+    inner: S,
 }
 
 // === impl BufBody ===
@@ -79,6 +90,12 @@ impl<B: Body> BufBody<B> {
                 shared: Arc::new(Mutex::new(None)),
             }),
         }
+    }
+
+    /// Returns a `Layer` that wraps http requests
+    pub fn layer<S: 'static>(
+    ) -> impl svc::layer::Layer<S, Service = WrapBody<S>> + Clone + Send + Sync + 'static {
+        WrapBody::layer()
     }
 
     pub fn try_clone(&self) -> Option<Self> {
@@ -130,6 +147,50 @@ where
             Inner::Initial(ref body) => body.size_hint(),
             Inner::Replay(ref body) => body.size_hint(),
         }
+    }
+}
+
+// === impl WrapBody ===
+
+impl<S> WrapBody<S> {
+    pub fn layer() -> impl svc::layer::Layer<S, Service = Self> + Clone + Send + Sync + 'static {
+        svc::layer::mk(|inner| WrapBody { inner })
+    }
+}
+
+impl<P, B, S> svc::Proxy<http::Request<B>, S> for WrapBody<P>
+where
+    B: Body,
+    P: svc::Proxy<http::Request<BufBody<B>>, S>,
+    P::Error: Into<linkerd_error::Error>,
+    S: svc::Service<P::Request>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    fn proxy(&self, svc: &mut S, req: http::Request<B>) -> Self::Future {
+        self.inner.proxy(svc, req.map(BufBody::new))
+    }
+}
+
+impl<S, B> svc::Service<http::Request<B>> for WrapBody<S>
+where
+    B: Body,
+    S::Error: Into<linkerd_error::Error>,
+    S: svc::Service<http::Request<BufBody<B>>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        self.inner.call(req.map(BufBody::new))
     }
 }
 

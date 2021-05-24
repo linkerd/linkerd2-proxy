@@ -13,8 +13,10 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
 
-pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
-    NewRetryLayer::new(NewRetry::new(metrics))
+pub use linkerd_retry::buf_body;
+
+pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry<WithBody>> {
+    NewRetryLayer::new(NewRetry::new(metrics).clone_requests_via::<WithBody>())
 }
 
 pub trait CloneRequest<Req> {
@@ -33,6 +35,9 @@ pub struct Retry<C = ()> {
     response_classes: profiles::http::ResponseClasses,
     _clone_request: PhantomData<C>,
 }
+
+#[derive(Clone, Debug)]
+pub struct WithBody;
 
 impl NewRetry {
     pub fn new(metrics: HttpRouteRetry) -> Self {
@@ -132,6 +137,39 @@ impl<B: Default + HttpBody> CloneRequest<http::Request<B>> for () {
         // if let Some(ext) = req.extensions().get::<handle_time::Tracker>() {
         //     clone.extensions_mut().insert(ext.clone());
         // }
+
+        Some(clone)
+    }
+}
+
+// === impl WithBody ===
+
+impl<B: HttpBody> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody {
+    fn clone_request(
+        req: &http::Request<buf_body::BufBody<B>>,
+    ) -> Option<http::Request<buf_body::BufBody<B>>> {
+        let content_length_ok = |req: &http::Request<_>| {
+            req.headers()
+                .get(http::header::CONTENT_LENGTH)
+                .and_then(|value| {
+                    let length = value.to_str().ok()?.parse::<usize>().ok()?;
+                    Some(length > buf_body::BufBody::<B>::MAX_BUF)
+                })
+                .unwrap_or(true)
+        };
+
+        // TODO(eliza): maybe log how we made the retry decision here?
+        if (!req.body().is_end_stream() && req.method() != http::Method::POST)
+            || content_length_ok(&req)
+        {
+            return None;
+        }
+
+        let mut clone = http::Request::new(req.body().try_clone()?);
+        *clone.method_mut() = req.method().clone();
+        *clone.uri_mut() = req.uri().clone();
+        *clone.headers_mut() = req.headers().clone();
+        *clone.version_mut() = req.version();
 
         Some(clone)
     }

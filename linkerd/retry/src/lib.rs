@@ -11,7 +11,7 @@ pub use tower::retry::{budget::Budget, Policy};
 use tower::util::{Oneshot, ServiceExt};
 use tracing::trace;
 
-mod buf_body;
+pub mod buf_body;
 
 /// A strategy for obtaining per-target retry polices.
 pub trait NewPolicy<T> {
