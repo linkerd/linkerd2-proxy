@@ -172,7 +172,10 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     .into_inner(),
             )
             .push(svc::BoxNewService::layer())
-            // Obtain a new inner service for each request (fom the above cache).
+            // Obtain a new inner service for each request. Override stacks are cached, as they
+            // depend on discovery that should not be performed many times. Forwarding stacks are
+            // not cached explicitly, as there are no real resources we need to share across
+            // connections. This allows us to avoid buffering requests to these endpoints.
             .push(svc::NewRouter::layer(
                 |http::Accept { orig_dst, protocol }| {
                     move |req: &http::Request<_>| {
