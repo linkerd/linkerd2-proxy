@@ -503,7 +503,6 @@ mod tests {
         tx.send_trailers(tlrs.clone())
             .await
             .expect("rx is not dropped");
-        drop(tx);
 
         while initial.data().await.is_some() {
             // do nothing
@@ -536,7 +535,6 @@ mod tests {
         tx.send_trailers(tlrs.clone())
             .await
             .expect("rx is not dropped");
-        drop(tx);
 
         assert!(dbg!(initial.data().await).is_none(), "no data in body");
         let initial_tlrs = initial.trailers().await.expect("trailers should not error");
@@ -548,6 +546,38 @@ mod tests {
         assert!(dbg!(replay.data().await).is_none(), "no data in body");
         let replay_tlrs = replay.trailers().await.expect("trailers should not error");
         assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
+    }
+
+    #[tokio::test]
+    async fn switches_with_body_remaining() {
+        // This simulates a case where the server returns an error _before_ the
+        // entire body has been read.
+        let Test {
+            mut tx,
+            mut initial,
+            replay,
+        } = Test::new();
+
+        tx.send_data("hello".into())
+            .await
+            .expect("rx is not dropped");
+        tx.send_data(" world".into())
+            .await
+            .expect("rx is not dropped");
+
+        assert_eq!(chunk(&mut initial).await, String::from("hello"));
+        assert_eq!(chunk(&mut initial).await, String::from(" world"));
+
+        // drop the initial body to send the data to the replay
+        drop(initial);
+
+        let _ = tx.send_data(", have lots of fun".into()).await;
+        let _ = tx.send_trailers(HeaderMap::new()).await;
+
+        assert_eq!(
+            string(hyper::body::aggregate(replay).await.unwrap()),
+            String::from("hello world, have lots of fun")
+        );
     }
 
     struct Test {
@@ -569,6 +599,18 @@ mod tests {
                 replay,
             }
         }
+    }
+
+    async fn chunk<T>(body: &mut T) -> String
+    where
+        T: http_body::Body + Unpin,
+    {
+        string(body.data().await.unwrap().map_err(|_| ()).unwrap())
+    }
+
+    fn string(mut data: impl Buf) -> String {
+        let bytes = data.copy_to_bytes(data.remaining());
+        String::from_utf8(bytes.to_vec()).unwrap()
     }
 
     async fn body_to_string<T>(body: T) -> String
