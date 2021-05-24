@@ -65,6 +65,7 @@ struct InitialBody<B: Body + Default> {
     bufs: BufList,
     trailers: Option<HeaderMap>,
     shared: Arc<Mutex<Option<BodyState<B>>>>,
+    is_completed: bool,
 }
 
 #[derive(Debug)]
@@ -72,6 +73,7 @@ struct BodyState<B> {
     body: Option<BufList>,
     trailers: Option<HeaderMap>,
     rest: Option<B>,
+    is_completed: bool,
 }
 
 #[derive(Debug)]
@@ -92,6 +94,7 @@ impl<B: Body + Default> BufBody<B> {
                 bufs: Default::default(),
                 trailers: None,
                 shared: Arc::new(Mutex::new(None)),
+                is_completed: false,
             }),
         }
     }
@@ -222,6 +225,9 @@ where
                 Data::Initial(bytes)
             })
         });
+        if opt.is_none() {
+            this.is_completed = true;
+        }
         Poll::Ready(opt)
     }
 
@@ -261,6 +267,7 @@ impl<B: Body + Default> Drop for InitialBody<B> {
                 body: Some(body),
                 trailers: self.trailers.take(),
                 rest,
+                is_completed: self.is_completed,
             });
         }
     }
@@ -311,6 +318,11 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
             }
         }
 
+        // If the inner body has previously ended, don't poll it again.
+        if this.is_completed {
+            return Poll::Ready(None);
+        }
+
         // If there's more data in the initial body, poll that...
         if let Some(rest) = this.rest.as_mut() {
             return Pin::new(rest).poll_data(cx).map(|some| {
@@ -335,7 +347,10 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         }
 
         if let Some(rest) = this.rest.as_mut() {
-            return Pin::new(rest).poll_trailers(cx);
+            // If the inner body has previously ended, don't poll it again.
+            if !rest.is_end_stream() {
+                return Pin::new(rest).poll_trailers(cx);
+            }
         }
 
         Poll::Ready(Ok(None))
@@ -542,6 +557,7 @@ mod tests {
         tx.send_trailers(tlrs.clone())
             .await
             .expect("rx is not dropped");
+        drop(tx);
 
         while initial.data().await.is_some() {
             // do nothing
@@ -574,6 +590,8 @@ mod tests {
         tx.send_trailers(tlrs.clone())
             .await
             .expect("rx is not dropped");
+
+        drop(tx);
 
         assert!(dbg!(initial.data().await).is_none(), "no data in body");
         let initial_tlrs = initial.trailers().await.expect("trailers should not error");
