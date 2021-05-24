@@ -155,19 +155,12 @@ impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<buf_body::BufBody
 
         // Requests without bodies can always be retried, as we will not need to
         // buffer the body. If the request *does* have a body, retry it if and
-        // only if:
-        // - the request is a POST
-        // - the request contains a `content-length` header,
-        // - the content length is >= 64 kb,
+        // only if the request contains a `content-length` header and the
+        // content length is >= 64 kb.
         let has_body = !req.body().is_end_stream();
-        let method = req.method();
-        if has_body
-            && (method != http::Method::POST
-                || content_length(&req).unwrap_or(usize::MAX) > Self::MAX_BUFFERED_BYTES)
-        {
+        if has_body && content_length(&req).unwrap_or(usize::MAX) > Self::MAX_BUFFERED_BYTES {
             tracing::trace!(
                 req.has_body = has_body,
-                req.method = %method,
                 req.content_length = ?content_length(&req),
                 "not retryable",
             );
@@ -176,7 +169,6 @@ impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<buf_body::BufBody
 
         tracing::trace!(
             req.has_body = has_body,
-            req.method = %method,
             req.content_length = ?content_length(&req),
             "retryable",
         );
