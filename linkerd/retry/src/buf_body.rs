@@ -19,6 +19,9 @@ use std::{
 /// Wraps an HTTP body type and lazily buffers data as it is read from the inner
 /// body.
 ///
+/// When the initial `Body` is dropped, any data in the buffer is transferred to
+/// the cloned body, if it exists.
+///
 /// The buffered data can then be used to retry the request if the original
 /// request fails.
 #[pin_project]
@@ -28,10 +31,30 @@ pub struct BufBody<B> {
     inner: Inner<B>,
 }
 
+/// Data returned by `BufBody`'s `http_body::Body` implementation is either
+/// `Bytes` returned by the initial body, or a list of all `Bytes` chunks
+/// returned by the initial body (when replaying it).
 #[derive(Debug)]
 pub enum Data {
     Initial(Bytes),
     Replay(BufList),
+}
+
+/// Body data composed of multiple `Bytes` chunks.
+#[derive(Debug, Default)]
+pub struct BufList {
+    bufs: VecDeque<Bytes>,
+}
+
+/// A `Service`/`Proxy` that wraps an HTTP request's `Body` type in a `BufBody`,
+/// allowing it to be cloned.
+///
+// TODO(eliza): it would be nice if this could just be `MapRequest`, but Tower
+// won't let us implement `Proxy` for it (because it doesn't expose access to
+// the closure). Maybe we can change that upstream eventually...
+#[derive(Debug, Default, Clone)]
+pub struct WrapBody<S> {
+    inner: S,
 }
 
 #[pin_project(project = InnerProj)]
@@ -66,21 +89,10 @@ enum ReplayBody<B> {
     Empty,
 }
 
-#[derive(Debug, Default)]
-pub struct BufList {
-    bufs: VecDeque<Bytes>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct WrapBody<S> {
-    inner: S,
-}
-
 // === impl BufBody ===
 
 impl<B: Body> BufBody<B> {
-    pub const MAX_BUF: usize = 64 * 1024;
-
+    /// Wraps an initial `Body` in a `BufBody`.
     pub fn new(body: B) -> Self {
         Self {
             inner: Inner::Initial(InitialBody {
@@ -92,12 +104,7 @@ impl<B: Body> BufBody<B> {
         }
     }
 
-    /// Returns a `Layer` that wraps http requests
-    pub fn layer<S: 'static>(
-    ) -> impl svc::layer::Layer<S, Service = WrapBody<S>> + Clone + Send + Sync + 'static {
-        WrapBody::layer()
-    }
-
+    /// If this is the initial body, returns a `Some` with a replay body.
     pub fn try_clone(&self) -> Option<Self> {
         match self.inner {
             Inner::Initial(InitialBody { ref shared, .. }) => Some(Self {
@@ -214,11 +221,11 @@ where
                 let len = data.remaining();
                 // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
                 // internally be a cheap refcount bump almost all of the time.
-                // But, if it isn't, this will copy it to a  that we can
+                // But, if it isn't, this will copy it to a `Bytes` that we can
                 // now clone.
                 let bytes = data.copy_to_bytes(len);
+                // Buffer a clone of the bytes read on this poll.
                 bufs.bufs.push_back(bytes.clone());
-                debug_assert_eq!(data.remaining(), 0);
                 // Return the bytes
                 Data::Initial(bytes)
             })
@@ -332,11 +339,7 @@ impl<B: Body> Body for ReplayBody<B> {
             ReplayBody::Ready(BodyState { ref body, .. }) => http_body::SizeHint::with_exact(
                 body.as_ref().map(Buf::remaining).unwrap_or(0) as u64,
             ),
-            _ => {
-                let mut hint = http_body::SizeHint::default();
-                hint.set_upper(BufBody::<B>::MAX_BUF as u64);
-                hint
-            }
+            _ => http_body::SizeHint::default(),
         }
     }
 }

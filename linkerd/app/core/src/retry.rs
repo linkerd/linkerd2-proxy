@@ -1,6 +1,5 @@
 use super::classify;
 use super::dst::Route;
-// use super::handle_time;
 use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
 use crate::profiles;
@@ -13,7 +12,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
 
-pub use linkerd_retry::buf_body;
+pub use linkerd_retry::*;
 
 pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry<WithBody>> {
     NewRetryLayer::new(NewRetry::new(metrics).clone_requests_via::<WithBody>())
@@ -133,16 +132,16 @@ impl<B: Default + HttpBody> CloneRequest<http::Request<B>> for () {
         *clone.headers_mut() = req.headers().clone();
         *clone.version_mut() = req.version();
 
-        // // Count retries toward the request's total handle time.
-        // if let Some(ext) = req.extensions().get::<handle_time::Tracker>() {
-        //     clone.extensions_mut().insert(ext.clone());
-        // }
-
         Some(clone)
     }
 }
 
 // === impl WithBody ===
+
+impl WithBody {
+    /// Allow buffering requests up to 64 kb
+    pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
+}
 
 impl<B: HttpBody> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody {
     fn clone_request(
@@ -164,7 +163,7 @@ impl<B: HttpBody> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody
         let method = req.method();
         if has_body
             && (method != http::Method::POST
-                || content_length(&req).unwrap_or(usize::MAX) > buf_body::BufBody::<B>::MAX_BUF)
+                || content_length(&req).unwrap_or(usize::MAX) > Self::MAX_BUFFERED_BYTES)
         {
             tracing::trace!(
                 req.has_body = has_body,
@@ -174,6 +173,7 @@ impl<B: HttpBody> CloneRequest<http::Request<buf_body::BufBody<B>>> for WithBody
             );
             return None;
         }
+
         tracing::trace!(
             req.has_body = has_body,
             req.method = %method,
