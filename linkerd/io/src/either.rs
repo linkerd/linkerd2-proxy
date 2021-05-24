@@ -37,7 +37,7 @@ impl<L: io::AsyncRead, R: io::AsyncRead> io::AsyncRead for EitherIo<L, R> {
     #[inline]
     fn poll_read(
         self: Pin<&mut Self>,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         buf: &mut io::ReadBuf<'_>,
     ) -> io::Poll<()> {
         match self.project() {
@@ -49,7 +49,7 @@ impl<L: io::AsyncRead, R: io::AsyncRead> io::AsyncRead for EitherIo<L, R> {
 
 impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
     #[inline]
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> io::Poll<()> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         match self.project() {
             EitherIoProj::Left(l) => l.poll_shutdown(cx),
             EitherIoProj::Right(r) => r.poll_shutdown(cx),
@@ -57,7 +57,7 @@ impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
     }
 
     #[inline]
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> io::Poll<()> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> io::Poll<()> {
         match self.project() {
             EitherIoProj::Left(l) => l.poll_flush(cx),
             EitherIoProj::Right(r) => r.poll_flush(cx),
@@ -65,7 +65,7 @@ impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
     }
 
     #[inline]
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> io::Poll<usize> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> io::Poll<usize> {
         match self.project() {
             EitherIoProj::Left(l) => l.poll_write(cx, buf),
             EitherIoProj::Right(r) => r.poll_write(cx, buf),
@@ -75,7 +75,7 @@ impl<L: io::AsyncWrite, R: io::AsyncWrite> io::AsyncWrite for EitherIo<L, R> {
     #[inline]
     fn poll_write_vectored(
         self: Pin<&mut Self>,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         buf: &[io::IoSlice<'_>],
     ) -> io::Poll<usize> {
         match self.project() {
