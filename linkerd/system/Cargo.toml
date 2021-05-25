@@ -13,5 +13,5 @@ Unsafe code for accessing system-level counters for memory & CPU usage.
 tracing = "0.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.1"
+libc = "0.2"
 procinfo = "0.4.2"
