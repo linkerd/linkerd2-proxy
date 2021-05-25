@@ -1,4 +1,9 @@
+//! Utilities for use TCP servers & clients.
+//!
+//! Uses unsafe code to interact with socket options for keepalive and SO_ORIGINAL_DST.
+
 #![deny(warnings, rust_2018_idioms)]
+//#![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
 pub mod addrs;

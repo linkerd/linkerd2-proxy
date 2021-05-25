@@ -19,7 +19,7 @@ use linkerd_app_core::{
     proxy::{http, tap},
     reconnect,
     svc::{self, Param},
-    Error, DST_OVERRIDE_HEADER,
+    Error,
 };
 use tracing::debug_span;
 
@@ -227,9 +227,6 @@ where
                     .push(http::BoxResponse::layer()),
             )
             .check_new_service::<Target, http::Request<http::BoxBody>>()
-            // Removes the override header after it has been used to
-            // determine a request target.
-            .push_on_response(strip_header::request::layer(DST_OVERRIDE_HEADER))
             // Routes each request to a target, obtains a service for that
             // target, and dispatches the request.
             .instrument_from_target()

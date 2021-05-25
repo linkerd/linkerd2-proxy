@@ -51,6 +51,7 @@ members = [
     "linkerd/stack",
     "linkerd/stack/metrics",
     "linkerd/stack/tracing",
+    "linkerd/system",
     "linkerd/timeout",
     "linkerd/tls",
     "linkerd/tracing",
