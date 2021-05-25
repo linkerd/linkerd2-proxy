@@ -20,5 +20,5 @@ thiserror = "1.0"
 tracing = "0.1.2"
 untrusted = "0.7"
 webpki = "=0.21.4"
-boring = { version = "1.1.4", optional = true, features = ["fips"]}
+boring = { version = "1.1.6", optional = true, features = ["fips"]}
 openssl = { version = "0.10.33", optional = true }
