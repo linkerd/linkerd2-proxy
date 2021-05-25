@@ -7,6 +7,8 @@ on:
 
 jobs:
   package:
+    permissions:
+      contents: write
     strategy:
       matrix:
         architecture: [amd64, arm64, arm]
@@ -25,7 +27,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: git co
-        uses: actions/checkout@v2
+        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
 
       - name: meta
         id: release-tag-meta
@@ -53,7 +55,7 @@ jobs:
           args: /linkerd/expected-checksec.json "target/${{ matrix.target }}/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-${{ matrix.architecture }}-checksec.json"
 
       - name: upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@ee69f02b3dfdecd58bb31b4d133da38ba6fe3700 # v2.2.3
         with:
           name: ${{ matrix.architecture }}-artifacts
           path: target/${{ matrix.target }}/release/package/*
@@ -63,9 +65,11 @@ jobs:
     name: GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - name: git co
-        uses: actions/checkout@v2
+        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
 
       - name: meta
         id: release-tag-meta
@@ -74,7 +78,7 @@ jobs:
           git-ref: ${{ github.ref }}
 
       - name: download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@158ca71f7c614ae705e79f25522ef4658df18253 # v2.0.9
         with:
           path: artifacts
 
@@ -82,7 +86,7 @@ jobs:
         run: ls -R artifacts
 
       - name: release
-        uses: softprops/action-gh-release@affa18ef97bc9db20076945705aba8c516139abd
+        uses: softprops/action-gh-release@b7e450da2a4b4cb4bfbae528f788167786cfcedf # v0.1.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
