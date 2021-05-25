@@ -645,7 +645,6 @@ dependencies = [
  "hyper",
  "indexmap",
  "ipnet",
- "libc",
  "linkerd-addr",
  "linkerd-cache",
  "linkerd-concurrency-limit",
@@ -681,6 +680,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-stack-metrics",
  "linkerd-stack-tracing",
+ "linkerd-system",
  "linkerd-timeout",
  "linkerd-tls",
  "linkerd-trace-context",
@@ -688,7 +688,6 @@ dependencies = [
  "linkerd-transport-header",
  "linkerd2-proxy-api",
  "pin-project",
- "procinfo",
  "prost-types",
  "regex",
  "thiserror",
@@ -1341,6 +1340,15 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-system"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "procinfo",
  "tracing",
 ]
 
