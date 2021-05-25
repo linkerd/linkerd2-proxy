@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["full"] }
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]
+resolver = "2"
 
 [[bin]]
 name = "fuzz_target_1"
