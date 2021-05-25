@@ -2,9 +2,9 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
+use std::{convert::TryFrom, error as stdErr, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
 use thiserror::Error;
-use tracing::{debug, warn};
+use tracing::debug;
 
 #[cfg(feature = "rustls-tls")]
 #[path = "imp/rustls.rs"]
@@ -25,9 +25,9 @@ pub struct Csr(Arc<Vec<u8>>);
 /// An error returned from the TLS implementation.
 pub struct Error(imp::Error);
 
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        error::Error::source(&self.0)
+impl stdErr::Error for Error {
+    fn source(&self) -> Option<&(dyn stdErr::Error + 'static)> {
+        stdErr::Error::source(&self.0)
     }
 }
 
@@ -71,12 +71,6 @@ impl From<imp::InvalidCrt> for InvalidCrt {
 /// A newtype for local server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct LocalId(pub Name);
-
-impl<'t> Into<webpki::DNSNameRef<'t>> for &'t LocalId {
-    fn into(self) -> webpki::DNSNameRef<'t> {
-        (&self.0).into()
-    }
-}
 
 // === impl Csr ===
 
@@ -301,17 +295,17 @@ impl fmt::Display for LocalId {
 
 // === impl InvalidCrt ===
 
-impl fmt::Display for InvalidCrt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl error::Error for InvalidCrt {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        self.0.source()
-    }
-}
+// impl fmt::Display for InvalidCrt {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         self.0.fmt(f)
+//     }
+// }
+//
+// impl stdErr::Error for InvalidCrt {
+//     fn source(&self) -> Option<&(dyn stdErr::Error + 'static)> {
+//         self.0.source()
+//     }
+// }
 
 #[derive(Clone)]
 pub struct ClientConfig(pub imp::ClientConfig);

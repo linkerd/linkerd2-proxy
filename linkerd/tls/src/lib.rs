@@ -73,10 +73,3 @@ impl From<Arc<ServerConfig>> for TlsAcceptor {
     }
 }
 
-/// Needed for tests.
-// impl HasNegotiatedProtocol for io::BoxedIo {
-//     #[inline]
-//     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-//         None
-//     }
-// }

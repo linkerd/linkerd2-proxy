@@ -349,14 +349,6 @@ where
     Ok((tls, io))
 }
 
-impl fmt::Display for DetectTimeout {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TLS detection timeout")
-    }
-}
-
-impl std::error::Error for DetectTimeout {}
-
 // === impl ClientId ===
 
 impl From<id::Name> for ClientId {

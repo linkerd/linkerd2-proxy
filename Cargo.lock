@@ -141,8 +141,7 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 [[package]]
 name = "boring"
 version = "1.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de45976d3e185902843f8ac67fcdc3f10f47cb96e275a545218273bf09a592f6"
+source = "git+https://github.com/netapp/boring?branch=feat/fips-support#85d02f09741053f7af55a1074d5c272d0a79b27c"
 dependencies = [
  "bitflags",
  "boring-sys",
@@ -154,8 +153,7 @@ dependencies = [
 [[package]]
 name = "boring-sys"
 version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2416bce1bcabf0d7995ce0338ec2425b8766a4d5a39d758a3638008911642fc"
+source = "git+https://github.com/netapp/boring?branch=feat/fips-support#85d02f09741053f7af55a1074d5c272d0a79b27c"
 dependencies = [
  "bindgen",
  "cmake",
@@ -2390,8 +2388,7 @@ dependencies = [
 [[package]]
 name = "tokio-boring"
 version = "2.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14a691f1783bcff212705a7be3ce90428511f7012d085b948741b40a81acb8dd"
+source = "git+https://github.com/netapp/boring?branch=feat/fips-support#85d02f09741053f7af55a1074d5c272d0a79b27c"
 dependencies = [
  "boring",
  "boring-sys",
