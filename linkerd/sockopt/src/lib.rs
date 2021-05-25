@@ -1,38 +1,7 @@
-//! Utilities for use TCP servers & clients.
-//!
-//! Uses unsafe code to interact with socket options for keepalive and SO_ORIGINAL_DST.
-
-#![deny(warnings, rust_2018_idioms)]
-//#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-pub mod addrs;
-mod connect;
-pub mod listen;
-pub mod metrics;
-pub mod orig_dst;
-
-pub use self::{
-    addrs::{ClientAddr, ListenAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    connect::ConnectTcp,
-    listen::{Bind, BindTcp},
-    orig_dst::BindWithOrigDst,
-};
-use std::time::Duration;
-use tokio::net::TcpStream;
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct Keepalive(pub Option<Duration>);
-
-impl From<Keepalive> for Option<Duration> {
-    fn from(Keepalive(duration): Keepalive) -> Option<Duration> {
-        duration
-    }
-}
-
-// Misc.
-
-fn set_nodelay_or_warn(socket: &TcpStream) {
+pub fn set_nodelay_or_warn(socket: &TcpStream) {
     if let Err(e) = socket.set_nodelay(true) {
         tracing::warn!("failed to set nodelay: {}", e);
     }
