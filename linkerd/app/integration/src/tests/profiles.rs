@@ -181,7 +181,7 @@ async fn retry_uses_budget() {
 }
 
 #[tokio::test]
-async fn retry_with_small_post_bodies() {
+async fn retry_with_small_post_body() {
     profile_test! {
         routes: [
             controller::route()
@@ -193,6 +193,27 @@ async fn retry_with_small_post_bodies() {
         with_client: |client: client::Client| async move {
             let req = client.request_builder("/0.5")
                 .method("POST")
+                .body("req has a body".into())
+                .unwrap();
+            let res = client.request_body(req).await;
+            assert_eq!(res.status(), 200);
+        }
+    }
+}
+
+#[tokio::test]
+async fn retry_with_small_put_body() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .response_failure(500..600)
+                .retryable(true)
+        ],
+        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        with_client: |client: client::Client| async move {
+            let req = client.request_builder("/0.5")
+                .method("PUT")
                 .body("req has a body".into())
                 .unwrap();
             let res = client.request_body(req).await;
@@ -232,27 +253,6 @@ async fn does_not_retry_if_earlier_response_class_is_success() {
         budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
         with_client: |client: client::Client| async move {
             let res = client.request(client.request_builder("/0.5")).await.unwrap();
-            assert_eq!(res.status(), 533);
-        }
-    }
-}
-
-#[tokio::test]
-async fn does_not_retry_with_body_if_not_post() {
-    profile_test! {
-        routes: [
-            controller::route()
-                .request_any()
-                .response_failure(500..600)
-                .retryable(true)
-        ],
-        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
-        with_client: |client: client::Client| async move {
-            let req = client.request_builder("/0.5")
-                .method("PUT")
-                .body("req has a body".into())
-                .unwrap();
-            let res = client.request_body(req).await;
             assert_eq!(res.status(), 533);
         }
     }
