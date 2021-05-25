@@ -98,6 +98,7 @@ impl Daemon {
         } = self;
 
         debug!("Identity daemon running");
+
         let mut curr_expiry = UNIX_EPOCH;
         let mut client = api::identity_client::IdentityClient::new(client);
 

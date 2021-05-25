@@ -1,17 +1,19 @@
 mod client_hello;
 
-use crate::{LocalId, NegotiatedProtocol, ServerId};
+use crate::{
+    HasNegotiatedProtocol, LocalId, NegotiatedProtocol, NegotiatedProtocolRef, ServerId,
+    TlsAcceptor,
+};
 use bytes::BytesMut;
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
-use linkerd_dns_name as dns;
 use linkerd_error::Error;
 use linkerd_identity as id;
-use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
+use linkerd_io::{self as io, AsyncReadExt, EitherIo, PeerAddr, PrefixedIo, ReadBuf};
 use linkerd_stack::{layer, NewService, Param};
-use rustls::Session;
 use std::{
     fmt,
+    net::SocketAddr,
     pin::Pin,
     str::FromStr,
     sync::Arc,
@@ -19,16 +21,78 @@ use std::{
 };
 use thiserror::Error;
 use tokio::time::{self, Duration};
-pub use tokio_rustls::server::TlsStream;
 use tower::util::ServiceExt;
 use tracing::{debug, trace, warn};
 
-pub type Config = Arc<rustls::ServerConfig>;
+use crate::imp;
+
+#[derive(Debug)]
+pub struct TlsStream<IO>(imp::server::TlsStream<IO>);
+
+impl<IO> TlsStream<IO> {
+    pub fn client_identity(&self) -> Option<ClientId> {
+        self.0.client_identity()
+    }
+}
+
+impl<IO> From<imp::server::TlsStream<IO>> for TlsStream<IO> {
+    fn from(stream: imp::server::TlsStream<IO>) -> Self {
+        TlsStream(stream)
+    }
+}
+
+impl<IO> io::AsyncRead for TlsStream<IO>
+where
+    IO: io::AsyncRead + io::AsyncWrite + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_read(cx, buf)
+    }
+}
+
+impl<IO> io::AsyncWrite for TlsStream<IO>
+where
+    IO: io::AsyncRead + io::AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
+    }
+}
+
+impl<IO: PeerAddr> PeerAddr for TlsStream<IO> {
+    fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.0.peer_addr()
+    }
+}
+
+impl<IO> HasNegotiatedProtocol for TlsStream<IO> {
+    #[inline]
+    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        self.0.negotiated_protocol()
+    }
+}
+
+pub type Config = Arc<id::ServerConfig>;
 
 /// Produces a server config that fails to handshake all connections.
 pub fn empty_config() -> Config {
-    let verifier = rustls::NoClientAuth::new();
-    Arc::new(rustls::ServerConfig::new(verifier))
+    Arc::new(id::ServerConfig::empty())
 }
 
 /// A newtype for remote client idenities.
@@ -270,18 +334,12 @@ async fn handshake<T>(tls_config: Config, io: T) -> io::Result<(ServerTls, TlsSt
 where
     T: io::AsyncRead + io::AsyncWrite + Unpin,
 {
-    let io = tokio_rustls::TlsAcceptor::from(tls_config)
-        .accept(io)
-        .await?;
+    let io = TlsAcceptor::from(tls_config).accept(io).await?;
 
     // Determine the peer's identity, if it exist.
-    let client_id = client_identity(&io);
-
-    let negotiated_protocol = io
-        .get_ref()
-        .1
-        .get_alpn_protocol()
-        .map(|b| NegotiatedProtocol(b.into()));
+    let client_id = io.client_identity();
+    // Extract the negotiated protocol for the stream.
+    let negotiated_protocol = io.negotiated_protocol().map(|p| p.to_owned());
 
     debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
     let tls = ServerTls::Established {
@@ -291,25 +349,13 @@ where
     Ok((tls, io))
 }
 
-fn client_identity<S>(tls: &TlsStream<S>) -> Option<ClientId> {
-    use webpki::GeneralDNSNameRef;
-
-    let (_io, session) = tls.get_ref();
-    let certs = session.get_peer_certificates()?;
-    let c = certs.first().map(rustls::Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::from(c).ok()?;
-    let dns_names = end_cert.dns_names().ok()?;
-
-    match dns_names.first()? {
-        GeneralDNSNameRef::DNSName(n) => {
-            Some(ClientId(id::Name::from(dns::Name::from(n.to_owned()))))
-        }
-        GeneralDNSNameRef::Wildcard(_) => {
-            // Wildcards can perhaps be handled in a future path...
-            None
-        }
+impl fmt::Display for DetectTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TLS detection timeout")
     }
 }
+
+impl std::error::Error for DetectTimeout {}
 
 // === impl ClientId ===
 

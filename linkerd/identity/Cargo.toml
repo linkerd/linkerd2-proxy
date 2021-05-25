@@ -6,15 +6,19 @@ license = "Apache-2.0"
 edition = "2018"
 
 [features]
-default = []
+default = ["rustls-tls"]
 test-util = []
+rustls-tls = ["ring", "rustls"]
+openssl-tls = ["openssl"]
+boring-tls = ["boring"]
 
 [dependencies]
 linkerd-dns-name = { path = "../dns/name" }
-ring = "0.16.19"
-rustls = "0.19"
+ring = { version = "0.16.19", optional = true }
+rustls = { version = "0.19", optional = true }
 thiserror = "1.0"
 tracing = "0.1.2"
 untrusted = "0.7"
 webpki = "=0.21.4"
-
+openssl = { version = "0.10.32", optional = true }
+boring = { version = "1.1.2", optional = true }

@@ -230,9 +230,7 @@ impl svc::Param<tls::server::Config> for WithTransportHeaderAlpn {
         // be preferable if rustls::ServerConfig wrapped individual fields in an
         // Arc so they could be overridden independently.
         let mut config = self.0.server_config().as_ref().clone();
-        config
-            .alpn_protocols
-            .push(transport_header::PROTOCOL.into());
+        config.add_protocols(transport_header::PROTOCOL.into());
         config.into()
     }
 }

@@ -12,6 +12,11 @@ This crate conglomerates proxy configuration, runtime administration, etc,
 independently of the inbound and outbound proxy logic.
 """
 
+[features]
+rustls-tls = ["linkerd-identity/rustls-tls", "linkerd-tls/rustls-tls"]
+openssl-tls = ["linkerd-identity/openssl-tls", "linkerd-tls/openssl-tls"]
+boring-tls = ["linkerd-identity/boring-tls", "linkerd-tls/boring-tls"]
+
 [dependencies]
 bytes = "1"
 http = "0.2"

@@ -2,12 +2,16 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-pub use ring::error::KeyRejected;
-use ring::rand;
-use ring::signature::EcdsaKeyPair;
 use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
 use thiserror::Error;
 use tracing::{debug, warn};
+
+#[cfg(feature = "rustls-tls")]
+#[path = "imp/rustls.rs"]
+mod imp;
+#[cfg(not(feature = "rustls-tls"))]
+#[path = "imp/openssl.rs"]
+mod imp;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
@@ -18,58 +22,61 @@ pub use linkerd_dns_name::InvalidName;
 #[derive(Clone, Debug)]
 pub struct Csr(Arc<Vec<u8>>);
 
-/// An endpoint's identity.
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct Name(Arc<linkerd_dns_name::Name>);
+/// An error returned from the TLS implementation.
+pub struct Error(imp::Error);
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        error::Error::source(&self.0)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, fmt)
+    }
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, fmt)
+    }
+}
+
+impl From<imp::Error> for Error {
+    fn from(err: imp::Error) -> Error {
+        Error(err)
+    }
+}
 
 #[derive(Clone, Debug)]
-pub struct Key(Arc<EcdsaKeyPair>);
-
-struct SigningKey(Arc<EcdsaKeyPair>);
-struct Signer(Arc<EcdsaKeyPair>);
-
-#[derive(Clone)]
-pub struct TrustAnchors(Arc<rustls::ClientConfig>);
+pub struct Key(imp::Key);
 
 #[derive(Clone, Debug)]
 pub struct TokenSource(Arc<String>);
 
 #[derive(Clone, Debug)]
-pub struct Crt {
-    id: LocalId,
-    expiry: SystemTime,
-    chain: Vec<rustls::Certificate>,
-}
-
-#[derive(Clone)]
-pub struct CrtKey {
-    id: LocalId,
-    expiry: SystemTime,
-    client_config: Arc<rustls::ClientConfig>,
-    server_config: Arc<rustls::ServerConfig>,
-}
-
-struct CertResolver(rustls::sign::CertifiedKey);
+pub struct Crt(imp::Crt);
 
 #[derive(Clone, Debug, Error)]
 #[error(transparent)]
-pub struct InvalidCrt(rustls::TLSError);
+pub struct InvalidCrt(imp::InvalidCrt);
+
+impl From<imp::InvalidCrt> for InvalidCrt {
+    fn from(err: imp::InvalidCrt) -> Self {
+        InvalidCrt(err)
+    }
+}
 
 /// A newtype for local server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct LocalId(pub Name);
 
-// These must be kept in sync:
-static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
-    &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
-const SIGNATURE_ALG_RUSTLS_SCHEME: rustls::SignatureScheme =
-    rustls::SignatureScheme::ECDSA_NISTP256_SHA256;
-const SIGNATURE_ALG_RUSTLS_ALGORITHM: rustls::internal::msgs::enums::SignatureAlgorithm =
-    rustls::internal::msgs::enums::SignatureAlgorithm::ECDSA;
-const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[
-    rustls::ProtocolVersion::TLSv1_2,
-    rustls::ProtocolVersion::TLSv1_3,
-];
+impl<'t> Into<webpki::DNSNameRef<'t>> for &'t LocalId {
+    fn into(self) -> webpki::DNSNameRef<'t> {
+        (&self.0).into()
+    }
+}
 
 // === impl Csr ===
 
@@ -90,50 +97,32 @@ impl Csr {
 // === impl Key ===
 
 impl Key {
-    pub fn from_pkcs8(b: &[u8]) -> Result<Self, KeyRejected> {
-        let k = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, b)?;
-        Ok(Key(Arc::new(k)))
-    }
-}
-
-impl rustls::sign::SigningKey for SigningKey {
-    fn choose_scheme(
-        &self,
-        offered: &[rustls::SignatureScheme],
-    ) -> Option<Box<dyn rustls::sign::Signer>> {
-        if offered.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
-            Some(Box::new(Signer(self.0.clone())))
-        } else {
-            None
-        }
-    }
-
-    fn algorithm(&self) -> rustls::internal::msgs::enums::SignatureAlgorithm {
-        SIGNATURE_ALG_RUSTLS_ALGORITHM
-    }
-}
-
-impl rustls::sign::Signer for Signer {
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::TLSError> {
-        let rng = rand::SystemRandom::new();
-        self.0
-            .sign(&rng, message)
-            .map(|signature| signature.as_ref().to_owned())
-            .map_err(|ring::error::Unspecified| {
-                rustls::TLSError::General("Signing Failed".to_owned())
-            })
-    }
-
-    fn get_scheme(&self) -> rustls::SignatureScheme {
-        SIGNATURE_ALG_RUSTLS_SCHEME
+    pub fn from_pkcs8(b: &[u8]) -> Result<Key, Error> {
+        let key = imp::Key::from_pkcs8(b)?;
+        Ok(Key(key))
     }
 }
 
 // === impl Name ===
+/// An endpoint's identity.
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct Name(Arc<linkerd_dns_name::Name>);
 
 impl From<linkerd_dns_name::Name> for Name {
     fn from(n: linkerd_dns_name::Name) -> Self {
         Name(Arc::new(n))
+    }
+}
+
+impl Into<linkerd_dns_name::Name> for Name {
+    fn into(self) -> linkerd_dns_name::Name {
+        self.0.as_ref().clone()
+    }
+}
+
+impl From<&Name> for Name {
+    fn from(n: &Name) -> Self {
+        Self(n.0.clone())
     }
 }
 
@@ -210,102 +199,31 @@ impl TokenSource {
     }
 }
 
-// === impl TrustAnchors ===
+// === TrustAnchors ===
+#[derive(Clone, Debug)]
+pub struct TrustAnchors(imp::TrustAnchors);
 
 impl TrustAnchors {
     #[cfg(any(test, feature = "test-util"))]
     fn empty() -> Self {
-        TrustAnchors(Arc::new(rustls::ClientConfig::new()))
+        TrustAnchors(imp::TrustAnchors::empty())
     }
 
-    pub fn from_pem(s: &str) -> Option<Self> {
-        use std::io::Cursor;
-
-        let mut roots = rustls::RootCertStore::empty();
-        let (added, skipped) = roots.add_pem_file(&mut Cursor::new(s)).ok()?;
-        if skipped != 0 {
-            warn!("skipped {} trust anchors in trust anchors file", skipped);
+    pub fn from_pem(s: &str) -> Option<TrustAnchors> {
+        match imp::TrustAnchors::from_pem(s) {
+            None => None,
+            Some(ta) => Some(TrustAnchors(ta)),
         }
-        if added == 0 {
-            return None;
-        }
-
-        let mut c = rustls::ClientConfig::new();
-
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
-        // as we'd like (e.g. controlling the set of trusted signature
-        // algorithms), but they provide good enough defaults for now.
-        // TODO: lock down the verification further.
-        // TODO: Change Rustls's API to Avoid needing to clone `root_cert_store`.
-        c.root_store = roots;
-
-        // Disable session resumption for the time-being until resumption is
-        // more tested.
-        c.enable_tickets = false;
-
-        Some(TrustAnchors(Arc::new(c)))
     }
 
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
-        let mut client = self.0.as_ref().clone();
-
-        // Ensure the certificate is valid for the services we terminate for
-        // TLS. This assumes that server cert validation does the same or
-        // more validation than client cert validation.
-        //
-        // XXX: Rustls currently only provides access to a
-        // `ServerCertVerifier` through
-        // `rustls::ClientConfig::get_verifier()`.
-        //
-        // XXX: Once `rustls::ServerCertVerified` is exposed in Rustls's
-        // safe API, use it to pass proof to CertCertResolver::new....
-        //
-        // TODO: Restrict accepted signatutre algorithms.
-        static NO_OCSP: &[u8] = &[];
-        client
-            .get_verifier()
-            .verify_server_cert(&client.root_store, &crt.chain, (&crt.id).into(), NO_OCSP)
-            .map_err(InvalidCrt)?;
-        debug!("certified {}", crt.id);
-
-        let k = SigningKey(key.0);
-        let key = rustls::sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k)));
-        let resolver = Arc::new(CertResolver(key));
-
-        // Enable client authentication.
-        client.client_auth_cert_resolver = resolver.clone();
-
-        // Ask TLS clients for a certificate and accept any certificate issued
-        // by our trusted CA(s).
-        //
-        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
-        // as we'd like (e.g. controlling the set of trusted signature
-        // algorithms), but they provide good enough defaults for now.
-        // TODO: lock down the verification further.
-        //
-        // TODO: Change Rustls's API to Avoid needing to clone `root_cert_store`.
-        let mut server = rustls::ServerConfig::new(
-            rustls::AllowAnyAnonymousOrAuthenticatedClient::new(self.0.root_store.clone()),
-        );
-        server.versions = TLS_VERSIONS.to_vec();
-        server.cert_resolver = resolver;
-
-        Ok(CrtKey {
-            id: crt.id,
-            expiry: crt.expiry,
-            client_config: Arc::new(client),
-            server_config: Arc::new(server),
-        })
+        let key = self.0.certify(key.0, crt.0).map(CrtKey)?;
+        debug!("Certified {}", key.id());
+        Ok(key)
     }
 
-    pub fn client_config(&self) -> Arc<rustls::ClientConfig> {
-        self.0.clone()
-    }
-}
-
-impl fmt::Debug for TrustAnchors {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TrustAnchors").finish()
+    pub fn client_config(&self) -> Arc<ClientConfig> {
+        Arc::new(ClientConfig(self.0.client_config().as_ref().clone()))
     }
 }
 
@@ -318,113 +236,43 @@ impl Crt {
         intermediates: Vec<Vec<u8>>,
         expiry: SystemTime,
     ) -> Self {
-        let mut chain = Vec::with_capacity(intermediates.len() + 1);
-        chain.push(rustls::Certificate(leaf));
-        chain.extend(intermediates.into_iter().map(rustls::Certificate));
-
-        Self { id, chain, expiry }
+        Self(imp::Crt::new(id, leaf, intermediates, expiry))
     }
 
     pub fn name(&self) -> &Name {
-        self.id.as_ref()
+        self.0.name()
     }
 }
 
 impl From<&'_ Crt> for LocalId {
     fn from(crt: &Crt) -> LocalId {
-        crt.id.clone()
+        crt.0.id.clone()
     }
 }
 
 // === CrtKey ===
+#[derive(Clone, Debug)]
+pub struct CrtKey(imp::CrtKey);
 
 impl CrtKey {
     pub fn name(&self) -> &Name {
-        self.id.as_ref()
+        self.0.name()
     }
 
     pub fn expiry(&self) -> SystemTime {
-        self.expiry
+        self.0.expiry()
     }
 
     pub fn id(&self) -> &LocalId {
-        &self.id
+        &self.0.id()
     }
 
-    pub fn client_config(&self) -> Arc<rustls::ClientConfig> {
-        self.client_config.clone()
+    pub fn client_config(&self) -> Arc<ClientConfig> {
+        Arc::new(ClientConfig(self.0.client_config().as_ref().clone()))
     }
 
-    pub fn server_config(&self) -> Arc<rustls::ServerConfig> {
-        self.server_config.clone()
-    }
-}
-
-impl fmt::Debug for CrtKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        f.debug_struct("CrtKey")
-            .field("id", &self.id)
-            .field("expiry", &self.expiry)
-            .finish()
-    }
-}
-
-// === impl CertResolver ===
-
-impl rustls::ResolvesClientCert for CertResolver {
-    fn resolve(
-        &self,
-        _acceptable_issuers: &[&[u8]],
-        sigschemes: &[rustls::SignatureScheme],
-    ) -> Option<rustls::sign::CertifiedKey> {
-        // The proxy's server-side doesn't send the list of acceptable issuers so
-        // don't bother looking at `_acceptable_issuers`.
-        self.resolve_(sigschemes)
-    }
-
-    fn has_certs(&self) -> bool {
-        true
-    }
-}
-
-impl CertResolver {
-    fn resolve_(
-        &self,
-        sigschemes: &[rustls::SignatureScheme],
-    ) -> Option<rustls::sign::CertifiedKey> {
-        if !sigschemes.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
-            debug!("signature scheme not supported -> no certificate");
-            return None;
-        }
-        Some(self.0.clone())
-    }
-}
-
-impl rustls::ResolvesServerCert for CertResolver {
-    fn resolve(&self, hello: rustls::ClientHello<'_>) -> Option<rustls::sign::CertifiedKey> {
-        let server_name = if let Some(server_name) = hello.server_name() {
-            server_name
-        } else {
-            debug!("no SNI -> no certificate");
-            return None;
-        };
-
-        // Verify that our certificate is valid for the given SNI name.
-        let c = (&self.0.cert)
-            .first()
-            .map(rustls::Certificate::as_ref)
-            .unwrap_or(&[]); // An empty input will fail to parse.
-        if let Err(err) =
-            webpki::EndEntityCert::from(c).and_then(|c| c.verify_is_valid_for_dns_name(server_name))
-        {
-            debug!(
-                "our certificate is not valid for the SNI name -> no certificate: {:?}",
-                err
-            );
-            return None;
-        }
-
-        self.resolve_(hello.sigschemes())
+    pub fn server_config(&self) -> Arc<ServerConfig> {
+        Arc::new(ServerConfig(self.0.server_config().as_ref().clone()))
     }
 }
 
@@ -451,6 +299,57 @@ impl AsRef<Name> for LocalId {
 impl fmt::Display for LocalId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+// === impl InvalidCrt ===
+
+impl fmt::Display for InvalidCrt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl error::Error for InvalidCrt {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        self.0.source()
+    }
+}
+
+#[derive(Clone)]
+pub struct ClientConfig(pub imp::ClientConfig);
+
+impl ClientConfig {
+    pub fn empty() -> Self {
+        Self(imp::ClientConfig::empty())
+    }
+    pub fn set_protocols(&mut self, protocols: Vec<Vec<u8>>) {
+        self.0.set_protocols(protocols);
+    }
+}
+
+impl From<imp::ClientConfig> for ClientConfig {
+    fn from(conf: imp::ClientConfig) -> Self {
+        Self(conf)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ServerConfig(pub imp::ServerConfig);
+
+impl ServerConfig {
+    pub fn empty() -> Self {
+        Self(imp::ServerConfig::empty())
+    }
+
+    pub fn add_protocols(&mut self, protocols: Vec<u8>) {
+        self.0.add_protocols(protocols);
+    }
+}
+
+impl From<imp::ServerConfig> for ServerConfig {
+    fn from(conf: imp::ServerConfig) -> Self {
+        Self(conf)
     }
 }
 

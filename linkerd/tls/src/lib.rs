@@ -3,114 +3,83 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_identity::LocalId;
-use linkerd_io as io;
-pub use rustls::Session;
+use linkerd_identity::{ClientConfig, Name, ServerConfig};
+use linkerd_io::{AsyncRead, AsyncWrite, Result};
+
+#[cfg(feature = "rustls-tls")]
+#[path = "imp/rustls.rs"]
+mod imp;
+#[cfg(all(not(feature = "boring-tls"), not(feature = "rustls-tls")))]
+#[path = "imp/openssl.rs"]
+mod imp;
+#[cfg(all(feature = "boring-tls", not(feature = "rustls-tls")))]
+#[path = "imp/boring.rs"]
+mod imp;
+
+mod protocol;
 
 pub mod client;
 pub mod server;
 
 pub use self::{
     client::{Client, ClientTls, ConditionalClientTls, NoClientTls, ServerId},
+    protocol::{HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
+use std::sync::Arc;
 
-/// A trait implented by transport streams to indicate its negotiated protocol.
-pub trait HasNegotiatedProtocol {
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>>;
-}
+#[derive(Clone)]
+pub struct TlsConnector(imp::TlsConnector);
 
-#[derive(Clone, Eq, PartialEq, Hash)]
-pub struct NegotiatedProtocol(pub Vec<u8>);
-
-/// Indicates a negotiated protocol.
-#[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct NegotiatedProtocolRef<'t>(pub &'t [u8]);
-
-impl NegotiatedProtocol {
-    pub fn as_ref(&self) -> NegotiatedProtocolRef<'_> {
-        NegotiatedProtocolRef(&self.0)
+impl TlsConnector {
+    pub async fn connect<IO>(&self, domain: Name, stream: IO) -> Result<client::TlsStream<IO>>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin,
+    {
+        self.0.connect(domain, stream).await.map(|s| s.into())
     }
 }
 
-impl std::fmt::Debug for NegotiatedProtocol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        NegotiatedProtocolRef(&self.0).fmt(f)
+impl From<imp::TlsConnector> for TlsConnector {
+    fn from(connector: imp::TlsConnector) -> Self {
+        TlsConnector(connector)
     }
 }
 
-impl NegotiatedProtocolRef<'_> {
-    pub fn to_owned(&self) -> NegotiatedProtocol {
-        NegotiatedProtocol(self.0.into())
+impl From<Arc<ClientConfig>> for TlsConnector {
+    fn from(conf: Arc<ClientConfig>) -> Self {
+        imp::TlsConnector::from(conf).into()
     }
 }
 
-impl From<NegotiatedProtocolRef<'_>> for NegotiatedProtocol {
-    fn from(protocol: NegotiatedProtocolRef<'_>) -> NegotiatedProtocol {
-        protocol.to_owned()
+#[derive(Clone)]
+pub struct TlsAcceptor(imp::TlsAcceptor);
+
+impl TlsAcceptor {
+    pub async fn accept<IO>(&self, stream: IO) -> Result<server::TlsStream<IO>>
+    where
+        IO: AsyncRead + AsyncWrite + Unpin,
+    {
+        self.0.accept(stream).await.map(|s| s.into())
     }
 }
 
-impl std::fmt::Debug for NegotiatedProtocolRef<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match std::str::from_utf8(self.0) {
-            Ok(s) => s.fmt(f),
-            Err(_) => self.0.fmt(f),
-        }
+impl From<imp::TlsAcceptor> for TlsAcceptor {
+    fn from(acceptor: imp::TlsAcceptor) -> Self {
+        TlsAcceptor(acceptor)
     }
 }
 
-impl<I> HasNegotiatedProtocol for self::client::TlsStream<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
-    }
-}
-
-impl<I> HasNegotiatedProtocol for self::server::TlsStream<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
-    }
-}
-
-impl HasNegotiatedProtocol for tokio::net::TcpStream {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        None
-    }
-}
-
-impl<I: HasNegotiatedProtocol> HasNegotiatedProtocol for io::ScopedIo<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref().negotiated_protocol()
-    }
-}
-
-impl<L, R> HasNegotiatedProtocol for io::EitherIo<L, R>
-where
-    L: HasNegotiatedProtocol,
-    R: HasNegotiatedProtocol,
-{
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        match self {
-            io::EitherIo::Left(l) => l.negotiated_protocol(),
-            io::EitherIo::Right(r) => r.negotiated_protocol(),
-        }
+impl From<Arc<ServerConfig>> for TlsAcceptor {
+    fn from(conf: Arc<ServerConfig>) -> Self {
+        imp::TlsAcceptor::from(conf).into()
     }
 }
 
 /// Needed for tests.
-impl HasNegotiatedProtocol for io::BoxedIo {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        None
-    }
-}
+// impl HasNegotiatedProtocol for io::BoxedIo {
+//     #[inline]
+//     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+//         None
+//     }
+// }
