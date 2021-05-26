@@ -143,12 +143,12 @@ impl WithBody {
     pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 }
 
-impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<buf_body::ReplayBody<B>>>
+impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<replay::ReplayBody<B>>>
     for WithBody
 {
     fn clone_request(
-        req: &http::Request<buf_body::ReplayBody<B>>,
-    ) -> Option<http::Request<buf_body::ReplayBody<B>>> {
+        req: &http::Request<replay::ReplayBody<B>>,
+    ) -> Option<http::Request<replay::ReplayBody<B>>> {
         let content_length = |req: &http::Request<_>| {
             req.headers()
                 .get(http::header::CONTENT_LENGTH)

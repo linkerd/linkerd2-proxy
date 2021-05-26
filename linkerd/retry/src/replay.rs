@@ -4,32 +4,43 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
 use linkerd_stack as svc;
+use parking_lot::Mutex;
 use std::{
-    collections::VecDeque,
-    io::IoSlice,
-    mem,
-    pin::Pin,
-    sync::{Arc, Mutex},
-    task::Context,
-    task::Poll,
+    collections::VecDeque, io::IoSlice, mem, pin::Pin, sync::Arc, task::Context, task::Poll,
 };
 
 /// Wraps an HTTP body type and lazily buffers data as it is read from the inner
 /// body.
 ///
-/// When the initial `Body` is dropped, any data in the buffer is transferred to
-/// the cloned body, if it exists.
+/// When this body is dropped, if a clone exists, any buffered data is shared
+/// with its cloned. The first clone to be polled will take ownership over the
+/// data until it is dropped. When *that* clone is dropped, the buffered data
+/// --- including any new data read from the body by the clone, if the body has
+/// not yet completed --- will be shared with any remaining clones.
 ///
 /// The buffered data can then be used to retry the request if the original
 /// request fails.
 #[derive(Debug)]
 pub struct ReplayBody<B> {
+    /// Buffered state owned by this body if it is actively being polled. If
+    /// this body has been polled and no other body owned the state, this will
+    /// be `Some`.
     state: Option<BodyState<B>>,
+
+    /// Copy of the state shared across all clones. When the active clone is
+    /// dropped, it moves its state back into the shared state to be taken by the
+    /// next clone to be polled.
     shared: Arc<Mutex<Option<BodyState<B>>>>,
+
+    /// Should this clone replay the buffered body from the shared state before
+    /// polling the initial body?
     replay_body: bool,
+
+    /// Should this clone replay trailers from the shared state?
     replay_trailers: bool,
 }
-/// Data returned by `BufBody`'s `http_body::Body` implementation is either
+
+/// Data returned by `ReplayBody`'s `http_body::Body` implementation is either
 /// `Bytes` returned by the initial body, or a list of all `Bytes` chunks
 /// returned by the initial body (when replaying it).
 #[derive(Debug)]
@@ -44,7 +55,7 @@ pub struct BufList {
     bufs: VecDeque<Bytes>,
 }
 
-/// A `Service`/`Proxy` that wraps an HTTP request's `Body` type in a `BufBody`,
+/// A `Service`/`Proxy` that wraps an HTTP request's `Body` type in a `ReplayBody`,
 /// allowing it to be cloned.
 ///
 // TODO(eliza): it would be nice if this could just be `MapRequest`, but Tower
@@ -57,20 +68,20 @@ pub struct WrapBody<S> {
 
 #[derive(Debug)]
 struct BodyState<B> {
-    body: BufList,
+    buf: BufList,
     trailers: Option<HeaderMap>,
     rest: Option<B>,
     is_completed: bool,
 }
 
-// === impl BufBody ===
+// === impl ReplayBody ===
 
 impl<B: Body> ReplayBody<B> {
-    /// Wraps an initial `Body` in a `BufBody`.
+    /// Wraps an initial `Body` in a `ReplayBody`.
     pub fn new(body: B) -> Self {
         Self {
             state: Some(BodyState {
-                body: Default::default(),
+                buf: Default::default(),
                 trailers: None,
                 rest: Some(body),
                 is_completed: false,
@@ -86,7 +97,7 @@ impl<B: Body> ReplayBody<B> {
         state: &'a mut Option<BodyState<B>>,
         shared: &Arc<Mutex<Option<BodyState<B>>>>,
     ) -> &'a mut BodyState<B> {
-        state.get_or_insert_with(|| shared.lock().unwrap().take().expect("missing body state"))
+        state.get_or_insert_with(|| shared.lock().take().expect("missing body state"))
     }
 }
 
@@ -100,27 +111,44 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut();
         let state = Self::state(&mut this.state, &this.shared);
-        tracing::trace!(?this.replay_body, has_remaining = state.body.has_remaining(), "Replay::poll_data");
-        // If we haven't replayed the buffer yet, return it.
-        if this.replay_body && state.body.has_remaining() {
-            tracing::trace!(?state.body, "replaying body");
+        tracing::trace!(
+            replay_body = this.replay_body,
+            buf.has_remaining = state.buf.has_remaining(),
+            body.is_completed = state.is_completed,
+            "Replay::poll_data"
+        );
+
+        // If we haven't replayed the buffer yet, and its not empty, return the
+        // buffered data first.
+        if this.replay_body && state.buf.has_remaining() {
+            tracing::trace!("replaying body");
+            // Don't return the buffered data again on the next poll.
             this.replay_body = false;
-            return Poll::Ready(Some(Ok(Data::Replay(state.body.clone()))));
+            return Poll::Ready(Some(Ok(Data::Replay(state.buf.clone()))));
         }
 
         // If the inner body has previously ended, don't poll it again.
+        //
+        // NOTE(eliza): we would expect the inner body to just happily return
+        // `None` multiple times here, but `hyper::Body::channel` (which we use
+        // in the tests) will panic if it is polled after returning `None`, so
+        // we have to special-case this. :/
         if state.is_completed {
             return Poll::Ready(None);
         }
 
         // If there's more data in the initial body, poll that...
         if let Some(rest) = state.rest.as_mut() {
+            tracing::trace!("Polling initial body");
             let opt = futures::ready!(Pin::new(rest).poll_data(cx));
+
+            // If the body
             if opt.is_none() {
+                tracing::trace!("Initial body completed");
                 state.is_completed = true;
             }
             return Poll::Ready(
-                opt.map(|ok| ok.map(|data| Data::Initial(state.body.push_chunk(data)))),
+                opt.map(|ok| ok.map(|data| Data::Initial(state.buf.push_chunk(data)))),
             );
         }
 
@@ -134,10 +162,15 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         let this = self.get_mut();
         let state = Self::state(&mut this.state, &this.shared);
+        tracing::trace!(
+            replay_trailers = this.replay_trailers,
+            "Replay::poll_trailers"
+        );
 
         if this.replay_trailers {
             this.replay_trailers = false;
             if let Some(ref trailers) = state.trailers {
+                tracing::trace!("Replaying trailers");
                 return Poll::Ready(Ok(Some(trailers.clone())));
             }
         }
@@ -168,13 +201,16 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     fn size_hint(&self) -> http_body::SizeHint {
         let mut hint = http_body::SizeHint::default();
         if let Some(ref state) = self.state {
-            let rem = state.body.remaining() as u64;
+            let rem = state.buf.remaining() as u64;
+
             // Have we read the entire body? If so, the size is exactly the size
             // of the buffer.
             if state.is_completed {
                 return http_body::SizeHint::with_exact(rem);
             }
 
+            // Otherwise, the size is the size of the current buffer plus the
+            // size hint returned by the inner body.
             let (rest_lower, rest_upper) = state
                 .rest
                 .as_ref()
@@ -191,24 +227,23 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     }
 }
 
-impl<B> Drop for ReplayBody<B> {
-    fn drop(&mut self) {
-        if let Ok(mut shared) = self.shared.lock() {
-            mem::swap(&mut self.state, &mut *shared);
-        } else {
-            tracing::warn!("lock poisoned!");
-        }
-    }
-}
-
 impl<B> Clone for ReplayBody<B> {
     fn clone(&self) -> Self {
         Self {
             state: None,
             shared: self.shared.clone(),
+            // The clone should try to replay from the shared state before
+            // reading any additional data from the initial body.
             replay_body: true,
             replay_trailers: true,
         }
+    }
+}
+
+impl<B> Drop for ReplayBody<B> {
+    fn drop(&mut self) {
+        let mut shared = self.shared.lock();
+        mem::swap(&mut self.state, &mut *shared);
     }
 }
 
