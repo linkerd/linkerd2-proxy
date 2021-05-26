@@ -1126,6 +1126,7 @@ dependencies = [
  "http-body",
  "linkerd-error",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "tower",
  "tracing",
