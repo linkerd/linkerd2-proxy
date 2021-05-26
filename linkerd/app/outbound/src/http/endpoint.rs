@@ -8,14 +8,7 @@ use linkerd_app_core::{
 use tokio::io;
 
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<T, B>(
-        self,
-    ) -> Outbound<
-        svc::BoxNewService<
-            T,
-            svc::BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>,
-        >,
-    >
+    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::BoxNewHttp<T, B>>
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>

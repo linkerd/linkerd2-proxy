@@ -28,6 +28,11 @@ pub use tower::{
 
 pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 
+pub type BoxHttp<B = http::BoxBody> =
+    BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
+
+pub type BoxNewHttp<T, B = http::BoxBody> = BoxNewService<T, BoxHttp<B>>;
+
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
 

@@ -30,27 +30,31 @@ impl PeerAddr for BoxedIo {
 }
 
 impl AsyncRead for BoxedIo {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf<'_>) -> Poll<()> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<()> {
         self.as_mut().0.as_mut().poll_read(cx, buf)
     }
 }
 
 impl AsyncWrite for BoxedIo {
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         self.as_mut().0.as_mut().poll_shutdown(cx)
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         self.as_mut().0.as_mut().poll_flush(cx)
     }
 
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<usize> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<usize> {
         self.as_mut().0.as_mut().poll_write(cx, buf)
     }
 
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
-        cx: &mut Context,
+        cx: &mut Context<'_>,
         buf: &[IoSlice<'_>],
     ) -> Poll<usize> {
         self.as_mut().0.as_mut().poll_write_vectored(cx, buf)
