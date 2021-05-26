@@ -431,7 +431,7 @@ mod tests {
     use http::{HeaderMap, HeaderValue};
 
     #[tokio::test]
-    async fn basically_works() {
+    async fn replays_one_chunk() {
         let Test {
             mut tx,
             initial,
@@ -446,6 +446,29 @@ mod tests {
 
         let replay = body_to_string(replay).await;
         assert_eq!(replay, "hello world");
+    }
+
+    #[tokio::test]
+    async fn replays_several_chunks() {
+        let Test {
+            mut tx,
+            initial,
+            replay,
+            _trace,
+        } = Test::new();
+
+        tokio::spawn(async move {
+            tx.send_data("hello").await;
+            tx.send_data(" world").await;
+            tx.send_data(", have lots").await;
+            tx.send_data(" of fun!").await;
+        });
+
+        let initial = body_to_string(initial).await;
+        assert_eq!(initial, "hello world, have lots of fun!");
+
+        let replay = body_to_string(replay).await;
+        assert_eq!(replay, "hello world, have lots of fun!");
     }
 
     #[tokio::test]

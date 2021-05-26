@@ -7,18 +7,19 @@ edition = "2018"
 publish = false
 
 [dependencies]
-linkerd-error = { path = "../error" }
-linkerd-stack = { path = "../stack" }
-tower = { version = "0.4.7", default-features = false, features = ["retry", "util"] }
-tracing = "0.1.23"
-pin-project = "1"
 bytes = "1"
+futures = { version = "0.3", default-features = false }
 http-body = "0.4"
 http = "0.2"
-futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../error" }
+linkerd-stack = { path = "../stack" }
+pin-project = "1"
 parking_lot = "0.11"
+tower = { version = "0.4.7", default-features = false, features = ["retry", "util"] }
+tracing = "0.1.23"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"]}
 hyper = "0.14"
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
+tokio = { version = "1", features = ["macros", "rt"]}
+
