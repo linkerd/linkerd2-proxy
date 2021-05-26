@@ -5,9 +5,7 @@ use http::HeaderMap;
 use http_body::Body;
 use linkerd_stack as svc;
 use parking_lot::Mutex;
-use std::{
-    collections::VecDeque, io::IoSlice, mem, pin::Pin, sync::Arc, task::Context, task::Poll,
-};
+use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
 
 /// Wraps an HTTP body type and lazily buffers data as it is read from the inner
 /// body.
@@ -242,8 +240,10 @@ impl<B> Clone for ReplayBody<B> {
 
 impl<B> Drop for ReplayBody<B> {
     fn drop(&mut self) {
-        let mut shared = self.shared.lock();
-        mem::swap(&mut self.state, &mut *shared);
+        // If this clone owned the shared state, put it back.`s
+        if let Some(state) = self.state.take() {
+            *self.shared.lock() = Some(state);
+        }
     }
 }
 
@@ -629,6 +629,43 @@ mod tests {
 
         let replay2_tlrs = replay2.trailers().await.expect("trailers should not error");
         assert_eq!(replay2_tlrs.as_ref(), Some(&tlrs));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn drop_clone_early() {
+        let Test {
+            mut tx,
+            mut initial,
+            mut replay,
+            _trace,
+        } = Test::new();
+
+        let mut tlrs = HeaderMap::new();
+        tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
+        tlrs.insert("x-foo", HeaderValue::from_str("bar").unwrap());
+
+        let tlrs2 = tlrs.clone();
+        tokio::spawn(async move {
+            tx.send_data("hello").await;
+            tx.send_data(" world").await;
+            tx.send_trailers(tlrs2).await;
+        });
+
+        assert_eq!(body_to_string(&mut initial).await, "hello world");
+
+        let initial_tlrs = initial.trailers().await.expect("trailers should not error");
+        assert_eq!(initial_tlrs.as_ref(), Some(&tlrs));
+
+        // drop the initial body to send the data to the replay
+        drop(initial);
+
+        // clone the body again and then drop it
+        let replay2 = replay.clone();
+        drop(replay2);
+
+        assert_eq!(body_to_string(&mut replay).await, "hello world");
+        let replay_tlrs = replay.trailers().await.expect("trailers should not error");
+        assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
     }
 
     struct Test {
