@@ -173,7 +173,7 @@ impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<buf_body::BufBody
             "retryable",
         );
 
-        let mut clone = http::Request::new(req.body().try_clone()?);
+        let mut clone = http::Request::new(req.body().clone());
         *clone.method_mut() = req.method().clone();
         *clone.uri_mut() = req.uri().clone();
         *clone.headers_mut() = req.headers().clone();

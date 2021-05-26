@@ -1270,6 +1270,7 @@ dependencies = [
  "hyper",
  "linkerd-error",
  "linkerd-stack",
+ "linkerd-tracing",
  "pin-project",
  "tokio",
  "tower",

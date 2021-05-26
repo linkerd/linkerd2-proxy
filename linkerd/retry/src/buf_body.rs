@@ -37,7 +37,7 @@ pub enum Data {
 }
 
 /// Body data composed of multiple `Bytes` chunks.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct BufList {
     bufs: VecDeque<Bytes>,
 }
@@ -70,17 +70,18 @@ struct InitialBody<B: Body + Default> {
 
 #[derive(Debug)]
 struct BodyState<B> {
-    body: Option<BufList>,
+    body: BufList,
     trailers: Option<HeaderMap>,
     rest: Option<B>,
     is_completed: bool,
 }
 
 #[derive(Debug)]
-enum ReplayBody<B> {
-    Waiting(Arc<Mutex<Option<BodyState<B>>>>),
-    Ready(BodyState<B>),
-    Empty,
+struct ReplayBody<B> {
+    state: Option<BodyState<B>>,
+    shared: Arc<Mutex<Option<BodyState<B>>>>,
+    replayed_body: bool,
+    replayed_trailers: bool,
 }
 
 // === impl BufBody ===
@@ -98,14 +99,21 @@ impl<B: Body + Default> BufBody<B> {
             }),
         }
     }
+}
 
-    /// If this is the initial body, returns a `Some` with a replay body.
-    pub fn try_clone(&self) -> Option<Self> {
-        match self.inner {
-            Inner::Initial(InitialBody { ref shared, .. }) => Some(Self {
-                inner: Inner::Replay(ReplayBody::Waiting(shared.clone())),
+impl<B: Body + Default> Clone for BufBody<B> {
+    fn clone(&self) -> Self {
+        let shared = match self.inner {
+            Inner::Initial(ref body) => body.shared.clone(),
+            Inner::Replay(ref body) => body.shared.clone(),
+        };
+        Self {
+            inner: Inner::Replay(ReplayBody {
+                state: None,
+                shared,
+                replayed_body: false,
+                replayed_trailers: false,
             }),
-            _ => None,
         }
     }
 }
@@ -211,20 +219,8 @@ where
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut();
         let bufs = &mut this.bufs;
-        let opt = futures::ready!(Pin::new(&mut this.body).poll_data(cx)).map(|res| {
-            res.map(|mut data| {
-                let len = data.remaining();
-                // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
-                // internally be a cheap refcount bump almost all of the time.
-                // But, if it isn't, this will copy it to a `Bytes` that we can
-                // now clone.
-                let bytes = data.copy_to_bytes(len);
-                // Buffer a clone of the bytes read on this poll.
-                bufs.bufs.push_back(bytes.clone());
-                // Return the bytes
-                Data::Initial(bytes)
-            })
-        });
+        let opt = futures::ready!(Pin::new(&mut this.body).poll_data(cx))
+            .map(|res| res.map(|data| Data::Initial(bufs.push_chunk(data))));
         if opt.is_none() {
             this.is_completed = true;
         }
@@ -264,7 +260,7 @@ impl<B: Body + Default> Drop for InitialBody<B> {
 
         if let Ok(mut shared) = self.shared.lock() {
             *shared = Some(BodyState {
-                body: Some(body),
+                body,
                 trailers: self.trailers.take(),
                 rest,
                 is_completed: self.is_completed,
@@ -276,28 +272,11 @@ impl<B: Body + Default> Drop for InitialBody<B> {
 // === impl ReplayBody ===
 
 impl<B> ReplayBody<B> {
-    fn state(&mut self) -> &mut BodyState<B> {
-        loop {
-            if let ReplayBody::Ready(ref mut state) = self {
-                return state;
-            }
-
-            *self = if let ReplayBody::Waiting(inner) = mem::replace(self, ReplayBody::Empty) {
-                let state = match Arc::try_unwrap(inner) {
-                    Ok(inner) => inner
-                        .try_lock()
-                        .expect("if the Arc has no clones, the mutex cannot be contended")
-                        .take()
-                        .expect("InitialBody completed but failed to set body state"),
-                    _ => {
-                        unreachable!("ReplayBody should not be polled until initial body completes")
-                    }
-                };
-                ReplayBody::Ready(state)
-            } else {
-                unreachable!();
-            }
-        }
+    fn state<'a>(
+        state: &'a mut Option<BodyState<B>>,
+        shared: &Arc<Mutex<Option<BodyState<B>>>>,
+    ) -> &'a mut BodyState<B> {
+        state.get_or_insert_with(|| shared.lock().unwrap().take().expect("missing body state"))
     }
 }
 
@@ -309,26 +288,25 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let this = self.get_mut().state();
-
+        let this = self.get_mut();
+        let state = Self::state(&mut this.state, &this.shared);
+        tracing::trace!(?this.replayed_body, has_remaining = state.body.has_remaining(), "Replay::poll_data");
         // If we haven't replayed the buffer yet, return it.
-        if let Some(bytes) = this.body.take() {
-            if bytes.has_remaining() {
-                return Poll::Ready(Some(Ok(Data::Replay(bytes))));
-            }
+        if !this.replayed_body && state.body.has_remaining() {
+            tracing::trace!(?state.body, "replaying body");
+            this.replayed_body = true;
+            return Poll::Ready(Some(Ok(Data::Replay(state.body.clone()))));
         }
 
         // If the inner body has previously ended, don't poll it again.
-        if this.is_completed {
+        if state.is_completed {
             return Poll::Ready(None);
         }
 
         // If there's more data in the initial body, poll that...
-        if let Some(rest) = this.rest.as_mut() {
+        if let Some(rest) = state.rest.as_mut() {
             return Pin::new(rest).poll_data(cx).map(|some| {
-                some.map(|ok| {
-                    ok.map(|mut data| Data::Initial(data.copy_to_bytes(data.remaining())))
-                })
+                some.map(|ok| ok.map(|data| Data::Initial(state.body.push_chunk(data))))
             });
         }
 
@@ -340,16 +318,26 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        let this = self.get_mut().state();
+        let this = self.get_mut();
+        let state = Self::state(&mut this.state, &this.shared);
 
-        if let Some(trailers) = this.trailers.take() {
-            return Poll::Ready(Ok(Some(trailers)));
+        if !this.replayed_trailers {
+            this.replayed_trailers = true;
+            if let Some(ref trailers) = state.trailers {
+                return Poll::Ready(Ok(Some(trailers.clone())));
+            }
         }
 
-        if let Some(rest) = this.rest.as_mut() {
+        if let Some(rest) = state.rest.as_mut() {
             // If the inner body has previously ended, don't poll it again.
             if !rest.is_end_stream() {
-                return Pin::new(rest).poll_trailers(cx);
+                let res = futures::ready!(Pin::new(rest).poll_trailers(cx)).map(|tlrs| {
+                    if state.trailers.is_none() {
+                        state.trailers = tlrs.clone();
+                    }
+                    tlrs
+                });
+                return Poll::Ready(res);
             }
         }
 
@@ -357,43 +345,50 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     }
 
     fn is_end_stream(&self) -> bool {
-        match self {
-            ReplayBody::Ready(BodyState {
-                body: Some(ref body),
-                rest,
-                ..
-            }) => {
-                !body.has_remaining()
-                    && rest
-                        .as_ref()
-                        .map(|body| body.is_end_stream())
-                        .unwrap_or(true)
-            }
-            _ => false,
-        }
+        self.replayed_body
+            && (self.replayed_trailers
+                || self
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
+                    .unwrap_or(false))
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
-        match self {
-            ReplayBody::Ready(BodyState {
-                ref body,
-                rest: None,
-                ..
-            }) => http_body::SizeHint::with_exact(
-                body.as_ref().map(Buf::remaining).unwrap_or(0) as u64
-            ),
-            ReplayBody::Ready(BodyState {
-                ref body,
-                rest: Some(ref rest),
-                ..
-            }) => {
-                let mut hint = rest.size_hint();
-                let buffered = body.as_ref().map(Buf::remaining).unwrap_or(0) as u64;
-                hint.set_lower(hint.lower() + buffered);
-                hint.set_upper(hint.upper().unwrap_or(0) + buffered);
-                hint
-            }
-            _ => http_body::SizeHint::default(),
+        todo!()
+        // match self {
+        //     ReplayBody::Ready(BodyState {
+        //         ref body,
+        //         rest: None,
+        //         ..
+        //     }) => http_body::SizeHint::with_exact(
+        //         body.as_ref().map(Buf::remaining).unwrap_or(0) as u64
+        //     ),
+        //     ReplayBody::Ready(
+        //         BodyState {
+        //             ref body,
+        //             rest: Some(ref rest),
+        //             ..
+        //         },
+        //         _,
+        //     ) => {
+        //         let mut hint = rest.size_hint();
+        //         let buffered = body.as_ref().map(Buf::remaining).unwrap_or(0) as u64;
+        //         hint.set_lower(hint.lower() + buffered);
+        //         hint.set_upper(hint.upper().unwrap_or(0) + buffered);
+        //         hint
+        //     }
+        //     _ => http_body::SizeHint::default(),
+        // }
+    }
+}
+
+impl<B> Drop for ReplayBody<B> {
+    fn drop(&mut self) {
+        if let Ok(mut shared) = self.shared.lock() {
+            mem::swap(&mut self.state, &mut *shared);
+        } else {
+            tracing::warn!("lock poisoned!");
         }
     }
 }
@@ -441,6 +436,21 @@ impl Buf for Data {
 }
 
 // === impl BufList ===
+
+impl BufList {
+    fn push_chunk(&mut self, mut data: impl Buf) -> Bytes {
+        let len = data.remaining();
+        // `data` is (almost) certainly a `Bytes`, so `copy_to_bytes` should
+        // internally be a cheap refcount bump almost all of the time.
+        // But, if it isn't, this will copy it to a `Bytes` that we can
+        // now clone.
+        let bytes = data.copy_to_bytes(len);
+        // Buffer a clone of the bytes read on this poll.
+        self.bufs.push_back(bytes.clone());
+        // Return the bytes
+        bytes
+    }
+}
 
 impl Buf for BufList {
     fn remaining(&self) -> usize {
@@ -526,10 +536,9 @@ mod tests {
             mut tx,
             initial,
             replay,
+            _trace,
         } = Test::new();
-        tx.send_data("hello world".into())
-            .await
-            .expect("rx is not dropped");
+        tx.send_data("hello world").await;
         drop(tx);
 
         let initial = body_to_string(initial).await;
@@ -545,18 +554,15 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
+            _trace,
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
         tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
         tlrs.insert("x-foo", HeaderValue::from_str("bar").unwrap());
 
-        tx.send_data("hello world".into())
-            .await
-            .expect("rx is not dropped");
-        tx.send_trailers(tlrs.clone())
-            .await
-            .expect("rx is not dropped");
+        tx.send_data("hello world").await;
+        tx.send_trailers(tlrs.clone()).await;
         drop(tx);
 
         while initial.data().await.is_some() {
@@ -581,15 +587,14 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
+            _trace,
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
         tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
         tlrs.insert("x-foo", HeaderValue::from_str("bar").unwrap());
 
-        tx.send_trailers(tlrs.clone())
-            .await
-            .expect("rx is not dropped");
+        tx.send_trailers(tlrs.clone()).await;
 
         drop(tx);
 
@@ -605,68 +610,185 @@ mod tests {
         assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn switches_with_body_remaining() {
         // This simulates a case where the server returns an error _before_ the
         // entire body has been read.
         let Test {
             mut tx,
             mut initial,
-            replay,
+            mut replay,
+            _trace,
         } = Test::new();
 
-        tx.send_data("hello".into())
-            .await
-            .expect("rx is not dropped");
-        assert_eq!(chunk(&mut initial).await, String::from("hello"));
+        tx.send_data("hello").await;
+        assert_eq!(chunk(&mut initial).await.unwrap(), "hello");
 
-        tx.send_data(" world".into())
-            .await
-            .expect("rx is not dropped");
-        assert_eq!(chunk(&mut initial).await, String::from(" world"));
+        tx.send_data(" world").await;
+        assert_eq!(chunk(&mut initial).await.unwrap(), " world");
+
+        // drop the initial body to send the data to the replay
+        drop(initial);
+        tracing::info!("dropped initial body");
+
+        tokio::spawn(async move {
+            tx.send_data(", have lots of fun").await;
+            tx.send_trailers(HeaderMap::new()).await;
+        });
+
+        assert_eq!(
+            body_to_string(&mut replay).await,
+            "hello world, have lots of fun"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn multiple_replays() {
+        let Test {
+            mut tx,
+            mut initial,
+            mut replay,
+            _trace,
+        } = Test::new();
+
+        let mut tlrs = HeaderMap::new();
+        tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
+        tlrs.insert("x-foo", HeaderValue::from_str("bar").unwrap());
+
+        let tlrs2 = tlrs.clone();
+        tokio::spawn(async move {
+            tx.send_data("hello").await;
+            tx.send_data(" world").await;
+            tx.send_trailers(tlrs2).await;
+        });
+
+        assert_eq!(body_to_string(&mut initial).await, "hello world");
+
+        let initial_tlrs = initial.trailers().await.expect("trailers should not error");
+        assert_eq!(initial_tlrs.as_ref(), Some(&tlrs));
 
         // drop the initial body to send the data to the replay
         drop(initial);
 
+        let mut replay2 = replay.clone();
+        assert_eq!(body_to_string(&mut replay).await, "hello world");
+
+        let replay_tlrs = replay.trailers().await.expect("trailers should not error");
+        assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
+
+        // drop the initial body to send the data to the replay
+        drop(replay);
+
+        assert_eq!(body_to_string(&mut replay2).await, "hello world");
+
+        let replay2_tlrs = replay2.trailers().await.expect("trailers should not error");
+        assert_eq!(replay2_tlrs.as_ref(), Some(&tlrs));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn multiple_incomplete_replays() {
+        let Test {
+            mut tx,
+            mut initial,
+            mut replay,
+            _trace,
+        } = Test::new();
+
+        let mut tlrs = HeaderMap::new();
+        tlrs.insert("x-hello", HeaderValue::from_str("world").unwrap());
+        tlrs.insert("x-foo", HeaderValue::from_str("bar").unwrap());
+
+        tx.send_data("hello").await;
+        assert_eq!(chunk(&mut initial).await.unwrap(), "hello");
+
+        // drop the initial body to send the data to the replay
+        drop(initial);
+        tracing::info!("dropped initial body");
+
+        let mut replay2 = replay.clone();
+
+        tx.send_data(" world").await;
+        assert_eq!(chunk(&mut replay).await.unwrap(), "hello");
+        assert_eq!(chunk(&mut replay).await.unwrap(), " world");
+
+        // drop the replay body to send the data to the second replay
+        drop(replay);
+        tracing::info!("dropped first replay body");
+
+        let tlrs2 = tlrs.clone();
         tokio::spawn(async move {
-            let _ = tx.send_data(", have lots of fun".into()).await;
-            let _ = tx.send_trailers(HeaderMap::new()).await;
+            tx.send_data(", have lots").await;
+            tx.send_data(" of fun!").await;
+            tx.send_trailers(tlrs2).await;
         });
 
         assert_eq!(
-            dbg!(string(hyper::body::aggregate(replay).await.unwrap())),
-            String::from("hello world, have lots of fun")
+            body_to_string(&mut replay2).await,
+            "hello world, have lots of fun!"
         );
+
+        let replay2_tlrs = replay2.trailers().await.expect("trailers should not error");
+        assert_eq!(replay2_tlrs.as_ref(), Some(&tlrs));
     }
 
     struct Test {
-        tx: hyper::body::Sender,
+        tx: Tx,
         initial: BufBody<hyper::Body>,
         replay: BufBody<hyper::Body>,
+        _trace: tracing::subscriber::DefaultGuard,
     }
+
+    struct Tx(hyper::body::Sender);
 
     impl Test {
         fn new() -> Self {
             let (tx, body) = hyper::Body::channel();
             let initial = BufBody::new(body);
-            let replay = initial
-                .try_clone()
-                .expect("this is the first clone and should therefore succeed");
+            let replay = initial.clone();
             Self {
-                tx,
+                tx: Tx(tx),
                 initial,
                 replay,
+                _trace: linkerd_tracing::test::with_default_filter(concat!(
+                    module_path!(),
+                    "=trace"
+                )),
             }
         }
     }
 
-    async fn chunk<T>(body: &mut T) -> String
+    impl Tx {
+        #[tracing::instrument(skip(self))]
+        async fn send_data(&mut self, data: impl Into<Bytes> + std::fmt::Debug) {
+            let data = data.into();
+            tracing::info!("sending data...");
+            self.0.send_data(data).await.expect("rx is not dropped");
+            tracing::info!("sent data");
+        }
+
+        #[tracing::instrument(skip(self))]
+        async fn send_trailers(&mut self, trailers: HeaderMap) {
+            tracing::trace!("sending trailers...");
+            self.0
+                .send_trailers(trailers)
+                .await
+                .expect("rx is not dropped");
+            tracing::info!("sent trailers");
+        }
+    }
+
+    async fn chunk<T>(body: &mut T) -> Option<String>
     where
         T: http_body::Body + Unpin,
     {
-        dbg!("wait for chunk");
-        let chunk = string(body.data().await.unwrap().map_err(|_| ()).unwrap());
-        dbg!(chunk)
+        tracing::info!("waiting for a body chunk...");
+        let chunk = body
+            .data()
+            .await
+            .map(|res| res.map_err(|_| ()).unwrap())
+            .map(string);
+        tracing::info!(?chunk);
+        chunk
     }
 
     fn string(mut data: impl Buf) -> String {
@@ -674,16 +796,16 @@ mod tests {
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
-    async fn body_to_string<T>(body: T) -> String
+    async fn body_to_string<T>(mut body: T) -> String
     where
-        T: http_body::Body,
+        T: http_body::Body + Unpin,
         T::Error: std::fmt::Debug,
     {
-        let body = hyper::body::to_bytes(body)
-            .await
-            .expect("body should not fail");
-        std::str::from_utf8(&body[..])
-            .expect("body should be utf-8")
-            .to_owned()
+        let mut s = String::new();
+        while let Some(chunk) = chunk(&mut body).await {
+            s.push_str(&chunk[..]);
+        }
+        tracing::info!(body = ?s, "no more data");
+        s
     }
 }
