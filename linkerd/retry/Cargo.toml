@@ -20,3 +20,4 @@ futures = { version = "0.3", default-features = false }
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"]}
 hyper = "0.14"
+linkerd-tracing = { path = "../tracing", features = ["ansi"] }

@@ -23,10 +23,12 @@ use std::{
 /// The buffered data can then be used to retry the request if the original
 /// request fails.
 #[derive(Debug)]
-pub struct BufBody<B: Body + Default> {
-    inner: Inner<B>,
+pub struct ReplayBody<B> {
+    state: Option<BodyState<B>>,
+    shared: Arc<Mutex<Option<BodyState<B>>>>,
+    replay_body: bool,
+    replay_trailers: bool,
 }
-
 /// Data returned by `BufBody`'s `http_body::Body` implementation is either
 /// `Bytes` returned by the initial body, or a list of all `Bytes` chunks
 /// returned by the initial body (when replaying it).
@@ -54,21 +56,6 @@ pub struct WrapBody<S> {
 }
 
 #[derive(Debug)]
-enum Inner<B: Body + Default> {
-    Initial(InitialBody<B>),
-    Replay(ReplayBody<B>),
-}
-
-#[derive(Debug)]
-struct InitialBody<B: Body + Default> {
-    body: B,
-    bufs: BufList,
-    trailers: Option<HeaderMap>,
-    shared: Arc<Mutex<Option<BodyState<B>>>>,
-    is_completed: bool,
-}
-
-#[derive(Debug)]
 struct BodyState<B> {
     body: BufList,
     trailers: Option<HeaderMap>,
@@ -76,202 +63,25 @@ struct BodyState<B> {
     is_completed: bool,
 }
 
-#[derive(Debug)]
-struct ReplayBody<B> {
-    state: Option<BodyState<B>>,
-    shared: Arc<Mutex<Option<BodyState<B>>>>,
-    replayed_body: bool,
-    replayed_trailers: bool,
-}
-
 // === impl BufBody ===
 
-impl<B: Body + Default> BufBody<B> {
+impl<B: Body> ReplayBody<B> {
     /// Wraps an initial `Body` in a `BufBody`.
     pub fn new(body: B) -> Self {
         Self {
-            inner: Inner::Initial(InitialBody {
-                body,
-                bufs: Default::default(),
+            state: Some(BodyState {
+                body: Default::default(),
                 trailers: None,
-                shared: Arc::new(Mutex::new(None)),
+                rest: Some(body),
                 is_completed: false,
             }),
-        }
-    }
-}
-
-impl<B: Body + Default> Clone for BufBody<B> {
-    fn clone(&self) -> Self {
-        let shared = match self.inner {
-            Inner::Initial(ref body) => body.shared.clone(),
-            Inner::Replay(ref body) => body.shared.clone(),
-        };
-        Self {
-            inner: Inner::Replay(ReplayBody {
-                state: None,
-                shared,
-                replayed_body: false,
-                replayed_trailers: false,
-            }),
-        }
-    }
-}
-
-impl<B> Body for BufBody<B>
-where
-    B: Body + Unpin + Default,
-{
-    type Data = Data;
-    type Error = B::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        match self.get_mut().inner {
-            Inner::Initial(ref mut body) => Pin::new(body).poll_data(cx),
-            Inner::Replay(ref mut body) => Pin::new(body).poll_data(cx),
+            shared: Arc::new(Mutex::new(None)),
+            // The initial `ReplayBody` has nothing to replay
+            replay_body: false,
+            replay_trailers: false,
         }
     }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        match self.get_mut().inner {
-            Inner::Initial(ref mut body) => Pin::new(body).poll_trailers(cx),
-            Inner::Replay(ref mut body) => Pin::new(body).poll_trailers(cx),
-        }
-    }
-
-    fn is_end_stream(&self) -> bool {
-        match self.inner {
-            Inner::Initial(ref body) => body.is_end_stream(),
-            Inner::Replay(ref body) => body.is_end_stream(),
-        }
-    }
-
-    fn size_hint(&self) -> http_body::SizeHint {
-        match self.inner {
-            Inner::Initial(ref body) => body.size_hint(),
-            Inner::Replay(ref body) => body.size_hint(),
-        }
-    }
-}
-
-// === impl WrapBody ===
-
-impl<S> WrapBody<S> {
-    pub fn layer() -> impl svc::layer::Layer<S, Service = Self> + Clone + Send + Sync + 'static {
-        svc::layer::mk(|inner| WrapBody { inner })
-    }
-}
-
-impl<P, B, S> svc::Proxy<http::Request<B>, S> for WrapBody<P>
-where
-    B: Body + Unpin + Default,
-    P: svc::Proxy<http::Request<BufBody<B>>, S>,
-    P::Error: Into<linkerd_error::Error>,
-    S: svc::Service<P::Request>,
-{
-    type Request = P::Request;
-    type Response = P::Response;
-    type Error = P::Error;
-    type Future = P::Future;
-
-    fn proxy(&self, svc: &mut S, req: http::Request<B>) -> Self::Future {
-        self.inner.proxy(svc, req.map(BufBody::new))
-    }
-}
-
-impl<S, B> svc::Service<http::Request<B>> for WrapBody<S>
-where
-    B: Body + Unpin + Default,
-    S::Error: Into<linkerd_error::Error>,
-    S: svc::Service<http::Request<BufBody<B>>>,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        self.inner.call(req.map(BufBody::new))
-    }
-}
-
-// === impl InitialBody ===
-
-impl<B> Body for InitialBody<B>
-where
-    B: Body + Unpin + Default,
-{
-    type Data = Data;
-    type Error = B::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        let this = self.get_mut();
-        let bufs = &mut this.bufs;
-        let opt = futures::ready!(Pin::new(&mut this.body).poll_data(cx))
-            .map(|res| res.map(|data| Data::Initial(bufs.push_chunk(data))));
-        if opt.is_none() {
-            this.is_completed = true;
-        }
-        Poll::Ready(opt)
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        let this = self.get_mut();
-        let buffered_trailers = &mut this.trailers;
-        let res = futures::ready!(Pin::new(&mut this.body).poll_trailers(cx)).map(|trailers| {
-            *buffered_trailers = trailers.clone();
-            trailers
-        });
-        Poll::Ready(res)
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.body.is_end_stream()
-    }
-
-    fn size_hint(&self) -> http_body::SizeHint {
-        self.body.size_hint()
-    }
-}
-
-impl<B: Body + Default> Drop for InitialBody<B> {
-    fn drop(&mut self) {
-        let body = mem::take(&mut self.bufs);
-        let rest = if self.body.is_end_stream() {
-            None
-        } else {
-            Some(mem::take(&mut self.body))
-        };
-
-        if let Ok(mut shared) = self.shared.lock() {
-            *shared = Some(BodyState {
-                body,
-                trailers: self.trailers.take(),
-                rest,
-                is_completed: self.is_completed,
-            });
-        }
-    }
-}
-
-// === impl ReplayBody ===
-
-impl<B> ReplayBody<B> {
     fn state<'a>(
         state: &'a mut Option<BodyState<B>>,
         shared: &Arc<Mutex<Option<BodyState<B>>>>,
@@ -290,11 +100,11 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut();
         let state = Self::state(&mut this.state, &this.shared);
-        tracing::trace!(?this.replayed_body, has_remaining = state.body.has_remaining(), "Replay::poll_data");
+        tracing::trace!(?this.replay_body, has_remaining = state.body.has_remaining(), "Replay::poll_data");
         // If we haven't replayed the buffer yet, return it.
-        if !this.replayed_body && state.body.has_remaining() {
+        if this.replay_body && state.body.has_remaining() {
             tracing::trace!(?state.body, "replaying body");
-            this.replayed_body = true;
+            this.replay_body = false;
             return Poll::Ready(Some(Ok(Data::Replay(state.body.clone()))));
         }
 
@@ -305,9 +115,13 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
 
         // If there's more data in the initial body, poll that...
         if let Some(rest) = state.rest.as_mut() {
-            return Pin::new(rest).poll_data(cx).map(|some| {
-                some.map(|ok| ok.map(|data| Data::Initial(state.body.push_chunk(data))))
-            });
+            let opt = futures::ready!(Pin::new(rest).poll_data(cx));
+            if opt.is_none() {
+                state.is_completed = true;
+            }
+            return Poll::Ready(
+                opt.map(|ok| ok.map(|data| Data::Initial(state.body.push_chunk(data)))),
+            );
         }
 
         // Otherwise, guess we're done!
@@ -321,8 +135,8 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         let this = self.get_mut();
         let state = Self::state(&mut this.state, &this.shared);
 
-        if !this.replayed_trailers {
-            this.replayed_trailers = true;
+        if this.replay_trailers {
+            this.replay_trailers = false;
             if let Some(ref trailers) = state.trailers {
                 return Poll::Ready(Ok(Some(trailers.clone())));
             }
@@ -345,41 +159,35 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     }
 
     fn is_end_stream(&self) -> bool {
-        self.replayed_body
-            && (self.replayed_trailers
-                || self
-                    .state
-                    .as_ref()
-                    .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
-                    .unwrap_or(false))
+        self.state
+            .as_ref()
+            .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
+            .unwrap_or(false)
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
-        todo!()
-        // match self {
-        //     ReplayBody::Ready(BodyState {
-        //         ref body,
-        //         rest: None,
-        //         ..
-        //     }) => http_body::SizeHint::with_exact(
-        //         body.as_ref().map(Buf::remaining).unwrap_or(0) as u64
-        //     ),
-        //     ReplayBody::Ready(
-        //         BodyState {
-        //             ref body,
-        //             rest: Some(ref rest),
-        //             ..
-        //         },
-        //         _,
-        //     ) => {
-        //         let mut hint = rest.size_hint();
-        //         let buffered = body.as_ref().map(Buf::remaining).unwrap_or(0) as u64;
-        //         hint.set_lower(hint.lower() + buffered);
-        //         hint.set_upper(hint.upper().unwrap_or(0) + buffered);
-        //         hint
-        //     }
-        //     _ => http_body::SizeHint::default(),
-        // }
+        let mut hint = http_body::SizeHint::default();
+        if let Some(ref state) = self.state {
+            let rem = state.body.remaining() as u64;
+            // Have we read the entire body? If so, the size is exactly the size
+            // of the buffer.
+            if state.is_completed {
+                return http_body::SizeHint::with_exact(rem);
+            }
+
+            let (rest_lower, rest_upper) = state
+                .rest
+                .as_ref()
+                .map(|rest| {
+                    let hint = rest.size_hint();
+                    (hint.lower(), hint.upper().unwrap_or(0))
+                })
+                .unwrap_or_default();
+            hint.set_lower(rem + rest_lower);
+            hint.set_upper(rem + rest_upper);
+        }
+
+        hint
     }
 }
 
@@ -392,6 +200,63 @@ impl<B> Drop for ReplayBody<B> {
         }
     }
 }
+
+impl<B> Clone for ReplayBody<B> {
+    fn clone(&self) -> Self {
+        Self {
+            state: None,
+            shared: self.shared.clone(),
+            replay_body: true,
+            replay_trailers: true,
+        }
+    }
+}
+
+// === impl WrapBody ===
+
+impl<S> WrapBody<S> {
+    pub fn layer() -> impl svc::layer::Layer<S, Service = Self> + Clone + Send + Sync + 'static {
+        svc::layer::mk(|inner| WrapBody { inner })
+    }
+}
+
+impl<P, B, S> svc::Proxy<http::Request<B>, S> for WrapBody<P>
+where
+    B: Body + Unpin + Default,
+    P: svc::Proxy<http::Request<ReplayBody<B>>, S>,
+    P::Error: Into<linkerd_error::Error>,
+    S: svc::Service<P::Request>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    fn proxy(&self, svc: &mut S, req: http::Request<B>) -> Self::Future {
+        self.inner.proxy(svc, req.map(ReplayBody::new))
+    }
+}
+
+impl<S, B> svc::Service<http::Request<B>> for WrapBody<S>
+where
+    B: Body + Unpin + Default,
+    S::Error: Into<linkerd_error::Error>,
+    S: svc::Service<http::Request<ReplayBody<B>>>,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        self.inner.call(req.map(ReplayBody::new))
+    }
+}
+
+// === impl Data ===
 
 impl Buf for Data {
     #[inline]
@@ -733,8 +598,8 @@ mod tests {
 
     struct Test {
         tx: Tx,
-        initial: BufBody<hyper::Body>,
-        replay: BufBody<hyper::Body>,
+        initial: ReplayBody<hyper::Body>,
+        replay: ReplayBody<hyper::Body>,
         _trace: tracing::subscriber::DefaultGuard,
     }
 
@@ -743,16 +608,13 @@ mod tests {
     impl Test {
         fn new() -> Self {
             let (tx, body) = hyper::Body::channel();
-            let initial = BufBody::new(body);
+            let initial = ReplayBody::new(body);
             let replay = initial.clone();
             Self {
                 tx: Tx(tx),
                 initial,
                 replay,
-                _trace: linkerd_tracing::test::with_default_filter(concat!(
-                    module_path!(),
-                    "=trace"
-                )),
+                _trace: linkerd_tracing::test::with_default_filter("linkerd_retry=debug"),
             }
         }
     }
@@ -761,7 +623,7 @@ mod tests {
         #[tracing::instrument(skip(self))]
         async fn send_data(&mut self, data: impl Into<Bytes> + std::fmt::Debug) {
             let data = data.into();
-            tracing::info!("sending data...");
+            tracing::trace!("sending data...");
             self.0.send_data(data).await.expect("rx is not dropped");
             tracing::info!("sent data");
         }
@@ -781,7 +643,7 @@ mod tests {
     where
         T: http_body::Body + Unpin,
     {
-        tracing::info!("waiting for a body chunk...");
+        tracing::trace!("waiting for a body chunk...");
         let chunk = body
             .data()
             .await
@@ -789,11 +651,6 @@ mod tests {
             .map(string);
         tracing::info!(?chunk);
         chunk
-    }
-
-    fn string(mut data: impl Buf) -> String {
-        let bytes = data.copy_to_bytes(data.remaining());
-        String::from_utf8(bytes.to_vec()).unwrap()
     }
 
     async fn body_to_string<T>(mut body: T) -> String
@@ -807,5 +664,10 @@ mod tests {
         }
         tracing::info!(body = ?s, "no more data");
         s
+    }
+
+    fn string(mut data: impl Buf) -> String {
+        let bytes = data.copy_to_bytes(data.remaining());
+        String::from_utf8(bytes.to_vec()).unwrap()
     }
 }

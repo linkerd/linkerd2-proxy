@@ -12,7 +12,7 @@ use tower::util::{Oneshot, ServiceExt};
 use tracing::trace;
 
 pub mod buf_body;
-pub use self::buf_body::{BufBody, WrapBody};
+pub use self::buf_body::{ReplayBody, WrapBody};
 
 /// A strategy for obtaining per-target retry polices.
 pub trait NewPolicy<T> {
