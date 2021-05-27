@@ -4,7 +4,7 @@ use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
-use hyper::body::HttpBody;
+use http_body::Body;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_retry::NewRetryLayer;
 use linkerd_stack::Param;
@@ -14,8 +14,8 @@ use tower::retry::budget::Budget;
 
 pub use linkerd_retry::*;
 
-pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry<WithBody>> {
-    NewRetryLayer::new(NewRetry::new(metrics).clone_requests_via::<WithBody>())
+pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
+    NewRetryLayer::new(NewRetry::new(metrics))
 }
 
 pub trait CloneRequest<Req> {
@@ -23,12 +23,12 @@ pub trait CloneRequest<Req> {
 }
 
 #[derive(Clone, Debug)]
-pub struct NewRetry<C = ()> {
+pub struct NewRetry<C = WithBody> {
     metrics: HttpRouteRetry,
     _clone_request: PhantomData<C>,
 }
 
-pub struct Retry<C = ()> {
+pub struct Retry<C = WithBody> {
     metrics: Handle,
     budget: Arc<Budget>,
     response_classes: profiles::http::ResponseClasses,
@@ -120,22 +120,6 @@ impl<C> Clone for Retry<C> {
     }
 }
 
-impl<B: Default + HttpBody> CloneRequest<http::Request<B>> for () {
-    fn clone_request(req: &http::Request<B>) -> Option<http::Request<B>> {
-        if !req.body().is_end_stream() {
-            return None;
-        }
-
-        let mut clone = http::Request::new(B::default());
-        *clone.method_mut() = req.method().clone();
-        *clone.uri_mut() = req.uri().clone();
-        *clone.headers_mut() = req.headers().clone();
-        *clone.version_mut() = req.version();
-
-        Some(clone)
-    }
-}
-
 // === impl WithBody ===
 
 impl WithBody {
@@ -143,12 +127,8 @@ impl WithBody {
     pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 }
 
-impl<B: HttpBody + Unpin + Default> CloneRequest<http::Request<replay::ReplayBody<B>>>
-    for WithBody
-{
-    fn clone_request(
-        req: &http::Request<replay::ReplayBody<B>>,
-    ) -> Option<http::Request<replay::ReplayBody<B>>> {
+impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
+    fn clone_request(req: &http::Request<ReplayBody<B>>) -> Option<http::Request<ReplayBody<B>>> {
         let content_length = |req: &http::Request<_>| {
             req.headers()
                 .get(http::header::CONTENT_LENGTH)

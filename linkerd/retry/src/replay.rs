@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
