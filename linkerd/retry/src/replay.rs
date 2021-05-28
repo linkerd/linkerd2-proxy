@@ -26,7 +26,7 @@ pub struct ReplayBody<B> {
     /// Copy of the state shared across all clones. When the active clone is
     /// dropped, it moves its state back into the shared state to be taken by the
     /// next clone to be polled.
-    shared: Arc<Mutex<Option<BodyState<B>>>>,
+    shared: Arc<SharedState<B>>,
 
     /// Should this clone replay the buffered body from the shared state before
     /// polling the initial body?
@@ -52,6 +52,18 @@ pub struct BufList {
 }
 
 #[derive(Debug)]
+struct SharedState<B> {
+    body: Mutex<Option<BodyState<B>>>,
+    /// Did the initial body return `true` from `is_end_stream` before it was
+    /// ever polled? If so, always return `true`; the body is completely empty.
+    ///
+    /// We store this separately so that clones of a totally empty body can
+    /// always return `true` from `is_end_stream` even when they don't own the
+    /// shared state.
+    was_empty: bool,
+}
+
+#[derive(Debug)]
 struct BodyState<B> {
     buf: BufList,
     trailers: Option<HeaderMap>,
@@ -69,6 +81,7 @@ pub fn layer<B: Body>() -> svc::MapTargetLayer<fn(http::Request<B>) -> http::Req
 impl<B: Body> ReplayBody<B> {
     /// Wraps an initial `Body` in a `ReplayBody`.
     pub fn new(body: B) -> Self {
+        let was_empty = body.is_end_stream();
         Self {
             state: Some(BodyState {
                 buf: Default::default(),
@@ -76,7 +89,10 @@ impl<B: Body> ReplayBody<B> {
                 rest: Some(body),
                 is_completed: false,
             }),
-            shared: Arc::new(Mutex::new(None)),
+            shared: Arc::new(SharedState {
+                body: Mutex::new(None),
+                was_empty,
+            }),
             // The initial `ReplayBody` has nothing to replay
             replay_body: false,
             replay_trailers: false,
@@ -93,7 +109,7 @@ impl<B: Body> ReplayBody<B> {
     /// request has been dropped.
     fn acquire_state<'a>(
         state: &'a mut Option<BodyState<B>>,
-        shared: &Arc<Mutex<Option<BodyState<B>>>>,
+        shared: &Mutex<Option<BodyState<B>>>,
     ) -> &'a mut BodyState<B> {
         state.get_or_insert_with(|| shared.lock().take().expect("missing body state"))
     }
@@ -108,7 +124,7 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut();
-        let state = Self::acquire_state(&mut this.state, &this.shared);
+        let state = Self::acquire_state(&mut this.state, &this.shared.body);
         tracing::trace!(
             replay_body = this.replay_body,
             buf.has_remaining = state.buf.has_remaining(),
@@ -161,7 +177,7 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         let this = self.get_mut();
-        let state = Self::acquire_state(&mut this.state, &this.shared);
+        let state = Self::acquire_state(&mut this.state, &this.shared.body);
         tracing::trace!(
             replay_trailers = this.replay_trailers,
             "Replay::poll_trailers"
@@ -192,10 +208,23 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
     }
 
     fn is_end_stream(&self) -> bool {
-        self.state
-            .as_ref()
-            .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
-            .unwrap_or(false)
+        // if the initial body was EOS as soon as it was wrapped, then we are
+        // empty.
+        if self.shared.was_empty {
+            return true;
+        }
+
+        // if this body has data or trailers remaining to play back, it
+        // is not EOS
+        !self.replay_body
+            && !self.replay_trailers
+            // or, if we have replayed everything, the initial body may
+            // still have data remaining, so ask it
+            && self
+                .state
+                .as_ref()
+                .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
+                .unwrap_or(false)
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
@@ -244,7 +273,7 @@ impl<B> Drop for ReplayBody<B> {
     fn drop(&mut self) {
         // If this clone owned the shared state, put it back.`s
         if let Some(state) = self.state.take() {
-            *self.shared.lock() = Some(state);
+            *self.shared.body.lock() = Some(state);
         }
     }
 }
@@ -647,6 +676,63 @@ mod tests {
         assert_eq!(body_to_string(&mut replay).await, "hello world");
         let replay_tlrs = replay.trailers().await.expect("trailers should not error");
         assert_eq!(replay_tlrs.as_ref(), Some(&tlrs));
+    }
+
+    // This test is specifically for behavior across clones, so the clippy lint
+    // is wrong here.
+    #[allow(clippy::redundant_clone)]
+    #[test]
+    fn empty_body_is_always_eos() {
+        // If the initial body was empty, every clone should always return
+        // `true` from `is_end_stream`.
+        let initial = ReplayBody::new(hyper::Body::empty());
+        assert!(initial.is_end_stream());
+
+        let replay = initial.clone();
+        assert!(replay.is_end_stream());
+
+        let replay2 = replay.clone();
+        assert!(replay2.is_end_stream());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn eos_only_when_fully_replayed() {
+        // Test that each clone of a body is not EOS until the data has been
+        // fully replayed.
+        let mut initial = ReplayBody::new(hyper::Body::from("hello world"));
+        let mut replay = initial.clone();
+
+        body_to_string(&mut initial).await;
+        assert!(!replay.is_end_stream());
+
+        initial.trailers().await.expect("trailers should not error");
+        assert!(initial.is_end_stream());
+        assert!(!replay.is_end_stream());
+
+        // drop the initial body to send the data to the replay
+        drop(initial);
+
+        assert!(!replay.is_end_stream());
+
+        body_to_string(&mut replay).await;
+        assert!(!replay.is_end_stream());
+
+        replay.trailers().await.expect("trailers should not error");
+        assert!(replay.is_end_stream());
+
+        // Even if we clone a body _after_ it has been driven to EOS, the clone
+        // must not be EOS.
+        let mut replay2 = replay.clone();
+        assert!(!replay2.is_end_stream());
+
+        // drop the initial body to send the data to the replay
+        drop(replay);
+
+        body_to_string(&mut replay2).await;
+        assert!(!replay2.is_end_stream());
+
+        replay2.trailers().await.expect("trailers should not error");
+        assert!(replay2.is_end_stream());
     }
 
     struct Test {
