@@ -83,7 +83,15 @@ impl<B: Body> ReplayBody<B> {
         }
     }
 
-    fn state<'a>(
+    /// Mutably borrows the body state if this clone currently owns it,
+    /// or else tries to acquire it from the shared state.
+    ///
+    /// # Panics
+    ///
+    /// This panics if another clone has currently acquired the state, based on
+    /// the assumption that a retry body will not be polled until the previous
+    /// request has been dropped.
+    fn acquire_state<'a>(
         state: &'a mut Option<BodyState<B>>,
         shared: &Arc<Mutex<Option<BodyState<B>>>>,
     ) -> &'a mut BodyState<B> {
@@ -100,7 +108,7 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut();
-        let state = Self::state(&mut this.state, &this.shared);
+        let state = Self::acquire_state(&mut this.state, &this.shared);
         tracing::trace!(
             replay_body = this.replay_body,
             buf.has_remaining = state.buf.has_remaining(),
@@ -132,7 +140,9 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
             tracing::trace!("Polling initial body");
             let opt = futures::ready!(Pin::new(rest).poll_data(cx));
 
-            // If the body
+            // If the body has ended, remember that so that future clones will
+            // not try polling it again --- some `Body` types will panic if they
+            // are polled after returning `None`.
             if opt.is_none() {
                 tracing::trace!("Initial body completed");
                 state.is_completed = true;
@@ -151,7 +161,7 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         let this = self.get_mut();
-        let state = Self::state(&mut this.state, &this.shared);
+        let state = Self::acquire_state(&mut this.state, &this.shared);
         tracing::trace!(
             replay_trailers = this.replay_trailers,
             "Replay::poll_trailers"
