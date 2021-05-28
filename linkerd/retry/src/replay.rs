@@ -214,17 +214,18 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
             return true;
         }
 
+        let is_inner_eos = self
+            .state
+            .as_ref()
+            .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
+            .unwrap_or(false);
+
         // if this body has data or trailers remaining to play back, it
         // is not EOS
-        !self.replay_body
-            && !self.replay_trailers
-            // or, if we have replayed everything, the initial body may
+        !self.replay_body && !self.replay_trailers
+            // if we have replayed everything, the initial body may
             // still have data remaining, so ask it
-            && self
-                .state
-                .as_ref()
-                .and_then(|state| state.rest.as_ref().map(Body::is_end_stream))
-                .unwrap_or(false)
+            && is_inner_eos
     }
 
     fn size_hint(&self) -> http_body::SizeHint {
