@@ -122,6 +122,7 @@ impl<E> Outbound<E> {
                     )
                     // Sets an optional retry policy.
                     .push(retry::layer(rt.metrics.http_route_retry.clone()))
+                    .push_on_response(retry::replay::layer())
                     // Sets an optional request timeout.
                     .push(http::MakeTimeoutLayer::default())
                     // Records per-route metrics.
