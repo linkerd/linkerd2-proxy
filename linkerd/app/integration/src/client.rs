@@ -11,7 +11,7 @@ use tracing::instrument::Instrument;
 use webpki::{DNSName, DNSNameRef};
 
 type ClientError = hyper::Error;
-type Request = http::Request<Bytes>;
+type Request = http::Request<hyper::Body>;
 type Response = http::Response<hyper::Body>;
 type Sender = mpsc::UnboundedSender<(Request, oneshot::Sender<Result<Response, ClientError>>)>;
 
@@ -138,7 +138,7 @@ impl Client {
         &self,
         builder: http::request::Builder,
     ) -> impl Future<Output = Result<Response, ClientError>> + Send + Sync + 'static {
-        self.send_req(builder.body(Bytes::new()).unwrap())
+        self.send_req(builder.body(Bytes::new().into()).unwrap())
     }
 
     pub async fn request_body(&self, req: Request) -> Response {
@@ -175,7 +175,7 @@ impl Client {
         }
         tracing::debug!(headers = ?req.headers(), "request");
         let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send((req, tx));
+        let _ = self.tx.send((req.map(Into::into), tx));
         async { rx.await.expect("request cancelled") }.in_current_span()
     }
 
