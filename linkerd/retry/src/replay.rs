@@ -51,23 +51,17 @@ pub struct BufList {
     bufs: VecDeque<Bytes>,
 }
 
-/// A `Service`/`Proxy` that wraps an HTTP request's `Body` type in a `ReplayBody`,
-/// allowing it to be cloned.
-///
-// TODO(eliza): it would be nice if this could just be `MapRequest`, but Tower
-// won't let us implement `Proxy` for it (because it doesn't expose access to
-// the closure). Maybe we can change that upstream eventually...
-#[derive(Debug, Default, Clone)]
-pub struct WrapBody<S> {
-    inner: S,
-}
-
 #[derive(Debug)]
 struct BodyState<B> {
     buf: BufList,
     trailers: Option<HeaderMap>,
     rest: Option<B>,
     is_completed: bool,
+}
+
+pub fn layer<B: Body>() -> svc::MapTargetLayer<fn(http::Request<B>) -> http::Request<ReplayBody<B>>>
+{
+    svc::MapTargetLayer::new(|req: http::Request<B>| req.map(ReplayBody::new))
 }
 
 // === impl ReplayBody ===
@@ -242,50 +236,6 @@ impl<B> Drop for ReplayBody<B> {
         if let Some(state) = self.state.take() {
             *self.shared.lock() = Some(state);
         }
-    }
-}
-
-// === impl WrapBody ===
-
-impl<S> WrapBody<S> {
-    pub fn layer() -> impl svc::layer::Layer<S, Service = Self> + Clone + Send + Sync + 'static {
-        svc::layer::mk(|inner| WrapBody { inner })
-    }
-}
-
-impl<P, B, S> svc::Proxy<http::Request<B>, S> for WrapBody<P>
-where
-    B: Body + Unpin + Default,
-    P: svc::Proxy<http::Request<ReplayBody<B>>, S>,
-    P::Error: Into<linkerd_error::Error>,
-    S: svc::Service<P::Request>,
-{
-    type Request = P::Request;
-    type Response = P::Response;
-    type Error = P::Error;
-    type Future = P::Future;
-
-    fn proxy(&self, svc: &mut S, req: http::Request<B>) -> Self::Future {
-        self.inner.proxy(svc, req.map(ReplayBody::new))
-    }
-}
-
-impl<S, B> svc::Service<http::Request<B>> for WrapBody<S>
-where
-    B: Body + Unpin + Default,
-    S::Error: Into<linkerd_error::Error>,
-    S: svc::Service<http::Request<ReplayBody<B>>>,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
-        self.inner.call(req.map(ReplayBody::new))
     }
 }
 

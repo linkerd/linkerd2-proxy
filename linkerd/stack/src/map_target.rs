@@ -62,6 +62,22 @@ where
     }
 }
 
+impl<T, P, S, M> super::Proxy<T, S> for MapTargetService<P, M>
+where
+    M: MapTarget<T>,
+    P: super::Proxy<M::Target, S>,
+    S: tower::Service<P::Request>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    fn proxy(&self, svc: &mut S, req: T) -> Self::Future {
+        self.inner.proxy(svc, self.map_target.map_target(req))
+    }
+}
+
 impl<F, T, U> MapTarget<T> for F
 where
     F: Fn(T) -> U,
