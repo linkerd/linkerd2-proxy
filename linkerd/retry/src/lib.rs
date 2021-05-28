@@ -1,6 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
+#![allow(clippy::type_complexity)]
 
 use linkerd_error::Error;
 use linkerd_stack::{NewService, Proxy, ProxyService};
@@ -26,139 +27,128 @@ pub trait NewPolicy<T> {
 ///
 /// Composes `NewService`s that produce a `Proxy`.
 #[derive(Clone, Debug)]
-pub struct NewRetryLayer<P, L = ()> {
+pub struct NewRetryLayer<P> {
     new_policy: P,
-    on_retry: L,
 }
 
 #[derive(Clone, Debug)]
-pub struct NewRetry<P, N, L = ()> {
+pub struct NewRetry<P, N> {
     new_policy: P,
     inner: N,
-    on_retry: L,
 }
 
 #[derive(Clone, Debug)]
-pub struct Retry<P, S, L = ()> {
+pub struct Retry<P, S> {
     policy: Option<P>,
     inner: S,
-    on_retry: L,
 }
-
 #[pin_project(project = ResponseFutureProj)]
-pub enum ResponseFuture<F, S, Req>
+pub enum ResponseFuture<R, P, S, B>
 where
-    F: futures::TryFuture<Ok = S::Response>,
-    F::Error: Into<Error>,
-    S: tower::Service<Req> + Clone,
+    R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
+    P: Proxy<http::Request<replay::MaybeReplay<B>>, S> + Clone,
+    S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
 {
-    Disabled(#[pin] F),
-    Retry(#[pin] Oneshot<S, Req>),
+    Disabled(#[pin] P::Future),
+    Retry(
+        #[pin]
+        Oneshot<
+            tower::retry::Retry<
+                R,
+                tower::util::MapRequest<
+                    ProxyService<P, S>,
+                    fn(http::Request<ReplayBody<B>>) -> http::Request<replay::MaybeReplay<B>>,
+                >,
+            >,
+            http::Request<ReplayBody<B>>,
+        >,
+    ),
 }
 
 // === impl NewRetryLayer ===
 
 impl<P> NewRetryLayer<P> {
     pub fn new(new_policy: P) -> Self {
-        Self {
-            new_policy,
-            on_retry: (),
-        }
-    }
-
-    pub fn on_retry<L: Clone>(self, on_retry: L) -> NewRetryLayer<P, L> {
-        NewRetryLayer {
-            new_policy: self.new_policy,
-            on_retry,
-        }
+        Self { new_policy }
     }
 }
 
-impl<P: Clone, N, L: Clone> tower::layer::Layer<N> for NewRetryLayer<P, L> {
-    type Service = NewRetry<P, N, L>;
+impl<P: Clone, N> tower::layer::Layer<N> for NewRetryLayer<P> {
+    type Service = NewRetry<P, N>;
 
     fn layer(&self, inner: N) -> Self::Service {
         Self::Service {
             inner,
             new_policy: self.new_policy.clone(),
-            on_retry: self.on_retry.clone(),
         }
     }
 }
 
 // === impl NewRetry ===
 
-impl<T, N, P, L> NewService<T> for NewRetry<P, N, L>
+impl<T, N, P> NewService<T> for NewRetry<P, N>
 where
     N: NewService<T>,
     P: NewPolicy<T>,
-    L: Clone,
 {
-    type Service = Retry<P::Policy, N::Service, L>;
+    type Service = Retry<P::Policy, N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
         let policy = self.new_policy.new_policy(&target);
 
         let inner = self.inner.new_service(target);
-        Retry {
-            policy,
-            inner,
-            on_retry: self.on_retry.clone(),
-        }
+        Retry { policy, inner }
     }
 }
 
 // === impl Retry ===
 
-impl<R, P, Req, PReq, S, L> Proxy<Req, S> for Retry<R, P, L>
+impl<R, P, B, S> Proxy<http::Request<B>, S> for Retry<R, P>
 where
-    R: Clone,
-    R: tower::retry::Policy<L::Request, L::Response, Error> + Clone,
-    P: Proxy<L::Request, S, Response = L::Response, Request = PReq>
-        + Proxy<Req, S, Response = L::Response, Request = PReq>
-        + Clone,
-    S: tower::Service<PReq> + Clone,
+    R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
+    P: Proxy<http::Request<replay::MaybeReplay<B>>, S> + Clone,
+    S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
-    L: Proxy<Req, tower::retry::Retry<R, ProxyService<P, S>>> + Clone,
-    L::Error: Into<Error>,
+    B: http_body::Body + Unpin,
 {
-    type Request = PReq;
-    type Response = L::Response;
+    type Request = P::Request;
+    type Response = P::Response;
     type Error = Error;
-    type Future = ResponseFuture<
-        <P as Proxy<Req, S>>::Future,
-        ProxyService<L, tower::retry::Retry<R, ProxyService<P, S>>>,
-        Req,
-    >;
+    type Future = ResponseFuture<R, P, S, B>;
 
-    fn proxy(&self, svc: &mut S, req: Req) -> Self::Future {
+    fn proxy(&self, svc: &mut S, req: http::Request<B>) -> Self::Future {
         trace!(retryable = %self.policy.is_some());
 
         if let Some(policy) = self.policy.as_ref() {
-            let inner = <P as Proxy<L::Request, S>>::wrap_service(self.inner.clone(), svc.clone());
+            let inner = self.inner.clone().wrap_service(svc.clone()).map_request(
+                (|req: http::Request<ReplayBody<B>>| req.map(replay::MaybeReplay::Replay))
+                    as fn(_) -> _,
+            );
             let retry = tower::retry::Retry::new(policy.clone(), inner);
-            let retry = self.on_retry.clone().wrap_service(retry);
-            return ResponseFuture::Retry(retry.oneshot(req));
+            return ResponseFuture::Retry(retry.oneshot(req.map(ReplayBody::new)));
         }
 
-        ResponseFuture::Disabled(self.inner.proxy(svc, req))
+        ResponseFuture::Disabled(
+            self.inner
+                .proxy(svc, req.map(replay::MaybeReplay::NoReplay)),
+        )
     }
 }
 
-impl<F, S, Req> Future for ResponseFuture<F, S, Req>
+impl<R, P, S, B> Future for ResponseFuture<R, P, S, B>
 where
-    F: futures::TryFuture<Ok = S::Response>,
-    F::Error: Into<Error>,
-    S: tower::Service<Req> + Clone,
+    R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
+    P: Proxy<http::Request<replay::MaybeReplay<B>>, S> + Clone,
+    S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
 {
-    type Output = Result<F::Ok, Error>;
+    type Output = Result<P::Response, Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
-            ResponseFutureProj::Disabled(f) => f.try_poll(cx).map_err(Into::into),
+            ResponseFutureProj::Disabled(f) => f.poll(cx).map_err(Into::into),
             ResponseFutureProj::Retry(f) => f.poll(cx).map_err(Into::into),
         }
     }

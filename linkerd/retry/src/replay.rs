@@ -36,6 +36,12 @@ pub struct ReplayBody<B> {
     replay_trailers: bool,
 }
 
+#[derive(Debug)]
+pub enum MaybeReplay<B, R = ReplayBody<B>> {
+    NoReplay(B),
+    Replay(R),
+}
+
 /// Data returned by `ReplayBody`'s `http_body::Body` implementation is either
 /// `Bytes` returned by the initial body, or a list of all `Bytes` chunks
 /// returned by the initial body (when replaying it).
@@ -409,6 +415,97 @@ impl Buf for BufList {
                 buf.put(self.take(len));
                 buf.freeze()
             }
+        }
+    }
+}
+
+// === impl MaybeReplay ===
+
+impl<B: Body + Unpin> Body for MaybeReplay<B> {
+    type Data = MaybeReplay<B::Data, Data>;
+    type Error = B::Error;
+
+    #[inline]
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        match self.get_mut() {
+            MaybeReplay::Replay(body) => Pin::new(body)
+                .poll_data(cx)
+                .map(|opt| opt.map(|res| res.map(MaybeReplay::Replay))),
+            MaybeReplay::NoReplay(body) => Pin::new(body)
+                .poll_data(cx)
+                .map(|opt| opt.map(|res| res.map(MaybeReplay::NoReplay))),
+        }
+    }
+
+    #[inline]
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+        match self.get_mut() {
+            MaybeReplay::Replay(body) => Pin::new(body).poll_trailers(cx),
+            MaybeReplay::NoReplay(body) => Pin::new(body).poll_trailers(cx),
+        }
+    }
+
+    #[inline]
+    fn is_end_stream(&self) -> bool {
+        match self {
+            MaybeReplay::Replay(body) => body.is_end_stream(),
+            MaybeReplay::NoReplay(body) => body.is_end_stream(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> http_body::SizeHint {
+        match self {
+            MaybeReplay::Replay(body) => body.size_hint(),
+            MaybeReplay::NoReplay(body) => body.size_hint(),
+        }
+    }
+}
+
+impl<B: Buf> Buf for MaybeReplay<B, Data> {
+    #[inline]
+    fn remaining(&self) -> usize {
+        match self {
+            MaybeReplay::Replay(buf) => buf.remaining(),
+            MaybeReplay::NoReplay(buf) => buf.remaining(),
+        }
+    }
+
+    #[inline]
+    fn chunk(&self) -> &[u8] {
+        match self {
+            MaybeReplay::Replay(buf) => buf.chunk(),
+            MaybeReplay::NoReplay(buf) => buf.chunk(),
+        }
+    }
+
+    #[inline]
+    fn chunks_vectored<'iovs>(&'iovs self, iovs: &mut [IoSlice<'iovs>]) -> usize {
+        match self {
+            MaybeReplay::Replay(buf) => buf.chunks_vectored(iovs),
+            MaybeReplay::NoReplay(buf) => buf.chunks_vectored(iovs),
+        }
+    }
+
+    #[inline]
+    fn advance(&mut self, amt: usize) {
+        match self {
+            MaybeReplay::Replay(buf) => buf.advance(amt),
+            MaybeReplay::NoReplay(buf) => buf.advance(amt),
+        }
+    }
+
+    #[inline]
+    fn copy_to_bytes(&mut self, len: usize) -> Bytes {
+        match self {
+            MaybeReplay::Replay(buf) => buf.copy_to_bytes(len),
+            MaybeReplay::NoReplay(buf) => buf.copy_to_bytes(len),
         }
     }
 }
