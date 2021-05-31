@@ -215,6 +215,10 @@ where
             };
             http::Request::from_parts(parts, body)
         });
-        Box::pin(self.0.send_req(req).map_err(|err| err.to_string()))
+        Box::pin(
+            self.0
+                .send_req(req.map(Into::into))
+                .map_err(|err| err.to_string()),
+        )
     }
 }

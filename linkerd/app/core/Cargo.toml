@@ -82,8 +82,7 @@ features = [
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
-procinfo = "0.4.2"
+linkerd-system = { path = "../../system" }
 
 [dev-dependencies]
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18", features = ["arbitrary"] }

@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 use linkerd_error::Error;
 use linkerd_stack::Proxy;

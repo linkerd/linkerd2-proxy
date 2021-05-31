@@ -8,22 +8,14 @@ use linkerd_app_core::{
         http,
         resolve::map_endpoint,
     },
-    retry, svc, Error, Never, DST_OVERRIDE_HEADER,
+    retry, svc, Error, Never,
 };
 use tracing::debug_span;
 
 impl<E> Outbound<E> {
-    pub fn push_http_logical<B, ESvc, R>(
-        self,
-        resolve: R,
-    ) -> Outbound<
-        svc::BoxNewService<
-            Logical,
-            svc::BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>,
-        >,
-    >
+    pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::BoxNewHttp<Logical, B>>
     where
-        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Send + 'static,
+        B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Unpin + Send + 'static,
         B::Data: Send + 'static,
         E: svc::NewService<Endpoint, Service = ESvc> + Clone + Send + Sync + 'static,
         ESvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
@@ -130,6 +122,7 @@ impl<E> Outbound<E> {
                     )
                     // Sets an optional retry policy.
                     .push(retry::layer(rt.metrics.http_route_retry.clone()))
+                    .push_on_response(retry::replay::layer())
                     // Sets an optional request timeout.
                     .push(http::MakeTimeoutLayer::default())
                     // Records per-route metrics.
@@ -144,11 +137,7 @@ impl<E> Outbound<E> {
             // canonical-dst-header. The response body is boxed unify the profile
             // stack's response type. withthat of to endpoint stack.
             .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-            .push_on_response(
-                svc::layers()
-                    .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
-                    .push(http::BoxResponse::layer()),
-            )
+            .push_on_response(svc::layers().push(http::BoxResponse::layer()))
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());

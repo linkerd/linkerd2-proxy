@@ -43,17 +43,23 @@ macro_rules! profile_test {
                     .body("slept".into())
                     .unwrap()
             })
-            .route_fn("/0.5",  move |_req| {
-                if counter.fetch_add(1, Ordering::Relaxed) % 2 == 0 {
-                    Response::builder()
-                        .status(533)
-                        .body("nope".into())
-                        .unwrap()
-                } else {
-                    Response::builder()
-                        .status(200)
-                        .body("retried".into())
-                        .unwrap()
+            .route_async("/0.5",  move |req| {
+                let fail = counter.fetch_add(1, Ordering::Relaxed) % 2 == 0;
+                async move {
+                    // Read the entire body before responding, so that the
+                    // client doesn't fail when writing it out.
+                    let _body = hyper::body::aggregate(req.into_body()).await;
+                    Ok::<_, Error>(if fail {
+                        Response::builder()
+                            .status(533)
+                            .body("nope".into())
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(200)
+                            .body("retried".into())
+                            .unwrap()
+                    })
                 }
             })
             .route_fn("/0.5/sleep",  move |_req| {
@@ -175,6 +181,48 @@ async fn retry_uses_budget() {
 }
 
 #[tokio::test]
+async fn retry_with_small_post_body() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .response_failure(500..600)
+                .retryable(true)
+        ],
+        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        with_client: |client: client::Client| async move {
+            let req = client.request_builder("/0.5")
+                .method("POST")
+                .body("req has a body".into())
+                .unwrap();
+            let res = client.request_body(req).await;
+            assert_eq!(res.status(), 200);
+        }
+    }
+}
+
+#[tokio::test]
+async fn retry_with_small_put_body() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .response_failure(500..600)
+                .retryable(true)
+        ],
+        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        with_client: |client: client::Client| async move {
+            let req = client.request_builder("/0.5")
+                .method("PUT")
+                .body("req has a body".into())
+                .unwrap();
+            let res = client.request_body(req).await;
+            assert_eq!(res.status(), 200);
+        }
+    }
+}
+
+#[tokio::test]
 async fn does_not_retry_if_request_does_not_match() {
     profile_test! {
         routes: [
@@ -211,7 +259,7 @@ async fn does_not_retry_if_earlier_response_class_is_success() {
 }
 
 #[tokio::test]
-async fn does_not_retry_if_request_has_body() {
+async fn does_not_retry_if_body_is_too_long() {
     profile_test! {
         routes: [
             controller::route()
@@ -223,9 +271,35 @@ async fn does_not_retry_if_request_has_body() {
         with_client: |client: client::Client| async move {
             let req = client.request_builder("/0.5")
                 .method("POST")
-                .body("req has a body".into())
+                .body(hyper::Body::from(&[1u8; 64 * 1024 + 1][..]))
                 .unwrap();
             let res = client.request_body(req).await;
+            assert_eq!(res.status(), 533);
+        }
+    }
+}
+
+#[tokio::test]
+async fn does_not_retry_if_body_lacks_known_length() {
+    profile_test! {
+        routes: [
+            controller::route()
+                .request_any()
+                .response_failure(500..600)
+                .retryable(true)
+        ],
+        budget: Some(controller::retry_budget(Duration::from_secs(10), 0.1, 1)),
+        with_client: |client: client::Client| async move {
+            let (mut tx, body) = hyper::body::Body::channel();
+            let req = client.request_builder("/0.5")
+                .method("POST")
+                .body(body)
+                .unwrap();
+            let res = tokio::spawn(async move { client.request_body(req).await });
+            let _ = tx.send_data(Bytes::from_static(b"hello"));
+            let _ = tx.send_data(Bytes::from_static(b"world"));
+            drop(tx);
+            let res = res.await.unwrap();
             assert_eq!(res.status(), 533);
         }
     }

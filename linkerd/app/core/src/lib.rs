@@ -8,6 +8,7 @@
 //! - Metric labeling
 
 #![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_access_log as access_log;
@@ -53,7 +54,6 @@ pub mod transport;
 pub use self::addr_match::{AddrMatch, IpMatch, NameMatch};
 
 pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
-pub const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
 
 const DEFAULT_PORT: u16 = 80;
 
@@ -64,17 +64,6 @@ pub struct ProxyRuntime {
     pub tap: proxy::tap::Registry,
     pub span_sink: http_tracing::OpenCensusSink,
     pub drain: drain::Watch,
-}
-
-pub fn http_request_l5d_override_dst_name_addr<B>(
-    req: &http::Request<B>,
-) -> Result<NameAddr, addr::Error> {
-    proxy::http::authority_from_header(req, DST_OVERRIDE_HEADER)
-        .ok_or_else(|| {
-            tracing::trace!("{} not in request headers", DST_OVERRIDE_HEADER);
-            addr::Error::InvalidHost
-        })
-        .and_then(|a| NameAddr::from_authority_with_default_port(&a, DEFAULT_PORT))
 }
 
 pub fn http_request_authority_addr<B>(req: &http::Request<B>) -> Result<Addr, addr::Error> {

@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_error::Error;
@@ -10,6 +11,9 @@ use std::task::{Context, Poll};
 pub use tower::retry::{budget::Budget, Policy};
 use tower::util::{Oneshot, ServiceExt};
 use tracing::trace;
+
+pub mod replay;
+pub use self::replay::ReplayBody;
 
 /// A strategy for obtaining per-target retry polices.
 pub trait NewPolicy<T> {

@@ -1,3 +1,7 @@
+//! A utility for copying data bi-directionally between two sockets.
+//!
+//! This module uses unsafe code to implement [`BufMut`].
+
 #![deny(warnings, rust_2018_idioms)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
