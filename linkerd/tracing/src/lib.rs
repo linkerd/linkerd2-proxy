@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
 mod level;
@@ -31,11 +32,7 @@ pub fn init() -> Result<Handle, Error> {
         return Ok(Handle(Inner::Disabled));
     }
 
-    let log_format = env::var(ENV_LOG_FORMAT).unwrap_or_else(|_| DEFAULT_LOG_FORMAT.to_string());
-    let (dispatch, handle) = Settings::default()
-        .filter(log_level)
-        .format(log_format)
-        .build();
+    let (dispatch, handle) = Settings::from_env().filter(log_level).build();
 
     // Set the default subscriber.
     tracing::dispatcher::set_global_default(dispatch)?;
