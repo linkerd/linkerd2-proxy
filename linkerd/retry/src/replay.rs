@@ -424,7 +424,7 @@ mod tests {
             mut tx,
             initial,
             replay,
-            _trace,
+            ..
         } = Test::new();
         tx.send_data("hello world").await;
         drop(tx);
@@ -442,7 +442,7 @@ mod tests {
             mut tx,
             initial,
             replay,
-            _trace,
+            ..
         } = Test::new();
 
         tokio::spawn(async move {
@@ -465,7 +465,7 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
-            _trace,
+            ..
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
@@ -498,7 +498,7 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
-            _trace,
+            ..
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
@@ -529,7 +529,7 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
-            _trace,
+            ..
         } = Test::new();
 
         tx.send_data("hello").await;
@@ -559,7 +559,7 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
-            _trace,
+            ..
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
@@ -602,7 +602,7 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
-            _trace,
+            ..
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
@@ -648,7 +648,7 @@ mod tests {
             mut tx,
             mut initial,
             mut replay,
-            _trace,
+            ..
         } = Test::new();
 
         let mut tlrs = HeaderMap::new();
@@ -741,6 +741,7 @@ mod tests {
         initial: ReplayBody<hyper::Body>,
         replay: ReplayBody<hyper::Body>,
         _trace: tracing::subscriber::DefaultGuard,
+        _handle: linkerd_tracing::Handle,
     }
 
     struct Tx(hyper::body::Sender);
@@ -750,11 +751,13 @@ mod tests {
             let (tx, body) = hyper::Body::channel();
             let initial = ReplayBody::new(body);
             let replay = initial.clone();
+            let (trace, handle) = linkerd_tracing::test::with_default_filter("linkerd_retry=debug");
             Self {
                 tx: Tx(tx),
                 initial,
                 replay,
-                _trace: linkerd_tracing::test::with_default_filter("linkerd_retry=debug"),
+                _trace: trace,
+                _handle: handle,
             }
         }
     }
