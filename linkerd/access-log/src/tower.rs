@@ -80,7 +80,7 @@ where
     }
 
     fn call(&mut self, request: http::Request<B1>) -> Self::Future {
-        let get_header = |name: &str| {
+        let get_header = |name: http::header::HeaderName| {
             request
                 .headers()
                 .get(name)
@@ -89,11 +89,11 @@ where
         };
 
         let trace_id = || {
-            request
-                .headers()
+            let headers = request.headers();
+            headers
                 .get("x-b3-traceid")
-                .or_else(|| request.headers().get("X-Request-ID"))
-                .or_else(|| request.headers().get("X-Amzn-Trace-Id"))
+                .or_else(|| headers.get("X-Request-ID"))
+                .or_else(|| headers.get("X-Amzn-Trace-Id"))
                 .and_then(|x| x.to_str().ok())
                 .unwrap_or_default()
         };
@@ -106,17 +106,17 @@ where
             %timestamp,
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or_default(),
-            processing_ns=field::Empty,
-            total_ns=field::Empty,
-            method=request.method().as_str(),
-            uri=&field::display(&request.uri()),
-            version=&field::debug(&request.version()),
-            user_agent=get_header("User-Agent"),
-            host=get_header("Host"),
-            trace_id=trace_id(),
-            status=field::Empty,
-            request_bytes=get_header("Content-Length"),
-            response_bytes=field::Empty
+            processing_ns = field::Empty,
+            total_ns = field::Empty,
+            method = request.method().as_str(),
+            uri =  %request.uri(),
+            version = ?request.version(),
+            user_agent = get_header(http::header::USER_AGENT),
+            host = get_header(http::header::HOST),
+            trace_id = trace_id(),
+            status = field::Empty,
+            request_bytes = get_header(http::header::CONTENT_LENGTH),
+            response_bytes = field::Empty
         );
 
         if span.is_disabled() {

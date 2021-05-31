@@ -79,7 +79,6 @@ where
                 if let Some(fields) = span.extensions().get::<FormattedFields<F>>() {
                     let mut writer = self.make_writer.make_writer();
                     let _ = writeln!(&mut writer, "{}", fields.fields);
-                    println!("access log: {}", fields.fields);
                 }
             }
         }
