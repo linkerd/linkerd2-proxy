@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-retry"
+name = "linkerd-http-retry"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -12,6 +12,7 @@ futures = { version = "0.3", default-features = false }
 http-body = "0.4"
 http = "0.2"
 linkerd-error = { path = "../error" }
+linkerd-http-box = { path = "../http-box" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
 parking_lot = "0.11"

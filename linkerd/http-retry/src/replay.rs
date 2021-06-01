@@ -754,7 +754,7 @@ mod tests {
                 tx: Tx(tx),
                 initial,
                 replay,
-                _trace: linkerd_tracing::test::with_default_filter("linkerd_retry=debug"),
+                _trace: linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug"),
             }
         }
     }

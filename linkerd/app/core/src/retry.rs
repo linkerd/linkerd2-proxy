@@ -6,13 +6,12 @@ use crate::profiles;
 use futures::future;
 use http_body::Body;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd_retry::NewRetryLayer;
 use linkerd_stack::Param;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
 
-pub use linkerd_retry::*;
+pub use linkerd_http_retry::*;
 
 pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
     NewRetryLayer::new(NewRetry::new(metrics))
@@ -54,7 +53,7 @@ impl NewRetry {
     }
 }
 
-impl<C> linkerd_retry::NewPolicy<Route> for NewRetry<C> {
+impl<C> NewPolicy<Route> for NewRetry<C> {
     type Policy = Retry<C>;
 
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
@@ -70,7 +69,7 @@ impl<C> linkerd_retry::NewPolicy<Route> for NewRetry<C> {
     }
 }
 
-impl<C, A, B, E> linkerd_retry::Policy<http::Request<A>, http::Response<B>, E> for Retry<C>
+impl<C, A, B, E> Policy<http::Request<A>, http::Response<B>, E> for Retry<C>
 where
     C: CloneRequest<http::Request<A>>,
 {

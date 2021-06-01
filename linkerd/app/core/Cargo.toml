@@ -35,6 +35,8 @@ linkerd-error-respond = { path = "../../error-respond" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
 linkerd-http-metrics = { path = "../../http-metrics" }
+
+linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics" }
@@ -52,7 +54,6 @@ linkerd-proxy-tap = { path = "../../proxy/tap" }
 linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
-linkerd-retry = { path = "../../retry" }
 linkerd-timeout = { path = "../../timeout" }
 linkerd-tracing = { path = "../../tracing" }
 linkerd-service-profiles = { path = "../../service-profiles" }
