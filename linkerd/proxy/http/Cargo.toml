@@ -14,7 +14,7 @@ This should probably be decomposed into smaller, decoupled crates.
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-futures = "0.3.9"
+futures = "0.3.15"
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
