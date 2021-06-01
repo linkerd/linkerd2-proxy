@@ -4,6 +4,7 @@
 #![allow(clippy::type_complexity)]
 
 use linkerd_error::Error;
+use linkerd_http_box::BoxBody;
 use linkerd_stack::{NewService, Proxy, ProxyService};
 use pin_project::pin_project;
 use std::future::Future;
@@ -46,7 +47,7 @@ pub struct Retry<P, S> {
 pub enum ResponseFuture<R, P, S, B>
 where
     R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
-    P: Proxy<http::Request<replay::MaybeReplay<B>>, S> + Clone,
+    P: Proxy<http::Request<BoxBody>, S> + Clone,
     S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
 {
@@ -58,7 +59,7 @@ where
                 R,
                 tower::util::MapRequest<
                     ProxyService<P, S>,
-                    fn(http::Request<ReplayBody<B>>) -> http::Request<replay::MaybeReplay<B>>,
+                    fn(http::Request<ReplayBody<B>>) -> http::Request<BoxBody>,
                 >,
             >,
             http::Request<ReplayBody<B>>,
@@ -108,10 +109,12 @@ where
 impl<R, P, B, S> Proxy<http::Request<B>, S> for Retry<R, P>
 where
     R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
-    P: Proxy<http::Request<replay::MaybeReplay<B>>, S> + Clone,
+    P: Proxy<http::Request<BoxBody>, S> + Clone,
     S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
-    B: http_body::Body + Unpin,
+    B: http_body::Body + Unpin + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<Error>,
 {
     type Request = P::Request;
     type Response = P::Response;
@@ -123,24 +126,20 @@ where
 
         if let Some(policy) = self.policy.as_ref() {
             let inner = self.inner.clone().wrap_service(svc.clone()).map_request(
-                (|req: http::Request<ReplayBody<B>>| req.map(replay::MaybeReplay::Replay))
-                    as fn(_) -> _,
+                (|req: http::Request<ReplayBody<B>>| req.map(BoxBody::new)) as fn(_) -> _,
             );
             let retry = tower::retry::Retry::new(policy.clone(), inner);
             return ResponseFuture::Retry(retry.oneshot(req.map(ReplayBody::new)));
         }
 
-        ResponseFuture::Disabled(
-            self.inner
-                .proxy(svc, req.map(replay::MaybeReplay::NoReplay)),
-        )
+        ResponseFuture::Disabled(self.inner.proxy(svc, req.map(BoxBody::new)))
     }
 }
 
 impl<R, P, S, B> Future for ResponseFuture<R, P, S, B>
 where
     R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
-    P: Proxy<http::Request<replay::MaybeReplay<B>>, S> + Clone,
+    P: Proxy<http::Request<BoxBody>, S> + Clone,
     S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
 {

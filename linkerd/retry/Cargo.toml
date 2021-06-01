@@ -12,6 +12,7 @@ futures = { version = "0.3", default-features = false }
 http-body = "0.4"
 http = "0.2"
 linkerd-error = { path = "../error" }
+linkerd-http-box = { path = "../http-box" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
 parking_lot = "0.11"
