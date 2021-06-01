@@ -4,6 +4,7 @@ use linkerd_app_core::{
     metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{api_resolve as api, identity::LocalCrtKey, resolve::recover},
+    svc::NewService,
     Error, Recover,
 };
 use tonic::body::BoxBody;
@@ -41,7 +42,7 @@ impl Config {
     ) -> Result<Dst, Error> {
         let addr = self.control.addr.clone();
         let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
-        let svc = self.control.build(dns, metrics, identity);
+        let svc = self.control.build(dns, metrics, identity).new_service(());
 
         Ok(Dst {
             addr,

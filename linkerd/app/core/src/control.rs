@@ -1,11 +1,6 @@
 use crate::{
-    classify, config, control, dns, metrics,
-    proxy::http,
-    reconnect,
-    svc::{self, NewService, Param},
-    tls,
-    transport::ConnectTcp,
-    Addr, Error,
+    classify, config, control, dns, metrics, proxy::http, reconnect, svc, tls,
+    transport::ConnectTcp, Addr, Error,
 };
 use futures::future::Either;
 use std::fmt;
@@ -26,7 +21,7 @@ pub struct ControlAddr {
     pub identity: tls::ConditionalClientTls,
 }
 
-impl Param<Addr> for ControlAddr {
+impl svc::Param<Addr> for ControlAddr {
     fn param(&self) -> Addr {
         self.addr.clone()
     }
@@ -51,13 +46,15 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<L>,
-    ) -> Client<B>
+    ) -> svc::BoxNewService<(), Client<B>>
     where
         B: http::HttpBody + Send + 'static,
         B::Data: Send,
         B::Error: Into<Error> + Send + Sync + 'static,
-        L: Clone + Param<tls::client::Config> + Send + 'static,
+        L: Clone + svc::Param<tls::client::Config> + Send + Sync + 'static,
     {
+        let addr = self.addr;
+
         let connect_backoff = {
             let backoff = self.connect.backoff;
             move |_| Ok(backoff.stream())
@@ -102,7 +99,9 @@ impl Config {
             .push(metrics.to_layer::<classify::Response, _>())
             .push(self::add_origin::layer())
             .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
-            .new_service(self.addr)
+            .push_map_target(move |()| addr.clone())
+            .push(svc::BoxNewService::layer())
+            .into_inner()
     }
 }
 
@@ -234,8 +233,7 @@ mod balance {
 mod client {
     use crate::{
         proxy::http,
-        svc::{self, Param},
-        tls,
+        svc, tls,
         transport::{Remote, ServerAddr},
     };
     use linkerd_proxy_http::h2::Settings as H2Settings;
@@ -263,19 +261,19 @@ mod client {
 
     // === impl Target ===
 
-    impl Param<Remote<ServerAddr>> for Target {
+    impl svc::Param<Remote<ServerAddr>> for Target {
         fn param(&self) -> Remote<ServerAddr> {
             Remote(ServerAddr(self.addr))
         }
     }
 
-    impl Param<SocketAddr> for Target {
+    impl svc::Param<SocketAddr> for Target {
         fn param(&self) -> SocketAddr {
             self.addr
         }
     }
 
-    impl Param<tls::ConditionalClientTls> for Target {
+    impl svc::Param<tls::ConditionalClientTls> for Target {
         fn param(&self) -> tls::ConditionalClientTls {
             self.server_id.clone()
         }

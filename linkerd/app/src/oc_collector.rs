@@ -1,9 +1,7 @@
 use crate::{dns, identity::LocalCrtKey};
-use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, Error};
+use linkerd_app_core::{control, metrics::ControlHttp as HttpMetrics, svc::NewService, Error};
 use linkerd_opencensus::{self as opencensus, metrics, proto};
-use std::future::Future;
-use std::pin::Pin;
-use std::{collections::HashMap, time::SystemTime};
+use std::{collections::HashMap, future::Future, pin::Pin, time::SystemTime};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
@@ -51,7 +49,10 @@ impl Config {
             Config::Disabled => Ok(OcCollector::Disabled),
             Config::Enabled(inner) => {
                 let addr = inner.control.addr.clone();
-                let svc = inner.control.build(dns, client_metrics, identity);
+                let svc = inner
+                    .control
+                    .build(dns, client_metrics, identity)
+                    .new_service(());
 
                 let (span_sink, spans_rx) = mpsc::channel(Self::SPAN_BUFFER_CAPACITY);
                 let spans_rx = ReceiverStream::new(spans_rx);
