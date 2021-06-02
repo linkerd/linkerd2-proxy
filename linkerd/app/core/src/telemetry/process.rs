@@ -25,7 +25,7 @@ impl Report {
             .as_secs();
 
         #[cfg(not(target_os = "linux"))]
-        info!("System-level metrics are only supported on Linux");
+        tracing::info!("System-level metrics are only supported on Linux");
         Self {
             start_time: Arc::new(t0.into()),
 
