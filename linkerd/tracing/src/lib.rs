@@ -31,6 +31,25 @@ const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
 const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
 
+#[derive(Debug, Default)]
+pub struct Settings {
+    filter: Option<String>,
+    format: Option<String>,
+    is_test: bool,
+}
+
+#[derive(Clone)]
+pub struct Handle(Inner);
+
+#[derive(Clone)]
+enum Inner {
+    Disabled,
+    Enabled {
+        level: level::Handle,
+        tasks: TaskList,
+    },
+}
+
 /// Initialize tracing and logging with the value of the `ENV_LOG`
 /// environment variable as the verbosity-level filter.
 pub fn init() -> Result<Handle, Error> {
@@ -62,12 +81,7 @@ pub fn init_log_compat() -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Debug, Default)]
-pub struct Settings {
-    filter: Option<String>,
-    format: Option<String>,
-    is_test: bool,
-}
+// === impl Settings ===
 
 #[derive(Clone)]
 pub struct Handle(Inner);
