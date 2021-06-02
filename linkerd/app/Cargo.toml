@@ -15,7 +15,7 @@ This is used by tests and the executable.
 allow-loopback = ["linkerd-app-outbound/allow-loopback"]
 
 [dependencies]
-futures = "0.3.9"
+futures = "0.3.15"
 indexmap = "1.0"
 ipnet = "2.0"
 linkerd-app-core = { path = "./core" }
