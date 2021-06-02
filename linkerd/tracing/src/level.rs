@@ -1,66 +1,17 @@
-use hyper::body::{Body, Buf, HttpBody};
 use linkerd_error::Error;
-use std::{io, str};
-use tracing::{trace, warn};
+use tracing::trace;
 use tracing_subscriber::{reload, EnvFilter, Registry};
 
 #[derive(Clone)]
-pub(crate) struct Handle(reload::Handle<EnvFilter, Registry>);
+pub struct Handle(reload::Handle<EnvFilter, Registry>);
 
 impl Handle {
     pub(crate) fn new(handle: reload::Handle<EnvFilter, Registry>) -> Self {
         Self(handle)
     }
 
-    pub(crate) async fn serve<B>(
-        &self,
-        req: http::Request<B>,
-    ) -> Result<http::Response<Body>, Error>
-    where
-        B: HttpBody,
-        B::Error: Into<Error>,
-    {
-        match *req.method() {
-            http::Method::GET => {
-                let level = self.current()?;
-                Self::rsp(http::StatusCode::OK, level)
-            }
-
-            http::Method::PUT => {
-                let body = hyper::body::aggregate(req.into_body())
-                    .await
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                match self.set_from(body.chunk()) {
-                    Err(error) => {
-                        warn!(message = "setting log level failed", %error);
-                        Self::rsp(http::StatusCode::BAD_REQUEST, error)
-                    }
-                    Ok(()) => Self::rsp(http::StatusCode::NO_CONTENT, Body::empty()),
-                }
-            }
-
-            _ => Ok(http::Response::builder()
-                .status(http::StatusCode::METHOD_NOT_ALLOWED)
-                .header("allow", "GET")
-                .header("allow", "PUT")
-                .body(Body::empty())
-                .expect("builder with known status code must not fail")),
-        }
-    }
-
-    // This returns a Result for consistency with other methods that are
-    // fallible, and the return value will have to be wrapped anyway...but
-    // clippy doesn't know that
-    #[allow(clippy::unnecessary_wraps)]
-    fn rsp(status: http::StatusCode, body: impl Into<Body>) -> Result<http::Response<Body>, Error> {
-        Ok(http::Response::builder()
-            .status(status)
-            .body(body.into())
-            .expect("builder with known status code must not fail"))
-    }
-
-    fn set_from(&self, bytes: impl AsRef<[u8]>) -> Result<(), String> {
-        let body = str::from_utf8(&bytes.as_ref()).map_err(|e| format!("{}", e))?;
+    pub fn set_from(&self, bytes: impl AsRef<[u8]>) -> Result<(), String> {
+        let body = std::str::from_utf8(&bytes.as_ref()).map_err(|e| format!("{}", e))?;
         trace!(request.body = ?body);
         self.set_level(body).map_err(|e| format!("{}", e))
     }
