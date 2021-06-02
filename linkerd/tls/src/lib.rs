@@ -72,4 +72,3 @@ impl From<Arc<ServerConfig>> for TlsAcceptor {
         imp::TlsAcceptor::from(conf).into()
     }
 }
-
