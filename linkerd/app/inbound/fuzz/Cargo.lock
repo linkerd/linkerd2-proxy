@@ -572,6 +572,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures",
+ "html-escape",
  "http",
  "http-body",
  "hyper",
@@ -621,6 +622,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "pin-project",
  "regex",
+ "serde_json",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -1263,12 +1265,7 @@ dependencies = [
 name = "linkerd-tracing"
 version = "0.1.0"
 dependencies = [
- "bytes",
- "html-escape",
- "http",
- "hyper",
  "linkerd-error",
- "serde_json",
  "tokio",
  "tokio-trace",
  "tracing",
