@@ -92,9 +92,8 @@ impl Settings {
 
     fn format(&self) -> String {
         self.format
-            .as_ref()
-            .map(|f| f.as_str())
-            .unwrap_or_else(|| DEFAULT_LOG_FORMAT)
+            .as_deref()
+            .unwrap_or(DEFAULT_LOG_FORMAT)
             .to_uppercase()
     }
 
@@ -137,7 +136,7 @@ impl Settings {
             registry.with(fmt).into()
         };
 
-        (dispatch, tasks.into())
+        (dispatch, tasks)
     }
 
     fn mk_plain(&self, registry: Registry) -> (Dispatch, TaskList) {
@@ -154,7 +153,7 @@ impl Settings {
             registry.with(fmt).into()
         };
 
-        (dispatch, tasks.into())
+        (dispatch, tasks)
     }
 
     pub fn build(self) -> (Dispatch, Handle) {
