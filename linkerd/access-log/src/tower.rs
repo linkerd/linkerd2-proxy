@@ -44,6 +44,7 @@ pub struct AccessLogFuture<F> {
 impl<N> svc::layer::Layer<N> for AccessLogLayer {
     type Service = NewAccessLog<N>;
 
+    #[inline]
     fn layer(&self, inner: N) -> Self::Service {
         Self::Service { inner }
     }
@@ -75,6 +76,7 @@ where
     type Error = S::Error;
     type Future = AccessLogFuture<S::Future>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
     }
@@ -183,7 +185,7 @@ where
 
         response
             .headers()
-            .get("Content-Length")
+            .get(http::header::CONTENT_LENGTH)
             .and_then(|x| x.to_str().ok())
             .map(|x| span.record("response_bytes", &x));
 
