@@ -92,8 +92,9 @@ impl Settings {
 
     fn format(&self) -> String {
         self.format
-            .clone()
-            .unwrap_or_else(|| DEFAULT_LOG_FORMAT.to_string())
+            .as_ref()
+            .map(|f| f.as_str())
+            .unwrap_or_else(|| DEFAULT_LOG_FORMAT)
             .to_uppercase()
     }
 
