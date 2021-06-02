@@ -98,11 +98,10 @@ impl Settings {
     }
 
     fn mk_registry(&self) -> (Registry, level::Handle) {
-        let filter = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
-        let filter = EnvFilter::new(filter);
-        let (filter, level) = reload::Layer::new(filter);
-        let level = level::Handle::new(level);
-        (tracing_subscriber::registry().with(filter), level)
+        let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
+        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
+        let reg = tracing_subscriber::registry().with(filter);
+        (reg, level::Handle::new(level))
     }
 
     fn mk_json(&self, registry: Registry) -> (Dispatch, TaskList) {
