@@ -98,10 +98,7 @@ impl Settings {
     }
 
     fn mk_registry(&self) -> (Registry, level::Handle) {
-        let filter = self
-            .filter
-            .clone()
-            .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_string());
+        let filter = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
         let filter = EnvFilter::new(filter);
         let (filter, level) = reload::Layer::new(filter);
         let level = level::Handle::new(level);
