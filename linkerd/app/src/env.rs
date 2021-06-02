@@ -9,7 +9,9 @@ use crate::core::{
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
-use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use std::{
+    collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration, u32,
+};
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
@@ -74,6 +76,8 @@ pub enum ParseError {
     InvalidTokenSource,
     #[error("invalid trust anchors")]
     InvalidTrustAnchors,
+    #[error("size ({size} bytes) exceeds maximum value {max} bytes")]
+    SizeTooBig { size: u64, max: u64 },
 }
 
 // Environment variables to look at when loading the configuration
@@ -221,7 +225,7 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
-const DEFAULT_OUTBOUND_MAX_RETRY_LENGTH: u32 = 64 * KILOBYTE;
+const DEFAULT_OUTBOUND_MAX_RETRY_LENGTH: u64 = 64 * KILOBYTE;
 
 // This configuration limits the amount of time Linkerd retains cached clients &
 // connections.
@@ -269,9 +273,9 @@ const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24)
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
 
-const KILOBYTE: u32 = 1024;
-const MEGABYTE: u32 = KILOBYTE * 1024;
-const GIGABYTE: u32 = MEGABYTE * 1024;
+const KILOBYTE: u64 = 1024;
+const MEGABYTE: u64 = KILOBYTE * 1024;
+const GIGABYTE: u64 = MEGABYTE * 1024;
 
 /// Load a `App` by reading ENV variables.
 pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> {
@@ -369,9 +373,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     );
     let dst_profile_networks = parse(strings, ENV_DESTINATION_PROFILE_NETWORKS, parse_networks);
 
-    let initial_stream_window_size = parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_bytes);
+    let initial_stream_window_size =
+        parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_bytes_u32);
     let initial_connection_window_size =
-        parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_bytes);
+        parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_bytes_u32);
 
     let tap = parse_tap_config(strings, id_disabled);
 
@@ -915,8 +920,8 @@ pub fn parse_backoff<S: Strings>(
     }
 }
 
-pub fn parse_bytes(s: &str) -> Result<u32, ParseError> {
-    const SUFFIXES: &[(u32, &[&str])] = &[
+pub fn parse_bytes(s: &str) -> Result<u64, ParseError> {
+    const SUFFIXES: &[(u64, &[&str])] = &[
         (KILOBYTE, &["k", "kb", "kib"]),
         (MEGABYTE, &["m", "mb", "mib"]),
         (GIGABYTE, &["g", "gb", "gib"]),
@@ -925,13 +930,13 @@ pub fn parse_bytes(s: &str) -> Result<u32, ParseError> {
         // but whatever...
     ];
 
-    fn parse_multiplier(mult: u32, suffixes: &[&str], s: &str) -> Result<u32, ParseError> {
+    fn parse_multiplier(mult: u64, suffixes: &[&str], s: &str) -> Result<u64, ParseError> {
         for suffix in suffixes {
             if let Some(s) = s.strip_suffix(suffix) {
                 let s = s.trim();
-                return parse_number::<u32>(s).map(|num| num * mult).or_else(|_| {
+                return parse_number::<u64>(s).map(|num| num * mult).or_else(|_| {
                     let f = parse_number::<f64>(s)?;
-                    Ok((f * mult as f64) as u32)
+                    Ok((f * mult as f64) as u64)
                 });
             }
         }
@@ -939,7 +944,7 @@ pub fn parse_bytes(s: &str) -> Result<u32, ParseError> {
         Err(ParseError::NotBytes)
     }
 
-    if let Ok(bytes) = parse_number::<u32>(s) {
+    if let Ok(bytes) = parse_number::<u64>(s) {
         // If the entire string is just a number, treat that as a number of bytes.
         return Ok(bytes);
     }
@@ -956,10 +961,20 @@ pub fn parse_bytes(s: &str) -> Result<u32, ParseError> {
         // If the suffix is just "b", don't try fractional numbers...it wouldn't
         // make sense to buffer 1.3 bytes...
         let s = s.trim();
-        return parse_number::<u32>(s);
+        return parse_number::<u64>(s);
     }
 
     Err(ParseError::NotBytes)
+}
+
+fn parse_bytes_u32(s: &str) -> Result<u32, ParseError> {
+    use std::convert::TryInto;
+    parse_bytes(s).and_then(|size| {
+        size.try_into().map_err(|_| ParseError::SizeTooBig {
+            size,
+            max: std::u32::MAX as u64,
+        })
+    })
 }
 
 pub fn parse_control_addr<S: Strings>(
@@ -1146,7 +1161,7 @@ mod tests {
         }
     }
 
-    fn test_bytes_unit(expr: &str, suffixes: &[&str], value: u32) {
+    fn test_bytes_unit(expr: &str, suffixes: &[&str], value: u64) {
         for suffix in suffixes {
             let text = format!("{}{}", expr, suffix);
             assert_eq!(parse_bytes(&text), Ok(value), "\n  text: {:?}", text);

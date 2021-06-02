@@ -47,7 +47,7 @@ pub struct Config {
     pub ingress_mode: bool,
 
     /// The maximum request body content length to buffer for retries, in bytes.
-    pub max_retry_length_bytes: u32,
+    pub max_retry_length_bytes: u64,
 }
 
 #[derive(Clone, Debug)]

@@ -35,7 +35,7 @@ pub struct Retry<C = BufferBody> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct BufferBody {
-    max_length_bytes: u32,
+    max_length_bytes: u64,
 }
 
 impl NewRetry {
@@ -124,9 +124,9 @@ impl<C: Clone> Clone for Retry<C> {
 
 impl BufferBody {
     /// Allow buffering requests up to 64 kb
-    pub const DEFAULT_MAX_BUFFERED_BYTES: u32 = 64 * 1024;
+    pub const DEFAULT_MAX_BUFFERED_BYTES: u64 = 64 * 1024;
 
-    pub fn with_max_length(max_length_bytes: u32) -> Self {
+    pub fn with_max_length(max_length_bytes: u64) -> Self {
         Self { max_length_bytes }
     }
 }
@@ -139,7 +139,7 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for BufferBody 
         let content_length = |req: &http::Request<_>| {
             req.headers()
                 .get(http::header::CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok()?.parse::<u32>().ok())
+                .and_then(|value| value.to_str().ok()?.parse::<u64>().ok())
         };
 
         // Requests without bodies can always be retried, as we will not need to
@@ -147,7 +147,7 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for BufferBody 
         // only if the request contains a `content-length` header and the
         // content length is >= 64 kb.
         let has_body = !req.body().is_end_stream();
-        if has_body && content_length(&req).unwrap_or(u32::MAX) > self.max_length_bytes {
+        if has_body && content_length(&req).unwrap_or(u64::MAX) > self.max_length_bytes {
             tracing::trace!(
                 req.has_body = has_body,
                 req.content_length = ?content_length(&req),
