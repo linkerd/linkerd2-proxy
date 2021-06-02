@@ -458,8 +458,10 @@ dependencies = [
  "chrono",
  "futures",
  "http",
+ "linkerd-identity",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
  "pin-project",
- "tower",
  "tracing",
  "tracing-subscriber",
 ]
@@ -477,6 +479,15 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-dns-name"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "untrusted",
+ "webpki",
 ]
 
 [[package]]
@@ -522,6 +533,19 @@ dependencies = [
  "linkerd-stack",
  "pin-project",
  "tower",
+]
+
+[[package]]
+name = "linkerd-identity"
+version = "0.1.0"
+dependencies = [
+ "linkerd-dns-name",
+ "ring",
+ "rustls",
+ "thiserror",
+ "tracing",
+ "untrusted",
+ "webpki",
 ]
 
 [[package]]
