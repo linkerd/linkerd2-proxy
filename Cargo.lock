@@ -710,6 +710,7 @@ dependencies = [
  "linkerd-exp-backoff",
  "linkerd-http-classify",
  "linkerd-http-metrics",
+ "linkerd-http-retry",
  "linkerd-identity",
  "linkerd-io",
  "linkerd-metrics",
@@ -725,7 +726,6 @@ dependencies = [
  "linkerd-proxy-tcp",
  "linkerd-proxy-transport",
  "linkerd-reconnect",
- "linkerd-retry",
  "linkerd-service-profiles",
  "linkerd-stack",
  "linkerd-stack-metrics",
@@ -831,9 +831,9 @@ dependencies = [
  "ipnet",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-http-retry",
  "linkerd-identity",
  "linkerd-io",
- "linkerd-retry",
  "linkerd-tracing",
  "pin-project",
  "thiserror",
@@ -1041,6 +1041,26 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-stack",
  "pin-project",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-http-retry"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "hyper",
+ "linkerd-error",
+ "linkerd-http-box",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "parking_lot",
+ "pin-project",
+ "tokio",
  "tower",
  "tracing",
 ]
@@ -1304,25 +1324,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "pin-project",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-retry"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures",
- "http",
- "http-body",
- "hyper",
- "linkerd-error",
- "linkerd-stack",
- "linkerd-tracing",
- "parking_lot",
- "pin-project",
- "tokio",
  "tower",
  "tracing",
 ]

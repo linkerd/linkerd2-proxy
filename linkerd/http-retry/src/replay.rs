@@ -751,7 +751,8 @@ mod tests {
             let (tx, body) = hyper::Body::channel();
             let initial = ReplayBody::new(body);
             let replay = initial.clone();
-            let (trace, handle) = linkerd_tracing::test::with_default_filter("linkerd_retry=debug");
+            let (trace, handle) =
+                linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
             Self {
                 tx: Tx(tx),
                 initial,
