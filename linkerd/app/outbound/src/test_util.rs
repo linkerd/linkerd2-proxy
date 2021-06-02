@@ -17,6 +17,7 @@ pub fn default_config() -> Config {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
+        max_retry_length_bytes: 64 * 1024,
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
                 addr: ListenAddr(([0, 0, 0, 0], 0).into()),

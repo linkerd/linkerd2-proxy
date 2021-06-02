@@ -37,6 +37,11 @@ pub enum EnvError {
 pub enum ParseError {
     #[error("not a valid duration")]
     NotADuration,
+    #[error(
+        "a size must be an integer, or end with one of: \
+    `k`, `kb`, or `kib`; `m`, `mb`, or `mib`;  `g`, `gb`, or `gib`"
+    )]
+    NotBytes,
     #[error("not a valid DNS domain suffix")]
     NotADomainSuffix,
     #[error("not a boolean value: {0}")]
@@ -107,6 +112,13 @@ const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
 
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
+
+/// The maximum content length (in bytes) of request bodies that will be
+/// buffered for retries.
+///
+/// If a request body's `content-length` header is over this length, the request
+/// will not be retried. If unspecified, a default value (64k) is used.
+pub const ENV_OUTBOUND_MAX_RETRY_LENGTH: &str = "LINKERD2_PROXY_OUTBOUND_MAX_RETRY_LENGTH";
 
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
@@ -209,6 +221,7 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
+const DEFAULT_OUTBOUND_MAX_RETRY_LENGTH: u32 = 64 * KILOBYTE;
 
 // This configuration limits the amount of time Linkerd retains cached clients &
 // connections.
@@ -255,6 +268,10 @@ const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24)
 
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
+
+const KILOBYTE: u32 = 1024;
+const MEGABYTE: u32 = KILOBYTE * 1024;
+const GIGABYTE: u32 = MEGABYTE * 1024;
 
 /// Load a `App` by reading ENV variables.
 pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> {
@@ -418,9 +435,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
+        let max_retry_length_bytes = parse(strings, ENV_OUTBOUND_MAX_RETRY_LENGTH, parse_bytes)?
+            .unwrap_or(DEFAULT_OUTBOUND_MAX_RETRY_LENGTH);
+
         outbound::Config {
             ingress_mode,
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
+            max_retry_length_bytes,
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -894,6 +915,53 @@ pub fn parse_backoff<S: Strings>(
     }
 }
 
+pub fn parse_bytes(s: &str) -> Result<u32, ParseError> {
+    const SUFFIXES: &[(u32, &[&str])] = &[
+        (KILOBYTE, &["k", "kb", "kib"]),
+        (MEGABYTE, &["m", "mb", "mib"]),
+        (GIGABYTE, &["g", "gb", "gib"]),
+        // NOTE(eliza): no one would ever want to buffer requests with >1TB content
+        // length, right? honestly even including GB here is probably unnecessary
+        // but whatever...
+    ];
+
+    fn parse_multiplier(mult: u32, suffixes: &[&str], s: &str) -> Result<u32, ParseError> {
+        for suffix in suffixes {
+            if let Some(s) = s.strip_suffix(suffix) {
+                let s = s.trim();
+                return parse_number::<u32>(s).map(|num| num * mult).or_else(|_| {
+                    let f = parse_number::<f64>(s)?;
+                    Ok((f * mult as f64) as u32)
+                });
+            }
+        }
+
+        Err(ParseError::NotBytes)
+    }
+
+    if let Ok(bytes) = parse_number::<u32>(s) {
+        // If the entire string is just a number, treat that as a number of bytes.
+        return Ok(bytes);
+    }
+
+    let s = s.to_lowercase();
+    for &(mult, suffixes) in SUFFIXES {
+        // Okay, try each suffix...
+        if let Ok(bytes) = parse_multiplier(mult, suffixes, &s) {
+            return Ok(bytes);
+        }
+    }
+
+    if let Some(s) = s.strip_suffix("b") {
+        // If the suffix is just "b", don't try fractional numbers...it wouldn't
+        // make sense to buffer 1.3 bytes...
+        let s = s.trim();
+        return parse_number::<u32>(s);
+    }
+
+    Err(ParseError::NotBytes)
+}
+
 pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
@@ -1071,10 +1139,20 @@ mod tests {
         for v in &[0, 1, 23, 456_789] {
             let d = to_duration(*v);
             let text = format!("{}{}", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+            assert_eq!(parse_duration(&text), Ok(d), "\n  text: {:?}", text);
 
             let text = format!(" {}{}\t", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+            assert_eq!(parse_duration(&text), Ok(d), "\n  text: {:?}", text);
+        }
+    }
+
+    fn test_bytes_unit(expr: &str, suffixes: &[&str], value: u32) {
+        for suffix in suffixes {
+            let text = format!("{}{}", expr, suffix);
+            assert_eq!(parse_bytes(&text), Ok(value), "\n  text: {:?}", text);
+
+            let text = format!("\t{} {}", expr, suffix);
+            assert_eq!(parse_bytes(&text), Ok(value), "\n  text: {:?}", text);
         }
     }
 
@@ -1136,6 +1214,74 @@ mod tests {
     #[test]
     fn parse_duration_number_without_unit_is_invalid() {
         assert_eq!(parse_duration("1"), Err(ParseError::NotADuration));
+    }
+
+    #[test]
+    fn parse_bytes_without_unit() {
+        for &(s, bytes) in &[("1", 1), ("1024", 1024), ("4096", 4096), ("120000", 120000)] {
+            assert_eq!(parse_bytes(s), Ok(bytes), "\n  text: {:?}", s,);
+        }
+    }
+
+    #[test]
+    fn parse_bytes_unit_b() {
+        let suffixes = &["B", "b"];
+        for &(s, bytes) in &[("1", 1), ("1024", 1024), ("4096", 4096), ("120000", 120000)] {
+            test_bytes_unit(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_bytes_unit_kb() {
+        let suffixes = &[
+            "k", "K", "kb", "kB", "KB", "kib", "KiB", "Kib", "KIB", "kIb",
+        ];
+        for &(s, bytes) in &[
+            ("1", 1024),
+            ("1024", 1024 * 1024),
+            ("64", 64 * 1024),
+            ("0.5", 1024 / 2),
+            (".5", 1024 / 2),
+            ("1.5", 1024 + (1024 / 2)),
+        ] {
+            test_bytes_unit(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_bytes_unit_mb() {
+        let suffixes = &[
+            "m", "M", "mb", "mB", "mB", "mib", "MiB", "Mib", "MIB", "mIb",
+        ];
+        let one = 1024 * 1024;
+        for &(s, bytes) in &[
+            ("1", one),
+            ("1024", 1024 * one),
+            ("64", 64 * one),
+            ("0.5", one / 2),
+            (".5", one / 2),
+            ("1.5", one + (one / 2)),
+        ] {
+            test_bytes_unit(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_bytes_unit_gb() {
+        let suffixes = &[
+            "g", "g", "gb", "gB", "GB", "gib", "GiB", "Gib", "GIB", "gIb",
+        ];
+        let one = 1024 * 1024 * 1024;
+        for &(s, bytes) in &[
+            ("1", one),
+            ("1024", 1024 * one),
+            ("64", 64 * one),
+            ("0.5", one / 2),
+            (".5", one / 2),
+            ("1.5", one + (one / 2)),
+        ] {
+            test_bytes_unit(s, suffixes, bytes)
+        }
     }
 
     #[test]
