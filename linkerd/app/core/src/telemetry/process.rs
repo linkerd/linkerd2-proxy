@@ -3,9 +3,6 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[cfg(not(target_os = "linux"))]
-use tracing::info;
-
 metrics! {
     process_start_time_seconds: Gauge {
         "Time that the process started (in seconds since the UNIX epoch)"
@@ -28,7 +25,7 @@ impl Report {
             .as_secs();
 
         #[cfg(not(target_os = "linux"))]
-        info!("System-level metrics are only supported on Linux");
+        tracing::info!("System-level metrics are only supported on Linux");
         Self {
             start_time: Arc::new(t0.into()),
 
