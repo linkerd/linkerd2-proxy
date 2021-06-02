@@ -345,15 +345,15 @@ impl ClientConfig {
     }
 }
 
-impl Into<Arc<rustls::ClientConfig>> for ClientConfig {
-    fn into(self) -> Arc<rustls::ClientConfig> {
-        Arc::new(self.into())
+impl From<ClientConfig> for Arc<rustls::ClientConfig> {
+    fn from(cc: ClientConfig) -> Arc<rustls::ClientConfig> {
+        Arc::new(cc.into())
     }
 }
 
-impl Into<rustls::ClientConfig> for ClientConfig {
-    fn into(self) -> rustls::ClientConfig {
-        self.0
+impl From<ClientConfig> for rustls::ClientConfig {
+    fn from(cc: ClientConfig) -> rustls::ClientConfig {
+        cc.0
     }
 }
 
@@ -387,15 +387,15 @@ impl ServerConfig {
     }
 }
 
-impl Into<Arc<rustls::ServerConfig>> for ServerConfig {
-    fn into(self) -> Arc<rustls::ServerConfig> {
-        Arc::new(self.into())
+impl From<ServerConfig> for Arc<rustls::ServerConfig> {
+    fn from(sc: ServerConfig) -> Arc<rustls::ServerConfig> {
+        Arc::new(sc.into())
     }
 }
 
-impl Into<rustls::ServerConfig> for ServerConfig {
-    fn into(self) -> rustls::ServerConfig {
-        self.0
+impl From<ServerConfig> for rustls::ServerConfig {
+    fn from(sc: ServerConfig) -> rustls::ServerConfig {
+        sc.0
     }
 }
 

@@ -110,9 +110,9 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl Into<linkerd_dns_name::Name> for Name {
-    fn into(self) -> linkerd_dns_name::Name {
-        self.0.as_ref().clone()
+impl From<Name> for linkerd_dns_name::Name {
+    fn from(n: Name) -> linkerd_dns_name::Name {
+        n.0.as_ref().clone()
     }
 }
 

@@ -29,9 +29,9 @@ impl NegotiatedProtocolRef<'_> {
     }
 }
 
-impl Into<NegotiatedProtocol> for NegotiatedProtocolRef<'_> {
-    fn into(self) -> NegotiatedProtocol {
-        self.to_owned()
+impl From<NegotiatedProtocolRef<'_>> for NegotiatedProtocol {
+    fn from(npr: NegotiatedProtocolRef<'_>) -> NegotiatedProtocol {
+        npr.to_owned()
     }
 }
 
