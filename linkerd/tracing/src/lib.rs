@@ -2,15 +2,14 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-mod level;
-mod tasks;
+pub mod level;
 pub mod test;
 mod uptime;
 
 use self::uptime::Uptime;
-use hyper::body::HttpBody;
 use linkerd_error::Error;
 use std::{env, str};
+pub use tokio_trace::tasks::TaskList;
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
 use tracing_subscriber::{fmt::format, prelude::*};
@@ -148,13 +147,7 @@ impl Settings {
             }
         };
 
-        (
-            dispatch,
-            Handle(Inner::Enabled {
-                level,
-                tasks: tasks::Handle { tasks },
-            }),
-        )
+        (dispatch, Handle(Inner::Enabled { level, tasks }))
     }
 }
 
@@ -166,7 +159,7 @@ enum Inner {
     Disabled,
     Enabled {
         level: level::Handle,
-        tasks: tasks::Handle,
+        tasks: TaskList,
     },
 }
 
@@ -178,37 +171,17 @@ impl Handle {
         Self(Inner::Disabled)
     }
 
-    /// Serve requests that controls the log level. The request is expected to be either a GET or PUT
-    /// request. PUT requests must have a body that describes the new log level.
-    pub async fn serve_level<B>(
-        &self,
-        req: http::Request<B>,
-    ) -> Result<http::Response<hyper::Body>, Error>
-    where
-        B: HttpBody,
-        B::Error: Into<Error>,
-    {
+    pub fn level(&self) -> Option<&level::Handle> {
         match self.0 {
-            Inner::Enabled { ref level, .. } => level.serve(req).await,
-            Inner::Disabled => Ok(Self::not_found()),
+            Inner::Enabled { ref level, .. } => Some(level),
+            Inner::Disabled => None,
         }
     }
 
-    /// Serve requests for task dumps.
-    pub async fn serve_tasks<B>(
-        &self,
-        req: http::Request<B>,
-    ) -> Result<http::Response<hyper::Body>, Error> {
+    pub fn tasks(&self) -> Option<&TaskList> {
         match self.0 {
-            Inner::Enabled { ref tasks, .. } => tasks.serve(req),
-            Inner::Disabled => Ok(Self::not_found()),
+            Inner::Enabled { ref tasks, .. } => Some(tasks),
+            Inner::Disabled => None,
         }
-    }
-
-    fn not_found() -> http::Response<hyper::Body> {
-        http::Response::builder()
-            .status(http::StatusCode::NOT_FOUND)
-            .body(hyper::Body::empty())
-            .expect("Response must be valid")
     }
 }

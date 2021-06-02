@@ -27,7 +27,9 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+mod level;
 mod readiness;
+mod tasks;
 
 pub use self::readiness::{Latch, Readiness};
 
@@ -174,19 +176,25 @@ where
             "/ready" => Box::pin(future::ok(self.ready_rsp())),
             "/metrics" => {
                 let rsp = self.metrics.serve(req).unwrap_or_else(|error| {
-                    tracing::error!(%error, "Failed to format metrics");
+                    ::tracing::error!(%error, "Failed to format metrics");
                     Self::internal_error_rsp(error)
                 });
                 Box::pin(future::ok(rsp))
             }
             "/proxy-log-level" => {
                 if Self::client_is_localhost(&req) {
-                    let handle = self.tracing.clone();
+                    let level = self.tracing.level().cloned();
                     Box::pin(async move {
-                        handle.serve_level(req).await.or_else(|error| {
-                            tracing::error!(%error, "Failed to get/set tracing level");
-                            Ok(Self::internal_error_rsp(error))
-                        })
+                        let rsp = match level {
+                            Some(level) => {
+                                level::serve(&level, req).await.unwrap_or_else(|error| {
+                                    tracing::error!(%error, "Failed to get/set tracing level");
+                                    Self::internal_error_rsp(error)
+                                })
+                            }
+                            None => Self::not_found(),
+                        };
+                        Ok(rsp)
                     })
                 } else {
                     Box::pin(future::ok(Self::forbidden_not_localhost()))
@@ -205,13 +213,14 @@ where
             }
             path if path.starts_with("/tasks") => {
                 if Self::client_is_localhost(&req) {
-                    let handle = self.tracing.clone();
-                    Box::pin(async move {
-                        handle.serve_tasks(req).await.or_else(|error| {
+                    let rsp = match self.tracing.tasks() {
+                        Some(tasks) => tasks::serve(tasks, req).unwrap_or_else(|error| {
                             tracing::error!(%error, "Failed to fetch tasks");
-                            Ok(Self::internal_error_rsp(error))
-                        })
-                    })
+                            Self::internal_error_rsp(error)
+                        }),
+                        None => Self::not_found(),
+                    };
+                    Box::pin(future::ok(rsp))
                 } else {
                     Box::pin(future::ok(Self::forbidden_not_localhost()))
                 }
