@@ -7,53 +7,54 @@ use futures::future;
 use http_body::Body;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_stack::Param;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
 
 pub use linkerd_http_retry::*;
 
-pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
-    NewRetryLayer::new(NewRetry::new(metrics))
+pub fn layer(new_retry: NewRetry) -> NewRetryLayer<NewRetry> {
+    NewRetryLayer::new(new_retry)
 }
 
 pub trait CloneRequest<Req> {
-    fn clone_request(req: &Req) -> Option<Req>;
+    fn clone_request(&self, req: &Req) -> Option<Req>;
 }
 
 #[derive(Clone, Debug)]
-pub struct NewRetry<C = WithBody> {
+pub struct NewRetry<C = BufferBody> {
     metrics: HttpRouteRetry,
-    _clone_request: PhantomData<C>,
+    clone_request: C,
 }
 
-pub struct Retry<C = WithBody> {
+pub struct Retry<C = BufferBody> {
     metrics: Handle,
     budget: Arc<Budget>,
     response_classes: profiles::http::ResponseClasses,
-    _clone_request: PhantomData<C>,
+    clone_request: C,
 }
 
-#[derive(Clone, Debug)]
-pub struct WithBody;
+#[derive(Copy, Clone, Debug)]
+pub struct BufferBody {
+    max_length_bytes: usize,
+}
 
 impl NewRetry {
     pub fn new(metrics: HttpRouteRetry) -> Self {
         Self {
             metrics,
-            _clone_request: PhantomData,
+            clone_request: BufferBody::default(),
         }
     }
 
-    pub fn clone_requests_via<C>(self) -> NewRetry<C> {
+    pub fn clone_requests_via<C: Clone>(self, clone_request: C) -> NewRetry<C> {
         NewRetry {
             metrics: self.metrics,
-            _clone_request: PhantomData,
+            clone_request,
         }
     }
 }
 
-impl<C> NewPolicy<Route> for NewRetry<C> {
+impl<C: Clone> NewPolicy<Route> for NewRetry<C> {
     type Policy = Retry<C>;
 
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
@@ -64,14 +65,14 @@ impl<C> NewPolicy<Route> for NewRetry<C> {
             metrics,
             budget: retries.budget().clone(),
             response_classes: route.route.response_classes().clone(),
-            _clone_request: self._clone_request,
+            clone_request: self.clone_request.clone(),
         })
     }
 }
 
 impl<C, A, B, E> Policy<http::Request<A>, http::Response<B>, E> for Retry<C>
 where
-    C: CloneRequest<http::Request<A>>,
+    C: CloneRequest<http::Request<A>> + Clone,
 {
     type Future = future::Ready<Self>;
 
@@ -104,30 +105,37 @@ where
     }
 
     fn clone_request(&self, req: &http::Request<A>) -> Option<http::Request<A>> {
-        C::clone_request(req)
+        self.clone_request.clone_request(req)
     }
 }
 
-impl<C> Clone for Retry<C> {
+impl<C: Clone> Clone for Retry<C> {
     fn clone(&self) -> Self {
         Self {
             metrics: self.metrics.clone(),
             budget: self.budget.clone(),
             response_classes: self.response_classes.clone(),
-            _clone_request: self._clone_request,
+            clone_request: self.clone_request.clone(),
         }
     }
 }
 
-// === impl WithBody ===
+// === impl BufferBody ===
 
-impl WithBody {
+impl BufferBody {
     /// Allow buffering requests up to 64 kb
-    pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
+    pub const DEFAULT_MAX_BUFFERED_BYTES: usize = 64 * 1024;
+
+    pub fn with_max_length(max_length_bytes: usize) -> Self {
+        Self { max_length_bytes }
+    }
 }
 
-impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
-    fn clone_request(req: &http::Request<ReplayBody<B>>) -> Option<http::Request<ReplayBody<B>>> {
+impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for BufferBody {
+    fn clone_request(
+        &self,
+        req: &http::Request<ReplayBody<B>>,
+    ) -> Option<http::Request<ReplayBody<B>>> {
         let content_length = |req: &http::Request<_>| {
             req.headers()
                 .get(http::header::CONTENT_LENGTH)
@@ -139,10 +147,11 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
         // only if the request contains a `content-length` header and the
         // content length is >= 64 kb.
         let has_body = !req.body().is_end_stream();
-        if has_body && content_length(&req).unwrap_or(usize::MAX) > Self::MAX_BUFFERED_BYTES {
+        if has_body && content_length(&req).unwrap_or(usize::MAX) > self.max_length_bytes {
             tracing::trace!(
                 req.has_body = has_body,
                 req.content_length = ?content_length(&req),
+                max_content_length = self.max_length_bytes,
                 "not retryable",
             );
             return None;
@@ -151,6 +160,7 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
         tracing::trace!(
             req.has_body = has_body,
             req.content_length = ?content_length(&req),
+            max_content_length = self.max_length_bytes,
             "retryable",
         );
 
@@ -161,5 +171,13 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
         *clone.version_mut() = req.version();
 
         Some(clone)
+    }
+}
+
+impl Default for BufferBody {
+    fn default() -> Self {
+        Self {
+            max_length_bytes: Self::DEFAULT_MAX_BUFFERED_BYTES,
+        }
     }
 }

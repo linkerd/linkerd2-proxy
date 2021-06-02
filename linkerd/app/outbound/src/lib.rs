@@ -45,6 +45,9 @@ pub struct Config {
     // not perform per-target-address discovery. Non-HTTP connections are
     // forwarded without discovery/routing/mTLS.
     pub ingress_mode: bool,
+
+    /// The maximum request body content length to buffer for retries, in bytes.
+    pub max_retry_length_bytes: usize,
 }
 
 #[derive(Clone, Debug)]

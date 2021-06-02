@@ -54,6 +54,13 @@ impl<E> Outbound<E> {
             .check_service::<Concrete>()
             .into_inner();
 
+        // Build a retry policy with retry metrics and the maximum buffered
+        // request body length from the config.
+        let retry_policy = retry::NewRetry::new(rt.metrics.http_route_retry.clone())
+            .clone_requests_via(retry::BufferBody::with_max_length(
+                config.max_retry_length_bytes,
+            ));
+
         let stack = endpoint
             .clone()
             .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
@@ -121,7 +128,7 @@ impl<E> Outbound<E> {
                             .to_layer::<classify::Response, _>(),
                     )
                     // Sets an optional retry policy.
-                    .push(retry::layer(rt.metrics.http_route_retry.clone()))
+                    .push(retry::layer(retry_policy))
                     .push_on_response(retry::replay::layer())
                     // Sets an optional request timeout.
                     .push(http::MakeTimeoutLayer::default())
