@@ -369,9 +369,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     );
     let dst_profile_networks = parse(strings, ENV_DESTINATION_PROFILE_NETWORKS, parse_networks);
 
-    let initial_stream_window_size = parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_number);
+    let initial_stream_window_size = parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_bytes);
     let initial_connection_window_size =
-        parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
+        parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_bytes);
 
     let tap = parse_tap_config(strings, id_disabled);
 
