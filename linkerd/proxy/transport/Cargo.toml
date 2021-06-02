@@ -11,7 +11,7 @@ Transport-level implementations that rely on core proxy infrastructure
 
 [dependencies]
 bytes = "1"
-futures = "0.3.9"
+futures = "0.3.15"
 linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }

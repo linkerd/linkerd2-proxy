@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.9"
+futures = "0.3.15"
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18" }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
