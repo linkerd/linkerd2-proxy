@@ -100,12 +100,14 @@ where
                 .unwrap_or_default()
         };
 
-        let timestamp = chrono::Utc::now().format_with_items(
-            [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
-        );
+        let now = || {
+            chrono::Utc::now().format_with_items(
+                [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
+            )
+        };
 
         let span = span!(target: TRACE_TARGET, Level::INFO, "http",
-            %timestamp,
+            timestamp = %now(),
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or_default(),
             processing_ns = field::Empty,
