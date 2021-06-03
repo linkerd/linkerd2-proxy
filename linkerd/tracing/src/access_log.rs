@@ -53,7 +53,7 @@ pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
     // always enable the access log spans.
     let directive = format!("{}=info", TRACE_TARGET)
         .parse()
-        .expect("hard-coded filter directive must parse");
+        .expect("access logging filter directive must parse");
 
     Some((writer, Guard(guard.into()), directive))
 }

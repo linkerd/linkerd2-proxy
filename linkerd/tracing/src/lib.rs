@@ -20,7 +20,7 @@ use tracing_subscriber::{
 };
 
 type Registry = Layered<
-    access_log::Writer,
+    Option<access_log::Writer>,
     Layered<reload::Layer<EnvFilter, tracing_subscriber::Registry>, tracing_subscriber::Registry>,
 >;
 
@@ -46,7 +46,7 @@ enum Inner {
     Enabled {
         level: level::Handle,
         tasks: TaskList,
-        guard: access_log::Guard,
+        guard: Option<access_log::Guard>,
     },
 }
 
@@ -114,18 +114,24 @@ impl Settings {
             .to_uppercase()
     }
 
-    fn mk_registry(&self) -> (Registry, level::Handle, access_log::Guard) {
-        let filter = {
+    fn mk_registry(&self) -> (Registry, level::Handle, Option<access_log::Guard>) {
+        let mut env = {
             let f = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
             EnvFilter::new(f)
         };
 
-        let (access_log, guard, directive) =
-            access_log::build().expect("XXX FIXME handle case when access log isn't used");
-        let filter = filter.add_directive(directive);
+        let (access_log, guard) = match access_log::build() {
+            None => (None, None),
+            Some((access_log, guard, directive)) => {
+                env = env.add_directive(directive);
+                (Some(access_log), Some(guard))
+            }
+        };
 
-        let (filter, level) = reload::Layer::new(filter);
-        let reg = tracing_subscriber::registry().with(filter).with(access_log);
+        let (reload_env, level) = reload::Layer::new(env);
+        let reg = tracing_subscriber::registry()
+            .with(reload_env)
+            .with(access_log);
         (reg, level::Handle::new(level), guard)
     }
 
