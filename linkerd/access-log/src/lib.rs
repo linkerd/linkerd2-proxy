@@ -94,8 +94,8 @@ where
             let headers = request.headers();
             headers
                 .get("x-b3-traceid")
-                .or_else(|| headers.get("X-Request-ID"))
-                .or_else(|| headers.get("X-Amzn-Trace-Id"))
+                .or_else(|| headers.get("x-request-id"))
+                .or_else(|| headers.get("x-amzn-trace-id"))
                 .and_then(|x| x.to_str().ok())
                 .unwrap_or_default()
         };
