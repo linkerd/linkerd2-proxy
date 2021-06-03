@@ -1319,7 +1319,13 @@ mod tests {
                 }),
             ),
             ("1", Ok(one)),
-            ("64", Ok(64 * one)),
+            (
+                "64",
+                Err(ParseError::SizeTooBig {
+                    size: 64 * one as u64,
+                    max: std::u32::MAX as u64,
+                }),
+            ),
             (".5", Ok(one / 2)),
             ("1.5", Ok(one + (one / 2))),
         ] {
