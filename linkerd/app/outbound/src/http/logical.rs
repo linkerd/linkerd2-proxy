@@ -58,7 +58,7 @@ impl<E> Outbound<E> {
         // request body length from the config.
         let retry_policy = retry::NewRetry::new(rt.metrics.http_route_retry.clone())
             .clone_requests_via(retry::BufferBody::with_max_length(
-                config.max_retry_length_bytes,
+                config.max_retry_size_bytes,
             ));
 
         let stack = endpoint

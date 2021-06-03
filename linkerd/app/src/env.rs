@@ -122,7 +122,7 @@ pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLI
 ///
 /// If a request body's `content-length` header is over this length, the request
 /// will not be retried. If unspecified, a default value (64k) is used.
-pub const ENV_OUTBOUND_MAX_RETRY_LENGTH: &str = "LINKERD2_PROXY_OUTBOUND_MAX_RETRY_LENGTH";
+pub const ENV_OUTBOUND_MAX_RETRY_SIZE: &str = "LINKERD2_PROXY_OUTBOUND_MAX_RETRY_SIZE";
 
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
@@ -225,7 +225,7 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
-const DEFAULT_OUTBOUND_MAX_RETRY_LENGTH: u64 = 64 * KILOBYTE;
+const DEFAULT_OUTBOUND_MAX_RETRY_SIZE: u64 = 64 * KILOBYTE;
 
 // This configuration limits the amount of time Linkerd retains cached clients &
 // connections.
@@ -373,10 +373,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     );
     let dst_profile_networks = parse(strings, ENV_DESTINATION_PROFILE_NETWORKS, parse_networks);
 
-    let initial_stream_window_size =
-        parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_bytes_u32);
-    let initial_connection_window_size =
-        parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_bytes_u32);
+    let initial_stream_window_size = parse(
+        strings,
+        ENV_INITIAL_STREAM_WINDOW_SIZE,
+        parse_size_bytes_u32,
+    );
+    let initial_connection_window_size = parse(
+        strings,
+        ENV_INITIAL_CONNECTION_WINDOW_SIZE,
+        parse_size_bytes_u32,
+    );
 
     let tap = parse_tap_config(strings, id_disabled);
 
@@ -440,13 +446,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
-        let max_retry_length_bytes = parse(strings, ENV_OUTBOUND_MAX_RETRY_LENGTH, parse_bytes)?
-            .unwrap_or(DEFAULT_OUTBOUND_MAX_RETRY_LENGTH);
+        let max_retry_size_bytes = parse(strings, ENV_OUTBOUND_MAX_RETRY_SIZE, parse_size_bytes)?
+            .unwrap_or(DEFAULT_OUTBOUND_MAX_RETRY_SIZE);
 
         outbound::Config {
             ingress_mode,
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
-            max_retry_length_bytes,
+            max_retry_size_bytes,
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -920,7 +926,7 @@ pub fn parse_backoff<S: Strings>(
     }
 }
 
-pub fn parse_bytes(s: &str) -> Result<u64, ParseError> {
+pub fn parse_size_bytes(s: &str) -> Result<u64, ParseError> {
     const SUFFIXES: &[(u64, &[&str])] = &[
         (KILOBYTE, &["k", "kb", "kib"]),
         (MEGABYTE, &["m", "mb", "mib"]),
@@ -967,9 +973,9 @@ pub fn parse_bytes(s: &str) -> Result<u64, ParseError> {
     Err(ParseError::NotBytes)
 }
 
-fn parse_bytes_u32(s: &str) -> Result<u32, ParseError> {
+fn parse_size_bytes_u32(s: &str) -> Result<u32, ParseError> {
     use std::convert::TryInto;
-    parse_bytes(s).and_then(|size| {
+    parse_size_bytes(s).and_then(|size| {
         size.try_into().map_err(|_| ParseError::SizeTooBig {
             size,
             max: std::u32::MAX as u64,
@@ -1164,10 +1170,10 @@ mod tests {
     fn test_bytes_unit(expr: &str, suffixes: &[&str], value: u64) {
         for suffix in suffixes {
             let text = format!("{}{}", expr, suffix);
-            assert_eq!(parse_bytes(&text), Ok(value), "\n  text: {:?}", text);
+            assert_eq!(parse_size_bytes(&text), Ok(value), "\n  text: {:?}", text);
 
             let text = format!("\t{} {}", expr, suffix);
-            assert_eq!(parse_bytes(&text), Ok(value), "\n  text: {:?}", text);
+            assert_eq!(parse_size_bytes(&text), Ok(value), "\n  text: {:?}", text);
         }
     }
 
@@ -1232,14 +1238,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_bytes_without_unit() {
+    fn parse_size_bytes_without_unit() {
         for &(s, bytes) in &[("1", 1), ("1024", 1024), ("4096", 4096), ("120000", 120000)] {
-            assert_eq!(parse_bytes(s), Ok(bytes), "\n  text: {:?}", s,);
+            assert_eq!(parse_size_bytes(s), Ok(bytes), "\n  text: {:?}", s,);
         }
     }
 
     #[test]
-    fn parse_bytes_unit_b() {
+    fn parse_size_bytes_unit_b() {
         let suffixes = &["B", "b"];
         for &(s, bytes) in &[("1", 1), ("1024", 1024), ("4096", 4096), ("120000", 120000)] {
             test_bytes_unit(s, suffixes, bytes)
@@ -1247,7 +1253,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_bytes_unit_kb() {
+    fn parse_size_bytes_unit_kb() {
         let suffixes = &[
             "k", "K", "kb", "kB", "KB", "kib", "KiB", "Kib", "KIB", "kIb",
         ];
@@ -1264,7 +1270,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_bytes_unit_mb() {
+    fn parse_size_bytes_unit_mb() {
         let suffixes = &[
             "m", "M", "mb", "mB", "mB", "mib", "MiB", "Mib", "MIB", "mIb",
         ];
@@ -1282,7 +1288,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_bytes_unit_gb() {
+    fn parse_size_bytes_unit_gb() {
         let suffixes = &[
             "g", "g", "gb", "gB", "GB", "gib", "GiB", "Gib", "GIB", "gIb",
         ];
