@@ -1305,6 +1305,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_size_bytes_u32_unit_gb() {
+        let suffixes = &[
+            "g", "g", "gb", "gB", "GB", "gib", "GiB", "Gib", "GIB", "gIb",
+        ];
+        let one: u32 = 1024 * 1024 * 1024;
+        for &(expr, ref value) in &[
+            (
+                "1024",
+                Err(ParseError::SizeTooBig {
+                    size: 1024 * one as u64,
+                    max: std::u32::MAX as u64,
+                }),
+            ),
+            ("1", Ok(one)),
+            ("64", Ok(64 * one)),
+            (".5", Ok(one / 2)),
+            ("1.5", Ok(one + (one / 2))),
+        ] {
+            for suffix in suffixes {
+                let text = format!("{}{}", expr, suffix);
+                assert_eq!(&parse_size_bytes_u32(&text), value, "\n  text: {:?}", text);
+
+                let text = format!("\t{} {}", expr, suffix);
+                assert_eq!(&parse_size_bytes_u32(&text), value, "\n  text: {:?}", text);
+            }
+        }
+    }
+
+    #[test]
     fn convert_attributes_string_to_map_different_values() {
         let attributes_string = "\
             cluster=\"test-cluster1\"\n\
