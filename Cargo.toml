@@ -20,7 +20,6 @@ members = [
     "linkerd/transport-header",
     "linkerd/dns/name",
     "linkerd/dns",
-    "linkerd/drain",
     "linkerd/duplex",
     "linkerd/error",
     "linkerd/errno",
