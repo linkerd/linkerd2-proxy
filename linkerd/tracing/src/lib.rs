@@ -2,18 +2,16 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
+mod access_log;
 pub mod level;
 pub mod test;
 mod uptime;
 
 use self::uptime::Uptime;
-//use linkerd_access_log::tracing::AccessLogWriter;
 use linkerd_error::Error;
-//use std::{path::PathBuf, sync::Arc};
 pub use tokio_trace::tasks::TaskList;
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
-//use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     fmt::format::{self, DefaultFields},
     layer::Layered,
@@ -21,12 +19,13 @@ use tracing_subscriber::{
     reload, EnvFilter,
 };
 
-type Registry =
-    Layered<reload::Layer<EnvFilter, tracing_subscriber::Registry>, tracing_subscriber::Registry>;
+type Registry = Layered<
+    access_log::Writer,
+    Layered<reload::Layer<EnvFilter, tracing_subscriber::Registry>, tracing_subscriber::Registry>,
+>;
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
-//const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
 const DEFAULT_LOG_LEVEL: &str = "warn,linkerd=info";
 const DEFAULT_LOG_FORMAT: &str = "PLAIN";
@@ -47,6 +46,7 @@ enum Inner {
     Enabled {
         level: level::Handle,
         tasks: TaskList,
+        guard: access_log::Guard,
     },
 }
 
@@ -83,20 +83,6 @@ pub fn init_log_compat() -> Result<(), Error> {
 
 // === impl Settings ===
 
-#[derive(Clone)]
-pub struct Handle(Inner);
-
-#[derive(Clone)]
-enum Inner {
-    Disabled,
-    Enabled {
-        level: level::Handle,
-        tasks: TaskList,
-    },
-}
-
-// === impl Settings ===
-
 impl Settings {
     pub fn from_env() -> Option<Self> {
         let filter = std::env::var(ENV_LOG_LEVEL).ok();
@@ -128,11 +114,19 @@ impl Settings {
             .to_uppercase()
     }
 
-    fn mk_registry(&self) -> (Registry, level::Handle) {
-        let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
-        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
-        let reg = tracing_subscriber::registry().with(filter);
-        (reg, level::Handle::new(level))
+    fn mk_registry(&self) -> (Registry, level::Handle, access_log::Guard) {
+        let filter = {
+            let f = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
+            EnvFilter::new(f)
+        };
+
+        let (access_log, guard, directive) =
+            access_log::build().expect("XXX FIXME handle case when access log isn't used");
+        let filter = filter.add_directive(directive);
+
+        let (filter, level) = reload::Layer::new(filter);
+        let reg = tracing_subscriber::registry().with(filter).with(access_log);
+        (reg, level::Handle::new(level), guard)
     }
 
     fn mk_json(&self, registry: Registry) -> (Dispatch, TaskList) {
@@ -184,14 +178,20 @@ impl Settings {
     }
 
     pub fn build(self) -> (Dispatch, Handle) {
-        let (registry, level) = self.mk_registry();
+        let (registry, level, guard) = self.mk_registry();
 
         let (dispatch, tasks) = match self.format().as_ref() {
             "JSON" => self.mk_json(registry),
             _ => self.mk_plain(registry),
         };
 
-        (dispatch, Handle(Inner::Enabled { level, tasks }))
+        let handle = Handle(Inner::Enabled {
+            level,
+            tasks,
+            guard,
+        });
+
+        (dispatch, handle)
     }
 }
 
@@ -217,43 +217,3 @@ impl Handle {
         }
     }
 }
-
-/*
-let (access_log, flush_guard, filter) = if let Some((access_log, flush_guard)) =
-    self.access_log.and_then(|path| {
-        // Create the access log file, or open it in append-only mode if
-        // it already exists.
-        let file = fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(&path)
-            .map_err(|e| {
-                eprintln!(
-                    "failed to create access log: {} ({}={})",
-                    e,
-                    ENV_ACCESS_LOG,
-                    path.display()
-                )
-            })
-            .ok()?;
-
-        // If we successfully created or opened the access log file,
-        // build the access log layer.
-        eprintln!("writing access log to {:?}", file);
-        let (non_blocking, guard) = tracing_appender::non_blocking(file);
-        let access_log = AccessLogWriter::new().with_writer(non_blocking);
-
-        Some((access_log, guard))
-    }) {
-    // Also, ensure that the `tracing` filter configuration will
-    // always enable the access log spans.
-    let filter = filter.add_directive(
-        "access_log=info"
-            .parse()
-            .expect("hard-coded filter directive should always parse"),
-    );
-    (Some(access_log), Some(flush_guard), filter)
-} else {
-    (None, None, filter)
-};
-    */
