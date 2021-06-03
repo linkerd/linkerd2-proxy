@@ -591,21 +591,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 
 [[package]]
-name = "linkerd-access-log"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "futures",
- "http",
- "linkerd-identity",
- "linkerd-proxy-transport",
- "linkerd-stack",
- "linkerd-tracing",
- "pin-project",
- "tracing",
-]
-
-[[package]]
 name = "linkerd-addr"
 version = "0.1.0"
 dependencies = [
@@ -690,9 +675,9 @@ dependencies = [
  "hyper",
  "indexmap",
  "libfuzzer-sys",
- "linkerd-access-log",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-http-access-log",
  "thiserror",
  "tokio",
  "tower",
@@ -868,6 +853,21 @@ dependencies = [
  "rand",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "linkerd-http-access-log"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "http",
+ "linkerd-identity",
+ "linkerd-proxy-transport",
+ "linkerd-stack",
+ "linkerd-tracing",
+ "pin-project",
+ "tracing",
 ]
 
 [[package]]

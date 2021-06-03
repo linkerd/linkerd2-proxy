@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-access-log"
+name = "linkerd-http-access-log"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"

@@ -8,7 +8,6 @@ use crate::{
     target::{self, HttpAccept, HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
     Inbound,
 };
-use linkerd_access_log::NewAccessLog;
 pub use linkerd_app_core::proxy::http::{
     normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
     Version,
@@ -23,6 +22,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, Remote},
     Error,
 };
+use linkerd_http_access_log::NewAccessLog;
 use tracing::debug_span;
 
 impl<H> Inbound<H> {

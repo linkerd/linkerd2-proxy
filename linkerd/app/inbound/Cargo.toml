@@ -14,8 +14,8 @@ bytes = "1"
 http = "0.2"
 futures = "0.3.15"
 indexmap = "1.0"
-linkerd-access-log = { path = "../../access-log" }
 linkerd-app-core = { path = "../core" }
+linkerd-http-access-log = { path = "../../http-access-log" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.7", features = ["util"] }
