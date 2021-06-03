@@ -1,9 +1,9 @@
 use http_body::Body as HttpBody;
-use linkerd2_proxy_api::identity as api;
+use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_metrics::Counter;
-use linkerd_stack::Param;
+use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::convert::TryFrom;
@@ -84,12 +84,13 @@ impl Config {
 // === impl Daemon ===
 
 impl Daemon {
-    pub async fn run<T>(self, client: T)
+    pub async fn run<N, S>(self, mut new_client: N)
     where
-        T: GrpcService<BoxBody>,
-        T::ResponseBody: Send + 'static,
-        <T::ResponseBody as Body>::Data: Send,
-        <T::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+        N: NewService<(), Service = S>,
+        S: GrpcService<BoxBody>,
+        S::ResponseBody: Send + 'static,
+        <S::ResponseBody as Body>::Data: Send,
+        <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
     {
         let Self {
             crt_key_watch,
@@ -100,18 +101,24 @@ impl Daemon {
         debug!("Identity daemon running");
 
         let mut curr_expiry = UNIX_EPOCH;
-        let mut client = api::identity_client::IdentityClient::new(client);
 
         loop {
             match config.token.load() {
                 Ok(token) => {
-                    let req = grpc::Request::new(api::CertifyRequest {
-                        token,
-                        identity: config.local_id.to_string(),
-                        certificate_signing_request: config.csr.to_vec(),
-                    });
-                    trace!("daemon certifying");
-                    let rsp = client.certify(req).await;
+                    let rsp = {
+                        // The client is used for infrequent communication with the identity controller;
+                        // so clients are instantiated on-demand rather than held.
+                        let mut client = IdentityClient::new(new_client.new_service(()));
+
+                        trace!("daemon certifying");
+                        let req = grpc::Request::new(api::CertifyRequest {
+                            token,
+                            identity: config.local_id.to_string(),
+                            certificate_signing_request: config.csr.to_vec(),
+                        });
+                        client.certify(req).await
+                    };
+
                     match rsp {
                         Err(e) => error!("Failed to certify identity: {}", e),
                         Ok(rsp) => {

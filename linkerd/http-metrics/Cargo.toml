@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 bytes = "1"
-futures = "0.3.9"
+futures = "0.3.15"
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }

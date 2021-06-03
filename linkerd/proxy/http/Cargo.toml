@@ -14,7 +14,8 @@ This should probably be decomposed into smaller, decoupled crates.
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-futures = "0.3.9"
+drain = "0.0.1"
+futures = "0.3.15"
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
@@ -23,7 +24,6 @@ hyper = { version = "0.14.2", features = ["client", "http1", "http2", "server", 
 hyper-balance = { path = "../../../hyper-balance" }
 indexmap = "1.0"
 linkerd-detect = { path = "../../detect" }
-linkerd-drain = { path = "../../drain" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }
 linkerd-http-box = { path = "../../http-box" }

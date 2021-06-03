@@ -1,5 +1,5 @@
 [package]
-name = "linkerd-cache"
+name = "linkerd-http-retry"
 version = "0.1.0"
 authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
 license = "Apache-2.0"
@@ -7,14 +7,20 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3.15"
+bytes = "1"
+futures = { version = "0.3", default-features = false }
+http-body = "0.4"
+http = "0.2"
 linkerd-error = { path = "../error" }
+linkerd-http-box = { path = "../http-box" }
 linkerd-stack = { path = "../stack" }
+pin-project = "1"
 parking_lot = "0.11"
-tokio = { version = "1", default-features = false, features = ["rt", "sync", "time"] }
-tower = { version = "0.4.7", default-features = false, features = ["util"] }
+tower = { version = "0.4.7", default-features = false, features = ["retry", "util"] }
 tracing = "0.1.23"
 
 [dev-dependencies]
-tokio = { version = "1", default-features = false, features = ["macros", "test-util", "time"] }
+hyper = "0.14"
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
+tokio = { version = "1", features = ["macros", "rt"]}
+
