@@ -4,6 +4,7 @@ use futures::TryFuture;
 use linkerd_identity as identity;
 use linkerd_proxy_transport::{ClientAddr, Remote};
 use linkerd_stack as svc;
+use linkerd_tracing::access_log::TRACE_TARGET;
 use pin_project::pin_project;
 use std::{
     future::Future,
@@ -102,7 +103,7 @@ where
             [chrono::format::Item::Fixed(chrono::format::Fixed::RFC3339)].iter(),
         );
 
-        let span = span!(target: "access_log", Level::INFO, "http",
+        let span = span!(target: TRACE_TARGET, Level::INFO, "http",
             %timestamp,
             client.addr = %self.client_addr,
             client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or_default(),

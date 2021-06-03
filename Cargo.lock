@@ -639,16 +639,15 @@ checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 name = "linkerd-access-log"
 version = "0.1.0"
 dependencies = [
- "base64",
  "chrono",
  "futures",
  "http",
  "linkerd-identity",
  "linkerd-proxy-transport",
  "linkerd-stack",
+ "linkerd-tracing",
  "pin-project",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2452,7 +2451,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "705096c6f83bf68ea5d357a6aa01829ddbdac531b357b45abeca842938085baa"
 dependencies = [
  "ansi_term",
- "chrono",
  "lazy_static",
  "matchers",
  "parking_lot",

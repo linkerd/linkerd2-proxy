@@ -14,6 +14,8 @@ use tracing_subscriber::{
 
 const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
+pub const TRACE_TARGET: &str = "_access_log";
+
 #[derive(Clone, Debug)]
 pub struct Guard(Arc<WorkerGuard>);
 
@@ -49,7 +51,7 @@ pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
 
     // Also, ensure that the `tracing` filter configuration will
     // always enable the access log spans.
-    let directive = "access_log=info"
+    let directive = format!("{}=info", TRACE_TARGET)
         .parse()
         .expect("hard-coded filter directive must parse");
 
@@ -70,7 +72,7 @@ impl Writer<DefaultFields> {
 impl<F> Writer<F> {
     #[inline(always)]
     fn cares_about(&self, meta: &Metadata<'_>) -> bool {
-        meta.target() == "access_log"
+        meta.target() == TRACE_TARGET
     }
 
     #[allow(dead_code)]

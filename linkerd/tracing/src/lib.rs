@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-mod access_log;
+pub mod access_log;
 pub mod level;
 pub mod test;
 mod uptime;
