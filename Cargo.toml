@@ -6,6 +6,7 @@ resolver = "2"
 members = [
     "hyper-balance",
     "linkerd/addr",
+    "linkerd/app/admin",
     "linkerd/app/core",
     "linkerd/app/gateway",
     "linkerd/app/inbound",
