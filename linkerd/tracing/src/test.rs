@@ -15,11 +15,7 @@ pub fn trace_subscriber(default: impl ToString) -> (Dispatch, Handle) {
     // This may fail, since the global log compat layer may have been
     // initialized by another test.
     let _ = init_log_compat();
-    Settings::default()
-        .filter(log_level)
-        .format(log_format)
-        .test(true)
-        .build()
+    Settings::for_test(log_level, log_format).build()
 }
 
 pub fn with_default_filter(default: impl ToString) -> tracing::dispatcher::DefaultGuard {
