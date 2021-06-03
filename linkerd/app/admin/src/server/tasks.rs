@@ -1,6 +1,5 @@
 use hyper::Body;
-use linkerd_error::Error;
-use linkerd_tracing::TaskList;
+use linkerd_app_core::{trace::TaskList, Error};
 use std::fmt::Write;
 
 pub(super) fn serve<B>(

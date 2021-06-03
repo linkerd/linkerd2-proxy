@@ -1,19 +1,16 @@
-use crate::core::{
-    admin, classify,
+use linkerd_app_core::{
+    classify,
     config::ServerConfig,
     detect, drain, errors,
     metrics::{self, FmtMetrics},
+    proxy::{http, identity::LocalCrtKey},
     serve,
     svc::{self, Param},
     tls, trace,
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use crate::{
-    http,
-    identity::LocalCrtKey,
-    inbound::target::{HttpAccept, Target, TcpAccept},
-};
+use linkerd_app_inbound::target::{HttpAccept, Target, TcpAccept};
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -25,9 +22,9 @@ pub struct Config {
     pub metrics_retain_idle: Duration,
 }
 
-pub struct Admin {
+pub struct Task {
     pub listen_addr: Local<ServerAddr>,
-    pub latch: admin::Latch,
+    pub latch: crate::Latch,
     pub serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
 }
 
@@ -42,7 +39,7 @@ struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
 // === impl Config ===
 
 impl Config {
-    #[allow(clippy::clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn build<B, R>(
         self,
         bind: B,
@@ -52,7 +49,7 @@ impl Config {
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
-    ) -> Result<Admin, Error>
+    ) -> Result<Task, Error>
     where
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
@@ -62,8 +59,8 @@ impl Config {
 
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
-        let (ready, latch) = admin::Readiness::new();
-        let admin = admin::Admin::new(report, ready, shutdown, trace);
+        let (ready, latch) = crate::server::Readiness::new();
+        let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(admin)
             .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(
@@ -137,7 +134,7 @@ impl Config {
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
-        Ok(Admin {
+        Ok(Task {
             listen_addr,
             latch,
             serve,

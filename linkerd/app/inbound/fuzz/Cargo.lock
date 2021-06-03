@@ -390,15 +390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "html-escape"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "828cfebfca0fcbe03c80eb298142e2eed1f7e1c00cecf307b10ddc54eac4d77b"
-dependencies = [
- "utf8-width",
-]
-
-[[package]]
 name = "http"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -584,7 +575,6 @@ dependencies = [
  "bytes",
  "drain",
  "futures",
- "html-escape",
  "http",
  "http-body",
  "hyper",
@@ -2256,12 +2246,6 @@ dependencies = [
  "matches",
  "percent-encoding",
 ]
-
-[[package]]
-name = "utf8-width"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9071ac216321a4470a69fb2b28cfc68dcd1a39acd877c8be8e014df6772d8efa"
 
 [[package]]
 name = "want"

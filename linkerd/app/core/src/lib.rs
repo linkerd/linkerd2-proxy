@@ -34,7 +34,6 @@ pub use linkerd_transport_header as transport_header;
 use thiserror::Error;
 
 mod addr_match;
-pub mod admin;
 pub mod classify;
 pub mod config;
 pub mod control;

@@ -10,15 +10,17 @@
 //!   tracing configuration).
 //! * `POST /shutdown` -- shuts down the proxy.
 
-use crate::{proxy::http::ClientHandle, svc, trace};
 use futures::future;
 use http::StatusCode;
 use hyper::{
     body::{Body, HttpBody},
     Request, Response,
 };
-use linkerd_error::Error;
-use linkerd_metrics::{self as metrics, FmtMetrics};
+use linkerd_app_core::{
+    metrics::{self as metrics, FmtMetrics},
+    proxy::http::ClientHandle,
+    svc, trace, Error,
+};
 use std::{
     future::Future,
     net::SocketAddr,

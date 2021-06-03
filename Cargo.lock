@@ -629,6 +629,7 @@ dependencies = [
  "futures",
  "indexmap",
  "ipnet",
+ "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-gateway",
  "linkerd-app-inbound",
@@ -645,13 +646,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-app-admin"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "html-escape",
+ "http",
+ "hyper",
+ "linkerd-app-core",
+ "linkerd-app-inbound",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-app-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
  "drain",
  "futures",
- "html-escape",
  "http",
  "http-body",
  "hyper",
