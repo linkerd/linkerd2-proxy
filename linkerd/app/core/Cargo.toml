@@ -14,6 +14,7 @@ independently of the inbound and outbound proxy logic.
 
 [dependencies]
 bytes = "1"
+drain = { version = "0.0.1", features = ["retain"] }
 http = "0.2"
 html-escape = "0.2"
 http-body = "0.4"
@@ -26,7 +27,6 @@ linkerd-cache = { path = "../../cache" }
 linkerd-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
-linkerd-drain = { path = "../../drain", features = ["retain"] }
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-errno = { path = "../../errno" }

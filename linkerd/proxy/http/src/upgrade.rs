@@ -6,7 +6,6 @@ use futures::{
     TryFutureExt,
 };
 use hyper::upgrade::OnUpgrade;
-use linkerd_drain as drain;
 use linkerd_duplex::Duplex;
 use std::fmt;
 use std::mem;
