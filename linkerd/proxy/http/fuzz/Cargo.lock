@@ -115,6 +115,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "drain"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bace0faf279ba51822e2f4518eb311636d0e3198adbf7f55f496dc6ac96ac558"
+dependencies = [
+ "futures",
+ "tokio",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -416,14 +426,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkerd-drain"
-version = "0.1.0"
-dependencies = [
- "futures",
- "tokio",
-]
-
-[[package]]
 name = "linkerd-duplex"
 version = "0.1.0"
 dependencies = [
@@ -491,6 +493,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "drain",
  "futures",
  "h2",
  "http",
@@ -500,7 +503,6 @@ dependencies = [
  "hyper-balance",
  "indexmap",
  "linkerd-detect",
- "linkerd-drain",
  "linkerd-duplex",
  "linkerd-error",
  "linkerd-http-box",
