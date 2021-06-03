@@ -43,6 +43,7 @@ pub struct AccessLogFuture<F> {
 }
 
 impl<N> NewAccessLog<N> {
+    #[inline]
     pub fn layer() -> impl svc::layer::Layer<N, Service = Self> {
         svc::layer::mk(|inner| NewAccessLog { inner })
     }
