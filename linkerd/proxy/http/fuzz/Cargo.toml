@@ -1,4 +1,3 @@
-
 [package]
 name = "linkerd-proxy-http-fuzz"
 version = "0.0.0"
@@ -14,11 +13,6 @@ libfuzzer-sys = "0.4"
 linkerd-proxy-http = { path = ".." }
 linkerd-tracing = { path = "../../../tracing" }
 tokio = { version = "1", features = ["full"] }
-
-# Prevent this from interfering with workspaces
-[workspace]
-members = ["."]
-resolver = "2"
 
 [[bin]]
 name = "fuzz_target_1"

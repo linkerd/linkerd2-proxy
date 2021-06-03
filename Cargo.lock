@@ -623,6 +623,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-addr-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "linkerd-addr",
+ "linkerd-tracing",
+ "tracing",
+]
+
+[[package]]
 name = "linkerd-app"
 version = "0.1.0"
 dependencies = [
@@ -748,6 +758,22 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-app-inbound-fuzz"
+version = "0.0.0"
+dependencies = [
+ "arbitrary",
+ "http",
+ "hyper",
+ "libfuzzer-sys",
+ "linkerd-app-core",
+ "linkerd-app-inbound",
+ "linkerd-app-test",
+ "linkerd-tracing",
+ "tokio",
  "tracing",
 ]
 
@@ -885,6 +911,17 @@ dependencies = [
  "tokio",
  "tracing",
  "trust-dns-resolver",
+]
+
+[[package]]
+name = "linkerd-dns-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "linkerd-dns",
+ "linkerd-tracing",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1174,6 +1211,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-proxy-http-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "linkerd-proxy-http",
+ "linkerd-tracing",
+ "tokio",
+]
+
+[[package]]
 name = "linkerd-proxy-identity"
 version = "0.1.0"
 dependencies = [
@@ -1403,6 +1450,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-tls-fuzz"
+version = "0.0.0"
+dependencies = [
+ "libfuzzer-sys",
+ "linkerd-tls",
+ "linkerd-tracing",
+]
+
+[[package]]
 name = "linkerd-trace-context"
 version = "0.1.0"
 dependencies = [
@@ -1448,6 +1504,18 @@ dependencies = [
  "prost-build",
  "tokio",
  "tokio-test",
+ "tracing",
+]
+
+[[package]]
+name = "linkerd-transport-header-fuzz"
+version = "0.0.0"
+dependencies = [
+ "arbitrary",
+ "libfuzzer-sys",
+ "linkerd-tracing",
+ "linkerd-transport-header",
+ "tokio",
  "tracing",
 ]
 

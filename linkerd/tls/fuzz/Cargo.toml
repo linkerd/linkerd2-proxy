@@ -1,4 +1,3 @@
-
 [package]
 name = "linkerd-tls-fuzz"
 version = "0.0.0"
@@ -14,16 +13,8 @@ libfuzzer-sys = "0.4"
 linkerd-tls = { path = ".." }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 
-# Prevent this from interfering with workspaces
-[workspace]
-members = ["."]
-resolver = "2"
-
 [[bin]]
 name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
 test = false
 doc = false
-
-[patch.crates-io]
-webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21"}

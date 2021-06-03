@@ -16,11 +16,6 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1.23"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 
-# Prevent this from interfering with workspaces
-[workspace]
-members = ["."]
-resolver = "2"
-
 [[bin]]
 name = "fuzz_target_structured"
 path = "fuzz_targets/fuzz_target_structured.rs"

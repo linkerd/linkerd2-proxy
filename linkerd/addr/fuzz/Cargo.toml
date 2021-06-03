@@ -14,11 +14,6 @@ linkerd-addr = { path = ".." }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 tracing = "0.1.23"
 
-# Prevent this from interfering with workspaces
-[workspace]
-members = ["."]
-resolver = "2"
-
 [[bin]]
 name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
