@@ -1,4 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
 
 use futures::TryFuture;
 use linkerd_identity as identity;
