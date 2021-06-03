@@ -1,14 +1,26 @@
-use linkerd_access_log::tracing::AccessLogWriter;
-use std::{path::PathBuf, sync::Arc};
-pub use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use std::{io::Write, marker::PhantomData, path::PathBuf, sync::Arc};
+use tracing::{Id, Metadata, Subscriber};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::Directive;
+use tracing_subscriber::{
+    fmt::{
+        format::{DefaultFields, JsonFields},
+        FormatFields, FormattedFields, MakeWriter,
+    },
+    layer::Context,
+    registry::LookupSpan,
+    Layer,
+};
 
 const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
 
 #[derive(Clone, Debug)]
 pub struct Guard(Arc<WorkerGuard>);
 
-pub type Writer = AccessLogWriter<NonBlocking>;
+pub(super) struct Writer<F = DefaultFields> {
+    make_writer: NonBlocking,
+    _f: PhantomData<fn(F)>,
+}
 
 pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
     // Create the access log file, or open it in append-only mode if
@@ -25,15 +37,15 @@ pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
             .append(true)
             .create(true)
             .open(&path)
-            .map_err(|e| eprintln!("failed to open file {}: {}", path.display(), e,))
+            .map_err(|e| eprintln!("Failed to open file {}: {}", path.display(), e,))
             .ok()?
     };
 
     // If we successfully created or opened the access log file,
     // build the access log layer.
-    eprintln!("writing access log to {:?}", file);
+    eprintln!("Writing access log to {:?}", file);
     let (non_blocking, guard) = tracing_appender::non_blocking(file);
-    let writer = AccessLogWriter::new().with_writer(non_blocking);
+    let writer = Writer::new(non_blocking);
 
     // Also, ensure that the `tracing` filter configuration will
     // always enable the access log spans.
@@ -42,4 +54,47 @@ pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
         .expect("hard-coded filter directive must parse");
 
     Some((writer, Guard(guard.into()), directive))
+}
+
+// === impl Writer ===
+
+impl Writer<DefaultFields> {
+    pub fn new(make_writer: NonBlocking) -> Self {
+        Self {
+            make_writer,
+            _f: PhantomData::default(),
+        }
+    }
+}
+
+impl<F> Writer<F> {
+    #[inline(always)]
+    fn cares_about(&self, meta: &Metadata<'_>) -> bool {
+        meta.target() == "access_log"
+    }
+
+    #[allow(dead_code)]
+    pub fn into_json(self) -> Writer<JsonFields> {
+        Writer {
+            make_writer: self.make_writer,
+            _f: PhantomData,
+        }
+    }
+}
+
+impl<S, F> Layer<S> for Writer<F>
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+    F: for<'writer> FormatFields<'writer> + 'static,
+{
+    fn on_close(&self, id: Id, ctx: Context<'_, S>) {
+        if let Some(span) = ctx.span(&id) {
+            if self.cares_about(span.metadata()) {
+                if let Some(fields) = span.extensions().get::<FormattedFields<F>>() {
+                    let mut writer = self.make_writer.make_writer();
+                    let _ = writeln!(&mut writer, "{}", fields.fields);
+                }
+            }
+        }
+    }
 }

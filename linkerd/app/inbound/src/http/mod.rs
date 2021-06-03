@@ -13,7 +13,7 @@ pub use linkerd_app_core::proxy::http::{
     Version,
 };
 use linkerd_app_core::{
-    access_log::tower::AccessLogLayer,
+    access_log::NewAccessLog,
     classify,
     config::{ProxyConfig, ServerConfig},
     dst, errors, http_tracing, identity, io, profiles,
@@ -90,7 +90,7 @@ impl<H> Inbound<H> {
                     .push(http::BoxRequest::layer())
                     .push(http::BoxResponse::layer()),
             )
-            .push(AccessLogLayer::new())
+            .push(NewAccessLog::layer())
             .check_new_service::<T, http::Request<_>>()
             .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
             .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))

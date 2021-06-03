@@ -1474,7 +1474,6 @@ dependencies = [
 name = "linkerd-tracing"
 version = "0.1.0"
 dependencies = [
- "linkerd-access-log",
  "linkerd-error",
  "tokio",
  "tokio-trace",
