@@ -257,10 +257,10 @@ impl ClientConfig {
 
 #[derive(Clone)]
 pub struct ServerConfig {
-    pub root_certs: Arc<X509Store>,
-    pub key: Option<Arc<Key>>,
-    pub cert: Option<Arc<Crt>>,
-    pub alpn_protocols: Arc<Vec<Vec<u8>>>,
+    root_certs: Arc<X509Store>,
+    key: Option<Arc<Key>>,
+    cert: Option<Arc<Crt>>,
+    alpn_protocols: Arc<Vec<Vec<u8>>>,
 }
 
 impl ServerConfig {
@@ -294,10 +294,9 @@ impl ServerConfig {
 
 impl fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "alpn_protocols: {:?}, key: {:?}",
-            self.alpn_protocols, self.key
-        )
+        f.debug_struct("ServerConfig")
+            .field("alpn_protocols", &self.alpn_protocols)
+            .field("key", &self.key)
+            .finish()
     }
 }
