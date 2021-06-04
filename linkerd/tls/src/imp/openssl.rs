@@ -222,10 +222,7 @@ impl<IO> TlsStream<IO> {
         let cert = self.0.ssl().peer_certificate()?;
         let peer = cert.subject_alt_names()?.pop()?;
 
-        match ClientId::from_str(peer.dnsname().unwrap()) {
-            Ok(client) => Some(client),
-            Err(_) => None,
-        }
+        ClientId::from_str(peer.dnsname().unwrap()).ok()
     }
 }
 
