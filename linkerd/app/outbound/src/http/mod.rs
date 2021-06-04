@@ -5,7 +5,6 @@ mod require_id_header;
 mod server;
 
 use crate::tcp;
-use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     dst,
@@ -173,7 +172,7 @@ impl tap::Inspect for Endpoint {
         Some(self.addr.into())
     }
 
-    fn dst_labels<B>(&self, _: &Request<B>) -> Option<&IndexMap<String, String>> {
+    fn dst_labels<B>(&self, _: &Request<B>) -> Option<&tap::Labels> {
         Some(self.metadata.labels())
     }
 
@@ -181,7 +180,7 @@ impl tap::Inspect for Endpoint {
         self.tls.clone()
     }
 
-    fn route_labels<B>(&self, req: &Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<Arc<tap::Labels>> {
         req.extensions()
             .get::<dst::Route>()
             .map(|r| r.route.labels().clone())

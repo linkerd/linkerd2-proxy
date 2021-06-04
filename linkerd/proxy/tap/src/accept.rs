@@ -1,6 +1,5 @@
 use crate::grpc::Server;
 use futures::future;
-use indexmap::IndexSet;
 use linkerd2_proxy_api::tap::tap_server::{Tap, TapServer};
 use linkerd_conditional::Conditional;
 use linkerd_error::Error;
@@ -8,6 +7,7 @@ use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
 use linkerd_tls::{self as tls, server::Connection};
 use std::{
+    collections::HashSet,
     future::Future,
     pin::Pin,
     sync::Arc,
@@ -17,14 +17,14 @@ use tower::Service;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPermittedClients {
-    permitted_client_ids: Arc<IndexSet<tls::ClientId>>,
+    permitted_client_ids: Arc<HashSet<tls::ClientId>>,
     server: Server,
 }
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
 impl AcceptPermittedClients {
-    pub fn new(permitted_client_ids: Arc<IndexSet<tls::ClientId>>, server: Server) -> Self {
+    pub fn new(permitted_client_ids: Arc<HashSet<tls::ClientId>>, server: Server) -> Self {
         Self {
             permitted_client_ids,
             server,

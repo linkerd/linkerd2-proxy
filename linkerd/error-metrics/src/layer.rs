@@ -1,17 +1,19 @@
 use crate::RecordError;
-use indexmap::IndexMap;
 use linkerd_metrics::Counter;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Debug)]
 pub struct RecordErrorLayer<L, K: Hash + Eq> {
     label: L,
-    errors: Arc<Mutex<IndexMap<K, Counter>>>,
+    errors: Arc<Mutex<HashMap<K, Counter>>>,
 }
 
 impl<L, K: Hash + Eq> RecordErrorLayer<L, K> {
-    pub(crate) fn new(label: L, errors: Arc<Mutex<IndexMap<K, Counter>>>) -> Self {
+    pub(crate) fn new(label: L, errors: Arc<Mutex<HashMap<K, Counter>>>) -> Self {
         Self { label, errors }
     }
 }

@@ -7,7 +7,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-indexmap = "1.0"
 linkerd-metrics = { path = "../../metrics" }
 tower = { version = "0.4.7", default-features = false }
 tokio = { version = "1", features = ["time"] }

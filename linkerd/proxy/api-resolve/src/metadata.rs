@@ -1,12 +1,14 @@
 use http::uri::Authority;
-use indexmap::IndexMap;
 use linkerd_tls::client::ServerId;
+use std::collections::BTreeMap;
+
+pub type Labels = BTreeMap<String, String>;
 
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
     /// Arbitrary endpoint labels. Primarily used for telemetry.
-    labels: IndexMap<String, String>,
+    labels: Labels,
 
     /// A hint from the controller about what protocol (HTTP1, HTTP2, etc) the
     /// destination understands.
@@ -35,7 +37,7 @@ pub enum ProtocolHint {
 impl Default for Metadata {
     fn default() -> Self {
         Self {
-            labels: IndexMap::default(),
+            labels: Labels::default(),
             identity: None,
             authority_override: None,
             opaque_transport_port: None,
@@ -46,14 +48,14 @@ impl Default for Metadata {
 
 impl Metadata {
     pub fn new(
-        labels: IndexMap<String, String>,
+        labels: impl IntoIterator<Item = (String, String)>,
         protocol_hint: ProtocolHint,
         opaque_transport_port: Option<u16>,
         identity: Option<ServerId>,
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
-            labels,
+            labels: labels.into_iter().collect(),
             protocol_hint,
             opaque_transport_port,
             identity,
@@ -62,7 +64,7 @@ impl Metadata {
     }
 
     /// Returns the endpoint's labels from the destination service, if it has them.
-    pub fn labels(&self) -> &IndexMap<String, String> {
+    pub fn labels(&self) -> &Labels {
         &self.labels
     }
 

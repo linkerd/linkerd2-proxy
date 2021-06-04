@@ -1,13 +1,13 @@
-use crate::Inspect;
-use indexmap::IndexMap;
+use crate::{Inspect, Labels};
 use ipnet::{Ipv4Net, Ipv6Net};
 use linkerd2_proxy_api::net::ip_address;
 use linkerd2_proxy_api::tap::observe_request;
-use std::boxed::Box;
-use std::convert::TryFrom;
-use std::convert::TryInto;
-use std::net;
-use std::str::FromStr;
+use std::{
+    boxed::Box,
+    convert::{TryFrom, TryInto},
+    net,
+    str::FromStr,
+};
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
@@ -138,7 +138,7 @@ impl TryFrom<observe_request::r#match::Match> for Match {
 // ===== impl LabelMatch ======
 
 impl LabelMatch {
-    fn matches(&self, labels: &IndexMap<String, String>) -> bool {
+    fn matches(&self, labels: &Labels) -> bool {
         labels.get(&self.key) == Some(&self.value)
     }
 }

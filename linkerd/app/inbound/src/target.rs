@@ -1,4 +1,3 @@
-use indexmap::IndexMap;
 use linkerd_app_core::{
     classify, dst, http_request_authority_addr, http_request_host_addr, identity, metrics,
     profiles,
@@ -279,7 +278,7 @@ impl tap::Inspect for Target {
         Some(self.target_addr)
     }
 
-    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&IndexMap<String, String>> {
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&tap::Labels> {
         None
     }
 
@@ -287,7 +286,7 @@ impl tap::Inspect for Target {
         Conditional::None(tls::NoClientTls::Loopback)
     }
 
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<tap::Labels>> {
         req.extensions()
             .get::<dst::Route>()
             .map(|r| r.route.labels().clone())

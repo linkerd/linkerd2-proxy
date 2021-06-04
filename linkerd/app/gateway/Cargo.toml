@@ -9,7 +9,6 @@ publish = false
 [dependencies]
 http = "0.2"
 futures = { version = "0.3", default-features = false }
-indexmap = "1.0"
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }

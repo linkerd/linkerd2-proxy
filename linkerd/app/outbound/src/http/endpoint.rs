@@ -182,7 +182,7 @@ mod test {
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
             metadata: Metadata::new(
-                Default::default(),
+                None,
                 support::resolver::ProtocolHint::Http2,
                 None,
                 None,
@@ -230,7 +230,7 @@ mod test {
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
             metadata: Metadata::new(
-                Default::default(),
+                None,
                 support::resolver::ProtocolHint::Http2,
                 None,
                 None,

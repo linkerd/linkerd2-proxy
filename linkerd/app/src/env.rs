@@ -8,8 +8,14 @@ use crate::core::{
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use indexmap::IndexSet;
-use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    net::SocketAddr,
+    path::PathBuf,
+    str::FromStr,
+    time::Duration,
+};
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
@@ -703,7 +709,7 @@ impl Env {
 fn parse_tap_config(
     strings: &dyn Strings,
     id_disabled: bool,
-) -> Result<Option<(SocketAddr, IndexSet<tls::server::ClientId>)>, EnvError> {
+) -> Result<Option<(SocketAddr, HashSet<tls::server::ClientId>)>, EnvError> {
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
     if id_disabled {
         if tap_identity.is_some() {
@@ -773,8 +779,8 @@ fn parse_addr(s: &str) -> Result<Addr, ParseError> {
     })
 }
 
-fn parse_port_set(s: &str) -> Result<IndexSet<u16>, ParseError> {
-    let mut set = IndexSet::new();
+fn parse_port_set(s: &str) -> Result<HashSet<u16>, ParseError> {
+    let mut set = HashSet::new();
     for num in s.split(',') {
         set.insert(parse_number::<u16>(num)?);
     }
@@ -831,8 +837,8 @@ where
     }
 }
 
-fn parse_dns_suffixes(list: &str) -> Result<IndexSet<dns::Suffix>, ParseError> {
-    let mut suffixes = IndexSet::new();
+fn parse_dns_suffixes(list: &str) -> Result<HashSet<dns::Suffix>, ParseError> {
+    let mut suffixes = HashSet::new();
     for item in list.split(',') {
         let item = item.trim();
         if !item.is_empty() {
@@ -852,8 +858,8 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
     dns::Suffix::from_str(s).map_err(|_| ParseError::NotADomainSuffix)
 }
 
-fn parse_networks(list: &str) -> Result<IndexSet<ipnet::IpNet>, ParseError> {
-    let mut nets = IndexSet::new();
+fn parse_networks(list: &str) -> Result<HashSet<ipnet::IpNet>, ParseError> {
+    let mut nets = HashSet::new();
     for input in list.split(',') {
         let input = input.trim();
         if !input.is_empty() {

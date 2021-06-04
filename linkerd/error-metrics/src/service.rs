@@ -1,13 +1,15 @@
 use crate::LabelError;
 use futures::TryFuture;
-use indexmap::IndexMap;
 use linkerd_metrics::{Counter, FmtLabels};
 use pin_project::pin_project;
-use std::future::Future;
-use std::hash::Hash;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
+use std::{
+    collections::HashMap,
+    future::Future,
+    hash::Hash,
+    pin::Pin,
+    sync::{Arc, Mutex},
+    task::{Context, Poll},
+};
 
 /// A middlware that records errors.
 #[pin_project]
@@ -18,10 +20,10 @@ pub struct RecordError<L, K: Hash + Eq, S> {
     inner: S,
 }
 
-type Errors<K> = Arc<Mutex<IndexMap<K, Counter>>>;
+type Errors<K> = Arc<Mutex<HashMap<K, Counter>>>;
 
 impl<L, K: Hash + Eq, S> RecordError<L, K, S> {
-    pub(crate) fn new(label: L, errors: Arc<Mutex<IndexMap<K, Counter>>>, inner: S) -> Self {
+    pub(crate) fn new(label: L, errors: Arc<Mutex<HashMap<K, Counter>>>, inner: S) -> Self {
         RecordError {
             label,
             errors,
