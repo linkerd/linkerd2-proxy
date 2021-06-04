@@ -223,7 +223,7 @@ pub struct ClientConfig {
 
 impl fmt::Debug for ClientConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.protocols, f)
+        f.debug_struct("ClientConfig").field("protocols", &self.protocols).finish()
     }
 }
 
