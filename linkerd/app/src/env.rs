@@ -528,7 +528,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
-            disable_protocol_detection_for_ports: inbound_opaque_ports.into(),
+            disable_protocol_detection_for_ports: inbound_opaque_ports.into_iter().collect(),
         }
     };
 
