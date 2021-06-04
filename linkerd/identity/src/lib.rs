@@ -3,7 +3,7 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 use std::{
-    convert::TryFrom, error as stdErr, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime,
+    convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime,
 };
 use thiserror::Error;
 use tracing::debug;
@@ -25,31 +25,9 @@ pub use linkerd_dns_name::InvalidName;
 pub struct Csr(Arc<Vec<u8>>);
 
 /// An error returned from the TLS implementation.
-pub struct Error(imp::Error);
-
-impl stdErr::Error for Error {
-    fn source(&self) -> Option<&(dyn stdErr::Error + 'static)> {
-        stdErr::Error::source(&self.0)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, fmt)
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, fmt)
-    }
-}
-
-impl From<imp::Error> for Error {
-    fn from(err: imp::Error) -> Error {
-        Error(err)
-    }
-}
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct Error(#[from] imp::Error);
 
 #[derive(Clone, Debug)]
 pub struct Key(imp::Key);
@@ -62,13 +40,7 @@ pub struct Crt(imp::Crt);
 
 #[derive(Clone, Debug, Error)]
 #[error(transparent)]
-pub struct InvalidCrt(imp::InvalidCrt);
-
-impl From<imp::InvalidCrt> for InvalidCrt {
-    fn from(err: imp::InvalidCrt) -> Self {
-        InvalidCrt(err)
-    }
-}
+pub struct InvalidCrt(#[from] imp::InvalidCrt);
 
 /// A newtype for local server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

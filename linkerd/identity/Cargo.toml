@@ -14,7 +14,7 @@ boring-tls = ["boring"]
 
 [dependencies]
 linkerd-dns-name = { path = "../dns/name" }
-ring = { version = "0.16.19", optional = true }
+ring = { version = "0.16.19", optional = true, features = ["std"] }
 rustls = { version = "0.19", optional = true }
 thiserror = "1.0"
 tracing = "0.1.2"

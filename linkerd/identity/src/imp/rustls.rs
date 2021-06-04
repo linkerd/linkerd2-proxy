@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use std::{error, fmt};
 use tracing::{debug, warn};
+use thiserror::Error;
 
 // These must be kept in sync:
 static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
@@ -32,31 +33,9 @@ impl Key {
     }
 }
 
-pub struct Error(KeyRejected);
-
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        None
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, fmt)
-    }
-}
-
-impl fmt::Debug for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, fmt)
-    }
-}
-
-impl From<ring::error::KeyRejected> for Error {
-    fn from(error: ring::error::KeyRejected) -> Error {
-        Error(error)
-    }
-}
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct Error(#[from] KeyRejected);
 
 #[derive(Clone)]
 pub struct TrustAnchors(Arc<ClientConfig>);

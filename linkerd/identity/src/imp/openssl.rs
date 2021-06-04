@@ -38,26 +38,9 @@ impl Key {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Error(ErrorStack);
-
-impl From<ErrorStack> for Error {
-    fn from(err: ErrorStack) -> Self {
-        Self(err)
-    }
-}
-
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        self.0.source()
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self, fmt)
-    }
-}
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct Error(#[from] ErrorStack);
 
 #[derive(Clone)]
 pub struct TrustAnchors(Arc<X509Store>);
