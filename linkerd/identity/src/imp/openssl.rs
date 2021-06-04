@@ -215,10 +215,10 @@ impl Crt {
 
 #[derive(Clone)]
 pub struct ClientConfig {
-    pub root_certs: Arc<X509Store>,
-    pub key: Option<Arc<Key>>,
-    pub cert: Option<Arc<Crt>>,
-    pub protocols: Arc<Vec<Vec<u8>>>,
+    root_certs: Arc<X509Store>,
+    key: Option<Arc<Key>>,
+    cert: Option<Arc<Crt>>,
+    protocols: Arc<Vec<Vec<u8>>>,
 }
 
 impl fmt::Debug for ClientConfig {
