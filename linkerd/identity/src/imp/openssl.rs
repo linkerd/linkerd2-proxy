@@ -112,53 +112,31 @@ impl TrustAnchors {
     }
 
     pub fn client_config(&self) -> Arc<ClientConfig> {
-        println!("Returning empty client config");
         Arc::new(ClientConfig::new(vec![], self.0.clone(), None, None))
     }
 }
 
 impl fmt::Debug for TrustAnchors {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "OpenSSL trust anchors")
+        f.debug_tuple("openssl::TrustAnchors")
+            .field(self.0.as_ref())
+            .finish()
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug. Error)]
 pub enum InvalidCrt {
+    #[error("subject alt name incorrect ({0})")]
     SubjectAltName(String),
-    Verify(X509VerifyResult),
-    General(Error),
-}
-
-impl From<Error> for InvalidCrt {
-    fn from(err: Error) -> Self {
-        InvalidCrt::General(err)
-    }
+    #[error("{0}")]
+    Verify(#[source] X509VerifyResult),
+    #[error(transparent)]
+    General(#[from] Error),
 }
 
 impl From<ErrorStack> for InvalidCrt {
     fn from(err: ErrorStack) -> Self {
         InvalidCrt::General(err.into())
-    }
-}
-
-impl fmt::Display for InvalidCrt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InvalidCrt::SubjectAltName(name) => write!(f, "Subject alt name incorrect {}", name),
-            InvalidCrt::Verify(err) => err.fmt(f),
-            InvalidCrt::General(err) => err.fmt(f),
-        }
-    }
-}
-
-impl error::Error for InvalidCrt {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            InvalidCrt::Verify(err) => err.source(),
-            InvalidCrt::General(err) => err.source(),
-            _ => None,
-        }
     }
 }
 
