@@ -2,9 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-use std::{
-    convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime,
-};
+use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
 use thiserror::Error;
 use tracing::debug;
 

@@ -5,8 +5,8 @@ use ring::signature::EcdsaKeyPair;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::{error, fmt};
-use tracing::{debug, warn};
 use thiserror::Error;
+use tracing::{debug, warn};
 
 // These must be kept in sync:
 static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
