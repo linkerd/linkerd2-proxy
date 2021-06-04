@@ -9,7 +9,7 @@ use std::{
 };
 
 use std::str::FromStr;
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[cfg(feature = "boring-tls")]
 use {
@@ -83,7 +83,7 @@ impl From<SslConnectorBuilder> for TlsConnector {
 
 impl From<Arc<ClientConfig>> for TlsConnector {
     fn from(conf: Arc<ClientConfig>) -> Self {
-        println!("Setting up ssl connector");
+        trace!("Setting up ssl connector");
         let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
 
         match conf.0.key.clone() {
@@ -97,11 +97,11 @@ impl From<Arc<ClientConfig>> for TlsConnector {
         match conf.0.cert.clone() {
             None => debug!("No certificate provided"),
             Some(cert) => {
-                println!("Setting certificate {:?}", cert);
+                trace!("Setting certificate {:?}", cert);
                 builder.set_certificate(cert.cert.as_ref()).unwrap();
 
                 for cert in &cert.chain {
-                    println!("Adding extra chain certificate {:?}", cert);
+                    trace!("Adding extra chain certificate {:?}", cert);
                     builder.add_extra_chain_cert(cert.clone()).unwrap()
                 }
             }
@@ -114,7 +114,7 @@ impl From<Arc<ClientConfig>> for TlsConnector {
             .iter()
             .map(|x| x.x509().unwrap().to_owned())
             .for_each(|cert| {
-                println!("Adding Root certificate {:?}", cert);
+                trace!("Adding Root certificate {:?}", cert);
                 builder.cert_store_mut().add_cert(cert).unwrap()
             });
 
@@ -162,25 +162,24 @@ impl From<SslAcceptor> for TlsAcceptor {
 
 impl From<Arc<ServerConfig>> for TlsAcceptor {
     fn from(conf: Arc<ServerConfig>) -> Self {
-        println!("SSL Version {}", version::version());
+        debug!("SSL Version {}", version::version());
         match fips::enable(true) {
             Err(err) => tracing::error!("FIPS mode can not be enabled {:?}", err),
             _ => debug!("FIPS mode is enabled"),
         }
 
-        println!("Setting up ssl acceptor with mozilla intermediate");
         let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
 
         let key = conf.0.key.as_ref().unwrap().as_ref().0.as_ref();
-        println!("Setting private key {:?}", key);
+        trace!("Setting private key {:?}", key);
         builder.set_private_key(key).unwrap();
 
         let cert = conf.0.cert.as_ref().unwrap().as_ref();
-        println!("Setting certificate {:?}", cert);
+        trace!("Setting certificate {:?}", cert);
         builder.set_certificate(cert.cert.as_ref()).unwrap();
 
         for cert in &cert.chain {
-            println!("Adding extra chain certificate {:?}", cert);
+            trace!("Adding extra chain certificate {:?}", cert);
             builder.add_extra_chain_cert(cert.clone()).unwrap()
         }
 
@@ -191,7 +190,7 @@ impl From<Arc<ServerConfig>> for TlsAcceptor {
             .iter()
             .map(|x| x.x509().unwrap().to_owned())
             .for_each(|cert| {
-                println!("Adding Root certificate {:?}", cert);
+                trace!("Adding Root certificate {:?}", cert);
                 builder.cert_store_mut().add_cert(cert).unwrap()
             });
 

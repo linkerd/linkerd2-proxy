@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::SystemTime;
-use std::{error, fmt};
+use std::fmt;
 
 #[cfg(feature = "boring-tls")]
 use boring::{
@@ -27,6 +27,7 @@ use tracing::{debug, warn};
 
 use crate::{LocalId, Name};
 use std::fmt::Formatter;
+use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub struct Key(pub Arc<PKey<Private>>);
@@ -71,7 +72,7 @@ impl TrustAnchors {
         if !cert
             .subject_alt_names()
             .into_iter()
-            .flat_map(|alt_names| alt_names.iter())
+            .flat_map(|alt_names| alt_names.iter().collect())
             .any(|n| n.dnsname().unwrap() == crt.id.0.as_ref())
         {
             return Err(InvalidCrt::SubjectAltName(crt.id.to_string()));
@@ -116,13 +117,11 @@ impl TrustAnchors {
 
 impl fmt::Debug for TrustAnchors {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("openssl::TrustAnchors")
-            .field(self.0.as_ref())
-            .finish()
+        f.pad("openssl::TrustAnchors")
     }
 }
 
-#[derive(Clone, Debug. Error)]
+#[derive(Clone, Debug, Error)]
 pub enum InvalidCrt {
     #[error("subject alt name incorrect ({0})")]
     SubjectAltName(String),
