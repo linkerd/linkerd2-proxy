@@ -3,6 +3,7 @@
 pub use crate::proxy::http;
 use crate::{cache, Error};
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
+pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
     self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
     NewRouter, NewService, Param, Predicate, UnwrapOr,
@@ -69,13 +70,6 @@ impl<L> Layers<L> {
         self.push(stack::MapTargetLayer::new(map_target))
     }
 
-    /// Wraps an inner `MakeService` to be a `NewService`.
-    pub fn push_into_new_service(
-        self,
-    ) -> Layers<Pair<L, stack::new_service::FromMakeServiceLayer>> {
-        self.push(stack::new_service::FromMakeServiceLayer::default())
-    }
-
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
     pub fn push_spawn_buffer<Req>(
         self,
@@ -137,7 +131,7 @@ impl<S> Stack<S> {
 
     /// Wraps an inner `MakeService` to be a `NewService`.
     pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
-        self.push(stack::new_service::FromMakeServiceLayer::default())
+        self.push(stack::new_service::FromMakeService::layer())
     }
 
     /// Buffer requests when when the next layer is out of capacity.

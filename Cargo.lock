@@ -1290,8 +1290,13 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
+ "linkerd-tracing",
  "pin-project",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
  "tower",
+ "tower-test",
  "tracing",
 ]
 

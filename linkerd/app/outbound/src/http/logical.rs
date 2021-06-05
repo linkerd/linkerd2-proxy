@@ -37,8 +37,9 @@ impl<E> Outbound<E> {
             buffer_capacity,
             cache_max_idle_age,
             dispatch_timeout,
+            connect,
             ..
-        } = config.proxy;
+        } = config.proxy.clone();
         let watchdog = cache_max_idle_age * 2;
 
         let endpoint =
@@ -56,6 +57,10 @@ impl<E> Outbound<E> {
 
         let stack = endpoint
             .clone()
+            .push(svc::NewReconnect::layer({
+                let backoff = connect.backoff;
+                move |_| Ok(backoff.stream())
+            }))
             .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
             .push_on_response(
                 svc::layers()
