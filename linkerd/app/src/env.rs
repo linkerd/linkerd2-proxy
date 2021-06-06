@@ -9,7 +9,9 @@ use crate::core::{
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use indexmap::IndexSet;
-use std::{collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
+use std::{
+    collections::HashMap, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration, u32,
+};
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
@@ -37,6 +39,12 @@ pub enum EnvError {
 pub enum ParseError {
     #[error("not a valid duration")]
     NotADuration,
+    #[error(
+        "not a valid size: {0} (a size must be an integer, or be an integer \
+        or float followed by one one of: `k`, `kb`, or `kib`; `m`, `mb`, or \
+        `mib`;`g`, `gb`, or `gib`)"
+    )]
+    NotASize(#[from] NotASize),
     #[error("not a valid DNS domain suffix")]
     NotADomainSuffix,
     #[error("not a boolean value: {0}")]
@@ -69,6 +77,16 @@ pub enum ParseError {
     InvalidTokenSource,
     #[error("invalid trust anchors")]
     InvalidTrustAnchors,
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum NotASize {
+    #[error("size ({size} bytes) exceeds maximum value {max} bytes")]
+    TooBig { size: u64, max: u64 },
+    #[error(transparent)]
+    NotAnInteger(#[from] std::num::ParseIntError),
+    #[error(transparent)]
+    NotAFloat(#[from] std::num::ParseFloatError),
 }
 
 // Environment variables to look at when loading the configuration
@@ -107,6 +125,13 @@ const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
 
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
+
+/// The maximum content length (in bytes) of request bodies that will be
+/// buffered for retries.
+///
+/// If a request body's `content-length` header is over this length, the request
+/// will not be retried. If unspecified, a default value (64k) is used.
+pub const ENV_OUTBOUND_MAX_RETRY_SIZE: &str = "LINKERD2_PROXY_OUTBOUND_MAX_RETRY_SIZE";
 
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
@@ -209,6 +234,7 @@ const DEFAULT_RESOLV_CONF: &str = "/etc/resolv.conf";
 
 const DEFAULT_INITIAL_STREAM_WINDOW_SIZE: u32 = 65_535; // Protocol default
 const DEFAULT_INITIAL_CONNECTION_WINDOW_SIZE: u32 = 1048576; // 1MB ~ 16 streams at capacity
+const DEFAULT_OUTBOUND_MAX_RETRY_SIZE: u64 = 64 * KILOBYTE;
 
 // This configuration limits the amount of time Linkerd retains cached clients &
 // connections.
@@ -255,6 +281,10 @@ const DEFAULT_IDENTITY_MAX_REFRESH: Duration = Duration::from_secs(60 * 60 * 24)
 
 const INBOUND_CONNECT_BASE: &str = "INBOUND_CONNECT";
 const OUTBOUND_CONNECT_BASE: &str = "OUTBOUND_CONNECT";
+
+const KILOBYTE: u64 = 1024;
+const MEGABYTE: u64 = KILOBYTE * 1024;
+const GIGABYTE: u64 = MEGABYTE * 1024;
 
 /// Load a `App` by reading ENV variables.
 pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> {
@@ -352,9 +382,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     );
     let dst_profile_networks = parse(strings, ENV_DESTINATION_PROFILE_NETWORKS, parse_networks);
 
-    let initial_stream_window_size = parse(strings, ENV_INITIAL_STREAM_WINDOW_SIZE, parse_number);
-    let initial_connection_window_size =
-        parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
+    let initial_stream_window_size = parse(
+        strings,
+        ENV_INITIAL_STREAM_WINDOW_SIZE,
+        parse_size_bytes_u32,
+    );
+    let initial_connection_window_size = parse(
+        strings,
+        ENV_INITIAL_CONNECTION_WINDOW_SIZE,
+        parse_size_bytes_u32,
+    );
 
     let tap = parse_tap_config(strings, id_disabled);
 
@@ -418,9 +455,13 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             outbound_dispatch_timeout?.unwrap_or(DEFAULT_OUTBOUND_DISPATCH_TIMEOUT);
 
+        let max_retry_size_bytes = parse(strings, ENV_OUTBOUND_MAX_RETRY_SIZE, parse_size_bytes)?
+            .unwrap_or(DEFAULT_OUTBOUND_MAX_RETRY_SIZE);
+
         outbound::Config {
             ingress_mode,
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
+            max_retry_size_bytes,
             proxy: ProxyConfig {
                 server,
                 connect,
@@ -788,17 +829,18 @@ pub(super) fn parse_identity(s: &str) -> Result<identity::Name, ParseError> {
     })
 }
 
-pub(super) fn parse<T, Parse>(
+pub(super) fn parse<T, E, Parse>(
     strings: &dyn Strings,
     name: &str,
     parse: Parse,
 ) -> Result<Option<T>, EnvError>
 where
-    Parse: FnOnce(&str) -> Result<T, ParseError>,
+    Parse: FnOnce(&str) -> Result<T, E>,
+    E: Into<ParseError>,
 {
     match strings.get(name)? {
         Some(ref s) => {
-            let r = parse(s).map_err(|parse_error| {
+            let r = parse(s).map_err(Into::into).map_err(|parse_error| {
                 error!("{}={:?} is not valid: {:?}", name, s, parse_error);
                 EnvError::InvalidEnvVar
             })?;
@@ -894,6 +936,88 @@ pub fn parse_backoff<S: Strings>(
     }
 }
 
+pub fn parse_size_bytes(s: &str) -> Result<u64, NotASize> {
+    const SUFFIXES: &[(u64, &[&str])] = &[
+        (KILOBYTE, &["k", "kb", "kib"]),
+        (MEGABYTE, &["m", "mb", "mib"]),
+        (GIGABYTE, &["g", "gb", "gib"]),
+        // NOTE(eliza): no one would ever want to buffer requests with >1TB content
+        // length, right? honestly even including GB here is probably unnecessary
+        // but whatever...
+    ];
+
+    fn parse_multiplier(mult: u64, suffixes: &[&str], s: &str) -> Option<Result<u64, NotASize>> {
+        for suffix in suffixes {
+            if let Some(s) = s.strip_suffix(suffix) {
+                let s = s.trim();
+                return Some(
+                    s.parse::<u64>()
+                        .map(|num| num.checked_mul(mult))
+                        .or_else(|_| {
+                            // TODO(eliza): don't use floats for this, seems kinda janky
+                            let f = s.parse::<f64>()?;
+                            Ok(Some((f * mult as f64) as u64))
+                        })
+                        .and_then(|val| {
+                            val.ok_or(NotASize::TooBig {
+                                size: std::u64::MAX,
+                                max: std::u64::MAX,
+                            })
+                        }),
+                );
+            }
+        }
+
+        None
+    }
+
+    let s = s.trim();
+    let mut err = match s.parse::<u64>() {
+        Err(e) => e.into(),
+        Ok(bytes) => return Ok(bytes),
+    };
+
+    let s = s.to_lowercase();
+    let s = &s.trim();
+
+    // Try each set of suffixes...
+    let mut found_suffix = false;
+    for &(mult, suffixes) in SUFFIXES {
+        match parse_multiplier(mult, suffixes, &s) {
+            Some(Ok(bytes)) => return Ok(bytes),
+            Some(Err(e)) => {
+                // We found a valid suffix, but couldn't parse the number for some
+                // reason! We'll return that error later.
+                err = e;
+                found_suffix = true;
+            }
+            None => {}
+        }
+    }
+
+    // Only try to parse *just* a `b` if we couldn't find any other suffix, so
+    // that we return the most relevant error.
+    if !found_suffix {
+        if let Some(s) = s.strip_suffix("b") {
+            // If the suffix is just "b", or there is no suffix, don't try
+            // fractional numbers...it wouldn't  make sense to buffer 1.3 bytes...
+            return s.trim().parse::<u64>().map_err(Into::into);
+        }
+    }
+
+    Err(err)
+}
+
+fn parse_size_bytes_u32(s: &str) -> Result<u32, NotASize> {
+    use std::convert::TryInto;
+    parse_size_bytes(s).and_then(|size| {
+        size.try_into().map_err(|_| NotASize::TooBig {
+            size,
+            max: std::u32::MAX as u64,
+        })
+    })
+}
+
 pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
@@ -939,7 +1063,9 @@ pub fn parse_identity_config<S: Strings>(
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |ref s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
-    let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
+    let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| {
+        Ok::<_, ParseError>(PathBuf::from(s))
+    });
     let tok = parse(strings, ENV_IDENTITY_TOKEN_FILE, |ref s| {
         identity::TokenSource::if_nonempty_file(s.to_string()).map_err(|e| {
             error!("Could not read {}: {}", ENV_IDENTITY_TOKEN_FILE, e);
@@ -1071,11 +1197,43 @@ mod tests {
         for v in &[0, 1, 23, 456_789] {
             let d = to_duration(*v);
             let text = format!("{}{}", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+            assert_eq!(parse_duration(&text), Ok(d), "\n  text: {:?}", text);
 
             let text = format!(" {}{}\t", v, unit);
-            assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+            assert_eq!(parse_duration(&text), Ok(d), "\n  text: {:?}", text);
         }
+    }
+
+    fn test_bytes_unit<F, T>(expr: &str, suffixes: &[&str], value: &Result<T, NotASize>, parse: F)
+    where
+        F: Fn(&str) -> Result<T, NotASize>,
+        T: std::fmt::Debug + Eq,
+    {
+        for suffix in suffixes {
+            let text = format!("{}{}", expr, suffix);
+            assert_eq!(&parse(&text), value, "\n  text: {:?}", text);
+
+            let text = format!("\t{} {}", expr, suffix);
+            assert_eq!(&parse(&text), value, "\n  text: {:?}", text);
+        }
+    }
+
+    fn test_bytes_unit_u32(expr: &str, suffixes: &[&str], value: &Result<u32, NotASize>) {
+        test_bytes_unit(expr, suffixes, value, parse_size_bytes_u32)
+    }
+
+    fn test_bytes_unit_u64(expr: &str, suffixes: &[&str], value: &Result<u64, NotASize>) {
+        test_bytes_unit(expr, suffixes, value, parse_size_bytes)
+    }
+
+    // These errors can't be constructed outside of std, so hack around that by
+    // trying to parse an invalid string.
+    fn not_a_float() -> NotASize {
+        NotASize::NotAFloat("garbage".parse::<f64>().unwrap_err())
+    }
+
+    fn not_an_int() -> NotASize {
+        NotASize::NotAnInteger("garbage".parse::<u64>().unwrap_err())
     }
 
     #[test]
@@ -1136,6 +1294,156 @@ mod tests {
     #[test]
     fn parse_duration_number_without_unit_is_invalid() {
         assert_eq!(parse_duration("1"), Err(ParseError::NotADuration));
+    }
+
+    #[test]
+    fn parse_size_bytes_without_unit() {
+        for &(s, ref bytes) in &[
+            ("1", Ok(1)),
+            ("1024", Ok(1024)),
+            ("4096", Ok(4096)),
+            ("120000", Ok(120000)),
+            ("1234m + 5", Err(not_an_int())),
+            // garbage
+            ("garbage", Err(not_an_int())),
+            ("1234garbage666", Err(not_an_int())),
+        ] {
+            assert_eq!(&parse_size_bytes(s), bytes, "\n  text: {:?}", s,);
+        }
+    }
+
+    #[test]
+    fn parse_size_bytes_unit_b() {
+        let suffixes = &["B", "b"];
+        for &(s, ref bytes) in &[
+            ("1", Ok(1)),
+            ("1024", Ok(1024)),
+            ("4096", Ok(4096)),
+            ("120000", Ok(120000)),
+            // double suffixes
+            ("1234 kb", Err(not_an_int())),
+            ("1234m + 5", Err(not_an_int())),
+            // garbage
+            ("garbage", Err(not_an_int())),
+            ("1234garbage666", Err(not_an_int())),
+        ] {
+            test_bytes_unit_u64(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_size_bytes_unit_kb() {
+        let suffixes = &[
+            "k", "K", "kb", "kB", "KB", "kib", "KiB", "Kib", "KIB", "kIb",
+        ];
+        let one = 1024;
+        for &(s, ref bytes) in &[
+            ("1", Ok(one)),
+            ("1024", Ok(1024 * one)),
+            ("64", Ok(64 * one)),
+            ("0.5", Ok(one / 2)),
+            (".5", Ok(one / 2)),
+            ("1.5", Ok(one + (one / 2))),
+            // double suffixes
+            ("1234 kb", Err(not_a_float())),
+            ("1234m + 5", Err(not_a_float())),
+            // garbage
+            ("garbage", Err(not_a_float())),
+            ("1234garbage666", Err(not_a_float())),
+        ] {
+            test_bytes_unit_u64(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_size_bytes_unit_mb() {
+        let suffixes = &[
+            "m", "M", "mb", "mB", "mB", "mib", "MiB", "Mib", "MIB", "mIb",
+        ];
+        let one = 1024 * 1024;
+        for &(s, ref bytes) in &[
+            ("1", Ok(one)),
+            ("1024", Ok(1024 * one)),
+            ("64", Ok(64 * one)),
+            ("0.5", Ok(one / 2)),
+            (".5", Ok(one / 2)),
+            ("1.5", Ok(one + (one / 2))),
+            // double suffixes
+            ("1234 kb", Err(not_a_float())),
+            ("1234m + 5", Err(not_a_float())),
+            // garbage
+            ("garbage", Err(not_a_float())),
+            ("1234garbage666", Err(not_a_float())),
+        ] {
+            test_bytes_unit_u64(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_size_bytes_unit_gb() {
+        let suffixes = &[
+            "g", "g", "gb", "gB", "GB", "gib", "GiB", "Gib", "GIB", "gIb",
+        ];
+        let one = 1024 * 1024 * 1024;
+        for &(s, ref bytes) in &[
+            ("1", Ok(one)),
+            ("1024", Ok(1024 * one)),
+            ("64", Ok(64 * one)),
+            ("0.5", Ok(one / 2)),
+            (".5", Ok(one / 2)),
+            ("1.5", Ok(one + (one / 2))),
+            // this should overflow
+            (
+                "17179869185",
+                Err(NotASize::TooBig {
+                    size: std::u64::MAX,
+                    max: std::u64::MAX,
+                }),
+            ),
+            // double suffixes
+            ("1234 kb", Err(not_a_float())),
+            ("1234m + 5", Err(not_a_float())),
+            // garbage
+            ("garbage", Err(not_a_float())),
+            ("1234garbage666", Err(not_a_float())),
+        ] {
+            test_bytes_unit_u64(s, suffixes, bytes)
+        }
+    }
+
+    #[test]
+    fn parse_size_bytes_u32_unit_gb() {
+        let suffixes = &[
+            "g", "g", "gb", "gB", "GB", "gib", "GiB", "Gib", "GIB", "gIb",
+        ];
+        let one: u32 = 1024 * 1024 * 1024;
+        for &(expr, ref value) in &[
+            (
+                "1024",
+                Err(NotASize::TooBig {
+                    size: 1024 * one as u64,
+                    max: std::u32::MAX as u64,
+                }),
+            ),
+            ("1", Ok(one)),
+            (
+                "64",
+                Err(NotASize::TooBig {
+                    size: 64 * one as u64,
+                    max: std::u32::MAX as u64,
+                }),
+            ),
+            (".5", Ok(one / 2)),
+            ("1.5", Ok(one + (one / 2))),
+            // double suffixes
+            ("1234 kb", Err(not_a_float())),
+            ("1234m + 5k", Err(not_a_float())),
+            // garbage
+            ("garbage", Err(not_a_float())),
+            ("1234garbage666", Err(not_a_float())),
+        ] {
+            test_bytes_unit_u32(expr, suffixes, value)
+        }
     }
 
     #[test]
