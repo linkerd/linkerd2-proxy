@@ -205,11 +205,13 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     close.close();
                 }
 
+                const SERVER_HEADER: &str = concat!("linkerd-proxy/", env!("GIT_VERSION"));
                 if self.is_grpc {
                     let mut rsp = http::Response::builder()
                         .version(http::Version::HTTP_2)
                         .header(http::header::CONTENT_LENGTH, "0")
                         .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
+                        .header(http::header::SERVER, SERVER_HEADER)
                         .body(ResponseBody::default())
                         .expect("app::errors response is valid");
                     let code = set_grpc_status(&*error, rsp.headers_mut());
@@ -223,6 +225,7 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     .version(self.version)
                     .status(status)
                     .header(http::header::CONTENT_LENGTH, "0")
+                    .header(http::header::SERVER, SERVER_HEADER)
                     .body(ResponseBody::default())
                     .expect("error response must be valid"))
             }
