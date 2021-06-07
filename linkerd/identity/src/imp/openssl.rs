@@ -87,24 +87,23 @@ impl TrustAnchors {
         }
 
         let mut context = X509StoreContext::new().unwrap();
-        let verify = context.init(&self.0, &cert, &chain, |c| match c.verify_cert() {
+        context.init(&self.0, &cert, &chain, |c| match c.verify_cert() {
             Ok(true) => Ok(Ok(true)),
             Ok(false) => Ok(Err(InvalidCrt::Verify(c.error()))),
             Err(err) => Err(err),
         })??;
-        
+
         let server_config =
             ServerConfig::new(vec![], self.0.clone(), Some(crt.clone()), Some(key.clone()));
         let client_config =
-             ClientConfig::new(vec![], self.0.clone(), Some(crt.clone()), Some(key.clone()));
-        
+            ClientConfig::new(vec![], self.0.clone(), Some(crt.clone()), Some(key.clone()));
+
         Ok(CrtKey {
             id: crt.id.clone(),
             expiry: crt.expiry.clone(),
             client_config: Arc::new(client_config),
             server_config: Arc::new(server_config),
-        }),
-        }
+        })
     }
 
     pub fn client_config(&self) -> Arc<ClientConfig> {
