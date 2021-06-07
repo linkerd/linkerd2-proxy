@@ -18,7 +18,7 @@ drain = { version = "0.0.1", features = ["retain"] }
 http = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 indexmap = "1.0"
 ipnet = "2.0"
 linkerd-addr = { path = "../../addr" }
@@ -42,7 +42,7 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18" }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
 linkerd-proxy-identity = { path = "../../proxy/identity" }
@@ -85,5 +85,5 @@ features = [
 linkerd-system = { path = "../../system" }
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["arbitrary"] }
 prost-types = "0.7.0"

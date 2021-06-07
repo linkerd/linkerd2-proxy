@@ -168,6 +168,11 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     })),
                 },
                 http_endpoint
+                    .push_on_response(
+                        svc::layers()
+                            .push(svc::layer::mk(svc::SpawnReady::new))
+                            .push(svc::FailFast::layer("Ingress server", dispatch_timeout)),
+                    )
                     .instrument(|_: &_| info_span!("forward"))
                     .into_inner(),
             )

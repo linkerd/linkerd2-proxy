@@ -7,7 +7,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = "0.3"
+futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
 linkerd-error = { path = "../error" }
