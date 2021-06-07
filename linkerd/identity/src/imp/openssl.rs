@@ -1,6 +1,6 @@
+use std::fmt;
 use std::sync::Arc;
 use std::time::SystemTime;
-use std::fmt;
 
 #[cfg(feature = "boring-tls")]
 use boring::{
@@ -215,15 +215,17 @@ impl Crt {
 
 #[derive(Clone)]
 pub struct ClientConfig {
-    root_certs: Arc<X509Store>,
-    key: Option<Arc<Key>>,
-    cert: Option<Arc<Crt>>,
+    pub root_certs: Arc<X509Store>,
+    pub key: Option<Arc<Key>>,
+    pub cert: Option<Arc<Crt>>,
     protocols: Arc<Vec<Vec<u8>>>,
 }
 
 impl fmt::Debug for ClientConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ClientConfig").field("protocols", &self.protocols).finish()
+        f.debug_struct("ClientConfig")
+            .field("protocols", &self.protocols)
+            .finish()
     }
 }
 
@@ -257,9 +259,9 @@ impl ClientConfig {
 
 #[derive(Clone)]
 pub struct ServerConfig {
-    root_certs: Arc<X509Store>,
-    key: Option<Arc<Key>>,
-    cert: Option<Arc<Crt>>,
+    pub root_certs: Arc<X509Store>,
+    pub key: Option<Arc<Key>>,
+    pub cert: Option<Arc<Crt>>,
     alpn_protocols: Arc<Vec<Vec<u8>>>,
 }
 
