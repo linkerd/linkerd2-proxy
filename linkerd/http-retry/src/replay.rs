@@ -1,7 +1,6 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
-use linkerd_stack as svc;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
 
@@ -69,11 +68,6 @@ struct BodyState<B> {
     trailers: Option<HeaderMap>,
     rest: Option<B>,
     is_completed: bool,
-}
-
-pub fn layer<B: Body>() -> svc::MapTargetLayer<fn(http::Request<B>) -> http::Request<ReplayBody<B>>>
-{
-    svc::MapTargetLayer::new(|req: http::Request<B>| req.map(ReplayBody::new))
 }
 
 // === impl ReplayBody ===
