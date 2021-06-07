@@ -23,7 +23,7 @@ use openssl::{
     },
 };
 
-use tracing::{debug, warn};
+use tracing::{debug, error};
 
 use crate::{LocalId, Name};
 use std::fmt::Formatter;
@@ -47,24 +47,34 @@ pub struct Error(#[from] ErrorStack);
 pub struct TrustAnchors(Arc<X509Store>);
 
 impl TrustAnchors {
+    fn store() -> X509StoreBuilder {
+        X509StoreBuilder::new().expect("unable to create certificate store")
+    }
+
     #[cfg(any(test, feature = "test-util"))]
     pub fn empty() -> Self {
-        Self(Arc::new(X509StoreBuilder::new().unwrap().build()))
+        Self(Arc::new(TrustAnchors::store().build()))
     }
 
     pub fn from_pem(s: &str) -> Option<Self> {
         debug!("Loading {} into x509", s);
-        let mut store = X509StoreBuilder::new().unwrap();
 
-        match X509::from_pem(s.as_bytes()) {
+        return match X509::from_pem(s.as_bytes()) {
             Ok(cert) => {
+                let mut store = TrustAnchors::store();
                 debug!("Adding trust {:?}", cert);
-                store.add_cert(cert).unwrap();
-            }
-            Err(err) => warn!("unable to construct trust anchor {}", err),
-        }
+                if store.add_cert(cert).is_err() {
+                    error!("unable to add certificate to trust anchors");
+                    return None
+                }
 
-        Some(Self(Arc::new(store.build())))
+                Some(Self(Arc::new(store.build())))
+            }
+            Err(err) => {
+                error!("unable to construct trust anchor {}", err);
+                None
+            },
+        }
     }
 
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
@@ -73,20 +83,20 @@ impl TrustAnchors {
             .subject_alt_names()
             .unwrap()
             .iter()
-            .filter(|n| n.dnsname().unwrap().to_string() == crt.id.to_string())
+            .filter(|n| n.dnsname().expect("unable to convert to dns name") == crt.name().as_ref())
             .next()
             .is_none()
         {
-            return Err(InvalidCrt::SubjectAltName(crt.id.to_string()));
+            return Err(InvalidCrt::SubjectAltName(crt.id));
         }
 
-        let mut chain = Stack::new().unwrap();
-        chain.push(cert.clone()).unwrap();
+        let mut chain = Stack::new()?;
+        chain.push(cert.clone())?;
         for chain_crt in crt.chain.clone() {
-            chain.push(chain_crt).unwrap();
+            chain.push(chain_crt)?;
         }
 
-        let mut context = X509StoreContext::new().unwrap();
+        let mut context = X509StoreContext::new()?;
         context.init(&self.0, &cert, &chain, |c| match c.verify_cert() {
             Ok(true) => Ok(Ok(true)),
             Ok(false) => Ok(Err(InvalidCrt::Verify(c.error()))),
@@ -120,7 +130,7 @@ impl fmt::Debug for TrustAnchors {
 #[derive(Clone, Debug, Error)]
 pub enum InvalidCrt {
     #[error("subject alt name incorrect ({0})")]
-    SubjectAltName(String),
+    SubjectAltName(LocalId),
     #[error("{0}")]
     Verify(#[source] X509VerifyResult),
     #[error(transparent)]
@@ -189,11 +199,11 @@ impl Crt {
         expiry: SystemTime,
     ) -> Self {
         let mut chain = Vec::with_capacity(intermediates.len() + 1);
-        let cert = X509::from_der(&leaf).unwrap();
+        let cert = X509::from_der(&leaf).expect("unable to convert to a x509 certificate");
         chain.extend(
             intermediates
                 .into_iter()
-                .map(|crt| X509::from_der(&crt).unwrap()),
+                .map(|crt| X509::from_der(&crt).expect("unable to add intermediate certificate")),
         );
 
         Self {
@@ -242,7 +252,7 @@ impl ClientConfig {
     pub fn empty() -> Self {
         ClientConfig::new(
             Vec::new(),
-            Arc::new(X509StoreBuilder::new().unwrap().build()),
+            Arc::new(X509StoreBuilder::new().expect("unable to construct root certs").build()),
             None,
             None,
         )
@@ -279,7 +289,7 @@ impl ServerConfig {
     pub fn empty() -> Self {
         ServerConfig::new(
             Vec::new(),
-            Arc::new(X509StoreBuilder::new().unwrap().build()),
+            Arc::new(X509StoreBuilder::new().expect("unable to construct root certs").build()),
             None,
             None,
         )
