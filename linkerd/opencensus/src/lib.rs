@@ -4,10 +4,7 @@
 
 pub mod metrics;
 
-use futures::{
-    stream::{Stream, StreamExt},
-    FutureExt,
-};
+use futures::stream::{Stream, StreamExt};
 use http_body::Body as HttpBody;
 use linkerd_error::Error;
 use metrics::Registry;
@@ -173,17 +170,20 @@ where
                 return Ok(());
             }
 
-            futures::select_biased! {
-                res = spans.next().fuse() => match res {
+            tokio::select! {
+                biased;
+
+                res = spans.next() => match res {
                     Some(span) => {
                         trace!(?span, "Adding to batch");
                         accum.push(span);
                     }
                     None => return Err(SpanRxClosed),
                 },
+
                 // Don't hold spans indefinitely. Return if we hit an idle
                 // timeout and spans have been collected.
-                _ = time::sleep(Self::MAX_BATCH_IDLE).fuse() => {
+                _ = time::sleep(Self::MAX_BATCH_IDLE) => {
                     if !accum.is_empty() {
                         trace!(spans = accum.len(), "Flushing spans due to inactivitiy");
                         return Ok(());

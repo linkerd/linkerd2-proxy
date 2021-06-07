@@ -1109,7 +1109,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-stack",
  "pin-project",
- "socket2 0.3.19",
+ "socket2 0.4.0",
  "tokio",
  "tokio-stream",
  "tower",

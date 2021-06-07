@@ -15,7 +15,7 @@ This should probably be decomposed into smaller, decoupled crates.
 async-trait = "0.1"
 bytes = "1"
 drain = "0.0.1"
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
