@@ -51,7 +51,7 @@ where
         // Get an update and stream or return None.
         let (init, rsp) = self.init(&target, None).await?;
 
-        // XXX There's Response::into_parts isn't public.
+        // XXX Response::into_parts isn't public.
         let metadata = rsp.metadata().clone();
 
         // Spawn a background task to keep the profile watch up-to-date until all copies of `rx`
