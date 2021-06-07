@@ -3,7 +3,7 @@ use crate::{iface, Inspect, Registry};
 use futures::ready;
 use futures::stream::Stream;
 use hyper::body::{Buf, HttpBody};
-use linkerd2_proxy_api::{http_types, pb_duration, tap as api};
+use linkerd2_proxy_api::{http_types, tap as api};
 use linkerd_conditional::Conditional;
 use linkerd_proxy_http::HasH2Reason;
 use linkerd_tls as tls;
@@ -373,7 +373,7 @@ impl iface::TapResponse for TapResponse {
 
         let init = api::tap_event::http::Event::ResponseInit(api::tap_event::http::ResponseInit {
             id: Some(self.tap.id.clone()),
-            since_request_init: Some(pb_duration(response_init_at - self.request_init_at)),
+            since_request_init: Some((response_init_at - self.request_init_at).into()),
             http_status: rsp.status().as_u16().into(),
             headers,
         });
@@ -406,7 +406,7 @@ impl iface::TapResponse for TapResponse {
         let reason = err.h2_reason();
         let end = api::tap_event::http::Event::ResponseEnd(api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id.clone()),
-            since_request_init: Some(pb_duration(response_end_at - self.request_init_at)),
+            since_request_init: Some((response_end_at - self.request_init_at).into()),
             since_response_init: None,
             response_bytes: 0,
             eos: Some(api::Eos {
@@ -472,8 +472,8 @@ impl TapResponsePayload {
         };
         let end = api::tap_event::http::ResponseEnd {
             id: Some(self.tap.id),
-            since_request_init: Some(pb_duration(response_end_at - self.request_init_at)),
-            since_response_init: Some(pb_duration(response_end_at - self.response_init_at)),
+            since_request_init: Some((response_end_at - self.request_init_at).into()),
+            since_response_init: Some((response_end_at - self.response_init_at).into()),
             response_bytes: self.response_bytes as u64,
             eos: Some(api::Eos { end }),
             trailers,
