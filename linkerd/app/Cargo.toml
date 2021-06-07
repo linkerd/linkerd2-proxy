@@ -23,8 +23,8 @@ linkerd-app-core = { path = "./core" }
 linkerd-app-gateway = { path = "./gateway" }
 linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
-linkerd-opencensus = { path = "../opencensus" }
 linkerd-error = { path = "../error" }
+linkerd-opencensus = { path = "../opencensus" }
 regex = "1.0.0"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt"] }

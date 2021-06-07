@@ -21,6 +21,7 @@ mod client;
 mod default;
 pub mod discover;
 pub mod http;
+mod proto;
 pub mod split;
 
 pub use self::client::Client;

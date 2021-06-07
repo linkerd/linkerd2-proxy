@@ -41,7 +41,7 @@ pub use self::{
     unwrap_or::UnwrapOr,
 };
 pub use tower::{
-    util::{future_service, FutureService, ServiceExt},
+    util::{future_service, FutureService, MapErrLayer, ServiceExt},
     Service,
 };
 
