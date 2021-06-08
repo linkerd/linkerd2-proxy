@@ -331,7 +331,7 @@ impl AsRef<rustls::ClientConfig> for ClientConfig {
 
 impl fmt::Debug for ClientConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("")
+        f.debug_struct("rustls::ClientConfig")
             .field("alpn", &self.0.alpn_protocols)
             .field("protocols", &self.0.versions)
             .finish()
@@ -373,7 +373,7 @@ impl AsRef<rustls::ServerConfig> for ServerConfig {
 
 impl fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("")
+        f.debug_struct("rustls::ServerConfig")
             .field("alpn", &self.0.alpn_protocols)
             .field("protocols", &self.0.versions)
             .finish()
