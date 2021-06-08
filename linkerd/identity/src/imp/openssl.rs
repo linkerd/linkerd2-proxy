@@ -23,7 +23,7 @@ use openssl::{
     },
 };
 
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::{LocalId, Name};
 use std::fmt::Formatter;
@@ -57,12 +57,11 @@ impl TrustAnchors {
     }
 
     pub fn from_pem(s: &str) -> Option<Self> {
-        debug!("Loading {} into x509", s);
-
+        debug!("constructing trust trust anchors from pem {}", s);
         return match X509::from_pem(s.as_bytes()) {
             Ok(cert) => {
                 let mut store = TrustAnchors::store();
-                debug!("Adding trust {:?}", cert);
+                trace!("adding certificate to trust anchors {:?}", cert);
                 if store.add_cert(cert).is_err() {
                     error!("unable to add certificate to trust anchors");
                     return None
