@@ -1,7 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-use futures::{prelude::*, select_biased};
+use futures::prelude::*;
 use linkerd_error::Recover;
 use linkerd_stack::{Service, ServiceExt};
 use std::task::{Context, Poll};
@@ -78,44 +78,44 @@ where
         S::Future: Send,
     {
         loop {
-            tracing::trace!("Awaiting readiness");
+            trace!("Awaiting readiness");
             let status = match self.inner.ready().await {
                 Ok(svc) => {
-                    tracing::trace!("Issuing request");
+                    trace!("Issuing request");
                     match svc.call(target.clone()).await {
                         Ok(mut rsp) => match Self::next(rsp.get_mut()).await {
                             Ok(init) => return Ok((init, rsp)),
                             Err(status) => {
-                                tracing::debug!(%status, "Stream failed");
+                                debug!(%status, "Stream failed");
                                 status
                             }
                         },
                         Err(status) => {
-                            tracing::debug!(%status, "Request failed");
+                            debug!(%status, "Request failed");
                             status
                         }
                     }
                 }
                 Err(status) => {
-                    tracing::debug!(%status, "Service did not become ready");
+                    debug!(%status, "Service did not become ready");
                     status
                 }
             };
 
             let mut new_backoff = self.recover.recover(status)?;
-            tracing::debug!("Recovering");
+            debug!("Recovering");
             if let Some(b) = backoff.as_mut() {
                 // If there's a already a backoff, wait for it; but if the stream ends, then the
                 // newly-obtained backoff is used.
                 if b.next().await.is_none() {
-                    tracing::trace!("Old backoff exhausted; using new backoff");
+                    trace!("Old backoff exhausted; using new backoff");
                     backoff = new_backoff.next().await.map(move |()| new_backoff);
                 }
             } else {
-                tracing::trace!("Using new backoff");
+                trace!("Using new backoff");
                 backoff = new_backoff.next().await.map(move |()| new_backoff);
             }
-            tracing::trace!("Backed off");
+            trace!("Backed off");
         }
     }
 
@@ -133,16 +133,18 @@ where
         S::Future: Send,
     {
         loop {
-            select_biased! {
+            tokio::select! {
+                biased;
+
                 // If all of the receivers are dropped, stop the task.
-                _ = tx.closed().fuse() => {
+                _ = tx.closed() => {
                     trace!("Receivers dropped");
                     return;
                 },
 
                 // Otherwise, continue to get new profile versions and update the watch. The stream
                 // may be re-instantiated each time
-                res = self.recovering_next(&target, &mut stream).fuse() => match res {
+                res = self.recovering_next(&target, &mut stream) => match res {
                     Ok(profile) => {
                         let _ = tx.send(profile);
                     }
@@ -284,7 +286,7 @@ mod tests {
                 time::Duration::from_secs(2),
             ))
             .map(|_| {
-                tracing::debug!("backoff fired");
+                debug!("backoff fired");
             }))
         };
         let watch = StreamWatch::new(recover, map_err.layer(mock));

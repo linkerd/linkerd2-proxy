@@ -15,7 +15,7 @@ futures = "0.3.15"
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 tonic = { version = "0.4", default-features = false }
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tracing = "0.1"
 
 [dev-dependencies]
