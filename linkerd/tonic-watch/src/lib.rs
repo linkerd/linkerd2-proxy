@@ -100,14 +100,15 @@ where
 
             let mut new_backoff = self.recover.recover(status)?;
             debug!("Recovering");
-            if let Some(b) = backoff.as_mut() {
+            let use_new_backoff = if let Some(b) = backoff.as_mut() {
                 // If there's a already a backoff, wait for it; but if the stream ends, then the
                 // newly-obtained backoff is used.
-                if b.next().await.is_none() {
-                    trace!("Old backoff exhausted; using new backoff");
-                    backoff = new_backoff.next().await.map(move |()| new_backoff);
-                }
+                trace!("Using old backoff");
+                b.next().await.is_none()
             } else {
+                true
+            };
+            if use_new_backoff {
                 trace!("Using new backoff");
                 backoff = new_backoff.next().await.map(move |()| new_backoff);
             }
