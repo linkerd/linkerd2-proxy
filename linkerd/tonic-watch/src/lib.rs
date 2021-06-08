@@ -217,10 +217,25 @@ where
 mod tests {
     use super::*;
     use linkerd_error::{recover, Error};
-    use linkerd_stack::{layer::Layer, MapErrLayer};
+    use linkerd_stack::MapErr;
     use tokio::{sync::mpsc, time};
     use tokio_stream::wrappers::{IntervalStream, ReceiverStream};
     use tower_test::mock;
+
+    fn mk_svc<T, U>() -> (
+        MapErr<
+            mock::Mock<T, InnerRsp<U>>,
+            impl Clone + Send + Sync + 'static + Fn(Error) -> tonic::Status,
+        >,
+        mock::Handle<T, InnerRsp<U>>,
+    ) {
+        let (svc, h) = mock::pair::<T, InnerRsp<U>>();
+        let svc = MapErr::new(svc, |e: Error| match e.downcast_ref::<tonic::Status>() {
+            Some(status) => tonic::Status::new(status.code(), status.to_string()),
+            None => tonic::Status::internal(e.to_string()),
+        });
+        (svc, h)
+    }
 
     #[tokio::test(flavor = "current_thread")]
     async fn watch_reconnect() {
@@ -228,12 +243,8 @@ mod tests {
 
         time::pause();
 
-        let (mock, mut handle) = mock::pair::<(), InnerRsp<u16>>();
-        let map_err = MapErrLayer::new(|e: Error| match e.downcast_ref::<tonic::Status>() {
-            Some(status) => tonic::Status::new(status.code(), status.to_string()),
-            None => tonic::Status::internal(e.to_string()),
-        });
-        let watch = StreamWatch::new(recover::Immediately::default(), map_err.layer(mock));
+        let (mock, mut handle) = mk_svc::<(), u16>();
+        let watch = StreamWatch::new(recover::Immediately::default(), mock);
 
         handle.allow(1);
         let (tx0, rx0) = mpsc::channel::<Result<u16>>(3);
@@ -258,9 +269,8 @@ mod tests {
         });
         let (_, _) = tokio::join!(tx1.send(Ok(345u16)), send_req);
 
-        // We need to give the background task an opportunity to process the update so this yields
-        // control. The actual sleep duration is unimportant (and time is mocked, anyway).
-        time::sleep(time::Duration::from_secs(1)).await;
+        // We need to give the background task an opportunity to process the update.
+        tokio::task::yield_now().await;
 
         assert_eq!(*rx.borrow(), 345);
     }
@@ -271,11 +281,7 @@ mod tests {
 
         time::pause();
 
-        let (mock, mut handle) = mock::pair::<(), InnerRsp<u16>>();
-        let map_err = MapErrLayer::new(|e: Error| match e.downcast_ref::<tonic::Status>() {
-            Some(status) => tonic::Status::new(status.code(), status.to_string()),
-            None => tonic::Status::internal(e.to_string()),
-        });
+        let (svc, mut handle) = mk_svc::<(), u16>();
         let recover = |_: tonic::Status| {
             Ok(IntervalStream::new(time::interval_at(
                 time::Instant::now() + time::Duration::from_secs(2),
@@ -285,7 +291,7 @@ mod tests {
                 debug!("backoff fired");
             }))
         };
-        let watch = StreamWatch::new(recover, map_err.layer(mock));
+        let watch = StreamWatch::new(recover, svc);
 
         handle.allow(1);
         let send_err = handle.next_request().map(move |req| {
