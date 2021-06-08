@@ -1,6 +1,6 @@
 use crate::{ClientId, HasNegotiatedProtocol, NegotiatedProtocolRef};
 use linkerd_identity::{ClientConfig, Name, ServerConfig};
-use linkerd_io::{self as io, AsyncRead, AsyncWrite, ErrorKind, PeerAddr, ReadBuf, Result};
+use linkerd_io::{self as io, AsyncRead, AsyncWrite, PeerAddr, ReadBuf, Result};
 use std::net::SocketAddr;
 use std::{
     pin::Pin,
@@ -87,7 +87,9 @@ impl TlsConnector {
         let mut s = TlsStream::new(ssl, stream);
         match Pin::new(&mut s.0).connect().await {
             Ok(_) => Ok(s),
-            Err(err) => Err(io::Error::new(ErrorKind::Other, err)),
+            Err(err) => Err(err
+                .into_io_error()
+                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))),
         }
     }
     #[cfg(feature = "boring-tls")]
@@ -131,7 +133,7 @@ impl TlsAcceptor {
     fn new(conf: Arc<ServerConfig>) -> Result<Self> {
         debug!("SSL provider version {}", version::version());
         match fips::enable(true) {
-            Err(err) => warn!("FIPS mode can not be enabled {:?}", err),
+            Err(err) => warn!("FIPS mode can not be enabled {}", err),
             _ => debug!("FIPS mode is enabled"),
         }
 
@@ -179,7 +181,9 @@ impl TlsAcceptor {
 
         match Pin::new(&mut s.0).accept().await {
             Ok(_) => Ok(s),
-            Err(err) => Err(io::Error::new(ErrorKind::Other, err)),
+            Err(err) => Err(err
+                .into_io_error()
+                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))),
         }
     }
     #[cfg(feature = "boring-tls")]

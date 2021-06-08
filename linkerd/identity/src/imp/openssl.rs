@@ -62,9 +62,9 @@ impl TrustAnchors {
             Ok(cert) => {
                 let mut store = TrustAnchors::store();
                 trace!("adding certificate to trust anchors {:?}", cert);
-                if let Err(err) =  store.add_cert(cert) {
+                if let Err(err) = store.add_cert(cert) {
                     error!("unable to add certificate to trust anchors, {}", err);
-                    return None
+                    return None;
                 }
 
                 Some(Self(Arc::new(store.build())))
@@ -175,7 +175,7 @@ impl CrtKey {
 
 impl fmt::Debug for CrtKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        f.debug_struct("CrtKey")
+        f.debug_struct("openssl::CrtKey")
             .field("id", &self.id)
             .field("expiry", &self.expiry)
             .finish()
@@ -228,7 +228,7 @@ pub struct ClientConfig {
 
 impl fmt::Debug for ClientConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ClientConfig")
+        f.debug_struct("openssl::ClientConfig")
             .field("protocols", &self.protocols)
             .finish()
     }
@@ -309,7 +309,7 @@ impl ServerConfig {
 
 impl fmt::Debug for ServerConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ServerConfig")
+        f.debug_struct("openssl::ServerConfig")
             .field("alpn_protocols", &self.alpn_protocols)
             .field("key", &self.key)
             .finish()
