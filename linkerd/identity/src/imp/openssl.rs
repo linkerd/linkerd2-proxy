@@ -235,7 +235,7 @@ impl fmt::Debug for ClientConfig {
 }
 
 impl ClientConfig {
-    pub fn new(
+    fn new(
         protocols: Vec<Vec<u8>>,
         root_certs: Arc<X509Store>,
         cert: Option<Crt>,
@@ -275,7 +275,7 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    pub fn new(
+    fn new(
         alpn_protocols: Vec<Vec<u8>>,
         root_certs: Arc<X509Store>,
         cert: Option<Crt>,
