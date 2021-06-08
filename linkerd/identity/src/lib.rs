@@ -265,20 +265,6 @@ impl fmt::Display for LocalId {
     }
 }
 
-// === impl InvalidCrt ===
-
-// impl fmt::Display for InvalidCrt {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         self.0.fmt(f)
-//     }
-// }
-//
-// impl stdErr::Error for InvalidCrt {
-//     fn source(&self) -> Option<&(dyn stdErr::Error + 'static)> {
-//         self.0.source()
-//     }
-// }
-
 #[derive(Clone)]
 pub struct ClientConfig(pub imp::ClientConfig);
 
