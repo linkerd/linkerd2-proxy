@@ -158,7 +158,6 @@ where
     ///
     /// If the stream or lookup fails in a recoverable way, back-offs are applied and `stream` is
     /// updated to point at the updated stream..
-    #[inline]
     async fn recovering_next<T, U>(&mut self, target: &T, stream: &mut InnerStream<U>) -> Result<U>
     where
         T: Clone + Send + Sync + 'static,
@@ -180,7 +179,6 @@ where
 
     // Reads the next profile off of the given stream and, if it succeeds, returns the profile and
     // the stream.
-    #[inline]
     async fn next<U>(stream: &mut InnerStream<U>) -> Result<U> {
         stream
             .try_next()
