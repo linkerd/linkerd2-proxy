@@ -136,18 +136,9 @@ where
         let mut client = self.client.clone();
         Box::pin(async move {
             let rsp = client.get_profile(req).await?;
-
-            // XXX `tonic::Response` provides no means to extract metadata so we must clone.
-            let metadata = rsp.metadata().clone();
-
-            let stream: InnerStream = Box::pin(
-                rsp.into_inner()
-                    .map_ok(move |p| proto::convert_profile(p, addr.port())),
-            );
-
-            let mut rsp = tonic::Response::new(stream);
-            *rsp.metadata_mut() = metadata;
-            Ok(rsp)
+            Ok(rsp.map(|s| {
+                Box::pin(s.map_ok(move |p| proto::convert_profile(p, addr.port()))) as InnerStream
+            }))
         })
     }
 }

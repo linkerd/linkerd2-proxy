@@ -51,17 +51,13 @@ where
         // Get an update and stream or return None.
         let (init, rsp) = self.init(&target, None).await?;
 
-        // XXX Response::into_parts isn't public.
-        let metadata = rsp.metadata().clone();
-
-        // Spawn a background task to keep the profile watch up-to-date until all copies of `rx`
-        // have dropped.
-        let (tx, rx) = watch::channel(init);
-        tokio::spawn(self.publish_updates(target, tx, rsp.into_inner()));
-
-        let mut rsp = tonic::Response::new(rx);
-        *rsp.metadata_mut() = metadata;
-        Ok(rsp)
+        Ok(rsp.map(move |inner| {
+            // Spawn a background task to keep the profile watch up-to-date until all copies of `rx`
+            // have dropped.
+            let (tx, rx) = watch::channel(init);
+            tokio::spawn(self.publish_updates(target, tx, inner));
+            rx
+        }))
     }
 
     /// Initiates a lookup stream and obtains the first profile from it.
