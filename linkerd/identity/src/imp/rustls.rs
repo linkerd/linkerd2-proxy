@@ -132,9 +132,7 @@ impl TrustAnchors {
 
 impl fmt::Debug for TrustAnchors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("TrustAnchors")
-            .field(self.0.as_ref())
-            .finish()
+        f.debug_tuple("rustls::TrustAnchors").finish()
     }
 }
 

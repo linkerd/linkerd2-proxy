@@ -25,7 +25,8 @@ impl Name {
 
 impl fmt::Debug for Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        fmt::Display::fmt(self, f)
+        let s: &str = AsRef::<str>::as_ref(&self.0);
+        s.fmt(f)
     }
 }
 
