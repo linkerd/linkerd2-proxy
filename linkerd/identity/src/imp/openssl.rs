@@ -64,7 +64,7 @@ impl TrustAnchors {
                 trace!("adding certificate to trust anchors {:?}", cert);
                 if store.add_cert(cert).is_err() {
                     error!("unable to add certificate to trust anchors");
-                    return None
+                    return None;
                 }
 
                 Some(Self(Arc::new(store.build())))
@@ -72,8 +72,8 @@ impl TrustAnchors {
             Err(err) => {
                 error!("unable to construct trust anchor {}", err);
                 None
-            },
-        }
+            }
+        };
     }
 
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
@@ -251,7 +251,11 @@ impl ClientConfig {
     pub fn empty() -> Self {
         ClientConfig::new(
             Vec::new(),
-            Arc::new(X509StoreBuilder::new().expect("unable to construct root certs").build()),
+            Arc::new(
+                X509StoreBuilder::new()
+                    .expect("unable to construct root certs")
+                    .build(),
+            ),
             None,
             None,
         )
@@ -288,7 +292,11 @@ impl ServerConfig {
     pub fn empty() -> Self {
         ServerConfig::new(
             Vec::new(),
-            Arc::new(X509StoreBuilder::new().expect("unable to construct root certs").build()),
+            Arc::new(
+                X509StoreBuilder::new()
+                    .expect("unable to construct root certs")
+                    .build(),
+            ),
             None,
             None,
         )
