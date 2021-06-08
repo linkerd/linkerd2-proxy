@@ -78,13 +78,11 @@ impl TrustAnchors {
 
     pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
         let cert = crt.cert.clone();
-        if cert
+        if !cert
             .subject_alt_names()
-            .unwrap()
-            .iter()
-            .filter(|n| n.dnsname().expect("unable to convert to dns name") == crt.name().as_ref())
-            .next()
-            .is_none()
+            .into_iter()
+            .flat_map(|alt_names| alt_names.into_iter())
+            .any(|n| n.dnsname().expect("unable to convert to dns name") == crt.id.0.as_ref())
         {
             return Err(InvalidCrt::SubjectAltName(crt.id));
         }
