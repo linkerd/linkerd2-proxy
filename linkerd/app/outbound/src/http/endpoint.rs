@@ -3,7 +3,7 @@ use crate::Outbound;
 use linkerd_app_core::{
     classify, config, http_tracing, metrics,
     proxy::{http, tap},
-    reconnect, svc, tls, Error, CANONICAL_DST_HEADER,
+    svc, tls, Error, CANONICAL_DST_HEADER,
 };
 use tokio::io;
 
@@ -40,12 +40,10 @@ impl<C> Outbound<C> {
         // HTTP/1.x fallback is supported as needed.
         let stack = connect
             .push(http::client::layer(h1_settings, h2_settings))
+            .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
             .check_service::<T>()
-            // Re-establishes a connection when the client fails.
-            .push(reconnect::layer({
-                let backoff = backoff;
-                move |_| Ok(backoff.stream())
-            }))
+            .into_new_service()
+            .push_new_reconnect(backoff)
             .push(tap::NewTapHttp::layer(rt.tap.clone()))
             .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(http_tracing::client(

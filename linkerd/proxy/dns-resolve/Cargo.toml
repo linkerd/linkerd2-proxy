@@ -10,7 +10,7 @@ Service Dns Resolutions for the proxy
 """
 
 [dependencies]
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-addr = { path = "../../addr" }
 linkerd-dns = { path = "../../dns" }

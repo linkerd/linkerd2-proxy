@@ -1,6 +1,6 @@
 use crate::{
-    classify, config, control, dns, metrics, proxy::http, reconnect, svc, tls,
-    transport::ConnectTcp, Addr, Error,
+    classify, config, control, dns, metrics, proxy::http, svc, tls, transport::ConnectTcp, Addr,
+    Error,
 };
 use futures::future::Either;
 use std::fmt;
@@ -55,11 +55,6 @@ impl Config {
     {
         let addr = self.addr;
 
-        let connect_backoff = {
-            let backoff = self.connect.backoff;
-            move |_| Ok(backoff.stream())
-        };
-
         // When a DNS resolution fails, log the error and use the TTL, if there
         // is one, to drive re-resolution attempts.
         let resolve_backoff = {
@@ -89,7 +84,9 @@ impl Config {
             .push(tls::Client::layer(identity))
             .push_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push(reconnect::layer(connect_backoff))
+            .push_on_response(svc::MapErrLayer::new(Into::into))
+            .into_new_service()
+            .push_new_reconnect(self.connect.backoff)
             // Ensure individual endpoints are driven to readiness so that the balancer need not
             // drive them all directly.
             .push_on_response(svc::layer::mk(svc::SpawnReady::new))

@@ -1109,7 +1109,7 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-stack",
  "pin-project",
- "socket2 0.3.19",
+ "socket2 0.4.0",
  "tokio",
  "tokio-stream",
  "tower",
@@ -1299,10 +1299,11 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.18"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?tag=v0.1.18#4c424593d934a22635c06706a3c399d0875a49a1"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=main#453ac1ea2b73fe12bb26a05c2bc6d44eb3d8c77b"
 dependencies = [
  "h2",
  "http",
+ "ipnet",
  "prost",
  "prost-types",
  "tonic",
