@@ -136,20 +136,9 @@ impl fmt::Debug for TrustAnchors {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct InvalidCrt(rustls::TLSError);
-
-impl fmt::Display for InvalidCrt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl error::Error for InvalidCrt {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        self.0.source()
-    }
-}
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct InvalidCrt(#[from] rustls::TLSError);
 
 impl rustls::sign::SigningKey for SigningKey {
     fn choose_scheme(
