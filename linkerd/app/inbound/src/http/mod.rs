@@ -17,7 +17,6 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     dst, errors, http_tracing, identity, io, profiles,
     proxy::{http, tap},
-    reconnect,
     svc::{self, Param},
     Error,
 };
@@ -140,10 +139,9 @@ where
                 config.proxy.connect.h1_settings,
                 config.proxy.connect.h2_settings,
             ))
-            .push(reconnect::layer({
-                let backoff = config.proxy.connect.backoff;
-                move |_| Ok(backoff.stream())
-            }))
+            .push_on_response(svc::MapErrLayer::new(Into::into))
+            .into_new_service()
+            .push_new_reconnect(config.proxy.connect.backoff)
             .check_new_service::<HttpEndpoint, http::Request<_>>();
 
         let target = endpoint

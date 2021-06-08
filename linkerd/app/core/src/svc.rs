@@ -3,6 +3,9 @@
 pub use crate::proxy::http;
 use crate::{cache, Error};
 pub use linkerd_concurrency_limit::ConcurrencyLimit;
+use linkerd_error::Recover;
+use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
+pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
     self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
     NewRouter, NewService, Param, Predicate, UnwrapOr,
@@ -26,6 +29,9 @@ pub use tower::{
     Service, ServiceExt,
 };
 
+#[derive(Copy, Clone, Debug)]
+pub struct AlwaysReconnect(ExponentialBackoff);
+
 pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 
 pub type BoxHttp<B = http::BoxBody> =
@@ -47,6 +53,8 @@ pub fn stack<S>(inner: S) -> Stack<S> {
     Stack(inner)
 }
 
+// === impl IdentityProxy ===
+
 pub fn proxies() -> Stack<IdentityProxy> {
     Stack(IdentityProxy(()))
 }
@@ -59,6 +67,8 @@ impl<T> NewService<T> for IdentityProxy {
     fn new_service(&mut self, _: T) -> Self::Service {}
 }
 
+// === impl Layers ===
+
 #[allow(dead_code)]
 impl<L> Layers<L> {
     pub fn push<O>(self, outer: O) -> Layers<Pair<L, O>> {
@@ -67,13 +77,6 @@ impl<L> Layers<L> {
 
     pub fn push_map_target<M>(self, map_target: M) -> Layers<Pair<L, stack::MapTargetLayer<M>>> {
         self.push(stack::MapTargetLayer::new(map_target))
-    }
-
-    /// Wraps an inner `MakeService` to be a `NewService`.
-    pub fn push_into_new_service(
-        self,
-    ) -> Layers<Pair<L, stack::new_service::FromMakeServiceLayer>> {
-        self.push(stack::new_service::FromMakeServiceLayer::default())
     }
 
     /// Buffers requests in an mpsc, spawning the inner service onto a dedicated task.
@@ -104,6 +107,8 @@ impl<M, L: Layer<M>> Layer<M> for Layers<L> {
         self.0.layer(inner)
     }
 }
+
+// === impl Stack ===
 
 #[allow(dead_code)]
 impl<S> Stack<S> {
@@ -137,7 +142,14 @@ impl<S> Stack<S> {
 
     /// Wraps an inner `MakeService` to be a `NewService`.
     pub fn into_new_service(self) -> Stack<stack::new_service::FromMakeService<S>> {
-        self.push(stack::new_service::FromMakeServiceLayer::default())
+        self.push(stack::new_service::FromMakeService::layer())
+    }
+
+    pub fn push_new_reconnect(
+        self,
+        backoff: ExponentialBackoff,
+    ) -> Stack<NewReconnect<AlwaysReconnect, S>> {
+        self.push(NewReconnect::layer(AlwaysReconnect(backoff)))
     }
 
     /// Buffer requests when when the next layer is out of capacity.
@@ -329,5 +341,15 @@ where
 
     fn call(&mut self, t: T) -> Self::Future {
         self.0.call(t)
+    }
+}
+
+// === impl AlwaysReconnect ===
+
+impl<E: Into<Error>> Recover<E> for AlwaysReconnect {
+    type Backoff = ExponentialBackoffStream;
+
+    fn recover(&self, _: E) -> Result<Self::Backoff, E> {
+        Ok(self.0.stream())
     }
 }

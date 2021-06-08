@@ -13,3 +13,10 @@ futures = { version = "0.3", default-features = false }
 tower = { version = "0.4.7", default-features = false }
 tracing = "0.1.23"
 pin-project = "1"
+
+[dev-dependencies]
+linkerd-tracing = { path = "../tracing" }
+tokio = { version = "1", features = ["macros", "rt", "time"] }
+tokio-stream = { version = "0.1", features = ["time"] }
+tokio-test = "0.4"
+tower-test = "0.4"

@@ -23,7 +23,6 @@ pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_identity as identity;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
-pub use linkerd_reconnect as reconnect;
 pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
