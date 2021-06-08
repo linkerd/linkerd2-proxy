@@ -62,9 +62,9 @@ impl TrustAnchors {
             Ok(cert) => {
                 let mut store = TrustAnchors::store();
                 trace!("adding certificate to trust anchors {:?}", cert);
-                if store.add_cert(cert).is_err() {
-                    error!("unable to add certificate to trust anchors");
-                    return None;
+                if let Err(err) =  store.add_cert(cert) {
+                    error!("unable to add certificate to trust anchors, {}", err);
+                    return None
                 }
 
                 Some(Self(Arc::new(store.build())))
