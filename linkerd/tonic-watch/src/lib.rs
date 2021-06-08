@@ -143,6 +143,7 @@ where
                 // may be re-instantiated each time
                 res = self.recovering_next(&target, &mut stream) => match res {
                     Ok(profile) => {
+                        // If sending the update fails, then we'll just look and hit the closed case above.
                         let _ = tx.send(profile);
                     }
                     Err(status) => {
