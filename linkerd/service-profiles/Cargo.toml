@@ -21,6 +21,7 @@ linkerd-error = { path = "../error" }
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["destination", "client"] }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
+linkerd-tonic-watch = { path = "../tonic-watch" }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.0.0"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }

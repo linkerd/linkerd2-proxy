@@ -7,8 +7,8 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Fail, Filter, MapTargetLayer,
-    NewRouter, NewService, Param, Predicate, UnwrapOr,
+    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, Fail, Filter,
+    MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
@@ -21,13 +21,7 @@ use tower::{
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
-pub use tower::{
-    layer::Layer,
-    service_fn as mk,
-    spawn_ready::SpawnReady,
-    util::{Either, MapErrLayer},
-    Service, ServiceExt,
-};
+pub use tower::{layer::Layer, service_fn as mk, spawn_ready::SpawnReady, Service, ServiceExt};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AlwaysReconnect(ExponentialBackoff);

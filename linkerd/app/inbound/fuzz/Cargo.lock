@@ -1143,6 +1143,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-proxy-api-resolve",
  "linkerd-stack",
+ "linkerd-tonic-watch",
  "linkerd2-proxy-api",
  "pin-project",
  "rand",
@@ -1233,6 +1234,18 @@ dependencies = [
  "tracing",
  "untrusted",
  "webpki",
+]
+
+[[package]]
+name = "linkerd-tonic-watch"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-error",
+ "linkerd-stack",
+ "tokio",
+ "tonic",
+ "tracing",
 ]
 
 [[package]]

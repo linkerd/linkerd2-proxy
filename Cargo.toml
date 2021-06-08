@@ -53,6 +53,7 @@ members = [
     "linkerd/stack/tracing",
     "linkerd/system",
     "linkerd/timeout",
+    "linkerd/tonic-watch",
     "linkerd/tls",
     "linkerd/tracing",
     "linkerd2-proxy",
