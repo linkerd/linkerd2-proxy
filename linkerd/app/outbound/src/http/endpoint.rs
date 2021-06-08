@@ -43,7 +43,7 @@ impl<C> Outbound<C> {
             .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
             .check_service::<T>()
             .into_new_service()
-            .push(svc::NewReconnect::layer(move |_| Ok(backoff.stream())))
+            .push_new_reconnect(backoff)
             .push(tap::NewTapHttp::layer(rt.tap.clone()))
             .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
             .push_on_response(http_tracing::client(

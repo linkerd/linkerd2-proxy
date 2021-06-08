@@ -141,10 +141,7 @@ where
             ))
             .push_on_response(svc::MapErrLayer::new(Into::into))
             .into_new_service()
-            .push(svc::NewReconnect::layer({
-                let backoff = config.proxy.connect.backoff;
-                move |_| Ok(backoff.stream())
-            }))
+            .push_new_reconnect(config.proxy.connect.backoff)
             .check_new_service::<HttpEndpoint, http::Request<_>>();
 
         let target = endpoint

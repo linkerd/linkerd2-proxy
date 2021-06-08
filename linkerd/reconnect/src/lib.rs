@@ -45,11 +45,12 @@ enum State<B, S> {
 // === impl NewReconnect ===
 
 impl<R: Clone, N> NewReconnect<R, N> {
+    pub fn new(recover: R, inner: N) -> Self {
+        Self { inner, recover }
+    }
+
     pub fn layer(recover: R) -> impl layer::Layer<N, Service = Self> + Clone {
-        layer::mk(move |inner| NewReconnect {
-            inner,
-            recover: recover.clone(),
-        })
+        layer::mk(move |inner| Self::new(recover.clone(), inner))
     }
 }
 

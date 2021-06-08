@@ -86,10 +86,7 @@ impl Config {
             .push(self::client::layer())
             .push_on_response(svc::MapErrLayer::new(Into::into))
             .into_new_service()
-            .push(svc::NewReconnect::layer({
-                let backoff = self.connect.backoff;
-                move |_| Ok(backoff.stream())
-            }))
+            .push_new_reconnect(self.connect.backoff)
             // Ensure individual endpoints are driven to readiness so that the balancer need not
             // drive them all directly.
             .push_on_response(svc::layer::mk(svc::SpawnReady::new))
