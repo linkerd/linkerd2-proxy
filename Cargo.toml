@@ -63,7 +63,7 @@ members = [
 [profile.dev]
 debug = false
 [profile.test]
-debug = true
+debug = false
 
 [patch.crates-io]
 trust-dns-proto = { git = "https://github.com/bluejekyll/trust-dns", branch = "main" }
