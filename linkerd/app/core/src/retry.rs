@@ -7,7 +7,6 @@ use futures::future;
 use http_body::Body;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_stack::Param;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use tower::retry::budget::Budget;
 
@@ -17,21 +16,21 @@ pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
     NewRetryLayer::new(NewRetry::new(metrics))
 }
 
-pub trait CloneRequest<Req> {
-    fn clone_request(req: &Req) -> Option<Req>;
+pub trait CloneRequest<B> {
+    fn clone_request(req: &http::Request<B>) -> Option<http::Request<B>>;
 }
 
 #[derive(Clone, Debug)]
 pub struct NewRetry<C = WithBody> {
     metrics: HttpRouteRetry,
-    _clone_request: PhantomData<C>,
+    clone_request: C,
 }
 
 pub struct Retry<C = WithBody> {
     metrics: Handle,
     budget: Arc<Budget>,
     response_classes: profiles::http::ResponseClasses,
-    _clone_request: PhantomData<C>,
+    clone_request: C,
 }
 
 #[derive(Clone, Debug)]
@@ -41,19 +40,22 @@ impl NewRetry {
     pub fn new(metrics: HttpRouteRetry) -> Self {
         Self {
             metrics,
-            _clone_request: PhantomData,
+            clone_request: WithBody,
         }
     }
 
-    pub fn clone_requests_via<C>(self) -> NewRetry<C> {
+    pub fn clone_requests_via<C>(self, clone_request: C) -> NewRetry<C> {
         NewRetry {
             metrics: self.metrics,
-            _clone_request: PhantomData,
+            clone_request,
         }
     }
 }
 
-impl<C> NewPolicy<Route> for NewRetry<C> {
+impl<C> NewPolicy<Route> for NewRetry<C>
+where
+    C: Clone,
+{
     type Policy = Retry<C>;
 
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
@@ -64,14 +66,14 @@ impl<C> NewPolicy<Route> for NewRetry<C> {
             metrics,
             budget: retries.budget().clone(),
             response_classes: route.route.response_classes().clone(),
-            _clone_request: self._clone_request,
+            clone_request: self.clone_request.clone(),
         })
     }
 }
 
 impl<C, A, B, E> Policy<http::Request<A>, http::Response<B>, E> for Retry<C>
 where
-    C: CloneRequest<http::Request<A>>,
+    C: CloneRequest<A> + Clone,
 {
     type Future = future::Ready<Self>;
 
@@ -108,13 +110,23 @@ where
     }
 }
 
-impl<C> Clone for Retry<C> {
+impl<A, C> CanRetry<A> for Retry<C>
+where
+    C: CanRetry<A>,
+{
+    #[inline]
+    fn can_retry(&self, req: &http::Request<A>) -> bool {
+        self.clone_request.can_retry(req)
+    }
+}
+
+impl<C: Clone> Clone for Retry<C> {
     fn clone(&self) -> Self {
         Self {
             metrics: self.metrics.clone(),
             budget: self.budget.clone(),
             response_classes: self.response_classes.clone(),
-            _clone_request: self._clone_request,
+            clone_request: self.clone_request.clone(),
         }
     }
 }
@@ -126,8 +138,20 @@ impl WithBody {
     pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 }
 
-impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
+impl<B: Body + Unpin> CloneRequest<ReplayBody<B>> for WithBody {
     fn clone_request(req: &http::Request<ReplayBody<B>>) -> Option<http::Request<ReplayBody<B>>> {
+        let mut clone = http::Request::new(req.body().clone());
+        *clone.method_mut() = req.method().clone();
+        *clone.uri_mut() = req.uri().clone();
+        *clone.headers_mut() = req.headers().clone();
+        *clone.version_mut() = req.version();
+
+        Some(clone)
+    }
+}
+
+impl<B: Body> CanRetry<B> for WithBody {
+    fn can_retry(&self, req: &http::Request<B>) -> bool {
         let content_length = |req: &http::Request<_>| {
             req.headers()
                 .get(http::header::CONTENT_LENGTH)
@@ -145,7 +169,7 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
                 req.content_length = ?content_length(&req),
                 "not retryable",
             );
-            return None;
+            return false;
         }
 
         tracing::trace!(
@@ -153,13 +177,6 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
             req.content_length = ?content_length(&req),
             "retryable",
         );
-
-        let mut clone = http::Request::new(req.body().clone());
-        *clone.method_mut() = req.method().clone();
-        *clone.uri_mut() = req.uri().clone();
-        *clone.headers_mut() = req.headers().clone();
-        *clone.version_mut() = req.version();
-
-        Some(clone)
+        true
     }
 }

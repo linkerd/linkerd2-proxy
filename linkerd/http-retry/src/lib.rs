@@ -43,6 +43,12 @@ pub struct Retry<P, S> {
     policy: Option<P>,
     inner: S,
 }
+
+pub trait CanRetry<B> {
+    /// Returns `true` if a request can be retried.
+    fn can_retry(&self, req: &http::Request<B>) -> bool;
+}
+
 #[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<R, P, S, B>
 where
@@ -108,7 +114,7 @@ where
 
 impl<R, P, B, S> Proxy<http::Request<B>, S> for Retry<R, P>
 where
-    R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + Clone,
+    R: tower::retry::Policy<http::Request<ReplayBody<B>>, P::Response, Error> + CanRetry<B> + Clone,
     P: Proxy<http::Request<BoxBody>, S> + Clone,
     S: tower::Service<P::Request> + Clone,
     S::Error: Into<Error>,
@@ -125,11 +131,13 @@ where
         trace!(retryable = %self.policy.is_some());
 
         if let Some(policy) = self.policy.as_ref() {
-            let inner = self.inner.clone().wrap_service(svc.clone()).map_request(
-                (|req: http::Request<ReplayBody<B>>| req.map(BoxBody::new)) as fn(_) -> _,
-            );
-            let retry = tower::retry::Retry::new(policy.clone(), inner);
-            return ResponseFuture::Retry(retry.oneshot(req.map(ReplayBody::new)));
+            if policy.can_retry(&req) {
+                let inner = self.inner.clone().wrap_service(svc.clone()).map_request(
+                    (|req: http::Request<ReplayBody<B>>| req.map(BoxBody::new)) as fn(_) -> _,
+                );
+                let retry = tower::retry::Retry::new(policy.clone(), inner);
+                return ResponseFuture::Retry(retry.oneshot(req.map(ReplayBody::new)));
+            }
         }
 
         ResponseFuture::Disabled(self.inner.proxy(svc, req.map(BoxBody::new)))
