@@ -85,12 +85,12 @@ impl TlsConnector {
     {
         let ssl = self.0.configure()?.into_ssl(domain.as_ref())?;
         let mut s = TlsStream::new(ssl, stream);
-        match Pin::new(&mut s.0).connect().await {
-            Ok(_) => Ok(s),
-            Err(err) => Err(err
-                .into_io_error()
-                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))),
-        }
+        Pin::new(&mut s.0).connect().await.map_err(|err| {
+            err.into_io_error()
+                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))
+        })?;
+
+        Ok(s)
     }
     #[cfg(feature = "boring-tls")]
     pub async fn connect<IO>(&self, domain: Name, stream: IO) -> Result<client::TlsStream<IO>>
@@ -176,12 +176,12 @@ impl TlsAcceptor {
         let ssl = Ssl::new(self.0.context())?;
         let mut s = TlsStream::new(ssl, stream);
 
-        match Pin::new(&mut s.0).accept().await {
-            Ok(_) => Ok(s),
-            Err(err) => Err(err
-                .into_io_error()
-                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))),
-        }
+        Pin::new(&mut s.0).accept().await.map_err(|err| {
+            err.into_io_error()
+                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))
+        })?;
+
+        Ok(s)
     }
     #[cfg(feature = "boring-tls")]
     pub async fn accept<IO>(&self, stream: IO) -> Result<server::TlsStream<IO>>
