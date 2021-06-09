@@ -146,7 +146,6 @@ impl Receiver {
     fn targets(&self) -> Vec<Target> {
         self.inner.borrow().targets.clone()
     }
-
 }
 
 // === impl ReceiverStream ===
@@ -156,7 +155,6 @@ impl From<Receiver> for ReceiverStream {
         let inner = tokio_stream::wrappers::WatchStream::new(inner);
         ReceiverStream { inner }
     }
-
 }
 
 impl Stream for ReceiverStream {
