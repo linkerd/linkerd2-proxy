@@ -726,7 +726,7 @@ mod tests {
     fn empty_body_is_always_eos() {
         // If the initial body was empty, every clone should always return
         // `true` from `is_end_stream`.
-        let initial = ReplayBody::new(hyper::Body::empty());
+        let initial = ReplayBody::new(hyper::Body::empty(), 64 * 1024);
         assert!(initial.is_end_stream());
 
         let replay = initial.clone();
@@ -788,7 +788,7 @@ mod tests {
     impl Test {
         fn new() -> Self {
             let (tx, body) = hyper::Body::channel();
-            let initial = ReplayBody::new(body);
+            let initial = ReplayBody::new(body, 64 * 1024);
             let replay = initial.clone();
             Self {
                 tx: Tx(tx),
