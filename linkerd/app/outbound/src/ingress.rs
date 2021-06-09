@@ -97,8 +97,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             .push_request_filter(
                 |(profile, http): (Option<profiles::Receiver>, Http<NameAddr>)| {
                     if let Some(profile) = profile {
-                        let addr = profile.borrow().addr.clone();
-                        if let Some(logical_addr) = addr {
+                        if let Some(logical_addr) = profile.logical_addr() {
                             return Ok(http::Logical {
                                 profile,
                                 logical_addr,

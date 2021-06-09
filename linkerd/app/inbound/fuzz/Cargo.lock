@@ -1132,7 +1132,6 @@ dependencies = [
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
- "async-stream",
  "bytes",
  "futures",
  "http",
@@ -1150,6 +1149,7 @@ dependencies = [
  "regex",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tower",
  "tracing",

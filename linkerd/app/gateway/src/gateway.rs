@@ -63,7 +63,7 @@ where
             None => return Gateway::BadDomain(http.target.name().clone()),
         };
 
-        let logical_addr = match profile.borrow().addr.clone() {
+        let logical_addr = match profile.logical_addr() {
             Some(addr) => addr,
             None => return Gateway::BadDomain(http.target.name().clone()),
         };

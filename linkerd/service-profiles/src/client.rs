@@ -73,7 +73,10 @@ where
         let w = self.watch.clone();
         Box::pin(async move {
             match w.spawn_watch(addr).await {
-                Ok(rsp) => Ok(Some(rsp.into_inner())),
+                Ok(rsp) => {
+                    let rx = rsp.into_inner();
+                    Ok(Some(rx.into()))
+                }
                 Err(status) => {
                     debug!(%status, "Ignoring profile");
                     Ok::<_, Never>(None)
