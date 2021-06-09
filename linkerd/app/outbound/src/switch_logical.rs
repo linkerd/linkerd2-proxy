@@ -36,28 +36,21 @@ impl<S> Outbound<S> {
             .push_switch(
                 move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
                     if let Some(rx) = profile {
-                        let profiles::Profile {
-                            ref addr,
-                            ref endpoint,
-                            opaque_protocol,
-                            ..
-                        } = *rx.borrow();
-
                         // If the profile provides an endpoint, then the target is single endpoint and
                         // not a logical/load-balanced service.
-                        if let Some((addr, metadata)) = endpoint.clone() {
+                        if let Some((addr, metadata)) = rx.endpoint() {
                             return Ok(svc::Either::A(Endpoint::from_metadata(
                                 addr,
                                 metadata,
                                 no_tls_reason,
-                                opaque_protocol,
+                                rx.is_opaque_protocol(),
                             )));
                         }
 
                         // Otherwise, if the profile provides a (named) logical address, then we build a
                         // logical stack so we apply routes, traffic splits, and load balancing.
-                        if let Some(logical_addr) = addr.clone() {
-                            return Ok(svc::Either::B(Logical::new(logical_addr, rx.clone())));
+                        if let Some(logical_addr) = rx.logical_addr() {
+                            return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
                         }
                     }
 
@@ -151,7 +144,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile), orig_dst));
+        let svc = stack.new_service((Some(profile.into()), orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }
@@ -182,7 +175,7 @@ mod tests {
         });
 
         let orig_dst = OrigDstAddr(SocketAddr::new([192, 0, 2, 20].into(), 2020));
-        let svc = stack.new_service((Some(profile), orig_dst));
+        let svc = stack.new_service((Some(profile.into()), orig_dst));
         let (server_io, _client_io) = io::duplex(1);
         svc.oneshot(server_io).await.expect("service must succeed");
     }

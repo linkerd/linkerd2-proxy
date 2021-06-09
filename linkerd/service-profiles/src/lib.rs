@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-use futures::stream::Stream;
+use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
 use linkerd_error::Error;
 use linkerd_proxy_api_resolve::Metadata;
@@ -15,6 +15,7 @@ use std::{
     task::{Context, Poll},
 };
 use thiserror::Error;
+use tokio::sync::watch;
 use tower::util::{Oneshot, ServiceExt};
 
 mod client;
@@ -26,7 +27,15 @@ pub mod split;
 
 pub use self::client::Client;
 
-pub type Receiver = tokio::sync::watch::Receiver<Profile>;
+#[derive(Clone, Debug)]
+pub struct Receiver {
+    inner: tokio::sync::watch::Receiver<Profile>,
+}
+
+#[derive(Debug)]
+struct ReceiverStream {
+    inner: tokio_stream::wrappers::WatchStream<Profile>,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
@@ -113,20 +122,48 @@ where
     }
 }
 
-fn stream_profile(mut rx: Receiver) -> Pin<Box<dyn Stream<Item = Profile> + Send + Sync>> {
-    Box::pin(async_stream::stream! {
-        loop {
-            let val = rx.borrow().clone();
-            yield val;
-            // This is a loop with a return condition rather than a while loop,
-            // because we want to yield the *first* value immediately, rather
-            // than waiting for the profile to change again.
-            if let Err(_) = rx.changed().await {
-                tracing::trace!("profile sender dropped");
-                return;
-            }
-        }
-    })
+// === impl Receiver ===
+
+impl From<watch::Receiver<Profile>> for Receiver {
+    fn from(inner: watch::Receiver<Profile>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Receiver {
+    pub fn logical_addr(&self) -> Option<LogicalAddr> {
+        self.inner.borrow().addr.clone()
+    }
+
+    pub fn is_opaque_protocol(&self) -> bool {
+        self.inner.borrow().opaque_protocol
+    }
+
+    pub fn endpoint(&self) -> Option<(SocketAddr, Metadata)> {
+        self.inner.borrow().endpoint.clone()
+    }
+
+    fn targets(&self) -> Vec<Target> {
+        self.inner.borrow().targets.clone()
+    }
+}
+
+// === impl ReceiverStream ===
+
+impl From<Receiver> for ReceiverStream {
+    fn from(Receiver { inner }: Receiver) -> Self {
+        let inner = tokio_stream::wrappers::WatchStream::new(inner);
+        ReceiverStream { inner }
+    }
+}
+
+impl Stream for ReceiverStream {
+    type Item = Profile;
+
+    #[inline]
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.inner).poll_next(cx)
+    }
 }
 
 // === impl LookupAddr ===
