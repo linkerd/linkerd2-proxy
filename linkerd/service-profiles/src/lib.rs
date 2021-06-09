@@ -160,6 +160,7 @@ impl From<Receiver> for ReceiverStream {
 impl Stream for ReceiverStream {
     type Item = Profile;
 
+    #[inline]
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Pin::new(&mut self.inner).poll_next(cx)
     }
