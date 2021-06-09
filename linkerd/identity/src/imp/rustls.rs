@@ -2,9 +2,9 @@ use crate::{LocalId, Name};
 use ring::error::KeyRejected;
 use ring::rand;
 use ring::signature::EcdsaKeyPair;
+use std::fmt;
 use std::sync::Arc;
 use std::time::SystemTime;
-use std::fmt;
 use thiserror::Error;
 use tracing::{debug, warn};
 
