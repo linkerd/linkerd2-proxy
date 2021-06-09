@@ -140,12 +140,12 @@ mod tests {
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
-        let (_tx, profile) = tokio::sync::watch::channel(Profile {
+        let (_tx, rx) = tokio::sync::watch::channel(Profile {
             addr: Some(logical_addr.clone()),
             ..Default::default()
         });
         let logical = Logical {
-            profile,
+            profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
         };
@@ -203,12 +203,12 @@ mod tests {
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
-        let (_tx, profile) = tokio::sync::watch::channel(Profile {
+        let (_tx, rx) = tokio::sync::watch::channel(Profile {
             addr: Some(logical_addr.clone()),
             ..Default::default()
         });
         let logical = Logical {
-            profile,
+            profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
         };

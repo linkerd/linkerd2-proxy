@@ -1,4 +1,4 @@
-use crate::{LogicalAddr, Profile, Receiver, Target};
+use crate::{LogicalAddr, Profile, Receiver, ReceiverStream, Target};
 use futures::{prelude::*, ready};
 use indexmap::IndexSet;
 use linkerd_addr::NameAddr;
@@ -32,7 +32,7 @@ pub struct NewSplit<N, S, Req> {
 
 pub struct Split<T, N, S, Req> {
     rng: SmallRng,
-    rx: Pin<Box<dyn Stream<Item = Profile> + Send + Sync>>,
+    rx: ReceiverStream,
     target: T,
     new_service: N,
     distribution: WeightedIndex<u32>,
@@ -62,7 +62,7 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let rx: Receiver = target.param();
-        let mut targets = rx.borrow().targets.clone();
+        let mut targets = rx.targets();
         if targets.is_empty() {
             let LogicalAddr(addr) = target.param();
             targets.push(Target { addr, weight: 1 })
@@ -83,7 +83,7 @@ where
         }
 
         Split {
-            rx: crate::stream_profile(rx),
+            rx: rx.into(),
             target,
             new_service,
             services,
@@ -112,8 +112,8 @@ where
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
-        while let Poll::Ready(Some(up)) = self.rx.as_mut().poll_next(cx) {
-            update = Some(up.clone());
+        while let Poll::Ready(Some(up)) = self.rx.poll_next_unpin(cx) {
+            update = Some(up);
         }
 
         // Every time the profile updates, rebuild the distribution, reusing

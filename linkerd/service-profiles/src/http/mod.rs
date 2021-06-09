@@ -1,4 +1,3 @@
-use crate::Receiver;
 use indexmap::IndexMap;
 use regex::Regex;
 use std::{
