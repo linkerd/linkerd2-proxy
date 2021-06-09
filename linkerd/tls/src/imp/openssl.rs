@@ -98,13 +98,10 @@ impl TlsConnector {
         IO: AsyncRead + AsyncWrite + Unpin,
     {
         let conf = self.0.configure()?;
-        match tokio_boring::connect(conf, domain.as_ref(), stream).await {
-            Ok(ss) => Ok(ss.into()),
-            Err(err) => {
-                let _ = err.ssl();
-                Err(io::Error::new(ErrorKind::Other, "Ble"))
-            }
-        }
+        tokio_boring::connect(conf, domain.as_ref(), stream)
+            .await
+            .map(|ss| ss.into())
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "unable to establish connection"))
     }
 }
 
@@ -191,13 +188,10 @@ impl TlsAcceptor {
     where
         IO: AsyncRead + AsyncWrite + Unpin,
     {
-        match tokio_boring::accept(&self.0, stream).await {
-            Ok(ss) => Ok(ss.into()),
-            Err(err) => {
-                let _ = err.ssl();
-                Err(io::Error::new(ErrorKind::Other, "Ble"))
-            }
-        }
+        tokio_boring::accept(&self.0, stream)
+            .await
+            .map(|ss| ss.into())
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "unable to accept connection"))
     }
 }
 
