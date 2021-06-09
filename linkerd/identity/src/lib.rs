@@ -207,12 +207,6 @@ impl Crt {
     }
 }
 
-impl From<&'_ Crt> for LocalId {
-    fn from(crt: &Crt) -> LocalId {
-        crt.0.id.clone()
-    }
-}
-
 // === CrtKey ===
 #[derive(Clone, Debug)]
 pub struct CrtKey(imp::CrtKey);
@@ -256,6 +250,12 @@ impl From<LocalId> for Name {
 impl AsRef<Name> for LocalId {
     fn as_ref(&self) -> &Name {
         &self.0
+    }
+}
+
+impl From<&'_ Crt> for LocalId {
+    fn from(crt: &Crt) -> LocalId {
+        crt.name().clone().into()
     }
 }
 
