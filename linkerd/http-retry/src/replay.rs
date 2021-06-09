@@ -1,8 +1,10 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use http::HeaderMap;
 use http_body::Body;
+use linkerd_error::Error;
 use parking_lot::Mutex;
 use std::{collections::VecDeque, io::IoSlice, pin::Pin, sync::Arc, task::Context, task::Poll};
+use thiserror::Error;
 
 /// Wraps an HTTP body type and lazily buffers data as it is read from the inner
 /// body.
@@ -33,7 +35,14 @@ pub struct ReplayBody<B> {
 
     /// Should this clone replay trailers from the shared state?
     replay_trailers: bool,
+
+    /// Maxiumum number of bytes to buffer.
+    max_bytes: usize,
 }
+
+#[derive(Debug, Error)]
+#[error("cannot buffer more than {0} bytes")]
+pub struct Capped(usize);
 
 /// Data returned by `ReplayBody`'s `http_body::Body` implementation is either
 /// `Bytes` returned by the initial body, or a list of all `Bytes` chunks
@@ -68,13 +77,14 @@ struct BodyState<B> {
     trailers: Option<HeaderMap>,
     rest: Option<B>,
     is_completed: bool,
+    is_capped: bool,
 }
 
 // === impl ReplayBody ===
 
 impl<B: Body> ReplayBody<B> {
     /// Wraps an initial `Body` in a `ReplayBody`.
-    pub fn new(body: B) -> Self {
+    pub fn new(body: B, max_bytes: usize) -> Self {
         let was_empty = body.is_end_stream();
         Self {
             state: Some(BodyState {
@@ -82,6 +92,7 @@ impl<B: Body> ReplayBody<B> {
                 trailers: None,
                 rest: Some(body),
                 is_completed: false,
+                is_capped: false,
             }),
             shared: Arc::new(SharedState {
                 body: Mutex::new(None),
@@ -90,6 +101,7 @@ impl<B: Body> ReplayBody<B> {
             // The initial `ReplayBody` has nothing to replay
             replay_body: false,
             replay_trailers: false,
+            max_bytes,
         }
     }
 
@@ -109,9 +121,13 @@ impl<B: Body> ReplayBody<B> {
     }
 }
 
-impl<B: Body + Unpin> Body for ReplayBody<B> {
+impl<B> Body for ReplayBody<B>
+where
+    B: Body + Unpin,
+    B::Error: Into<Error>,
+{
     type Data = Data;
-    type Error = B::Error;
+    type Error = Error;
 
     fn poll_data(
         self: Pin<&mut Self>,
@@ -123,16 +139,24 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
             replay_body = this.replay_body,
             buf.has_remaining = state.buf.has_remaining(),
             body.is_completed = state.is_completed,
+            body.is_capped = state.is_capped,
             "Replay::poll_data"
         );
 
         // If we haven't replayed the buffer yet, and its not empty, return the
         // buffered data first.
-        if this.replay_body && state.buf.has_remaining() {
-            tracing::trace!("replaying body");
-            // Don't return the buffered data again on the next poll.
-            this.replay_body = false;
-            return Poll::Ready(Some(Ok(Data::Replay(state.buf.clone()))));
+        if this.replay_body {
+            if state.buf.has_remaining() {
+                tracing::trace!("replaying body");
+                // Don't return the buffered data again on the next poll.
+                this.replay_body = false;
+                return Poll::Ready(Some(Ok(Data::Replay(state.buf.clone()))));
+            }
+
+            if state.is_capped {
+                tracing::trace!("cannot replay buffered body, maximum buffer length reached");
+                return Poll::Ready(Some(Err(Capped(this.max_bytes).into())));
+            }
         }
 
         // If the inner body has previously ended, don't poll it again.
@@ -157,9 +181,30 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
                 tracing::trace!("Initial body completed");
                 state.is_completed = true;
             }
-            return Poll::Ready(
-                opt.map(|ok| ok.map(|data| Data::Initial(state.buf.push_chunk(data)))),
-            );
+            return Poll::Ready(opt.map(|ok| {
+                ok.map(|data| {
+                    // If we have already buffered the maximum number of bytes,
+                    // allow *this* body to continue, but don't buffer any more.
+                    if state.is_capped {
+                        return Data::Initial(data.copy_to_bytes(data.remaining()));
+                    }
+
+                    if state.buf.remaining() + data.remaining() >= this.max_bytes {
+                        tracing::debug!(
+                            max_bytes = this.max_bytes,
+                            "buffered maximum number of bytes, discarding buffer"
+                        );
+                        // discard the buffer
+                        state.buf = Default::default();
+                        state.is_capped = true;
+                        return Data::Initial(data.copy_to_bytes(data.remaining()));
+                    }
+
+                    // Buffer and return the bytes
+                    Data::Initial(state.buf.push_chunk(data))
+                })
+                .map_err(Into::into)
+            }));
         }
 
         // Otherwise, guess we're done!
@@ -194,7 +239,7 @@ impl<B: Body + Unpin> Body for ReplayBody<B> {
                     }
                     tlrs
                 });
-                return Poll::Ready(res);
+                return Poll::Ready(res.map_err(Into::into));
             }
         }
 
@@ -260,6 +305,7 @@ impl<B> Clone for ReplayBody<B> {
             // reading any additional data from the initial body.
             replay_body: true,
             replay_trailers: true,
+            max_bytes: self.max_bytes,
         }
     }
 }

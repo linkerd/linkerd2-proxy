@@ -1026,6 +1026,7 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "pin-project",
+ "thiserror",
  "tokio",
  "tower",
  "tracing",
