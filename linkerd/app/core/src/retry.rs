@@ -4,10 +4,11 @@ use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
+use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd_stack::Param;
+use linkerd_stack::{Either, Param};
 use std::sync::Arc;
-use tower::retry::budget::Budget;
+use tower::retry::{budget::Budget, Policy};
 
 pub use linkerd_http_retry::*;
 
@@ -54,6 +55,37 @@ impl NewPolicy<Route> for NewRetry {
 }
 
 // === impl Retry ===
+
+impl Retry {
+    fn can_retry<A: http_body::Body>(&self, req: &http::Request<A>) -> bool {
+        let content_length = |req: &http::Request<_>| {
+            req.headers()
+                .get(http::header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
+        };
+
+        // Requests without bodies can always be retried, as we will not need to
+        // buffer the body. If the request *does* have a body, retry it if and
+        // only if the request contains a `content-length` header and the
+        // content length is >= 64 kb.
+        let has_body = !req.body().is_end_stream();
+        if has_body && content_length(&req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
+            tracing::trace!(
+                req.has_body = has_body,
+                req.content_length = ?content_length(&req),
+                "not retryable",
+            );
+            return false;
+        }
+
+        tracing::trace!(
+            req.has_body = has_body,
+            req.content_length = ?content_length(&req),
+            "retryable",
+        );
+        true
+    }
+}
 
 impl<A, B, E> Policy<http::Request<A>, http::Response<B>, E> for Retry
 where
@@ -109,33 +141,20 @@ where
     }
 }
 
-impl<A: http_body::Body> CanRetry<A> for Retry {
-    fn can_retry(&self, req: &http::Request<A>) -> bool {
-        let content_length = |req: &http::Request<_>| {
-            req.headers()
-                .get(http::header::CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
-        };
+impl<A, B, E> RetryPolicy<http::Request<A>, http::Response<B>, E> for Retry
+where
+    A: http_body::Body + Unpin,
+    A::Error: Into<Error>,
+{
+    type RetryRequest = http::Request<ReplayBody<A>>;
 
-        // Requests without bodies can always be retried, as we will not need to
-        // buffer the body. If the request *does* have a body, retry it if and
-        // only if the request contains a `content-length` header and the
-        // content length is >= 64 kb.
-        let has_body = !req.body().is_end_stream();
-        if has_body && content_length(&req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
-            tracing::trace!(
-                req.has_body = has_body,
-                req.content_length = ?content_length(&req),
-                "not retryable",
-            );
-            return false;
+    fn prepare_request(
+        &self,
+        req: http::Request<A>,
+    ) -> Either<Self::RetryRequest, http::Request<A>> {
+        if self.can_retry(&req) {
+            return Either::A(req.map(|body| ReplayBody::new(body, MAX_BUFFERED_BYTES)));
         }
-
-        tracing::trace!(
-            req.has_body = has_body,
-            req.content_length = ?content_length(&req),
-            "retryable",
-        );
-        true
+        Either::B(req)
     }
 }

@@ -120,6 +120,7 @@ impl<E> Outbound<E> {
                             .http_route_actual
                             .to_layer::<classify::Response, _>(),
                     )
+                    .push_on_response(http::BoxRequest::layer())
                     // Sets an optional retry policy.
                     .push(retry::layer(rt.metrics.http_route_retry.clone()))
                     // Sets an optional request timeout.
