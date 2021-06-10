@@ -1,6 +1,6 @@
 //! A middleware that boxes HTTP request bodies.
+use crate::BoxBody;
 use linkerd_error::Error;
-use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, Proxy};
 use std::task::{Context, Poll};
 

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tower::retry::{budget::Budget, Policy};
 
 use linkerd_http_retry::ReplayBody;
-use linkerd_retry::RetryPolicy;
+use linkerd_retry::*;
 
 pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
     NewRetryLayer::new(NewRetry::new(metrics))

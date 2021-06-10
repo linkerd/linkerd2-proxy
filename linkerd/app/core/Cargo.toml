@@ -53,7 +53,7 @@ linkerd-proxy-tap = { path = "../../proxy/tap" }
 linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
-linkerd-retry = { path = "../../reconnect" }
+linkerd-retry = { path = "../../retry" }
 linkerd-timeout = { path = "../../timeout" }
 linkerd-tracing = { path = "../../tracing" }
 linkerd-service-profiles = { path = "../../service-profiles" }
