@@ -452,4 +452,20 @@ mod tests {
             err == HttpMatch::try_from(http).err()
         }
     }
+
+    #[test]
+    fn malformed_port_range() {
+        // This reproduces a bug found by quickcheck where a range's `min` >
+        // `max.
+
+        use self::observe_request::r#match::tcp;
+        let tcp = observe_request::r#match::Tcp {
+            r#match: Some(tcp::Match::Ports(tcp::PortRange { min: 1, max: 0 })),
+        };
+
+        assert_eq!(
+            TcpMatch::try_from(tcp).err(),
+            Some(InvalidMatch::InvalidPort)
+        )
+    }
 }
