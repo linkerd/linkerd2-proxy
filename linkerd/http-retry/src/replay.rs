@@ -135,6 +135,10 @@ where
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         let this = self.get_mut();
         let state = Self::acquire_state(&mut this.state, &this.shared.body);
+        // Move these out to avoid mutable borrow issues in the `map` closure
+        // when polling the inner body.
+        let max_bytes = this.max_bytes;
+        let is_capped = state.is_capped;
         tracing::trace!(
             replay_body = this.replay_body,
             buf.has_remaining = state.buf.has_remaining(),
@@ -182,16 +186,16 @@ where
                 state.is_completed = true;
             }
             return Poll::Ready(opt.map(|ok| {
-                ok.map(|data| {
+                ok.map(|mut data| {
                     // If we have already buffered the maximum number of bytes,
                     // allow *this* body to continue, but don't buffer any more.
-                    if state.is_capped {
+                    if is_capped {
                         return Data::Initial(data.copy_to_bytes(data.remaining()));
                     }
 
-                    if state.buf.remaining() + data.remaining() >= this.max_bytes {
+                    if state.buf.remaining() + data.remaining() > max_bytes {
                         tracing::debug!(
-                            max_bytes = this.max_bytes,
+                            max_bytes,
                             "buffered maximum number of bytes, discarding buffer"
                         );
                         // discard the buffer
@@ -740,7 +744,7 @@ mod tests {
     async fn eos_only_when_fully_replayed() {
         // Test that each clone of a body is not EOS until the data has been
         // fully replayed.
-        let mut initial = ReplayBody::new(hyper::Body::from("hello world"));
+        let mut initial = ReplayBody::new(hyper::Body::from("hello world"), 64 * 1024);
         let mut replay = initial.clone();
 
         body_to_string(&mut initial).await;
@@ -774,6 +778,68 @@ mod tests {
 
         replay2.trailers().await.expect("trailers should not error");
         assert!(replay2.is_end_stream());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn caps_buffer() {
+        // Test that, when the initial body is longer than the preconfigured
+        // cap, we allow the request to continue, but stop buffering. The
+        // initial body will complete, but the replay will immediately fail.
+
+        let (mut tx, body) = hyper::Body::channel();
+        let mut initial = ReplayBody::new(body, 8);
+        let mut replay = initial.clone();
+
+        // Send enough data to reach the cap
+        tx.send_data(Bytes::from("aaaaaaaa")).await.unwrap();
+        assert_eq!(chunk(&mut initial).await, Some("aaaaaaaa".to_string()));
+
+        // Further chunks are still forwarded on the initial body
+        tx.send_data(Bytes::from("bbbbbbbb")).await.unwrap();
+        assert_eq!(chunk(&mut initial).await, Some("bbbbbbbb".to_string()));
+
+        drop(initial);
+
+        // The request's replay should error, since we discarded the buffer when
+        // we hit the cap.
+        let err = replay
+            .data()
+            .await
+            .expect("replay must yield Some(Err(..)) when capped")
+            .expect_err("replay must error when cappped");
+        assert!(err.is::<Capped>())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn caps_across_replays() {
+        // Test that, when the initial body is longer than the preconfigured
+        // cap, we allow the request to continue, but stop buffering.
+
+        let (mut tx, body) = hyper::Body::channel();
+        let mut initial = ReplayBody::new(body, 8);
+        let mut replay = initial.clone();
+
+        // Send enough data to reach the cap
+        tx.send_data(Bytes::from("aaaaaaaa")).await.unwrap();
+        assert_eq!(chunk(&mut initial).await, Some("aaaaaaaa".to_string()));
+        drop(initial);
+
+        let mut replay2 = replay.clone();
+
+        // The replay will reach the cap, but it should still return data from
+        // the original body.
+        tx.send_data(Bytes::from("bbbbbbbb")).await.unwrap();
+        assert_eq!(chunk(&mut replay).await, Some("aaaaaaaa".to_string()));
+        assert_eq!(chunk(&mut replay).await, Some("bbbbbbbb".to_string()));
+        drop(replay);
+
+        // The second replay will fail, though, because the buffer was discarded.
+        let err = replay2
+            .data()
+            .await
+            .expect("replay must yield Some(Err(..)) when capped")
+            .expect_err("replay must error when cappped");
+        assert!(err.is::<Capped>())
     }
 
     struct Test {

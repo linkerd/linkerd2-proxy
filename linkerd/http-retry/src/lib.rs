@@ -136,7 +136,9 @@ where
                     (|req: http::Request<ReplayBody<B>>| req.map(BoxBody::new)) as fn(_) -> _,
                 );
                 let retry = tower::retry::Retry::new(policy.clone(), inner);
-                return ResponseFuture::Retry(retry.oneshot(req.map(ReplayBody::new)));
+                return ResponseFuture::Retry(
+                    retry.oneshot(req.map(|x| ReplayBody::new(x, 64 * 1024))),
+                );
             }
         }
 
