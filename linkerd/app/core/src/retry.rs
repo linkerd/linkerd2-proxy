@@ -10,7 +10,8 @@ use linkerd_stack::{Either, Param};
 use std::sync::Arc;
 use tower::retry::{budget::Budget, Policy};
 
-pub use linkerd_http_retry::*;
+use linkerd_http_retry::ReplayBody;
+use linkerd_retry::RetryPolicy;
 
 pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
     NewRetryLayer::new(NewRetry::new(metrics))
