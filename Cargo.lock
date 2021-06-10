@@ -1240,6 +1240,7 @@ dependencies = [
  "linkerd2-proxy-api",
  "pin-project",
  "prost-types",
+ "quickcheck",
  "rand",
  "thiserror",
  "tokio",

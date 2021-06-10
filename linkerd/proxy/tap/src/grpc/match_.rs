@@ -310,150 +310,146 @@ impl TryFrom<observe_request::r#match::Http> for HttpMatch {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use ipnet::{Ipv4Net, Ipv6Net};
-//     use quickcheck::*;
-//     use rand::Rng;
-//     use std::collections::HashMap;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ipnet::{Ipv4Net, Ipv6Net};
+    use linkerd2_proxy_api::http_types;
+    use quickcheck::*;
+    use std::collections::HashMap;
 
-//     use super::*;
-//     use linkerd2_proxy_api::http_types;
+    impl Arbitrary for LabelMatch {
+        fn arbitrary(gen: &mut Gen) -> Self {
+            Self {
+                key: Arbitrary::arbitrary(gen),
+                value: Arbitrary::arbitrary(gen),
+            }
+        }
+    }
 
-//     impl Arbitrary for LabelMatch {
-//         fn arbitrary<G: Gen>(g: &mut G) -> Self {
-//             Self {
-//                 key: Arbitrary::arbitrary(g),
-//                 value: Arbitrary::arbitrary(g),
-//             }
-//         }
-//     }
+    impl Arbitrary for TcpMatch {
+        fn arbitrary(gen: &mut Gen) -> Self {
+            if bool::arbitrary(gen) {
+                TcpMatch::Net(NetMatch::arbitrary(gen))
+            } else {
+                TcpMatch::PortRange(u16::arbitrary(gen), u16::arbitrary(gen))
+            }
+        }
+    }
 
-//     impl Arbitrary for TcpMatch {
-//         fn arbitrary<G: Gen>(g: &mut G) -> Self {
-//             if g.gen::<bool>() {
-//                 TcpMatch::Net(NetMatch::arbitrary(g))
-//             } else {
-//                 TcpMatch::PortRange(g.gen(), g.gen())
-//             }
-//         }
-//     }
+    impl Arbitrary for NetMatch {
+        fn arbitrary(gen: &mut Gen) -> Self {
+            if bool::arbitrary(gen) {
+                let addr = net::Ipv4Addr::arbitrary(gen);
+                let bits = u8::arbitrary(gen) % 32;
+                let net = Ipv4Net::new(addr, bits).expect("ipv4 network address");
+                NetMatch::Net4(net)
+            } else {
+                let addr = net::Ipv6Addr::arbitrary(gen);
+                let bits = u8::arbitrary(gen) % 128;
+                let net = Ipv6Net::new(addr, bits).expect("ipv6 network address");
+                NetMatch::Net6(net)
+            }
+        }
+    }
 
-//     impl Arbitrary for NetMatch {
-//         fn arbitrary<G: Gen>(g: &mut G) -> Self {
-//             if g.gen::<bool>() {
-//                 let addr = net::Ipv4Addr::arbitrary(g);
-//                 let bits = g.gen::<u8>() % 32;
-//                 let net = Ipv4Net::new(addr, bits).expect("ipv4 network address");
-//                 NetMatch::Net4(net)
-//             } else {
-//                 let addr = net::Ipv6Addr::arbitrary(g);
-//                 let bits = g.gen::<u8>() % 128;
-//                 let net = Ipv6Net::new(addr, bits).expect("ipv6 network address");
-//                 NetMatch::Net6(net)
-//             }
-//         }
-//     }
+    quickcheck! {
+        fn tcp_from_proto(tcp: observe_request::r#match::Tcp) -> bool {
+            use self::observe_request::r#match::tcp;
 
-//     quickcheck! {
-//         fn tcp_from_proto(tcp: observe_request::r#match::Tcp) -> bool {
-//             use self::observe_request::r#match::tcp;
+            let err: Option<InvalidMatch> =
+                tcp.r#match.as_ref()
+                    .map(|m| match m {
+                        tcp::Match::Ports(ps) => {
+                            let ok = 0 < ps.min &&
+                                ps.min <= ps.max &&
+                                ps.max < u32::from(::std::u16::MAX);
+                            if ok { None } else { Some(InvalidMatch::InvalidPort) }
+                        }
+                        tcp::Match::Netmask(n) => {
+                            match n.ip.as_ref().and_then(|ip| ip.ip.as_ref()) {
+                                Some(_) => None,
+                                None => Some(InvalidMatch::Empty),
+                            }
+                        }
+                    })
+                    .unwrap_or(Some(InvalidMatch::Empty));
 
-//             let err: Option<InvalidMatch> =
-//                 tcp.r#match.as_ref()
-//                     .map(|m| match m {
-//                         tcp::Match::Ports(ps) => {
-//                             let ok = 0 < ps.min &&
-//                                 ps.min <= ps.max &&
-//                                 ps.max < u32::from(::std::u16::MAX);
-//                             if ok { None } else { Some(InvalidMatch::InvalidPort) }
-//                         }
-//                         tcp::Match::Netmask(n) => {
-//                             match n.ip.as_ref().and_then(|ip| ip.ip.as_ref()) {
-//                                 Some(_) => None,
-//                                 None => Some(InvalidMatch::Empty),
-//                             }
-//                         }
-//                     })
-//                     .unwrap_or(Some(InvalidMatch::Empty));
+            err == TcpMatch::try_from(tcp).err()
+        }
 
-//             err == TcpMatch::try_from(tcp).err()
-//         }
+        fn tcp_matches(m: TcpMatch, addr: net::SocketAddr) -> bool {
+            let matches = match (&m, addr.ip()) {
+                (&TcpMatch::Net(NetMatch::Net4(ref n)), net::IpAddr::V4(ip)) => {
+                    n.contains(&ip)
+                }
+                (&TcpMatch::Net(NetMatch::Net6(ref n)), net::IpAddr::V6(ip)) => {
+                    n.contains(&ip)
+                }
+                (&TcpMatch::PortRange(min, max), _) => {
+                    min <= addr.port() && addr.port() <= max
+                }
+                _ => false
+            };
 
-//         fn tcp_matches(m: TcpMatch, addr: net::SocketAddr) -> bool {
-//             let matches = match (&m, addr.ip()) {
-//                 (&TcpMatch::Net(NetMatch::Net4(ref n)), net::IpAddr::V4(ip)) => {
-//                     n.contains(&ip)
-//                 }
-//                 (&TcpMatch::Net(NetMatch::Net6(ref n)), net::IpAddr::V6(ip)) => {
-//                     n.contains(&ip)
-//                 }
-//                 (&TcpMatch::PortRange(min, max), _) => {
-//                     min <= addr.port() && addr.port() <= max
-//                 }
-//                 _ => false
-//             };
+            m.matches(addr) == matches
+        }
 
-//             m.matches(addr) == matches
-//         }
+        fn labels_from_proto(label: observe_request::r#match::Label) -> bool {
+            let err: Option<InvalidMatch> =
+                if label.key.is_empty() || label.value.is_empty() {
+                    Some(InvalidMatch::Empty)
+                } else {
+                    None
+                };
 
-//         fn labels_from_proto(label: observe_request::r#match::Label) -> bool {
-//             let err: Option<InvalidMatch> =
-//                 if label.key.is_empty() || label.value.is_empty() {
-//                     Some(InvalidMatch::Empty)
-//                 } else {
-//                     None
-//                 };
+            err == LabelMatch::try_from(label).err()
+        }
 
-//             err == LabelMatch::try_from(label).err()
-//         }
+        fn label_matches(l: LabelMatch, labels: HashMap<String, String>) -> bool {
+            let matches = labels.get(&l.key) == Some(&l.value);
+            l.matches(&labels.into_iter().collect()) == matches
+        }
 
-//         fn label_matches(l: LabelMatch, labels: HashMap<String, String>) -> bool {
-//             use std::iter::FromIterator;
+        fn http_from_proto(http: observe_request::r#match::Http) -> bool {
+            use self::observe_request::r#match::http;
 
-//             let matches = labels.get(&l.key) == Some(&l.value);
-//             l.matches(&IndexMap::from_iter(labels.into_iter())) == matches
-//         }
+            let err = match http.r#match.as_ref() {
+                None => Some(InvalidMatch::Empty),
+                Some(http::Match::Method(ref m)) => {
+                    match m.r#type.as_ref() {
+                        None => Some(InvalidMatch::Empty),
+                        Some(http_types::http_method::Type::Unregistered(ref m)) if m.len() > 15 => {
+                            Some(InvalidMatch::InvalidHttpMethod)
+                        }
+                        Some(http_types::http_method::Type::Unregistered(m)) => {
+                            ::http::Method::from_bytes(m.as_bytes())
+                                .err()
+                                .map(|_| InvalidMatch::InvalidHttpMethod)
+                        }
+                        Some(http_types::http_method::Type::Registered(m)) if *m >= 9 => {
+                            Some(InvalidMatch::InvalidHttpMethod)
+                        }
+                        Some(http_types::http_method::Type::Registered(_)) => None,
+                    }
+                }
+                Some(http::Match::Scheme(m)) => match m.r#type.as_ref() {
+                    None => Some(InvalidMatch::Empty),
+                    Some(http_types::scheme::Type::Unregistered(_)) => None,
+                    Some(http_types::scheme::Type::Registered(m)) if *m < 2 => None,
+                    Some(http_types::scheme::Type::Registered(_)) => Some(InvalidMatch::InvalidScheme),
+                }
+                Some(http::Match::Authority(m)) => match m.r#match.as_ref() {
+                    None => Some(InvalidMatch::Empty),
+                    Some(_) => None,
+                }
+                Some(http::Match::Path(m)) => match m.r#match.as_ref() {
+                    None => Some(InvalidMatch::Empty),
+                    Some(_) => None,
+                }
+            };
 
-//         fn http_from_proto(http: observe_request::r#match::Http) -> bool {
-//             use self::observe_request::r#match::http;
-
-//             let err = match http.r#match.as_ref() {
-//                 None => Some(InvalidMatch::Empty),
-//                 Some(http::Match::Method(ref m)) => {
-//                     match m.r#type.as_ref() {
-//                         None => Some(InvalidMatch::Empty),
-//                         Some(http_types::http_method::Type::Unregistered(ref m)) if m.len() > 15 => {
-//                             Some(InvalidMatch::InvalidHttpMethod)
-//                         }
-//                         Some(http_types::http_method::Type::Unregistered(m)) => {
-//                             ::http::Method::from_bytes(m.as_bytes())
-//                                 .err()
-//                                 .map(|_| InvalidMatch::InvalidHttpMethod)
-//                         }
-//                         Some(http_types::http_method::Type::Registered(m)) if *m >= 9 => {
-//                             Some(InvalidMatch::InvalidHttpMethod)
-//                         }
-//                         Some(http_types::http_method::Type::Registered(_)) => None,
-//                     }
-//                 }
-//                 Some(http::Match::Scheme(m)) => match m.r#type.as_ref() {
-//                     None => Some(InvalidMatch::Empty),
-//                     Some(http_types::scheme::Type::Unregistered(_)) => None,
-//                     Some(http_types::scheme::Type::Registered(m)) if *m < 2 => None,
-//                     Some(http_types::scheme::Type::Registered(_)) => Some(InvalidMatch::InvalidScheme),
-//                 }
-//                 Some(http::Match::Authority(m)) => match m.r#match.as_ref() {
-//                     None => Some(InvalidMatch::Empty),
-//                     Some(_) => None,
-//                 }
-//                 Some(http::Match::Path(m)) => match m.r#match.as_ref() {
-//                     None => Some(InvalidMatch::Empty),
-//                     Some(_) => None,
-//                 }
-//             };
-
-//             err == HttpMatch::try_from(http).err()
-//         }
-//     }
-// }
+            err == HttpMatch::try_from(http).err()
+        }
+    }
+}
