@@ -180,7 +180,7 @@ impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
         m.r#match.ok_or(InvalidMatch::Empty).and_then(|t| match t {
             tcp::Match::Ports(range) => {
                 // If either a minimum or maximum is not specified, the range is considered to
-                // be over a discrete value.`
+                // be over a discrete value.
                 let min = if range.min == 0 { range.max } else { range.min };
                 let max = if range.max == 0 { range.min } else { range.max };
                 if min == 0 || max == 0 {
@@ -459,16 +459,13 @@ mod tests {
     #[test]
     fn malformed_port_range() {
         // This reproduces a bug found by quickcheck where a range's `min` >
-        // `max.
+        // `max`.
 
         use self::observe_request::r#match::tcp;
         let tcp = observe_request::r#match::Tcp {
             r#match: Some(tcp::Match::Ports(tcp::PortRange { min: 1, max: 0 })),
         };
 
-        assert_eq!(
-            TcpMatch::try_from(tcp).err(),
-            Some(InvalidMatch::InvalidPort)
-        )
+        assert_eq!(TcpMatch::try_from(tcp).err(), None)
     }
 }
