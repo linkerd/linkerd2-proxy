@@ -9,6 +9,9 @@ description = """
 Implements the Resolve trait using the proxy's gRPC API
 """
 
+[features]
+rustfmt = ["linkerd2-proxy-api/rustfmt"]
+
 [dependencies]
 async-stream = "0.3"
 futures = { version = "0.3", default-features = false }

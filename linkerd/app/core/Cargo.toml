@@ -42,7 +42,6 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
 linkerd-proxy-identity = { path = "../../proxy/identity" }
@@ -83,7 +82,3 @@ features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linkerd-system = { path = "../../system" }
-
-[dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["arbitrary"] }
-prost-types = "0.7.0"
