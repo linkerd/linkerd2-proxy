@@ -180,13 +180,16 @@ impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
         m.r#match.ok_or(InvalidMatch::Empty).and_then(|t| match t {
             tcp::Match::Ports(range) => {
                 // If either a minimum or maximum is not specified, the range is considered to
-                // be over a discrete value.
+                // be over a discrete value.`
                 let min = if range.min == 0 { range.max } else { range.min };
                 let max = if range.max == 0 { range.min } else { range.max };
                 if min == 0 || max == 0 {
                     return Err(InvalidMatch::Empty);
                 }
                 if min > u32::from(::std::u16::MAX) || max > u32::from(::std::u16::MAX) {
+                    return Err(InvalidMatch::InvalidPort);
+                }
+                if min > max {
                     return Err(InvalidMatch::InvalidPort);
                 }
                 Ok(TcpMatch::PortRange(min as u16, max as u16))
