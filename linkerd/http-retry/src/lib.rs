@@ -197,19 +197,23 @@ where
                 ok.map(|mut data| {
                     // If we have buffered the maximum number of bytes, allow
                     // *this* body to continue, but don't buffer any more.
+                    let length = data.remaining();
+                    state.max_bytes = state.max_bytes.saturating_sub(length);
                     if state.is_capped() {
                         // If there's data in the buffer, discard it now, since
                         // we won't allow any clones to have a complete body.
                         if state.buf.has_remaining() {
-                            tracing::debug!("buffered maximum capacity, discarding buffer");
+                            tracing::debug!(
+                                buf.size = state.buf.remaining(),
+                                "buffered maximum capacity, discarding buffer"
+                            );
                             state.buf = Default::default();
                         }
-                        return Data::Initial(data.copy_to_bytes(data.remaining()));
+                        return Data::Initial(data.copy_to_bytes(length));
                     }
 
-                    state.max_bytes = state.max_bytes.saturating_sub(data.remaining());
                     if state.is_capped() {
-                        return Data::Initial(data.copy_to_bytes(data.remaining()));
+                        return Data::Initial(data.copy_to_bytes(length));
                     }
 
                     // Buffer and return the bytes
@@ -801,6 +805,7 @@ mod tests {
         // Test that, when the initial body is longer than the preconfigured
         // cap, we allow the request to continue, but stop buffering. The
         // initial body will complete, but the replay will immediately fail.
+        let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=trace");
 
         let (mut tx, body) = hyper::Body::channel();
         let mut initial = ReplayBody::new(body, 8);
@@ -830,6 +835,7 @@ mod tests {
     async fn caps_across_replays() {
         // Test that, when the initial body is longer than the preconfigured
         // cap, we allow the request to continue, but stop buffering.
+        let _trace = linkerd_tracing::test::with_default_filter("linkerd_http_retry=debug");
 
         let (mut tx, body) = hyper::Body::channel();
         let mut initial = ReplayBody::new(body, 8);
