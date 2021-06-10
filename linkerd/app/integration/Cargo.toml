@@ -13,8 +13,8 @@ a dedicated crate to help the compiler cache dependencies properly.
 """
 
 [features]
-# Disable to skip certain tests that should not be run on CI.
-flaky_tests = []
+flaky_tests = [] # Disable to skip certain tests that should not be run on CI.
+rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 bytes = "1"

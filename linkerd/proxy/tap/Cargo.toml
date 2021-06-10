@@ -6,6 +6,9 @@ license = "Apache-2.0"
 edition = "2018"
 publish = false
 
+[features]
+rustfmt = ["linkerd2-proxy-api/rustfmt"]
+
 [dependencies]
 http = "0.2"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
@@ -32,3 +35,4 @@ pin-project = "1"
 [dev-dependencies]
 linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["arbitrary"] }
 prost-types = "0.7.0"
+quickcheck = { version = "1", default-features = false }

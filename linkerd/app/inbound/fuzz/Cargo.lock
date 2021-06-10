@@ -621,7 +621,6 @@ dependencies = [
  "linkerd-trace-context",
  "linkerd-tracing",
  "linkerd-transport-header",
- "linkerd2-proxy-api",
  "pin-project",
  "regex",
  "serde_json",
