@@ -86,7 +86,7 @@ impl<H> Inbound<H> {
                     .push(http::BoxRequest::layer())
                     .push(http::BoxResponse::layer()),
             )
-            // .check_new_service::<T, http::Request<_>>()
+            .check_new_service::<T, http::Request<_>>()
             .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
             .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
             .push(svc::BoxNewService::layer());
@@ -184,7 +184,7 @@ where
             ))
             .push_map_target(Logical::from)
             .push_on_response(http::BoxResponse::layer())
-            // .check_new_service::<(profiles::Receiver, Target), _>()
+            .check_new_service::<(profiles::Receiver, Target), _>()
             .push(svc::UnwrapOr::layer(no_profile))
             .push(profiles::discover::layer(
                 profiles,

@@ -120,7 +120,12 @@ impl<E> Outbound<E> {
                             .http_route_actual
                             .to_layer::<classify::Response, _>(),
                     )
-                    .push_on_response(http::BoxRequest::layer())
+                    // Depending on whether or not the request can be retried,
+                    // it may have one of two `Body` types. This layer unifies
+                    // any `Body` type into `BoxBody` so that the rest of the
+                    // stack doesn't have to implement `Service` for requests
+                    // with both body types.
+                    .push_on_response(http::EraseRequest::layer())
                     // Sets an optional retry policy.
                     .push(retry::layer(rt.metrics.http_route_retry.clone()))
                     // Sets an optional request timeout.
