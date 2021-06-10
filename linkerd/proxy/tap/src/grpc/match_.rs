@@ -365,7 +365,7 @@ mod tests {
                     .map(|m| match m {
                         tcp::Match::Ports(ps) => {
                             let ok = 0 < ps.min &&
-                                ps.min <= ps.max &&
+                                (ps.min <= ps.max || ps.max == 0) &&
                                 ps.max < u32::from(::std::u16::MAX);
                             if ok { None } else { Some(InvalidMatch::InvalidPort) }
                         }
