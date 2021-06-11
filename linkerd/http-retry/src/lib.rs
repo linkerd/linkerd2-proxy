@@ -450,7 +450,7 @@ impl Buf for BufList {
         match self.bufs.front_mut() {
             Some(first) if len <= first.remaining() => {
                 let buf = first.copy_to_bytes(len);
-                // if we consumed the first buffer, also advance our "cursor" by
+                // If we consumed the first buffer, also advance our "cursor" by
                 // popping it.
                 if first.remaining() == 0 {
                     self.bufs.pop_front();
