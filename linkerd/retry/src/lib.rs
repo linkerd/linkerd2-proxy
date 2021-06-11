@@ -18,7 +18,7 @@ pub trait NewPolicy<T> {
     fn new_policy(&self, target: &T) -> Option<Self::Policy>;
 }
 
-/// A layer that applies per-target retry polcies.
+/// A layer that applies per-target retry policies.
 ///
 /// Composes `NewService`s that produce a `Proxy`.
 #[derive(Clone, Debug)]
