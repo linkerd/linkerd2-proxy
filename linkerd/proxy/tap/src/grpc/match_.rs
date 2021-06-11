@@ -184,6 +184,7 @@ impl TryFrom<observe_request::r#match::Tcp> for TcpMatch {
                 let min = if range.min == 0 { range.max } else { range.min };
                 let max = if range.max == 0 { range.min } else { range.max };
                 if min == 0 || max == 0 {
+                    debug_assert!(min == 0 && max == 0);
                     return Err(InvalidMatch::Empty);
                 }
                 if min > u32::from(::std::u16::MAX) || max > u32::from(::std::u16::MAX) {
@@ -364,10 +365,13 @@ mod tests {
                 tcp.r#match.as_ref()
                     .map(|m| match m {
                         tcp::Match::Ports(ps) => {
-                            let ok = 0 < ps.min &&
-                                (ps.min <= ps.max || ps.max == 0) &&
-                                ps.max < u32::from(::std::u16::MAX);
-                            if ok { None } else { Some(InvalidMatch::InvalidPort) }
+                            if ps.min == 0 && ps.max == 0 {
+                                Some(InvalidMatch::Empty)
+                            } else if ps.min > ps.max && ps.max != 0 {
+                                Some(InvalidMatch::InvalidPort)
+                            } else if ps.min > u32::from(::std::u16::MAX) || ps.max > u32::from(::std::u16::MAX) {
+                                Some(InvalidMatch::InvalidPort)
+                            } else { None }
                         }
                         tcp::Match::Netmask(n) => {
                             match n.ip.as_ref().and_then(|ip| ip.ip.as_ref()) {
@@ -454,18 +458,5 @@ mod tests {
 
             err == HttpMatch::try_from(http).err()
         }
-    }
-
-    #[test]
-    fn malformed_port_range() {
-        // This reproduces a bug found by quickcheck where a range's `min` >
-        // `max`.
-
-        use self::observe_request::r#match::tcp;
-        let tcp = observe_request::r#match::Tcp {
-            r#match: Some(tcp::Match::Ports(tcp::PortRange { min: 1, max: 0 })),
-        };
-
-        assert_eq!(TcpMatch::try_from(tcp).err(), None)
     }
 }
