@@ -1,7 +1,6 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
-#![allow(clippy::type_complexity)]
 
 use linkerd_error::Error;
 use linkerd_stack::{Either, NewService, Proxy, ProxyService};
