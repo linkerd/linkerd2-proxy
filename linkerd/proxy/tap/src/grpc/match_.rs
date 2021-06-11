@@ -365,6 +365,7 @@ mod tests {
                 tcp.r#match.as_ref()
                     .map(|m| match m {
                         tcp::Match::Ports(ps) => {
+                            #[allow(clippy::clippy::if_same_then_else)]
                             if ps.min == 0 && ps.max == 0 {
                                 Some(InvalidMatch::Empty)
                             } else if ps.min > ps.max && ps.max != 0 {
