@@ -6,48 +6,48 @@ use crate::profiles;
 use futures::future;
 use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd_stack::{Either, Param};
-use std::sync::Arc;
-use tower::retry::{budget::Budget, Policy};
-
 use linkerd_http_retry::ReplayBody;
-use linkerd_retry::*;
+use linkerd_retry as retry;
+use linkerd_stack::{layer, Either, Param};
+use std::sync::Arc;
 
-pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
-    NewRetryLayer::new(NewRetry::new(metrics))
+pub fn layer<N>(
+    metrics: HttpRouteRetry,
+) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N>> + Clone {
+    retry::NewRetry::<_, N>::layer(NewRetryPolicy::new(metrics))
 }
 
 #[derive(Clone, Debug)]
-pub struct NewRetry {
+pub struct NewRetryPolicy {
     metrics: HttpRouteRetry,
 }
 
 #[derive(Clone, Debug)]
-pub struct Retry {
+pub struct RetryPolicy {
     metrics: Handle,
-    budget: Arc<Budget>,
+    budget: Arc<retry::Budget>,
     response_classes: profiles::http::ResponseClasses,
 }
 
 /// Allow buffering requests up to 64 kb
 const MAX_BUFFERED_BYTES: usize = 64 * 1024;
 
-// === impl NewRetry ===
+// === impl NewRetryPolicy ===
 
-impl NewRetry {
+impl NewRetryPolicy {
     pub fn new(metrics: HttpRouteRetry) -> Self {
         Self { metrics }
     }
 }
 
-impl NewPolicy<Route> for NewRetry {
-    type Policy = Retry;
+impl retry::NewPolicy<Route> for NewRetryPolicy {
+    type Policy = RetryPolicy;
 
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
         let retries = route.route.retries().cloned()?;
 
         let metrics = self.metrics.get_handle(route.param());
-        Some(Retry {
+        Some(RetryPolicy {
             metrics,
             budget: retries.budget().clone(),
             response_classes: route.route.response_classes().clone(),
@@ -57,7 +57,7 @@ impl NewPolicy<Route> for NewRetry {
 
 // === impl Retry ===
 
-impl Retry {
+impl RetryPolicy {
     fn can_retry<A: http_body::Body>(&self, req: &http::Request<A>) -> bool {
         let content_length = |req: &http::Request<_>| {
             req.headers()
@@ -88,7 +88,7 @@ impl Retry {
     }
 }
 
-impl<A, B, E> Policy<http::Request<A>, http::Response<B>, E> for Retry
+impl<A, B, E> retry::Policy<http::Request<A>, http::Response<B>, E> for RetryPolicy
 where
     A: http_body::Body + Clone,
 {
@@ -142,7 +142,7 @@ where
     }
 }
 
-impl<A, B, E> RetryPolicy<http::Request<A>, http::Response<B>, E> for Retry
+impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<B>, E> for RetryPolicy
 where
     A: http_body::Body + Unpin,
     A::Error: Into<Error>,

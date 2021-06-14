@@ -42,7 +42,7 @@ pub use http::{
     uri, Request, Response, StatusCode,
 };
 pub use hyper::body::HttpBody;
-pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse, EraseRequest};
+pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
 
 #[derive(Clone, Debug)]
 pub struct HeaderPair(pub HeaderName, pub HeaderValue);
