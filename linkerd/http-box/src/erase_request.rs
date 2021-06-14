@@ -5,7 +5,7 @@ use linkerd_error::Error;
 use linkerd_stack::{layer, Proxy};
 use std::task::{Context, Poll};
 
-/// A middleware that boxes HTTP request bodies.
+/// Boxes request bodies, erasing the original type.
 ///
 /// This is *very* similar to the [`BoxRequest`] middleware. However, that
 /// middleware is generic over a specific body type that is erased. A given
@@ -53,10 +53,12 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.0.poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         self.0.call(req.map(BoxBody::new))
     }
@@ -75,6 +77,7 @@ where
     type Error = P::Error;
     type Future = P::Future;
 
+    #[inline]
     fn proxy(&self, inner: &mut S, req: http::Request<B>) -> Self::Future {
         self.0.proxy(inner, req.map(BoxBody::new))
     }

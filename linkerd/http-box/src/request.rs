@@ -34,10 +34,12 @@ where
     type Error = S::Error;
     type Future = S::Future;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.0.poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         self.0.call(req.map(BoxBody::new))
     }
