@@ -3,12 +3,14 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_error::Error;
-use linkerd_stack::{Either, NewService, Proxy, ProxyService};
+use linkerd_stack::{layer, Either, NewService, Oneshot, Proxy, ProxyService, ServiceExt};
 use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use tower::util::{Oneshot, ServiceExt};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
+pub use tower::retry::{budget::Budget, Policy};
 use tracing::trace;
 
 /// A strategy for obtaining per-target retry polices.
@@ -18,29 +20,9 @@ pub trait NewPolicy<T> {
     fn new_policy(&self, target: &T) -> Option<Self::Policy>;
 }
 
-/// A layer that applies per-target retry policies.
-///
-/// Composes `NewService`s that produce a `Proxy`.
-#[derive(Clone, Debug)]
-pub struct NewRetryLayer<P> {
-    new_policy: P,
-}
-
-#[derive(Clone, Debug)]
-pub struct NewRetry<P, N> {
-    new_policy: P,
-    inner: N,
-}
-
-#[derive(Clone, Debug)]
-pub struct Retry<P, S> {
-    policy: Option<P>,
-    inner: S,
-}
-
 /// An extension to [`tower::retry::Policy`] that adds a method to prepare a
 /// request to be retried, possibly changing its type.
-pub trait RetryPolicy<Req, Res, E>: tower::retry::Policy<Self::RetryRequest, Res, E> {
+pub trait PrepareRequest<Req, Res, E>: tower::retry::Policy<Self::RetryRequest, Res, E> {
     /// A request type that can be retried.
     ///
     /// This *may* be the same as the `Req` type parameter, but it can also be a
@@ -59,6 +41,19 @@ pub trait RetryPolicy<Req, Res, E>: tower::retry::Policy<Self::RetryRequest, Res
     fn prepare_request(&self, req: Req) -> Either<Self::RetryRequest, Req>;
 }
 
+/// Applies per-target retry policies.
+#[derive(Clone, Debug)]
+pub struct NewRetry<P, N> {
+    new_policy: P,
+    inner: N,
+}
+
+#[derive(Clone, Debug)]
+pub struct Retry<P, S> {
+    policy: Option<P>,
+    inner: S,
+}
+
 #[pin_project(project = ResponseFutureProj)]
 pub enum ResponseFuture<R, P, S, Req>
 where
@@ -71,26 +66,16 @@ where
     Retry(#[pin] Oneshot<tower::retry::Retry<R, ProxyService<P, S>>, Req>),
 }
 
-// === impl NewRetryLayer ===
-
-impl<P> NewRetryLayer<P> {
-    pub fn new(new_policy: P) -> Self {
-        Self { new_policy }
-    }
-}
-
-impl<P: Clone, N> tower::layer::Layer<N> for NewRetryLayer<P> {
-    type Service = NewRetry<P, N>;
-
-    fn layer(&self, inner: N) -> Self::Service {
-        Self::Service {
-            inner,
-            new_policy: self.new_policy.clone(),
-        }
-    }
-}
-
 // === impl NewRetry ===
+
+impl<P: Clone, N> NewRetry<P, N> {
+    pub fn layer(new_policy: P) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
+            inner,
+            new_policy: new_policy.clone(),
+        })
+    }
+}
 
 impl<T, N, P> NewService<T> for NewRetry<P, N>
 where
@@ -112,7 +97,7 @@ where
 
 impl<R, P, Req, S, E, PReq, PRsp, PFut> Proxy<Req, S> for Retry<R, P>
 where
-    R: RetryPolicy<Req, PRsp, Error> + Clone,
+    R: PrepareRequest<Req, PRsp, Error> + Clone,
     P: Proxy<Req, S, Request = PReq, Response = PRsp, Future = PFut>
         + Proxy<R::RetryRequest, S, Request = PReq, Response = PRsp, Future = PFut>
         + Clone,

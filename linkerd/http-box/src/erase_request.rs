@@ -27,8 +27,12 @@ use std::task::{Context, Poll};
 pub struct EraseRequest<S>(S);
 
 impl<S> EraseRequest<S> {
+    pub fn new(inner: S) -> Self {
+        Self(inner)
+    }
+
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
-        layer::mk(EraseRequest)
+        layer::mk(Self::new)
     }
 }
 
