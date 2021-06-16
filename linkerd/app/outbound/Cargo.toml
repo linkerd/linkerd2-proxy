@@ -18,7 +18,7 @@ test-subscriber = []
 bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
-indexmap = "1.0"
+indexmap = "1.6"
 linkerd-app-core = { path = "../core" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }

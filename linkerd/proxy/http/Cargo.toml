@@ -22,7 +22,7 @@ http-body = "0.4"
 httparse = "1.2"
 hyper = { version = "0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
 hyper-balance = { path = "../../../hyper-balance" }
-indexmap = "1.0"
+indexmap = "1.6"
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }

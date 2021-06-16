@@ -23,7 +23,7 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 http = "0.2"
 http-body = "0.4"
-indexmap = "1.0"
+indexmap = "1.6"
 pin-project = "1"
 prost = "0.7"
 tonic = { version = "0.4", default-features = false }
