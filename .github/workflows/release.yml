@@ -55,7 +55,7 @@ jobs:
           args: /linkerd/expected-checksec.json "target/${{ matrix.target }}/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-${{ matrix.architecture }}-checksec.json"
 
       - name: upload artifacts
-        uses: actions/upload-artifact@27121b0bdffd731efa15d66772be8dc71245d074 # v2.2.3
+        uses: actions/upload-artifact@27121b0bdffd731efa15d66772be8dc71245d074
         with:
           name: ${{ matrix.architecture }}-artifacts
           path: target/${{ matrix.target }}/release/package/*
