@@ -483,7 +483,6 @@ dependencies = [
  "deflate",
  "http",
  "hyper",
- "indexmap",
  "tracing",
 ]
 

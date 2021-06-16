@@ -578,7 +578,6 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "indexmap",
  "ipnet",
  "linkerd-addr",
  "linkerd-cache",
@@ -641,7 +640,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "indexmap",
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
@@ -785,7 +783,6 @@ name = "linkerd-error-metrics"
 version = "0.1.0"
 dependencies = [
  "futures",
- "indexmap",
  "linkerd-metrics",
  "pin-project",
  "tower",
@@ -845,7 +842,6 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "indexmap",
  "linkerd-error",
  "linkerd-http-classify",
  "linkerd-metrics",
@@ -905,7 +901,6 @@ dependencies = [
  "deflate",
  "http",
  "hyper",
- "indexmap",
  "tracing",
 ]
 
@@ -934,7 +929,6 @@ dependencies = [
  "futures",
  "http",
  "http-body",
- "indexmap",
  "linkerd-addr",
  "linkerd-error",
  "linkerd-proxy-core",
@@ -1181,7 +1175,6 @@ dependencies = [
 name = "linkerd-stack-metrics"
 version = "0.1.0"
 dependencies = [
- "indexmap",
  "linkerd-metrics",
  "tokio",
  "tower",
