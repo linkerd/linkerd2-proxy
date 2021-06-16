@@ -13,7 +13,7 @@ cargo-fuzz = true
 arbitrary = { version = "1",  features = ["derive"] }
 libfuzzer-sys = { version = "0.4.0", features = ["arbitrary-derive"] }
 tokio = { version = "1", features = ["full"] }
-hyper = { version = "0.14.2", features = ["http1", "http2"] }
+hyper = { version = "0.14.9", features = ["http1", "http2"] }
 http = "0.2"
 linkerd-app-core = { path = "../../core" }
 linkerd-app-inbound = { path = ".." }
