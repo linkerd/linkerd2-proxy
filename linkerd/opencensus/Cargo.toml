@@ -16,5 +16,5 @@ opencensus-proto = { path = "../../opencensus-proto" }
 tonic = { version = "0.4", default-features = false, features = ["prost", "codegen"] }
 tower = { version = "0.4.7", default-features = false }
 tokio = { version = "1", features = ["macros", "sync", "time"] }
-tokio-stream = { version = "0.1.5", features = ["sync"] }
+tokio-stream = { version = "0.1.6", features = ["sync"] }
 tracing = "0.1.23"
