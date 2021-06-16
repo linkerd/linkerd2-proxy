@@ -8,7 +8,7 @@ on:
 jobs:
   test:
     if: |
-      !contains(github.event.pull_request.labels.*.name, 'dependencies')
+      !startsWith(github.event.pull_request.title, 'build(deps): ')
     name: codecov
     runs-on: ubuntu-latest
     timeout-minutes: 30
