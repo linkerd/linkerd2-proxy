@@ -1,12 +1,41 @@
 version: 2
 updates:
-  - package-ecosystem: "cargo"
-    versioning-strategy: increase-if-necessary
-    directory: "/"
+  - package-ecosystem: cargo
+    directory: /
     schedule:
-      interval: "daily"
+      interval: daily
 
-  - package-ecosystem: "github-actions"
+  - package-ecosystem: cargo
+    directory: /linkerd/addr/fuzz
+    schedule:
+      interval: daily
+
+  - package-ecosystem: cargo
+    directory: /linkerd/app/inbound/fuzz
+    schedule:
+      interval: daily
+
+  - package-ecosystem: cargo
+    directory: /linkerd/dns/fuzz
+    schedule:
+      interval: daily
+
+  - package-ecosystem: cargo
+    directory: /linkerd/proxy/http/fuzz
+    schedule:
+      interval: daily
+
+  - package-ecosystem: cargo
+    directory: /linkerd/tls/fuzz
+    schedule:
+      interval: daily
+
+  - package-ecosystem: cargo
+    directory: /linkerd/transport-header/fuzz
+    schedule:
+      interval: daily
+
+  - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: daily
