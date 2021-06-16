@@ -1192,11 +1192,11 @@ mod tests {
     #[test]
     fn dns_suffixes() {
         fn p(s: &str) -> Result<Vec<String>, ParseError> {
-            let sfxs = parse_dns_suffixes(s)?
+            let mut sfxs = parse_dns_suffixes(s)?
                 .into_iter()
                 .map(|s| format!("{}", s))
-                .collect();
-
+                .collect::<Vec<_>>();
+            sfxs.sort();
             Ok(sfxs)
         }
 
