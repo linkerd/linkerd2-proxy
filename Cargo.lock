@@ -371,9 +371,9 @@ checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
 
 [[package]]
 name = "hdrhistogram"
-version = "7.2.0"
+version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af54a13c410de2b5e2d611475072834b86d7b2f835a2a8f7b1b1248d3e9bfbd8"
+checksum = "faa51471caf8069812385974ce947bf4b71a806d7e5a0d1f710af57d6a9a45ad"
 dependencies = [
  "byteorder",
  "num-traits",
