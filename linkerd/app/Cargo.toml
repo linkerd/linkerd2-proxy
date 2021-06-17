@@ -25,7 +25,7 @@ linkerd-app-inbound = { path = "./inbound" }
 linkerd-app-outbound = { path = "./outbound" }
 linkerd-error = { path = "../error" }
 linkerd-opencensus = { path = "../opencensus" }
-regex = "1.4.6"
+regex = "1.5.4"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt"] }
 tokio-stream = { version = "0.1.6", features = ["time", "sync"] }
