@@ -84,4 +84,4 @@ features = [
 linkerd-system = { path = "../../system" }
 
 [dev-dependencies]
-quickcheck = "1.0"
+quickcheck = { version = "1", default-features = false }
