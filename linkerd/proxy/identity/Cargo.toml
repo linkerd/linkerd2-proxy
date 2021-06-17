@@ -19,6 +19,6 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 tokio = { version = "1", features = ["time", "sync"] }
 tonic = { version = "0.4", default-features = false }
-tracing = "0.1.23"
+tracing = "0.1.26"
 http-body = "0.4"
 pin-project = "1"

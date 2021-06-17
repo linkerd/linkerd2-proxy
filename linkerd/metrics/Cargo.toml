@@ -19,7 +19,7 @@ hyper = { version = "0.14.2", features = ["http1", "http2"] }
 indexmap = "1.6"
 parking_lot = { version = "0.11", optional = true }
 tokio = { version = "1", features = ["time"], optional = true }
-tracing = "0.1.2"
+tracing = "0.1.26"
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }

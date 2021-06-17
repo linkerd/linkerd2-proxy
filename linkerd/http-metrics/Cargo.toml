@@ -18,5 +18,5 @@ linkerd-http-classify = { path = "../http-classify" }
 linkerd-metrics = { path = "../metrics" }
 linkerd-stack = { path = "../stack" } 
 tower = "0.4.7"
-tracing = "0.1.23"
+tracing = "0.1.26"
 pin-project = "1"
