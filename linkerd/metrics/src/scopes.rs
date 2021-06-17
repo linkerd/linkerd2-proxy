@@ -1,16 +1,15 @@
 use super::prom::FmtLabels;
-use indexmap::IndexMap;
-use std::hash::Hash;
+use std::{collections::HashMap, hash::Hash};
 
 /// Holds an `S`-typed scope for each `L`-typed label set.
 ///
 /// An `S` type typically holds one or more metrics.
 #[derive(Debug)]
-pub struct Scopes<L: FmtLabels + Hash + Eq, S>(IndexMap<L, S>);
+pub struct Scopes<L: FmtLabels + Hash + Eq, S>(HashMap<L, S>);
 
 impl<L: FmtLabels + Hash + Eq, S> Default for Scopes<L, S> {
     fn default() -> Self {
-        Scopes(IndexMap::default())
+        Scopes(HashMap::default())
     }
 }
 
@@ -42,8 +41,8 @@ impl<L: FmtLabels + Hash + Eq, S: Default> Scopes<L, S> {
 }
 
 impl<'a, L: FmtLabels + Hash + Eq, S> IntoIterator for &'a Scopes<L, S> {
-    type Item = <&'a IndexMap<L, S> as IntoIterator>::Item;
-    type IntoIter = <&'a IndexMap<L, S> as IntoIterator>::IntoIter;
+    type Item = <&'a HashMap<L, S> as IntoIterator>::Item;
+    type IntoIter = <&'a HashMap<L, S> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()

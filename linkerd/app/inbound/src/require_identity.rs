@@ -1,14 +1,13 @@
 use crate::target::TcpAccept;
-use indexmap::IndexSet;
 use linkerd_app_core::{svc::stack::Predicate, tls, Conditional, Error};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
 
 /// A connection policy that fails connections that don't have a client identity
 /// if they target one of the configured local ports.
 #[derive(Clone, Debug)]
 pub struct RequireIdentityForPorts {
-    ports: Arc<IndexSet<u16>>,
+    ports: Arc<HashSet<u16>>,
 }
 
 #[derive(Debug, Error)]

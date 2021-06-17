@@ -211,7 +211,7 @@ mod test {
         };
 
         let e = ep(Metadata::new(
-            Default::default(),
+            None,
             ProtocolHint::Unknown,
             Some(4143),
             Some(tls::ServerId(
@@ -249,7 +249,7 @@ mod test {
         };
 
         let e = ep(Metadata::new(
-            Default::default(),
+            None,
             ProtocolHint::Unknown,
             Some(4143),
             Some(tls::ServerId(
@@ -287,7 +287,7 @@ mod test {
         };
 
         let e = ep(Metadata::new(
-            Default::default(),
+            None,
             ProtocolHint::Unknown,
             Some(4143),
             Some(tls::ServerId(

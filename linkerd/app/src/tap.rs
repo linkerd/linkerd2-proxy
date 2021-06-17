@@ -1,5 +1,4 @@
 use futures::prelude::*;
-use indexmap::IndexSet;
 use linkerd_app_core::{
     config::ServerConfig,
     drain,
@@ -11,7 +10,7 @@ use linkerd_app_core::{
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use std::pin::Pin;
+use std::{collections::HashSet, pin::Pin};
 use tower::util::{service_fn, ServiceExt};
 
 #[derive(Clone, Debug)]
@@ -19,7 +18,7 @@ pub enum Config {
     Disabled,
     Enabled {
         config: ServerConfig,
-        permitted_client_ids: IndexSet<tls::server::ClientId>,
+        permitted_client_ids: HashSet<tls::server::ClientId>,
     },
 }
 

@@ -2,11 +2,11 @@ mod report;
 mod service;
 
 use super::{LastUpdate, Registry, Report};
-use indexmap::IndexMap;
 use linkerd_http_classify::ClassifyResponse;
 use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram};
 use linkerd_stack::layer;
 use std::{
+    collections::HashMap,
     fmt::Debug,
     hash::Hash,
     sync::{Arc, Mutex},
@@ -30,7 +30,7 @@ where
 {
     last_update: Instant,
     total: Counter,
-    by_status: IndexMap<Option<http::StatusCode>, StatusMetrics<C>>,
+    by_status: HashMap<Option<http::StatusCode>, StatusMetrics<C>>,
 }
 
 #[derive(Debug)]
@@ -39,7 +39,7 @@ where
     C: Hash + Eq,
 {
     latency: Histogram<latency::Ms>,
-    by_class: IndexMap<C, ClassMetrics>,
+    by_class: HashMap<C, ClassMetrics>,
 }
 
 #[derive(Debug, Default)]
@@ -85,7 +85,7 @@ impl<C: Hash + Eq> Default for Metrics<C> {
         Self {
             last_update: Instant::now(),
             total: Counter::default(),
-            by_status: IndexMap::default(),
+            by_status: HashMap::default(),
         }
     }
 }
@@ -103,7 +103,7 @@ where
     fn default() -> Self {
         Self {
             latency: Histogram::default(),
-            by_class: IndexMap::default(),
+            by_class: HashMap::default(),
         }
     }
 }

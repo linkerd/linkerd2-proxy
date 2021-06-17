@@ -618,7 +618,6 @@ name = "linkerd-app"
 version = "0.1.0"
 dependencies = [
  "futures",
- "indexmap",
  "ipnet",
  "linkerd-app-admin",
  "linkerd-app-core",
@@ -663,7 +662,6 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "indexmap",
  "ipnet",
  "linkerd-addr",
  "linkerd-cache",
@@ -723,7 +721,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "http",
- "indexmap",
  "linkerd-app-core",
  "linkerd-app-inbound",
  "linkerd-app-outbound",
@@ -745,7 +742,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "indexmap",
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
@@ -796,7 +792,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "indexmap",
  "ipnet",
  "linkerd-app-core",
  "linkerd-app-test",
@@ -931,7 +926,6 @@ name = "linkerd-error-metrics"
 version = "0.1.0"
 dependencies = [
  "futures",
- "indexmap",
  "linkerd-metrics",
  "pin-project",
  "tower",
@@ -992,7 +986,6 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "indexmap",
  "linkerd-error",
  "linkerd-http-classify",
  "linkerd-metrics",
@@ -1056,7 +1049,6 @@ dependencies = [
  "hdrhistogram",
  "http",
  "hyper",
- "indexmap",
  "parking_lot",
  "quickcheck",
  "tokio",
@@ -1088,7 +1080,6 @@ dependencies = [
  "futures",
  "http",
  "http-body",
- "indexmap",
  "linkerd-addr",
  "linkerd-error",
  "linkerd-proxy-core",
@@ -1158,7 +1149,6 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-balance",
- "indexmap",
  "linkerd-detect",
  "linkerd-duplex",
  "linkerd-error",
@@ -1216,7 +1206,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "indexmap",
  "ipnet",
  "linkerd-conditional",
  "linkerd-error",
@@ -1357,7 +1346,6 @@ dependencies = [
 name = "linkerd-stack-metrics"
 version = "0.1.0"
 dependencies = [
- "indexmap",
  "linkerd-metrics",
  "tokio",
  "tower",

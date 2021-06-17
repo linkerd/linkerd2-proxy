@@ -7,12 +7,14 @@ mod service;
 
 pub use self::layer::RecordErrorLayer;
 pub use self::service::RecordError;
-use indexmap::IndexMap;
 pub use linkerd_metrics::FmtLabels;
 use linkerd_metrics::{metrics, Counter, FmtMetrics};
-use std::fmt;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    fmt,
+    hash::Hash,
+    sync::{Arc, Mutex},
+};
 
 metrics! {
     request_errors_total: Counter {
@@ -29,7 +31,7 @@ pub trait LabelError<E> {
 /// Produces layers and reports results.
 #[derive(Debug)]
 pub struct Registry<K: Hash + Eq> {
-    errors: Arc<Mutex<IndexMap<K, Counter>>>,
+    errors: Arc<Mutex<HashMap<K, Counter>>>,
 }
 
 impl<K: Hash + Eq> Registry<K> {
