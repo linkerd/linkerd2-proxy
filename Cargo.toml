@@ -15,7 +15,6 @@ members = [
     "linkerd/app/test",
     "linkerd/app",
     "linkerd/cache",
-    "linkerd/concurrency-limit",
     "linkerd/conditional",
     "linkerd/detect",
     "linkerd/transport-header",

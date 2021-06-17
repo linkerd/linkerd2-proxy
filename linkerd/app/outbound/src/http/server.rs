@@ -47,7 +47,7 @@ impl<N> Outbound<N> {
                     // background task to ensure it becomes ready without new
                     // requests being processed.
                     .push(svc::layer::mk(svc::SpawnReady::new))
-                    .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
+                    .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity)
                     .push(rt.metrics.http_errors.clone())

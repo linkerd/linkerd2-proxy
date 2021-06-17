@@ -75,7 +75,7 @@ impl<H> Inbound<H> {
                     // to `NewRouter`) and the concurrency limit need not be
                     // driven outside of the request path, so there's no need
                     // for SpawnReady
-                    .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
+                    .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                     .push(rt.metrics.http_errors.clone())
                     // Synthesizes responses for proxy errors.

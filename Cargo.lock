@@ -665,7 +665,6 @@ dependencies = [
  "ipnet",
  "linkerd-addr",
  "linkerd-cache",
- "linkerd-concurrency-limit",
  "linkerd-conditional",
  "linkerd-detect",
  "linkerd-dns",
@@ -839,19 +838,6 @@ dependencies = [
  "linkerd-tracing",
  "parking_lot",
  "tokio",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-concurrency-limit"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-stack",
- "pin-project",
- "tokio",
- "tokio-util",
  "tower",
  "tracing",
 ]
