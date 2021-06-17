@@ -71,7 +71,7 @@ tracing = "0.1.26"
 pin-project = "1"
 
 [dependencies.tower]
-version = "0.4.7"
+version = "0.4.8"
 default-features = false
 features = [
     "buffer",

@@ -17,7 +17,7 @@ indexmap = "1.6"
 linkerd-app-core = { path = "../core" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
-tower = { version = "0.4.7", features = ["util"] }
+tower = { version = "0.4.8", features = ["util"] }
 tracing = "0.1.26"
 
 [target.'cfg(fuzzing)'.dependencies]
