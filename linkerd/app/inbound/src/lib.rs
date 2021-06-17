@@ -23,14 +23,14 @@ use self::{
     target::{HttpAccept, TcpAccept},
 };
 use linkerd_app_core::{
-    config::{ConnectConfig, ProxyConfig, ServerConfig},
+    config::{ConnectConfig, PortSet, ProxyConfig, ServerConfig},
     detect, drain, io, metrics, profiles,
     proxy::tcp,
     serve, svc, tls,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, NameMatch, Never, ProxyRuntime,
 };
-use std::{collections::HashSet, convert::TryFrom, fmt::Debug, future::Future, time::Duration};
+use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -38,7 +38,7 @@ pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
-    pub disable_protocol_detection_for_ports: HashSet<u16>,
+    pub disable_protocol_detection_for_ports: PortSet,
     pub profile_idle_timeout: Duration,
 }
 
@@ -262,7 +262,7 @@ where
             .push_switch(
                 move |t: T| {
                     let OrigDstAddr(addr) = t.param();
-                    if !disable_detect.contains(&addr.port()) {
+                    if !disable_detect.contains(addr.port()) {
                         Ok::<_, Never>(svc::Either::A(t))
                     } else {
                         Ok(svc::Either::B(TcpAccept::port_skipped(t)))

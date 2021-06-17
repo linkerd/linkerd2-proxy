@@ -1,13 +1,13 @@
 use crate::target::TcpAccept;
-use linkerd_app_core::{svc::stack::Predicate, tls, Conditional, Error};
-use std::{collections::HashSet, sync::Arc};
+use linkerd_app_core::{config::PortSet, svc::stack::Predicate, tls, Conditional, Error};
+use std::sync::Arc;
 use thiserror::Error;
 
 /// A connection policy that fails connections that don't have a client identity
 /// if they target one of the configured local ports.
 #[derive(Clone, Debug)]
 pub struct RequireIdentityForPorts {
-    ports: Arc<HashSet<u16>>,
+    ports: Arc<PortSet>,
 }
 
 #[derive(Debug, Error)]
@@ -29,7 +29,7 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
 
     fn check(&mut self, meta: TcpAccept) -> Result<TcpAccept, Error> {
         let port = meta.target_addr.port();
-        let id_required = self.ports.contains(&port);
+        let id_required = self.ports.contains(port);
 
         tracing::debug!(%port, tls = ?meta.tls, %id_required);
         if id_required {
