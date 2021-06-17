@@ -11,14 +11,14 @@ Transport-level implementations that rely on core proxy infrastructure
 
 [dependencies]
 bytes = "1"
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics" }
 linkerd-stack = { path = "../../stack" }
 pin-project = "1"
-socket2 = "0.3"
+socket2 = "0.4"
 tokio = { version = "1", features = ["macros", "net"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tower = { version = "0.4", features = ["make"] }

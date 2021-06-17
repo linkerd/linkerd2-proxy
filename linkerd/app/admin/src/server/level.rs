@@ -2,8 +2,7 @@ use hyper::{
     body::{Buf, HttpBody},
     Body,
 };
-use linkerd_error::Error;
-use linkerd_tracing::level::Handle;
+use linkerd_app_core::{trace::level::Handle, Error};
 use std::io;
 
 pub(super) async fn serve<B>(

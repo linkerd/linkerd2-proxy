@@ -58,7 +58,7 @@ impl<P> svc::Param<LogicalAddr> for Logical<P> {
 // Used for skipping HTTP detection
 impl svc::Param<Option<http::detect::Skip>> for Logical<()> {
     fn param(&self) -> Option<http::detect::Skip> {
-        if self.profile.borrow().opaque_protocol {
+        if self.profile.is_opaque_protocol() {
             Some(http::detect::Skip)
         } else {
             None

@@ -16,7 +16,7 @@ pub fn only_default() -> Receiver {
 pub fn only(profile: Profile) -> Receiver {
     let (tx, rx) = channel(profile);
     tokio::spawn(async move { tx.closed().await });
-    rx
+    rx.into()
 }
 
 pub fn resolver() -> crate::resolver::Profiles {

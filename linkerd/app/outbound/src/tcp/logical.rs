@@ -140,12 +140,12 @@ mod tests {
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
-        let (_tx, profile) = tokio::sync::watch::channel(Profile {
+        let (_tx, rx) = tokio::sync::watch::channel(Profile {
             addr: Some(logical_addr.clone()),
             ..Default::default()
         });
         let logical = Logical {
-            profile,
+            profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
         };
@@ -203,12 +203,12 @@ mod tests {
 
         // We create a logical target to be resolved to endpoints.
         let logical_addr = LogicalAddr("xyz.example.com:4444".parse().unwrap());
-        let (_tx, profile) = tokio::sync::watch::channel(Profile {
+        let (_tx, rx) = tokio::sync::watch::channel(Profile {
             addr: Some(logical_addr.clone()),
             ..Default::default()
         });
         let logical = Logical {
-            profile,
+            profile: rx.into(),
             logical_addr: logical_addr.clone(),
             protocol: (),
         };
@@ -248,7 +248,7 @@ mod tests {
         resolve_tx
             .add(Some((ep0_addr, Default::default())))
             .unwrap();
-        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        tokio::task::yield_now().await; // Let the balancer observe the update.
         let (io, task) = spawn_io();
         svc.clone().oneshot(io).await.unwrap();
         let msg = task.await.unwrap().unwrap();
@@ -259,7 +259,7 @@ mod tests {
         resolve_tx
             .add(Some((ep1_addr, Default::default())))
             .unwrap();
-        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        tokio::task::yield_now().await; // Let the balancer observe the update.
         let mut seen0 = false;
         let mut seen1 = false;
         for i in 1..=100 {
@@ -294,7 +294,7 @@ mod tests {
         // When we remove the ep0, all traffic goes to ep1:
 
         resolve_tx.remove(Some(ep0_addr)).unwrap();
-        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        tokio::task::yield_now().await; // Let the balancer observe the update.
         for _ in 1..=100 {
             let (io, task) = spawn_io();
             svc.clone().oneshot(io).await.unwrap();
@@ -306,7 +306,7 @@ mod tests {
         // Empty load balancers hit fail-fast errors:
 
         resolve_tx.remove(Some(ep1_addr)).unwrap();
-        time::sleep(time::Duration::from_secs(1)).await; // Let the balancer observe the update.
+        tokio::task::yield_now().await; // Let the balancer observe the update.
         let (io, task) = spawn_io();
         let err = svc
             .clone()

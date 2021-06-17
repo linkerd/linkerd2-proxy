@@ -1,4 +1,4 @@
-use crate::{Config, RequireIdentityForPorts, SkipByPort};
+use crate::{Config, RequireIdentityForPorts};
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
@@ -48,7 +48,7 @@ pub fn default_config() -> Config {
             detect_protocol_timeout: Duration::from_secs(10),
         },
         require_identity_for_inbound_ports: RequireIdentityForPorts::from(None),
-        disable_protocol_detection_for_ports: SkipByPort::from(indexmap::IndexSet::default()),
+        disable_protocol_detection_for_ports: Default::default(),
         profile_idle_timeout: Duration::from_millis(500),
     }
 }

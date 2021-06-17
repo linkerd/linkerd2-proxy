@@ -120,9 +120,14 @@ impl<E> Outbound<E> {
                             .http_route_actual
                             .to_layer::<classify::Response, _>(),
                     )
+                    // Depending on whether or not the request can be retried,
+                    // it may have one of two `Body` types. This layer unifies
+                    // any `Body` type into `BoxBody` so that the rest of the
+                    // stack doesn't have to implement `Service` for requests
+                    // with both body types.
+                    .push_on_response(http::BoxRequest::erased())
                     // Sets an optional retry policy.
                     .push(retry::layer(rt.metrics.http_route_retry.clone()))
-                    .push_on_response(retry::replay::layer())
                     // Sets an optional request timeout.
                     .push(http::MakeTimeoutLayer::default())
                     // Records per-route metrics.
@@ -135,7 +140,7 @@ impl<E> Outbound<E> {
             ))
             // Strips headers that may be set by this proxy and add an outbound
             // canonical-dst-header. The response body is boxed unify the profile
-            // stack's response type. withthat of to endpoint stack.
+            // stack's response type with that of to endpoint stack.
             .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
             .push_on_response(svc::layers().push(http::BoxResponse::layer()))
             .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))

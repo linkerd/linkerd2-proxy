@@ -2,7 +2,6 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-use futures::prelude::*;
 use linkerd_stack::{layer, NewService};
 use parking_lot::RwLock;
 use std::{
@@ -91,12 +90,14 @@ where
         // Wait for either the reset to be notified or the idle timeout to
         // elapse.
         loop {
-            futures::select_biased! {
+            tokio::select! {
+                biased;
+
                 // If the reset was notified, restart the timer.
-                _ = reset.notified().fuse() => {
+                _ = reset.notified() => {
                     trace!("Reset");
                 }
-                _ = time::sleep(idle).fuse() => match cache.upgrade() {
+                _ = time::sleep(idle) => match cache.upgrade() {
                     Some(cache) => match Arc::try_unwrap(reset) {
                         // If this is the last reference to the handle after the
                         // idle timeout, remove the cache entry.

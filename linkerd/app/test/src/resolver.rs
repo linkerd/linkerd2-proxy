@@ -158,7 +158,7 @@ impl Profiles {
             .endpoints
             .lock()
             .unwrap()
-            .insert(addr.into(), Some(rx));
+            .insert(addr.into(), Some(rx.into()));
         tx
     }
 
@@ -169,7 +169,7 @@ impl Profiles {
             .endpoints
             .lock()
             .unwrap()
-            .insert(addr.into(), Some(rx));
+            .insert(addr.into(), Some(rx.into()));
         self
     }
 

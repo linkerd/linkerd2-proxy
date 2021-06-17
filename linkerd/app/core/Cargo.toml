@@ -14,19 +14,18 @@ independently of the inbound and outbound proxy logic.
 
 [dependencies]
 bytes = "1"
+drain = { version = "0.0.1", features = ["retain"] }
 http = "0.2"
-html-escape = "0.2"
 http-body = "0.4"
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
-futures = "0.3.15"
-indexmap = "1.0"
-ipnet = "2.0"
+futures = { version = "0.3", default-features = false }
+indexmap = "1.6"
+ipnet = "2.3"
 linkerd-addr = { path = "../../addr" }
 linkerd-cache = { path = "../../cache" }
 linkerd-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
-linkerd-drain = { path = "../../drain", features = ["retain"] }
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-errno = { path = "../../errno" }
@@ -43,7 +42,6 @@ linkerd-metrics = { path = "../../metrics" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
 linkerd-proxy-discover = { path = "../../proxy/discover" }
 linkerd-proxy-identity = { path = "../../proxy/identity" }
@@ -54,6 +52,7 @@ linkerd-proxy-tap = { path = "../../proxy/tap" }
 linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
+linkerd-retry = { path = "../../retry" }
 linkerd-timeout = { path = "../../timeout" }
 linkerd-tracing = { path = "../../tracing" }
 linkerd-service-profiles = { path = "../../service-profiles" }
@@ -62,11 +61,11 @@ linkerd-stack-metrics = { path = "../../stack/metrics" }
 linkerd-stack-tracing = { path = "../../stack/tracing" }
 linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
-regex = "1.0.0"
+regex = "1.4.6"
 serde_json = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
-tokio-stream = { version = "0.1.5", features = ["time"] }
+tokio-stream = { version = "0.1.6", features = ["time"] }
 tonic = { version = "0.4", default-features = false, features = ["prost"] }
 tracing = "0.1.23"
 pin-project = "1"
@@ -84,7 +83,3 @@ features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linkerd-system = { path = "../../system" }
-
-[dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18", features = ["arbitrary"] }
-prost-types = "0.7.0"

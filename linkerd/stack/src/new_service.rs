@@ -31,17 +31,13 @@ where
     }
 }
 
-// === impl FromMakeServiceLayer ===
+// === impl FromMakeService ===
 
-impl<S> tower::layer::Layer<S> for FromMakeServiceLayer {
-    type Service = FromMakeService<S>;
-
-    fn layer(&self, make_service: S) -> Self::Service {
-        Self::Service { make_service }
+impl<S> FromMakeService<S> {
+    pub fn layer() -> impl super::layer::Layer<S, Service = Self> {
+        super::layer::mk(|make_service| Self { make_service })
     }
 }
-
-// === impl FromMakeService ===
 
 impl<T, S> NewService<T> for FromMakeService<S>
 where

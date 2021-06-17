@@ -4,74 +4,93 @@ use super::http_metrics::retries::Handle;
 use super::metrics::HttpRouteRetry;
 use crate::profiles;
 use futures::future;
-use http_body::Body;
+use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
-use linkerd_stack::Param;
-use std::marker::PhantomData;
+use linkerd_http_retry::ReplayBody;
+use linkerd_retry as retry;
+use linkerd_stack::{layer, Either, Param};
 use std::sync::Arc;
-use tower::retry::budget::Budget;
 
-pub use linkerd_http_retry::*;
-
-pub fn layer(metrics: HttpRouteRetry) -> NewRetryLayer<NewRetry> {
-    NewRetryLayer::new(NewRetry::new(metrics))
-}
-
-pub trait CloneRequest<Req> {
-    fn clone_request(req: &Req) -> Option<Req>;
-}
-
-#[derive(Clone, Debug)]
-pub struct NewRetry<C = WithBody> {
+pub fn layer<N>(
     metrics: HttpRouteRetry,
-    _clone_request: PhantomData<C>,
-}
-
-pub struct Retry<C = WithBody> {
-    metrics: Handle,
-    budget: Arc<Budget>,
-    response_classes: profiles::http::ResponseClasses,
-    _clone_request: PhantomData<C>,
+) -> impl layer::Layer<N, Service = retry::NewRetry<NewRetryPolicy, N>> + Clone {
+    retry::NewRetry::<_, N>::layer(NewRetryPolicy::new(metrics))
 }
 
 #[derive(Clone, Debug)]
-pub struct WithBody;
+pub struct NewRetryPolicy {
+    metrics: HttpRouteRetry,
+}
 
-impl NewRetry {
+#[derive(Clone, Debug)]
+pub struct RetryPolicy {
+    metrics: Handle,
+    budget: Arc<retry::Budget>,
+    response_classes: profiles::http::ResponseClasses,
+}
+
+/// Allow buffering requests up to 64 kb
+const MAX_BUFFERED_BYTES: usize = 64 * 1024;
+
+// === impl NewRetryPolicy ===
+
+impl NewRetryPolicy {
     pub fn new(metrics: HttpRouteRetry) -> Self {
-        Self {
-            metrics,
-            _clone_request: PhantomData,
-        }
-    }
-
-    pub fn clone_requests_via<C>(self) -> NewRetry<C> {
-        NewRetry {
-            metrics: self.metrics,
-            _clone_request: PhantomData,
-        }
+        Self { metrics }
     }
 }
 
-impl<C> NewPolicy<Route> for NewRetry<C> {
-    type Policy = Retry<C>;
+impl retry::NewPolicy<Route> for NewRetryPolicy {
+    type Policy = RetryPolicy;
 
     fn new_policy(&self, route: &Route) -> Option<Self::Policy> {
         let retries = route.route.retries().cloned()?;
 
         let metrics = self.metrics.get_handle(route.param());
-        Some(Retry {
+        Some(RetryPolicy {
             metrics,
             budget: retries.budget().clone(),
             response_classes: route.route.response_classes().clone(),
-            _clone_request: self._clone_request,
         })
     }
 }
 
-impl<C, A, B, E> Policy<http::Request<A>, http::Response<B>, E> for Retry<C>
+// === impl Retry ===
+
+impl RetryPolicy {
+    fn can_retry<A: http_body::Body>(&self, req: &http::Request<A>) -> bool {
+        let content_length = |req: &http::Request<_>| {
+            req.headers()
+                .get(http::header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
+        };
+
+        // Requests without bodies can always be retried, as we will not need to
+        // buffer the body. If the request *does* have a body, retry it if and
+        // only if the request contains a `content-length` header and the
+        // content length is >= 64 kb.
+        let has_body = !req.body().is_end_stream();
+        if has_body && content_length(&req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
+            tracing::trace!(
+                req.has_body = has_body,
+                req.content_length = ?content_length(&req),
+                "not retryable",
+            );
+            return false;
+        }
+
+        tracing::trace!(
+            req.has_body = has_body,
+            req.content_length = ?content_length(&req),
+            "retryable",
+        );
+        true
+    }
+}
+
+impl<A, B, E> retry::Policy<http::Request<A>, http::Response<B>, E> for RetryPolicy
 where
-    C: CloneRequest<http::Request<A>>,
+    A: http_body::Body + Clone,
 {
     type Future = future::Ready<Self>;
 
@@ -104,55 +123,14 @@ where
     }
 
     fn clone_request(&self, req: &http::Request<A>) -> Option<http::Request<A>> {
-        C::clone_request(req)
-    }
-}
-
-impl<C> Clone for Retry<C> {
-    fn clone(&self) -> Self {
-        Self {
-            metrics: self.metrics.clone(),
-            budget: self.budget.clone(),
-            response_classes: self.response_classes.clone(),
-            _clone_request: self._clone_request,
-        }
-    }
-}
-
-// === impl WithBody ===
-
-impl WithBody {
-    /// Allow buffering requests up to 64 kb
-    pub const MAX_BUFFERED_BYTES: usize = 64 * 1024;
-}
-
-impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
-    fn clone_request(req: &http::Request<ReplayBody<B>>) -> Option<http::Request<ReplayBody<B>>> {
-        let content_length = |req: &http::Request<_>| {
-            req.headers()
-                .get(http::header::CONTENT_LENGTH)
-                .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
-        };
-
-        // Requests without bodies can always be retried, as we will not need to
-        // buffer the body. If the request *does* have a body, retry it if and
-        // only if the request contains a `content-length` header and the
-        // content length is >= 64 kb.
-        let has_body = !req.body().is_end_stream();
-        if has_body && content_length(&req).unwrap_or(usize::MAX) > Self::MAX_BUFFERED_BYTES {
-            tracing::trace!(
-                req.has_body = has_body,
-                req.content_length = ?content_length(&req),
-                "not retryable",
-            );
+        let can_retry = self.can_retry(&req);
+        debug_assert!(
+            can_retry,
+            "The retry policy attempted to clone an un-retryable request. This is unexpected."
+        );
+        if !can_retry {
             return None;
         }
-
-        tracing::trace!(
-            req.has_body = has_body,
-            req.content_length = ?content_length(&req),
-            "retryable",
-        );
 
         let mut clone = http::Request::new(req.body().clone());
         *clone.method_mut() = req.method().clone();
@@ -161,5 +139,23 @@ impl<B: Body + Unpin> CloneRequest<http::Request<ReplayBody<B>>> for WithBody {
         *clone.version_mut() = req.version();
 
         Some(clone)
+    }
+}
+
+impl<A, B, E> retry::PrepareRequest<http::Request<A>, http::Response<B>, E> for RetryPolicy
+where
+    A: http_body::Body + Unpin,
+    A::Error: Into<Error>,
+{
+    type RetryRequest = http::Request<ReplayBody<A>>;
+
+    fn prepare_request(
+        &self,
+        req: http::Request<A>,
+    ) -> Either<Self::RetryRequest, http::Request<A>> {
+        if self.can_retry(&req) {
+            return Either::A(req.map(|body| ReplayBody::new(body, MAX_BUFFERED_BYTES)));
+        }
+        Either::B(req)
     }
 }

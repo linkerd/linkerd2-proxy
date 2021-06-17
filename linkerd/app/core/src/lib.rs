@@ -11,19 +11,18 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
+pub use drain;
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
 pub use linkerd_conditional::Conditional;
 pub use linkerd_detect as detect;
 pub use linkerd_dns;
-pub use linkerd_drain as drain;
 pub use linkerd_error::{Error, Never, Recover};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_identity as identity;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
-pub use linkerd_reconnect as reconnect;
 pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
@@ -34,7 +33,6 @@ pub use linkerd_transport_header as transport_header;
 use thiserror::Error;
 
 mod addr_match;
-pub mod admin;
 pub mod classify;
 pub mod config;
 pub mod control;

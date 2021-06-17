@@ -5,7 +5,6 @@ use crate::{
     h2::Settings as H2Settings,
     trace, upgrade, Version,
 };
-use linkerd_drain as drain;
 use linkerd_error::Error;
 use linkerd_io::{self as io, PeerAddr};
 use linkerd_stack::{layer, NewService, Param};

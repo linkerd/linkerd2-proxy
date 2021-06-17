@@ -12,8 +12,8 @@ Configures and runs the inbound proxy
 [dependencies]
 bytes = "1"
 http = "0.2"
-futures = "0.3.15"
-indexmap = "1.0"
+futures = { version = "0.3", default-features = false }
+indexmap = "1.6"
 linkerd-app-core = { path = "../core" }
 linkerd-http-access-log = { path = "../../http-access-log" }
 thiserror = "1.0"

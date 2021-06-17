@@ -120,7 +120,7 @@ where
                 let profile = p.ok_or_else(|| {
                     DiscoveryRejected::new("no profile discovered for gateway target")
                 })?;
-                let logical_addr = profile.borrow().addr.clone().ok_or_else(|| {
+                let logical_addr = profile.logical_addr().ok_or_else(|| {
                     DiscoveryRejected::new(
                         "profile for gateway target does not have a logical address",
                     )
