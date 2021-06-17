@@ -15,7 +15,7 @@ openssl-tls = ["linkerd-app/openssl-tls"]
 boring-tls = ["linkerd-app/boring-tls"]
 
 [dependencies]
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 mimalloc = { version = "0.1.19", optional = true }
 num_cpus = { version = "1", optional = true }
 linkerd-app = { path = "../linkerd/app" }

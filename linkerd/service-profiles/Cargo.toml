@@ -9,22 +9,26 @@ description = """
 Implements client layers for Linkerd ServiceProfiles.
 """
 
+[features]
+rustfmt = ["linkerd2-proxy-api/rustfmt"]
+
 [dependencies]
 bytes = "1"
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-indexmap = "1.0"
+indexmap = "1.6"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18"  }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["destination", "client"] }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
+linkerd-tonic-watch = { path = "../tonic-watch" }
 rand = { version = "0.8", features = ["small_rng"] }
-regex = "1.0.0"
+regex = "1.4.6"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
-async-stream = "0.3"
+tokio-stream = { version = "0.1", features = ["sync"] }
 tonic = { version = "0.4", default-features = false }
 tower = { version = "0.4.7", features = [ "ready-cache", "retry", "util"] }
 thiserror = "1"
@@ -32,6 +36,6 @@ tracing = "0.1.23"
 pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18", features = ["arbitrary"] }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["arbitrary"] }
 prost-types = "0.7.0"
 quickcheck = { version = "1", default-features = false }

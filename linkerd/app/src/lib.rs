@@ -4,7 +4,6 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-pub mod admin;
 pub mod dst;
 pub mod env;
 pub mod identity;
@@ -13,12 +12,12 @@ pub mod tap;
 
 pub use self::metrics::Metrics;
 use futures::{future, FutureExt, TryFutureExt};
+use linkerd_app_admin as admin;
 pub use linkerd_app_core::{self as core, metrics, trace};
 use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
-    proxy::http,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
@@ -61,7 +60,7 @@ pub struct Config {
 }
 
 pub struct App {
-    admin: admin::Admin,
+    admin: admin::Task,
     drain: drain::Signal,
     dst: ControlAddr,
     identity: identity::Identity,

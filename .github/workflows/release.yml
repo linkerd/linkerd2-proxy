@@ -55,7 +55,7 @@ jobs:
           args: /linkerd/expected-checksec.json "target/${{ matrix.target }}/release/package/linkerd2-proxy-${{ steps.release-tag-meta.outputs.name }}-${{ matrix.architecture }}-checksec.json"
 
       - name: upload artifacts
-        uses: actions/upload-artifact@ee69f02b3dfdecd58bb31b4d133da38ba6fe3700 # v2.2.3
+        uses: actions/upload-artifact@27121b0bdffd731efa15d66772be8dc71245d074
         with:
           name: ${{ matrix.architecture }}-artifacts
           path: target/${{ matrix.target }}/release/package/*
@@ -86,7 +86,7 @@ jobs:
         run: ls -R artifacts
 
       - name: release
-        uses: softprops/action-gh-release@b7e450da2a4b4cb4bfbae528f788167786cfcedf # v0.1.5
+        uses: softprops/action-gh-release@91409e712cf565ce9eff10c87a8d1b11b81757ae
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

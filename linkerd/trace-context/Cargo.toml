@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 base64 = "0.13"
 bytes = "1"
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 hex = "0.3.2"
 http = "0.2"
 linkerd-error = { path = "../error" }

@@ -6,6 +6,7 @@ resolver = "2"
 members = [
     "hyper-balance",
     "linkerd/addr",
+    "linkerd/app/admin",
     "linkerd/app/core",
     "linkerd/app/gateway",
     "linkerd/app/inbound",
@@ -45,6 +46,7 @@ members = [
     "linkerd/proxy/tcp",
     "linkerd/proxy/transport",
     "linkerd/reconnect",
+    "linkerd/retry",
     "linkerd/service-profiles",
     "linkerd/signal",
     "linkerd/stack",
@@ -52,6 +54,7 @@ members = [
     "linkerd/stack/tracing",
     "linkerd/system",
     "linkerd/timeout",
+    "linkerd/tonic-watch",
     "linkerd/tls",
     "linkerd/tracing",
     "linkerd2-proxy",

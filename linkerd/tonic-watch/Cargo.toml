@@ -1,0 +1,25 @@
+[package]
+name = "linkerd-tonic-watch"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+description = """
+Provides a utility for creating robust watches from a service that returns a stream.
+"""
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../error" }
+linkerd-stack = { path = "../stack" }
+tonic = { version = "0.4", default-features = false }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+linkerd-tracing = { path = "../tracing" }
+tokio = { version = "1", features = ["macros"] }
+tokio-stream = { version = "0.1", features = ["sync", "time"] }
+tokio-test = "0.4"
+tower-test = "0.4"

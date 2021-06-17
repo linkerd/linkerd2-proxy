@@ -21,7 +21,7 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::Client<control::Client<BoxBody>, BackoffUnlessInvalidArgument>,
+    pub profiles: profiles::Client<BackoffUnlessInvalidArgument, control::Client<BoxBody>>,
 
     /// Resolves endpoints.
     pub resolve:
@@ -46,7 +46,7 @@ impl Config {
 
         Ok(Dst {
             addr,
-            profiles: profiles::Client::new(svc.clone(), backoff, self.context.clone()),
+            profiles: profiles::Client::new(backoff, svc.clone(), self.context.clone()),
             resolve: recover::Resolve::new(backoff, api::Resolve::new(svc, self.context)),
         })
     }
@@ -63,6 +63,23 @@ impl Recover<Error> for BackoffUnlessInvalidArgument {
         }
 
         tracing::trace!(%error, "Recovering");
+        Ok(self.0.stream())
+    }
+}
+
+impl Recover<tonic::Status> for BackoffUnlessInvalidArgument {
+    type Backoff = ExponentialBackoffStream;
+
+    fn recover(&self, status: tonic::Status) -> Result<Self::Backoff, tonic::Status> {
+        // Address is not resolvable
+        if status.code() == tonic::Code::InvalidArgument
+                    // Unexpected cluster state
+                    || status.code() == tonic::Code::FailedPrecondition
+        {
+            return Err(status);
+        }
+
+        tracing::trace!(%status, "Recovering");
         Ok(self.0.stream())
     }
 }

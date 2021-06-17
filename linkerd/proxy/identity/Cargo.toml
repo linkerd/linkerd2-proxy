@@ -6,9 +6,12 @@ license = "Apache-2.0"
 edition = "2018"
 publish = false
 
+[features]
+rustfmt = ["linkerd2-proxy-api/rustfmt"]
+
 [dependencies]
-futures = "0.3.15"
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", tag = "v0.1.18" }
+futures = { version = "0.3", default-features = false }
+linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["identity", "client"] }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }

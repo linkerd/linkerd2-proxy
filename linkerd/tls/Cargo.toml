@@ -15,7 +15,7 @@ boring-tls = ["linkerd-identity/boring-tls", "boring", "tokio-boring"]
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 linkerd-conditional = { path = "../conditional" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }

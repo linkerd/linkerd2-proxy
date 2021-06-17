@@ -1,0 +1,14 @@
+[package]
+name = "linkerd-retry"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+linkerd-error = { path = "../error" }
+linkerd-stack = { path = "../stack" }
+pin-project = "1"
+tower = { version = "0.4.7", default-features = false, features = ["retry"] }
+tracing = "0.1.23"

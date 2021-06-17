@@ -28,9 +28,9 @@ use linkerd_app_core::{
     proxy::tcp,
     serve, svc, tls,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, NameMatch, ProxyRuntime,
+    Error, NameMatch, Never, ProxyRuntime,
 };
-use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
+use std::{collections::HashSet, convert::TryFrom, fmt::Debug, future::Future, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -38,12 +38,9 @@ pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
-    pub disable_protocol_detection_for_ports: SkipByPort,
+    pub disable_protocol_detection_for_ports: HashSet<u16>,
     pub profile_idle_timeout: Duration,
 }
-
-#[derive(Clone, Debug)]
-pub struct SkipByPort(std::sync::Arc<indexmap::IndexSet<u16>>);
 
 #[derive(Clone, Debug)]
 pub struct Inbound<S> {
@@ -230,6 +227,7 @@ where
         let disable_detect = self.config.disable_protocol_detection_for_ports.clone();
         let require_id = self.config.require_identity_for_inbound_ports.clone();
         let config = self.config.proxy.clone();
+
         self.clone()
             .push_http_router(profiles)
             .push_http_server()
@@ -262,15 +260,21 @@ where
             ))
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
-                disable_detect,
+                move |t: T| {
+                    let OrigDstAddr(addr) = t.param();
+                    if !disable_detect.contains(&addr.port()) {
+                        Ok::<_, Never>(svc::Either::A(t))
+                    } else {
+                        Ok(svc::Either::B(TcpAccept::port_skipped(t)))
+                    }
+                },
                 self.clone()
                     .push_tcp_forward(server_port)
                     .stack
                     .push_map_target(TcpEndpoint::from)
                     .push(self.runtime.metrics.transport.layer_accept())
-                    .push_map_target(TcpAccept::port_skipped)
-                    .check_new_service::<T, _>()
-                    .instrument(|_: &T| debug_span!("forward"))
+                    .check_new_service::<TcpAccept, _>()
+                    .instrument(|_: &TcpAccept| debug_span!("forward"))
                     .into_inner(),
             )
             .check_new_service::<T, I>()
@@ -291,30 +295,6 @@ where
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .into_inner()
-    }
-}
-
-// === impl SkipByPort ===
-
-impl From<indexmap::IndexSet<u16>> for SkipByPort {
-    fn from(ports: indexmap::IndexSet<u16>) -> Self {
-        SkipByPort(ports.into())
-    }
-}
-
-impl<T> svc::Predicate<T> for SkipByPort
-where
-    T: svc::Param<OrigDstAddr>,
-{
-    type Request = svc::Either<T, T>;
-
-    fn check(&mut self, t: T) -> Result<Self::Request, Error> {
-        let OrigDstAddr(addr) = t.param();
-        if !self.0.contains(&addr.port()) {
-            Ok(svc::Either::A(t))
-        } else {
-            Ok(svc::Either::B(t))
-        }
     }
 }
 

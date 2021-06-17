@@ -17,8 +17,8 @@ test-subscriber = []
 [dependencies]
 bytes = "1"
 http = "0.2"
-futures = "0.3.15"
-indexmap = "1.0"
+futures = { version = "0.3", default-features = false }
+indexmap = "1.6"
 linkerd-app-core = { path = "../core" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
@@ -30,7 +30,7 @@ pin-project = "1"
 
 [dev-dependencies]
 hyper = { version = "0.14.2", features = ["http1", "http2"] }
-ipnet = "2.0"
+ipnet = "2.3"
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 tokio = { version = "1", features = ["full", "macros"] }

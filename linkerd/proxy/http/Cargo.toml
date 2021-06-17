@@ -15,14 +15,14 @@ This should probably be decomposed into smaller, decoupled crates.
 async-trait = "0.1"
 bytes = "1"
 drain = "0.0.1"
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
 httparse = "1.2"
 hyper = { version = "0.14.2", features = ["client", "http1", "http2", "server", "stream", "runtime"] }
 hyper-balance = { path = "../../../hyper-balance" }
-indexmap = "1.0"
+indexmap = "1.6"
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-error = { path = "../../error" }

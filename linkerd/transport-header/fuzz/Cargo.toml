@@ -10,10 +10,10 @@ cargo-fuzz = true
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1", features = ["derive"] }
-libfuzzer-sys = { version = "0.4.0", features = ["arbitrary-derive"] }
+libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 linkerd-transport-header = { path = ".." }
 tokio = { version = "1", features = ["full"] }
-tracing = "0.1.23"
+tracing = "0.1.26"
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
 
 # Prevent this from interfering with workspaces

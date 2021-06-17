@@ -286,13 +286,12 @@ pub(crate) fn bind_ephemeral() -> (Socket, SocketAddr) {
     use socket2::{Domain, Protocol, Type};
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-    let sock =
-        Socket::new(Domain::ipv4(), Type::stream(), Some(Protocol::tcp())).expect("Socket::new");
+    let sock = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("Socket::new");
     sock.bind(&addr.into()).expect("Socket::bind");
     let addr = sock
         .local_addr()
         .expect("Socket::local_addr")
-        .as_std()
+        .as_socket()
         .expect("must be AF_INET");
     (sock, addr)
 }
@@ -302,8 +301,7 @@ pub(crate) fn bind_ephemeral() -> (Socket, SocketAddr) {
 pub(crate) fn listen(sock: Socket) -> TcpListener {
     sock.listen(1024)
         .expect("socket should be able to start listening");
-    let sock = sock.into_tcp_listener();
     sock.set_nonblocking(true)
         .expect("socket should be able to set nonblocking");
-    TcpListener::from_std(sock).expect("socket should seem okay to tokio")
+    TcpListener::from_std(sock.into()).expect("socket should seem okay to tokio")
 }

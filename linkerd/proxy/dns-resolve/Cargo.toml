@@ -10,13 +10,13 @@ Service Dns Resolutions for the proxy
 """
 
 [dependencies]
-futures = "0.3.15"
+futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../../error" }
 linkerd-addr = { path = "../../addr" }
 linkerd-dns = { path = "../../dns" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
-tokio-stream = { version = "0.1.5", features = ["sync"]}
+tokio-stream = { version = "0.1.6", features = ["sync"]}
 tower = "0.4.7"
 tracing = "0.1.9"

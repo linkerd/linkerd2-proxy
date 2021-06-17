@@ -42,8 +42,6 @@ jobs:
       - run: cargo install cargo-fuzz
       # Iterate through all fuzz crates to ensure each compiles independently.
       - run: cd linkerd/${{matrix.dir}}/fuzz && cargo +nightly fuzz build
-      # Error if the repo isn't clean (i.e. because lock files were modified).
-      - run: git status && git diff-index --quiet HEAD
 
   # It's easy to make changes that are innocuous in dev builds that end up ballooning resources
   # needed for release builds. This job builds the proxy in release-mode to ensure the build isn't
