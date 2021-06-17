@@ -2,7 +2,6 @@
 
 pub use crate::proxy::http;
 use crate::{cache, Error};
-pub use linkerd_concurrency_limit::ConcurrencyLimit;
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
@@ -21,7 +20,10 @@ use tower::{
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
-pub use tower::{layer::Layer, service_fn as mk, spawn_ready::SpawnReady, Service, ServiceExt};
+pub use tower::{
+    layer::Layer, limit::GlobalConcurrencyLimitLayer as ConcurrencyLimitLayer, service_fn as mk,
+    spawn_ready::SpawnReady, Service, ServiceExt,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AlwaysReconnect(ExponentialBackoff);

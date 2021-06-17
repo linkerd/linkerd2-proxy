@@ -206,7 +206,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     // The concurrency-limit can force the service into fail-fast, but it need not
                     // be driven to readiness on a background task (i.e., by `SpawnReady`).
                     // Otherwise, the inner service is always ready (because it's a router).
-                    .push(svc::ConcurrencyLimit::layer(max_in_flight_requests))
+                    .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("Ingress server", dispatch_timeout))
                     .push(rt.metrics.http_errors.clone())
                     .push(errors::layer())

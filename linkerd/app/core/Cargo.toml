@@ -22,7 +22,6 @@ futures = { version = "0.3", default-features = false }
 ipnet = "2.3"
 linkerd-addr = { path = "../../addr" }
 linkerd-cache = { path = "../../cache" }
-linkerd-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
 linkerd-detect = { path = "../../detect" }
@@ -78,6 +77,7 @@ features = [
     "spawn-ready",
     "timeout",
     "util",
+    "limit",
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies]
