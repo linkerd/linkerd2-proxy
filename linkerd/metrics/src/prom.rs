@@ -124,6 +124,16 @@ impl<'a, N: fmt::Display, M: FmtMetric> Metric<'a, N, M> {
     }
 }
 
+impl<N: fmt::Display, M: FmtMetric> fmt::Debug for Metric<'_, N, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Metric")
+            .field("name", &format_args!("{}", self.name))
+            .field("help", &self.help)
+            .field("type", &std::any::type_name::<M>())
+            .finish()
+    }
+}
+
 // ===== impl FmtLabels =====
 
 impl<'a, A: FmtLabels + 'a> FmtLabels for &'a A {

@@ -6,11 +6,17 @@ license = "Apache-2.0"
 edition = "2018"
 publish = false
 
+[features]
+default = ["metrics"]
+metrics = ["linkerd-error-metrics"]
+
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
 linkerd-error = { path = "../error" }
+linkerd-error-metrics = { path = "../error-metrics", optional = true }
 linkerd-io = { path = "../io" }
+# linkerd-metrics = { path = "../metrics", optional = true }
 linkerd-stack = { path = "../stack" }
 tokio = { version = "1", features = ["time"] }
 thiserror = "1.0"

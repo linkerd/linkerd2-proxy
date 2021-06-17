@@ -28,7 +28,7 @@ pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
 #[derive(Clone, Debug)]
-pub struct Proxy {
+pub struct Proxy<T = ()> {
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
     pub http_route_retry: HttpRouteRetry,

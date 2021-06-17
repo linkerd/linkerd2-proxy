@@ -70,6 +70,15 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
+    pub fn tls_detect_metrics() -> detect::metrics::ErrorRegistry {
+        linkerd_metrics::metrics! {
+            inbound_tls_detect_error_total: linkerd_metrics::Counter {
+                "The total number of errors that occurred while trying to detect TLS on an inbound connection."
+            }
+        }
+        detect::metrics::ErrorRegistry::default().with_metric(inbound_tls_detect_error_total)
+    }
+
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         Self {
             config,
@@ -210,6 +219,7 @@ where
         server_port: u16,
         profiles: P,
         gateway: G,
+        tls_detect_metrics: 
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
