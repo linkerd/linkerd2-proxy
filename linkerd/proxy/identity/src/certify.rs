@@ -99,6 +99,7 @@ impl Daemon {
         } = self;
 
         debug!("Identity daemon running");
+
         let mut curr_expiry = UNIX_EPOCH;
 
         loop {

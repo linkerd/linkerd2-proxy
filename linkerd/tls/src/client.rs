@@ -2,11 +2,11 @@ use futures::{
     future::{Either, MapOk},
     prelude::*,
 };
+use io::ReadBuf;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{layer, Param};
-use rustls::Session;
 use std::{
     fmt,
     future::Future,
@@ -15,8 +15,69 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-pub use tokio_rustls::client::TlsStream;
 use tracing::{debug, trace};
+
+use crate::imp;
+use crate::{HasNegotiatedProtocol, NegotiatedProtocolRef, TlsConnector};
+
+#[derive(Debug)]
+pub struct TlsStream<IO>(imp::client::TlsStream<IO>);
+
+impl<IO> TlsStream<IO> {
+    pub fn get_alpn_protocol(&self) -> Option<&[u8]> {
+        self.0.get_alpn_protocol()
+    }
+}
+
+impl<IO> From<imp::client::TlsStream<IO>> for TlsStream<IO> {
+    fn from(stream: imp::client::TlsStream<IO>) -> Self {
+        TlsStream(stream)
+    }
+}
+
+impl<IO> io::AsyncRead for TlsStream<IO>
+where
+    IO: io::AsyncRead + io::AsyncWrite + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_read(cx, buf)
+    }
+}
+
+impl<IO> io::AsyncWrite for TlsStream<IO>
+where
+    IO: io::AsyncRead + io::AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0).poll_shutdown(cx)
+    }
+}
+
+impl<IO> HasNegotiatedProtocol for TlsStream<IO>
+where
+    IO: HasNegotiatedProtocol,
+{
+    #[inline]
+    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+        self.0.negotiated_protocol()
+    }
+}
 
 /// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -54,7 +115,7 @@ pub enum NoClientTls {
 /// known TLS identity.
 pub type ConditionalClientTls = Conditional<ClientTls, NoClientTls>;
 
-pub type Config = Arc<rustls::ClientConfig>;
+pub type Config = Arc<id::ClientConfig>;
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
@@ -128,11 +189,11 @@ where
                 // TODO it would be better to avoid cloning the whole TLS config
                 // per-connection.
                 match alpn {
-                    None => tokio_rustls::TlsConnector::from(local.param()),
+                    None => TlsConnector::from(local.param()),
                     Some(AlpnProtocols(protocols)) => {
-                        let mut config: rustls::ClientConfig = local.param().as_ref().clone();
-                        config.alpn_protocols = protocols;
-                        tokio_rustls::TlsConnector::from(Arc::new(config))
+                        let mut config: id::ClientConfig = local.param().as_ref().clone();
+                        config.set_protocols(protocols);
+                        TlsConnector::from(Arc::new(config))
                     }
                 }
             }
@@ -147,7 +208,7 @@ where
         Either::Right(Box::pin(async move {
             let io = connect.await?;
             let io = handshake.connect((&server_id.0).into(), io).await?;
-            if let Some(alpn) = io.get_ref().1.get_alpn_protocol() {
+            if let Some(alpn) = io.get_alpn_protocol() {
                 debug!(alpn = ?std::str::from_utf8(alpn));
             }
             Ok(io::EitherIo::Right(io))
