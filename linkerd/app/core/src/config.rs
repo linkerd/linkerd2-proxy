@@ -48,7 +48,7 @@ pub type PortSet = HashSet<u16, BuildHasherDefault<PortHasher>>;
 /// Because ports are single `u16` values, we don't have to hash them; we can just use
 /// the integer values as hashes directly.
 #[derive(Default)]
-pub struct PortHasher(u64);
+pub struct PortHasher(u16);
 
 // === impl ServerConfig ===
 
@@ -73,11 +73,11 @@ impl Hasher for PortHasher {
 
     #[inline]
     fn write_u16(&mut self, port: u16) {
-        self.0 = port as u64;
+        self.0 = port;
     }
 
     #[inline]
     fn finish(&self) -> u64 {
-        self.0
+        self.0 as u64
     }
 }
