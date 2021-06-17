@@ -11,7 +11,7 @@ publish = false
 futures = { version = "0.3", default-features = false }
 linkerd-stack = { path = "../stack" }
 tokio = { version = "1", features = ["sync"] }
-tokio-util = "0.6.5"
+tokio-util = "0.6.7"
 tower = { version = "0.4.7", default-features = false }
 tracing = "0.1.23"
 pin-project = "1"

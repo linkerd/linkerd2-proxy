@@ -16,7 +16,7 @@ linkerd-error = { path = "../../error" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync", "time"] }
-tokio-util = "0.6.5"
+tokio-util = "0.6.7"
 tower = { version = "0.4.7", features = ["discover"] }
 tracing = "0.1.23"
 pin-project = "1"
