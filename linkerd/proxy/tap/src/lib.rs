@@ -25,6 +25,7 @@ pub fn new() -> (Registry, grpc::Server) {
     (registry, server)
 }
 
+/// Endpoint labels are lexicographically ordered by key.
 pub type Labels = std::collections::BTreeMap<String, String>;
 
 /// Inspects a request for a `Stack`.
