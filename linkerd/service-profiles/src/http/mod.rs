@@ -62,11 +62,7 @@ impl Route {
     where
         I: Iterator<Item = (String, String)>,
     {
-        let labels = {
-            let mut pairs = label_iter.collect::<Vec<_>>();
-            pairs.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
-            Labels(Arc::new(pairs.into_iter().collect()))
-        };
+        let labels = Labels(Arc::new(label_iter.collect()));
 
         Self {
             labels,
