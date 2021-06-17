@@ -11,7 +11,7 @@ futures = { version = "0.3", default-features = false }
 http = "0.2"
 hyper = "0.14"
 pin-project = "1"
-tower = { version = "0.4.7", default-features = false, features = ["load"] }
+tower = { version = "0.4.8", default-features = false, features = ["load"] }
 tokio = { version = "1", features = ["macros"] }
 
 [dev-dependencies]

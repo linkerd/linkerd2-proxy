@@ -10,5 +10,5 @@ publish = false
 linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
-tower = { version = "0.4.7", default-features = false, features = ["retry"] }
+tower = { version = "0.4.8", default-features = false, features = ["retry"] }
 tracing = "0.1.26"

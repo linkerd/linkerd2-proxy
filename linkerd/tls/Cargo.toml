@@ -20,7 +20,7 @@ rustls = "0.19"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "time"] }
 tokio-rustls = "0.22"
-tower = "0.4.7"
+tower = "0.4.8"
 tracing = "0.1.26"
 webpki = "0.21"
 untrusted = "0.7"
@@ -30,4 +30,4 @@ linkerd-identity = { path = "../identity", features = ["test-util"] }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
-tower = { version = "0.4.7", default-features = false, features = ["util"] }
+tower = { version = "0.4.8", default-features = false, features = ["util"] }

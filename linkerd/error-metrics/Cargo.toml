@@ -11,5 +11,5 @@ publish = false
 futures = { version = "0.3", default-features = false }
 indexmap = "1.6"
 linkerd-metrics = { path = "../metrics" }
-tower = { version = "0.4.7", default-features = false }
+tower = { version = "0.4.8", default-features = false }
 pin-project = "1"
