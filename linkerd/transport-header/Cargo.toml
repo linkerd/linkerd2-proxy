@@ -16,7 +16,7 @@ linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
 prost = "0.7"
 tokio = { version = "1", features = ["time"] }
-tracing = "0.1.23"
+tracing = "0.1.26"
 
 [build-dependencies]
 prost-build = { version = "0.7", default-features = false }

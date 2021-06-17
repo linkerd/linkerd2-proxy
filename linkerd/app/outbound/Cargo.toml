@@ -25,7 +25,7 @@ linkerd-identity = { path = "../../identity" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.7", features = ["util"] }
-tracing = "0.1.23"
+tracing = "0.1.26"
 pin-project = "1"
 
 [dev-dependencies]
