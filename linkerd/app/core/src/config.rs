@@ -81,3 +81,25 @@ impl Hasher for PortHasher {
         self.0 as u64
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quickcheck::*;
+
+    quickcheck! {
+        fn portset_contains_all_ports(ports: Vec<u16>) -> bool {
+            // Make a port set containing the generated port numbers.
+            let portset = ports.iter().cloned().collect::<PortSet>();
+            for port in ports {
+                // If the port set doesn't contain one of the ports it was
+                // created with, that's bad news!
+                if !portset.contains(&port) {
+                    return false;
+                }
+            }
+
+            true
+        }
+    }
+}
