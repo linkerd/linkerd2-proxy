@@ -29,7 +29,7 @@ impl Predicate<TcpAccept> for RequireIdentityForPorts {
 
     fn check(&mut self, meta: TcpAccept) -> Result<TcpAccept, Error> {
         let port = meta.target_addr.port();
-        let id_required = self.ports.contains(port);
+        let id_required = self.ports.contains(&port);
 
         tracing::debug!(%port, tls = ?meta.tls, %id_required);
         if id_required {

@@ -262,7 +262,7 @@ where
             .push_switch(
                 move |t: T| {
                     let OrigDstAddr(addr) = t.param();
-                    if !disable_detect.contains(addr.port()) {
+                    if !disable_detect.contains(&addr.port()) {
                         Ok::<_, Never>(svc::Either::A(t))
                     } else {
                         Ok(svc::Either::B(TcpAccept::port_skipped(t)))

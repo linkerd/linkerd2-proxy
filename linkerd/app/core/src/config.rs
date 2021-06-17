@@ -7,7 +7,6 @@ use crate::{
 use std::{
     collections::HashSet,
     hash::{BuildHasherDefault, Hasher},
-    iter::FromIterator,
     time::Duration,
 };
 
@@ -42,13 +41,14 @@ pub struct ProxyConfig {
 ///
 /// Because ports are `u16` values, this type avoids the overhead of actually
 /// hashing ports.
-#[derive(Clone, Debug, Default)]
-pub struct PortSet(HashSet<u16, BuildHasherDefault<PortHasher>>);
+pub type PortSet = HashSet<u16, BuildHasherDefault<PortHasher>>;
 
+/// A hasher for ports.
+///
 /// Because ports are single `u16` values, we don't have to hash them; we can just use
 /// the integer values as hashes directly.
 #[derive(Default)]
-struct PortHasher(u64);
+pub struct PortHasher(u64);
 
 // === impl ServerConfig ===
 
@@ -64,23 +64,6 @@ impl Param<Keepalive> for ServerConfig {
     }
 }
 
-// === impl PortSet ===
-
-impl PortSet {
-    #[inline]
-    pub fn contains(&self, port: u16) -> bool {
-        self.0.contains(&port)
-    }
-}
-
-impl FromIterator<u16> for PortSet {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = u16>,
-    {
-        Self(HashSet::from_iter(iter))
-    }
-}
 // === impl PortHasher ===
 
 impl Hasher for PortHasher {
