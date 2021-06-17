@@ -219,7 +219,7 @@ where
         server_port: u16,
         profiles: P,
         gateway: G,
-        tls_detect_metrics: 
+        tls_detect_metrics: detect::metrics::ErrorRegistry,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
@@ -268,6 +268,7 @@ where
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
             ))
+            .push(tls_detect_metrics.layer(detect::metrics::LabelTimeout))
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {
