@@ -141,6 +141,12 @@ impl Param<Option<identity::Name>> for HttpAccept {
     }
 }
 
+impl Param<Remote<ClientAddr>> for HttpAccept {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.tcp.client_addr
+    }
+}
+
 // === impl HttpEndpoint ===
 
 impl Param<http::client::Settings> for HttpEndpoint {

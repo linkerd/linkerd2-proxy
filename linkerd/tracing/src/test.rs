@@ -1,4 +1,5 @@
 use super::*;
+use std::env;
 
 /// By default, disable logging in modules that are expected to error in tests.
 pub const DEFAULT_LOG: &str = "warn,\

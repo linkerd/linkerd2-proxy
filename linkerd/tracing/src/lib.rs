@@ -2,13 +2,13 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
+pub mod access_log;
 pub mod level;
 pub mod test;
 mod uptime;
 
 use self::uptime::Uptime;
 use linkerd_error::Error;
-use std::{env, str};
 pub use tokio_trace::tasks::TaskList;
 use tokio_trace::tasks::TasksLayer;
 use tracing::Dispatch;
@@ -19,8 +19,10 @@ use tracing_subscriber::{
     reload, EnvFilter,
 };
 
-type Registry =
-    Layered<reload::Layer<EnvFilter, tracing_subscriber::Registry>, tracing_subscriber::Registry>;
+type Registry = Layered<
+    Option<access_log::Writer>,
+    Layered<reload::Layer<EnvFilter, tracing_subscriber::Registry>, tracing_subscriber::Registry>,
+>;
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
@@ -44,6 +46,7 @@ enum Inner {
     Enabled {
         level: level::Handle,
         tasks: TaskList,
+        guard: Option<access_log::Guard>,
     },
 }
 
@@ -111,11 +114,25 @@ impl Settings {
             .to_uppercase()
     }
 
-    fn mk_registry(&self) -> (Registry, level::Handle) {
-        let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
-        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
-        let reg = tracing_subscriber::registry().with(filter);
-        (reg, level::Handle::new(level))
+    fn mk_registry(&self) -> (Registry, level::Handle, Option<access_log::Guard>) {
+        let mut env = {
+            let f = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
+            EnvFilter::new(f)
+        };
+
+        let (access_log, guard) = match access_log::build() {
+            None => (None, None),
+            Some((access_log, guard, directive)) => {
+                env = env.add_directive(directive);
+                (Some(access_log), Some(guard))
+            }
+        };
+
+        let (reload_env, level) = reload::Layer::new(env);
+        let reg = tracing_subscriber::registry()
+            .with(reload_env)
+            .with(access_log);
+        (reg, level::Handle::new(level), guard)
     }
 
     fn mk_json(&self, registry: Registry) -> (Dispatch, TaskList) {
@@ -167,14 +184,20 @@ impl Settings {
     }
 
     pub fn build(self) -> (Dispatch, Handle) {
-        let (registry, level) = self.mk_registry();
+        let (registry, level, guard) = self.mk_registry();
 
         let (dispatch, tasks) = match self.format().as_ref() {
             "JSON" => self.mk_json(registry),
             _ => self.mk_plain(registry),
         };
 
-        (dispatch, Handle(Inner::Enabled { level, tasks }))
+        let handle = Handle(Inner::Enabled {
+            level,
+            tasks,
+            guard,
+        });
+
+        (dispatch, handle)
     }
 }
 

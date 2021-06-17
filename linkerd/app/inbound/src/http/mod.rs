@@ -18,8 +18,10 @@ use linkerd_app_core::{
     dst, errors, http_tracing, identity, io, profiles,
     proxy::{http, tap},
     svc::{self, Param},
+    transport::{ClientAddr, Remote},
     Error,
 };
+use linkerd_http_access_log::NewAccessLog;
 use tracing::debug_span;
 
 impl<H> Inbound<H> {
@@ -34,7 +36,8 @@ impl<H> Inbound<H> {
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
-            + Param<Option<identity::Name>>,
+            + Param<Option<identity::Name>>
+            + Param<Remote<ClientAddr>>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -86,6 +89,7 @@ impl<H> Inbound<H> {
                     .push(http::BoxRequest::layer())
                     .push(http::BoxResponse::layer()),
             )
+            .push(NewAccessLog::layer())
             .check_new_service::<T, http::Request<_>>()
             .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
             .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
