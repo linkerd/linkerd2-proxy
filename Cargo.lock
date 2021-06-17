@@ -705,6 +705,7 @@ dependencies = [
  "linkerd-tracing",
  "linkerd-transport-header",
  "pin-project",
+ "quickcheck",
  "regex",
  "serde_json",
  "thiserror",

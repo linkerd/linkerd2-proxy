@@ -82,3 +82,6 @@ features = [
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linkerd-system = { path = "../../system" }
+
+[dev-dependencies]
+quickcheck = { version = "1", default-features = false }
