@@ -496,9 +496,9 @@ dependencies = [
 
 [[package]]
 name = "idna"
-version = "0.2.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de910d521f7cc3135c4de8db1cb910e0b5ed1dc6f57c381cd07e8e661ce10094"
+checksum = "418a0a6fab821475f634efe3ccc45c013f742efe03d853e8d3355d5cb850ecf8"
 dependencies = [
  "matches",
  "unicode-bidi",
@@ -2428,8 +2428,8 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.20.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#bbc9d5e9156f48102d246791e4ffa6e94962eebc"
+version = "0.21.0-alpha.1"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#ed9f05b102755178f3aa23f09c368b66d5972950"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2452,8 +2452,8 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.20.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#bbc9d5e9156f48102d246791e4ffa6e94962eebc"
+version = "0.21.0-alpha.1"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#ed9f05b102755178f3aa23f09c368b66d5972950"
 dependencies = [
  "cfg-if",
  "futures-util",
