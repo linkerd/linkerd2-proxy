@@ -39,7 +39,7 @@ impl std::fmt::Debug for NegotiatedProtocol {
 }
 
 impl NegotiatedProtocolRef<'_> {
-    pub fn to_owned(&self) -> NegotiatedProtocol {
+    pub fn to_owned(self) -> NegotiatedProtocol {
         NegotiatedProtocol(self.0.into())
     }
 }
