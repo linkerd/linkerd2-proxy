@@ -70,13 +70,15 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn tls_detect_metrics() -> detect::metrics::ErrorRegistry {
+    pub fn tls_detect_metrics(
+    ) -> detect::metrics::ErrorRegistry<detect::metrics::ErrorLabels<metrics::error::label::IoLabels>>
+    {
         linkerd_metrics::metrics! {
             inbound_tls_detect_error_total: linkerd_metrics::Counter {
                 "The total number of errors that occurred while trying to detect TLS on an inbound connection."
             }
         }
-        detect::metrics::ErrorRegistry::default().with_metric(inbound_tls_detect_error_total)
+        detect::metrics::ErrorRegistry::default().with_metric(&inbound_tls_detect_error_total)
     }
 
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
@@ -219,7 +221,9 @@ where
         server_port: u16,
         profiles: P,
         gateway: G,
-        tls_detect_metrics: detect::metrics::ErrorRegistry,
+        tls_detect_metrics: detect::metrics::ErrorRegistry<
+            detect::metrics::ErrorLabels<metrics::error::label::IoLabels>,
+        >,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
@@ -268,7 +272,12 @@ where
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .push(tls_detect_metrics.layer(detect::metrics::LabelTimeout))
+            .push(
+                tls_detect_metrics.layer(
+                    detect::metrics::LabelTimeout::default()
+                        .or_else(metrics::error::label::Io::default()),
+                ),
+            )
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {

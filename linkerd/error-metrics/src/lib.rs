@@ -2,9 +2,9 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
+pub mod label;
 mod layer;
 mod service;
-
 pub use self::layer::RecordErrorLayer;
 pub use self::service::RecordError;
 pub use linkerd_metrics::FmtLabels;

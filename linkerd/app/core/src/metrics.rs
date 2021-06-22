@@ -11,6 +11,7 @@ pub use crate::{
     },
 };
 use linkerd_addr::Addr;
+pub use linkerd_error_metrics as error;
 use linkerd_metrics::FmtLabels;
 pub use linkerd_metrics::*;
 use std::fmt::{self, Write};
@@ -28,7 +29,7 @@ pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
 #[derive(Clone, Debug)]
-pub struct Proxy<T = ()> {
+pub struct Proxy {
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
     pub http_route_retry: HttpRouteRetry,

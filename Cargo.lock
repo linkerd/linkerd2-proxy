@@ -918,6 +918,7 @@ name = "linkerd-error-metrics"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "linkerd-errno",
  "linkerd-metrics",
  "pin-project",
  "tower",
