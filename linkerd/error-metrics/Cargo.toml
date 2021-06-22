@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
+linkerd-error = { path = "../error" }
 linkerd-metrics = { path = "../metrics" }
 tower = { version = "0.4.8", default-features = false }
 pin-project = "1"

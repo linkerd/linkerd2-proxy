@@ -1,7 +1,8 @@
 use super::LabelError;
 use linkerd_errno::Errno;
+use linkerd_error::Error;
 use linkerd_metrics::FmtLabels;
-use std::{error::Error, fmt, io};
+use std::{fmt, io};
 
 /// Catchall for uncategorized labels.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
@@ -49,14 +50,13 @@ impl Io {
     }
 }
 
-impl<E, L> LabelError<E> for Io<L>
+impl<L> LabelError<Error> for Io<L>
 where
-    E: Error + 'static,
-    L: LabelError<E>,
+    L: LabelError<Error>,
 {
     type Labels = IoLabels<L::Labels>;
-    fn label_error(&self, error: &E) -> Self::Labels {
-        let mut curr: Option<&(dyn Error + 'static)> = Some(error);
+    fn label_error(&self, error: &Error) -> Self::Labels {
+        let mut curr: Option<&(dyn std::error::Error + 'static)> = Some(error.as_ref());
         while let Some(err) = curr {
             if let Some(err) = err.downcast_ref::<io::Error>() {
                 return match err.raw_os_error() {

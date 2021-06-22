@@ -1308,6 +1308,102 @@ mod transport {
         )
         .await
     }
+
+    #[tokio::test]
+    async fn inbound_tls_detect_timeout() {
+        const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
+
+        let _trace = trace_init();
+        use std::time::SystemTime;
+
+        let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let identity::Identity {
+            mut env,
+            mut certify_rsp,
+            ..
+        } = identity::Identity::new("foo-ns1", id.to_string());
+        certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
+        env.put(
+            app::env::ENV_INBOUND_DETECT_TIMEOUT,
+            format!("{:?}", TIMEOUT),
+        );
+
+        let id_svc = controller::identity()
+            .certify(move |_| certify_rsp)
+            .run()
+            .await;
+        let srv = tcp::server()
+            .accept_fut(move |sock| async { drop(sock) })
+            .run()
+            .await;
+
+        let proxy = proxy::new()
+            .identity(id_svc)
+            .inbound(srv)
+            .run_with_test_env(env)
+            .await;
+        let client = client::tcp(proxy.inbound);
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        let _tcp_client = client.connect().await;
+
+        tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
+            .await;
+
+        metrics::metric("inbound_tls_detect_error_total")
+            .label("error", "timeout")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn inbound_tls_detect_io_err() {
+        const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
+
+        let _trace = trace_init();
+        use std::time::SystemTime;
+
+        let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+        let identity::Identity {
+            mut env,
+            mut certify_rsp,
+            ..
+        } = identity::Identity::new("foo-ns1", id.to_string());
+        certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
+        env.put(
+            app::env::ENV_INBOUND_DETECT_TIMEOUT,
+            format!("{:?}", TIMEOUT),
+        );
+
+        let id_svc = controller::identity()
+            .certify(move |_| certify_rsp)
+            .run()
+            .await;
+        let srv = tcp::server()
+            .accept_fut(move |sock| async { drop(sock) })
+            .run()
+            .await;
+
+        let proxy = proxy::new()
+            .identity(id_svc)
+            .inbound(srv)
+            .run_with_test_env(env)
+            .await;
+        let client = client::tcp(proxy.inbound);
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        drop(tcp_client);
+
+        metrics::metric("inbound_tls_detect_error_total")
+            .label("error", "io")
+            .value(1u64)
+            .assert_in(&metrics)
+            .await;
+    }
 }
 
 // linkerd/linkerd2#613

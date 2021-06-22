@@ -11,12 +11,13 @@ pub use crate::{
     },
 };
 use linkerd_addr::Addr;
-pub use linkerd_error_metrics as error;
 use linkerd_metrics::FmtLabels;
 pub use linkerd_metrics::*;
 use std::fmt::{self, Write};
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime};
+
+pub mod tls_detect;
 
 pub type ControlHttp = http_metrics::Requests<ControlLabels, Class>;
 

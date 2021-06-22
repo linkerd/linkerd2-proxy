@@ -193,8 +193,12 @@ impl Config {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) =
-            inbound.serve(bind_in, dst.profiles.clone(), gateway_stack);
+        let (inbound_addr, inbound_serve) = inbound.serve(
+            bind_in,
+            dst.profiles.clone(),
+            gateway_stack,
+            inbound_tls_detect_metrics,
+        );
         let (outbound_addr, outbound_serve) = outbound.serve(bind_out, dst.profiles, dst.resolve);
 
         let start_proxy = Box::pin(async move {

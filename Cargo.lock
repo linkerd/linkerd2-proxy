@@ -858,7 +858,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "linkerd-error",
- "linkerd-error-metrics",
  "linkerd-io",
  "linkerd-stack",
  "thiserror",
@@ -919,6 +918,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-errno",
+ "linkerd-error",
  "linkerd-metrics",
  "pin-project",
  "tower",

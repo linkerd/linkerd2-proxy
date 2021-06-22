@@ -16,10 +16,6 @@ use thiserror::Error;
 use tokio::time;
 use tower::util::ServiceExt;
 use tracing::{debug, info, trace};
-
-#[cfg(feature = "metrics")]
-pub mod metrics;
-
 #[async_trait::async_trait]
 pub trait Detect<I>: Clone + Send + Sync + 'static {
     type Protocol: Send;

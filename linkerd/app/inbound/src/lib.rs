@@ -70,15 +70,13 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn tls_detect_metrics(
-    ) -> detect::metrics::ErrorRegistry<detect::metrics::ErrorLabels<metrics::error::label::IoLabels>>
-    {
+    pub fn tls_detect_metrics() -> metrics::tls_detect::ErrorRegistry {
         linkerd_metrics::metrics! {
             inbound_tls_detect_error_total: linkerd_metrics::Counter {
                 "The total number of errors that occurred while trying to detect TLS on an inbound connection."
             }
         }
-        detect::metrics::ErrorRegistry::default().with_metric(&inbound_tls_detect_error_total)
+        metrics::tls_detect::ErrorRegistry::default().with_metric(&inbound_tls_detect_error_total)
     }
 
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
@@ -135,6 +133,7 @@ impl Inbound<()> {
         bind: B,
         profiles: P,
         gateway: G,
+        tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
     ) -> (Local<ServerAddr>, impl Future<Output = ()> + Send)
     where
         B: Bind<ServerConfig>,
@@ -155,9 +154,12 @@ impl Inbound<()> {
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack =
-                self.to_tcp_connect()
-                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
+            let stack = self.to_tcp_connect().into_server(
+                listen_addr.as_ref().port(),
+                profiles,
+                gateway,
+                tls_detect_metrics,
+            );
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -221,9 +223,7 @@ where
         server_port: u16,
         profiles: P,
         gateway: G,
-        tls_detect_metrics: detect::metrics::ErrorRegistry<
-            detect::metrics::ErrorLabels<metrics::error::label::IoLabels>,
-        >,
+        tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
@@ -272,12 +272,7 @@ where
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .push(
-                tls_detect_metrics.layer(
-                    detect::metrics::LabelTimeout::default()
-                        .or_else(metrics::error::label::Io::default()),
-                ),
-            )
+            .push_on_response(tls_detect_metrics.layer(metrics::tls_detect::LabelTimeout::new()))
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {
