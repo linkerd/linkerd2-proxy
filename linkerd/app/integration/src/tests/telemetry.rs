@@ -1308,13 +1308,15 @@ mod transport {
         )
         .await
     }
-    #[tokio::test]
-    async fn inbound_tls_detect_timeout() {
-        const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
+}
 
-        let _trace = trace_init();
-        use std::time::SystemTime;
+mod tls_detect {
+    use super::*;
+    use std::time::SystemTime;
 
+    const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
+
+    async fn proxy() -> proxy::Listening {
         let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
         let identity::Identity {
             mut env,
@@ -1336,11 +1338,18 @@ mod transport {
             .run()
             .await;
 
-        let proxy = proxy::new()
+        proxy::new()
             .identity(id_svc)
             .inbound(srv)
             .run_with_test_env(env)
-            .await;
+            .await
+    }
+
+    #[tokio::test]
+    async fn inbound_timeout() {
+        let _trace = trace_init();
+
+        let proxy = proxy().await;
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -1357,38 +1366,10 @@ mod transport {
     }
 
     #[tokio::test]
-    async fn inbound_tls_detect_io_err() {
-        const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
-
+    async fn inbound_io_err() {
         let _trace = trace_init();
-        use std::time::SystemTime;
 
-        let id = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
-        let identity::Identity {
-            mut env,
-            mut certify_rsp,
-            ..
-        } = identity::Identity::new("foo-ns1", id.to_string());
-        certify_rsp.valid_until = Some((SystemTime::now() + Duration::from_secs(666)).into());
-        env.put(
-            app::env::ENV_INBOUND_DETECT_TIMEOUT,
-            format!("{:?}", TIMEOUT),
-        );
-
-        let id_svc = controller::identity()
-            .certify(move |_| certify_rsp)
-            .run()
-            .await;
-        let srv = tcp::server()
-            .accept_fut(move |sock| async { drop(sock) })
-            .run()
-            .await;
-
-        let proxy = proxy::new()
-            .identity(id_svc)
-            .inbound(srv)
-            .run_with_test_env(env)
-            .await;
+        let proxy = proxy().await;
         let client = client::tcp(proxy.inbound);
         let metrics = client::http1(proxy.metrics, "localhost");
 
@@ -1399,9 +1380,47 @@ mod transport {
 
         metrics::metric("inbound_tls_detect_failure_total")
             .label("error", "io")
-            .value(2u64)
+            .value(1u64)
             .assert_in(&metrics)
             .await;
+    }
+
+    #[tokio::test]
+    async fn inbound_multi() {
+        let _trace = trace_init();
+
+        let proxy = proxy().await;
+        let client = client::tcp(proxy.inbound);
+        let metrics = client::http1(proxy.metrics, "localhost");
+
+        let timeout_metric =
+            metrics::metric("inbound_tls_detect_failure_total").label("error", "timeout");
+        let err_metric = metrics::metric("inbound_tls_detect_failure_total").label("error", "io");
+
+        let tcp_client = client.connect().await;
+
+        tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
+            .await;
+
+        timeout_metric.clone().value(1u64).assert_in(&metrics).await;
+        drop(tcp_client);
+
+        let tcp_client = client.connect().await;
+
+        tcp_client.write(TcpFixture::HELLO_MSG).await;
+        drop(tcp_client);
+
+        err_metric.clone().value(1u64).assert_in(&metrics).await;
+        timeout_metric.clone().value(1u64).assert_in(&metrics).await;
+
+        let tcp_client = client.connect().await;
+
+        tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
+            .await;
+
+        err_metric.clone().value(1u64).assert_in(&metrics).await;
+        timeout_metric.clone().value(2u64).assert_in(&metrics).await;
+        drop(tcp_client);
     }
 }
 
