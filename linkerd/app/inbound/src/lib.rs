@@ -72,11 +72,11 @@ impl<S> Inbound<S> {
 impl Inbound<()> {
     pub fn tls_detect_metrics() -> metrics::tls_detect::ErrorRegistry {
         linkerd_metrics::metrics! {
-            inbound_tls_detect_error_total: linkerd_metrics::Counter {
+            inbound_tls_detect_failure_total: linkerd_metrics::Counter {
                 "The total number of errors that occurred while trying to detect TLS on an inbound connection."
             }
         }
-        metrics::tls_detect::ErrorRegistry::default().with_metric(&inbound_tls_detect_error_total)
+        metrics::tls_detect::ErrorRegistry::default().with_metric(&inbound_tls_detect_failure_total)
     }
 
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {

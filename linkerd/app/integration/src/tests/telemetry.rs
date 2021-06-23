@@ -1308,7 +1308,6 @@ mod transport {
         )
         .await
     }
-
     #[tokio::test]
     async fn inbound_tls_detect_timeout() {
         const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
@@ -1350,7 +1349,7 @@ mod transport {
         tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
             .await;
 
-        metrics::metric("inbound_tls_detect_error_total")
+        metrics::metric("inbound_tls_detect_failure_total")
             .label("error", "timeout")
             .value(1u64)
             .assert_in(&metrics)
@@ -1398,9 +1397,9 @@ mod transport {
         tcp_client.write(TcpFixture::HELLO_MSG).await;
         drop(tcp_client);
 
-        metrics::metric("inbound_tls_detect_error_total")
+        metrics::metric("inbound_tls_detect_failure_total")
             .label("error", "io")
-            .value(1u64)
+            .value(2u64)
             .assert_in(&metrics)
             .await;
     }
