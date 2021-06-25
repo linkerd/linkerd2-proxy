@@ -90,6 +90,7 @@ impl<N> Inbound<N> {
             config,
             runtime: rt,
             stack: tcp,
+            tls_detect_metrics,
         } = self;
         let detect_timeout = config.proxy.detect_protocol_timeout;
 
@@ -166,6 +167,7 @@ impl<N> Inbound<N> {
             config,
             runtime: rt,
             stack,
+            tls_detect_metrics,
         }
     }
 }

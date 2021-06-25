@@ -42,11 +42,12 @@ pub struct Config {
     pub profile_idle_timeout: Duration,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
+    tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
 }
 
 // === impl Inbound ===
@@ -70,10 +71,15 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+    pub fn new(
+        config: Config,
+        runtime: ProxyRuntime,
+        tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
+    ) -> Self {
         Self {
             config,
             runtime,
+            tls_detect_metrics,
             stack: svc::stack(()),
         }
     }
@@ -82,6 +88,7 @@ impl Inbound<()> {
         Inbound {
             config: self.config,
             runtime: self.runtime,
+            tls_detect_metrics: self.tls_detect_metrics,
             stack: svc::stack(stack),
         }
     }
@@ -97,7 +104,10 @@ impl Inbound<()> {
             > + Clone,
     > {
         let Self {
-            config, runtime, ..
+            config,
+            runtime,
+            tls_detect_metrics,
+            stack: _,
         } = self.clone();
 
         // Establishes connections to remote peers (for both TCP
@@ -116,6 +126,7 @@ impl Inbound<()> {
             config,
             runtime,
             stack,
+            tls_detect_metrics,
         }
     }
 
@@ -124,7 +135,6 @@ impl Inbound<()> {
         bind: B,
         profiles: P,
         gateway: G,
-        tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
     ) -> (Local<ServerAddr>, impl Future<Output = ()> + Send)
     where
         B: Bind<ServerConfig>,
@@ -145,12 +155,9 @@ impl Inbound<()> {
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack = self.to_tcp_connect().into_server(
-                listen_addr.as_ref().port(),
-                profiles,
-                gateway,
-                tls_detect_metrics,
-            );
+            let stack =
+                self.to_tcp_connect()
+                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -183,6 +190,7 @@ where
             config,
             runtime: rt,
             stack: connect,
+            tls_detect_metrics,
         } = self;
         let prevent_loop = PreventLoop::from(server_port);
 
@@ -206,6 +214,7 @@ where
             config,
             runtime: rt,
             stack,
+            tls_detect_metrics,
         }
     }
 
@@ -214,7 +223,6 @@ where
         server_port: u16,
         profiles: P,
         gateway: G,
-        tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
@@ -263,7 +271,10 @@ where
                 self.runtime.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .push_on_response(tls_detect_metrics.layer(metrics::tls_detect::LabelTimeout::new()))
+            .push_on_response(
+                self.tls_detect_metrics
+                    .layer(metrics::tls_detect::LabelTimeout::new()),
+            )
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {

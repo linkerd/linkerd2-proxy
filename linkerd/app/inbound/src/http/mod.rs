@@ -50,6 +50,7 @@ impl<H> Inbound<H> {
             config,
             runtime: rt,
             stack: http,
+            tls_detect_metrics,
         } = self;
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
@@ -95,6 +96,7 @@ impl<H> Inbound<H> {
             config,
             runtime: rt,
             stack,
+            tls_detect_metrics,
         }
     }
 }
@@ -129,6 +131,7 @@ where
             config,
             runtime: rt,
             stack: connect,
+            tls_detect_metrics,
         } = self;
 
         // Creates HTTP clients for each inbound port & HTTP settings.
@@ -238,6 +241,7 @@ where
             config,
             runtime: rt,
             stack,
+            tls_detect_metrics,
         }
     }
 }

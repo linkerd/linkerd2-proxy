@@ -172,6 +172,7 @@ impl Config {
                 span_sink: oc_collector.span_sink(),
                 drain: drain_rx.clone(),
             },
+            inbound_tls_detect_metrics,
         );
 
         let outbound = Outbound::new(
@@ -193,12 +194,8 @@ impl Config {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) = inbound.serve(
-            bind_in,
-            dst.profiles.clone(),
-            gateway_stack,
-            inbound_tls_detect_metrics,
-        );
+        let (inbound_addr, inbound_serve) =
+            inbound.serve(bind_in, dst.profiles.clone(), gateway_stack);
         let (outbound_addr, outbound_serve) = outbound.serve(bind_out, dst.profiles, dst.resolve);
 
         let start_proxy = Box::pin(async move {
