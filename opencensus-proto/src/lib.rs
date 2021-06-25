@@ -1,6 +1,6 @@
 //! gRPC bindings for OpenCensus.
 //!
-//! Vendored from https://github.com/census-instrumentation/opencensus-proto/.
+//! Vendored from <https://github.com/census-instrumentation/opencensus-proto/>.
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]

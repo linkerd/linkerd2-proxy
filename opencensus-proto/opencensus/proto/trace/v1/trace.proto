@@ -62,7 +62,7 @@ message Span {
   // This field conveys information about request position in multiple distributed tracing graphs.
   // It is a list of Tracestate.Entry with a maximum of 32 members in the list.
   //
-  // See the https://github.com/w3c/distributed-tracing for more details about this field.
+  // See the <https://github.com/w3c/distributed-tracing> for more details about this field.
   message Tracestate {
     message Entry {
       // The key must begin with a lowercase letter, and can only contain
@@ -148,7 +148,7 @@ message Span {
   // A set of attributes, each with a key and a value.
   message Attributes {
     // The set of attributes. The value can be a string, an integer, a double
-    // or the Boolean values `true` or `false`. Note, global attributes like 
+    // or the Boolean values `true` or `false`. Note, global attributes like
     // server name can be set as tags using resource API. Examples of attributes:
     //
     //     "/http/user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"
@@ -248,7 +248,7 @@ message Span {
   // where a single batch handler processes multiple requests from different
   // traces or when the handler receives a request from a different project.
   message Link {
-    // A unique identifier of a trace that this linked span is part of. The ID is a 
+    // A unique identifier of a trace that this linked span is part of. The ID is a
     // 16-byte array.
     bytes trace_id = 1;
 
@@ -296,8 +296,8 @@ message Span {
   // Status.Ok (code = 0).
   Status status = 11;
 
-  // An optional resource that is associated with this span. If not set, this span 
-  // should be part of a batch that does include the resource information, unless resource 
+  // An optional resource that is associated with this span. If not set, this span
+  // should be part of a batch that does include the resource information, unless resource
   // information is unknown.
   opencensus.proto.resource.v1.Resource resource = 16;
 

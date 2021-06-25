@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 
 /// Boxes request bodies, erasing the original type.
 ///
-/// This is *very* similar to the [`BoxRequest`] middleware. However, that
+/// This is *very* similar to the [`BoxRequest`](crate::request::BoxRequest) middleware. However, that
 /// middleware is generic over a specific body type that is erased. A given
 /// instance of `EraseRequest` can only erase the type of one particular `Body`
 /// type, while this middleware will erase bodies of *any* type.
