@@ -16,6 +16,7 @@ use thiserror::Error;
 use tokio::time;
 use tower::util::ServiceExt;
 use tracing::{debug, info, trace};
+
 #[async_trait::async_trait]
 pub trait Detect<I>: Clone + Send + Sync + 'static {
     type Protocol: Send;
