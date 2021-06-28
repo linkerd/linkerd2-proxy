@@ -1,6 +1,7 @@
 use crate::{target::TcpEndpoint, Inbound};
 use linkerd_app_core::{
     io,
+    metrics::tls_detect::LabelTimeout,
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
@@ -159,6 +160,7 @@ impl<N> Inbound<N> {
                 rt.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
+            .push_on_response(tls_detect_metrics.layer(LabelTimeout::new()))
             .check_new_service::<T, I>()
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());
