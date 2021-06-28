@@ -8,6 +8,7 @@ use crate::{
 };
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
+    errors::L5D_HTTP_ERROR_MESSAGE,
     io, proxy,
     svc::{self, NewService, Param},
     tls,
@@ -187,6 +188,55 @@ async fn downgrade_absolute_form() {
     bg.await.expect("background task failed");
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn return_bad_gateway_response_error_header() {
+    let _trace = trace_init();
+
+    // Build a mock connect that always errors.
+    let accept = HttpAccept {
+        version: proxy::http::Version::Http1,
+        tcp: TcpAccept {
+            target_addr: ([127, 0, 0, 1], 5550).into(),
+            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
+            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+        },
+    };
+    let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, connect_error());
+
+    // Build a client uses the connect that always errors so that responses
+    // are BAD_GATEWAY.
+    let mut client = ClientBuilder::new();
+    let profiles = profile::resolver();
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
+    let cfg = default_config();
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+
+    // Send a request and assert that it is a BAD_GATEWAY with the expected
+    // header message.
+    let req = Request::builder()
+        .method(http::Method::GET)
+        .uri("http://foo.svc.cluster.local:5550")
+        .body(Body::default())
+        .unwrap();
+    let response = http_util::http_request(&mut client, req).await.unwrap();
+    assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
+    let message = response
+        .headers()
+        .get(L5D_HTTP_ERROR_MESSAGE)
+        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+    assert_eq!(message, "proxy received invalid response");
+
+    drop(client);
+    bg.await.expect("background task failed");
+}
+    drop(client);
+    bg.await.expect("background task failed");
+}
+
 #[tracing::instrument]
 fn hello_server(
     http: hyper::server::conn::Http,
@@ -207,3 +257,14 @@ fn hello_server(
         Ok(io::BoxedIo::new(client_io))
     }
 }
+
+#[tracing::instrument]
+fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
+    move |_| {
+        Err(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "server is not listening",
+        ))
+    }
+}
+

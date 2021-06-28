@@ -14,6 +14,8 @@ use thiserror::Error;
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
 
+pub const L5D_HTTP_ERROR_MESSAGE: &str = "l5d-http-error-message";
+
 pub fn layer() -> respond::RespondLayer<NewRespond> {
     respond::RespondLayer::new(NewRespond(()))
 }
@@ -217,31 +219,60 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     return Ok(rsp);
                 }
 
-                let status = http_status(&*error);
-                debug!(%status, version = ?self.version, "Handling error with HTTP response");
-                Ok(http::Response::builder()
+                let mut rsp = http::Response::builder()
                     .version(self.version)
-                    .status(status)
                     .header(http::header::CONTENT_LENGTH, "0")
                     .body(ResponseBody::default())
-                    .expect("error response must be valid"))
+                    .expect("error response must be valid");
+                let status = set_http_status(&*error, rsp.headers_mut());
+                *rsp.status_mut() = status;
+                debug!(%status, version = ?self.version, "Handling error with HTTP response");
+                Ok(rsp)
             }
         }
     }
 }
 
-fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
-    if let Some(HttpError { http, .. }) = error.downcast_ref::<HttpError>() {
+fn set_http_status(
+    error: &(dyn std::error::Error + 'static),
+    headers: &mut http::HeaderMap,
+) -> StatusCode {
+    if let Some(HttpError { http, message, .. }) = error.downcast_ref::<HttpError>() {
+        headers.insert(L5D_HTTP_ERROR_MESSAGE, HeaderValue::from_static(message));
         *http
     } else if error.is::<ResponseTimeout>() {
+        headers.insert(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("request timed out"),
+        );
         http::StatusCode::GATEWAY_TIMEOUT
-    } else if error.is::<FailFastError>() || error.is::<tower::timeout::error::Elapsed>() {
+    } else if let Some(e) = error.downcast_ref::<FailFastError>() {
+        headers.insert(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
+                warn!(%error, "Failed to encode fail-fast error message");
+                HeaderValue::from_static("service in fail-fast")
+            }),
+        );
+        http::StatusCode::SERVICE_UNAVAILABLE
+    } else if error.is::<tower::timeout::error::Elapsed>() {
+        headers.insert(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("proxy dispatch timed out"),
+        );
         http::StatusCode::SERVICE_UNAVAILABLE
     } else if error.is::<IdentityRequired>() {
+        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
+            headers.insert(L5D_HTTP_ERROR_MESSAGE, msg);
+        }
         http::StatusCode::FORBIDDEN
     } else if let Some(source) = error.source() {
-        http_status(source)
+        set_http_status(source, headers)
     } else {
+        headers.insert(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("proxy received invalid response"),
+        );
         http::StatusCode::BAD_GATEWAY
     }
 }
