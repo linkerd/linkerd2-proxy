@@ -19,8 +19,8 @@ async fn default_proxy() -> (proxy::Listening, client::Client) {
     run_proxy(proxy::new().inbound(srv), identity).await
 }
 
-/// A helper that configures the provided proxy builder with the above detect
-/// timeout and the provided inbound server and identity.
+/// A helper that configures and runs the provided proxy builder with the above
+/// detect timeout and the provided inbound server and identity.
 async fn run_proxy(
     proxy: proxy::Proxy,
     identity::Identity {
@@ -201,7 +201,7 @@ async fn inbound_direct_multi() {
 
     let timeout_metric =
         metrics::metric("inbound_tls_detect_failure_total").label("error", "timeout");
-    let io_metric = metrics::metric("inbound_tls_detect_failure_total").label("error", "io");
+    let no_tls_metric = metrics::metric("inbound_tls_detect_failure_total").label("error", "other");
 
     let tcp_client = client.connect().await;
 
@@ -216,7 +216,7 @@ async fn inbound_direct_multi() {
     tcp_client.write(TcpFixture::HELLO_MSG).await;
     drop(tcp_client);
 
-    io_metric.clone().value(1u64).assert_in(&metrics).await;
+    no_tls_metric.clone().value(1u64).assert_in(&metrics).await;
     timeout_metric.clone().value(1u64).assert_in(&metrics).await;
 
     let tcp_client = client.connect().await;
@@ -224,7 +224,73 @@ async fn inbound_direct_multi() {
     tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
         .await;
 
-    io_metric.clone().value(1u64).assert_in(&metrics).await;
+    no_tls_metric.clone().value(1u64).assert_in(&metrics).await;
     timeout_metric.clone().value(2u64).assert_in(&metrics).await;
     drop(tcp_client);
+}
+
+/// Tests that the detect metric is not incremented when TLS is successfully
+/// detected by the direct stack.
+#[tokio::test]
+async fn inbound_direct_success() {
+    let _trace = trace_init();
+
+    let srv = server::http2().route("/", "hello world").run().await;
+
+    // Configure the mock SO_ORIGINAL_DST addr to behave as though the
+    // connection's original destination was the proxy's inbound listener.
+    let proxy1 = proxy::new().inbound(srv).inbound_direct();
+    let proxy1_id_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let proxy1_id = identity::Identity::new("foo-ns1", proxy1_id_name.to_string());
+    let (proxy1, metrics) = run_proxy(proxy1, proxy1_id).await;
+
+    // Route the connection through a second proxy, because inbound direct
+    // connections require mutual authentication.
+    let auth = "bar.ns1.svc.cluster.local";
+    let ctrl = controller::new();
+    let dst = format!("{}:{}", auth, proxy1.inbound.port());
+    let _profile_out = ctrl.profile_tx_default(proxy1.inbound, auth);
+    let dst = ctrl.destination_tx(dst);
+    dst.send(controller::destination_add_tls(
+        proxy1.inbound,
+        proxy1_id_name,
+    ));
+    let ctrl = ctrl.run().await;
+    let proxy2 = proxy::new().outbound_ip(proxy1.inbound).controller(ctrl);
+    let proxy2_id_name = "bar.ns1.serviceaccount.identity.linkerd.cluster.local";
+    let proxy2_id = identity::Identity::new("bar-ns1", proxy2_id_name.to_string());
+    let (proxy2, _) = run_proxy(proxy2, proxy2_id).await;
+
+    let tls_client = client::http1(proxy2.outbound, auth);
+    let no_tls_client = client::tcp(proxy1.inbound);
+
+    let metric = metrics::metric("inbound_tls_detect_failure_total")
+        .label("error", "timeout")
+        .value(1u64);
+
+    // Connect with TLS. The metric should not be incremented.
+    // (This request will get a 502 because the inbound proxy doesn't know how
+    // to resolve the "gateway"ed service, but that doesn't actually matter for
+    // this test --- what we care about is that the TLS handshake is accepted).
+    let _ = tls_client
+        .request(tls_client.request_builder("/").method("GET"))
+        .await;
+    assert!(metric.is_not_in(metrics.get("/metrics").await));
+    drop(tls_client);
+
+    // Now, allow detection to time out.
+    let tcp_client = no_tls_client.connect().await;
+    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
+        .await;
+    drop(tcp_client);
+
+    metric.clone().assert_in(&metrics).await;
+
+    // Connect with a new TLS client. The metric value should not have changed.
+    // (This request also 502s but it's fine).
+    let tls_client = client::http1(proxy2.outbound, auth);
+    let _ = tls_client
+        .request(tls_client.request_builder("/").method("GET"))
+        .await;
+    metric.assert_in(&metrics).await;
 }
