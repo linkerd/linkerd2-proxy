@@ -5,13 +5,14 @@ use linkerd_metrics::{
     metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, LastUpdate, Metric, Store,
 };
 use linkerd_stack::{layer, NewService, Param};
+use parking_lot::Mutex;
 use pin_project::pin_project;
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::hash::Hash;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -185,12 +186,7 @@ where
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let labels = Param::<K>::param(&target);
-        let metrics = self
-            .registry
-            .lock()
-            .expect("metrics registry poisoned")
-            .get_or_default(labels)
-            .clone();
+        let metrics = self.registry.lock().get_or_default(labels).clone();
 
         let inner = self.inner.new_service(target);
         Accept { metrics, inner }
@@ -247,12 +243,7 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let labels = target.param();
-        let metrics = self
-            .registry
-            .lock()
-            .expect("metrics registr poisoned")
-            .get_or_default(labels)
-            .clone();
+        let metrics = self.registry.lock().get_or_default(labels).clone();
 
         Connecting {
             new_sensor: Some(NewSensor(metrics)),
@@ -300,10 +291,9 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
         M: FmtMetric,
     {
         for (key, metrics) in inner.iter() {
-            if let Ok(by_eos) = (*metrics).by_eos.lock() {
-                for (eos, m) in by_eos.metrics.iter() {
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
-                }
+            let by_eos = (*metrics).by_eos.lock();
+            for (eos, m) in by_eos.metrics.iter() {
+                get_metric(&*m).fmt_metric_labeled(f, &metric.name, (key, eos))?;
             }
         }
 
@@ -313,7 +303,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
 
 impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut metrics = self.metrics.lock().expect("metrics registry poisoned");
+        let mut metrics = self.metrics.lock();
         if metrics.is_empty() {
             return Ok(());
         }
@@ -345,9 +335,8 @@ impl Sensor {
     fn open(metrics: Arc<Metrics>) -> Self {
         metrics.open_total.incr();
         metrics.open_connections.incr();
-        if let Ok(mut by_eos) = metrics.by_eos.lock() {
-            by_eos.last_update = Instant::now();
-        }
+        metrics.by_eos.lock().last_update = Instant::now();
+
         Self {
             metrics: Some(metrics),
             opened_at: Instant::now(),
@@ -359,18 +348,16 @@ impl io::Sensor for Sensor {
     fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.read_bytes_total.add(sz as u64);
-            if let Ok(mut by_eos) = m.by_eos.lock() {
-                by_eos.last_update = Instant::now();
-            }
+            let mut by_eos = m.by_eos.lock();
+            by_eos.last_update = Instant::now();
         }
     }
 
     fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.write_bytes_total.add(sz as u64);
-            if let Ok(mut by_eos) = m.by_eos.lock() {
-                by_eos.last_update = Instant::now();
-            }
+            let mut by_eos = m.by_eos.lock();
+            by_eos.last_update = Instant::now();
         }
     }
 
@@ -381,7 +368,7 @@ impl io::Sensor for Sensor {
         if let Some(m) = self.metrics.take() {
             m.open_connections.decr();
 
-            let mut by_eos = m.by_eos.lock().expect("transport eos metrics lock");
+            let mut by_eos = m.by_eos.lock();
             let class = by_eos
                 .metrics
                 .entry(Eos(eos))
@@ -441,9 +428,11 @@ impl FmtLabels for Eos {
 impl LastUpdate for Metrics {
     fn last_update(&self) -> Instant {
         self.by_eos
-            .lock()
+            .try_lock()
             .map(|metrics| metrics.last_update)
-            .unwrap_or_else(|_| Instant::now()) // XXX(eliza): ew
+            // if the metric is currently being updated, don't wait for it to be
+            // done, just assume it's being updated now.
+            .unwrap_or_else(Instant::now)
     }
 }
 
@@ -476,7 +465,7 @@ mod tests {
 
         let retain_idle_for = Duration::from_secs(1);
         let (r, report) = super::new(retain_idle_for);
-        let mut registry = r.0.lock().unwrap();
+        let mut registry = r.0.lock();
 
         let before_update = Instant::now();
         let metrics = registry.entry(Target(123)).or_default().clone();

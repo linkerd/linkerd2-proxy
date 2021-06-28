@@ -1239,6 +1239,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "socket2 0.4.0",
  "tokio",
