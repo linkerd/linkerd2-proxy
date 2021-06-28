@@ -38,7 +38,7 @@ where
     let connect = svc::stack(connect)
         .push_map_target(|t: TcpEndpoint| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
         .into_inner();
-    Inbound::new(cfg, rt)
+    Inbound::new(cfg, rt, crate::tls_detect_metrics())
         .with_stack(connect)
         .push_http_router(profiles)
         .push_http_server()
