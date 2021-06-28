@@ -144,7 +144,7 @@ async fn inbound_success() {
     metric.assert_in(&metrics).await;
 }
 
-/// Tests a both of the above cases together.
+/// Tests both of the above cases together.
 #[tokio::test]
 async fn inbound_multi() {
     let _trace = trace_init();
