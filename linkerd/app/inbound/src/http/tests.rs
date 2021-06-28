@@ -15,6 +15,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, Remote, ServerAddr},
     Conditional, NameAddr, ProxyRuntime,
 };
+use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
 use tracing::Instrument;
 
@@ -233,6 +234,52 @@ async fn return_bad_gateway_response_error_header() {
     drop(client);
     bg.await.expect("background task failed");
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn return_timeout_response_error_header() {
+    let _trace = trace_init();
+    tokio::time::pause();
+
+    // Build a mock connect that sleeps longer than the default inbound
+    // dispatch timeout of 1 second.
+    let server = hyper::server::conn::Http::new();
+    let accept = HttpAccept {
+        version: proxy::http::Version::Http1,
+        tcp: TcpAccept {
+            target_addr: ([127, 0, 0, 1], 5550).into(),
+            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
+            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+        },
+    };
+    let connect = support::connect().endpoint(accept.tcp.target_addr, timeout_server(server));
+
+    // Build a client uses the connect that always sleeps so that responses
+    // are SERVICE_UNAVAILABLE.
+    let mut client = ClientBuilder::new();
+    let profiles = profile::resolver();
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
+    let cfg = default_config();
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+
+    // Send a request and assert that it is a SERVICE_UNAVAILABLE with the
+    // expected header message.
+    let req = Request::builder()
+        .method(http::Method::GET)
+        .uri("http://foo.svc.cluster.local:5550")
+        .body(Body::default())
+        .unwrap();
+    let response = http_util::http_request(&mut client, req).await.unwrap();
+    assert_eq!(response.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+    let message = response
+        .headers()
+        .get(L5D_HTTP_ERROR_MESSAGE)
+        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+    assert_eq!(message, "proxy dispatch timed out");
+
     drop(client);
     bg.await.expect("background task failed");
 }
@@ -268,3 +315,30 @@ fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     }
 }
 
+#[tracing::instrument]
+fn timeout_server(
+    http: hyper::server::conn::Http,
+) -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Send> {
+    Box::new(move |endpoint| {
+        let http = http.clone();
+        let span = tracing::info_span!("timeout_server", ?endpoint);
+        Box::pin(
+            async move {
+                tracing::info!("sleeping so that the proxy hits a dispatch timeout");
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let (client_io, server_io) = support::io::duplex(4096);
+                let timeout_service =
+                    hyper::service::service_fn(|request: Request<Body>| async move {
+                        tracing::info!(?request);
+                        Ok::<_, io::Error>(Response::new(Body::from("timeout server")))
+                    });
+                tokio::spawn(
+                    http.serve_connection(server_io, timeout_service)
+                        .in_current_span(),
+                );
+                Ok(io::BoxedIo::new(client_io))
+            }
+            .instrument(span),
+        )
+    })
+}
