@@ -5,7 +5,7 @@ const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enoug
 
 /// A helper that builds a proxy with the above detect timeout and a TCP server that always drops
 /// the accepted socket.
-async fn run_proxy() -> (proxy::Listening, client::Client) {
+async fn default_proxy() -> (proxy::Listening, client::Client) {
     // We provide a mocked TCP server that always immediately drops accepted socket. This should
     // trigger errors.
     let srv = tcp::server()
@@ -16,13 +16,13 @@ async fn run_proxy() -> (proxy::Listening, client::Client) {
         "foo-ns1",
         "foo.ns1.serviceaccount.identity.linkerd.cluster.local".to_string(),
     );
-    run_proxy_with_inbound(srv, identity).await
+    run_proxy(proxy::new().inbound(srv), identity).await
 }
 
-/// A helper that builds a proxy with the above detect timeout and the provided
-/// inbound server and identity.
-async fn run_proxy_with_inbound(
-    srv: server::Listening,
+/// A helper that configures the provided proxy builder with the above detect
+/// timeout and the provided inbound server and identity.
+async fn run_proxy(
+    proxy: proxy::Proxy,
     identity::Identity {
         mut env,
         mut certify_rsp,
@@ -43,11 +43,7 @@ async fn run_proxy_with_inbound(
         format!("{:?}", TIMEOUT),
     );
 
-    let proxy = proxy::new()
-        .identity(id_svc)
-        .inbound(srv)
-        .run_with_test_env(env)
-        .await;
+    let proxy = proxy.identity(id_svc).run_with_test_env(env).await;
 
     // Wait for the proxy's identity to be certified.
     let admin_client = client::http1(proxy.metrics, "localhost");
@@ -67,7 +63,7 @@ async fn run_proxy_with_inbound(
 async fn inbound_timeout() {
     let _trace = trace_init();
 
-    let (proxy, metrics) = run_proxy().await;
+    let (proxy, metrics) = default_proxy().await;
     let client = client::tcp(proxy.inbound);
 
     let _tcp_client = client.connect().await;
@@ -87,7 +83,7 @@ async fn inbound_timeout() {
 async fn inbound_io_err() {
     let _trace = trace_init();
 
-    let (proxy, metrics) = run_proxy().await;
+    let (proxy, metrics) = default_proxy().await;
     let client = client::tcp(proxy.inbound);
 
     let tcp_client = client.connect().await;
@@ -112,7 +108,7 @@ async fn inbound_success() {
     let id_name = "foo.ns1.serviceaccount.identity.linkerd.cluster.local";
     let identity = identity::Identity::new("foo-ns1", id_name.to_string());
     let client_config = client::TlsConfig::new(identity.client_config.clone(), id_name);
-    let (proxy, metrics) = run_proxy_with_inbound(srv, identity).await;
+    let (proxy, metrics) = run_proxy(proxy::new().inbound(srv), identity).await;
 
     let tls_client = client::http2_tls(
         proxy.inbound,
@@ -149,7 +145,58 @@ async fn inbound_success() {
 async fn inbound_multi() {
     let _trace = trace_init();
 
-    let (proxy, metrics) = run_proxy().await;
+    let (proxy, metrics) = default_proxy().await;
+    let client = client::tcp(proxy.inbound);
+
+    let timeout_metric =
+        metrics::metric("inbound_tls_detect_failure_total").label("error", "timeout");
+    let io_metric = metrics::metric("inbound_tls_detect_failure_total").label("error", "io");
+
+    let tcp_client = client.connect().await;
+
+    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
+        .await;
+
+    timeout_metric.clone().value(1u64).assert_in(&metrics).await;
+    drop(tcp_client);
+
+    let tcp_client = client.connect().await;
+
+    tcp_client.write(TcpFixture::HELLO_MSG).await;
+    drop(tcp_client);
+
+    io_metric.clone().value(1u64).assert_in(&metrics).await;
+    timeout_metric.clone().value(1u64).assert_in(&metrics).await;
+
+    let tcp_client = client.connect().await;
+
+    tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
+        .await;
+
+    io_metric.clone().value(1u64).assert_in(&metrics).await;
+    timeout_metric.clone().value(2u64).assert_in(&metrics).await;
+    drop(tcp_client);
+}
+
+/// Tests that TLS detect failure metrics are collected for the direct stack.
+#[tokio::test]
+async fn inbound_direct_multi() {
+    let _trace = trace_init();
+
+    let srv = tcp::server()
+        .accept_fut(move |sock| async { drop(sock) })
+        .run()
+        .await;
+    let identity = identity::Identity::new(
+        "foo-ns1",
+        "foo.ns1.serviceaccount.identity.linkerd.cluster.local".to_string(),
+    );
+
+    // Configure the mock SO_ORIGINAL_DST addr to behave as though the
+    // connection's original destination was the proxy's inbound listener.
+    let proxy = proxy::new().inbound(srv).inbound_direct();
+
+    let (proxy, metrics) = run_proxy(proxy, identity).await;
     let client = client::tcp(proxy.inbound);
 
     let timeout_metric =
