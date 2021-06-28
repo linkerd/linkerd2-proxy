@@ -16,7 +16,7 @@ deflate = { version = "0.9.1", features = ["gzip"] }
 hdrhistogram = { version = "7.3", default-features = false, optional = true }
 http = "0.2"
 hyper = { version = "0.14.10", features = ["http1", "http2"] }
-parking_lot = { version = "0.11", optional = true }
+parking_lot = { version = "0.11" }
 tokio = { version = "1", features = ["time"], optional = true }
 tracing = "0.1.26"
 linkerd-stack = { path = "../stack", optional = true }

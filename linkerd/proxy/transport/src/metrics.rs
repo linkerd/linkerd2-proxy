@@ -2,7 +2,8 @@ use futures::{ready, TryFuture};
 use linkerd_errno::Errno;
 use linkerd_io as io;
 use linkerd_metrics::{
-    metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, LastUpdate, Metric, Store,
+    metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, LastUpdate, Metric, NewMetrics,
+    Store,
 };
 use linkerd_stack::{layer, NewService, Param};
 use parking_lot::Mutex;
@@ -51,11 +52,7 @@ pub struct ConnectLayer<K: Eq + Hash + FmtLabels> {
     registry: Arc<Mutex<Inner<K>>>,
 }
 
-#[derive(Debug)]
-pub struct MakeAccept<K: Eq + Hash + FmtLabels, M> {
-    inner: M,
-    registry: Arc<Mutex<Inner<K>>>,
-}
+pub type MakeAccept<N, K, S> = NewMetrics<N, K, Metrics, Accept<S>>;
 
 #[derive(Clone, Debug)]
 pub struct Accept<A> {
@@ -78,7 +75,7 @@ pub struct Connecting<F> {
 
 /// Stores a class of transport's metrics.
 #[derive(Debug, Default)]
-struct Metrics {
+pub struct Metrics {
     open_total: Counter,
     open_connections: Gauge,
     write_bytes_total: Counter,
@@ -129,12 +126,13 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
         ConnectLayer::new(self.0.clone())
     }
 
-    pub fn layer_accept<M>(&self) -> impl layer::Layer<M, Service = MakeAccept<K, M>> + Clone {
-        let registry = self.0.clone();
-        layer::mk(move |inner| MakeAccept {
-            inner,
-            registry: registry.clone(),
-        })
+    pub fn layer_accept<M, T>(
+        &self,
+    ) -> impl layer::Layer<M, Service = MakeAccept<M, K, M::Service>> + Clone
+    where
+        M: NewService<T>,
+    {
+        MakeAccept::layer(self.0.clone())
     }
 }
 
@@ -163,36 +161,6 @@ impl<K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<K> {
 
 // === impl Accept ===
 
-impl<K, M> Clone for MakeAccept<K, M>
-where
-    K: Eq + Hash + FmtLabels,
-    M: Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            registry: self.registry.clone(),
-        }
-    }
-}
-
-impl<T, K, M> NewService<T> for MakeAccept<K, M>
-where
-    T: Param<K>,
-    K: Eq + Hash + FmtLabels,
-    M: NewService<T>,
-{
-    type Service = Accept<M::Service>;
-
-    fn new_service(&mut self, target: T) -> Self::Service {
-        let labels = Param::<K>::param(&target);
-        let metrics = self.registry.lock().get_or_default(labels).clone();
-
-        let inner = self.inner.new_service(target);
-        Accept { metrics, inner }
-    }
-}
-
 impl<I, A> tower::Service<I> for Accept<A>
 where
     A: tower::Service<SensorIo<I>, Response = ()>,
@@ -208,6 +176,12 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let io = SensorIo::new(io, Sensor::open(self.metrics.clone()));
         self.inner.call(io)
+    }
+}
+
+impl<A> From<(A, Arc<Metrics>)> for Accept<A> {
+    fn from((inner, metrics): (A, Arc<Metrics>)) -> Self {
+        Self { inner, metrics }
     }
 }
 
