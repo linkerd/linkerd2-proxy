@@ -237,10 +237,10 @@ pub mod tests {
             let stack = Outbound::new(default_config(), rt)
                 // Fails connection attempts
                 .with_stack(support::connect().endpoint_fn(addr, |_| {
-                    Err(io::Error::new(
-                        io::ErrorKind::ConnectionReset,
-                        "i don't like you, go away",
-                    ))
+                    Err(
+                        io::Error::new(io::ErrorKind::ConnectionReset, "i don't like you, go away")
+                            .into(),
+                    )
                 }))
                 .push_endpoint()
                 .into_inner()

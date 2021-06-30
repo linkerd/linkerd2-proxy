@@ -19,6 +19,7 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
+linkerd-error = { path = "../../error" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 thiserror = "1.0"
