@@ -313,3 +313,31 @@ fn connect_error() -> impl Fn(Remote<ServerAddr>) -> Result<io::BoxedIo, Error> 
 fn timeout_error() -> impl Fn(Remote<ServerAddr>) -> Result<io::BoxedIo, Error> {
     move |_| Err(tower::timeout::error::Elapsed::new().into())
 }
+
+#[tracing::instrument]
+fn timeout_server(
+    http: hyper::server::conn::Http,
+) -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Send> {
+    Box::new(move |endpoint| {
+        let http = http.clone();
+        let span = tracing::info_span!("timeout_server", ?endpoint);
+        Box::pin(
+            async move {
+                tracing::info!("sleeping so that the proxy hits a dispatch timeout");
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let (client_io, server_io) = support::io::duplex(4096);
+                let timeout_service =
+                    hyper::service::service_fn(|request: Request<Body>| async move {
+                        tracing::info!(?request);
+                        Ok::<_, io::Error>(Response::new(Body::from("timeout server")))
+                    });
+                tokio::spawn(
+                    http.serve_connection(server_io, timeout_service)
+                        .in_current_span(),
+                );
+                Ok(io::BoxedIo::new(client_io))
+            }
+            .instrument(span),
+        )
+    })
+}
