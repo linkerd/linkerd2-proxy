@@ -9,7 +9,6 @@ use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
 use linkerd_stack::{layer, NewService, Param};
-use rustls::Session;
 use std::{
     fmt,
     pin::Pin,
@@ -19,6 +18,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::time::{self, Duration};
+use tokio_rustls::rustls::{self, Session};
 pub use tokio_rustls::server::TlsStream;
 use tower::util::ServiceExt;
 use tracing::{debug, trace, warn};

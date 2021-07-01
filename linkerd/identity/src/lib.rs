@@ -7,6 +7,7 @@ use ring::rand;
 use ring::signature::EcdsaKeyPair;
 use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
 use thiserror::Error;
+use tokio_rustls::rustls;
 use tracing::{debug, warn};
 
 #[cfg(any(test, feature = "test-util"))]

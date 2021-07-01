@@ -6,7 +6,6 @@ use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
 use linkerd_stack::{layer, Param};
-use rustls::Session;
 use std::{
     fmt,
     future::Future,
@@ -16,6 +15,7 @@ use std::{
     task::{Context, Poll},
 };
 pub use tokio_rustls::client::TlsStream;
+use tokio_rustls::rustls::{self, Session};
 use tracing::{debug, trace};
 
 /// A newtype for target server identities.
