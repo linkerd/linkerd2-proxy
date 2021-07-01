@@ -16,7 +16,6 @@ use linkerd_app_core::{
     Conditional, NameAddr, ProxyRuntime,
 };
 use linkerd_app_test::connect::ConnectFuture;
-use linkerd_error::Error;
 use linkerd_tracing::test::trace_init;
 use tracing::Instrument;
 
@@ -241,7 +240,9 @@ async fn return_timeout_response_error_header() {
     let _trace = trace_init();
     tokio::time::pause();
 
-    // Build a mock connect that immediately returns a timeout error.
+    // Build a mock connect that sleeps longer than the default inbound
+    // dispatch timeout of 1 second.
+    let server = hyper::server::conn::Http::new();
     let accept = HttpAccept {
         version: proxy::http::Version::Http1,
         tcp: TcpAccept {
@@ -250,10 +251,10 @@ async fn return_timeout_response_error_header() {
             tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
         },
     };
-    let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, timeout_error());
+    let connect = support::connect().endpoint(accept.tcp.target_addr, timeout_server(server));
 
-    // Build a client uses the connect that returns timeout errors so that
-    // responses are SERVICE_UNAVAILABLE.
+    // Build a client uses the connect that always sleeps so that responses
+    // are SERVICE_UNAVAILABLE.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
     let profile_tx =
@@ -286,7 +287,7 @@ async fn return_timeout_response_error_header() {
 #[tracing::instrument]
 fn hello_server(
     http: hyper::server::conn::Http,
-) -> impl Fn(Remote<ServerAddr>) -> Result<io::BoxedIo, Error> {
+) -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     move |endpoint| {
         let span = tracing::info_span!("hello_server", ?endpoint);
         let _e = span.enter();
@@ -305,13 +306,13 @@ fn hello_server(
 }
 
 #[tracing::instrument]
-fn connect_error() -> impl Fn(Remote<ServerAddr>) -> Result<io::BoxedIo, Error> {
-    move |_| Err(io::Error::new(io::ErrorKind::Other, "server is not listening").into())
-}
-
-#[tracing::instrument]
-fn timeout_error() -> impl Fn(Remote<ServerAddr>) -> Result<io::BoxedIo, Error> {
-    move |_| Err(tower::timeout::error::Elapsed::new().into())
+fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
+    move |_| {
+        Err(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "server is not listening",
+        ))
+    }
 }
 
 #[tracing::instrument]
