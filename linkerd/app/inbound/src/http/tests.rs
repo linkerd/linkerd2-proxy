@@ -39,6 +39,8 @@ where
 {
     let connect = svc::stack(connect)
         .push_map_target(|t: TcpEndpoint| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
+        .push_timeout(cfg.proxy.connect.timeout)
+        .push(svc::stack::BoxFuture::layer())
         .into_inner();
     Inbound::new(cfg, rt)
         .with_stack(connect)
@@ -309,7 +311,7 @@ fn hello_server(
 fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
     move |_| {
         Err(io::Error::new(
-            io::ErrorKind::ConnectionRefused,
+            io::ErrorKind::Other,
             "server is not listening",
         ))
     }
