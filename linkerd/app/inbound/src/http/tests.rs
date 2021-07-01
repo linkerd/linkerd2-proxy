@@ -15,7 +15,6 @@ use linkerd_app_core::{
     transport::{ClientAddr, Remote, ServerAddr},
     Conditional, NameAddr, ProxyRuntime,
 };
-use linkerd_app_test::connect::ConnectFuture;
 use linkerd_error::Error;
 use linkerd_tracing::test::trace_init;
 use tracing::Instrument;
