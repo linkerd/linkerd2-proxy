@@ -8,6 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
+use tokio_rustls::rustls;
 use tonic as grpc;
 
 pub struct Identity {

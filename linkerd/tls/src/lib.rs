@@ -4,7 +4,7 @@
 
 pub use linkerd_identity::LocalId;
 use linkerd_io as io;
-pub use rustls::Session;
+pub use tokio_rustls::rustls::Session;
 
 pub mod client;
 pub mod server;
