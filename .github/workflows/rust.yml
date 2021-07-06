@@ -68,7 +68,7 @@ jobs:
       - run: make test
 
   # Generate docs
-  test:
+  docs:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
