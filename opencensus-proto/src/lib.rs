@@ -4,7 +4,7 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
+#![allow(clippy::inconsistent_struct_constructor, rustdoc::bare_urls)]
 
 pub mod agent {
     pub mod trace {
