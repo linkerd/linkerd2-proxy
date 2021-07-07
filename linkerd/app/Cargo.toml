@@ -27,7 +27,7 @@ linkerd-opencensus = { path = "../opencensus" }
 regex = "1.5.4"
 thiserror = "1.0"
 tokio = { version = "1", features = ["rt"] }
-tokio-stream = { version = "0.1.6", features = ["time", "sync"] }
+tokio-stream = { version = "0.1.7", features = ["time", "sync"] }
 tonic = { version = "0.4", default-features = false, features = ["prost"] }
 tower = "0.4.8"
 tracing = "0.1.26"
