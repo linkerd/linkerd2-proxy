@@ -11,7 +11,7 @@ bytes = "1"
 futures = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.2", features = ["http1", "http2"] }
+hyper = { version = "0.14.10", features = ["http1", "http2"] }
 linkerd-error = { path = "../error" }
 linkerd-http-classify = { path = "../http-classify" }
 linkerd-metrics = { path = "../metrics" }
