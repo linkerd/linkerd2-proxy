@@ -320,8 +320,8 @@ fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels
 }
 
 pub fn tls_detect_metrics() -> metrics::tls_detect::ErrorRegistry {
-    linkerd_metrics::metrics! {
-        inbound_tls_detect_failure_total: linkerd_metrics::Counter {
+    metrics::metrics! {
+        inbound_tls_detect_failure_total: metrics::Counter {
             "The total number of errors that occurred while trying to detect TLS on an inbound connection."
         }
     }

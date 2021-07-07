@@ -14,8 +14,6 @@ bytes = "1"
 http = "0.2"
 futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
-linkerd-error-metrics = { path = "../../error-metrics" }
-linkerd-metrics = { path = "../../metrics" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.8", features = ["util"] }
