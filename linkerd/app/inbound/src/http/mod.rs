@@ -50,7 +50,6 @@ impl<H> Inbound<H> {
             config,
             runtime: rt,
             stack: http,
-            tls_detect_metrics,
         } = self;
         let ProxyConfig {
             server: ServerConfig { h2_settings, .. },
@@ -78,10 +77,13 @@ impl<H> Inbound<H> {
                     // for SpawnReady
                     .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                    .push(rt.metrics.http_errors.clone())
+                    .push(rt.proxy.metrics.http_errors.clone())
                     // Synthesizes responses for proxy errors.
                     .push(errors::layer())
-                    .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
+                    .push(http_tracing::server(
+                        rt.proxy.span_sink.clone(),
+                        trace_labels(),
+                    ))
                     // Record when an HTTP/1 URI was in absolute form
                     .push(http::normalize_uri::MarkAbsoluteForm::layer())
                     .push(http::BoxRequest::layer())
@@ -89,14 +91,16 @@ impl<H> Inbound<H> {
             )
             .check_new_service::<T, http::Request<_>>()
             .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
-            .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
+            .push(http::NewServeHttp::layer(
+                h2_settings,
+                rt.proxy.drain.clone(),
+            ))
             .push(svc::BoxNewService::layer());
 
         Inbound {
             config,
             runtime: rt,
             stack,
-            tls_detect_metrics,
         }
     }
 }
@@ -131,12 +135,11 @@ where
             config,
             runtime: rt,
             stack: connect,
-            tls_detect_metrics,
         } = self;
 
         // Creates HTTP clients for each inbound port & HTTP settings.
         let endpoint = connect
-            .push(rt.metrics.transport.layer_connect())
+            .push(rt.proxy.metrics.transport.layer_connect())
             .push_map_target(TcpEndpoint::from)
             .push(http::client::layer(
                 config.proxy.connect.h1_settings,
@@ -150,10 +153,18 @@ where
         let target = endpoint
             .push_map_target(HttpEndpoint::from)
             // Registers the stack to be tapped.
-            .push(tap::NewTapHttp::layer(rt.tap.clone()))
+            .push(tap::NewTapHttp::layer(rt.proxy.tap.clone()))
             // Records metrics for each `Target`.
-            .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
-            .push_on_response(http_tracing::client(rt.span_sink.clone(), trace_labels()))
+            .push(
+                rt.proxy
+                    .metrics
+                    .http_endpoint
+                    .to_layer::<classify::Response, _>(),
+            )
+            .push_on_response(http_tracing::client(
+                rt.proxy.span_sink.clone(),
+                trace_labels(),
+            ))
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
 
@@ -177,7 +188,12 @@ where
                     // by tap.
                     .push_http_insert_target::<dst::Route>()
                     // Records per-route metrics.
-                    .push(rt.metrics.http_route.to_layer::<classify::Response, _>())
+                    .push(
+                        rt.proxy
+                            .metrics
+                            .http_route
+                            .to_layer::<classify::Response, _>(),
+                    )
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::NewClassify::layer())
@@ -211,7 +227,8 @@ where
             .push_on_response(
                 svc::layers()
                     .push(
-                        rt.metrics
+                        rt.proxy
+                            .metrics
                             .stack
                             .layer(crate::stack_labels("http", "logical")),
                     )
@@ -241,7 +258,6 @@ where
             config,
             runtime: rt,
             stack,
-            tls_detect_metrics,
         }
     }
 }

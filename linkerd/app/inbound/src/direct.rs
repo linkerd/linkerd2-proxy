@@ -91,7 +91,6 @@ impl<N> Inbound<N> {
             config,
             runtime: rt,
             stack: tcp,
-            tls_detect_metrics,
         } = self;
         let detect_timeout = config.proxy.detect_protocol_timeout;
 
@@ -151,16 +150,16 @@ impl<N> Inbound<N> {
                     .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
                     .into_inner(),
             )
-            .push(rt.metrics.transport.layer_accept())
+            .push(rt.proxy.metrics.transport.layer_accept())
             // Build a ClientInfo target for each accepted connection. Refuse the
             // connection if it doesn't include an mTLS identity.
             .push_request_filter(ClientInfo::try_from)
             .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(
-                rt.identity.clone().map(WithTransportHeaderAlpn),
+                rt.proxy.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
-            .push_on_response(tls_detect_metrics.layer(LabelTimeout::new()))
+            .push_on_response(rt.tls_detect_metrics.layer(LabelTimeout::new()))
             .check_new_service::<T, I>()
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());
@@ -169,7 +168,6 @@ impl<N> Inbound<N> {
             config,
             runtime: rt,
             stack,
-            tls_detect_metrics,
         }
     }
 }

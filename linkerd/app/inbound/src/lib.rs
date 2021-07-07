@@ -43,11 +43,16 @@ pub struct Config {
 }
 
 #[derive(Clone)]
+struct Runtime {
+    tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
+    proxy: ProxyRuntime,
+}
+
+#[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
-    runtime: ProxyRuntime,
+    runtime: Runtime,
     stack: svc::Stack<S>,
-    tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
 }
 
 // === impl Inbound ===
@@ -58,7 +63,7 @@ impl<S> Inbound<S> {
     }
 
     pub fn runtime(&self) -> &ProxyRuntime {
-        &self.runtime
+        &self.runtime.proxy
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
@@ -78,8 +83,10 @@ impl Inbound<()> {
     ) -> Self {
         Self {
             config,
-            runtime,
-            tls_detect_metrics,
+            runtime: Runtime {
+                proxy: runtime,
+                tls_detect_metrics,
+            },
             stack: svc::stack(()),
         }
     }
@@ -88,7 +95,6 @@ impl Inbound<()> {
         Inbound {
             config: self.config,
             runtime: self.runtime,
-            tls_detect_metrics: self.tls_detect_metrics,
             stack: svc::stack(stack),
         }
     }
@@ -106,7 +112,6 @@ impl Inbound<()> {
         let Self {
             config,
             runtime,
-            tls_detect_metrics,
             stack: _,
         } = self.clone();
 
@@ -126,7 +131,6 @@ impl Inbound<()> {
             config,
             runtime,
             stack,
-            tls_detect_metrics,
         }
     }
 
@@ -158,7 +162,7 @@ impl Inbound<()> {
             let stack =
                 self.to_tcp_connect()
                     .into_server(listen_addr.as_ref().port(), profiles, gateway);
-            let shutdown = self.runtime.drain.signaled();
+            let shutdown = self.runtime.proxy.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
 
@@ -190,7 +194,6 @@ where
             config,
             runtime: rt,
             stack: connect,
-            tls_detect_metrics,
         } = self;
         let prevent_loop = PreventLoop::from(server_port);
 
@@ -199,12 +202,12 @@ where
         // Looping is always prevented.
         let stack = connect
             .push_request_filter(prevent_loop)
-            .push(rt.metrics.transport.layer_connect())
+            .push(rt.proxy.metrics.transport.layer_connect())
             .push_make_thunk()
             .push_on_response(
                 svc::layers()
                     .push(tcp::Forward::layer())
-                    .push(drain::Retain::layer(rt.drain.clone())),
+                    .push(drain::Retain::layer(rt.proxy.drain.clone())),
             )
             .instrument(|_: &_| debug_span!("tcp"))
             .push(svc::BoxNewService::layer())
@@ -214,7 +217,6 @@ where
             config,
             runtime: rt,
             stack,
-            tls_detect_metrics,
         }
     }
 
@@ -237,9 +239,21 @@ where
         P::Error: Send,
         P::Future: Send,
     {
-        let disable_detect = self.config.disable_protocol_detection_for_ports.clone();
-        let require_id = self.config.require_identity_for_inbound_ports.clone();
-        let config = self.config.proxy.clone();
+        let Self {
+            config:
+                Config {
+                    proxy: config,
+                    require_identity_for_inbound_ports: require_id,
+                    disable_protocol_detection_for_ports: disable_detect,
+                    ..
+                },
+            runtime:
+                Runtime {
+                    proxy: rt,
+                    tls_detect_metrics,
+                },
+            stack: _,
+        } = self.clone();
 
         self.clone()
             .push_http_router(profiles)
@@ -251,7 +265,7 @@ where
                 // application as an opaque TCP stream.
                 self.clone()
                     .push_tcp_forward(server_port)
-                    .stack
+                    .into_stack()
                     .push_map_target(TcpEndpoint::from)
                     .push_on_response(svc::BoxService::layer())
                     .into_inner(),
@@ -264,17 +278,14 @@ where
                 http::DetectHttp::default(),
             ))
             .push_request_filter(require_id)
-            .push(self.runtime.metrics.transport.layer_accept())
+            .push(rt.metrics.transport.layer_accept())
             .push_request_filter(TcpAccept::try_from)
             .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(
-                self.runtime.identity.clone(),
+                rt.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .push_on_response(
-                self.tls_detect_metrics
-                    .layer(metrics::tls_detect::LabelTimeout::new()),
-            )
+            .push_on_response(tls_detect_metrics.layer(metrics::tls_detect::LabelTimeout::new()))
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {
@@ -289,7 +300,7 @@ where
                     .push_tcp_forward(server_port)
                     .stack
                     .push_map_target(TcpEndpoint::from)
-                    .push(self.runtime.metrics.transport.layer_accept())
+                    .push(rt.metrics.transport.layer_accept())
                     .check_new_service::<TcpAccept, _>()
                     .instrument(|_: &TcpAccept| debug_span!("forward"))
                     .into_inner(),
