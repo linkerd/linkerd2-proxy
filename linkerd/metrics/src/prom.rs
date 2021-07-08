@@ -134,6 +134,18 @@ impl<N: fmt::Display, M: FmtMetric> fmt::Debug for Metric<'_, N, M> {
     }
 }
 
+impl<N: Clone + fmt::Display, M: FmtMetric> Clone for Metric<'_, N, M> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            help: self.help,
+            _p: self._p,
+        }
+    }
+}
+
+impl<N: Copy + fmt::Display, M: FmtMetric> Copy for Metric<'_, N, M> {}
+
 // ===== impl FmtLabels =====
 
 impl<'a, A: FmtLabels + 'a> FmtLabels for &'a A {

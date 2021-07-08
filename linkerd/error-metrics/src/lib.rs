@@ -35,7 +35,7 @@ where
     K: Hash + Eq,
 {
     errors: Arc<Mutex<HashMap<K, Counter>>>,
-    metric: &'static Metric<'static, &'static str, Counter>,
+    metric: Metric<'static, &'static str, Counter>,
 }
 
 impl<K: Hash + Eq> Registry<K> {
@@ -43,7 +43,7 @@ impl<K: Hash + Eq> Registry<K> {
         RecordErrorLayer::new(label, self.errors.clone())
     }
 
-    pub fn with_metric(self, metric: &'static Metric<'static, &'static str, Counter>) -> Self {
+    pub fn with_metric(self, metric: Metric<'static, &'static str, Counter>) -> Self {
         Self {
             errors: self.errors,
             metric,
@@ -55,7 +55,7 @@ impl<K: Hash + Eq> Default for Registry<K> {
     fn default() -> Self {
         Self {
             errors: Default::default(),
-            metric: &request_errors_total,
+            metric: request_errors_total,
         }
     }
 }
