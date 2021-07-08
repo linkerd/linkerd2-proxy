@@ -30,13 +30,12 @@ pub trait LabelError<E> {
 
 /// Produces layers and reports results.
 #[derive(Debug)]
-pub struct Registry<K, N = &'static str>
+pub struct Registry<K>
 where
     K: Hash + Eq,
-    N: fmt::Display + 'static,
 {
     errors: Arc<Mutex<HashMap<K, Counter>>>,
-    metric: &'static Metric<'static, N, Counter>,
+    metric: &'static Metric<'static, &'static str, Counter>,
 }
 
 impl<K: Hash + Eq> Registry<K> {
@@ -44,11 +43,8 @@ impl<K: Hash + Eq> Registry<K> {
         RecordErrorLayer::new(label, self.errors.clone())
     }
 
-    pub fn with_metric<N: fmt::Display + 'static>(
-        self,
-        metric: &'static Metric<'static, N, Counter>,
-    ) -> Registry<K, N> {
-        Registry {
+    pub fn with_metric(self, metric: &'static Metric<'static, &'static str, Counter>) -> Self {
+        Self {
             errors: self.errors,
             metric,
         }
@@ -64,7 +60,7 @@ impl<K: Hash + Eq> Default for Registry<K> {
     }
 }
 
-impl<K: Hash + Eq, N: fmt::Display> Clone for Registry<K, N> {
+impl<K: Hash + Eq> Clone for Registry<K> {
     fn clone(&self) -> Self {
         Self {
             errors: self.errors.clone(),
@@ -73,7 +69,7 @@ impl<K: Hash + Eq, N: fmt::Display> Clone for Registry<K, N> {
     }
 }
 
-impl<K: FmtLabels + Hash + Eq, N: fmt::Display> FmtMetrics for Registry<K, N> {
+impl<K: FmtLabels + Hash + Eq> FmtMetrics for Registry<K> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let errors = match self.errors.lock() {
             Ok(errors) => errors,
