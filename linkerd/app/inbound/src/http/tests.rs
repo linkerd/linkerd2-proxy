@@ -206,7 +206,7 @@ async fn return_bad_gateway_response_error_header() {
     };
     let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, connect_error());
 
-    // Build a client uses the connect that always errors so that responses
+    // Build a client using the connect that always errors so that responses
     // are BAD_GATEWAY.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
@@ -255,7 +255,7 @@ async fn return_timeout_response_error_header() {
     };
     let connect = support::connect().endpoint(accept.tcp.target_addr, timeout_server(server));
 
-    // Build a client uses the connect that always sleeps so that responses
+    // Build a client using the connect that always sleeps so that responses
     // are SERVICE_UNAVAILABLE.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
