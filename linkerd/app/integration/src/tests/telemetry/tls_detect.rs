@@ -3,6 +3,8 @@ use std::time::SystemTime;
 
 const TIMEOUT: Duration = Duration::from_millis(640); // 640ms ought to be enough for anybody.
 
+const METRIC: &str = "inbound_tcp_accept_errors_total";
+
 /// A helper that builds a proxy with the above detect timeout and a TCP server that always drops
 /// the accepted socket.
 async fn default_proxy() -> (proxy::Listening, client::Client) {
@@ -71,8 +73,8 @@ async fn inbound_timeout() {
     tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
         .await;
 
-    metrics::metric("inbound_tls_detect_failure_total")
-        .label("error", "timeout")
+    metrics::metric(METRIC)
+        .label("error", "tls_detect_timeout")
         .value(1u64)
         .assert_in(&metrics)
         .await;
@@ -91,7 +93,7 @@ async fn inbound_io_err() {
     tcp_client.write(TcpFixture::HELLO_MSG).await;
     drop(tcp_client);
 
-    metrics::metric("inbound_tls_detect_failure_total")
+    metrics::metric(METRIC)
         .label("error", "io")
         .value(1u64)
         .assert_in(&metrics)
@@ -117,8 +119,8 @@ async fn inbound_success() {
     );
     let no_tls_client = client::tcp(proxy.inbound);
 
-    let metric = metrics::metric("inbound_tls_detect_failure_total")
-        .label("error", "timeout")
+    let metric = metrics::metric(METRIC)
+        .label("error", "tls_detect_timeout")
         .value(1u64);
 
     // Connect with TLS. The metric should not be incremented.
@@ -148,9 +150,8 @@ async fn inbound_multi() {
     let (proxy, metrics) = default_proxy().await;
     let client = client::tcp(proxy.inbound);
 
-    let timeout_metric =
-        metrics::metric("inbound_tls_detect_failure_total").label("error", "timeout");
-    let io_metric = metrics::metric("inbound_tls_detect_failure_total").label("error", "io");
+    let timeout_metric = metrics::metric(METRIC).label("error", "tls_detect_timeout");
+    let io_metric = metrics::metric(METRIC).label("error", "io");
 
     let tcp_client = client.connect().await;
 
@@ -199,9 +200,8 @@ async fn inbound_direct_multi() {
     let (proxy, metrics) = run_proxy(proxy, identity).await;
     let client = client::tcp(proxy.inbound);
 
-    let timeout_metric =
-        metrics::metric("inbound_tls_detect_failure_total").label("error", "timeout");
-    let no_tls_metric = metrics::metric("inbound_tls_detect_failure_total").label("error", "other");
+    let timeout_metric = metrics::metric(METRIC).label("error", "tls_detect_timeout");
+    let no_tls_metric = metrics::metric(METRIC).label("error", "other");
 
     let tcp_client = client.connect().await;
 
@@ -264,8 +264,8 @@ async fn inbound_direct_success() {
     let tls_client = client::http1(proxy2.outbound, auth);
     let no_tls_client = client::tcp(proxy1.inbound);
 
-    let metric = metrics::metric("inbound_tls_detect_failure_total")
-        .label("error", "timeout")
+    let metric = metrics::metric(METRIC)
+        .label("error", "tls_detect_timeout")
         .value(1u64);
 
     // Connect with TLS. The metric should not be incremented.
