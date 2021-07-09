@@ -8,7 +8,7 @@ mod service;
 pub use self::layer::RecordErrorLayer;
 pub use self::service::RecordError;
 pub use linkerd_metrics::FmtLabels;
-use linkerd_metrics::{metrics, Counter, FmtMetrics, Metric};
+use linkerd_metrics::{self as metrics, Counter, FmtMetrics};
 use std::{
     collections::HashMap,
     fmt,
@@ -16,17 +16,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-metrics! {
-    request_errors_total: Counter {
-        "The total number of HTTP requests that could not be processed due to a proxy error."
-    }
-}
-
 pub trait LabelError<E> {
     type Labels: FmtLabels + Hash + Eq;
 
     fn label_error(&self, error: &E) -> Self::Labels;
 }
+
+type Metric = metrics::Metric<'static, &'static str, Counter>;
 
 /// Produces layers and reports results.
 #[derive(Debug)]
@@ -35,28 +31,19 @@ where
     K: Hash + Eq,
 {
     errors: Arc<Mutex<HashMap<K, Counter>>>,
-    metric: Metric<'static, &'static str, Counter>,
+    metric: Metric,
 }
 
 impl<K: Hash + Eq> Registry<K> {
-    pub fn layer<L>(&self, label: L) -> RecordErrorLayer<L, K> {
-        RecordErrorLayer::new(label, self.errors.clone())
-    }
-
-    pub fn with_metric(self, metric: Metric<'static, &'static str, Counter>) -> Self {
+    pub fn new(metric: Metric) -> Self {
         Self {
-            errors: self.errors,
+            errors: Default::default(),
             metric,
         }
     }
-}
 
-impl<K: Hash + Eq> Default for Registry<K> {
-    fn default() -> Self {
-        Self {
-            errors: Default::default(),
-            metric: request_errors_total,
-        }
+    pub fn layer<L>(&self, label: L) -> RecordErrorLayer<L, K> {
+        RecordErrorLayer::new(label, self.errors.clone())
     }
 }
 

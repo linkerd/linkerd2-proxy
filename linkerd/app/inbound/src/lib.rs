@@ -336,5 +336,5 @@ pub fn tls_detect_metrics() -> metrics::tls_detect::ErrorRegistry {
             "The total number of errors that occurred while trying to detect TLS on an inbound connection."
         }
     }
-    metrics::tls_detect::ErrorRegistry::default().with_metric(inbound_tls_detect_failure_total)
+    metrics::tls_detect::ErrorRegistry::new(inbound_tls_detect_failure_total)
 }

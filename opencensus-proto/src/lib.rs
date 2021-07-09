@@ -1,10 +1,10 @@
 //! gRPC bindings for OpenCensus.
 //!
-//! Vendored from https://github.com/census-instrumentation/opencensus-proto/.
+//! Vendored from <https://github.com/census-instrumentation/opencensus-proto/>.
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
+#![allow(clippy::inconsistent_struct_constructor, rustdoc::bare_urls)]
 
 pub mod agent {
     pub mod trace {
