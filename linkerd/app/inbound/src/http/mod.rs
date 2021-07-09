@@ -383,7 +383,7 @@ pub mod fuzz_logic {
                 Remote(ServerAddr(([127, 0, 0, 1], t.param()).into()))
             })
             .into_inner();
-        Inbound::new(cfg, rt, crate::tls_detect_metrics())
+        Inbound::new(cfg, rt)
             .with_stack(connect)
             .push_http_router(profiles)
             .push_http_server()
