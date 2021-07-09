@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
-    transport::{self, addrs, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
+    transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Never,
 };
@@ -69,7 +69,7 @@ impl<N> Inbound<N> {
         gateway: G,
     ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
-        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Param<addrs::TargetPort>,
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -159,7 +159,6 @@ impl<N> Inbound<N> {
                 rt.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
-            .push(rt.metrics.tcp_accept_errors.layer())
             .check_new_service::<T, I>()
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());

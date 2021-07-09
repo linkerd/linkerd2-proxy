@@ -272,8 +272,6 @@ where
                 rt.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .push(rt.metrics.tcp_accept_errors.layer())
-            .check_new_service::<T, I>()
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {
