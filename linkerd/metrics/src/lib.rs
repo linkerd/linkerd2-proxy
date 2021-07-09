@@ -8,6 +8,8 @@ mod counter;
 mod gauge;
 mod histogram;
 pub mod latency;
+#[cfg(feature = "linkerd-stack")]
+mod new_metrics;
 mod prom;
 mod scopes;
 mod serve;
@@ -24,6 +26,9 @@ pub use self::serve::Serve;
 pub use self::store::{LastUpdate, Store};
 #[cfg(feature = "summary")]
 pub use self::summary::Summary;
+
+#[cfg(feature = "linkerd-stack")]
+pub use self::new_metrics::NewMetrics;
 
 #[macro_export]
 macro_rules! metrics {

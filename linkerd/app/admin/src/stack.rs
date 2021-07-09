@@ -62,7 +62,7 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(admin)
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _>())
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Target>())
             .push_on_response(
                 svc::layers()
                     .push(metrics.http_errors.clone())

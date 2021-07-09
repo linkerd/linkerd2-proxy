@@ -3,13 +3,14 @@ mod service;
 
 use super::{LastUpdate, Registry, Report};
 use linkerd_http_classify::ClassifyResponse;
-use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram};
-use linkerd_stack::layer;
+use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, NewMetrics};
+use linkerd_stack::{self as svc, layer};
+use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -63,12 +64,15 @@ impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
         Report::new(retain_idle, self.0)
     }
 
-    pub fn to_layer<L, N>(&self) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L>> + Clone
+    pub fn to_layer<L, N, Tgt>(
+        &self,
+    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L, C, N::Service>> + Clone
     where
         L: ClassifyResponse<Class = C> + Send + Sync + 'static,
+        N: svc::NewService<Tgt>,
     {
         let reg = self.0.clone();
-        layer::mk(move |inner| NewHttpMetrics::new(reg.clone(), inner))
+        NewMetrics::layer(reg)
     }
 }
 
@@ -144,7 +148,7 @@ mod tests {
         let retain_idle_for = Duration::from_secs(1);
         let r = super::Requests::<Target, Class>::default();
         let report = r.clone().into_report(retain_idle_for);
-        let mut registry = r.0.lock().unwrap();
+        let mut registry = r.0.lock();
 
         let before_update = Instant::now();
         let metrics = registry

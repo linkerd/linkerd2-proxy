@@ -4,9 +4,10 @@
 
 pub use self::{requests::Requests, retries::Retries};
 use linkerd_metrics::{LastUpdate, Store};
+use parking_lot::Mutex;
 use std::fmt;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub mod requests;

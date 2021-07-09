@@ -93,7 +93,7 @@ impl Config {
             .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_response(self::control::balance::layer())
             .into_new_service()
-            .push(metrics.to_layer::<classify::Response, _>())
+            .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
             .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
             .push_map_target(move |()| addr.clone())
