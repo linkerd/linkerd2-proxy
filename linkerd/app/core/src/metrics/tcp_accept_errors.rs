@@ -82,9 +82,9 @@ impl LabelError<Error> for LabelAcceptErrors {
 impl FmtLabels for AcceptErrors {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TlsDetectTimeout => f.pad("error=\"tls_detect_timeout\""),
-            Self::Io => write!(f, "error=\"io\""),
-            Self::Other => write!(f, "error=\"other\""),
+            Self::TlsDetectTimeout => fmt::Display::fmt("error=\"tls_detect_timeout\"", f),
+            Self::Io => fmt::Display::fmt("error=\"io\"", f),
+            Self::Other => fmt::Display::fmt("error=\"other\"", f),
         }
     }
 }
