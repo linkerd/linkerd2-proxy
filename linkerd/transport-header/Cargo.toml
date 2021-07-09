@@ -14,12 +14,12 @@ linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
-prost = "0.7"
+prost = "0.8"
 tokio = { version = "1", features = ["time"] }
 tracing = "0.1.26"
 
 [build-dependencies]
-prost-build = { version = "0.7", default-features = false }
+prost-build = { version = "0.8", default-features = false }
 
 [target.'cfg(fuzzing)'.dependencies]
 arbitrary = { version = "1",  features = ["derive"] }

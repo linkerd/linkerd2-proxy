@@ -337,7 +337,6 @@ fn code_header(code: grpc::Code) -> HeaderValue {
         Code::Unavailable => HeaderValue::from_static("14"),
         Code::DataLoss => HeaderValue::from_static("15"),
         Code::Unauthenticated => HeaderValue::from_static("16"),
-        Code::__NonExhaustive => unreachable!("Code::__NonExhaustive"),
     }
 }
 
