@@ -158,7 +158,7 @@ async fn inbound_multi() {
     let client = client::tcp(proxy.inbound);
 
     let metric = metric(&proxy);
-    let timeout_metric = metric.clone().label("error", "timeout");
+    let timeout_metric = metric.clone().label("error", "tls_detect_timeout");
     let io_metric = metric.label("error", "io");
 
     let tcp_client = client.connect().await;
