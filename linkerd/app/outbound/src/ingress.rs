@@ -233,6 +233,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                 let orig_dst = Param::<OrigDstAddr>::param(&a);
                 tcp::Accept::from(orig_dst)
             })
+            .push_on_response(rt.metrics.tcp_accept_errors)
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>()

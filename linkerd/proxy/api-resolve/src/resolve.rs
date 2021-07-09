@@ -7,16 +7,12 @@ use crate::{
 use api::destination_client::DestinationClient;
 use async_stream::try_stream;
 use futures::prelude::*;
-use http_body::Body as HttpBody;
+use http_body::Body;
 use linkerd_error::Error;
 use linkerd_stack::Param;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tonic::{
-    self as grpc,
-    body::{Body, BoxBody},
-    client::GrpcService,
-};
+use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tower::Service;
 use tracing::{debug, info, trace};
 
@@ -32,9 +28,9 @@ impl<S> Resolve<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    <S::ResponseBody as Body>::Error: Into<Error> + Send,
     S::Future: Send,
 {
     pub fn new(svc: S, context_token: String) -> Self {
@@ -56,9 +52,9 @@ where
     T: Param<ConcreteAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
     S::Error: Into<Error> + Send,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+    <S::ResponseBody as Body>::Error: Into<Error> + Send,
     S::Future: Send,
 {
     type Response = UpdatesStream;

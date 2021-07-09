@@ -113,8 +113,6 @@ impl Config {
         } = self;
         debug!("building app");
         let (metrics, report) = Metrics::new(admin.metrics_retain_idle);
-        let inbound_tls_detect_metrics = inbound::tls_detect_metrics();
-        let report = inbound_tls_detect_metrics.clone().and_then(report);
 
         let dns = dns.build();
 
@@ -172,7 +170,6 @@ impl Config {
                 span_sink: oc_collector.span_sink(),
                 drain: drain_rx.clone(),
             },
-            inbound_tls_detect_metrics,
         );
 
         let outbound = Outbound::new(

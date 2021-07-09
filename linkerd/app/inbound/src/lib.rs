@@ -43,15 +43,9 @@ pub struct Config {
 }
 
 #[derive(Clone)]
-struct Runtime {
-    tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
-    proxy: ProxyRuntime,
-}
-
-#[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
-    runtime: Runtime,
+    runtime: ProxyRuntime,
     stack: svc::Stack<S>,
 }
 
@@ -63,7 +57,7 @@ impl<S> Inbound<S> {
     }
 
     pub fn runtime(&self) -> &ProxyRuntime {
-        &self.runtime.proxy
+        &self.runtime
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
@@ -76,17 +70,10 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(
-        config: Config,
-        runtime: ProxyRuntime,
-        tls_detect_metrics: metrics::tls_detect::ErrorRegistry,
-    ) -> Self {
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         Self {
             config,
-            runtime: Runtime {
-                proxy: runtime,
-                tls_detect_metrics,
-            },
+            runtime,
             stack: svc::stack(()),
         }
     }
@@ -162,7 +149,7 @@ impl Inbound<()> {
             let stack =
                 self.to_tcp_connect()
                     .into_server(listen_addr.as_ref().port(), profiles, gateway);
-            let shutdown = self.runtime.proxy.drain.signaled();
+            let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
 
@@ -202,12 +189,12 @@ where
         // Looping is always prevented.
         let stack = connect
             .push_request_filter(prevent_loop)
-            .push(rt.proxy.metrics.transport.layer_connect())
+            .push(rt.metrics.transport.layer_connect())
             .push_make_thunk()
             .push_on_response(
                 svc::layers()
                     .push(tcp::Forward::layer())
-                    .push(drain::Retain::layer(rt.proxy.drain.clone())),
+                    .push(drain::Retain::layer(rt.drain.clone())),
             )
             .instrument(|_: &_| debug_span!("tcp"))
             .push(svc::BoxNewService::layer())
@@ -247,11 +234,7 @@ where
                     disable_protocol_detection_for_ports: disable_detect,
                     ..
                 },
-            runtime:
-                Runtime {
-                    proxy: rt,
-                    tls_detect_metrics,
-                },
+            runtime: rt,
             stack: _,
         } = self.clone();
 
@@ -285,7 +268,6 @@ where
                 rt.identity.clone(),
                 config.detect_protocol_timeout,
             ))
-            .push_on_response(tls_detect_metrics.layer(metrics::tls_detect::LabelTimeout::new()))
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {
@@ -320,6 +302,7 @@ where
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
+            .push_on_response(rt.metrics.tcp_accept_errors)
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .into_inner()
@@ -328,13 +311,4 @@ where
 
 fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
     metrics::StackLabels::inbound(proto, name)
-}
-
-pub fn tls_detect_metrics() -> metrics::tls_detect::ErrorRegistry {
-    metrics::metrics! {
-        inbound_tls_detect_failure_total: metrics::Counter {
-            "The total number of errors that occurred while trying to detect TLS on an inbound connection."
-        }
-    }
-    metrics::tls_detect::ErrorRegistry::new(inbound_tls_detect_failure_total)
 }

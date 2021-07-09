@@ -1,3 +1,5 @@
+mod tcp_accept_errors;
+
 pub use crate::{
     classify::{Class, SuccessOrFailure},
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, proxy,
@@ -16,8 +18,6 @@ pub use linkerd_metrics::*;
 use std::fmt::{self, Write};
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime};
-
-pub mod tls_detect;
 
 pub type ControlHttp = http_metrics::Requests<ControlLabels, Class>;
 
@@ -38,6 +38,7 @@ pub struct Proxy {
     pub http_errors: errors::MetricsLayer,
     pub stack: Stack,
     pub transport: transport::Metrics,
+    pub tcp_accept_errors: tcp_accept_errors::Layer,
 }
 
 #[derive(Clone, Debug)]
@@ -158,6 +159,9 @@ impl Metrics {
 
         let (transport, transport_report) = transport::metrics::new(retain_idle);
 
+        let inbound_tcp_accept_errors = tcp_accept_errors::Registry::inbound();
+        let outbound_tcp_accept_errors = tcp_accept_errors::Registry::outbound();
+
         let (opencensus, opencensus_report) = opencensus::metrics::new();
 
         let metrics = Metrics {
@@ -169,6 +173,7 @@ impl Metrics {
                 http_errors: http_errors.inbound(),
                 stack: stack.clone(),
                 transport: transport.clone(),
+                tcp_accept_errors: inbound_tcp_accept_errors.layer(),
             },
             outbound: Proxy {
                 http_endpoint,
@@ -178,6 +183,7 @@ impl Metrics {
                 http_errors: http_errors.outbound(),
                 stack: stack.clone(),
                 transport,
+                tcp_accept_errors: outbound_tcp_accept_errors.layer(),
             },
             control,
             opencensus,
@@ -190,6 +196,8 @@ impl Metrics {
             .and_then(actual_report)
             .and_then(control_report)
             .and_then(transport_report)
+            .and_then(inbound_tcp_accept_errors)
+            .and_then(outbound_tcp_accept_errors)
             .and_then(opencensus_report)
             .and_then(stack)
             .and_then(process)

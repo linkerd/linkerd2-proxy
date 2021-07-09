@@ -1,7 +1,6 @@
 use crate::{target::TcpEndpoint, Inbound};
 use linkerd_app_core::{
     io,
-    metrics::tls_detect::LabelTimeout,
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
@@ -150,16 +149,15 @@ impl<N> Inbound<N> {
                     .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
                     .into_inner(),
             )
-            .push(rt.proxy.metrics.transport.layer_accept())
+            .push(rt.metrics.transport.layer_accept())
             // Build a ClientInfo target for each accepted connection. Refuse the
             // connection if it doesn't include an mTLS identity.
             .push_request_filter(ClientInfo::try_from)
             .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(
-                rt.proxy.identity.clone().map(WithTransportHeaderAlpn),
+                rt.identity.clone().map(WithTransportHeaderAlpn),
                 detect_timeout,
             ))
-            .push_on_response(rt.tls_detect_metrics.layer(LabelTimeout::new()))
             .check_new_service::<T, I>()
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer());
