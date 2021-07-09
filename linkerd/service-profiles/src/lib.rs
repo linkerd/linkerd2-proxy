@@ -63,7 +63,7 @@ pub struct Target {
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
 
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum DiscoveryRejected {
     #[error("discovery rejected by control plane: {0}")]
     Remote(

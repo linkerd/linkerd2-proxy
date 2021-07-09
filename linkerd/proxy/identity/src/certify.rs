@@ -1,4 +1,4 @@
-use http_body::Body as HttpBody;
+use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::Error;
 use linkerd_identity as id;
@@ -11,11 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 use tokio::time::{self, Sleep};
-use tonic::{
-    self as grpc,
-    body::{Body, BoxBody},
-    client::GrpcService,
-};
+use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, error, trace};
 
 /// Configures the Identity service and local identity.
@@ -88,9 +84,9 @@ impl Daemon {
     where
         N: NewService<(), Service = S>,
         S: GrpcService<BoxBody>,
-        S::ResponseBody: Send + 'static,
+        S::ResponseBody: Send + Sync + 'static,
         <S::ResponseBody as Body>::Data: Send,
-        <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+        <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
         let Self {
             crt_key_watch,
