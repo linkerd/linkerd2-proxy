@@ -2,7 +2,7 @@ use crate::{tcp, Outbound};
 use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
-    transport::{metrics::SensorIo, OrigDstAddr},
+    transport::{addrs::TargetPort, metrics::SensorIo, OrigDstAddr},
     Error,
 };
 use std::convert::TryFrom;
@@ -22,7 +22,7 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: Param<OrigDstAddr>,
+        T: Param<OrigDstAddr> + Param<TargetPort>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<(Option<profiles::Receiver>, tcp::Accept), Service = NSvc>
             + Clone
@@ -80,8 +80,8 @@ impl<N> Outbound<N> {
             .push(rt.metrics.transport.layer_accept())
             .push_cache(config.proxy.cache_max_idle_age)
             .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
-            .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-            .push_on_response(rt.metrics.tcp_accept_errors.clone())
+            .push_request_filter(|t: T| tcp::Accept::try_from(Param::<OrigDstAddr>::param(&t)))
+            .push(rt.metrics.tcp_accept_errors.layer())
             .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>();
 

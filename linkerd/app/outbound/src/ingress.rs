@@ -8,7 +8,7 @@ use linkerd_app_core::{
     },
     svc::{self, stack::Param},
     tls,
-    transport::{OrigDstAddr, Remote, ServerAddr},
+    transport::{addrs, OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, NameAddr, Never,
 };
 use thiserror::Error;
@@ -56,7 +56,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
         resolve: R,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
-        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr> + Param<addrs::TargetPort> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
@@ -233,7 +233,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                 let orig_dst = Param::<OrigDstAddr>::param(&a);
                 tcp::Accept::from(orig_dst)
             })
-            .push_on_response(rt.metrics.tcp_accept_errors)
+            .push(rt.metrics.tcp_accept_errors.layer())
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>()

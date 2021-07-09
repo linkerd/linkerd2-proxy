@@ -27,7 +27,9 @@ use linkerd_app_core::{
     detect, drain, io, metrics, profiles,
     proxy::tcp,
     serve, svc, tls,
-    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        self, addrs::TargetPort, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, NameMatch, Never, ProxyRuntime,
 };
 use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
@@ -131,7 +133,8 @@ impl Inbound<()> {
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>>
             + svc::Param<Local<ServerAddr>>
-            + svc::Param<OrigDstAddr>,
+            + svc::Param<OrigDstAddr>
+            + svc::Param<TargetPort>,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
         G: Clone + Send + Sync + Unpin + 'static,
         GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,
@@ -214,7 +217,8 @@ where
         gateway: G,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
-        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
+        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + svc::Param<TargetPort>,
+        T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -268,6 +272,8 @@ where
                 rt.identity.clone(),
                 config.detect_protocol_timeout,
             ))
+            .push(rt.metrics.tcp_accept_errors.layer())
+            .check_new_service::<T, I>()
             .instrument(|_: &_| debug_span!("proxy"))
             .push_switch(
                 move |t: T| {
@@ -302,7 +308,7 @@ where
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
-            .push_on_response(rt.metrics.tcp_accept_errors)
+            .push(rt.metrics.tcp_accept_errors.layer())
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .into_inner()

@@ -33,6 +33,20 @@ impl<L, K: Hash + Eq, S> RecordError<L, K, S> {
     }
 }
 
+impl<L, K, S> From<(S, Errors<K>)> for RecordError<L, K, S>
+where
+    K: Hash + Eq,
+    L: Default,
+{
+    fn from((inner, errors): (S, Errors<K>)) -> Self {
+        RecordError {
+            label: L::default(),
+            errors,
+            inner,
+        }
+    }
+}
+
 impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
     fn record<E>(errors: &Errors<K>, label: &L, err: &E)
     where

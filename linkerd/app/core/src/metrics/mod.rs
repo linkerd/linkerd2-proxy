@@ -38,7 +38,7 @@ pub struct Proxy {
     pub http_errors: errors::MetricsLayer,
     pub stack: Stack,
     pub transport: transport::Metrics,
-    pub tcp_accept_errors: tcp_accept_errors::Layer,
+    pub tcp_accept_errors: tcp_accept_errors::Registry,
 }
 
 #[derive(Clone, Debug)]
@@ -173,7 +173,7 @@ impl Metrics {
                 http_errors: http_errors.inbound(),
                 stack: stack.clone(),
                 transport: transport.clone(),
-                tcp_accept_errors: inbound_tcp_accept_errors.layer(),
+                tcp_accept_errors: inbound_tcp_accept_errors.clone(),
             },
             outbound: Proxy {
                 http_endpoint,
@@ -183,7 +183,7 @@ impl Metrics {
                 http_errors: http_errors.outbound(),
                 stack: stack.clone(),
                 transport,
-                tcp_accept_errors: outbound_tcp_accept_errors.layer(),
+                tcp_accept_errors: outbound_tcp_accept_errors.clone(),
             },
             control,
             opencensus,

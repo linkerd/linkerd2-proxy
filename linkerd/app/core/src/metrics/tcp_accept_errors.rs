@@ -1,10 +1,15 @@
+use crate::{
+    metrics::{self, Counter, FmtMetrics},
+    svc,
+    transport::addrs::TargetPort,
+};
 use linkerd_error::Error;
-use linkerd_error_metrics::{FmtLabels, LabelError, RecordErrorLayer};
-use linkerd_metrics::{metrics, Counter, FmtMetrics};
+use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
 use linkerd_tls::server::DetectTimeout as TlsDetectTimeout;
-use std::fmt;
+use parking_lot::Mutex;
+use std::{collections::HashMap, fmt, sync::Arc};
 
-metrics! {
+metrics::metrics! {
     inbound_tcp_accept_errors_total: Counter {
         "The total number of inbound TCP connections that could not be processed due to a proxy error."
     },
@@ -13,11 +18,15 @@ metrics! {
         "The total number of outbound TCP connections that could not be processed due to a proxy error."
     }
 }
-
 #[derive(Clone, Debug)]
-pub struct Registry(linkerd_error_metrics::Registry<AcceptErrors>);
+pub struct Registry {
+    scopes: Arc<Mutex<metrics::Store<TargetPort, Scope>>>,
+    metric: linkerd_error_metrics::Metric,
+}
 
-#[derive(Clone, Copy, Debug)]
+type Scope = Mutex<HashMap<AcceptErrors, metrics::Counter>>;
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LabelAcceptErrors(());
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -27,32 +36,56 @@ pub enum AcceptErrors {
     Other,
 }
 
-pub type Layer = RecordErrorLayer<LabelAcceptErrors, AcceptErrors>;
-
 // === impl Registry ===
 
 impl Registry {
     pub fn inbound() -> Self {
-        Self(linkerd_error_metrics::Registry::new(
-            inbound_tcp_accept_errors_total,
-        ))
+        Self::with_metric(inbound_tcp_accept_errors_total)
     }
 
     pub fn outbound() -> Self {
-        Self(linkerd_error_metrics::Registry::new(
-            outbound_tcp_accept_errors_total,
-        ))
+        Self::with_metric(outbound_tcp_accept_errors_total)
     }
 
-    pub fn layer(&self) -> Layer {
-        self.0.layer(LabelAcceptErrors(()))
+    fn with_metric(metric: linkerd_error_metrics::Metric) -> Self {
+        Self {
+            metric,
+            scopes: Default::default(),
+        }
+    }
+
+    pub fn layer<N, T>(
+        &self,
+    ) -> impl svc::Layer<
+        N,
+        Service = metrics::NewMetrics<
+            N,
+            TargetPort,
+            Scope,
+            RecordError<LabelAcceptErrors, AcceptErrors, N::Service>,
+        >,
+    > + Clone
+    where
+        T: svc::Param<TargetPort>,
+        N: svc::NewService<T>,
+    {
+        metrics::NewMetrics::layer(self.scopes.clone())
     }
 }
 
 impl FmtMetrics for Registry {
-    #[inline]
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt_metrics(f)
+        use metrics::FmtMetric;
+        let errors = self.scopes.lock();
+
+        self.metric.fmt_help(f)?;
+        for (port, ms) in errors.iter() {
+            for (e, m) in ms.lock().iter() {
+                m.fmt_metric_labeled(f, self.metric.name, (port, e))?;
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -19,7 +19,9 @@ use linkerd_app_core::{
     control::ControlAddr,
     dns, drain,
     svc::Param,
-    transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        addrs::TargetPort, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
@@ -92,9 +94,15 @@ impl Config {
     ) -> Result<App, Error>
     where
         BIn: Bind<ServerConfig> + 'static,
-        BIn::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BIn::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Param<TargetPort>,
         BOut: Bind<ServerConfig> + 'static,
-        BOut::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>> + Param<OrigDstAddr>,
+        BOut::Addrs: Param<Remote<ClientAddr>>
+            + Param<Local<ServerAddr>>
+            + Param<OrigDstAddr>
+            + Param<TargetPort>,
         BAdmin: Bind<ServerConfig> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {

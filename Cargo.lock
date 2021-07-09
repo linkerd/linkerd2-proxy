@@ -701,6 +701,7 @@ dependencies = [
  "linkerd-trace-context",
  "linkerd-tracing",
  "linkerd-transport-header",
+ "parking_lot",
  "pin-project",
  "quickcheck",
  "regex",

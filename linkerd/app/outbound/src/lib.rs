@@ -123,7 +123,7 @@ impl Outbound<()> {
     ) -> (Local<ServerAddr>, impl Future<Output = ()>)
     where
         B: Bind<ServerConfig>,
-        B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
+        B::Addrs: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Param<TargetPort>,
         R: Clone + Send + Sync + Unpin + 'static,
         R: Resolve<ConcreteAddr, Endpoint = Metadata, Error = Error>,
         R::Resolution: Send,
@@ -178,6 +178,12 @@ impl<P> Param<transport::labels::Key> for Accept<P> {
 impl<P> Param<OrigDstAddr> for Accept<P> {
     fn param(&self) -> OrigDstAddr {
         self.orig_dst
+    }
+}
+
+impl<P> Param<TargetPort> for Accept<P> {
+    fn param(&self) -> TargetPort {
+        self.orig_dst.into()
     }
 }
 

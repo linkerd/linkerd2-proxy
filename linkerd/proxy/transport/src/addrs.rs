@@ -28,6 +28,9 @@ pub struct Local<T>(pub T);
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Remote<T>(pub T);
 
+#[derive(Eq, PartialEq, Debug, Copy, Clone, Hash)]
+pub struct TargetPort(u16);
+
 // === impl ClientAddr ===
 
 impl AsRef<SocketAddr> for ClientAddr {
@@ -153,5 +156,25 @@ impl<T: Into<SocketAddr>> From<Remote<T>> for SocketAddr {
 impl<T: fmt::Display> fmt::Display for Remote<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+// === impl TargetPort ===
+
+impl From<OrigDstAddr> for TargetPort {
+    fn from(OrigDstAddr(addr): OrigDstAddr) -> Self {
+        Self(addr.port())
+    }
+}
+
+impl From<SocketAddr> for TargetPort {
+    fn from(addr: SocketAddr) -> Self {
+        Self(addr.port())
+    }
+}
+
+impl linkerd_metrics::FmtLabels for TargetPort {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "target_port=\"{}\"", self.0)
     }
 }
