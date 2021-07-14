@@ -4,14 +4,17 @@ use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
 use linkerd_stack::{NewService, Param, Proxy};
+use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
-use std::time::Instant;
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Instant,
+};
 
 /// Wraps services to record metrics.
 #[derive(Debug)]
@@ -126,13 +129,13 @@ where
     type Service = HttpMetrics<N::Service, C>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
-        let metrics = match self.registry.lock() {
-            Ok(mut r) => Some(
+        let metrics = {
+            let mut r = self.registry.lock();
+            Some(
                 r.entry(target.param())
                     .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
                     .clone(),
-            ),
-            Err(_) => None,
+            )
         };
 
         let inner = self.inner.new_service(target);
@@ -182,10 +185,9 @@ where
         if req.body().is_end_stream() {
             if let Some(lock) = req_metrics.take() {
                 let now = Instant::now();
-                if let Ok(mut metrics) = lock.lock() {
-                    (*metrics).last_update = now;
-                    (*metrics).total.incr();
-                }
+                let mut metrics = lock.lock();
+                (*metrics).last_update = now;
+                (*metrics).total.incr();
             }
         }
 
@@ -232,10 +234,9 @@ where
         if req.body().is_end_stream() {
             if let Some(lock) = req_metrics.take() {
                 let now = Instant::now();
-                if let Ok(mut metrics) = lock.lock() {
-                    (*metrics).last_update = now;
-                    (*metrics).total.incr();
-                }
+                let mut metrics = lock.lock();
+                (*metrics).last_update = now;
+                (*metrics).total.incr();
             }
         }
 
@@ -324,10 +325,9 @@ where
 
         if let Some(lock) = this.metrics.take() {
             let now = Instant::now();
-            if let Ok(mut metrics) = lock.lock() {
-                (*metrics).last_update = now;
-                (*metrics).total.incr();
-            }
+            let mut metrics = lock.lock();
+            (*metrics).last_update = now;
+            (*metrics).total.incr();
         }
 
         Poll::Ready(frame)
@@ -390,10 +390,7 @@ where
             Some(lock) => lock,
             None => return,
         };
-        let mut metrics = match lock.lock() {
-            Ok(m) => m,
-            Err(_) => return,
-        };
+        let mut metrics = lock.lock();
 
         (*metrics).last_update = now;
 
@@ -434,10 +431,7 @@ fn measure_class<C: Hash + Eq>(
     status: Option<http::StatusCode>,
 ) {
     let now = Instant::now();
-    let mut metrics = match lock.lock() {
-        Ok(m) => m,
-        Err(_) => return,
-    };
+    let mut metrics = lock.lock();
 
     (*metrics).last_update = now;
 

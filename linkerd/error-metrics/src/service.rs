@@ -1,13 +1,14 @@
 use crate::LabelError;
 use futures::TryFuture;
 use linkerd_metrics::{Counter, FmtLabels};
+use parking_lot::Mutex;
 use pin_project::pin_project;
 use std::{
     collections::HashMap,
     future::Future,
     hash::Hash,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -38,9 +39,11 @@ impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
         L: LabelError<E, Labels = K> + Clone,
     {
         let labels = label.label_error(&err);
-        if let Ok(mut errors) = errors.lock() {
-            errors.entry(labels).or_insert_with(Default::default).incr();
-        }
+        errors
+            .lock()
+            .entry(labels)
+            .or_insert_with(Default::default)
+            .incr();
     }
 }
 

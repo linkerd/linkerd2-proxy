@@ -5,11 +5,12 @@ use super::{LastUpdate, Registry, Report};
 use linkerd_http_classify::ClassifyResponse;
 use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram};
 use linkerd_stack::layer;
+use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -144,7 +145,7 @@ mod tests {
         let retain_idle_for = Duration::from_secs(1);
         let r = super::Requests::<Target, Class>::default();
         let report = r.clone().into_report(retain_idle_for);
-        let mut registry = r.0.lock().unwrap();
+        let mut registry = r.0.lock();
 
         let before_update = Instant::now();
         let metrics = registry

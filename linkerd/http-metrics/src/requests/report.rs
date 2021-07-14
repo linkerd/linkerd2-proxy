@@ -66,12 +66,11 @@ where
         M: FmtMetric,
     {
         for (tgt, tm) in registry.iter() {
-            if let Ok(tm) = tm.lock() {
-                for (status, m) in &tm.by_status {
-                    let status = status.as_ref().map(|s| Status(*s));
-                    let labels = (tgt, status);
-                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
-                }
+            let tm = tm.lock();
+            for (status, m) in &tm.by_status {
+                let status = status.as_ref().map(|s| Status(*s));
+                let labels = (tgt, status);
+                get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
             }
         }
 
@@ -89,13 +88,12 @@ where
         M: FmtMetric,
     {
         for (tgt, tm) in registry.iter() {
-            if let Ok(tm) = tm.lock() {
-                for (status, sm) in &tm.by_status {
-                    for (cls, m) in &sm.by_class {
-                        let status = status.as_ref().map(|s| Status(*s));
-                        let labels = (tgt, (status, cls));
-                        get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
-                    }
+            let tm = tm.lock();
+            for (status, sm) in &tm.by_status {
+                for (cls, m) in &sm.by_class {
+                    let status = status.as_ref().map(|s| Status(*s));
+                    let labels = (tgt, (status, cls));
+                    get_metric(&*m).fmt_metric_labeled(f, &metric.name, labels)?;
                 }
             }
         }
@@ -110,10 +108,7 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut registry = match self.registry.lock() {
-            Err(_) => return Ok(()),
-            Ok(r) => r,
-        };
+        let mut registry = self.registry.lock();
         trace!(
             prefix = self.prefix,
             targets = registry.len(),
