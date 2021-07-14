@@ -37,8 +37,9 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
+    let Config { proxy, .. } = cfg.clone();
     Inbound::new(cfg, rt)
-        .to_tcp_connect(connect, cfg.proxy.connect.timeout)
+        .to_tcp_connect(connect, proxy.connect.timeout)
         .push_http_router(profiles)
         .push_http_server()
         .into_inner()

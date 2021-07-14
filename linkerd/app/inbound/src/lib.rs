@@ -101,7 +101,10 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        S: svc::Service<dyn linkerd_stack::Param<Remote<ServerAddr>>> + Clone,
+        S: svc::Service<Remote<ServerAddr>> + Clone + 'static,
+        S::Response: io::AsyncRead + io::AsyncWrite + Send,
+        S::Error: Into<Error>,
+        S::Future: Send,
     {
         let Self {
             config, runtime, ..
