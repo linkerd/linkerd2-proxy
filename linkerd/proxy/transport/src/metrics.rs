@@ -312,7 +312,6 @@ impl Sensor {
         metrics.open_total.incr();
         metrics.open_connections.incr();
         metrics.by_eos.lock().last_update = Instant::now();
-
         Self {
             metrics: Some(metrics),
             opened_at: Instant::now(),
