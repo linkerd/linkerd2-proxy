@@ -1,5 +1,5 @@
 use crate::{
-    target::{HttpAccept, TcpAccept, TcpEndpoint},
+    target::{HttpAccept, TcpAccept},
     test_util::{
         support::{connect::Connect, http_util, profile, resolver},
         *,
@@ -10,7 +10,7 @@ use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     errors::L5D_HTTP_ERROR_MESSAGE,
     io, proxy,
-    svc::{self, NewService, Param},
+    svc::{self, NewService},
     tls,
     transport::{ClientAddr, Remote, ServerAddr},
     Conditional, NameAddr, ProxyRuntime,
@@ -37,13 +37,8 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
-    let connect = svc::stack(connect)
-        .push_map_target(|t: TcpEndpoint| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
-        .push_timeout(cfg.proxy.connect.timeout)
-        .push(svc::stack::BoxFuture::layer())
-        .into_inner();
     Inbound::new(cfg, rt)
-        .with_stack(connect)
+        .to_tcp_connect(connect, cfg.proxy.connect.timeout)
         .push_http_router(profiles)
         .push_http_server()
         .into_inner()

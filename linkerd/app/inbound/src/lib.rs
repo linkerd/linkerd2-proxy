@@ -88,8 +88,11 @@ impl Inbound<()> {
         }
     }
 
-    pub fn to_tcp_connect<T: svc::Param<u16>>(
+    pub fn to_tcp_connect<S, T: svc::Param<u16>>(
+        // pub fn to_tcp_connect<T: svc::Param<u16>>(
         &self,
+        connect_tcp: S,
+        timeout: Duration,
     ) -> Inbound<
         impl svc::Service<
                 T,
@@ -97,18 +100,15 @@ impl Inbound<()> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-    > {
+    >
+    where
+        S: svc::Service<linkerd_stack::Param<Remote<ServerAddr>>> + Clone,
+    {
         let Self {
             config, runtime, ..
         } = self.clone();
 
-        // Establishes connections to remote peers (for both TCP
-        // forwarding and HTTP proxying).
-        let ConnectConfig {
-            keepalive, timeout, ..
-        } = config.proxy.connect;
-
-        let stack = svc::stack(transport::ConnectTcp::new(keepalive))
+        let stack = svc::stack(connect_tcp)
             .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
             // Limits the time we wait for a connection to be established.
             .push_timeout(timeout)
@@ -152,10 +152,20 @@ impl Inbound<()> {
             .bind(&self.config.proxy.server)
             .expect("Failed to bind inbound listener");
 
+        // Establishes connections to remote peers (for both TCP
+        // forwarding and HTTP proxying).
+        let Self { config, .. } = self.clone();
+        let ConnectConfig {
+            keepalive, timeout, ..
+        } = config.proxy.connect;
+        let connect_tcp = transport::ConnectTcp::new(keepalive);
+
         let serve = async move {
-            let stack =
-                self.to_tcp_connect()
-                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
+            let stack = self.to_tcp_connect(connect_tcp, timeout).into_server(
+                listen_addr.as_ref().port(),
+                profiles,
+                gateway,
+            );
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
