@@ -1,25 +1,22 @@
 mod report;
 mod service;
 
-use super::{Registry, Report};
+pub use self::service::{NewHttpMetrics, ResponseBody};
+use super::Report;
 use linkerd_http_classify::ClassifyResponse;
 use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, LastUpdate, NewMetrics};
 use linkerd_stack::{self as svc, layer};
-use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
-pub use self::service::{NewHttpMetrics, ResponseBody};
-
-type SharedRegistry<T, C> = Arc<Mutex<Registry<T, Metrics<C>>>>;
+type Registry<T, C> = super::Registry<T, Metrics<C>>;
 
 #[derive(Debug)]
-pub struct Requests<T, C>(SharedRegistry<T, C>)
+pub struct Requests<T, C>(Registry<T, C>)
 where
     T: Hash + Eq,
     C: Hash + Eq;
@@ -52,7 +49,7 @@ pub struct ClassMetrics {
 
 impl<T: Hash + Eq, C: Hash + Eq> Default for Requests<T, C> {
     fn default() -> Self {
-        Requests(Arc::new(Mutex::new(Registry::default())))
+        Requests(Registry::default())
     }
 }
 

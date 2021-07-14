@@ -1,6 +1,9 @@
 use super::{ClassMetrics, Metrics, StatusMetrics};
-use crate::{Prefixed, Registry, Report};
-use linkerd_metrics::{latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric};
+use crate::{Prefixed, Report};
+use linkerd_metrics::{
+    latency, Counter, FmtLabels, FmtMetric, FmtMetrics, Histogram, Metric, Store,
+};
+use parking_lot::Mutex;
 use std::{fmt, hash::Hash, time::Instant};
 use tracing::trace;
 
@@ -43,7 +46,7 @@ where
     C: FmtLabels + Hash + Eq,
 {
     fn fmt_by_target<N, M>(
-        registry: &Registry<T, Metrics<C>>,
+        registry: &Store<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&Metrics<C>) -> &M,
@@ -56,7 +59,7 @@ where
     }
 
     fn fmt_by_status<N, M>(
-        registry: &Registry<T, Metrics<C>>,
+        registry: &Store<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&StatusMetrics<C>) -> &M,
@@ -78,7 +81,7 @@ where
     }
 
     fn fmt_by_class<N, M>(
-        registry: &Registry<T, Metrics<C>>,
+        registry: &Store<T, Mutex<Metrics<C>>>,
         f: &mut fmt::Formatter<'_>,
         metric: Metric<'_, N, M>,
         get_metric: impl Fn(&ClassMetrics) -> &M,

@@ -28,7 +28,7 @@ pub use self::{
     prom::{FmtLabels, FmtMetric, FmtMetrics, Metric},
     scopes::Scopes,
     serve::Serve,
-    store::{LastUpdate, Store},
+    store::{LastUpdate, SharedStore, Store},
 };
 
 #[macro_export]

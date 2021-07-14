@@ -1,10 +1,9 @@
-use crate::Store;
+use crate::SharedStore;
 use linkerd_stack as svc;
-use parking_lot::Mutex;
 use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 
 pub struct NewMetrics<N, K: Hash + Eq, M, S> {
-    store: Arc<Mutex<Store<K, M>>>,
+    store: SharedStore<K, M>,
     inner: N,
     _svc: PhantomData<fn() -> S>,
 }
@@ -13,9 +12,7 @@ impl<N, K, M, S> NewMetrics<N, K, M, S>
 where
     K: Hash + Eq,
 {
-    pub fn layer(
-        store: Arc<Mutex<Store<K, M>>>,
-    ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+    pub fn layer(store: SharedStore<K, M>) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
             store: store.clone(),
             inner,
