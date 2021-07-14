@@ -1,6 +1,7 @@
 use crate::iface;
 use futures::{Stream, StreamExt};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use tokio::sync::watch;
 use tracing::trace;
 
@@ -43,20 +44,18 @@ where
     }
 
     pub fn register(&self, tap: T) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.taps.push(tap);
-            let _ = inner.taps_send.send(inner.taps.clone());
-        }
+        let mut inner = self.inner.lock();
+        inner.taps.push(tap);
+        let _ = inner.taps_send.send(inner.taps.clone());
     }
 
     pub async fn clean(self, wakeup: impl Stream) {
         futures::pin_mut!(wakeup);
         while wakeup.next().await.is_some() {
-            if let Ok(mut inner) = self.inner.lock() {
-                let count = inner.taps.len();
-                inner.taps.retain(|tap| tap.can_tap_more());
-                trace!("retained {} of {} taps", inner.taps.len(), count);
-            }
+            let mut inner = self.inner.lock();
+            let count = inner.taps.len();
+            inner.taps.retain(|tap| tap.can_tap_more());
+            trace!("retained {} of {} taps", inner.taps.len(), count);
         }
     }
 }

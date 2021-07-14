@@ -1,10 +1,11 @@
 use crate::{FmtLabels, FmtMetric, Metric};
+use parking_lot::Mutex;
 use std::{
     borrow::Borrow,
     collections::hash_map::{self, HashMap},
     fmt,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 
@@ -104,7 +105,7 @@ where
         M: FmtMetric,
     {
         for (key, m) in self.iter() {
-            let m = m.lock().unwrap();
+            let m = m.lock();
             get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
@@ -127,7 +128,7 @@ where
 
 impl<M: LastUpdate> LastUpdate for Mutex<M> {
     fn last_update(&self) -> Instant {
-        self.lock().unwrap().last_update()
+        self.lock().last_update()
     }
 }
 

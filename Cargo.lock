@@ -911,6 +911,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-metrics",
+ "parking_lot",
  "pin-project",
  "tower",
 ]
@@ -974,6 +975,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-metrics",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "tower",
  "tracing",
@@ -1200,6 +1202,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
+ "parking_lot",
  "pin-project",
  "prost-types",
  "quickcheck",
@@ -1237,6 +1240,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "socket2 0.4.0",
  "tokio",
@@ -1331,6 +1335,7 @@ name = "linkerd-stack-metrics"
 version = "0.1.0"
 dependencies = [
  "linkerd-metrics",
+ "parking_lot",
  "tokio",
  "tower",
 ]

@@ -5,11 +5,12 @@ use super::{LastUpdate, Registry, Report};
 use linkerd_http_classify::ClassifyResponse;
 use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram};
 use linkerd_stack::layer;
+use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 

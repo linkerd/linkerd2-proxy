@@ -10,5 +10,6 @@ publish = false
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-metrics = { path = "../metrics" }
+parking_lot = "0.11"
 pin-project = "1"
 tower = { version = "0.4.8", default-features = false }
