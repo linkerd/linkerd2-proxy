@@ -8,14 +8,16 @@ use linkerd_metrics::{
 use linkerd_stack::{layer, NewService, Param};
 use parking_lot::Mutex;
 use pin_project::pin_project;
-use std::collections::HashMap;
-use std::fmt;
-use std::future::Future;
-use std::hash::Hash;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    fmt,
+    future::Future,
+    hash::Hash,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::{Duration, Instant},
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
@@ -322,16 +324,14 @@ impl io::Sensor for Sensor {
     fn record_read(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.read_bytes_total.add(sz as u64);
-            let mut by_eos = m.by_eos.lock();
-            by_eos.last_update = Instant::now();
+            m.by_eos.lock().last_update = Instant::now();
         }
     }
 
     fn record_write(&mut self, sz: usize) {
         if let Some(ref m) = self.metrics {
             m.write_bytes_total.add(sz as u64);
-            let mut by_eos = m.by_eos.lock();
-            by_eos.last_update = Instant::now();
+            m.by_eos.lock().last_update = Instant::now();
         }
     }
 
@@ -401,12 +401,7 @@ impl FmtLabels for Eos {
 
 impl LastUpdate for Metrics {
     fn last_update(&self) -> Instant {
-        self.by_eos
-            .try_lock()
-            .map(|metrics| metrics.last_update)
-            // if the metric is currently being updated, don't wait for it to be
-            // done, just assume it's being updated now.
-            .unwrap_or_else(Instant::now)
+        self.by_eos.lock().last_update
     }
 }
 

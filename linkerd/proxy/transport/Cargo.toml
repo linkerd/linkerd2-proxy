@@ -17,8 +17,8 @@ linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-stack = { path = "../../stack" }
-pin-project = "1"
 parking_lot = "0.11"
+pin-project = "1"
 socket2 = "0.4"
 tokio = { version = "1", features = ["macros", "net"] }
 tokio-stream = { version = "0.1", features = ["net"] }

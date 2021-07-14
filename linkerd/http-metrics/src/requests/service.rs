@@ -7,13 +7,15 @@ use linkerd_metrics::NewMetrics;
 use linkerd_stack::Proxy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
-use std::fmt::Debug;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::Instant;
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Instant,
+};
 
 /// Wraps services to record metrics.
 pub type NewHttpMetrics<N, K, C, Class, S> =

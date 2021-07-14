@@ -1,9 +1,9 @@
 mod report;
 mod service;
 
-use super::{LastUpdate, Registry, Report};
+use super::{Registry, Report};
 use linkerd_http_classify::ClassifyResponse;
-use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, NewMetrics};
+use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, LastUpdate, NewMetrics};
 use linkerd_stack::{self as svc, layer};
 use parking_lot::Mutex;
 use std::{

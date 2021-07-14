@@ -3,12 +3,9 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 pub use self::{requests::Requests, retries::Retries};
-use linkerd_metrics::{LastUpdate, Store};
+use linkerd_metrics::Store;
 use parking_lot::Mutex;
-use std::fmt;
-use std::hash::Hash;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{fmt, hash::Hash, sync::Arc, time::Duration};
 
 pub mod requests;
 pub mod retries;
