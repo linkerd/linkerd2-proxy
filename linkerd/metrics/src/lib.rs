@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::inconsistent_struct_constructor)]
 
-//! Utilties for exposing metrics to Prometheus.
+//! Utilities for exposing metrics to Prometheus.
 
 mod counter;
 mod gauge;
@@ -17,18 +17,19 @@ mod store;
 #[cfg(feature = "summary")]
 mod summary;
 
-pub use self::counter::Counter;
-pub use self::gauge::Gauge;
-pub use self::histogram::Histogram;
-pub use self::prom::{FmtLabels, FmtMetric, FmtMetrics, Metric};
-pub use self::scopes::Scopes;
-pub use self::serve::Serve;
-pub use self::store::{LastUpdate, Store};
-#[cfg(feature = "summary")]
-pub use self::summary::Summary;
-
 #[cfg(feature = "linkerd-stack")]
 pub use self::new_metrics::NewMetrics;
+#[cfg(feature = "summary")]
+pub use self::summary::Summary;
+pub use self::{
+    counter::Counter,
+    gauge::Gauge,
+    histogram::Histogram,
+    prom::{FmtLabels, FmtMetric, FmtMetrics, Metric},
+    scopes::Scopes,
+    serve::Serve,
+    store::{LastUpdate, Store},
+};
 
 #[macro_export]
 macro_rules! metrics {
