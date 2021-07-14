@@ -78,6 +78,7 @@ where
 }
 
 // === impl HttpMetrics ===
+
 impl<S, C> From<(S, Arc<Mutex<Metrics<C::Class>>>)> for HttpMetrics<S, C>
 where
     C: ClassifyResponse,
