@@ -8,6 +8,7 @@ use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
 use pin_project::pin_project;
+use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
@@ -243,6 +244,12 @@ fn set_http_status(error: &(dyn std::error::Error + 'static)) -> http::response:
             HeaderValue::from_static("request timed out"),
         )
         .status(http::StatusCode::GATEWAY_TIMEOUT)
+    } else if error.is::<ConnectTimeout>() {
+        rsp.header(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("failed to connect"),
+        )
+        .status(http::StatusCode::GATEWAY_TIMEOUT)
     } else if let Some(e) = error.downcast_ref::<FailFastError>() {
         rsp.header(
             L5D_HTTP_ERROR_MESSAGE,
@@ -363,8 +370,8 @@ pub struct IdentityRequired {
     pub found: Option<tls::client::ServerId>,
 }
 
-impl std::fmt::Display for IdentityRequired {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for IdentityRequired {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.found {
             Some(ref found) => write!(
                 f,
@@ -413,7 +420,7 @@ impl metrics::LabelError<Error> for LabelError {
 }
 
 impl metrics::FmtLabels for Reason {
-    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "message=\"{}\"",
@@ -483,3 +490,14 @@ impl HttpError {
         self.http
     }
 }
+
+#[derive(Debug)]
+pub struct ConnectTimeout();
+
+impl fmt::Display for ConnectTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad("connect timed out")
+    }
+}
+
+impl std::error::Error for ConnectTimeout {}

@@ -24,7 +24,9 @@ use self::{
 };
 use linkerd_app_core::{
     config::{ConnectConfig, PortSet, ProxyConfig, ServerConfig},
-    detect, drain, io, metrics, profiles,
+    detect, drain,
+    errors::ConnectTimeout,
+    io, metrics, profiles,
     proxy::tcp,
     serve, svc, tls,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -110,6 +112,13 @@ impl Inbound<()> {
             .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
             // Limits the time we wait for a connection to be established.
             .push_timeout(timeout)
+            .push(svc::MapErrLayer::new(|err: Error| {
+                if err.is::<tower::timeout::error::Elapsed>() {
+                    ConnectTimeout().into()
+                } else {
+                    err.into()
+                }
+            }))
             .push(svc::stack::BoxFuture::layer());
 
         Inbound {

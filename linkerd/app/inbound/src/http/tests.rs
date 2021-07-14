@@ -238,12 +238,12 @@ async fn return_bad_gateway_response_error_header() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn return_timeout_response_error_header() {
+async fn return_connect_timeout_error_header() {
     let _trace = trace_init();
     tokio::time::pause();
 
     // Build a mock connect that sleeps longer than the default inbound
-    // dispatch timeout of 1 second.
+    // connect timeout.
     let server = hyper::server::conn::Http::new();
     let accept = HttpAccept {
         version: proxy::http::Version::Http1,
@@ -253,10 +253,10 @@ async fn return_timeout_response_error_header() {
             tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
         },
     };
-    let connect = support::connect().endpoint(accept.tcp.target_addr, timeout_server(server));
+    let connect = support::connect().endpoint(accept.tcp.target_addr, connect_timeout(server));
 
     // Build a client using the connect that always sleeps so that responses
-    // are SERVICE_UNAVAILABLE.
+    // are GATEWAY_TIMEOUT.
     let mut client = ClientBuilder::new();
     let profiles = profile::resolver();
     let profile_tx =
@@ -267,7 +267,7 @@ async fn return_timeout_response_error_header() {
     let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
-    // Send a request and assert that it is a SERVICE_UNAVAILABLE with the
+    // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
     let req = Request::builder()
         .method(http::Method::GET)
@@ -275,12 +275,12 @@ async fn return_timeout_response_error_header() {
         .body(Body::default())
         .unwrap();
     let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
     let message = response
         .headers()
         .get(L5D_HTTP_ERROR_MESSAGE)
         .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
-    assert_eq!(message, "proxy dispatch timed out");
+    assert_eq!(message, "failed to connect");
 
     drop(client);
     bg.await.expect("background task failed");
@@ -318,17 +318,16 @@ fn connect_error() -> impl Fn(Remote<ServerAddr>) -> io::Result<io::BoxedIo> {
 }
 
 #[tracing::instrument]
-fn timeout_server(
+fn connect_timeout(
     http: hyper::server::conn::Http,
 ) -> Box<dyn FnMut(Remote<ServerAddr>) -> ConnectFuture + Send> {
     Box::new(move |endpoint| {
-        // let http = http.clone();
-        let span = tracing::info_span!("timeout_server", ?endpoint);
+        let span = tracing::info_span!("connect_timeout", ?endpoint);
         Box::pin(
             async move {
-                tracing::info!("sleeping so that the proxy hits a dispatch timeout");
+                tracing::info!("sleeping so that the proxy hits a connect timeout");
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                // The proxy hits a dispatch timeout so we don't need to worry
+                // The proxy hits a connect timeout so we don't need to worry
                 // about returning a service here.
                 unreachable!();
             }
