@@ -744,7 +744,6 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
- "linkerd-stack",
  "linkerd-tracing",
  "thiserror",
  "tokio",
