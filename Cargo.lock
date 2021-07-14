@@ -878,7 +878,7 @@ name = "linkerd-dns-name"
 version = "0.1.0"
 dependencies = [
  "thiserror",
- "untrusted",
+ "untrusted 0.9.0",
  "webpki",
 ]
 
@@ -1008,7 +1008,7 @@ dependencies = [
  "thiserror",
  "tokio-rustls",
  "tracing",
- "untrusted",
+ "untrusted 0.9.0",
  "webpki",
 ]
 
@@ -1398,7 +1398,7 @@ dependencies = [
  "tokio-rustls",
  "tower",
  "tracing",
- "untrusted",
+ "untrusted 0.9.0",
  "webpki",
 ]
 
@@ -1929,7 +1929,7 @@ dependencies = [
  "libc",
  "once_cell",
  "spin",
- "untrusted",
+ "untrusted 0.7.1",
  "web-sys",
  "winapi",
 ]
@@ -1975,7 +1975,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3042af939fca8c3453b7af0f1c66e533a15a86169e39de2657310ade8f98d3c"
 dependencies = [
  "ring",
- "untrusted",
+ "untrusted 0.7.1",
 ]
 
 [[package]]
@@ -2501,6 +2501,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
+name = "untrusted"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
 name = "url"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2604,7 +2610,7 @@ version = "0.21.4"
 source = "git+https://github.com/linkerd/webpki?branch=cert-dns-names-0.21#a4acca51d3dab4c99680e570dd4498b0c8b13b94"
 dependencies = [
  "ring",
- "untrusted",
+ "untrusted 0.7.1",
 ]
 
 [[package]]

@@ -22,7 +22,7 @@ tokio-rustls = "0.22"
 tower = "0.4.8"
 tracing = "0.1.26"
 webpki = "0.21"
-untrusted = "0.7"
+untrusted = "0.9"
 
 [dev-dependencies]
 linkerd-identity = { path = "../identity", features = ["test-util"] }
