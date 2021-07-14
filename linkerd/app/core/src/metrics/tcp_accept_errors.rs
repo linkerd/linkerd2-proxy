@@ -7,7 +7,7 @@ use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
 use linkerd_tls::server::DetectTimeout as TlsDetectTimeout;
 use parking_lot::Mutex;
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt};
 
 metrics::metrics! {
     inbound_tcp_accept_errors_total: Counter {
@@ -18,9 +18,10 @@ metrics::metrics! {
         "The total number of outbound TCP connections that could not be processed due to a proxy error."
     }
 }
+
 #[derive(Clone, Debug)]
 pub struct Registry {
-    scopes: Arc<Mutex<metrics::Store<TargetPort, Scope>>>,
+    scopes: metrics::SharedStore<TargetPort, Scope>,
     metric: linkerd_error_metrics::Metric,
 }
 
