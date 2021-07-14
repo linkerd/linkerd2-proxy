@@ -44,7 +44,7 @@ pub struct Config {
     pub profile_idle_timeout: Duration,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
     runtime: ProxyRuntime,
@@ -107,7 +107,9 @@ impl Inbound<()> {
         S::Future: Send,
     {
         let Self {
-            config, runtime, ..
+            config,
+            runtime,
+            stack: _,
         } = self.clone();
 
         let stack = svc::stack(connect_tcp)
@@ -245,9 +247,17 @@ where
         P::Error: Send,
         P::Future: Send,
     {
-        let disable_detect = self.config.disable_protocol_detection_for_ports.clone();
-        let require_id = self.config.require_identity_for_inbound_ports.clone();
-        let config = self.config.proxy.clone();
+        let Self {
+            config:
+                Config {
+                    proxy: config,
+                    require_identity_for_inbound_ports: require_id,
+                    disable_protocol_detection_for_ports: disable_detect,
+                    ..
+                },
+            runtime: rt,
+            stack: _,
+        } = self.clone();
 
         self.clone()
             .push_http_router(profiles)
@@ -259,7 +269,7 @@ where
                 // application as an opaque TCP stream.
                 self.clone()
                     .push_tcp_forward(server_port)
-                    .stack
+                    .into_stack()
                     .push_map_target(TcpEndpoint::from)
                     .push_on_response(svc::BoxService::layer())
                     .into_inner(),
@@ -272,11 +282,11 @@ where
                 http::DetectHttp::default(),
             ))
             .push_request_filter(require_id)
-            .push(self.runtime.metrics.transport.layer_accept())
+            .push(rt.metrics.transport.layer_accept())
             .push_request_filter(TcpAccept::try_from)
             .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(
-                self.runtime.identity.clone(),
+                rt.identity.clone(),
                 config.detect_protocol_timeout,
             ))
             .instrument(|_: &_| debug_span!("proxy"))
@@ -293,7 +303,7 @@ where
                     .push_tcp_forward(server_port)
                     .stack
                     .push_map_target(TcpEndpoint::from)
-                    .push(self.runtime.metrics.transport.layer_accept())
+                    .push(rt.metrics.transport.layer_accept())
                     .check_new_service::<TcpAccept, _>()
                     .instrument(|_: &TcpAccept| debug_span!("forward"))
                     .into_inner(),
@@ -313,6 +323,7 @@ where
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
+            .push_on_response(rt.metrics.tcp_accept_errors)
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .into_inner()

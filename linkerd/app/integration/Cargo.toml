@@ -22,7 +22,7 @@ futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.2", features = ["http1", "http2", "stream", "client", "server"] }
+hyper = { version = "0.14.10", features = ["http1", "http2", "stream", "client", "server"] }
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
@@ -31,12 +31,11 @@ linkerd-app-test = { path = "../test" }
 linkerd-tracing = { path = "../../tracing" }
 regex = "1"
 socket2 = "0.4"
-rustls = "0.19"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
-tokio-stream = { version = "0.1.6", features = ["sync"] }
+tokio-stream = { version = "0.1.7", features = ["sync"] }
 tokio-rustls = "0.22"
 tower = { version = "0.4.8", default-features = false }
-tonic = { version = "0.4", default-features = false }
+tonic = { version = "0.5", default-features = false }
 tracing = "0.1.26"
 webpki = "0.21"
 tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt"] }

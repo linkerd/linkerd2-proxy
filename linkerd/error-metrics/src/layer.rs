@@ -1,10 +1,7 @@
 use crate::RecordError;
 use linkerd_metrics::Counter;
-use std::{
-    collections::HashMap,
-    hash::Hash,
-    sync::{Arc, Mutex},
-};
+use parking_lot::Mutex;
+use std::{collections::HashMap, hash::Hash, sync::Arc};
 
 #[derive(Debug)]
 pub struct RecordErrorLayer<L, K: Hash + Eq> {

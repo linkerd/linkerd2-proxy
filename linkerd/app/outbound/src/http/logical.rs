@@ -1,7 +1,7 @@
 use super::{CanonicalDstHeader, Concrete, Endpoint, Logical};
 use crate::{endpoint, resolve, stack_labels, Outbound};
 use linkerd_app_core::{
-    classify, config, profiles,
+    classify, config, dst, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -118,7 +118,7 @@ impl<E> Outbound<E> {
                     .push(
                         rt.metrics
                             .http_route_actual
-                            .to_layer::<classify::Response, _>(),
+                            .to_layer::<classify::Response, _, dst::Route>(),
                     )
                     // Depending on whether or not the request can be retried,
                     // it may have one of two `Body` types. This layer unifies
@@ -131,7 +131,7 @@ impl<E> Outbound<E> {
                     // Sets an optional request timeout.
                     .push(http::MakeTimeoutLayer::default())
                     // Records per-route metrics.
-                    .push(rt.metrics.http_route.to_layer::<classify::Response, _>())
+                    .push(rt.metrics.http_route.to_layer::<classify::Response, _, _>())
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::NewClassify::layer())

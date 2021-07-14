@@ -1,9 +1,10 @@
 use http::header::HeaderValue;
 use linkerd_errno::Errno;
 use linkerd_error::Error;
-use linkerd_error_metrics as metrics;
+use linkerd_error_metrics::{self as error_metrics, RecordErrorLayer, Registry};
 use linkerd_error_respond as respond;
 pub use linkerd_error_respond::RespondLayer;
+use linkerd_metrics::{metrics, Counter, FmtLabels, FmtMetrics};
 use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
@@ -17,20 +18,31 @@ use tracing::{debug, warn};
 
 pub const L5D_HTTP_ERROR_MESSAGE: &str = "l5d-http-error-message";
 
+metrics! {
+    inbound_http_errors_total: Counter {
+        "The total number of inbound HTTP requests that could not be processed due to a proxy error."
+    },
+
+    outbound_http_errors_total: Counter {
+        "The total number of outbound HTTP requests that could not be processed due to a proxy error."
+    }
+}
+
 pub fn layer() -> respond::RespondLayer<NewRespond> {
     respond::RespondLayer::new(NewRespond(()))
 }
 
-#[derive(Clone, Default)]
-pub struct Metrics(metrics::Registry<Label>);
+#[derive(Clone)]
+pub struct Metrics {
+    inbound: Registry<Reason>,
+    outbound: Registry<Reason>,
+}
 
-pub type MetricsLayer = metrics::RecordErrorLayer<LabelError, Label>;
+pub type MetricsLayer = RecordErrorLayer<LabelError, Reason>;
 
 /// Error metric labels.
 #[derive(Copy, Clone, Debug)]
-pub struct LabelError(super::metrics::Direction);
-
-pub type Label = (super::metrics::Direction, Reason);
+pub struct LabelError(());
 
 #[derive(Copy, Clone, Debug, Error)]
 #[error("{}", self.message)]
@@ -360,7 +372,6 @@ fn code_header(code: grpc::Code) -> HeaderValue {
         Code::Unavailable => HeaderValue::from_static("14"),
         Code::DataLoss => HeaderValue::from_static("15"),
         Code::Unauthenticated => HeaderValue::from_static("16"),
-        Code::__NonExhaustive => unreachable!("Code::__NonExhaustive"),
     }
 }
 
@@ -411,15 +422,15 @@ impl LabelError {
     }
 }
 
-impl metrics::LabelError<Error> for LabelError {
-    type Labels = Label;
+impl error_metrics::LabelError<Error> for LabelError {
+    type Labels = Reason;
 
     fn label_error(&self, err: &Error) -> Self::Labels {
-        (self.0, Self::reason(err.as_ref()))
+        Self::reason(err.as_ref())
     }
 }
 
-impl metrics::FmtLabels for Reason {
+impl FmtLabels for Reason {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -444,17 +455,26 @@ impl metrics::FmtLabels for Reason {
     }
 }
 
+impl Default for Metrics {
+    fn default() -> Metrics {
+        Self {
+            inbound: Registry::new(inbound_http_errors_total),
+            outbound: Registry::new(outbound_http_errors_total),
+        }
+    }
+}
+
 impl Metrics {
     pub fn inbound(&self) -> MetricsLayer {
-        self.0.layer(LabelError(super::metrics::Direction::In))
+        self.inbound.layer(LabelError(()))
     }
 
     pub fn outbound(&self) -> MetricsLayer {
-        self.0.layer(LabelError(super::metrics::Direction::Out))
+        self.outbound.layer(LabelError(()))
     }
 
-    pub fn report(&self) -> metrics::Registry<Label> {
-        self.0.clone()
+    pub fn report(&self) -> impl FmtMetrics + Clone + Send {
+        self.inbound.clone().and_then(self.outbound.clone())
     }
 }
 

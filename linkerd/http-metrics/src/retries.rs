@@ -1,13 +1,16 @@
-use super::{LastUpdate, Prefixed, Registry, Report};
-use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, Metric};
-use std::fmt;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use super::{Prefixed, Registry, Report};
+use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, LastUpdate, Metric};
+use parking_lot::Mutex;
+use std::{
+    fmt,
+    hash::Hash,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tracing::trace;
 
 #[derive(Debug)]
-pub struct Retries<T>(Arc<Mutex<Registry<T, Metrics>>>)
+pub struct Retries<T>(Registry<T, Metrics>)
 where
     T: Hash + Eq;
 
@@ -27,7 +30,7 @@ struct NoBudgetLabel;
 
 impl<T: Hash + Eq> Default for Retries<T> {
     fn default() -> Self {
-        Retries(Arc::new(Mutex::new(Registry::default())))
+        Retries(Registry::default())
     }
 }
 
@@ -37,7 +40,7 @@ impl<T: Hash + Eq> Retries<T> {
     }
 
     pub fn get_handle(&self, target: T) -> Handle {
-        let mut reg = self.0.lock().expect("retry metrics registry poisoned");
+        let mut reg = self.0.lock();
         Handle(reg.entry(target).or_default().clone())
     }
 }
@@ -52,12 +55,11 @@ impl<T: Hash + Eq> Clone for Retries<T> {
 
 impl Handle {
     pub fn incr_retryable(&self, has_budget: bool) {
-        if let Ok(mut m) = self.0.lock() {
-            m.last_update = Instant::now();
-            m.retryable.incr();
-            if !has_budget {
-                m.no_budget.incr();
-            }
+        let mut m = self.0.lock();
+        m.last_update = Instant::now();
+        m.retryable.incr();
+        if !has_budget {
+            m.no_budget.incr();
         }
     }
 }
@@ -99,10 +101,7 @@ where
     T: FmtLabels + Hash + Eq,
 {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut registry = match self.registry.lock() {
-            Err(_) => return Ok(()),
-            Ok(r) => r,
-        };
+        let mut registry = self.registry.lock();
         trace!(
             prfefix = %self.prefix,
             targets = %registry.len(),
@@ -116,11 +115,10 @@ where
         let metric = self.retryable_total();
         metric.fmt_help(f)?;
         for (tgt, tm) in registry.iter() {
-            if let Ok(m) = tm.lock() {
-                m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
-                m.no_budget
-                    .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
-            }
+            let m = tm.lock();
+            m.retryable.fmt_metric_labeled(f, &metric.name, tgt)?;
+            m.no_budget
+                .fmt_metric_labeled(f, &metric.name, (tgt, NoBudgetLabel))?;
         }
 
         registry.retain_since(Instant::now() - self.retain_idle);

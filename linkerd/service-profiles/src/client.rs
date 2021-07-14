@@ -1,15 +1,12 @@
 use crate::{proto, LookupAddr, Profile, Receiver};
 use futures::prelude::*;
-use http_body::Body as HttpBody;
+use http_body::Body;
 use linkerd2_proxy_api::destination::{self as api, destination_client::DestinationClient};
 use linkerd_error::{Never, Recover};
 use linkerd_stack::{Param, Service};
 use linkerd_tonic_watch::StreamWatch;
 use std::task::{Context, Poll};
-use tonic::{
-    body::{Body, BoxBody},
-    client::GrpcService,
-};
+use tonic::{body::BoxBody, client::GrpcService};
 use tracing::debug;
 
 /// Creates watches on service profiles.
@@ -30,9 +27,9 @@ struct Inner<S> {
 impl<R, S> Client<R, S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover<tonic::Status> + Send + Clone + 'static,
@@ -49,9 +46,9 @@ impl<T, R, S> Service<T> for Client<R, S>
 where
     T: Param<LookupAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover<tonic::Status> + Send + Clone + 'static,
@@ -96,9 +93,9 @@ type InnerFuture =
 impl<S> Inner<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
@@ -113,9 +110,9 @@ where
 impl<S> Service<LookupAddr> for Inner<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {

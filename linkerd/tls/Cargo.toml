@@ -16,7 +16,6 @@ linkerd-error = { path = "../error" }
 linkerd-identity = { path = "../identity" }
 linkerd-io = { path = "../io" }
 linkerd-stack = { path = "../stack" }
-rustls = "0.19"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "time"] }
 tokio-rustls = "0.22"

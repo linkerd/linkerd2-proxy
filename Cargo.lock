@@ -351,9 +351,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.9.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
 
 [[package]]
 name = "hdrhistogram"
@@ -445,9 +445,9 @@ checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
 
 [[package]]
 name = "hyper"
-version = "0.14.9"
+version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07d6baa1b441335f3ce5098ac421fb6547c46dda735ca1bc6d0153c838f9dd83"
+checksum = "7728a72c4c7d72665fde02204bcbd93b247721025b222ef78606f14513e0fd03"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -481,6 +481,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper-timeout"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
+dependencies = [
+ "hyper",
+ "pin-project-lite",
+ "tokio",
+ "tokio-io-timeout",
+]
+
+[[package]]
 name = "idna"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -493,9 +505,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "1.6.2"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "824845a0bf897a9042383849b02c1bc219c2383772efcd5c6f9766fa4b81aef3"
+checksum = "bc633605454125dec4b66843673f01c7df2b89479b32e0ed634e43a91cff62a5"
 dependencies = [
  "autocfg",
  "hashbrown",
@@ -530,9 +542,9 @@ checksum = "68f2d64f2edebec4ce84ad108148e67e1064789bee435edc5b60ad398714a3a9"
 
 [[package]]
 name = "itertools"
-version = "0.9.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+checksum = "69ddb889f9d0d08a67338271fa9b62996bc788c7796a5c18cf057420aaed5eaf"
 dependencies = [
  "either",
 ]
@@ -560,9 +572,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.97"
+version = "0.2.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12b8adadd720df158f4d70dfe7ccc6adb0472d7c55ca83445f6a5ab3e36f8fb6"
+checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -759,7 +771,6 @@ dependencies = [
  "linkerd-tracing",
  "linkerd2-proxy-api",
  "regex",
- "rustls",
  "socket2 0.4.0",
  "tokio",
  "tokio-rustls",
@@ -901,6 +912,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-metrics",
+ "parking_lot",
  "pin-project",
  "tower",
 ]
@@ -964,6 +976,7 @@ dependencies = [
  "linkerd-http-classify",
  "linkerd-metrics",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "tower",
  "tracing",
@@ -993,8 +1006,8 @@ version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
  "ring",
- "rustls",
  "thiserror",
+ "tokio-rustls",
  "tracing",
  "untrusted",
  "webpki",
@@ -1023,6 +1036,7 @@ dependencies = [
  "hdrhistogram",
  "http",
  "hyper",
+ "linkerd-stack",
  "parking_lot",
  "quickcheck",
  "tokio",
@@ -1190,6 +1204,7 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "linkerd2-proxy-api",
+ "parking_lot",
  "pin-project",
  "prost-types",
  "quickcheck",
@@ -1227,6 +1242,7 @@ dependencies = [
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",
+ "parking_lot",
  "pin-project",
  "socket2 0.4.0",
  "tokio",
@@ -1321,6 +1337,7 @@ name = "linkerd-stack-metrics"
 version = "0.1.0"
 dependencies = [
  "linkerd-metrics",
+ "parking_lot",
  "tokio",
  "tower",
 ]
@@ -1377,7 +1394,6 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tracing",
- "rustls",
  "thiserror",
  "tokio",
  "tokio-rustls",
@@ -1468,7 +1484,7 @@ dependencies = [
 [[package]]
 name = "linkerd2-proxy-api"
 version = "0.1.18"
-source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=main#48f13d65431c49ee5bdebc1bcd81df583ab5683d"
+source = "git+https://github.com/linkerd/linkerd2-proxy-api?branch=main#5e4e190df8fe3a2c869169a60b7ba78e2afe31b6"
 dependencies = [
  "h2",
  "http",
@@ -1736,9 +1752,9 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e6984d2f1a23009bd270b8bb56d0926810a3d483f59c987d77969e9d8e840b2"
+checksum = "de5e2533f59d08fcf364fd374ebda0692a70bd6d7e66ef97f306f45c6c5d8020"
 dependencies = [
  "bytes",
  "prost-derive",
@@ -1746,9 +1762,9 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32d3ebd75ac2679c2af3a92246639f9fcc8a442ee420719cc4fe195b98dd5fa3"
+checksum = "355f634b43cdd80724ee7848f95770e7e70eefa6dcf14fea676216573b8fd603"
 dependencies = [
  "bytes",
  "heck",
@@ -1764,9 +1780,9 @@ dependencies = [
 
 [[package]]
 name = "prost-derive"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "169a15f3008ecb5160cba7d37bcd690a7601b6d30cfb87a117d45e59d52af5d4"
+checksum = "600d2f334aa05acb02a755e217ef1ab6dea4d51b58b7846588b747edec04efba"
 dependencies = [
  "anyhow",
  "itertools",
@@ -1777,9 +1793,9 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b518d7cdd93dab1d1122cf07fa9a60771836c668dde9d9e2a139f957f0d9f1bb"
+checksum = "603bbd6394701d13f3f25aada59c7de9d35a6a5887cfc156181234a44002771b"
 dependencies = [
  "bytes",
  "prost",
@@ -2079,18 +2095,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.25"
+version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa6f76457f59514c7eeb4e59d891395fab0b2fd1d40723ae737d64153392e9c6"
+checksum = "93119e4feac1cbe6c798c34d3a53ea0026b0b1de6a120deef895137c0529bfe2"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.25"
+version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a36768c0fbf1bb15eca10defa29526bda730a2376c2ab4393ccfa16fb1a318d"
+checksum = "060d69a0afe7796bf42e9e2ff91f5ee691fb15c53d38b4b62a9a53eb23164745"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2123,9 +2139,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.7.1"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fb2ed024293bb19f7a5dc54fe83bf86532a44c12a2bb8ba40d64a4509395ca2"
+checksum = "98c8b05dc14c75ea83d63dd391100353789f5f24b8b3866542a5e85c8be8e985"
 dependencies = [
  "autocfg",
  "bytes",
@@ -2140,6 +2156,16 @@ dependencies = [
  "tokio-macros",
  "tracing",
  "winapi",
+]
+
+[[package]]
+name = "tokio-io-timeout"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90c49f106be240de154571dd31fbe48acb10ba6c6dd6f6517ad603abffa42de9"
+dependencies = [
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
@@ -2166,9 +2192,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8864d706fdb3cc0843a49647ac892720dac98a6eeb818b77190592cf4994066"
+checksum = "7b2f3f698253f03119ac0102beaa64f67a67e08074d03a22d18784104543727f"
 dependencies = [
  "futures-core",
  "pin-project-lite",
@@ -2217,9 +2243,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.4.3"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac42cd97ac6bd2339af5bcabf105540e21e45636ec6fa6aae5e85d44db31be0"
+checksum = "b584f064fdfc50017ec39162d5aebce49912f1eb16fd128e04b7f4ce4907c7e5"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2231,6 +2257,7 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
+ "hyper-timeout",
  "percent-encoding",
  "pin-project",
  "prost",
@@ -2239,6 +2266,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tower",
+ "tower-layer",
  "tower-service",
  "tracing",
  "tracing-futures",
@@ -2246,9 +2274,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c695de27302f4697191dda1c7178131a8cb805463dda02864acb80fe1322fdcf"
+checksum = "25db9a497663a9a779693ef67b6e6aef8345b3d3ff8d50ef92eae6c88cb1e386"
 dependencies = [
  "proc-macro2",
  "prost-build",
@@ -2368,9 +2396,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
-version = "0.2.18"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa5553bf0883ba7c9cbe493b085c29926bd41b66afc31ff72cf17ff4fb60dcd5"
+checksum = "ab69019741fca4d98be3c62d2b75254528b5432233fd8a4d2739fec20278de48"
 dependencies = [
  "ansi_term",
  "lazy_static",
@@ -2391,7 +2419,7 @@ dependencies = [
 [[package]]
 name = "trust-dns-proto"
 version = "0.21.0-alpha.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#57b131f7dca7d8d70d2ef06117c6884ae44e52b8"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#af83717b5bd156bdd7b52bbd4b2dbc23cc6be2c9"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2415,7 +2443,7 @@ dependencies = [
 [[package]]
 name = "trust-dns-resolver"
 version = "0.21.0-alpha.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#57b131f7dca7d8d70d2ef06117c6884ae44e52b8"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#af83717b5bd156bdd7b52bbd4b2dbc23cc6be2c9"
 dependencies = [
  "cfg-if",
  "futures-util",

@@ -17,6 +17,6 @@ linkerd-dns = { path = "../../dns" }
 linkerd-proxy-core = { path = "../core" }
 linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync"] }
-tokio-stream = { version = "0.1.6", features = ["sync"]}
+tokio-stream = { version = "0.1.7", features = ["sync"]}
 tower = "0.4.8"
 tracing = "0.1.26"

@@ -44,7 +44,9 @@ multiple-versions = "deny"
 # Wildcard dependencies are used for all workspace-local crates.
 wildcards = "allow"
 highlight = "all"
-deny = []
+deny = [
+    { name = "rustls", wrappers = ["tokio-rustls"] }
+]
 skip = []
 skip-tree = []
 

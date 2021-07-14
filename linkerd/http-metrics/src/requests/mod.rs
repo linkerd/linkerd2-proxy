@@ -1,24 +1,22 @@
 mod report;
 mod service;
 
-use super::{LastUpdate, Registry, Report};
+pub use self::service::{NewHttpMetrics, ResponseBody};
+use super::Report;
 use linkerd_http_classify::ClassifyResponse;
-use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram};
-use linkerd_stack::layer;
+use linkerd_metrics::{latency, Counter, FmtMetrics, Histogram, LastUpdate, NewMetrics};
+use linkerd_stack::{self as svc, layer};
 use std::{
     collections::HashMap,
     fmt::Debug,
     hash::Hash,
-    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-pub use self::service::{NewHttpMetrics, ResponseBody};
-
-type SharedRegistry<T, C> = Arc<Mutex<Registry<T, Metrics<C>>>>;
+type Registry<T, C> = super::Registry<T, Metrics<C>>;
 
 #[derive(Debug)]
-pub struct Requests<T, C>(SharedRegistry<T, C>)
+pub struct Requests<T, C>(Registry<T, C>)
 where
     T: Hash + Eq,
     C: Hash + Eq;
@@ -51,7 +49,7 @@ pub struct ClassMetrics {
 
 impl<T: Hash + Eq, C: Hash + Eq> Default for Requests<T, C> {
     fn default() -> Self {
-        Requests(Arc::new(Mutex::new(Registry::default())))
+        Requests(Registry::default())
     }
 }
 
@@ -63,12 +61,15 @@ impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
         Report::new(retain_idle, self.0)
     }
 
-    pub fn to_layer<L, N>(&self) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L>> + Clone
+    pub fn to_layer<L, N, Tgt>(
+        &self,
+    ) -> impl layer::Layer<N, Service = NewHttpMetrics<N, T, L, C, N::Service>> + Clone
     where
         L: ClassifyResponse<Class = C> + Send + Sync + 'static,
+        N: svc::NewService<Tgt>,
     {
         let reg = self.0.clone();
-        layer::mk(move |inner| NewHttpMetrics::new(reg.clone(), inner))
+        NewMetrics::layer(reg)
     }
 }
 
@@ -144,7 +145,7 @@ mod tests {
         let retain_idle_for = Duration::from_secs(1);
         let r = super::Requests::<Target, Class>::default();
         let report = r.clone().into_report(retain_idle_for);
-        let mut registry = r.0.lock().unwrap();
+        let mut registry = r.0.lock();
 
         let before_update = Instant::now();
         let metrics = registry
