@@ -45,7 +45,11 @@ impl<C> Outbound<C> {
             .into_new_service()
             .push_new_reconnect(backoff)
             .push(tap::NewTapHttp::layer(rt.tap.clone()))
-            .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
+            .push(
+                rt.metrics
+                    .http_endpoint
+                    .to_layer::<classify::Response, _, _>(),
+            )
             .push_on_response(http_tracing::client(
                 rt.span_sink.clone(),
                 crate::trace_labels(),

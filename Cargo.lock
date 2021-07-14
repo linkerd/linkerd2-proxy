@@ -1035,6 +1035,7 @@ dependencies = [
  "hdrhistogram",
  "http",
  "hyper",
+ "linkerd-stack",
  "parking_lot",
  "quickcheck",
  "tokio",

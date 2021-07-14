@@ -1,9 +1,10 @@
-use super::{ClassMetrics, Metrics, SharedRegistry, StatusMetrics};
+use super::{ClassMetrics, Metrics, StatusMetrics};
 use futures::{ready, TryFuture};
 use http_body::Body;
 use linkerd_error::Error;
 use linkerd_http_classify::{ClassifyEos, ClassifyResponse};
-use linkerd_stack::{NewService, Param, Proxy};
+use linkerd_metrics::NewMetrics;
+use linkerd_stack::Proxy;
 use parking_lot::Mutex;
 use pin_project::{pin_project, pinned_drop};
 use std::{
@@ -17,17 +18,8 @@ use std::{
 };
 
 /// Wraps services to record metrics.
-#[derive(Debug)]
-pub struct NewHttpMetrics<N, K, C>
-where
-    K: Hash + Eq,
-    C: ClassifyResponse,
-    C::Class: Hash + Eq,
-{
-    registry: SharedRegistry<K, C::Class>,
-    inner: N,
-    _p: PhantomData<fn() -> C>,
-}
+pub type NewHttpMetrics<N, K, C, Class, S> =
+    NewMetrics<N, K, Mutex<Metrics<Class>>, HttpMetrics<S, C>>;
 
 /// A middleware that records HTTP metrics.
 #[pin_project]
@@ -85,70 +77,21 @@ where
     inner: B,
 }
 
-// === impl NewHttpMetrics ===
+// === impl HttpMetrics ===
 
-impl<N, K, C> NewHttpMetrics<N, K, C>
+impl<S, C> From<(S, Arc<Mutex<Metrics<C::Class>>>)> for HttpMetrics<S, C>
 where
-    K: Hash + Eq,
     C: ClassifyResponse,
     C::Class: Hash + Eq,
 {
-    pub(crate) fn new(registry: SharedRegistry<K, C::Class>, inner: N) -> Self {
+    fn from((inner, metrics): (S, Arc<Mutex<Metrics<C::Class>>>)) -> Self {
         Self {
+            metrics: Some(metrics),
             inner,
-            registry,
             _p: PhantomData,
         }
     }
 }
-
-impl<N, K, C> Clone for NewHttpMetrics<N, K, C>
-where
-    N: Clone,
-    K: Clone + Hash + Eq,
-    C: ClassifyResponse + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            registry: self.registry.clone(),
-            _p: PhantomData,
-        }
-    }
-}
-
-impl<T, N, K, C> NewService<T> for NewHttpMetrics<N, K, C>
-where
-    T: Param<K>,
-    K: Hash + Eq,
-    N: NewService<T>,
-    C: ClassifyResponse + Default + Send + Sync + 'static,
-    C::Class: Hash + Eq,
-{
-    type Service = HttpMetrics<N::Service, C>;
-
-    fn new_service(&mut self, target: T) -> Self::Service {
-        let metrics = {
-            let mut r = self.registry.lock();
-            Some(
-                r.entry(target.param())
-                    .or_insert_with(|| Arc::new(Mutex::new(Metrics::default())))
-                    .clone(),
-            )
-        };
-
-        let inner = self.inner.new_service(target);
-
-        HttpMetrics {
-            inner,
-            metrics,
-            _p: PhantomData,
-        }
-    }
-}
-
-// === impl HttpMetrics ===
 
 impl<S, C> Clone for HttpMetrics<S, C>
 where

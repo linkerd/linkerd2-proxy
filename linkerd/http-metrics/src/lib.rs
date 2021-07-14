@@ -3,14 +3,14 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 pub use self::{requests::Requests, retries::Retries};
-use linkerd_metrics::{LastUpdate, Store};
+use linkerd_metrics::SharedStore;
 use parking_lot::Mutex;
-use std::{fmt, hash::Hash, sync::Arc, time::Duration};
+use std::{fmt, hash::Hash, time::Duration};
 
 pub mod requests;
 pub mod retries;
 
-type Registry<T, M> = Store<T, Mutex<M>>;
+type Registry<T, M> = SharedStore<T, Mutex<M>>;
 
 /// Reports metrics for prometheus.
 #[derive(Debug)]
@@ -19,7 +19,7 @@ where
     T: Hash + Eq,
 {
     prefix: &'static str,
-    registry: Arc<Mutex<Registry<T, M>>>,
+    registry: Registry<T, M>,
     /// The amount of time metrics with no updates should be retained for reports
     retain_idle: Duration,
     /// Whether latencies should be reported.
@@ -46,7 +46,7 @@ impl<T, M> Report<T, M>
 where
     T: Hash + Eq,
 {
-    fn new(retain_idle: Duration, registry: Arc<Mutex<Registry<T, M>>>) -> Self {
+    fn new(retain_idle: Duration, registry: Registry<T, M>) -> Self {
         Self {
             prefix: "",
             registry,

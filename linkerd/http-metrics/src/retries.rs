@@ -1,5 +1,5 @@
-use super::{LastUpdate, Prefixed, Registry, Report};
-use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, Metric};
+use super::{Prefixed, Registry, Report};
+use linkerd_metrics::{Counter, FmtLabels, FmtMetric, FmtMetrics, LastUpdate, Metric};
 use parking_lot::Mutex;
 use std::{
     fmt,
@@ -10,7 +10,7 @@ use std::{
 use tracing::trace;
 
 #[derive(Debug)]
-pub struct Retries<T>(Arc<Mutex<Registry<T, Metrics>>>)
+pub struct Retries<T>(Registry<T, Metrics>)
 where
     T: Hash + Eq;
 
@@ -30,7 +30,7 @@ struct NoBudgetLabel;
 
 impl<T: Hash + Eq> Default for Retries<T> {
     fn default() -> Self {
-        Retries(Arc::new(Mutex::new(Registry::default())))
+        Retries(Registry::default())
     }
 }
 

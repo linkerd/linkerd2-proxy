@@ -149,7 +149,11 @@ where
             // Registers the stack to be tapped.
             .push(tap::NewTapHttp::layer(rt.tap.clone()))
             // Records metrics for each `Target`.
-            .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
+            .push(
+                rt.metrics
+                    .http_endpoint
+                    .to_layer::<classify::Response, _, _>(),
+            )
             .push_on_response(http_tracing::client(rt.span_sink.clone(), trace_labels()))
             .push_on_response(http::BoxResponse::layer())
             .check_new_service::<Target, http::Request<_>>();
@@ -174,7 +178,11 @@ where
                     // by tap.
                     .push_http_insert_target::<dst::Route>()
                     // Records per-route metrics.
-                    .push(rt.metrics.http_route.to_layer::<classify::Response, _>())
+                    .push(
+                        rt.metrics
+                            .http_route
+                            .to_layer::<classify::Response, _, dst::Route>(),
+                    )
                     // Sets the per-route response classifier as a request
                     // extension.
                     .push(classify::NewClassify::layer())

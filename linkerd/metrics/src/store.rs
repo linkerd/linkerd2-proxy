@@ -13,6 +13,8 @@ pub trait LastUpdate {
     fn last_update(&self) -> Instant;
 }
 
+pub type SharedStore<K, V> = Arc<Mutex<Store<K, V>>>;
+
 #[derive(Debug)]
 pub struct Store<K, V>
 where
