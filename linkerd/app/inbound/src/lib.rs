@@ -89,7 +89,6 @@ impl Inbound<()> {
     }
 
     pub fn to_tcp_connect<S, T: svc::Param<u16>>(
-        // pub fn to_tcp_connect<T: svc::Param<u16>>(
         &self,
         connect_tcp: S,
         timeout: Duration,
@@ -102,7 +101,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        S: svc::Service<linkerd_stack::Param<Remote<ServerAddr>>> + Clone,
+        S: svc::Service<dyn linkerd_stack::Param<Remote<ServerAddr>>> + Clone,
     {
         let Self {
             config, runtime, ..
