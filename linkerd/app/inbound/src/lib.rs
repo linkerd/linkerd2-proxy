@@ -120,7 +120,7 @@ impl Inbound<()> {
                 if err.is::<tower::timeout::error::Elapsed>() {
                     ConnectTimeout().into()
                 } else {
-                    err.into()
+                    err
                 }
             }))
             .push(svc::stack::BoxFuture::layer());
