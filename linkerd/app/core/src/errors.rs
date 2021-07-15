@@ -1,4 +1,4 @@
-use http::{header::HeaderValue, StatusCode};
+use http::header::HeaderValue;
 use linkerd_errno::Errno;
 use linkerd_error::Error;
 use linkerd_error_metrics::{self as error_metrics, RecordErrorLayer, Registry};
@@ -9,11 +9,14 @@ use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
 use pin_project::pin_project;
+use std::fmt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
+
+pub const L5D_HTTP_ERROR_MESSAGE: &str = "l5d-http-error-message";
 
 metrics! {
     inbound_http_errors_total: Counter {
@@ -229,32 +232,64 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     return Ok(rsp);
                 }
 
-                let status = http_status(&*error);
-                debug!(%status, version = ?self.version, "Handling error with HTTP response");
-                Ok(http::Response::builder()
+                let rsp = set_http_status(&*error)
                     .version(self.version)
-                    .status(status)
                     .header(http::header::CONTENT_LENGTH, "0")
                     .body(ResponseBody::default())
-                    .expect("error response must be valid"))
+                    .expect("error response must be valid");
+                let status = rsp.status();
+                debug!(%status, version = ?self.version, "Handling error with HTTP response");
+                Ok(rsp)
             }
         }
     }
 }
 
-fn http_status(error: &(dyn std::error::Error + 'static)) -> StatusCode {
-    if let Some(HttpError { http, .. }) = error.downcast_ref::<HttpError>() {
-        *http
+fn set_http_status(error: &(dyn std::error::Error + 'static)) -> http::response::Builder {
+    let mut rsp = http::Response::builder();
+    if let Some(HttpError { http, message, .. }) = error.downcast_ref::<HttpError>() {
+        rsp.header(L5D_HTTP_ERROR_MESSAGE, HeaderValue::from_static(message))
+            .status(*http)
     } else if error.is::<ResponseTimeout>() {
-        http::StatusCode::GATEWAY_TIMEOUT
-    } else if error.is::<FailFastError>() || error.is::<tower::timeout::error::Elapsed>() {
-        http::StatusCode::SERVICE_UNAVAILABLE
+        rsp.header(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("request timed out"),
+        )
+        .status(http::StatusCode::GATEWAY_TIMEOUT)
+    } else if error.is::<ConnectTimeout>() {
+        rsp.header(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("failed to connect"),
+        )
+        .status(http::StatusCode::GATEWAY_TIMEOUT)
+    } else if let Some(e) = error.downcast_ref::<FailFastError>() {
+        rsp.header(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
+                warn!(%error, "Failed to encode fail-fast error message");
+                HeaderValue::from_static("service in fail-fast")
+            }),
+        )
+        .status(http::StatusCode::SERVICE_UNAVAILABLE)
+    } else if error.is::<tower::timeout::error::Elapsed>() {
+        rsp.header(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("proxy dispatch timed out"),
+        )
+        .status(http::StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<IdentityRequired>() {
-        http::StatusCode::FORBIDDEN
+        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
+            rsp = rsp.header(L5D_HTTP_ERROR_MESSAGE, msg)
+        }
+        rsp.status(http::StatusCode::FORBIDDEN)
     } else if let Some(source) = error.source() {
-        http_status(source)
+        set_http_status(source)
     } else {
-        http::StatusCode::BAD_GATEWAY
+        rsp.header(
+            L5D_HTTP_ERROR_MESSAGE,
+            HeaderValue::from_static("proxy received invalid response"),
+        )
+        .status(http::StatusCode::BAD_GATEWAY)
     }
 }
 
@@ -346,8 +381,8 @@ pub struct IdentityRequired {
     pub found: Option<tls::client::ServerId>,
 }
 
-impl std::fmt::Display for IdentityRequired {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for IdentityRequired {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.found {
             Some(ref found) => write!(
                 f,
@@ -396,7 +431,7 @@ impl error_metrics::LabelError<Error> for LabelError {
 }
 
 impl FmtLabels for Reason {
-    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "message=\"{}\"",
@@ -475,3 +510,14 @@ impl HttpError {
         self.http
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct ConnectTimeout(pub std::time::Duration);
+
+impl fmt::Display for ConnectTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "connect timed out after {:?}", self.0)
+    }
+}
+
+impl std::error::Error for ConnectTimeout {}

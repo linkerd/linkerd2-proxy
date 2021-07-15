@@ -86,6 +86,8 @@ impl Inbound<()> {
         }
     }
 
+    /// Readies the inbound stack to make TCP connections (for both TCP
+    // forwarding and HTTP proxying).
     pub fn to_tcp_connect<T: svc::Param<u16>>(
         &self,
     ) -> Inbound<
@@ -102,8 +104,6 @@ impl Inbound<()> {
             stack: _,
         } = self.clone();
 
-        // Establishes connections to remote peers (for both TCP
-        // forwarding and HTTP proxying).
         let ConnectConfig {
             keepalive, timeout, ..
         } = config.proxy.connect;
@@ -111,8 +111,7 @@ impl Inbound<()> {
         let stack = svc::stack(transport::ConnectTcp::new(keepalive))
             .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
             // Limits the time we wait for a connection to be established.
-            .push_timeout(timeout)
-            .push(svc::stack::BoxFuture::layer());
+            .push_connect_timeout(timeout);
 
         Inbound {
             config,
@@ -162,7 +161,7 @@ where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
     C::Error: Into<Error>,
-    C::Future: Send + Unpin,
+    C::Future: Send,
 {
     pub fn push_tcp_forward<I>(
         self,
