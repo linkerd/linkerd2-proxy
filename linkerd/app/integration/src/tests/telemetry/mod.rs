@@ -15,7 +15,8 @@ struct Fixture {
     _profile: controller::ProfileSender,
     dst_tx: Option<controller::DstSender>,
     labels: metrics::Labels,
-    tcp_labels: metrics::Labels,
+    tcp_src_labels: metrics::Labels,
+    tcp_dst_labels: metrics::Labels,
 }
 
 struct TcpFixture {
@@ -51,12 +52,13 @@ impl Fixture {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
-        let tcp_labels = metrics::labels()
-            .label("direction", "inbound")
-            .label("target_addr", orig_dst);
-        let labels = tcp_labels
+        let tcp_dst_labels = metrics::labels().label("direction", "inbound");
+        let tcp_src_labels = tcp_dst_labels.clone().label("target_addr", orig_dst);
+        let labels = tcp_dst_labels
             .clone()
             .label("authority", "tele.test.svc.cluster.local");
+        let tcp_src_labels = tcp_src_labels.label("peer", "src");
+        let tcp_dst_labels = tcp_dst_labels.label("peer", "dst");
         Fixture {
             client,
             metrics,
@@ -64,7 +66,8 @@ impl Fixture {
             _profile,
             dst_tx: None,
             labels,
-            tcp_labels,
+            tcp_src_labels,
+            tcp_dst_labels,
         }
     }
 
@@ -87,6 +90,8 @@ impl Fixture {
             .label("direction", "outbound")
             .label("target_addr", orig_dst);
         let labels = tcp_labels.clone().label("authority", authority);
+        let tcp_src_labels = tcp_labels.clone().label("peer", "src");
+        let tcp_dst_labels = tcp_labels.label("peer", "dst");
         Fixture {
             client,
             metrics,
@@ -94,7 +99,8 @@ impl Fixture {
             _profile,
             dst_tx: Some(dest),
             labels,
-            tcp_labels,
+            tcp_src_labels,
+            tcp_dst_labels,
         }
     }
 }
@@ -539,7 +545,8 @@ mod outbound_dst_labels {
             proxy,
             _profile,
             labels,
-            tcp_labels,
+            tcp_src_labels: tcp_labels.clone(),
+            tcp_dst_labels: tcp_labels,
             dst_tx: Some(dst_tx),
         };
 
@@ -899,11 +906,11 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
-            tcp_labels,
+            tcp_dst_labels,
             ..
         } = fixture.await;
 
-        let labels = tcp_labels.and(extra_labels).label("peer", "dst");
+        let labels = tcp_dst_labels.and(extra_labels);
         let opens = labels.metric("tcp_open_total").value(1u64);
 
         info!("client.get(/)");
@@ -927,11 +934,11 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
-            tcp_labels,
+            tcp_src_labels,
             ..
         } = fixture.await;
 
-        let labels = tcp_labels.and(extra_labels).label("peer", "src");
+        let labels = tcp_src_labels.and(extra_labels);
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
             .metric("tcp_close_total")
@@ -1111,14 +1118,13 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
-            tcp_labels,
+            tcp_src_labels,
             ..
         } = fixture.await;
 
-        let mut open_conns = tcp_labels
+        let mut open_conns = tcp_src_labels
             .and(extra_labels)
-            .metric("tcp_open_connections")
-            .label("peer", "src");
+            .metric("tcp_open_connections");
 
         info!("client.get(/)");
         assert_eq!(client.get("/").await, "hello");
