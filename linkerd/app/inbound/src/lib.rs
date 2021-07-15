@@ -88,7 +88,7 @@ impl Inbound<()> {
 
     /// Readies the inbound stack to make TCP connections (for both TCP
     // forwarding and HTTP proxying).
-    pub fn to_tcp_connect<T>(
+    pub fn to_tcp_connect<T: svc::Param<u16>>(
         &self,
     ) -> Inbound<
         impl svc::Service<
@@ -97,10 +97,7 @@ impl Inbound<()> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-    >
-    where
-        T: svc::Param<u16> + 'static,
-    {
+    > {
         let Self {
             config,
             runtime,
