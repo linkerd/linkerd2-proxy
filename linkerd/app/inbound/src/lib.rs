@@ -24,9 +24,7 @@ use self::{
 };
 use linkerd_app_core::{
     config::{ConnectConfig, PortSet, ProxyConfig, ServerConfig},
-    detect, drain,
-    errors::ConnectTimeout,
-    io, metrics, profiles,
+    detect, drain, io, metrics, profiles,
     proxy::tcp,
     serve, svc, tls,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
@@ -88,10 +86,10 @@ impl Inbound<()> {
         }
     }
 
-    pub fn to_tcp_connect<S, T: svc::Param<u16>>(
+    /// Readies the inbound stack to make TCP connections (for both TCP
+    // forwarding and HTTP proxying).
+    pub fn to_tcp_connect<T>(
         &self,
-        connect_tcp: S,
-        timeout: Duration,
     ) -> Inbound<
         impl svc::Service<
                 T,
@@ -101,10 +99,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        S: svc::Service<Remote<ServerAddr>> + Clone + 'static,
-        S::Response: io::AsyncRead + io::AsyncWrite + Send,
-        S::Error: Into<Error>,
-        S::Future: Send,
+        T: svc::Param<u16> + 'static,
     {
         let Self {
             config,
@@ -112,18 +107,14 @@ impl Inbound<()> {
             stack: _,
         } = self.clone();
 
-        let stack = svc::stack(connect_tcp)
+        let ConnectConfig {
+            keepalive, timeout, ..
+        } = config.proxy.connect;
+
+        let stack = svc::stack(transport::ConnectTcp::new(keepalive))
             .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
             // Limits the time we wait for a connection to be established.
-            .push_timeout(timeout)
-            .push(svc::MapErrLayer::new(|err: Error| {
-                if err.is::<tower::timeout::error::Elapsed>() {
-                    ConnectTimeout().into()
-                } else {
-                    err
-                }
-            }))
-            .push(svc::stack::BoxFuture::layer());
+            .push_connect_timeout(timeout);
 
         Inbound {
             config,
@@ -156,20 +147,10 @@ impl Inbound<()> {
             .bind(&self.config.proxy.server)
             .expect("Failed to bind inbound listener");
 
-        // Establishes connections to remote peers (for both TCP
-        // forwarding and HTTP proxying).
-        let Self { config, .. } = self.clone();
-        let ConnectConfig {
-            keepalive, timeout, ..
-        } = config.proxy.connect;
-        let connect_tcp = transport::ConnectTcp::new(keepalive);
-
         let serve = async move {
-            let stack = self.to_tcp_connect(connect_tcp, timeout).into_server(
-                listen_addr.as_ref().port(),
-                profiles,
-                gateway,
-            );
+            let stack =
+                self.to_tcp_connect()
+                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
             let shutdown = self.runtime.drain.signaled();
             serve::serve(listen, stack, shutdown).await
         };
@@ -183,7 +164,7 @@ where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
     C::Error: Into<Error>,
-    C::Future: Send + Unpin,
+    C::Future: Send,
 {
     pub fn push_tcp_forward<I>(
         self,

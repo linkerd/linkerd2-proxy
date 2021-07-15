@@ -512,11 +512,11 @@ impl HttpError {
 }
 
 #[derive(Debug)]
-pub struct ConnectTimeout();
+pub(crate) struct ConnectTimeout(pub std::time::Duration);
 
 impl fmt::Display for ConnectTimeout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("connect timed out")
+        write!(f, "connect timed out after {:?}", self.0)
     }
 }
 
