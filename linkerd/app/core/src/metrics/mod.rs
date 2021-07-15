@@ -282,6 +282,7 @@ impl FmtLabels for InboundEndpointLabels {
         }
 
         self.target_addr.fmt_labels(f)?;
+        f.write_str(",")?;
 
         TlsAccept::from(&self.tls).fmt_labels(f)?;
 
@@ -297,6 +298,7 @@ impl FmtLabels for OutboundEndpointLabels {
         }
 
         self.target_addr.fmt_labels(f)?;
+        f.write_str(",")?;
 
         TlsConnect::from(&self.server_id).fmt_labels(f)?;
 
