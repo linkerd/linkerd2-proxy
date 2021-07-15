@@ -5,7 +5,7 @@ use linkerd_app_core::{
     stack_tracing,
     svc::{self, Param},
     tls,
-    transport::{self, addrs::*, labels},
+    transport::{self, addrs::*},
     transport_header::TransportHeader,
     Addr, Conditional, Error, CANONICAL_DST_HEADER,
 };
@@ -252,7 +252,7 @@ impl Param<metrics::EndpointLabels> for Target {
         metrics::InboundEndpointLabels {
             tls: self.tls.clone(),
             authority: self.dst.name_addr().map(|d| d.as_http_authority()),
-            target_addr: labels::TargetAddr::from_socket_addr(self.target_addr),
+            target_addr: self.target_addr,
         }
         .into()
     }
