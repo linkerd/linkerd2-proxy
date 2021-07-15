@@ -15,6 +15,7 @@ struct Fixture {
     _profile: controller::ProfileSender,
     dst_tx: Option<controller::DstSender>,
     labels: metrics::Labels,
+    tcp_labels: metrics::Labels,
 }
 
 struct TcpFixture {
@@ -50,10 +51,12 @@ impl Fixture {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.inbound, "tele.test.svc.cluster.local");
-        let labels = metrics::labels()
-            .label("authority", "tele.test.svc.cluster.local")
+        let tcp_labels = metrics::labels()
             .label("direction", "inbound")
             .label("target_addr", orig_dst);
+        let labels = tcp_labels
+            .clone()
+            .label("authority", "tele.test.svc.cluster.local");
         Fixture {
             client,
             metrics,
@@ -61,6 +64,7 @@ impl Fixture {
             _profile,
             dst_tx: None,
             labels,
+            tcp_labels,
         }
     }
 
@@ -79,10 +83,10 @@ impl Fixture {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, "tele.test.svc.cluster.local");
-        let labels = metrics::labels()
+        let tcp_labels = metrics::labels()
             .label("direction", "outbound")
-            .label("authority", authority)
             .label("target_addr", orig_dst);
+        let labels = tcp_labels.clone().label("authority", authority);
         Fixture {
             client,
             metrics,
@@ -90,6 +94,7 @@ impl Fixture {
             _profile,
             dst_tx: Some(dest),
             labels,
+            tcp_labels,
         }
     }
 }
@@ -138,8 +143,7 @@ impl TcpFixture {
             .label("direction", "inbound")
             .label("peer", "dst")
             .label("tls", "no_identity")
-            .label("no_tls_reason", "loopback")
-            .label("authority", orig_dst);
+            .label("no_tls_reason", "loopback");
         TcpFixture {
             client,
             metrics,
@@ -175,8 +179,7 @@ impl TcpFixture {
             .label("target_addr", orig_dst);
         let dst_labels = metrics::labels()
             .label("direction", "outbound")
-            .label("peer", "dst")
-            .label("authority", orig_dst);
+            .label("peer", "dst");
 
         TcpFixture {
             client,
@@ -284,6 +287,7 @@ async fn test_http_count(metric: &str, fixture: impl Future<Output = Fixture>) {
         _profile,
         dst_tx: _dst_tx,
         labels,
+        ..
     } = fixture.await;
 
     let metric = labels.metric(metric);
@@ -352,6 +356,7 @@ mod response_classification {
             _profile,
             dst_tx: _dst_tx,
             labels,
+            ..
         } = fixture.await;
 
         for (i, status) in STATUSES.iter().enumerate() {
@@ -420,6 +425,7 @@ where
         _profile,
         dst_tx: _dst_tx,
         labels,
+        ..
     } = mk_fixture(srv).await;
 
     info!("client.get(/hey)");
@@ -523,16 +529,17 @@ mod outbound_dst_labels {
         let metrics = client::http1(proxy.metrics, "localhost");
 
         let client = client::new(proxy.outbound, dest);
-        let labels = metrics::labels()
+        let tcp_labels = metrics::labels()
             .label("direction", "outbound")
-            .label("authority", dest_and_port)
             .label("target_addr", addr);
+        let labels = tcp_labels.clone().label("authority", dest_and_port);
         let f = Fixture {
             client,
             metrics,
             proxy,
             _profile,
             labels,
+            tcp_labels,
             dst_tx: Some(dst_tx),
         };
 
@@ -550,6 +557,7 @@ mod outbound_dst_labels {
                 _profile,
                 dst_tx,
                 labels,
+                ..
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -588,6 +596,7 @@ mod outbound_dst_labels {
                 _profile,
                 dst_tx,
                 labels,
+                ..
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -627,6 +636,7 @@ mod outbound_dst_labels {
                 _profile,
                 dst_tx,
                 labels,
+                ..
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -674,6 +684,7 @@ mod outbound_dst_labels {
                 _profile,
                 dst_tx,
                 labels,
+                ..
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -756,6 +767,7 @@ mod outbound_dst_labels {
                 _profile,
                 dst_tx,
                 labels,
+                ..
             },
             addr,
         ) = fixture("labeled.test.svc.cluster.local").await;
@@ -887,10 +899,11 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
-            labels,
+            tcp_labels,
+            ..
         } = fixture.await;
 
-        let labels = labels.and(extra_labels).label("peer", "dst");
+        let labels = tcp_labels.and(extra_labels).label("peer", "dst");
         let opens = labels.metric("tcp_open_total").value(1u64);
 
         info!("client.get(/)");
@@ -914,10 +927,11 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
-            labels,
+            tcp_labels,
+            ..
         } = fixture.await;
 
-        let labels = labels.and(extra_labels).label("peer", "src");
+        let labels = tcp_labels.and(extra_labels).label("peer", "src");
         let mut opens = labels.metric("tcp_open_total").value(1u64);
         let mut closes = labels
             .metric("tcp_close_total")
@@ -1097,10 +1111,11 @@ mod transport {
             proxy: _proxy,
             _profile,
             dst_tx: _dst_tx,
-            labels,
+            tcp_labels,
+            ..
         } = fixture.await;
 
-        let mut open_conns = labels
+        let mut open_conns = tcp_labels
             .and(extra_labels)
             .metric("tcp_open_connections")
             .label("peer", "src");
@@ -1325,6 +1340,7 @@ async fn metrics_compression() {
         _profile,
         dst_tx: _dst_tx,
         labels,
+        ..
     } = Fixture::inbound().await;
 
     let do_scrape = |encoding: &str| {
