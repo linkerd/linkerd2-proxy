@@ -181,12 +181,7 @@ impl<S> Stack<S> {
     pub fn push_connect_timeout<T>(
         self,
         timeout: Duration,
-    ) -> Stack<
-        stack::MapErr<
-            tower::timeout::Timeout<S>,
-            impl FnOnce(Error) -> Error + Clone + Send + Unpin,
-        >,
-    >
+    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>>
     where
         S: Service<T>,
         S::Error: Into<Error>,
