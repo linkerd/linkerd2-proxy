@@ -1,6 +1,5 @@
 use super::OrigDstAddr;
 pub use crate::metrics::{Direction, OutboundEndpointLabels};
-use crate::svc::Param;
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
@@ -58,6 +57,7 @@ impl FmtLabels for Key {
                 direction.fmt_labels(f)?;
                 f.write_str(",peer=\"src\",")?;
                 target_addr.fmt_labels(f)?;
+                f.write_str(",")?;
                 TlsAccept::from(tls).fmt_labels(f)
             }
             Self::OutboundConnect(endpoint) => {
@@ -131,18 +131,23 @@ impl<'t> FmtLabels for TlsConnect<'t> {
 
 // === impl TargetAddr ===
 
-impl<P> From<&'_ P> for TargetAddr
-where
-    P: Param<OrigDstAddr>,
-{
-    fn from(target: &P) -> Self {
-        let OrigDstAddr(addr) = target.param();
+impl TargetAddr {
+    /// This is an explicit conversion (rather than a `From` impl) because the
+    /// caller is responsible for ensuring that the address is, in fact, a
+    /// target address in this context.
+    pub fn from_socket_addr(addr: SocketAddr) -> Self {
+        Self(addr)
+    }
+}
+
+impl From<OrigDstAddr> for TargetAddr {
+    fn from(OrigDstAddr(addr): OrigDstAddr) -> Self {
         Self(addr)
     }
 }
 
 impl FmtLabels for TargetAddr {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "target_port=\"{}\"", self.0)
+        write!(f, "target_addr=\"{}\"", self.0)
     }
 }

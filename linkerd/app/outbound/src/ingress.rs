@@ -8,7 +8,7 @@ use linkerd_app_core::{
     },
     svc::{self, stack::Param},
     tls,
-    transport::{addrs, OrigDstAddr, Remote, ServerAddr},
+    transport::{OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, NameAddr, Never,
 };
 use thiserror::Error;

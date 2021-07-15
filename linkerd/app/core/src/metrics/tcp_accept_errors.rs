@@ -1,7 +1,7 @@
 use crate::{
     metrics::{self, Counter, FmtMetrics},
     svc,
-    transport::labels::TargetAddr,
+    transport::{labels::TargetAddr, OrigDstAddr},
 };
 use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
@@ -64,10 +64,11 @@ impl Registry {
             TargetAddr,
             Scope,
             RecordError<LabelAcceptErrors, AcceptErrors, N::Service>,
+            OrigDstAddr,
         >,
     > + Clone
     where
-        TargetAddr: for<'a> From<&'a T>,
+        T: svc::Param<OrigDstAddr>,
         N: svc::NewService<T>,
     {
         metrics::NewMetrics::layer(self.scopes.clone())

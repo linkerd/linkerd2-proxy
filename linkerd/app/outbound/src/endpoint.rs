@@ -4,7 +4,7 @@ use linkerd_app_core::{
     profiles::LogicalAddr,
     proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
     svc, tls,
-    transport::{self, addrs::*},
+    transport::{self, addrs::*, labels},
     transport_header, Conditional, Error,
 };
 use std::{fmt, net::SocketAddr};
@@ -102,7 +102,7 @@ impl<P> svc::Param<transport::labels::Key> for Endpoint<P> {
 
 impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let target_addr = self.addr.into();
+        let target_addr = labels::TargetAddr::from_socket_addr(self.addr.into());
         let authority = self
             .logical_addr
             .as_ref()

@@ -2,15 +2,15 @@ use crate::SharedStore;
 use linkerd_stack as svc;
 use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 
-pub struct NewMetrics<N, K: Hash + Eq, M, S> {
+pub struct NewMetrics<N, K: Hash + Eq, M, S, P = K> {
     store: SharedStore<K, M>,
     inner: N,
-    _svc: PhantomData<fn() -> S>,
+    _svc: PhantomData<fn(P) -> S>,
 }
 
-impl<N, K, M, S> NewMetrics<N, K, M, S>
+impl<N, K, M, S, P> NewMetrics<N, K, M, S, P>
 where
-    K: Hash + Eq,
+    K: Hash + Eq + From<P>,
 {
     pub fn layer(store: SharedStore<K, M>) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
@@ -21,7 +21,7 @@ where
     }
 }
 
-impl<N, K, M, S> fmt::Debug for NewMetrics<N, K, M, S>
+impl<N, K, M, S, P> fmt::Debug for NewMetrics<N, K, M, S, P>
 where
     N: fmt::Debug,
     K: Hash + Eq + fmt::Debug,
@@ -33,33 +33,29 @@ where
             .field("store", &self.store)
             .field("inner", &self.inner)
             .field("svc", &format_args!("PhantomData<{}>", type_name::<S>()))
+            .field("param", &format_args!("PhantomData<{}>", type_name::<S>()))
             .finish()
     }
 }
 
-impl<N, K, M, S, T> svc::NewService<T> for NewMetrics<N, K, M, S>
+impl<N, K, M, S, T, P> svc::NewService<T> for NewMetrics<N, K, M, S, P>
 where
+    T: svc::Param<P>,
     N: svc::NewService<T>,
     S: From<(N::Service, Arc<M>)>,
     M: Default,
-    K: Hash + Eq,
-    // NOTE(eliza): it would probably be more idiomatic to use `T:
-    // Param<SomethingKCanBeBuiltFrom>` here, but that would require this service
-    // to be generic over an additional `Param` type. So, just using `From` is
-    // probably nicer, since the key type can be the one to declare what `Param`
-    // types it can be constructed from.
-    K: for<'a> From<&'a T>,
+    K: Hash + Eq + From<P>,
 {
     type Service = S;
     fn new_service(&mut self, target: T) -> Self::Service {
-        let key = K::from(&target);
+        let key = K::from(target.param());
         let inner = self.inner.new_service(target);
         let metric = self.store.lock().get_or_default(key).clone();
         S::from((inner, metric))
     }
 }
 
-impl<N, K, M, S> Clone for NewMetrics<N, K, M, S>
+impl<N, K, M, S, P> Clone for NewMetrics<N, K, M, S, P>
 where
     N: Clone,
     K: Hash + Eq,
