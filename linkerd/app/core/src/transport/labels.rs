@@ -1,4 +1,6 @@
+use super::OrigDstAddr;
 pub use crate::metrics::{Direction, OutboundEndpointLabels};
+use crate::svc::Param;
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
@@ -14,7 +16,7 @@ pub enum Key {
     Accept {
         direction: Direction,
         tls: tls::ConditionalServerTls,
-        target_addr: SocketAddr,
+        target_addr: TargetAddr,
     },
     OutboundConnect(OutboundEndpointLabels),
     InboundConnect,
@@ -25,6 +27,9 @@ pub struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TargetAddr(SocketAddr);
 
 // === impl Key ===
 
@@ -37,7 +42,7 @@ impl Key {
         Self::Accept {
             direction,
             tls,
-            target_addr,
+            target_addr: TargetAddr(target_addr),
         }
     }
 }
@@ -51,7 +56,8 @@ impl FmtLabels for Key {
                 target_addr,
             } => {
                 direction.fmt_labels(f)?;
-                write!(f, ",peer=\"src\",target_addr=\"{}\",", target_addr)?;
+                f.write_str(",peer=\"src\",")?;
+                target_addr.fmt_labels(f)?;
                 TlsAccept::from(tls).fmt_labels(f)
             }
             Self::OutboundConnect(endpoint) => {
@@ -120,5 +126,23 @@ impl<'t> FmtLabels for TlsConnect<'t> {
                 write!(f, "tls=\"true\",server_id=\"{}\"", server_id)
             }
         }
+    }
+}
+
+// === impl TargetAddr ===
+
+impl<P> From<&'_ P> for TargetAddr
+where
+    P: Param<OrigDstAddr>,
+{
+    fn from(target: &P) -> Self {
+        let OrigDstAddr(addr) = target.param();
+        Self(addr)
+    }
+}
+
+impl FmtLabels for TargetAddr {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "target_port=\"{}\"", self.0)
     }
 }

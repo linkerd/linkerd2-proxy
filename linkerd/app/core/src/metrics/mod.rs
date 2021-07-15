@@ -9,14 +9,13 @@ pub use crate::{
     telemetry, tls,
     transport::{
         self,
-        labels::{TlsAccept, TlsConnect},
+        labels::{TargetAddr, TlsAccept, TlsConnect},
     },
 };
 use linkerd_addr::Addr;
 use linkerd_metrics::FmtLabels;
 pub use linkerd_metrics::*;
 use std::fmt::{self, Write};
-use std::net::SocketAddr;
 use std::time::{Duration, SystemTime};
 
 pub type ControlHttp = http_metrics::Requests<ControlLabels, Class>;
@@ -65,7 +64,7 @@ pub enum EndpointLabels {
 pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
-    pub target_addr: SocketAddr,
+    pub target_addr: TargetAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -73,7 +72,7 @@ pub struct OutboundEndpointLabels {
     pub server_id: tls::ConditionalClientTls,
     pub authority: Option<http::uri::Authority>,
     pub labels: Option<String>,
-    pub target_addr: SocketAddr,
+    pub target_addr: TargetAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -282,7 +281,7 @@ impl FmtLabels for InboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        write!(f, "target_addr=\"{}\",", self.target_addr)?;
+        self.target_addr.fmt_labels(f)?;
 
         TlsAccept::from(&self.tls).fmt_labels(f)?;
 
@@ -297,7 +296,7 @@ impl FmtLabels for OutboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        write!(f, "target_addr=\"{}\",", self.target_addr)?;
+        self.target_addr.fmt_labels(f)?;
 
         TlsConnect::from(&self.server_id).fmt_labels(f)?;
 

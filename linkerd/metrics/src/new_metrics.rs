@@ -39,17 +39,22 @@ where
 
 impl<N, K, M, S, T> svc::NewService<T> for NewMetrics<N, K, M, S>
 where
-    T: svc::Param<K>,
     N: svc::NewService<T>,
     S: From<(N::Service, Arc<M>)>,
     M: Default,
     K: Hash + Eq,
+    // NOTE(eliza): it would probably be more idiomatic to use `T:
+    // Param<SomethingKCanBeBuiltFrom>` here, but that would require this service
+    // to be generic over an additional `Param` type. So, just using `From` is
+    // probably nicer, since the key type can be the one to declare what `Param`
+    // types it can be constructed from.
+    K: for<'a> From<&'a T>,
 {
     type Service = S;
     fn new_service(&mut self, target: T) -> Self::Service {
-        let k = target.param();
+        let key = K::from(&target);
         let inner = self.inner.new_service(target);
-        let metric = self.store.lock().get_or_default(k).clone();
+        let metric = self.store.lock().get_or_default(key).clone();
         S::from((inner, metric))
     }
 }

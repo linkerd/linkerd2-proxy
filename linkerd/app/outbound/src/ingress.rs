@@ -56,7 +56,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
         resolve: R,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
-        T: Param<OrigDstAddr> + Param<addrs::TargetPort> + Clone + Send + Sync + 'static,
+        T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,

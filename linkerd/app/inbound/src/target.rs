@@ -92,9 +92,9 @@ impl Param<SocketAddr> for TcpAccept {
     }
 }
 
-impl Param<transport::addrs::TargetPort> for TcpAccept {
-    fn param(&self) -> transport::addrs::TargetPort {
-        self.target_addr.into()
+impl Param<OrigDstAddr> for TcpAccept {
+    fn param(&self) -> SocketAddr {
+        OrigDstAddr(self.target_addr)
     }
 }
 

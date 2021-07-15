@@ -67,6 +67,7 @@ impl<T: Hash + Eq, C: Hash + Eq> Requests<T, C> {
     where
         L: ClassifyResponse<Class = C> + Send + Sync + 'static,
         N: svc::NewService<Tgt>,
+        Tgt: for<'a> From<&'a Tgt>,
     {
         let reg = self.0.clone();
         NewMetrics::layer(reg)

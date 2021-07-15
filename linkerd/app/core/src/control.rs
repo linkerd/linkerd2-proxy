@@ -33,6 +33,13 @@ impl fmt::Display for ControlAddr {
     }
 }
 
+// Needed for metrics labels, admittedly kind of weird...hm.
+impl From<&'_ ControlAddr> for ControlAddr {
+    fn from(addr: &Self) -> Self {
+        addr.clone()
+    }
+}
+
 type BalanceBody =
     http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
 

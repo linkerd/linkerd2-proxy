@@ -2,7 +2,7 @@ use crate::{tcp, Outbound};
 use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
-    transport::{addrs::TargetPort, metrics::SensorIo, OrigDstAddr},
+    transport::{metrics::SensorIo, OrigDstAddr},
     Error,
 };
 use std::convert::TryFrom;
@@ -22,7 +22,7 @@ impl<N> Outbound<N> {
         >,
     >
     where
-        T: Param<OrigDstAddr> + Param<TargetPort>,
+        T: Param<OrigDstAddr>,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,
         N: svc::NewService<(Option<profiles::Receiver>, tcp::Accept), Service = NSvc>
             + Clone

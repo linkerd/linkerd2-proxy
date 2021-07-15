@@ -44,11 +44,7 @@ where
         self.inner.param()
     }
 }
-impl<A> Param<TargetPort> for Addrs<A> {
-    fn param(&self) -> TargetPort {
-        self.orig_dst.into()
-    }
-}
+
 // === impl WithOrigDst ===
 
 impl<B> From<B> for BindWithOrigDst<B> {
