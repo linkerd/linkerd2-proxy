@@ -11,7 +11,25 @@ use tower_test::mock;
 #[tokio::test]
 async fn gateway() {
     assert_eq!(
-        Test::default().run().await.unwrap().status(),
+        Test::default()
+            .run_default_profile()
+            .await
+            .unwrap()
+            .status(),
+        http::StatusCode::NO_CONTENT
+    );
+}
+
+#[tokio::test]
+async fn gateway_endpoint() {
+    let addr = std::net::SocketAddr::new([192, 0, 2, 10].into(), 777);
+    let profile = Some(support::profile::only(profiles::Profile {
+        endpoint: Some((addr, Metadata::default())),
+        ..profiles::Profile::default()
+    }));
+
+    assert_eq!(
+        Test::default().run(profile).await.unwrap().status(),
         http::StatusCode::NO_CONTENT
     );
 }
@@ -23,7 +41,7 @@ async fn bad_domain() {
         ..Default::default()
     };
     let status = test
-        .run()
+        .run_default_profile()
         .await
         .unwrap_err()
         .downcast_ref::<HttpError>()
@@ -39,7 +57,7 @@ async fn no_identity() {
         ..Default::default()
     };
     let status = test
-        .run()
+        .run_default_profile()
         .await
         .unwrap_err()
         .downcast_ref::<HttpError>()
@@ -57,7 +75,7 @@ async fn forward_loop() {
         ..Default::default()
     };
     let status = test
-        .run()
+        .run_default_profile()
         .await
         .unwrap_err()
         .downcast_ref::<HttpError>()
@@ -85,9 +103,12 @@ impl Default for Test {
 }
 
 impl Test {
-    async fn run(self) -> Result<http::Response<http::BoxBody>, Error> {
+    async fn run(
+        self,
+        profile: Option<profiles::Receiver>,
+    ) -> Result<http::Response<http::BoxBody>, Error> {
         let Self {
-            suffix,
+            suffix: _,
             target,
             client_id,
             orig_fwd,
@@ -97,19 +118,13 @@ impl Test {
             mock::pair::<http::Request<http::BoxBody>, http::Response<http::BoxBody>>();
 
         let new = NewGateway::new(
-            move |_: outbound::http::Logical| outbound.clone(),
+            move |_: svc::Either<outbound::http::Logical, outbound::http::Endpoint>| {
+                outbound.clone()
+            },
             Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
+            linkerd_app_core::tls::NoClientTls::NotProvidedByServiceDiscovery,
         );
 
-        let allow = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
-        let profile = if allow.matches(target.name()) {
-            Some(support::profile::only(profiles::Profile {
-                addr: Some(target.clone().into()),
-                ..profiles::Profile::default()
-            }))
-        } else {
-            None
-        };
         let t = HttpTarget {
             target: target.clone(),
             version: http::Version::Http1,
@@ -145,5 +160,23 @@ impl Test {
         let rsp = gateway.oneshot(req).await?;
         bg.await?;
         Ok(rsp)
+    }
+
+    async fn run_default_profile(self) -> Result<http::Response<http::BoxBody>, Error> {
+        let target = self.target.clone();
+        let suffix = self.suffix.clone();
+
+        let allow = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
+        let profile = if allow.matches(target.name()) {
+            Some(support::profile::only(profiles::Profile {
+                addr: Some(target.clone().into()),
+                ..profiles::Profile::default()
+            }))
+        } else {
+            None
+        };
+
+        let resp = self.run(profile).await;
+        resp
     }
 }
