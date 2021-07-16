@@ -2,15 +2,15 @@ use crate::SharedStore;
 use linkerd_stack as svc;
 use std::{fmt, hash::Hash, marker::PhantomData, sync::Arc};
 
-pub struct NewMetrics<N, K: Hash + Eq, M, S, P = K> {
+pub struct NewMetrics<N, K: Hash + Eq, M, S> {
     store: SharedStore<K, M>,
     inner: N,
-    _svc: PhantomData<fn(P) -> S>,
+    _svc: PhantomData<fn() -> S>,
 }
 
-impl<N, K, M, S, P> NewMetrics<N, K, M, S, P>
+impl<N, K, M, S> NewMetrics<N, K, M, S>
 where
-    K: Hash + Eq + From<P>,
+    K: Hash + Eq,
 {
     pub fn layer(store: SharedStore<K, M>) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
@@ -21,7 +21,7 @@ where
     }
 }
 
-impl<N, K, M, S, P> fmt::Debug for NewMetrics<N, K, M, S, P>
+impl<N, K, M, S> fmt::Debug for NewMetrics<N, K, M, S>
 where
     N: fmt::Debug,
     K: Hash + Eq + fmt::Debug,
@@ -33,29 +33,28 @@ where
             .field("store", &self.store)
             .field("inner", &self.inner)
             .field("svc", &format_args!("PhantomData<{}>", type_name::<S>()))
-            .field("param", &format_args!("PhantomData<{}>", type_name::<S>()))
             .finish()
     }
 }
 
-impl<N, K, M, S, T, P> svc::NewService<T> for NewMetrics<N, K, M, S, P>
+impl<N, K, M, S, T> svc::NewService<T> for NewMetrics<N, K, M, S>
 where
-    T: svc::Param<P>,
+    T: svc::Param<K>,
     N: svc::NewService<T>,
     S: From<(N::Service, Arc<M>)>,
     M: Default,
-    K: Hash + Eq + From<P>,
+    K: Hash + Eq,
 {
     type Service = S;
     fn new_service(&mut self, target: T) -> Self::Service {
-        let key = K::from(target.param());
+        let key = target.param();
         let inner = self.inner.new_service(target);
         let metric = self.store.lock().get_or_default(key).clone();
         S::from((inner, metric))
     }
 }
 
-impl<N, K, M, S, P> Clone for NewMetrics<N, K, M, S, P>
+impl<N, K, M, S> Clone for NewMetrics<N, K, M, S>
 where
     N: Clone,
     K: Hash + Eq,

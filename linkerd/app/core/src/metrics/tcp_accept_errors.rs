@@ -1,7 +1,7 @@
 use crate::{
     metrics::{self, Counter, FmtMetrics},
     svc,
-    transport::{labels::TargetAddr, OrigDstAddr},
+    transport::{labels, OrigDstAddr},
 };
 use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
@@ -21,7 +21,7 @@ metrics::metrics! {
 
 #[derive(Clone, Debug)]
 pub struct Registry {
-    scopes: metrics::SharedStore<TargetAddr, Scope>,
+    scopes: metrics::SharedStore<OrigDstAddr, Scope>,
     metric: linkerd_error_metrics::Metric,
 }
 
@@ -61,10 +61,9 @@ impl Registry {
         N,
         Service = metrics::NewMetrics<
             N,
-            TargetAddr,
+            OrigDstAddr,
             Scope,
             RecordError<LabelAcceptErrors, AcceptErrors, N::Service>,
-            OrigDstAddr,
         >,
     > + Clone
     where
@@ -81,9 +80,10 @@ impl FmtMetrics for Registry {
         let errors = self.scopes.lock();
 
         self.metric.fmt_help(f)?;
-        for (port, ms) in errors.iter() {
+        for (OrigDstAddr(a), ms) in errors.iter() {
+            let ta = labels::TargetAddr(*a);
             for (e, m) in ms.lock().iter() {
-                m.fmt_metric_labeled(f, self.metric.name, (port, e))?;
+                m.fmt_metric_labeled(f, self.metric.name, (ta, e))?;
             }
         }
 

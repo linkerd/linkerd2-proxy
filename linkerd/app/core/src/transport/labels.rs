@@ -1,4 +1,3 @@
-use super::OrigDstAddr;
 pub use crate::metrics::{Direction, OutboundEndpointLabels};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
@@ -15,20 +14,20 @@ pub enum Key {
     Accept {
         direction: Direction,
         tls: tls::ConditionalServerTls,
-        target_addr: TargetAddr,
+        target_addr: SocketAddr,
     },
     OutboundConnect(OutboundEndpointLabels),
     InboundConnect,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
+pub(crate) struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TargetAddr(SocketAddr);
+pub(crate) struct TargetAddr(pub(crate) SocketAddr);
 
 // === impl Key ===
 
@@ -41,7 +40,7 @@ impl Key {
         Self::Accept {
             direction,
             tls,
-            target_addr: TargetAddr(target_addr),
+            target_addr,
         }
     }
 }
@@ -56,9 +55,7 @@ impl FmtLabels for Key {
             } => {
                 direction.fmt_labels(f)?;
                 f.write_str(",peer=\"src\",")?;
-                target_addr.fmt_labels(f)?;
-                f.write_str(",")?;
-                TlsAccept::from(tls).fmt_labels(f)
+                (TargetAddr(*target_addr), TlsAccept::from(tls)).fmt_labels(f)
             }
             Self::OutboundConnect(endpoint) => {
                 Direction::Out.fmt_labels(f)?;
@@ -130,21 +127,6 @@ impl<'t> FmtLabels for TlsConnect<'t> {
 }
 
 // === impl TargetAddr ===
-
-impl TargetAddr {
-    /// This is an explicit conversion (rather than a `From` impl) because the
-    /// caller is responsible for ensuring that the address is, in fact, a
-    /// target address in this context.
-    pub fn from_socket_addr(addr: SocketAddr) -> Self {
-        Self(addr)
-    }
-}
-
-impl From<OrigDstAddr> for TargetAddr {
-    fn from(OrigDstAddr(addr): OrigDstAddr) -> Self {
-        Self(addr)
-    }
-}
 
 impl FmtLabels for TargetAddr {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
