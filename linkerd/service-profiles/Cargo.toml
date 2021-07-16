@@ -21,7 +21,7 @@ indexmap = "1.7"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["destination", "client"] }
+linkerd2-proxy-api = { version = "0.2", features = ["destination", "client"] }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }
@@ -36,6 +36,6 @@ tracing = "0.1.26"
 pin-project = "1"
 
 [dev-dependencies]
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["arbitrary"] }
+linkerd2-proxy-api = { version = "0.2", features = ["arbitrary"] }
 prost-types = "0.8.0"
 quickcheck = { version = "1", default-features = false }

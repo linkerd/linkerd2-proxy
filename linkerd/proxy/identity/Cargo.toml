@@ -11,7 +11,7 @@ rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["identity", "client"] }
+linkerd2-proxy-api = { version = "0.2", features = ["identity", "client"] }
 linkerd-error = { path = "../../error" }
 linkerd-identity = { path = "../../identity" }
 linkerd-metrics = { path = "../../metrics" }
