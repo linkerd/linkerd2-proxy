@@ -35,61 +35,51 @@ impl<N> Outbound<N> {
         P::Future: Send,
         P::Error: Send,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: accept,
-        } = self;
-
-        let allow = config.allow_discovery.clone();
-        let stack = accept
-            .push(profiles::discover::layer(
-                profiles,
-                move |a: tcp::Accept| {
-                    let OrigDstAddr(addr) = a.orig_dst;
-                    if allow.matches_ip(addr.ip()) {
-                        debug!("Allowing profile lookup");
-                        Ok(profiles::LookupAddr(addr.into()))
-                    } else {
-                        tracing::debug!(
-                            %addr,
-                            networks = %allow.nets(),
-                            "Profile discovery not in configured search networks",
-                        );
-                        Err(profiles::DiscoveryRejected::new(
-                            "not in configured search networks",
+        self.map_stack(|config, rt, accept| {
+            let allow = config.allow_discovery.clone();
+            accept
+                .push(profiles::discover::layer(
+                    profiles,
+                    move |a: tcp::Accept| {
+                        let OrigDstAddr(addr) = a.orig_dst;
+                        if allow.matches_ip(addr.ip()) {
+                            debug!("Allowing profile lookup");
+                            Ok(profiles::LookupAddr(addr.into()))
+                        } else {
+                            tracing::debug!(
+                                %addr,
+                                networks = %allow.nets(),
+                                "Profile discovery not in configured search networks",
+                            );
+                            Err(profiles::DiscoveryRejected::new(
+                                "not in configured search networks",
+                            ))
+                        }
+                    },
+                ))
+                .instrument(|_: &_| debug_span!("profile"))
+                .push_on_response(
+                    svc::layers()
+                        // If the traffic split is empty/unavailable, eagerly fail
+                        // requests. When the split is in failfast, spawn the
+                        // service in a background task so it becomes ready without
+                        // new requests.
+                        .push(svc::layer::mk(svc::SpawnReady::new))
+                        .push(rt.metrics.stack.layer(crate::stack_labels("tcp", "server")))
+                        .push(svc::FailFast::layer(
+                            "TCP Server",
+                            config.proxy.dispatch_timeout,
                         ))
-                    }
-                },
-            ))
-            .instrument(|_: &_| debug_span!("profile"))
-            .push_on_response(
-                svc::layers()
-                    // If the traffic split is empty/unavailable, eagerly fail
-                    // requests. When the split is in failfast, spawn the
-                    // service in a background task so it becomes ready without
-                    // new requests.
-                    .push(svc::layer::mk(svc::SpawnReady::new))
-                    .push(rt.metrics.stack.layer(crate::stack_labels("tcp", "server")))
-                    .push(svc::FailFast::layer(
-                        "TCP Server",
-                        config.proxy.dispatch_timeout,
-                    ))
-                    .push_spawn_buffer(config.proxy.buffer_capacity),
-            )
-            .push(rt.metrics.transport.layer_accept())
-            .push_cache(config.proxy.cache_max_idle_age)
-            .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
-            .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-            .push_on_response(rt.metrics.tcp_accept_errors.clone())
-            .push(svc::BoxNewService::layer())
-            .check_new_service::<T, I>();
-
-        Outbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+                        .push_spawn_buffer(config.proxy.buffer_capacity),
+                )
+                .push(rt.metrics.transport.layer_accept())
+                .push_cache(config.proxy.cache_max_idle_age)
+                .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
+                .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
+                .push_on_response(rt.metrics.tcp_accept_errors.clone())
+                .push(svc::BoxNewService::layer())
+                .check_new_service::<T, I>()
+        })
     }
 }
 

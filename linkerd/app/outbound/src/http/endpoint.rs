@@ -23,54 +23,45 @@ impl<C> Outbound<C> {
         C::Error: Into<Error>,
         C::Future: Send + Unpin + 'static,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: connect,
-        } = self;
-        let config::ConnectConfig {
-            h1_settings,
-            h2_settings,
-            backoff,
-            ..
-        } = config.proxy.connect;
+        self.map_stack(|config, rt, connect| {
+            let config::ConnectConfig {
+                h1_settings,
+                h2_settings,
+                backoff,
+                ..
+            } = config.proxy.connect;
 
-        // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
-        // is typically used (i.e. when communicating with other proxies); though
-        // HTTP/1.x fallback is supported as needed.
-        let stack = connect
-            .push(http::client::layer(h1_settings, h2_settings))
-            .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
-            .check_service::<T>()
-            .into_new_service()
-            .push_new_reconnect(backoff)
-            .push(tap::NewTapHttp::layer(rt.tap.clone()))
-            .push(
-                rt.metrics
-                    .http_endpoint
-                    .to_layer::<classify::Response, _, _>(),
-            )
-            .push_on_response(http_tracing::client(
-                rt.span_sink.clone(),
-                crate::trace_labels(),
-            ))
-            .push(require_id_header::NewRequireIdentity::layer())
-            .push(http::NewOverrideAuthority::layer(vec![
-                "host",
-                CANONICAL_DST_HEADER,
-            ]))
-            .push_on_response(
-                svc::layers()
-                    .push(http::BoxResponse::layer())
-                    .push(svc::BoxService::layer()),
-            )
-            .push(svc::BoxNewService::layer());
-
-        Outbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+            // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+            // is typically used (i.e. when communicating with other proxies); though
+            // HTTP/1.x fallback is supported as needed.
+            connect
+                .push(http::client::layer(h1_settings, h2_settings))
+                .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
+                .check_service::<T>()
+                .into_new_service()
+                .push_new_reconnect(backoff)
+                .push(tap::NewTapHttp::layer(rt.tap.clone()))
+                .push(
+                    rt.metrics
+                        .http_endpoint
+                        .to_layer::<classify::Response, _, _>(),
+                )
+                .push_on_response(http_tracing::client(
+                    rt.span_sink.clone(),
+                    crate::trace_labels(),
+                ))
+                .push(require_id_header::NewRequireIdentity::layer())
+                .push(http::NewOverrideAuthority::layer(vec![
+                    "host",
+                    CANONICAL_DST_HEADER,
+                ]))
+                .push_on_response(
+                    svc::layers()
+                        .push(http::BoxResponse::layer())
+                        .push(svc::BoxService::layer()),
+                )
+                .push(svc::BoxNewService::layer())
+        })
     }
 }
 
