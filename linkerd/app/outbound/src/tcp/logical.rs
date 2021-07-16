@@ -40,81 +40,71 @@ where
         R::Future: Send + Unpin,
         C: Send + Sync + 'static,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: connect,
-        } = self;
+        self.map_stack(|config, rt, connect| {
+            let config::ProxyConfig {
+                buffer_capacity,
+                cache_max_idle_age,
+                dispatch_timeout,
+                ..
+            } = config.proxy;
 
-        let config::ProxyConfig {
-            buffer_capacity,
-            cache_max_idle_age,
-            dispatch_timeout,
-            ..
-        } = config.proxy;
+            let identity_disabled = rt.identity.is_none();
+            let resolve = svc::stack(resolve.into_service())
+                .check_service::<ConcreteAddr>()
+                .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
+                .push(svc::layer::mk(move |inner| {
+                    map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
+                }))
+                .check_service::<Concrete>()
+                .into_inner();
 
-        let identity_disabled = rt.identity.is_none();
-        let resolve = svc::stack(resolve.into_service())
-            .check_service::<ConcreteAddr>()
-            .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
-            .push(svc::layer::mk(move |inner| {
-                map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
-            }))
-            .check_service::<Concrete>()
-            .into_inner();
-
-        let stack = connect
-            .push_make_thunk()
-            .instrument(|t: &Endpoint| match t.tls.as_ref() {
-                Conditional::Some(tls) => {
-                    debug_span!("endpoint", server.addr = %t.addr, server.id = ?tls.server_id)
-                }
-                Conditional::None(_) => {
-                    debug_span!("endpoint", server.addr = %t.addr)
-                }
-            })
-            .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
-            .push_on_response(
-                svc::layers()
-                    .push(tcp::balance::layer(
-                        crate::EWMA_DEFAULT_RTT,
-                        crate::EWMA_DECAY,
-                    ))
-                    .push(
-                        rt.metrics
-                            .stack
-                            .layer(crate::stack_labels("tcp", "balancer")),
-                    )
-                    .push(tcp::Forward::layer())
-                    .push(drain::Retain::layer(rt.drain.clone())),
-            )
-            .into_new_service()
-            .push_map_target(Concrete::from)
-            .push(svc::BoxNewService::layer())
-            .check_new_service::<(ConcreteAddr, Logical), I>()
-            .push(profiles::split::layer())
-            .push_on_response(
-                svc::layers()
-                    .push(
-                        rt.metrics
-                            .stack
-                            .layer(crate::stack_labels("tcp", "logical")),
-                    )
-                    .push(svc::layer::mk(svc::SpawnReady::new))
-                    .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
-                    .push_spawn_buffer(buffer_capacity),
-            )
-            .push_cache(cache_max_idle_age)
-            .check_new_service::<Logical, I>()
-            .instrument(|_: &Logical| debug_span!("tcp"))
-            .check_new_service::<Logical, I>()
-            .push(svc::BoxNewService::layer());
-
-        Outbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+            connect
+                .push_make_thunk()
+                .instrument(|t: &Endpoint| match t.tls.as_ref() {
+                    Conditional::Some(tls) => {
+                        debug_span!("endpoint", server.addr = %t.addr, server.id = ?tls.server_id)
+                    }
+                    Conditional::None(_) => {
+                        debug_span!("endpoint", server.addr = %t.addr)
+                    }
+                })
+                .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
+                .push_on_response(
+                    svc::layers()
+                        .push(tcp::balance::layer(
+                            crate::EWMA_DEFAULT_RTT,
+                            crate::EWMA_DECAY,
+                        ))
+                        .push(
+                            rt.metrics
+                                .stack
+                                .layer(crate::stack_labels("tcp", "balancer")),
+                        )
+                        .push(tcp::Forward::layer())
+                        .push(drain::Retain::layer(rt.drain.clone())),
+                )
+                .into_new_service()
+                .push_map_target(Concrete::from)
+                .push(svc::BoxNewService::layer())
+                .check_new_service::<(ConcreteAddr, Logical), I>()
+                .push(profiles::split::layer())
+                .push_on_response(
+                    svc::layers()
+                        .push(
+                            rt.metrics
+                                .stack
+                                .layer(crate::stack_labels("tcp", "logical")),
+                        )
+                        .push(svc::layer::mk(svc::SpawnReady::new))
+                        .push(svc::FailFast::layer("TCP Logical", dispatch_timeout))
+                        .push_spawn_buffer(buffer_capacity),
+                )
+                .push_cache(cache_max_idle_age)
+                .check_new_service::<Logical, I>()
+                .instrument(|_: &Logical| debug_span!("tcp"))
+                .check_new_service::<Logical, I>()
+                .push(svc::BoxNewService::layer())
+        })
     }
 }
 

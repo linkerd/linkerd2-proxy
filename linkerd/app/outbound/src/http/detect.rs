@@ -31,64 +31,55 @@ impl<N> Outbound<N> {
         T: Param<Option<Skip>> + Clone + Send + Sync + 'static,
         U: From<(http::Version, T)> + svc::Param<http::Version> + 'static,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: tcp,
-        } = self;
-        let ProxyConfig {
-            server: ServerConfig { h2_settings, .. },
-            detect_protocol_timeout,
-            ..
-        } = config.proxy;
-
-        let skipped = tcp
-            .clone()
-            .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
-            .into_inner();
-
-        let stack = svc::stack(http)
-            .push_on_response(
-                svc::layers()
-                    .push(http::BoxRequest::layer())
-                    .push(svc::MapErrLayer::new(Into::into)),
-            )
-            .check_new_service::<U, _>()
-            .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
-            .push_map_target(U::from)
-            .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
-            .push(svc::UnwrapOr::layer(
-                tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
-                    .into_inner(),
-            ))
-            .push_on_response(svc::BoxService::layer())
-            .check_new_service::<(Option<http::Version>, T), _>()
-            .push_map_target(detect::allow_timeout)
-            .push(svc::BoxNewService::layer())
-            .push(detect::NewDetectService::layer(
+        self.map_stack(|config, rt, tcp| {
+            let ProxyConfig {
+                server: ServerConfig { h2_settings, .. },
                 detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ))
-            .push_switch(
-                // When the target is marked as as opaque, we skip HTTP
-                // detection and just use the TCP stack directly.
-                |target: T| -> Result<_, Error> {
-                    if let Some(Skip) = target.param() {
-                        Ok(svc::Either::B(target))
-                    } else {
-                        Ok(svc::Either::A(target))
-                    }
-                },
-                skipped,
-            )
-            .check_new_service::<T, _>()
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer());
+                ..
+            } = config.proxy;
 
-        Outbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+            let skipped = tcp
+                .clone()
+                .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
+                .into_inner();
+
+            svc::stack(http)
+                .push_on_response(
+                    svc::layers()
+                        .push(http::BoxRequest::layer())
+                        .push(svc::MapErrLayer::new(Into::into)),
+                )
+                .check_new_service::<U, _>()
+                .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
+                .push_map_target(U::from)
+                .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
+                .push(svc::UnwrapOr::layer(
+                    tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
+                        .into_inner(),
+                ))
+                .push_on_response(svc::BoxService::layer())
+                .check_new_service::<(Option<http::Version>, T), _>()
+                .push_map_target(detect::allow_timeout)
+                .push(svc::BoxNewService::layer())
+                .push(detect::NewDetectService::layer(
+                    detect_protocol_timeout,
+                    http::DetectHttp::default(),
+                ))
+                .push_switch(
+                    // When the target is marked as as opaque, we skip HTTP
+                    // detection and just use the TCP stack directly.
+                    |target: T| -> Result<_, Error> {
+                        if let Some(Skip) = target.param() {
+                            Ok(svc::Either::B(target))
+                        } else {
+                            Ok(svc::Either::A(target))
+                        }
+                    },
+                    skipped,
+                )
+                .check_new_service::<T, _>()
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+        })
     }
 }

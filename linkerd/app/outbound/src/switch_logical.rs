@@ -26,51 +26,41 @@ impl<S> Outbound<S> {
         SSvc::Future: Send,
     {
         let no_tls_reason = self.no_tls_reason();
-        let Self {
-            config,
-            runtime,
-            stack: endpoint,
-        } = self;
+        self.map_stack(|_, _, endpoint| {
+            endpoint
+                .push_switch(
+                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
+                        if let Some(rx) = profile {
+                            // If the profile provides an endpoint, then the target is single endpoint and
+                            // not a logical/load-balanced service.
+                            if let Some((addr, metadata)) = rx.endpoint() {
+                                return Ok(svc::Either::A(Endpoint::from_metadata(
+                                    addr,
+                                    metadata,
+                                    no_tls_reason,
+                                    rx.is_opaque_protocol(),
+                                )));
+                            }
 
-        let stack = endpoint
-            .push_switch(
-                move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
-                    if let Some(rx) = profile {
-                        // If the profile provides an endpoint, then the target is single endpoint and
-                        // not a logical/load-balanced service.
-                        if let Some((addr, metadata)) = rx.endpoint() {
-                            return Ok(svc::Either::A(Endpoint::from_metadata(
-                                addr,
-                                metadata,
-                                no_tls_reason,
-                                rx.is_opaque_protocol(),
-                            )));
+                            // Otherwise, if the profile provides a (named) logical address, then we build a
+                            // logical stack so we apply routes, traffic splits, and load balancing.
+                            if let Some(logical_addr) = rx.logical_addr() {
+                                return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
+                            }
                         }
 
-                        // Otherwise, if the profile provides a (named) logical address, then we build a
-                        // logical stack so we apply routes, traffic splits, and load balancing.
-                        if let Some(logical_addr) = rx.logical_addr() {
-                            return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
-                        }
-                    }
-
-                    // If there was no profile or it didn't include any useful metadata, create a bare
-                    // endpoint from the original destination address.
-                    Ok(svc::Either::A(Endpoint::forward(
-                        target.param(),
-                        no_tls_reason,
-                    )))
-                },
-                logical,
-            )
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer());
-
-        Outbound {
-            config,
-            runtime,
-            stack,
-        }
+                        // If there was no profile or it didn't include any useful metadata, create a bare
+                        // endpoint from the original destination address.
+                        Ok(svc::Either::A(Endpoint::forward(
+                            target.param(),
+                            no_tls_reason,
+                        )))
+                    },
+                    logical,
+                )
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+        })
     }
 }
 

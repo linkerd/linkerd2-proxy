@@ -55,31 +55,21 @@ impl<C> Outbound<C> {
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         C::Future: Send + 'static,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: connect,
-        } = self;
-
-        let stack = connect
-            // Initiates mTLS if the target is configured with identity. The
-            // endpoint configures ALPN when there is an opaque transport hint OR
-            // when an authority override is present (indicating the target is a
-            // remote cluster gateway).
-            .push(tls::Client::layer(rt.identity.clone()))
-            // Encodes a transport header if the established connection is TLS'd and
-            // ALPN negotiation indicates support.
-            .push(OpaqueTransport::layer())
-            // Limits the time we wait for a connection to be established.
-            .push_timeout(config.proxy.connect.timeout)
-            .push(svc::stack::BoxFuture::layer())
-            .push(rt.metrics.transport.layer_connect());
-
-        Outbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+        self.map_stack(|config, rt, connect| {
+            connect
+                // Initiates mTLS if the target is configured with identity. The
+                // endpoint configures ALPN when there is an opaque transport hint OR
+                // when an authority override is present (indicating the target is a
+                // remote cluster gateway).
+                .push(tls::Client::layer(rt.identity.clone()))
+                // Encodes a transport header if the established connection is TLS'd and
+                // ALPN negotiation indicates support.
+                .push(OpaqueTransport::layer())
+                // Limits the time we wait for a connection to be established.
+                .push_timeout(config.proxy.connect.timeout)
+                .push(svc::stack::BoxFuture::layer())
+                .push(rt.metrics.transport.layer_connect())
+        })
     }
 
     pub fn push_tcp_forward<T, I>(
@@ -98,24 +88,13 @@ impl<C> Outbound<C> {
         C::Error: Into<Error>,
         C::Future: Send,
     {
-        let Self {
-            config,
-            runtime,
-            stack: connect,
-        } = self;
-
-        let stack = connect
-            .push_make_thunk()
-            .push_on_response(super::Forward::layer())
-            .instrument(|_: &_| debug_span!("tcp.forward"))
-            .push(svc::BoxNewService::layer())
-            .check_new_service::<T, I>();
-
-        Outbound {
-            config,
-            runtime,
-            stack,
-        }
+        self.map_stack(|_, _, conn| {
+            conn.push_make_thunk()
+                .push_on_response(super::Forward::layer())
+                .instrument(|_: &_| debug_span!("tcp.forward"))
+                .push(svc::BoxNewService::layer())
+                .check_new_service::<T, I>()
+        })
     }
 }
 
