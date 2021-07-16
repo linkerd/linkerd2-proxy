@@ -80,8 +80,8 @@ impl FmtMetrics for Registry {
         let errors = self.scopes.lock();
 
         self.metric.fmt_help(f)?;
-        for (oda, ms) in errors.iter() {
-            let ta = labels::TargetAddr((*oda).into());
+        for (OrigDstAddr(a), ms) in errors.iter() {
+            let ta = labels::TargetAddr(*a);
             for (e, m) in ms.lock().iter() {
                 m.fmt_metric_labeled(f, self.metric.name, (ta, e))?;
             }
