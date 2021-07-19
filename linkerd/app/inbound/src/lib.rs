@@ -204,7 +204,8 @@ where
         gateway: G,
     ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
     where
-        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + 'static,
+        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
+        T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
@@ -292,7 +293,7 @@ where
                 let OrigDstAddr(target_addr) = a.param();
                 info_span!("server", port = target_addr.port())
             })
-            .push_on_response(rt.metrics.tcp_accept_errors)
+            .push(rt.metrics.tcp_accept_errors.layer())
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .into_inner()

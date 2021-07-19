@@ -18,7 +18,7 @@ pub trait LabelError<E> {
     fn label_error(&self, error: &E) -> Self::Labels;
 }
 
-type Metric = metrics::Metric<'static, &'static str, Counter>;
+pub type Metric = metrics::Metric<'static, &'static str, Counter>;
 
 /// Produces layers and reports results.
 #[derive(Debug)]

@@ -60,6 +60,10 @@ async fn run_proxy(
     (proxy, admin_client)
 }
 
+fn metric(proxy: &proxy::Listening) -> metrics::MetricMatch {
+    metrics::metric(METRIC).label("target_addr", proxy.inbound_server.as_ref().unwrap().addr)
+}
+
 /// Tests that the detect metric is labeled and incremented on timeout.
 #[tokio::test]
 async fn inbound_timeout() {
@@ -73,7 +77,7 @@ async fn inbound_timeout() {
     tokio::time::sleep(TIMEOUT + Duration::from_millis(15)) // just in case
         .await;
 
-    metrics::metric(METRIC)
+    metric(&proxy)
         .label("error", "tls_detect_timeout")
         .value(1u64)
         .assert_in(&metrics)
@@ -93,7 +97,7 @@ async fn inbound_io_err() {
     tcp_client.write(TcpFixture::HELLO_MSG).await;
     drop(tcp_client);
 
-    metrics::metric(METRIC)
+    metric(&proxy)
         .label("error", "io")
         .value(1u64)
         .assert_in(&metrics)
@@ -119,7 +123,7 @@ async fn inbound_success() {
     );
     let no_tls_client = client::tcp(proxy.inbound);
 
-    let metric = metrics::metric(METRIC)
+    let metric = metric(&proxy)
         .label("error", "tls_detect_timeout")
         .value(1u64);
 
@@ -150,8 +154,9 @@ async fn inbound_multi() {
     let (proxy, metrics) = default_proxy().await;
     let client = client::tcp(proxy.inbound);
 
-    let timeout_metric = metrics::metric(METRIC).label("error", "tls_detect_timeout");
-    let io_metric = metrics::metric(METRIC).label("error", "io");
+    let metric = metric(&proxy);
+    let timeout_metric = metric.clone().label("error", "tls_detect_timeout");
+    let io_metric = metric.label("error", "io");
 
     let tcp_client = client.connect().await;
 
@@ -200,8 +205,9 @@ async fn inbound_direct_multi() {
     let (proxy, metrics) = run_proxy(proxy, identity).await;
     let client = client::tcp(proxy.inbound);
 
-    let timeout_metric = metrics::metric(METRIC).label("error", "tls_detect_timeout");
-    let no_tls_metric = metrics::metric(METRIC).label("error", "other");
+    let metric = metrics::metric(METRIC).label("target_addr", proxy.inbound);
+    let timeout_metric = metric.clone().label("error", "tls_detect_timeout");
+    let no_tls_metric = metric.clone().label("error", "other");
 
     let tcp_client = client.connect().await;
 
@@ -248,7 +254,11 @@ async fn inbound_direct_success() {
     // connections require mutual authentication.
     let auth = "bar.ns1.svc.cluster.local";
     let ctrl = controller::new();
-    let dst = format!("{}:{}", auth, proxy1.inbound.port());
+    let dst = format!(
+        "{}:{}",
+        auth,
+        proxy1.inbound_server.as_ref().unwrap().addr.port()
+    );
     let _profile_out = ctrl.profile_tx_default(proxy1.inbound, auth);
     let dst = ctrl.destination_tx(dst);
     dst.send(controller::destination_add_tls(
@@ -265,6 +275,7 @@ async fn inbound_direct_success() {
     let no_tls_client = client::tcp(proxy1.inbound);
 
     let metric = metrics::metric(METRIC)
+        .label("target_addr", proxy1.inbound)
         .label("error", "tls_detect_timeout")
         .value(1u64);
 

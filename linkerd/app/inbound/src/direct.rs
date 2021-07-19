@@ -69,7 +69,8 @@ impl<N> Inbound<N> {
         gateway: G,
     ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
-        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
+        T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,

@@ -76,7 +76,7 @@ impl<N> Outbound<N> {
                 .push_cache(config.proxy.cache_max_idle_age)
                 .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
                 .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-                .push_on_response(rt.metrics.tcp_accept_errors.clone())
+                .push(rt.metrics.tcp_accept_errors.layer())
                 .push(svc::BoxNewService::layer())
                 .check_new_service::<T, I>()
         })
