@@ -7,6 +7,7 @@ use hyper::{
     client::conn::{Builder as ClientBuilder, SendRequest},
     Body, Request, Response,
 };
+use linkerd_app_core::svc::BoxService;
 use std::{
     future::Future,
     sync::{Arc, Mutex},
@@ -22,6 +23,8 @@ pub struct Server {
 
 type HandleFuture = Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>;
 
+type BoxServer = BoxService<io::DuplexStream, (), Error>;
+
 impl Default for Server {
     fn default() -> Self {
         Self {
@@ -36,18 +39,11 @@ impl Default for Server {
     }
 }
 
-pub async fn run_proxy<S>(mut server: S) -> (io::DuplexStream, JoinHandle<Result<(), Error>>)
-where
-    S: tower::Service<io::DuplexStream> + Send + Sync + 'static,
-    S::Error: Into<Error>,
-    S::Response: std::fmt::Debug + Send + Sync + 'static,
-    S::Future: Send,
-{
+pub async fn run_proxy(mut server: BoxServer) -> (io::DuplexStream, JoinHandle<Result<(), Error>>) {
     let (client_io, server_io) = io::duplex(4096);
     let f = server
         .ready()
         .await
-        .map_err(Into::into)
         .expect("proxy server failed to become ready")
         .call(server_io);
 
@@ -79,16 +75,10 @@ pub async fn connect_client(
     (client, tokio::spawn(client_bg))
 }
 
-pub async fn connect_and_accept<S>(
+pub async fn connect_and_accept(
     client_settings: &mut ClientBuilder,
-    server: S,
-) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>)
-where
-    S: tower::Service<io::DuplexStream> + Send + Sync + 'static,
-    S::Error: Into<Error>,
-    S::Response: std::fmt::Debug + Send + Sync + 'static,
-    S::Future: Send,
-{
+    server: BoxServer,
+) -> (SendRequest<Body>, impl Future<Output = Result<(), Error>>) {
     tracing::info!(settings = ?client_settings, "connecting client with");
     let (client_io, proxy) = run_proxy(server).await;
     let (client, client_bg) = connect_client(client_settings, client_io).await;

@@ -25,12 +25,7 @@ use tracing::debug_span;
 impl<H> Inbound<H> {
     pub fn push_http_server<T, I, HSvc>(
         self,
-    ) -> Inbound<
-        svc::BoxNewService<
-            T,
-            impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
-        >,
-    >
+    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
@@ -84,6 +79,7 @@ impl<H> Inbound<H> {
                 .check_new_service::<T, http::Request<_>>()
                 .instrument(|t: &T| debug_span!("http", v=%Param::<Version>::param(t)))
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
+                .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
     }
