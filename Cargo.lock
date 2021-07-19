@@ -2420,7 +2420,7 @@ dependencies = [
 [[package]]
 name = "trust-dns-proto"
 version = "0.21.0-alpha.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#af83717b5bd156bdd7b52bbd4b2dbc23cc6be2c9"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#705524af26f17862353e9d3c023a1ce14883dff4"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2444,7 +2444,7 @@ dependencies = [
 [[package]]
 name = "trust-dns-resolver"
 version = "0.21.0-alpha.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#af83717b5bd156bdd7b52bbd4b2dbc23cc6be2c9"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#705524af26f17862353e9d3c023a1ce14883dff4"
 dependencies = [
  "cfg-if",
  "futures-util",
