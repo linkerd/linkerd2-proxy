@@ -72,11 +72,7 @@ impl Outbound<()> {
     }
 
     pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
-        Outbound {
-            config: self.config,
-            runtime: self.runtime,
-            stack: svc::stack(stack),
-        }
+        self.map_stack(move |_, _, _| svc::stack(stack))
     }
 }
 
@@ -106,10 +102,19 @@ impl<S> Outbound<S> {
     }
 
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
+        self.map_stack(move |_, _, stack| stack.push(layer))
+    }
+
+    /// Creates a new `Outbound` by replacing the inner stack, as modified by `f`.
+    fn map_stack<T>(
+        self,
+        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+    ) -> Outbound<T> {
+        let stack = f(&self.config, &self.runtime, self.stack);
         Outbound {
             config: self.config,
             runtime: self.runtime,
-            stack: self.stack.push(layer),
+            stack,
         }
     }
 }

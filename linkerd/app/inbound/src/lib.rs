@@ -67,6 +67,19 @@ impl<S> Inbound<S> {
     pub fn into_inner(self) -> S {
         self.stack.into_inner()
     }
+
+    /// Creates a new `Inbound` by replacing the inner stack, as modified by `f`.
+    fn map_stack<T>(
+        self,
+        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+    ) -> Inbound<T> {
+        let stack = f(&self.config, &self.runtime, self.stack);
+        Inbound {
+            config: self.config,
+            runtime: self.runtime,
+            stack,
+        }
+    }
 }
 
 impl Inbound<()> {
@@ -79,11 +92,7 @@ impl Inbound<()> {
     }
 
     pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
-        Inbound {
-            config: self.config,
-            runtime: self.runtime,
-            stack: svc::stack(stack),
-        }
+        self.map_stack(move |_, _, _| svc::stack(stack))
     }
 
     pub fn to_tcp_connect<T: svc::Param<u16>>(
@@ -96,29 +105,19 @@ impl Inbound<()> {
                 Future = impl Send,
             > + Clone,
     > {
-        let Self {
-            config,
-            runtime,
-            stack: _,
-        } = self.clone();
+        self.clone().map_stack(|config, _, _| {
+            // Establishes connections to remote peers (for both TCP
+            // forwarding and HTTP proxying).
+            let ConnectConfig {
+                keepalive, timeout, ..
+            } = config.proxy.connect.clone();
 
-        // Establishes connections to remote peers (for both TCP
-        // forwarding and HTTP proxying).
-        let ConnectConfig {
-            keepalive, timeout, ..
-        } = config.proxy.connect;
-
-        let stack = svc::stack(transport::ConnectTcp::new(keepalive))
-            .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
-            // Limits the time we wait for a connection to be established.
-            .push_timeout(timeout)
-            .push(svc::stack::BoxFuture::layer());
-
-        Inbound {
-            config,
-            runtime,
-            stack,
-        }
+            svc::stack(transport::ConnectTcp::new(keepalive))
+                .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
+                // Limits the time we wait for a connection to be established.
+                .push_timeout(timeout)
+                .push(svc::stack::BoxFuture::layer())
+        })
     }
 
     pub fn serve<B, G, GSvc, P>(
@@ -177,34 +176,25 @@ where
         I: io::AsyncRead + io::AsyncWrite,
         I: Debug + Send + Sync + Unpin + 'static,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: connect,
-        } = self;
-        let prevent_loop = PreventLoop::from(server_port);
+        self.map_stack(|_, rt, connect| {
+            let prevent_loop = PreventLoop::from(server_port);
 
-        // Forwards TCP streams that cannot be decoded as HTTP.
-        //
-        // Looping is always prevented.
-        let stack = connect
-            .push_request_filter(prevent_loop)
-            .push(rt.metrics.transport.layer_connect())
-            .push_make_thunk()
-            .push_on_response(
-                svc::layers()
-                    .push(tcp::Forward::layer())
-                    .push(drain::Retain::layer(rt.drain.clone())),
-            )
-            .instrument(|_: &_| debug_span!("tcp"))
-            .push(svc::BoxNewService::layer())
-            .check_new::<TcpEndpoint>();
-
-        Inbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+            // Forwards TCP streams that cannot be decoded as HTTP.
+            //
+            // Looping is always prevented.
+            connect
+                .push_request_filter(prevent_loop)
+                .push(rt.metrics.transport.layer_connect())
+                .push_make_thunk()
+                .push_on_response(
+                    svc::layers()
+                        .push(tcp::Forward::layer())
+                        .push(drain::Retain::layer(rt.drain.clone())),
+                )
+                .instrument(|_: &_| debug_span!("tcp"))
+                .push(svc::BoxNewService::layer())
+                .check_new::<TcpEndpoint>()
+        })
     }
 
     pub fn into_server<T, I, G, GSvc, P>(
