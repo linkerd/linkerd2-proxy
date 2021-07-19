@@ -27,6 +27,9 @@ pub struct Registry {
 
 type Scope = Mutex<HashMap<AcceptErrors, metrics::Counter>>;
 
+type NewErrorMetrics<N, S> =
+    metrics::NewMetrics<N, OrigDstAddr, Scope, RecordError<LabelAcceptErrors, AcceptErrors, S>>;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LabelAcceptErrors(());
 
@@ -41,35 +44,22 @@ pub enum AcceptErrors {
 
 impl Registry {
     pub fn inbound() -> Self {
-        Self::with_metric(inbound_tcp_accept_errors_total)
-    }
-
-    pub fn outbound() -> Self {
-        Self::with_metric(outbound_tcp_accept_errors_total)
-    }
-
-    fn with_metric(metric: linkerd_error_metrics::Metric) -> Self {
         Self {
-            metric,
+            metric: inbound_tcp_accept_errors_total,
             scopes: Default::default(),
         }
     }
 
-    pub fn layer<N, T>(
+    pub fn outbound() -> Self {
+        Self {
+            metric: outbound_tcp_accept_errors_total,
+            scopes: Default::default(),
+        }
+    }
+
+    pub fn layer<T, N: svc::NewService<T>>(
         &self,
-    ) -> impl svc::Layer<
-        N,
-        Service = metrics::NewMetrics<
-            N,
-            OrigDstAddr,
-            Scope,
-            RecordError<LabelAcceptErrors, AcceptErrors, N::Service>,
-        >,
-    > + Clone
-    where
-        T: svc::Param<OrigDstAddr>,
-        N: svc::NewService<T>,
-    {
+    ) -> impl svc::Layer<N, Service = NewErrorMetrics<N, N::Service>> + Clone {
         metrics::NewMetrics::layer(self.scopes.clone())
     }
 }
