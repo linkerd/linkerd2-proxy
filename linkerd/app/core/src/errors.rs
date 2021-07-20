@@ -220,8 +220,11 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     close.close();
                 }
 
+                // Set the l5d error header on all responses.
+                let builder = set_l5d_error_header(&*error);
+
                 if self.is_grpc {
-                    let mut rsp = http::Response::builder()
+                    let mut rsp = builder
                         .version(http::Version::HTTP_2)
                         .header(http::header::CONTENT_LENGTH, "0")
                         .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
@@ -232,7 +235,7 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                     return Ok(rsp);
                 }
 
-                let rsp = set_http_status(&*error)
+                let rsp = set_http_status(builder, &*error)
                     .version(self.version)
                     .header(http::header::CONTENT_LENGTH, "0")
                     .body(ResponseBody::default())
@@ -245,51 +248,68 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
     }
 }
 
-fn set_http_status(error: &(dyn std::error::Error + 'static)) -> http::response::Builder {
-    let mut rsp = http::Response::builder();
-    if let Some(HttpError { http, message, .. }) = error.downcast_ref::<HttpError>() {
-        rsp.header(L5D_HTTP_ERROR_MESSAGE, HeaderValue::from_static(message))
-            .status(*http)
+fn set_l5d_error_header(error: &(dyn std::error::Error + 'static)) -> http::response::Builder {
+    let mut builder = http::Response::builder();
+    if let Some(HttpError { message, .. }) = error.downcast_ref::<HttpError>() {
+        builder.header(L5D_HTTP_ERROR_MESSAGE, HeaderValue::from_static(message))
     } else if error.is::<ResponseTimeout>() {
-        rsp.header(
+        builder.header(
             L5D_HTTP_ERROR_MESSAGE,
             HeaderValue::from_static("request timed out"),
         )
-        .status(http::StatusCode::GATEWAY_TIMEOUT)
     } else if error.is::<ConnectTimeout>() {
-        rsp.header(
+        builder.header(
             L5D_HTTP_ERROR_MESSAGE,
             HeaderValue::from_static("failed to connect"),
         )
-        .status(http::StatusCode::GATEWAY_TIMEOUT)
     } else if let Some(e) = error.downcast_ref::<FailFastError>() {
-        rsp.header(
+        builder.header(
             L5D_HTTP_ERROR_MESSAGE,
             HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
                 warn!(%error, "Failed to encode fail-fast error message");
                 HeaderValue::from_static("service in fail-fast")
             }),
         )
-        .status(http::StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<tower::timeout::error::Elapsed>() {
-        rsp.header(
+        builder.header(
             L5D_HTTP_ERROR_MESSAGE,
             HeaderValue::from_static("proxy dispatch timed out"),
         )
-        .status(http::StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<IdentityRequired>() {
         if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            rsp = rsp.header(L5D_HTTP_ERROR_MESSAGE, msg)
+            builder = builder.header(L5D_HTTP_ERROR_MESSAGE, msg)
         }
-        rsp.status(http::StatusCode::FORBIDDEN)
+        builder
     } else if let Some(source) = error.source() {
-        set_http_status(source)
+        set_l5d_error_header(source)
     } else {
-        rsp.header(
+        builder.header(
             L5D_HTTP_ERROR_MESSAGE,
             HeaderValue::from_static("proxy received invalid response"),
         )
-        .status(http::StatusCode::BAD_GATEWAY)
+    }
+}
+
+fn set_http_status(
+    builder: http::response::Builder,
+    error: &(dyn std::error::Error + 'static),
+) -> http::response::Builder {
+    if let Some(HttpError { http, .. }) = error.downcast_ref::<HttpError>() {
+        builder.status(*http)
+    } else if error.is::<ResponseTimeout>() {
+        builder.status(http::StatusCode::GATEWAY_TIMEOUT)
+    } else if error.is::<ConnectTimeout>() {
+        builder.status(http::StatusCode::GATEWAY_TIMEOUT)
+    } else if error.is::<FailFastError>() {
+        builder.status(http::StatusCode::SERVICE_UNAVAILABLE)
+    } else if error.is::<tower::timeout::error::Elapsed>() {
+        builder.status(http::StatusCode::SERVICE_UNAVAILABLE)
+    } else if error.is::<IdentityRequired>() {
+        builder.status(http::StatusCode::FORBIDDEN)
+    } else if let Some(source) = error.source() {
+        set_http_status(builder, source)
+    } else {
+        builder.status(http::StatusCode::BAD_GATEWAY)
     }
 }
 

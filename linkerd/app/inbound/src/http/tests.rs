@@ -335,6 +335,55 @@ async fn h2_response_error_header() {
     let _ = bg.await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn grpc_response_error_header() {
+    let _trace = trace_init();
+
+    // Build a mock connect that always errors.
+    let accept = HttpAccept {
+        version: proxy::http::Version::H2,
+        tcp: TcpAccept {
+            target_addr: ([127, 0, 0, 1], 5550).into(),
+            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
+            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
+        },
+    };
+    let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, connect_error());
+
+    // Build a client using the connect that always errors.
+    let mut client = ClientBuilder::new();
+    client.http2_only(true);
+    let profiles = profile::resolver();
+    let profile_tx =
+        profiles.profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
+    profile_tx.send(profile::Profile::default()).unwrap();
+    let cfg = default_config();
+    let (rt, _shutdown) = runtime();
+    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
+
+    // Send a request and assert that it is todo
+    let req = Request::builder()
+        .method(http::Method::GET)
+        .uri("http://foo.svc.cluster.local:5550")
+        .header(http::header::CONTENT_TYPE, "application/grpc")
+        .body(Body::default())
+        .unwrap();
+    let response = http_util::http_request(&mut client, req).await.unwrap();
+    assert_eq!(response.status(), http::StatusCode::OK);
+    let message = response
+        .headers()
+        .get(L5D_HTTP_ERROR_MESSAGE)
+        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+    assert_eq!(message, "HTTP Logical service in fail-fast");
+
+    // Drop the client and discard the result of awaiting the proxy background
+    // task. The result is discarded because it hits an error that is related
+    // to the mock implementation and has no significance to the test.
+    drop(client);
+    let _ = bg.await;
+}
+
 #[tracing::instrument]
 fn hello_server(
     http: hyper::server::conn::Http,
