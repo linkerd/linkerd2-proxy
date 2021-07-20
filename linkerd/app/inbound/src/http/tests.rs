@@ -314,7 +314,8 @@ async fn h2_response_error_header() {
     let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
-    // Send a request and assert that it is todo
+    // Send a request and assert that it is SERVICE_UNAVAILABLE with the
+    // expected header message.
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
@@ -362,7 +363,8 @@ async fn grpc_response_error_header() {
     let server = build_server(cfg, rt, profiles, connect).new_service(accept);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
-    // Send a request and assert that it is todo
+    // Send a request and assert that it is OK with the expected header
+    // message.
     let req = Request::builder()
         .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
