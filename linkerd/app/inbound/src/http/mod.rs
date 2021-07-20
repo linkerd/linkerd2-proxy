@@ -350,16 +350,7 @@ pub mod fuzz_logic {
         rt: ProxyRuntime,
         profiles: resolver::Profiles,
         connect: Connect<Remote<ServerAddr>>,
-    ) -> impl svc::NewService<
-        HttpAccept,
-        Service = impl tower::Service<
-            I,
-            Response = (),
-            Error = impl Into<linkerd_app_core::Error>,
-            Future = impl Send + 'static,
-        > + Send
-                      + Clone,
-    > + Clone
+    ) -> svc::BoxNewService<HttpAccept, svc::BoxService<I, (), linkerd_app_core::Error>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
