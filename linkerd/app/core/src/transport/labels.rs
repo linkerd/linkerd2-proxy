@@ -21,10 +21,13 @@ pub enum Key {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
+pub(crate) struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct TargetAddr(pub(crate) SocketAddr);
 
 // === impl Key ===
 
@@ -51,8 +54,8 @@ impl FmtLabels for Key {
                 target_addr,
             } => {
                 direction.fmt_labels(f)?;
-                write!(f, ",peer=\"src\",target_addr=\"{}\",", target_addr)?;
-                TlsAccept::from(tls).fmt_labels(f)
+                f.write_str(",peer=\"src\",")?;
+                (TargetAddr(*target_addr), TlsAccept::from(tls)).fmt_labels(f)
             }
             Self::OutboundConnect(endpoint) => {
                 Direction::Out.fmt_labels(f)?;
@@ -120,5 +123,13 @@ impl<'t> FmtLabels for TlsConnect<'t> {
                 write!(f, "tls=\"true\",server_id=\"{}\"", server_id)
             }
         }
+    }
+}
+
+// === impl TargetAddr ===
+
+impl FmtLabels for TargetAddr {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "target_addr=\"{}\"", self.0)
     }
 }

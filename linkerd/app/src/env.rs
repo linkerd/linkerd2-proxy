@@ -391,10 +391,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            h2_settings: h2::Settings {
-                keepalive_timeout: keepalive.into(),
-                ..h2_settings
-            },
+            h2_settings,
         };
         let cache_max_idle_age =
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
@@ -409,10 +406,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 OUTBOUND_CONNECT_BASE,
                 DEFAULT_OUTBOUND_CONNECT_BACKOFF,
             )?,
-            h2_settings: h2::Settings {
-                keepalive_timeout: keepalive.into(),
-                ..h2_settings
-            },
+            h2_settings,
             h1_settings: h1::PoolSettings {
                 max_idle,
                 idle_timeout: cache_max_idle_age,
@@ -453,10 +447,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let server = ServerConfig {
             addr,
             keepalive,
-            h2_settings: h2::Settings {
-                keepalive_timeout: keepalive.into(),
-                ..h2_settings
-            },
+            h2_settings,
         };
         let cache_max_idle_age =
             inbound_cache_max_idle_age?.unwrap_or(DEFAULT_INBOUND_ROUTER_MAX_IDLE_AGE);
@@ -471,10 +462,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 INBOUND_CONNECT_BASE,
                 DEFAULT_INBOUND_CONNECT_BACKOFF,
             )?,
-            h2_settings: h2::Settings {
-                keepalive_timeout: keepalive.into(),
-                ..h2_settings
-            },
+            h2_settings,
             h1_settings: h1::PoolSettings {
                 max_idle,
                 idle_timeout: cache_max_idle_age,

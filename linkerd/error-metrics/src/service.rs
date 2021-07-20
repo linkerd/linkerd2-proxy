@@ -24,9 +24,23 @@ pub struct RecordError<L, K: Hash + Eq, S> {
 type Errors<K> = Arc<Mutex<HashMap<K, Counter>>>;
 
 impl<L, K: Hash + Eq, S> RecordError<L, K, S> {
-    pub(crate) fn new(label: L, errors: Arc<Mutex<HashMap<K, Counter>>>, inner: S) -> Self {
+    pub(crate) fn new(label: L, errors: Errors<K>, inner: S) -> Self {
         RecordError {
             label,
+            errors,
+            inner,
+        }
+    }
+}
+
+impl<L, K, S> From<(S, Errors<K>)> for RecordError<L, K, S>
+where
+    K: Hash + Eq,
+    L: Default,
+{
+    fn from((inner, errors): (S, Errors<K>)) -> Self {
+        RecordError {
+            label: L::default(),
             errors,
             inner,
         }

@@ -102,7 +102,6 @@ impl<P> svc::Param<transport::labels::Key> for Endpoint<P> {
 
 impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let target_addr = self.addr.into();
         let authority = self
             .logical_addr
             .as_ref()
@@ -111,7 +110,7 @@ impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
             authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.tls.clone(),
-            target_addr,
+            target_addr: self.addr.into(),
         }
     }
 }

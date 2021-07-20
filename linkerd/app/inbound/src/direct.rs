@@ -69,7 +69,8 @@ impl<N> Inbound<N> {
         gateway: G,
     ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
-        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + 'static,
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
+        T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -86,87 +87,79 @@ impl<N> Inbound<N> {
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: tcp,
-        } = self;
-        let detect_timeout = config.proxy.detect_protocol_timeout;
+        self.map_stack(|config, rt, tcp| {
+            let detect_timeout = config.proxy.detect_protocol_timeout;
 
-        let stack = tcp
-            .instrument(|_: &TcpEndpoint| debug_span!("opaque"))
-            // When the transport header is present, it may be used for either local
-            // TCP forwarding, or we may be processing an HTTP gateway connection.
-            // HTTP gateway connections that have a transport header must provide a
-            // target name as a part of the header.
-            .push_switch(
-                |(h, client): (TransportHeader, ClientInfo)| match h {
-                    TransportHeader {
-                        port,
-                        name: None,
-                        protocol: None,
-                    } => Ok(svc::Either::A(TcpEndpoint { port })),
-                    TransportHeader {
-                        port,
-                        name: Some(name),
-                        protocol,
-                    } => Ok(svc::Either::B(GatewayTransportHeader {
-                        target: NameAddr::from((name, port)),
-                        protocol,
-                        client,
-                    })),
-                    TransportHeader {
-                        name: None,
-                        protocol: Some(_),
-                        ..
-                    } => Err(RefusedNoTarget),
-                },
-                // HTTP detection is not necessary in this case, since the transport
-                // header indicates the connection's HTTP version.
-                svc::stack(gateway.clone())
-                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
-                    .push_map_target(GatewayConnection::TransportHeader)
-                    .instrument(|g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target))
-                    .into_inner(),
-            )
-            // Use ALPN to determine whether a transport header should be read.
-            //
-            // When the transport header is not present, perform HTTP detection to
-            // support legacy gateway clients.
-            .push(NewTransportHeaderServer::layer(detect_timeout))
-            .push_switch(
-                |client: ClientInfo| {
-                    if client.header_negotiated() {
-                        Ok::<_, Never>(svc::Either::A(client))
-                    } else {
-                        Ok(svc::Either::B(GatewayConnection::Legacy(client)))
-                    }
-                },
-                // TODO: Remove this after we have at least one stable release out
-                // with transport header support.
-                svc::stack(gateway)
-                    .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
-                    .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
-                    .into_inner(),
-            )
-            .push(rt.metrics.transport.layer_accept())
-            // Build a ClientInfo target for each accepted connection. Refuse the
-            // connection if it doesn't include an mTLS identity.
-            .push_request_filter(ClientInfo::try_from)
-            .push(svc::BoxNewService::layer())
-            .push(tls::NewDetectTls::layer(
-                rt.identity.clone().map(WithTransportHeaderAlpn),
-                detect_timeout,
-            ))
-            .check_new_service::<T, I>()
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer());
-
-        Inbound {
-            config,
-            runtime: rt,
-            stack,
-        }
+            tcp.instrument(|_: &TcpEndpoint| debug_span!("opaque"))
+                // When the transport header is present, it may be used for either local
+                // TCP forwarding, or we may be processing an HTTP gateway connection.
+                // HTTP gateway connections that have a transport header must provide a
+                // target name as a part of the header.
+                .push_switch(
+                    |(h, client): (TransportHeader, ClientInfo)| match h {
+                        TransportHeader {
+                            port,
+                            name: None,
+                            protocol: None,
+                        } => Ok(svc::Either::A(TcpEndpoint { port })),
+                        TransportHeader {
+                            port,
+                            name: Some(name),
+                            protocol,
+                        } => Ok(svc::Either::B(GatewayTransportHeader {
+                            target: NameAddr::from((name, port)),
+                            protocol,
+                            client,
+                        })),
+                        TransportHeader {
+                            name: None,
+                            protocol: Some(_),
+                            ..
+                        } => Err(RefusedNoTarget),
+                    },
+                    // HTTP detection is not necessary in this case, since the transport
+                    // header indicates the connection's HTTP version.
+                    svc::stack(gateway.clone())
+                        .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
+                        .push_map_target(GatewayConnection::TransportHeader)
+                        .instrument(
+                            |g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target),
+                        )
+                        .into_inner(),
+                )
+                // Use ALPN to determine whether a transport header should be read.
+                //
+                // When the transport header is not present, perform HTTP detection to
+                // support legacy gateway clients.
+                .push(NewTransportHeaderServer::layer(detect_timeout))
+                .push_switch(
+                    |client: ClientInfo| {
+                        if client.header_negotiated() {
+                            Ok::<_, Never>(svc::Either::A(client))
+                        } else {
+                            Ok(svc::Either::B(GatewayConnection::Legacy(client)))
+                        }
+                    },
+                    // TODO: Remove this after we have at least one stable release out
+                    // with transport header support.
+                    svc::stack(gateway)
+                        .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
+                        .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
+                        .into_inner(),
+                )
+                .push(rt.metrics.transport.layer_accept())
+                // Build a ClientInfo target for each accepted connection. Refuse the
+                // connection if it doesn't include an mTLS identity.
+                .push_request_filter(ClientInfo::try_from)
+                .push(svc::BoxNewService::layer())
+                .push(tls::NewDetectTls::layer(
+                    rt.identity.clone().map(WithTransportHeaderAlpn),
+                    detect_timeout,
+                ))
+                .check_new_service::<T, I>()
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+        })
     }
 }
 

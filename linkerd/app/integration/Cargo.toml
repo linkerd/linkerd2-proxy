@@ -26,7 +26,7 @@ hyper = { version = "0.14.10", features = ["http1", "http2", "stream", "client",
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["destination", "arbitrary"] }
+linkerd2-proxy-api = { version = "0.2", features = ["destination", "arbitrary"] }
 linkerd-app-test = { path = "../test" }
 linkerd-tracing = { path = "../../tracing" }
 regex = "1"

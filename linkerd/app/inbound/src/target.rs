@@ -92,6 +92,12 @@ impl Param<SocketAddr> for TcpAccept {
     }
 }
 
+impl Param<OrigDstAddr> for TcpAccept {
+    fn param(&self) -> OrigDstAddr {
+        OrigDstAddr(self.target_addr)
+    }
+}
+
 impl Param<transport::labels::Key> for TcpAccept {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::accept(

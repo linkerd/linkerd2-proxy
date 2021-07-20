@@ -19,4 +19,4 @@ jobs:
     - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
     - run: cargo install cargo-tarpaulin
     - run: cargo tarpaulin --verbose --workspace --out Xml
-    - uses: codecov/codecov-action@29386c70ef20e286228c72b668a06fd0e8399192
+    - uses: codecov/codecov-action@c585afe366f940d214dc09df2664c06d7fe07052
