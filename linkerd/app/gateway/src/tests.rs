@@ -163,13 +163,10 @@ impl Test {
     }
 
     async fn run_default_profile(self) -> Result<http::Response<http::BoxBody>, Error> {
-        let target = self.target.clone();
-        let suffix = self.suffix.clone();
-
-        let allow = NameMatch::new(Some(dns::Suffix::from_str(suffix).unwrap()));
-        let profile = if allow.matches(target.name()) {
+        let allow = NameMatch::new(Some(dns::Suffix::from_str(self.suffix).unwrap()));
+        let profile = if allow.matches(self.target.name()) {
             Some(support::profile::only(profiles::Profile {
-                addr: Some(target.clone().into()),
+                addr: Some(self.target.clone().into()),
                 ..profiles::Profile::default()
             }))
         } else {
