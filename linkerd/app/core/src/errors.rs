@@ -424,32 +424,30 @@ impl fmt::Display for IdentityRequired {
 impl std::error::Error for IdentityRequired {}
 
 impl LabelError {
-    fn reason(err: &(dyn std::error::Error + 'static)) -> Reason {
+    fn reason(err: &(dyn std::error::Error + 'static)) -> Option<Reason> {
         if let Some(HttpError { reason, .. }) = err.downcast_ref::<HttpError>() {
-            *reason
+            return Some(*reason);
         } else if err.is::<ResponseTimeout>() {
-            Reason::ResponseTimeout
+            return Some(Reason::ResponseTimeout);
         } else if err.is::<FailFastError>() {
-            Reason::FailFast
+            return Some(Reason::FailFast);
         } else if err.is::<tower::timeout::error::Elapsed>() {
-            Reason::DispatchTimeout
+            return Some(Reason::DispatchTimeout);
         } else if err.is::<IdentityRequired>() {
-            Reason::IdentityRequired
+            return Some(Reason::IdentityRequired);
         } else if let Some(e) = err.downcast_ref::<std::io::Error>() {
-            Reason::Io(e.raw_os_error().map(Errno::from))
-        } else if let Some(e) = err.source() {
-            Self::reason(e)
-        } else {
-            Reason::Unexpected
-        }
+            return Some(Reason::Io(e.raw_os_error().map(Errno::from)));
+        };
+
+        None
     }
 }
 
-impl error_metrics::LabelError<Error> for LabelError {
+impl error_metrics::LabelError for LabelError {
     type Labels = Reason;
 
-    fn label_error(&self, err: &Error) -> Self::Labels {
-        Self::reason(err.as_ref())
+    fn label_error(&self, err: &(dyn std::error::Error + 'static)) -> Option<Self::Labels> {
+        Self::reason(err)
     }
 }
 
@@ -475,6 +473,12 @@ impl FmtLabels for Reason {
         }
 
         Ok(())
+    }
+}
+
+impl Default for Reason {
+    fn default() -> Self {
+        Reason::Unexpected
     }
 }
 

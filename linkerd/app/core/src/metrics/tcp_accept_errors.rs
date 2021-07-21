@@ -3,11 +3,10 @@ use crate::{
     svc,
     transport::{labels, OrigDstAddr},
 };
-use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
 use linkerd_tls::server::DetectTimeout as TlsDetectTimeout;
 use parking_lot::Mutex;
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, error::Error, fmt};
 
 metrics::metrics! {
     inbound_tcp_accept_errors_total: Counter {
@@ -83,22 +82,18 @@ impl FmtMetrics for Registry {
 
 // === impl LabelAcceptErrors ===
 
-impl LabelError<Error> for LabelAcceptErrors {
+impl LabelError for LabelAcceptErrors {
     type Labels = AcceptErrors;
 
-    fn label_error(&self, err: &Error) -> Self::Labels {
-        let mut curr: Option<&dyn std::error::Error> = Some(err.as_ref());
-        while let Some(err) = curr {
-            if err.is::<TlsDetectTimeout>() {
-                return AcceptErrors::TlsDetectTimeout;
-            } else if err.is::<std::io::Error>() {
-                // We ignore the error code because we want all labels to be consistent.
-                return AcceptErrors::Io;
-            }
-            curr = err.source();
+    fn label_error(&self, err: &(dyn Error + 'static)) -> Option<Self::Labels> {
+        if err.is::<TlsDetectTimeout>() {
+            Some(AcceptErrors::TlsDetectTimeout)
+        } else if err.is::<std::io::Error>() {
+            // We ignore the error code because we want all labels to be consistent.
+            Some(AcceptErrors::Io)
+        } else {
+            None
         }
-
-        AcceptErrors::Other
     }
 }
 
@@ -111,5 +106,11 @@ impl FmtLabels for AcceptErrors {
             Self::Io => fmt::Display::fmt("error=\"io\"", f),
             Self::Other => fmt::Display::fmt("error=\"other\"", f),
         }
+    }
+}
+
+impl Default for AcceptErrors {
+    fn default() -> Self {
+        Self::Other
     }
 }

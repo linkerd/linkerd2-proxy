@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use pin_project::pin_project;
 use std::{
     collections::HashMap,
+    error::Error,
     future::Future,
     hash::Hash,
     pin::Pin,
@@ -47,12 +48,25 @@ where
     }
 }
 
-impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
-    fn record<E>(errors: &Errors<K>, label: &L, err: &E)
-    where
-        L: LabelError<E, Labels = K> + Clone,
-    {
-        let labels = label.label_error(&err);
+impl<L, K, S> RecordError<L, K, S>
+where
+    L: LabelError<Labels = K>,
+    K: FmtLabels + Hash + Eq + Default,
+{
+    fn label_error(label: &L, err: &(dyn Error + 'static)) -> K {
+        let mut curr = Some(err);
+        while let Some(err) = curr {
+            if let Some(labels) = label.label_error(err) {
+                return labels;
+            }
+            curr = err.source();
+        }
+
+        K::default()
+    }
+
+    fn record(errors: &Errors<K>, label: &L, err: &(dyn Error + 'static)) {
+        let labels = Self::label_error(label, err);
         errors
             .lock()
             .entry(labels)
@@ -64,7 +78,9 @@ impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
 impl<Req, L, S> tower::Service<Req> for RecordError<L, L::Labels, S>
 where
     S: tower::Service<Req>,
-    L: LabelError<S::Error> + Clone,
+    S::Error: AsRef<dyn Error + Send + Sync + 'static>,
+    L: LabelError + Clone,
+    L::Labels: Default,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -73,7 +89,7 @@ where
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self.inner.poll_ready(cx) {
             Poll::Ready(Err(err)) => {
-                Self::record(&self.errors, &self.label, &err);
+                Self::record(&self.errors, &self.label, err.as_ref());
                 Poll::Ready(Err(err))
             }
             poll => poll,
@@ -92,7 +108,9 @@ where
 impl<L, F> Future for RecordError<L, L::Labels, F>
 where
     F: TryFuture,
-    L: LabelError<F::Error> + Clone,
+    L: LabelError + Clone,
+    L::Labels: Default,
+    F::Error: AsRef<dyn Error + Send + Sync + 'static>,
 {
     type Output = Result<F::Ok, F::Error>;
 
@@ -101,7 +119,7 @@ where
         match futures::ready!(this.inner.try_poll(cx)) {
             Ok(ready) => Poll::Ready(Ok(ready)),
             Err(err) => {
-                Self::record(&*this.errors, &*this.label, &err);
+                Self::record(&*this.errors, &*this.label, err.as_ref());
                 Poll::Ready(Err(err))
             }
         }

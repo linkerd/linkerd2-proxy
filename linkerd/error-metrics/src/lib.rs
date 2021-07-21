@@ -10,12 +10,12 @@ pub use self::service::RecordError;
 pub use linkerd_metrics::FmtLabels;
 use linkerd_metrics::{self as metrics, Counter, FmtMetrics};
 use parking_lot::Mutex;
-use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
+use std::{collections::HashMap, error::Error, fmt, hash::Hash, sync::Arc};
 
-pub trait LabelError<E> {
+pub trait LabelError {
     type Labels: FmtLabels + Hash + Eq;
 
-    fn label_error(&self, error: &E) -> Self::Labels;
+    fn label_error(&self, error: &(dyn Error + 'static)) -> Option<Self::Labels>;
 }
 
 pub type Metric = metrics::Metric<'static, &'static str, Counter>;
