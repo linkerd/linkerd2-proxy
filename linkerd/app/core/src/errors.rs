@@ -1,4 +1,4 @@
-use http::header::HeaderValue;
+use http::{header::HeaderValue, StatusCode};
 use linkerd_errno::Errno;
 use linkerd_error::Error;
 use linkerd_error_metrics::{self as error_metrics, RecordErrorLayer, Registry};
@@ -47,7 +47,7 @@ pub struct LabelError(());
 #[derive(Copy, Clone, Debug, Error)]
 #[error("{}", self.message)]
 pub struct HttpError {
-    http: http::StatusCode,
+    http: StatusCode,
     grpc: Code,
     message: &'static str,
     reason: Reason,
@@ -300,19 +300,19 @@ fn set_http_status(
     if let Some(HttpError { http, .. }) = error.downcast_ref::<HttpError>() {
         builder.status(*http)
     } else if error.is::<ResponseTimeout>() {
-        builder.status(http::StatusCode::GATEWAY_TIMEOUT)
+        builder.status(StatusCode::GATEWAY_TIMEOUT)
     } else if error.is::<ConnectTimeout>() {
-        builder.status(http::StatusCode::GATEWAY_TIMEOUT)
+        builder.status(StatusCode::GATEWAY_TIMEOUT)
     } else if error.is::<FailFastError>() {
-        builder.status(http::StatusCode::SERVICE_UNAVAILABLE)
+        builder.status(StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<tower::timeout::error::Elapsed>() {
-        builder.status(http::StatusCode::SERVICE_UNAVAILABLE)
+        builder.status(StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<IdentityRequired>() {
-        builder.status(http::StatusCode::FORBIDDEN)
+        builder.status(StatusCode::FORBIDDEN)
     } else if let Some(source) = error.source() {
         set_http_status(builder, source)
     } else {
-        builder.status(http::StatusCode::BAD_GATEWAY)
+        builder.status(StatusCode::BAD_GATEWAY)
     }
 }
 
@@ -505,7 +505,7 @@ impl HttpError {
     pub fn identity_required(message: &'static str) -> Self {
         Self {
             message,
-            http: http::StatusCode::FORBIDDEN,
+            http: StatusCode::FORBIDDEN,
             grpc: Code::Unauthenticated,
             reason: Reason::IdentityRequired,
         }
@@ -514,7 +514,7 @@ impl HttpError {
     pub fn not_found(message: &'static str) -> Self {
         Self {
             message,
-            http: http::StatusCode::NOT_FOUND,
+            http: StatusCode::NOT_FOUND,
             grpc: Code::NotFound,
             reason: Reason::NotFound,
         }
@@ -523,13 +523,13 @@ impl HttpError {
     pub fn gateway_loop() -> Self {
         Self {
             message: "gateway loop detected",
-            http: http::StatusCode::LOOP_DETECTED,
+            http: StatusCode::LOOP_DETECTED,
             grpc: Code::Aborted,
             reason: Reason::GatewayLoop,
         }
     }
 
-    pub fn status(&self) -> http::StatusCode {
+    pub fn status(&self) -> StatusCode {
         self.http
     }
 }
