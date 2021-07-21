@@ -16,7 +16,7 @@ use thiserror::Error;
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
 
-pub const L5D_HTTP_ERROR_MESSAGE: &str = "l5d-http-error-message";
+pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
 metrics! {
     inbound_http_errors_total: Counter {
@@ -251,20 +251,20 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
 fn set_l5d_error_header(error: &(dyn std::error::Error + 'static)) -> http::response::Builder {
     let mut builder = http::Response::builder();
     if let Some(HttpError { message, .. }) = error.downcast_ref::<HttpError>() {
-        builder.header(L5D_HTTP_ERROR_MESSAGE, HeaderValue::from_static(message))
+        builder.header(L5D_PROXY_ERROR, HeaderValue::from_static(message))
     } else if error.is::<ResponseTimeout>() {
         builder.header(
-            L5D_HTTP_ERROR_MESSAGE,
+            L5D_PROXY_ERROR,
             HeaderValue::from_static("request timed out"),
         )
     } else if error.is::<ConnectTimeout>() {
         builder.header(
-            L5D_HTTP_ERROR_MESSAGE,
+            L5D_PROXY_ERROR,
             HeaderValue::from_static("failed to connect"),
         )
     } else if let Some(e) = error.downcast_ref::<FailFastError>() {
         builder.header(
-            L5D_HTTP_ERROR_MESSAGE,
+            L5D_PROXY_ERROR,
             HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
                 warn!(%error, "Failed to encode fail-fast error message");
                 HeaderValue::from_static("service in fail-fast")
@@ -272,19 +272,19 @@ fn set_l5d_error_header(error: &(dyn std::error::Error + 'static)) -> http::resp
         )
     } else if error.is::<tower::timeout::error::Elapsed>() {
         builder.header(
-            L5D_HTTP_ERROR_MESSAGE,
+            L5D_PROXY_ERROR,
             HeaderValue::from_static("proxy dispatch timed out"),
         )
     } else if error.is::<IdentityRequired>() {
         if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            builder = builder.header(L5D_HTTP_ERROR_MESSAGE, msg)
+            builder = builder.header(L5D_PROXY_ERROR, msg)
         }
         builder
     } else if let Some(source) = error.source() {
         set_l5d_error_header(source)
     } else {
         builder.header(
-            L5D_HTTP_ERROR_MESSAGE,
+            L5D_PROXY_ERROR,
             HeaderValue::from_static("proxy received invalid response"),
         )
     }

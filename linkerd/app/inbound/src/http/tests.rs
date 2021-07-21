@@ -8,7 +8,7 @@ use crate::{
 };
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
-    errors::L5D_HTTP_ERROR_MESSAGE,
+    errors::L5D_PROXY_ERROR,
     io, proxy,
     svc::{self, NewService, Param},
     tls,
@@ -230,8 +230,8 @@ async fn http1_bad_gateway_response_error_header() {
     assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
     let message = response
         .headers()
-        .get(L5D_HTTP_ERROR_MESSAGE)
-        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+        .get(L5D_PROXY_ERROR)
+        .expect("response did not contain L5D_PROXY_ERROR header");
     assert_eq!(message, "proxy received invalid response");
 
     drop(client);
@@ -279,8 +279,8 @@ async fn http1_connect_timeout_response_error_header() {
     assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
     let message = response
         .headers()
-        .get(L5D_HTTP_ERROR_MESSAGE)
-        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+        .get(L5D_PROXY_ERROR)
+        .expect("response did not contain L5D_PROXY_ERROR header");
     assert_eq!(message, "failed to connect");
 
     drop(client);
@@ -325,8 +325,8 @@ async fn h2_response_error_header() {
     assert_eq!(response.status(), http::StatusCode::SERVICE_UNAVAILABLE);
     let message = response
         .headers()
-        .get(L5D_HTTP_ERROR_MESSAGE)
-        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+        .get(L5D_PROXY_ERROR)
+        .expect("response did not contain L5D_PROXY_ERROR header");
     assert_eq!(message, "HTTP Logical service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
@@ -375,8 +375,8 @@ async fn grpc_response_error_header() {
     assert_eq!(response.status(), http::StatusCode::OK);
     let message = response
         .headers()
-        .get(L5D_HTTP_ERROR_MESSAGE)
-        .expect("response did not contain L5D_HTTP_ERROR_MESSAGE header");
+        .get(L5D_PROXY_ERROR)
+        .expect("response did not contain L5D_PROXY_ERROR header");
     assert_eq!(message, "HTTP Logical service in fail-fast");
 
     // Drop the client and discard the result of awaiting the proxy background
