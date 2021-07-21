@@ -97,8 +97,8 @@ impl Inbound<()> {
 
     /// Readies the inbound stack to make TCP connections (for both TCP
     // forwarding and HTTP proxying).
-    pub fn to_tcp_connect<T: svc::Param<u16> + 'static>(
-        &self,
+    pub fn into_tcp_connect<T>(
+        self,
     ) -> Inbound<
         impl svc::Service<
                 T,
@@ -106,18 +106,23 @@ impl Inbound<()> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-    > {
-        self.clone().map_stack(|config, _, _| {
+    >
+    where
+        T: svc::Param<u16> + 'static,
+    {
+        self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
             let ConnectConfig {
-                keepalive, timeout, ..
-            } = config.proxy.connect.clone();
+                ref keepalive,
+                ref timeout,
+                ..
+            } = config.proxy.connect;
 
-            svc::stack(transport::ConnectTcp::new(keepalive))
+            svc::stack(transport::ConnectTcp::new(*keepalive))
                 .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
                 // Limits the time we wait for a connection to be established.
-                .push_connect_timeout(timeout)
+                .push_connect_timeout(*timeout)
                 .push(svc::stack::BoxFuture::layer())
         })
     }
@@ -142,19 +147,20 @@ impl Inbound<()> {
         P::Error: Send,
         P::Future: Send,
     {
-        let (listen_addr, listen) = bind
+        let (Local(ServerAddr(la)), listen) = bind
             .bind(&self.config.proxy.server)
             .expect("Failed to bind inbound listener");
 
         let serve = async move {
-            let stack =
-                self.to_tcp_connect()
-                    .into_server(listen_addr.as_ref().port(), profiles, gateway);
-            let shutdown = self.runtime.drain.signaled();
+            let shutdown = self.runtime.drain.clone().signaled();
+            let stack = self
+                .into_tcp_connect()
+                .push_server(la.port(), profiles, gateway)
+                .into_inner();
             serve::serve(listen, stack, shutdown).await
         };
 
-        (listen_addr, serve)
+        (Local(ServerAddr(la)), serve)
     }
 }
 
@@ -199,12 +205,12 @@ where
         })
     }
 
-    pub fn into_server<T, I, G, GSvc, P>(
+    pub fn push_server<T, I, G, GSvc, P>(
         self,
         server_port: u16,
         profiles: P,
         gateway: G,
-    ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
+    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
         T: Clone + Send + 'static,
@@ -219,86 +225,93 @@ where
         P::Error: Send,
         P::Future: Send,
     {
-        let Self {
-            config:
-                Config {
-                    proxy: config,
-                    require_identity_for_inbound_ports: require_id,
-                    disable_protocol_detection_for_ports: disable_detect,
-                    ..
-                },
-            runtime: rt,
-            stack: _,
-        } = self.clone();
-
-        self.clone()
-            .push_http_router(profiles)
-            .push_http_server()
-            .stack
-            .push_map_target(HttpAccept::from)
-            .push(svc::UnwrapOr::layer(
-                // When HTTP detection fails, forward the connection to the
-                // application as an opaque TCP stream.
-                self.clone()
-                    .push_tcp_forward(server_port)
-                    .into_stack()
-                    .push_map_target(TcpEndpoint::from)
-                    .push_on_response(svc::BoxService::layer())
-                    .into_inner(),
-            ))
-            .push_on_response(svc::BoxService::layer())
-            .push_map_target(detect::allow_timeout)
-            .push(svc::BoxNewService::layer())
-            .push(detect::NewDetectService::layer(
-                config.detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ))
-            .push_request_filter(require_id)
-            .push(rt.metrics.transport.layer_accept())
-            .push_request_filter(TcpAccept::try_from)
-            .push(svc::BoxNewService::layer())
-            .push(tls::NewDetectTls::layer(
-                rt.identity.clone(),
-                config.detect_protocol_timeout,
-            ))
-            .instrument(|_: &_| debug_span!("proxy"))
-            .push_switch(
-                move |t: T| {
-                    let OrigDstAddr(addr) = t.param();
-                    if !disable_detect.contains(&addr.port()) {
-                        Ok::<_, Infallible>(svc::Either::A(t))
-                    } else {
-                        Ok(svc::Either::B(TcpAccept::port_skipped(t)))
-                    }
-                },
-                self.clone()
-                    .push_tcp_forward(server_port)
-                    .stack
-                    .push_map_target(TcpEndpoint::from)
+        // Handles inbound connections that target an opaque port.
+        let opaque = self
+            .clone()
+            .push_tcp_forward(server_port)
+            .map_stack(|_, rt, tcp| {
+                tcp.push_map_target(TcpEndpoint::from)
                     .push(rt.metrics.transport.layer_accept())
                     .check_new_service::<TcpAccept, _>()
-                    .instrument(|_: &TcpAccept| debug_span!("forward"))
-                    .into_inner(),
-            )
-            .check_new_service::<T, I>()
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer())
-            .push_switch(
-                PreventLoop::from(server_port).to_switch(),
-                self.push_tcp_forward(server_port)
-                    .push_direct(gateway)
-                    .stack
-                    .instrument(|_: &_| debug_span!("direct"))
-                    .into_inner(),
-            )
-            .instrument(|a: &T| {
-                let OrigDstAddr(target_addr) = a.param();
-                info_span!("server", port = target_addr.port())
             })
-            .push(rt.metrics.tcp_accept_errors.layer())
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer())
-            .into_inner()
+            .into_stack();
+
+        // Handles inbound connections that could not be detected as HTTP.
+        let tcp = self.clone().push_tcp_forward(server_port);
+
+        // Handles connections targeting the inbound proxy port--either by acting as a gateway to
+        // the outbound stack or by forwarding connections locally (for opauque transport).
+        let direct = tcp
+            .clone()
+            .push_direct(gateway)
+            .into_stack()
+            .instrument(|_: &_| debug_span!("direct"));
+
+        self.push_http_router(profiles)
+            .push_http_server()
+            .map_stack(|cfg, rt, http| {
+                let detect_timeout = cfg.proxy.detect_protocol_timeout;
+                let require_id = cfg.require_identity_for_inbound_ports.clone();
+
+                http.push_map_target(HttpAccept::from)
+                    .push(svc::UnwrapOr::layer(
+                        // When HTTP detection fails, forward the connection to the application as
+                        // an opaque TCP stream.
+                        tcp.into_stack()
+                            .push_map_target(TcpEndpoint::from)
+                            .push_on_response(svc::BoxService::layer())
+                            .into_inner(),
+                    ))
+                    .push_map_target(detect::allow_timeout)
+                    .push(svc::BoxNewService::layer())
+                    .push(detect::NewDetectService::layer(
+                        detect_timeout,
+                        http::DetectHttp::default(),
+                    ))
+                    .push_request_filter(require_id)
+                    .push(rt.metrics.transport.layer_accept())
+                    .push_request_filter(TcpAccept::try_from)
+                    .push(svc::BoxNewService::layer())
+                    .push(tls::NewDetectTls::layer(
+                        rt.identity.clone(),
+                        detect_timeout,
+                    ))
+            })
+            .map_stack(|cfg, _, detect| {
+                let disable_detect = cfg.disable_protocol_detection_for_ports.clone();
+                detect
+                    .instrument(|_: &_| debug_span!("proxy"))
+                    .push_switch(
+                        move |t: T| -> Result<_, Infallible> {
+                            let OrigDstAddr(addr) = t.param();
+                            if !disable_detect.contains(&addr.port()) {
+                                Ok(svc::Either::A(t))
+                            } else {
+                                Ok(svc::Either::B(TcpAccept::port_skipped(t)))
+                            }
+                        },
+                        opaque
+                            .instrument(|_: &TcpAccept| debug_span!("forward"))
+                            .into_inner(),
+                    )
+                    .check_new_service::<T, I>()
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
+            })
+            .map_stack(|_, rt, accept| {
+                accept
+                    .push_switch(
+                        PreventLoop::from(server_port).to_switch(),
+                        direct.into_inner(),
+                    )
+                    .instrument(|a: &T| {
+                        let OrigDstAddr(target_addr) = a.param();
+                        info_span!("server", port = target_addr.port())
+                    })
+                    .push(rt.metrics.tcp_accept_errors.layer())
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
+            })
     }
 }
 
