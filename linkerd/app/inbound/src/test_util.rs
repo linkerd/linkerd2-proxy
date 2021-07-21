@@ -50,6 +50,7 @@ pub fn default_config() -> Config {
         require_identity_for_inbound_ports: RequireIdentityForPorts::from(None),
         disable_protocol_detection_for_ports: Default::default(),
         profile_idle_timeout: Duration::from_millis(500),
+        allowed_ips: Default::default(),
     }
 }
 

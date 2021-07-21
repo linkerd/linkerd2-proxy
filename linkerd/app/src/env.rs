@@ -150,6 +150,8 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
 
+const ENV_INBOUND_IPS: &str = "LINKERD2_PROXY_INBOUND_IPS";
+
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
 pub const ENV_IDENTITY_TRUST_ANCHORS: &str = "LINKERD2_PROXY_IDENTITY_TRUST_ANCHORS";
@@ -477,6 +479,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let mut require_identity_for_inbound_ports =
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
+        let allowed_ips =
+            parse(strings, ENV_INBOUND_IPS, parse_socket_addr_set)?.unwrap_or_default();
+
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(
                 "if {} is true, {} must be empty",
@@ -523,6 +528,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
             disable_protocol_detection_for_ports: inbound_opaque_ports.into_iter().collect(),
+            allowed_ips,
         }
     };
 
@@ -758,6 +764,10 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
             Err(ParseError::HostIsNotAnIpAddress)
         }
     }
+}
+
+fn parse_socket_addr_set(s: &str) -> Result<HashSet<SocketAddr>, ParseError> {
+    s.split(',').map(parse_socket_addr).collect()
 }
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {

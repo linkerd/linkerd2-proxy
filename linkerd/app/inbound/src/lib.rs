@@ -8,6 +8,7 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 mod allow_discovery;
+mod allow_ips;
 pub mod direct;
 pub mod http;
 mod prevent_loop;
@@ -18,6 +19,7 @@ pub(crate) mod test_util;
 
 pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
 use self::{
+    allow_ips::AllowIps,
     prevent_loop::PreventLoop,
     require_identity::RequireIdentityForPorts,
     target::{HttpAccept, TcpAccept},
@@ -30,7 +32,10 @@ use linkerd_app_core::{
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, Infallible, NameMatch, ProxyRuntime,
 };
-use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
+use std::{
+    collections::HashSet, convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr,
+    time::Duration,
+};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -40,6 +45,7 @@ pub struct Config {
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
     pub disable_protocol_detection_for_ports: PortSet,
     pub profile_idle_timeout: Duration,
+    pub allowed_ips: HashSet<SocketAddr>,
 }
 
 #[derive(Clone)]
@@ -298,7 +304,7 @@ where
                     .push_on_response(svc::BoxService::layer())
                     .push(svc::BoxNewService::layer())
             })
-            .map_stack(|_, rt, accept| {
+            .map_stack(|cfg, rt, accept| {
                 accept
                     .push_switch(
                         PreventLoop::from(server_port).to_switch(),
@@ -308,6 +314,7 @@ where
                         let OrigDstAddr(target_addr) = a.param();
                         info_span!("server", port = target_addr.port())
                     })
+                    .push_request_filter(AllowIps::new(cfg.allowed_ips.clone()))
                     .push(rt.metrics.tcp_accept_errors.layer())
                     .push_on_response(svc::BoxService::layer())
                     .push(svc::BoxNewService::layer())
