@@ -99,6 +99,7 @@ impl<E> Outbound<E> {
                 // If the traffic split is empty/unavailable, eagerly fail requests.
                 // When the split is in failfast, spawn the service in a background
                 // task so it becomes ready without new requests.
+                .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push(profiles::split::layer())
                 .push_on_response(
                     svc::layers()

@@ -38,7 +38,7 @@ impl Endpoint<()> {
         }
     }
 
-    pub(crate) fn from_metadata(
+    pub fn from_metadata(
         addr: impl Into<SocketAddr>,
         metadata: Metadata,
         reason: tls::NoClientTls,
