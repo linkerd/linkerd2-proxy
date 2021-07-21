@@ -105,8 +105,7 @@ where
     // resolvable service name, then continue with TCP endpoint resolution,
     // balancing, and forwarding. If the profile includes an endpoint instead
     // of a logical address, then connect to endpoint directly and avoid
-    // balancing.  An invalid original destination address is used so that
-    // service discovery is *required* to provide a valid endpoint.
+    // balancing.
     //
     // TODO: We should use another target type that actually reflects
     // reality. But the outbound stack is currently pretty tightly
