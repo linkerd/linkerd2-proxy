@@ -122,7 +122,6 @@ impl Test {
                 outbound.clone()
             },
             Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
-            linkerd_app_core::tls::NoClientTls::NotProvidedByServiceDiscovery,
         );
 
         let t = HttpTarget {

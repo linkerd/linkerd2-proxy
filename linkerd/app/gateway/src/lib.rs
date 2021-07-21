@@ -27,7 +27,7 @@ use linkerd_app_inbound::{
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
 use std::{
-    convert::{Infallible, TryFrom, TryInto},
+    convert::{TryFrom, TryInto},
     fmt,
 };
 use thiserror::Error;
@@ -99,7 +99,6 @@ where
         ..
     } = inbound.config().proxy.clone();
     let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
-    let no_tls_reason = outbound.no_tls_reason();
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
@@ -129,7 +128,7 @@ where
                         return Ok(svc::Either::A(outbound::tcp::Endpoint::from_metadata(
                             addr,
                             metadata,
-                            no_tls_reason,
+                            tls::NoClientTls::NotProvidedByServiceDiscovery,
                             rx.is_opaque_protocol(),
                         )));
                     }
@@ -184,14 +183,8 @@ where
         .clone()
         .push_http_logical(resolve)
         .into_stack()
-        .push_switch(
-            |t: svc::Either<outbound::http::Logical, outbound::http::Endpoint>| -> Result<
-                svc::Either<outbound::http::Logical, outbound::http::Endpoint>,
-                Infallible,
-            > { Ok(t) },
-            endpoint.into_stack(),
-        )
-        .push(NewGateway::layer(local_id, no_tls_reason))
+        .push_switch(Ok::<_, Never>, endpoint.into_stack())
+        .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
             if allow_discovery.matches(t.target.name()) {
                 Ok(profiles::LookupAddr(t.target.into()))

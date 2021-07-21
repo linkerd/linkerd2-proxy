@@ -93,7 +93,7 @@ impl<S> Outbound<S> {
         self.stack.into_inner()
     }
 
-    pub fn no_tls_reason(&self) -> tls::NoClientTls {
+    fn no_tls_reason(&self) -> tls::NoClientTls {
         if self.runtime.identity.is_none() {
             tls::NoClientTls::Disabled
         } else {

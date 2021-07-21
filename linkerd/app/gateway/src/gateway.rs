@@ -20,7 +20,6 @@ use tracing::{debug, warn};
 pub(crate) struct NewGateway<O> {
     outbound: O,
     local_id: Option<tls::LocalId>,
-    no_tls_reason: tls::NoClientTls,
 }
 
 #[derive(Clone, Debug)]
@@ -39,23 +38,12 @@ pub(crate) type Target = (Option<profiles::Receiver>, HttpTarget);
 // === impl NewGateway ===
 
 impl<O> NewGateway<O> {
-    pub fn new(
-        outbound: O,
-        local_id: Option<tls::LocalId>,
-        no_tls_reason: tls::NoClientTls,
-    ) -> Self {
-        Self {
-            outbound,
-            local_id,
-            no_tls_reason,
-        }
+    pub fn new(outbound: O, local_id: Option<tls::LocalId>) -> Self {
+        Self { outbound, local_id }
     }
 
-    pub fn layer(
-        local_id: Option<tls::LocalId>,
-        no_tls_reason: tls::NoClientTls,
-    ) -> impl layer::Layer<O, Service = Self> + Clone {
-        layer::mk(move |outbound| Self::new(outbound, local_id.clone(), no_tls_reason))
+    pub fn layer(local_id: Option<tls::LocalId>) -> impl layer::Layer<O, Service = Self> + Clone {
+        layer::mk(move |outbound| Self::new(outbound, local_id.clone()))
     }
 }
 
@@ -88,7 +76,7 @@ where
                     outbound::tcp::Endpoint::from_metadata(
                         addr,
                         metadata,
-                        self.no_tls_reason,
+                        tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
                     ),
                 ))));
