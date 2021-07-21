@@ -94,7 +94,7 @@ where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
     C::Error: Into<Error>,
-    C::Future: Send + Unpin,
+    C::Future: Send,
 {
     pub fn push_http_router<P>(
         self,
@@ -118,6 +118,7 @@ where
         self.map_stack(|config, rt, connect| {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let endpoint = connect
+                .push(svc::stack::BoxFuture::layer())
                 .push(rt.metrics.transport.layer_connect())
                 .push_map_target(TcpEndpoint::from)
                 .push(http::client::layer(

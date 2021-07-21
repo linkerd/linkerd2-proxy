@@ -103,33 +103,51 @@ where
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
     // resolvable service name, then continue with TCP endpoint resolution,
-    // balancing, and forwarding. An invalid original destination address is
-    // used so that service discovery is *required* to provide a valid endpoint.
+    // balancing, and forwarding. If the profile includes an endpoint instead
+    // of a logical address, then connect to endpoint directly and avoid
+    // balancing.
     //
     // TODO: We should use another target type that actually reflects
     // reality. But the outbound stack is currently pretty tightly
     // coupled to its target types.
-    let tcp = outbound
+    let logical = outbound
         .clone()
         .push_tcp_endpoint()
-        .push_tcp_logical(resolve.clone())
-        .into_stack()
-        .push_request_filter(
-            |(p, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
-                let profile = p.ok_or_else(|| {
+        .push_tcp_logical(resolve.clone());
+    let endpoint = outbound
+        .clone()
+        .push_tcp_endpoint()
+        .push_tcp_forward()
+        .into_stack();
+    let tcp = endpoint
+        .push_switch(
+            move |(profile, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
+                let profile = profile.ok_or_else(|| {
                     DiscoveryRejected::new("no profile discovered for gateway target")
                 })?;
+
+                if let Some((addr, metadata)) = profile.endpoint() {
+                    return Ok(svc::Either::A(outbound::tcp::Endpoint::from_metadata(
+                        addr,
+                        metadata,
+                        tls::NoClientTls::NotProvidedByServiceDiscovery,
+                        profile.is_opaque_protocol(),
+                    )));
+                }
+
                 let logical_addr = profile.logical_addr().ok_or_else(|| {
                     DiscoveryRejected::new(
-                        "profile for gateway target does not have a logical address",
+                        "profiles must have either an endpoint or a logical address",
                     )
                 })?;
-                Ok(outbound::tcp::Logical {
+
+                Ok(svc::Either::B(outbound::tcp::Logical {
                     profile,
                     protocol: (),
                     logical_addr,
-                })
+                }))
             },
+            logical.into_inner(),
         )
         .push(profiles::discover::layer(profiles.clone(), {
             let allow = allow_discovery.clone();
@@ -162,11 +180,12 @@ where
     // The client's ID is set as a request extension, as required by the
     // gateway. This permits gateway services (and profile resolutions) to be
     // cached per target, shared across clients.
-    let http = outbound
-        .push_tcp_endpoint()
-        .push_http_endpoint()
+    let endpoint = outbound.push_tcp_endpoint().push_http_endpoint();
+    let http = endpoint
+        .clone()
         .push_http_logical(resolve)
         .into_stack()
+        .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
             if allow_discovery.matches(t.target.name()) {

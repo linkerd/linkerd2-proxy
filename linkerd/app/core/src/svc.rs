@@ -174,6 +174,28 @@ impl<S> Stack<S> {
         self.push(tower::timeout::TimeoutLayer::new(timeout))
     }
 
+    /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
+    /// `ConnectTimeout` error.
+    ///
+    /// Note that any timeouts errors from the inner service will be wrapped as well.
+    pub fn push_connect_timeout<T>(
+        self,
+        timeout: Duration,
+    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>>
+    where
+        S: Service<T>,
+        S::Error: Into<Error>,
+    {
+        self.push_timeout(timeout)
+            .push(MapErrLayer::new(move |err: Error| {
+                if err.is::<tower::timeout::error::Elapsed>() {
+                    crate::errors::ConnectTimeout(timeout).into()
+                } else {
+                    err
+                }
+            }))
+    }
+
     pub fn push_http_insert_target<P>(self) -> Stack<http::insert::NewInsert<P, S>> {
         self.push(http::insert::NewInsert::layer())
     }
