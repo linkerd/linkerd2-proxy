@@ -49,7 +49,10 @@ impl<O> NewGateway<O> {
 
 impl<O> svc::NewService<Target> for NewGateway<O>
 where
-    O: svc::NewService<outbound::http::Logical> + Send + Clone + 'static,
+    O: svc::NewService<svc::Either<outbound::http::Logical, outbound::http::Endpoint>>
+        + Send
+        + Clone
+        + 'static,
 {
     type Service = Gateway<O::Service>;
 
@@ -63,6 +66,23 @@ where
             None => return Gateway::BadDomain(http.target.name().clone()),
         };
 
+        // Create an outbound target using the endpoint from the profile.
+        if let Some((addr, metadata)) = profile.endpoint() {
+            debug!("Creating outbound endpoint");
+            let svc = self
+                .outbound
+                .new_service(svc::Either::B(outbound::http::Endpoint::from((
+                    http.version,
+                    outbound::tcp::Endpoint::from_metadata(
+                        addr,
+                        metadata,
+                        tls::NoClientTls::NotProvidedByServiceDiscovery,
+                        profile.is_opaque_protocol(),
+                    ),
+                ))));
+            return Gateway::new(svc, http.target, local_id);
+        }
+
         let logical_addr = match profile.logical_addr() {
             Some(addr) => addr,
             None => return Gateway::BadDomain(http.target.name().clone()),
@@ -72,11 +92,13 @@ where
         // including the original port. We don't know the IP of the target, so
         // we use an unroutable one.
         debug!("Creating outbound service");
-        let svc = self.outbound.new_service(outbound::http::Logical {
-            profile,
-            protocol: http.version,
-            logical_addr,
-        });
+        let svc = self
+            .outbound
+            .new_service(svc::Either::A(outbound::http::Logical {
+                profile,
+                protocol: http.version,
+                logical_addr,
+            }));
 
         Gateway::new(svc, http.target, local_id)
     }

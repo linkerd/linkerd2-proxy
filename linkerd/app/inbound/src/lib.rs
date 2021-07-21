@@ -95,7 +95,9 @@ impl Inbound<()> {
         self.map_stack(move |_, _, _| svc::stack(stack))
     }
 
-    pub fn into_tcp_connect<T: svc::Param<u16>>(
+    /// Readies the inbound stack to make TCP connections (for both TCP
+    // forwarding and HTTP proxying).
+    pub fn into_tcp_connect<T>(
         self,
     ) -> Inbound<
         impl svc::Service<
@@ -104,7 +106,10 @@ impl Inbound<()> {
                 Error = Error,
                 Future = impl Send,
             > + Clone,
-    > {
+    >
+    where
+        T: svc::Param<u16> + 'static,
+    {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
             // forwarding and HTTP proxying).
@@ -117,7 +122,7 @@ impl Inbound<()> {
             svc::stack(transport::ConnectTcp::new(*keepalive))
                 .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
                 // Limits the time we wait for a connection to be established.
-                .push_timeout(*timeout)
+                .push_connect_timeout(*timeout)
                 .push(svc::stack::BoxFuture::layer())
         })
     }
@@ -164,7 +169,7 @@ where
     C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
     C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
     C::Error: Into<Error>,
-    C::Future: Send + Unpin,
+    C::Future: Send,
 {
     pub fn push_tcp_forward<I>(
         self,
