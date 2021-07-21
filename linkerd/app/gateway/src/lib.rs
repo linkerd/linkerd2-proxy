@@ -122,27 +122,30 @@ where
     let tcp = endpoint
         .push_switch(
             move |(profile, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
-                if let Some(rx) = profile {
-                    if let Some((addr, metadata)) = rx.endpoint() {
-                        return Ok(svc::Either::A(outbound::tcp::Endpoint::from_metadata(
-                            addr,
-                            metadata,
-                            tls::NoClientTls::NotProvidedByServiceDiscovery,
-                            rx.is_opaque_protocol(),
-                        )));
-                    }
+                let profile = profile.ok_or_else(|| {
+                    DiscoveryRejected::new("no profile discovered for gateway target")
+                })?;
 
-                    if let Some(logical_addr) = rx.logical_addr() {
-                        return Ok(svc::Either::B(outbound::tcp::Logical {
-                            profile: rx,
-                            protocol: (),
-                            logical_addr,
-                        }));
-                    }
+                if let Some((addr, metadata)) = profile.endpoint() {
+                    return Ok(svc::Either::A(outbound::tcp::Endpoint::from_metadata(
+                        addr,
+                        metadata,
+                        tls::NoClientTls::NotProvidedByServiceDiscovery,
+                        profile.is_opaque_protocol(),
+                    )));
                 }
-                Err(Box::new(DiscoveryRejected::new(
-                    "no profile discovered for gateway target",
-                )))
+
+                let logical_addr = profile.logical_addr().ok_or_else(|| {
+                    DiscoveryRejected::new(
+                        "profiles must have either an endpoint or a logical address",
+                    )
+                })?;
+
+                Ok(svc::Either::B(outbound::tcp::Logical {
+                    profile,
+                    protocol: (),
+                    logical_addr,
+                }))
             },
             logical.into_inner(),
         )
