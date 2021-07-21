@@ -13,7 +13,7 @@ use linkerd_app_core::{
     svc::{self, NewService, Param},
     tls,
     transport::{ClientAddr, Remote, ServerAddr},
-    Conditional, NameAddr, ProxyRuntime,
+    Conditional, Error, NameAddr, ProxyRuntime,
 };
 use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
@@ -24,16 +24,7 @@ fn build_server<I>(
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
-) -> svc::BoxNewService<
-    HttpAccept,
-    impl tower::Service<
-            I,
-            Response = (),
-            Error = impl Into<linkerd_app_core::Error>,
-            Future = impl Send + 'static,
-        > + Send
-        + Clone,
->
+) -> svc::BoxNewService<HttpAccept, svc::BoxService<I, (), Error>>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
