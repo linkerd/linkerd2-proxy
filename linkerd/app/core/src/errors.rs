@@ -221,7 +221,8 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
                 }
 
                 // Set the l5d error header on all responses.
-                let builder = set_l5d_error_header(&*error);
+                let mut builder = http::Response::builder();
+                builder = set_l5d_proxy_error_header(builder, &*error);
 
                 if self.is_grpc {
                     let mut rsp = builder
@@ -248,8 +249,10 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
     }
 }
 
-fn set_l5d_error_header(error: &(dyn std::error::Error + 'static)) -> http::response::Builder {
-    let mut builder = http::Response::builder();
+fn set_l5d_proxy_error_header(
+    mut builder: http::response::Builder,
+    error: &(dyn std::error::Error + 'static),
+) -> http::response::Builder {
     if let Some(HttpError { message, .. }) = error.downcast_ref::<HttpError>() {
         builder.header(L5D_PROXY_ERROR, HeaderValue::from_static(message))
     } else if error.is::<ResponseTimeout>() {
@@ -281,7 +284,7 @@ fn set_l5d_error_header(error: &(dyn std::error::Error + 'static)) -> http::resp
         }
         builder
     } else if let Some(source) = error.source() {
-        set_l5d_error_header(source)
+        set_l5d_proxy_error_header(builder, source)
     } else {
         builder.header(
             L5D_PROXY_ERROR,
