@@ -154,7 +154,7 @@ mod tests {
     use super::Discover;
     use async_stream::stream;
     use futures::prelude::*;
-    use linkerd_error::Never;
+    use linkerd_error::Infallible;
     use linkerd_proxy_core::resolve::Update;
     use std::net::SocketAddr;
     use tower::discover::Change;
@@ -168,7 +168,7 @@ mod tests {
     async fn reset() {
         tokio::pin! {
             let stream = stream! {
-                yield Ok::<_, Never>(Update::Add((1..=2).map(|n| (addr(n), n)).collect()));
+                yield Ok::<_, Infallible>(Update::Add((1..=2).map(|n| (addr(n), n)).collect()));
                 yield Ok(Update::Reset((2..=4).map(|n| (addr(n), n)).collect()));
             };
         }

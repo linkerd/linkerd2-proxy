@@ -6,7 +6,7 @@ use linkerd_app_core::{
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
-    Conditional, Error, NameAddr, Never,
+    Conditional, Error, Infallible, NameAddr,
 };
 use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
 use thiserror::Error;
@@ -135,7 +135,7 @@ impl<N> Inbound<N> {
                 .push_switch(
                     |client: ClientInfo| {
                         if client.header_negotiated() {
-                            Ok::<_, Never>(svc::Either::A(client))
+                            Ok::<_, Infallible>(svc::Either::A(client))
                         } else {
                             Ok(svc::Either::B(GatewayConnection::Legacy(client)))
                         }

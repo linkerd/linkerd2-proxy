@@ -1,5 +1,5 @@
 use futures::{ready, Stream, TryFuture};
-use linkerd_error::{Error, Never};
+use linkerd_error::{Error, Infallible};
 use pin_project::pin_project;
 use std::future::Future;
 use std::pin::Pin;
@@ -24,7 +24,7 @@ pub struct Buffer<M> {
 pub struct Discover<K, S> {
     #[pin]
     rx: mpsc::Receiver<discover::Change<K, S>>,
-    _disconnect_tx: oneshot::Sender<Never>,
+    _disconnect_tx: oneshot::Sender<Infallible>,
 }
 
 #[pin_project]
@@ -41,7 +41,7 @@ pub struct Daemon<D: discover::Discover> {
     #[pin]
     discover: D,
     #[pin]
-    disconnect_rx: oneshot::Receiver<Never>,
+    disconnect_rx: oneshot::Receiver<Infallible>,
     tx: PollSender<discover::Change<D::Key, D::Service>>,
     #[pin]
     watchdog: Option<Sleep>,

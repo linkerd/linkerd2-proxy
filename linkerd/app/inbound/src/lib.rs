@@ -28,7 +28,7 @@ use linkerd_app_core::{
     proxy::tcp,
     serve, svc, tls,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, NameMatch, Never, ProxyRuntime,
+    Error, Infallible, NameMatch, ProxyRuntime,
 };
 use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
 use tracing::{debug_span, info_span};
@@ -264,7 +264,7 @@ where
                 move |t: T| {
                     let OrigDstAddr(addr) = t.param();
                     if !disable_detect.contains(&addr.port()) {
-                        Ok::<_, Never>(svc::Either::A(t))
+                        Ok::<_, Infallible>(svc::Either::A(t))
                     } else {
                         Ok(svc::Either::B(TcpAccept::port_skipped(t)))
                     }

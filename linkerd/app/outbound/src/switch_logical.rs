@@ -1,5 +1,5 @@
 use crate::{endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr, Outbound};
-use linkerd_app_core::{io, profiles, svc, Error, Never};
+use linkerd_app_core::{io, profiles, svc, Error, Infallible};
 use std::fmt;
 
 impl<S> Outbound<S> {
@@ -29,7 +29,7 @@ impl<S> Outbound<S> {
         self.map_stack(|_, _, endpoint| {
             endpoint
                 .push_switch(
-                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
+                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
                         if let Some(rx) = profile {
                             // If the profile provides an endpoint, then the target is single endpoint and
                             // not a logical/load-balanced service.

@@ -8,7 +8,7 @@ use linkerd_app_core::{
         http,
         resolve::map_endpoint,
     },
-    retry, svc, Error, Never,
+    retry, svc, Error, Infallible,
 };
 use tracing::debug_span;
 
@@ -43,7 +43,7 @@ impl<E> Outbound<E> {
             let identity_disabled = rt.identity.is_none();
             let resolve = svc::stack(resolve.into_service())
                 .check_service::<ConcreteAddr>()
-                .push_request_filter(|c: Concrete| Ok::<_, Never>(c.resolve))
+                .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
                     map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
                 }))
