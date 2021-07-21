@@ -9,7 +9,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{OrigDstAddr, Remote, ServerAddr},
-    AddrMatch, Error, NameAddr, Never,
+    AddrMatch, Error, Infallible, NameAddr,
 };
 use thiserror::Error;
 use tracing::{debug_span, info_span};
@@ -153,7 +153,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             .push_switch(
                 |Http { target, version }: Http<Target>| match target {
                     Target::Override(target) => {
-                        Ok::<_, Never>(svc::Either::A(Http { target, version }))
+                        Ok::<_, Infallible>(svc::Either::A(Http { target, version }))
                     }
                     Target::Forward(OrigDstAddr(addr)) => Ok(svc::Either::B(http::Endpoint {
                         addr: Remote(ServerAddr(addr)),

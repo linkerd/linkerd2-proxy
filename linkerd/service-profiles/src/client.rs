@@ -2,7 +2,7 @@ use crate::{proto, LookupAddr, Profile, Receiver};
 use futures::prelude::*;
 use http_body::Body;
 use linkerd2_proxy_api::destination::{self as api, destination_client::DestinationClient};
-use linkerd_error::{Never, Recover};
+use linkerd_error::{Infallible, Recover};
 use linkerd_stack::{Param, Service};
 use linkerd_tonic_watch::StreamWatch;
 use std::task::{Context, Poll};
@@ -55,8 +55,8 @@ where
     R::Backoff: Unpin + Send,
 {
     type Response = Option<Receiver>;
-    type Error = Never;
-    type Future = futures::future::BoxFuture<'static, Result<Option<Receiver>, Never>>;
+    type Error = Infallible;
+    type Future = futures::future::BoxFuture<'static, Result<Option<Receiver>, Infallible>>;
 
     #[inline]
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -76,7 +76,7 @@ where
                 }
                 Err(status) => {
                     debug!(%status, "Ignoring profile");
-                    Ok::<_, Never>(None)
+                    Ok::<_, Infallible>(None)
                 }
             }
         })

@@ -19,7 +19,7 @@ use linkerd_app_core::{
     svc::{self, Param},
     tls,
     transport_header::SessionProtocol,
-    Error, NameAddr, NameMatch, Never,
+    Error, Infallible, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{
     direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
@@ -185,7 +185,7 @@ where
         .clone()
         .push_http_logical(resolve)
         .into_stack()
-        .push_switch(Ok::<_, Never>, endpoint.into_stack())
+        .push_switch(Ok::<_, Infallible>, endpoint.into_stack())
         .push(NewGateway::layer(local_id))
         .push(profiles::discover::layer(profiles, move |t: HttpTarget| {
             if allow_discovery.matches(t.target.name()) {
@@ -264,7 +264,7 @@ where
                         SessionProtocol::Http2 => http::Version::H2,
                     },
                 })),
-                None => Ok::<_, Never>(svc::Either::B(target)),
+                None => Ok::<_, Infallible>(svc::Either::B(target)),
             },
             tcp.push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
@@ -272,7 +272,7 @@ where
         )
         .push_switch(
             |gw| match gw {
-                GatewayConnection::TransportHeader(t) => Ok::<_, Never>(svc::Either::A(t)),
+                GatewayConnection::TransportHeader(t) => Ok::<_, Infallible>(svc::Either::A(t)),
                 GatewayConnection::Legacy(c) => Ok(svc::Either::B(c)),
             },
             legacy_http.into_inner(),

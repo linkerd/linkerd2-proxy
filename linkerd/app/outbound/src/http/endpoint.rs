@@ -73,7 +73,7 @@ mod test {
         io,
         proxy::api_resolve::Metadata,
         svc::{NewService, ServiceExt},
-        Never,
+        Infallible,
     };
     use std::net::SocketAddr;
 
@@ -259,7 +259,7 @@ mod test {
                 .fold(rsp, |rsp, orig_proto| {
                     rsp.header(WAS_ORIG_PROTO, orig_proto)
                 });
-            future::ok::<_, Never>(rsp.body(hyper::Body::default()).unwrap())
+            future::ok::<_, Infallible>(rsp.body(hyper::Body::default()).unwrap())
         });
 
         let mut http = hyper::server::conn::Http::new();

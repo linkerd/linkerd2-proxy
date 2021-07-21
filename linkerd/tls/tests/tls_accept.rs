@@ -7,7 +7,7 @@
 
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
-use linkerd_error::Never;
+use linkerd_error::Infallible;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{
@@ -169,7 +169,7 @@ where
                             sender
                                 .send(Transported { tls, result })
                                 .expect("send result");
-                            Ok::<(), Never>(())
+                            Ok::<(), Infallible>(())
                         }
                         .instrument(tracing::info_span!("test_svc")),
                     )
