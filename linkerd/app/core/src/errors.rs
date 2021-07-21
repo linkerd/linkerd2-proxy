@@ -38,11 +38,7 @@ pub struct Metrics {
     outbound: Registry<Reason>,
 }
 
-pub type MetricsLayer = RecordErrorLayer<LabelError, Reason>;
-
-/// Error metric labels.
-#[derive(Copy, Clone, Debug)]
-pub struct LabelError(());
+pub type MetricsLayer = RecordErrorLayer<error_metrics::LabelFn<Reason>, Reason>;
 
 #[derive(Copy, Clone, Debug, Error)]
 #[error("{}", self.message)]
@@ -423,34 +419,6 @@ impl fmt::Display for IdentityRequired {
 
 impl std::error::Error for IdentityRequired {}
 
-impl LabelError {
-    fn reason(err: &(dyn std::error::Error + 'static)) -> Option<Reason> {
-        if let Some(HttpError { reason, .. }) = err.downcast_ref::<HttpError>() {
-            return Some(*reason);
-        } else if err.is::<ResponseTimeout>() {
-            return Some(Reason::ResponseTimeout);
-        } else if err.is::<FailFastError>() {
-            return Some(Reason::FailFast);
-        } else if err.is::<tower::timeout::error::Elapsed>() {
-            return Some(Reason::DispatchTimeout);
-        } else if err.is::<IdentityRequired>() {
-            return Some(Reason::IdentityRequired);
-        } else if let Some(e) = err.downcast_ref::<std::io::Error>() {
-            return Some(Reason::Io(e.raw_os_error().map(Errno::from)));
-        };
-
-        None
-    }
-}
-
-impl error_metrics::LabelError for LabelError {
-    type Labels = Reason;
-
-    fn label_error(&self, err: &(dyn std::error::Error + 'static)) -> Option<Self::Labels> {
-        Self::reason(err)
-    }
-}
-
 impl FmtLabels for Reason {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -482,6 +450,26 @@ impl Default for Reason {
     }
 }
 
+impl Reason {
+    fn from_error(err: &(dyn std::error::Error + 'static)) -> Option<Self> {
+        if let Some(HttpError { reason, .. }) = err.downcast_ref::<HttpError>() {
+            return Some(*reason);
+        } else if err.is::<ResponseTimeout>() {
+            return Some(Reason::ResponseTimeout);
+        } else if err.is::<FailFastError>() {
+            return Some(Reason::FailFast);
+        } else if err.is::<tower::timeout::error::Elapsed>() {
+            return Some(Reason::DispatchTimeout);
+        } else if err.is::<IdentityRequired>() {
+            return Some(Reason::IdentityRequired);
+        } else if let Some(e) = err.downcast_ref::<std::io::Error>() {
+            return Some(Reason::Io(e.raw_os_error().map(Errno::from)));
+        };
+
+        None
+    }
+}
+
 impl Default for Metrics {
     fn default() -> Metrics {
         Self {
@@ -493,11 +481,13 @@ impl Default for Metrics {
 
 impl Metrics {
     pub fn inbound(&self) -> MetricsLayer {
-        self.inbound.layer(LabelError(()))
+        self.inbound
+            .layer(error_metrics::label_fn(Reason::from_error))
     }
 
     pub fn outbound(&self) -> MetricsLayer {
-        self.outbound.layer(LabelError(()))
+        self.outbound
+            .layer(error_metrics::label_fn(Reason::from_error))
     }
 
     pub fn report(&self) -> impl FmtMetrics + Clone + Send {
