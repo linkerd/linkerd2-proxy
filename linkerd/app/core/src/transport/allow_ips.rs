@@ -37,11 +37,6 @@ where
 
 impl AllowIps {
     pub fn new(ips: HashSet<SocketAddr>) -> Self {
-        if ips.is_empty() {
-            tracing::info!("`LINKERD_PROXY_INBOUND_IPS` allowlist not configured, allowing all target addresses");
-        } else {
-            tracing::debug!(allowed = ?ips, "Only allowing connections targeting `LINKERD_PROXY_INBOUND_IPS`");
-        }
         Self { ips: Arc::new(ips) }
     }
 }

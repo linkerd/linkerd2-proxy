@@ -17,7 +17,7 @@ use std::{
     time::Duration,
 };
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// The strings used to build a configuration.
 pub trait Strings {
@@ -479,9 +479,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let mut require_identity_for_inbound_ports =
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
-        let allowed_ips = parse(strings, ENV_INBOUND_IPS, parse_socket_addr_set)?
-            .unwrap_or_default()
-            .into();
+        let allowed_ips = {
+            let ips = parse(strings, ENV_INBOUND_IPS, parse_socket_addr_set)?.unwrap_or_default();
+
+            if ips.is_empty() {
+                info!(
+                    "`{}` allowlist not configured, allowing all target addresses",
+                    ENV_INBOUND_IPS
+                );
+            } else {
+                debug!(allowed = ?ips, "Only allowing connections targeting `{}`", ENV_INBOUND_IPS);
+            }
+            ips.into()
+        };
 
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(
