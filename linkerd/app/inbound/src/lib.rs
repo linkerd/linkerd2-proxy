@@ -114,7 +114,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        T: svc::Param<u16> + 'static,
+        T: svc::Param<Remote<ServerAddr>> + 'static,
     {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
@@ -126,7 +126,7 @@ impl Inbound<()> {
             } = config.proxy.connect;
 
             svc::stack(transport::ConnectTcp::new(*keepalive))
-                .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
+                .push_map_target(|t: T| t.param())
                 // Limits the time we wait for a connection to be established.
                 .push_connect_timeout(*timeout)
                 .push(svc::stack::BoxFuture::layer())

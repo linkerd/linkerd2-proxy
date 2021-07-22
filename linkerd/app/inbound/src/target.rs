@@ -41,14 +41,14 @@ pub struct Logical {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HttpEndpoint {
-    pub port: u16,
+    pub target_addr: Remote<ServerAddr>,
     pub settings: http::client::Settings,
     pub tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpEndpoint {
-    pub port: u16,
+    pub target_addr: Remote<ServerAddr>,
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +157,7 @@ impl Param<http::client::Settings> for HttpEndpoint {
 impl From<Target> for HttpEndpoint {
     fn from(target: Target) -> Self {
         Self {
-            port: target.target_addr.port(),
+            target_addr: Remote(ServerAddr(target.target_addr)),
             settings: target.http_version.into(),
             tls: target.tls,
         }
@@ -169,26 +169,28 @@ impl From<Target> for HttpEndpoint {
 impl From<TcpAccept> for TcpEndpoint {
     fn from(tcp: TcpAccept) -> Self {
         Self {
-            port: tcp.target_addr.port(),
+            target_addr: Remote(ServerAddr(tcp.target_addr)),
         }
     }
 }
 
 impl From<(TransportHeader, TcpAccept)> for TcpEndpoint {
-    fn from((header, _): (TransportHeader, TcpAccept)) -> Self {
-        Self { port: header.port }
+    fn from((header, accept): (TransportHeader, TcpAccept)) -> Self {
+        let ip = accept.target_addr.ip();
+        let target_addr = Remote(ServerAddr(SocketAddr::from((ip, header.port))));
+        Self { target_addr }
     }
 }
 
 impl From<HttpEndpoint> for TcpEndpoint {
-    fn from(h: HttpEndpoint) -> Self {
-        Self { port: h.port }
+    fn from(HttpEndpoint { target_addr, .. }: HttpEndpoint) -> Self {
+        Self { target_addr }
     }
 }
 
-impl Param<u16> for TcpEndpoint {
-    fn param(&self) -> u16 {
-        self.port
+impl Param<Remote<ServerAddr>> for TcpEndpoint {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.target_addr
     }
 }
 
@@ -202,7 +204,7 @@ impl Param<transport::labels::Key> for TcpEndpoint {
 #[cfg(test)]
 impl From<TcpEndpoint> for SocketAddr {
     fn from(ep: TcpEndpoint) -> SocketAddr {
-        SocketAddr::from(([127, 0, 0, 1], ep.port))
+        ep.target_addr.into()
     }
 }
 

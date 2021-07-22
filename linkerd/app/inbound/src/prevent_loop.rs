@@ -4,6 +4,7 @@ use linkerd_app_core::{
     transport::addrs::OrigDstAddr,
     Error,
 };
+use std::net::SocketAddr;
 use thiserror::Error;
 
 /// A connection policy that drops
@@ -32,8 +33,9 @@ impl Predicate<TcpEndpoint> for PreventLoop {
     type Request = TcpEndpoint;
 
     fn check(&mut self, t: TcpEndpoint) -> Result<TcpEndpoint, Error> {
-        if t.port == self.port {
-            Err(LoopPrevented { port: t.port }.into())
+        let port = SocketAddr::from(t.target_addr).port();
+        if port == self.port {
+            Err(LoopPrevented { port }.into())
         } else {
             Ok(t)
         }

@@ -10,7 +10,7 @@ use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     errors::L5D_PROXY_ERROR,
     io, proxy,
-    svc::{self, NewService, Param},
+    svc::{self, NewService},
     tls,
     transport::{ClientAddr, Remote, ServerAddr},
     Conditional, Error, NameAddr, ProxyRuntime,
@@ -30,7 +30,7 @@ where
 {
     // Mocks to_tcp_connect.
     let connect = svc::stack(connect)
-        .push_map_target(|t: TcpEndpoint| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
+        .push_map_target(|ep: TcpEndpoint| ep.target_addr)
         .push_connect_timeout(cfg.proxy.connect.timeout)
         .into_inner();
 

@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc::{self, Param},
     tls,
-    transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
+    transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, Infallible, NameAddr,
 };
@@ -101,7 +101,11 @@ impl<N> Inbound<N> {
                             port,
                             name: None,
                             protocol: None,
-                        } => Ok(svc::Either::A(TcpEndpoint { port })),
+                        } => {
+                            let target_addr =
+                                Remote(ServerAddr(SocketAddr::from(([127, 0, 0, 1], port))));
+                            Ok(svc::Either::A(TcpEndpoint { target_addr }))
+                        }
                         TransportHeader {
                             port,
                             name: Some(name),
