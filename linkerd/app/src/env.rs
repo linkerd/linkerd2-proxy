@@ -479,8 +479,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let mut require_identity_for_inbound_ports =
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
-        let allowed_ips =
-            parse(strings, ENV_INBOUND_IPS, parse_socket_addr_set)?.unwrap_or_default();
+        let allowed_ips = parse(strings, ENV_INBOUND_IPS, parse_socket_addr_set)?
+            .unwrap_or_default()
+            .into();
 
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
             error!(

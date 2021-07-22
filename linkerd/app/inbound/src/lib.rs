@@ -32,10 +32,7 @@ use linkerd_app_core::{
     },
     Error, Infallible, NameMatch, ProxyRuntime,
 };
-use std::{
-    collections::HashSet, convert::TryFrom, fmt::Debug, future::Future, net::SocketAddr,
-    time::Duration,
-};
+use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
 use tracing::{debug_span, info_span};
 
 #[derive(Clone, Debug)]
@@ -45,7 +42,7 @@ pub struct Config {
     pub require_identity_for_inbound_ports: RequireIdentityForPorts,
     pub disable_protocol_detection_for_ports: PortSet,
     pub profile_idle_timeout: Duration,
-    pub allowed_ips: HashSet<SocketAddr>,
+    pub allowed_ips: AllowIps,
 }
 
 #[derive(Clone)]
@@ -314,7 +311,7 @@ where
                         let OrigDstAddr(target_addr) = a.param();
                         info_span!("server", port = target_addr.port())
                     })
-                    .push_request_filter(AllowIps::new(cfg.allowed_ips.clone()))
+                    .push_request_filter(cfg.allowed_ips.clone())
                     .push(rt.metrics.tcp_accept_errors.layer())
                     .push_on_response(svc::BoxService::layer())
                     .push(svc::BoxNewService::layer())

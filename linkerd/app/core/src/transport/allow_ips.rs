@@ -2,7 +2,7 @@ use crate::{svc, transport::OrigDstAddr};
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 use thiserror::Error;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct AllowIps {
     ips: Arc<HashSet<SocketAddr>>,
 }
@@ -43,5 +43,11 @@ impl AllowIps {
             tracing::debug!(allowed = ?ips, "Only allowing connections targeting `LINKERD_PROXY_INBOUND_IPS`");
         }
         Self { ips: Arc::new(ips) }
+    }
+}
+
+impl From<HashSet<SocketAddr>> for AllowIps {
+    fn from(ips: HashSet<SocketAddr>) -> Self {
+        Self::new(ips)
     }
 }
