@@ -1,7 +1,7 @@
 use crate::{
     metrics::{self, Counter, FmtMetrics},
     svc,
-    transport::{labels, OrigDstAddr},
+    transport::{allow_ips, labels, OrigDstAddr},
 };
 use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
@@ -37,6 +37,7 @@ pub struct LabelAcceptErrors(());
 pub enum AcceptErrors {
     TlsDetectTimeout,
     Io,
+    InvalidIp,
     Other,
 }
 
@@ -94,6 +95,8 @@ impl LabelError<Error> for LabelAcceptErrors {
             } else if err.is::<std::io::Error>() {
                 // We ignore the error code because we want all labels to be consistent.
                 return AcceptErrors::Io;
+            } else if err.is::<allow_ips::InvalidIp>() {
+                return AcceptErrors::InvalidIp;
             }
             curr = err.source();
         }
@@ -110,6 +113,7 @@ impl FmtLabels for AcceptErrors {
             Self::TlsDetectTimeout => fmt::Display::fmt("error=\"tls_detect_timeout\"", f),
             Self::Io => fmt::Display::fmt("error=\"io\"", f),
             Self::Other => fmt::Display::fmt("error=\"other\"", f),
+            Self::InvalidIp => fmt::Display::fmt("error=\"invalid_ip\"", f),
         }
     }
 }
