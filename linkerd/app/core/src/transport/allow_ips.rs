@@ -30,7 +30,7 @@ where
             return Ok(target);
         }
 
-        tracing::warn!(%ip, allowed = ?self.ips, "IP address not in `LINKERD2_PROXY_INBOUND_IPS`");
+        tracing::warn!(%ip, allowed = ?self.ips, "Target IP address not permitted");
         Err(InvalidIp { ip }.into())
     }
 }
