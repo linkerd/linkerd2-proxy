@@ -249,7 +249,7 @@ pub mod fuzz_logic {
     use libfuzzer_sys::arbitrary::Arbitrary;
     use linkerd_app_core::{
         io, proxy,
-        svc::{self, NewService, Param},
+        svc::{self, NewService},
         tls,
         transport::{ClientAddr, Remote, ServerAddr},
         Conditional, NameAddr, ProxyRuntime,
@@ -356,9 +356,7 @@ pub mod fuzz_logic {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
         let connect = svc::stack(connect)
-            .push_map_target(|t: TcpEndpoint| {
-                Remote(ServerAddr(([127, 0, 0, 1], t.param()).into()))
-            })
+            .push_map_target(|t: TcpEndpoint| t.target_addr)
             .into_inner();
         Inbound::new(cfg, rt)
             .with_stack(connect)
