@@ -39,7 +39,7 @@ async fn inbound_http1() {
     let _profile = ctrl.profile_tx_default(srv.addr, "transparency.test.svc.cluster.local");
     let proxy = proxy::new()
         .controller(ctrl.run().await)
-        .inbound_fuzz_addr(srv)
+        .inbound(srv)
         .run()
         .await;
     let client = client::http1(proxy.inbound, "transparency.test.svc.cluster.local");
@@ -140,7 +140,7 @@ async fn inbound_tcp() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     let client = client::tcp(proxy.inbound);
 
@@ -1371,7 +1371,7 @@ async fn http2_request_without_authority() {
         })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run().await;
 
     // Make a single HTTP/2 request without an :authority header.
     //
@@ -1411,7 +1411,7 @@ async fn http2_rst_stream_is_propagated() {
         .route_async("/", move |_req| async move { Err(h2::Error::from(reason)) })
         .run()
         .await;
-    let proxy = proxy::new().inbound_fuzz_addr(srv).run().await;
+    let proxy = proxy::new().inbound(srv).run().await;
     let client = client::http2(proxy.inbound, "transparency.example.com");
 
     let err: hyper::Error = client

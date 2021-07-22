@@ -151,19 +151,6 @@ impl Proxy {
         }
     }
 
-    /// Adjust the server's 'addr'. This won't actually re-bind the server,
-    /// it will just affect what the proxy think is the so_original_dst.
-    ///
-    /// This address is bogus, but the proxy should properly ignored the IP
-    /// and only use the port combined with 127.0.0.1 to still connect to
-    /// the server.
-    pub fn inbound_fuzz_addr(self, mut s: server::Listening) -> Self {
-        let old_addr = s.addr;
-        let new_addr = ([10, 1, 2, 3], old_addr.port()).into();
-        s.addr = new_addr;
-        self.inbound(s)
-    }
-
     pub fn outbound(mut self, s: server::Listening) -> Self {
         self.outbound = MockOrigDst::Addr(s.addr);
         self.outbound_server = Some(s);
