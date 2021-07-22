@@ -285,7 +285,7 @@ async fn inbound_invalid_ip() {
         .with_extra_env(|env| {
             env.put(
                 app::env::ENV_INBOUND_IPS,
-                "10.5.1.42:9999,10.5.8.167:555".to_string(),
+                "10.5.1.42,10.5.8.167".to_string(),
             );
         })
         .run()
