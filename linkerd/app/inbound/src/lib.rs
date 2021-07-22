@@ -8,7 +8,6 @@
 #![allow(clippy::inconsistent_struct_constructor)]
 
 mod allow_discovery;
-mod allow_ips;
 pub mod direct;
 pub mod http;
 mod prevent_loop;
@@ -19,7 +18,6 @@ pub(crate) mod test_util;
 
 pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
 use self::{
-    allow_ips::AllowIps,
     prevent_loop::PreventLoop,
     require_identity::RequireIdentityForPorts,
     target::{HttpAccept, TcpAccept},
@@ -29,7 +27,9 @@ use linkerd_app_core::{
     detect, drain, io, metrics, profiles,
     proxy::tcp,
     serve, svc, tls,
-    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    transport::{
+        self, allow_ips::AllowIps, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
+    },
     Error, Infallible, NameMatch, ProxyRuntime,
 };
 use std::{

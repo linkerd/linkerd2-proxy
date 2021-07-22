@@ -1,15 +1,15 @@
-use linkerd_app_core::{svc, transport::OrigDstAddr, Error};
+use crate::{svc, transport::OrigDstAddr};
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
-pub(crate) struct AllowIps {
+pub struct AllowIps {
     ips: Arc<HashSet<SocketAddr>>,
 }
 
 #[derive(Clone, Debug, Error)]
 #[error("inbound connections are not allowed on this IP address ({ip})")]
-pub struct InvalidIp {
+pub(crate) struct InvalidIp {
     ip: SocketAddr,
 }
 
@@ -19,7 +19,7 @@ where
 {
     type Request = T;
 
-    fn check(&mut self, target: T) -> Result<Self::Request, Error> {
+    fn check(&mut self, target: T) -> Result<Self::Request, crate::Error> {
         // Allowlist not configured.
         if self.ips.is_empty() {
             return Ok(target);
@@ -36,11 +36,11 @@ where
 }
 
 impl AllowIps {
-    pub(crate) fn new(ips: HashSet<SocketAddr>) -> Self {
+    pub fn new(ips: HashSet<SocketAddr>) -> Self {
         if ips.is_empty() {
             tracing::info!("`LINKERD_PROXY_INBOUND_IPS` allowlist not configured, allowing all target addresses");
         } else {
-            tracing::info!(allowed = ?ips, "Only allowing connections targeting `LINKERD_PROXY_INBOUND_IPS`");
+            tracing::debug!(allowed = ?ips, "Only allowing connections targeting `LINKERD_PROXY_INBOUND_IPS`");
         }
         Self { ips: Arc::new(ips) }
     }
