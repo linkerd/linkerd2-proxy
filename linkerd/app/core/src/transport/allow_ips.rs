@@ -1,16 +1,16 @@
 use crate::{svc, transport::OrigDstAddr};
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{collections::HashSet, net::IpAddr, sync::Arc};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default)]
 pub struct AllowIps {
-    ips: Arc<HashSet<SocketAddr>>,
+    ips: Arc<HashSet<IpAddr>>,
 }
 
 #[derive(Clone, Debug, Error)]
 #[error("inbound connections are not allowed on this IP address ({ip})")]
 pub(crate) struct InvalidIp {
-    ip: SocketAddr,
+    ip: IpAddr,
 }
 
 impl<T> svc::stack::Predicate<T> for AllowIps
@@ -25,24 +25,25 @@ where
             return Ok(target);
         }
 
-        let OrigDstAddr(ip) = target.param();
+        let OrigDstAddr(addr) = target.param();
+        let ip = addr.ip();
         if self.ips.contains(&ip) {
             return Ok(target);
         }
 
-        tracing::warn!(%ip, allowed = ?self.ips, "Target IP address not permitted");
+        tracing::warn!(%addr, allowed = ?self.ips, "Target IP address not permitted");
         Err(InvalidIp { ip }.into())
     }
 }
 
 impl AllowIps {
-    pub fn new(ips: HashSet<SocketAddr>) -> Self {
+    pub fn new(ips: HashSet<IpAddr>) -> Self {
         Self { ips: Arc::new(ips) }
     }
 }
 
-impl From<HashSet<SocketAddr>> for AllowIps {
-    fn from(ips: HashSet<SocketAddr>) -> Self {
+impl From<HashSet<IpAddr>> for AllowIps {
+    fn from(ips: HashSet<IpAddr>) -> Self {
         Self::new(ips)
     }
 }

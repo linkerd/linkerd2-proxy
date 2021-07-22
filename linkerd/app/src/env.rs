@@ -11,7 +11,7 @@ use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
     str::FromStr,
     time::Duration,
@@ -67,6 +67,12 @@ pub enum ParseError {
     NotANetwork,
     #[error("host is not an IP address")]
     HostIsNotAnIpAddress,
+    #[error("not a valid IP address: {0}")]
+    NotAnIp(
+        #[from]
+        #[source]
+        std::net::AddrParseError,
+    ),
     #[error(transparent)]
     AddrError(addr::Error),
     #[error("not a valid identity name")]
@@ -480,7 +486,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
         let allowed_ips = {
-            let ips = parse(strings, ENV_INBOUND_IPS, parse_socket_addr_set)?.unwrap_or_default();
+            let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
 
             if ips.is_empty() {
                 info!(
@@ -777,8 +783,10 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
     }
 }
 
-fn parse_socket_addr_set(s: &str) -> Result<HashSet<SocketAddr>, ParseError> {
-    s.split(',').map(parse_socket_addr).collect()
+fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
+    s.split(',')
+        .map(|s| s.parse::<IpAddr>().map_err(Into::into))
+        .collect()
 }
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {
@@ -1237,5 +1245,30 @@ mod tests {
             Ok(vec!["multi.case.name".to_owned()]),
             "names are coerced to lowercase"
         );
+    }
+
+    #[test]
+    fn ip_sets() {
+        let ips = &[
+            IpAddr::from([127, 0, 0, 1]),
+            IpAddr::from([10, 0, 2, 42]),
+            IpAddr::from([192, 168, 0, 69]),
+        ];
+        assert_eq!(
+            parse_ip_set("127.0.0.1"),
+            Ok(ips[..1].iter().cloned().collect())
+        );
+        assert_eq!(
+            parse_ip_set("127.0.0.1,10.0.2.42"),
+            Ok(ips[..2].iter().cloned().collect())
+        );
+        assert_eq!(
+            parse_ip_set("127.0.0.1,10.0.2.42,192.168.0.69"),
+            Ok(ips[..3].iter().cloned().collect())
+        );
+        assert!(parse_ip_set("blaah").is_err());
+        assert!(parse_ip_set("10.4.0.555").is_err());
+        assert!(parse_ip_set("10.4.0.3,foobar,192.168.0.69").is_err());
+        assert!(parse_ip_set("10.0.1.1/24").is_err());
     }
 }
