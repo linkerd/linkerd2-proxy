@@ -4,7 +4,7 @@ use crate::core::{
     control::{Config as ControlConfig, ControlAddr},
     proxy::http::{h1, h2},
     tls,
-    transport::{Keepalive, ListenAddr},
+    transport::{self, Keepalive, ListenAddr},
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
@@ -67,12 +67,6 @@ pub enum ParseError {
     NotANetwork,
     #[error("host is not an IP address")]
     HostIsNotAnIpAddress,
-    #[error("not a valid IP address: {0}")]
-    NotAnIp(
-        #[from]
-        #[source]
-        std::net::AddrParseError,
-    ),
     #[error(transparent)]
     AddrError(addr::Error),
     #[error("not a valid identity name")]
@@ -486,7 +480,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
 
         let allowed_ips = {
-            let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
+            let ips = parse(strings, ENV_INBOUND_IPS, parse_networks)?.unwrap_or_default();
 
             if ips.is_empty() {
                 info!(
@@ -496,7 +490,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             } else {
                 debug!(allowed = ?ips, "Only allowing connections targeting `{}`", ENV_INBOUND_IPS);
             }
-            ips.into()
+            transport::AllowIps::new(ips)
         };
 
         if id_disabled && !require_identity_for_inbound_ports.is_empty() {
@@ -781,12 +775,6 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
             Err(ParseError::HostIsNotAnIpAddress)
         }
     }
-}
-
-fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
-    s.split(',')
-        .map(|s| s.parse::<IpAddr>().map_err(Into::into))
-        .collect()
 }
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {

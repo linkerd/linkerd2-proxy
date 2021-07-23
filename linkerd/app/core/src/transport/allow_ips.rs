@@ -1,10 +1,11 @@
-use crate::{svc, transport::OrigDstAddr};
-use std::{collections::HashSet, net::IpAddr, sync::Arc};
+use crate::{addr_match::IpMatch, svc, transport::OrigDstAddr};
+use ipnet::IpNet;
+use std::net::IpAddr;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Default)]
 pub struct AllowIps {
-    ips: Arc<HashSet<IpAddr>>,
+    ips: IpMatch,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -27,7 +28,7 @@ where
 
         let OrigDstAddr(addr) = target.param();
         let ip = addr.ip();
-        if self.ips.contains(&ip) {
+        if self.ips.matches(ip) {
             return Ok(target);
         }
 
@@ -37,13 +38,9 @@ where
 }
 
 impl AllowIps {
-    pub fn new(ips: HashSet<IpAddr>) -> Self {
-        Self { ips: Arc::new(ips) }
-    }
-}
-
-impl From<HashSet<IpAddr>> for AllowIps {
-    fn from(ips: HashSet<IpAddr>) -> Self {
-        Self::new(ips)
+    pub fn new(nets: impl IntoIterator<Item = IpNet>) -> Self {
+        Self {
+            ips: IpMatch::new(nets),
+        }
     }
 }
