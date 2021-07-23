@@ -876,14 +876,32 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
 }
 
 fn parse_networks(list: &str) -> Result<HashSet<ipnet::IpNet>, ParseError> {
+    use ipnet::{AddrParseError, IpNet, Ipv4Net, Ipv6Net};
+
     let mut nets = HashSet::new();
     for input in list.split(',') {
         let input = input.trim();
         if !input.is_empty() {
-            let net = ipnet::IpNet::from_str(input).map_err(|error| {
-                error!(%input, %error, "Invalid network");
-                ParseError::NotANetwork
-            })?;
+            // Try to parse the input as a CIDR.
+            let net = IpNet::from_str(input)
+                .or_else(|err| {
+                    // If we couldn't parse the input as a netmask in CIDR
+                    // notation, try parsing it as a single IP address, and
+                    // convert that address to a netmask whose prefix length is
+                    // the number of bits in that address type (which will
+                    // match only that address exactly).
+                    let net = match IpAddr::from_str(input).map_err(|_| err)? {
+                        IpAddr::V4(v4) => Ipv4Net::new(v4, 32).map(IpNet::from),
+                        IpAddr::V6(v6) => Ipv6Net::new(v6, 128).map(IpNet::from),
+                    }
+                    .expect("32 and 128 are always valid IPv4/IPv6 prefix lengths");
+
+                    Ok(net)
+                })
+                .map_err(|error: AddrParseError| {
+                    error!(%input, %error, "Invalid network");
+                    ParseError::NotANetwork
+                })?;
             nets.insert(net);
         }
     }
@@ -1089,6 +1107,9 @@ pub fn parse_identity_config<S: Strings>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+    use linkerd_app_core::trace::test::trace_init;
+    use std::net::{Ipv4Addr, Ipv6Addr};
 
     fn test_unit<F: Fn(u64) -> Duration>(unit: &str, to_duration: F) {
         for v in &[0, 1, 23, 456_789] {
@@ -1098,6 +1119,54 @@ mod tests {
 
             let text = format!(" {}{}\t", v, unit);
             assert_eq!(parse_duration(&text), Ok(d), "text=\"{}\"", text);
+        }
+    }
+
+    fn test_nets(input: &str, expected: &[IpNet]) {
+        let nets = match dbg!(parse_networks(dbg!(input))) {
+            Ok(nets) => nets,
+            Err(e) => panic!(
+                "failed to parse networks: {}\n    input: {:?}\n expected: {:?}",
+                e, input, expected,
+            ),
+        };
+
+        for net in expected {
+            assert!(
+                nets.contains(net),
+                "parsed networks did not contain {:?}\n    \
+                input: {:?}\n expected: {:?}\n   actual: {:?}",
+                net,
+                input,
+                expected,
+                nets,
+            )
+        }
+
+        assert_eq!(
+            nets.len(),
+            expected.len(),
+            "parsed more networks than expected!\n    \
+            input: {:?}\n expected: {:?}\n   actual: {:?}",
+            input,
+            expected,
+            nets,
+        )
+    }
+
+    fn test_nets_invalid(input: &str) {
+        match dbg!(parse_networks(dbg!(input))) {
+            Ok(nets) => panic!(
+                "expected a parse error, but got: {:?}\n    input: {:?}",
+                nets, input
+            ),
+            Err(e) => assert_eq!(
+                e,
+                ParseError::NotANetwork,
+                "unexpected parse error: {}\n    input: {:?}",
+                e,
+                input
+            ),
         }
     }
 
@@ -1248,27 +1317,147 @@ mod tests {
     }
 
     #[test]
-    fn ip_sets() {
-        let ips = &[
-            IpAddr::from([127, 0, 0, 1]),
-            IpAddr::from([10, 0, 2, 42]),
-            IpAddr::from([192, 168, 0, 69]),
+    fn nets_ipv4_single() {
+        let _trace = trace_init();
+        // successes
+        test_nets("10.0.1.1/24", &[v4_net([10, 0, 1, 1], 24)]);
+        test_nets("10.4.0.3", &[v4_net([10, 4, 0, 3], 32)]);
+        test_nets("192.168.0.0/16", &[v4_net([192, 168, 0, 0], 16)]);
+        test_nets("127.0.0.1", &[v4_net([127, 0, 0, 1], 32)]);
+
+        // failures
+        test_nets_invalid("localhost");
+        test_nets_invalid("192.168.0.0.9");
+        test_nets_invalid("192.168.0.0/2000");
+        test_nets_invalid("256.0.0.0/32");
+        test_nets_invalid("1.555.0.300");
+    }
+
+    #[test]
+    fn nets_ipv6_single() {
+        let _trace = trace_init();
+        // successes
+        test_nets("f00d::/32", &[v6_net([0xf00d, 0, 0, 0, 0, 0, 0, 0], 32)]);
+        test_nets(
+            "f00d:d00d::/16",
+            &[v6_net([0xf00d, 0xd00d, 0, 0, 0, 0, 0, 0], 16)],
+        );
+        test_nets(
+            "fd00:1234:5678::/24",
+            &[v6_net([0xfd00, 0x1234, 0x5678, 0, 0, 0, 0, 0], 24)],
+        );
+        test_nets(
+            "2001:db8::8a2e:370:7334",
+            &[v6_net(
+                [0x2001, 0x0db8, 0, 0, 0, 0x8a2e, 0x370, 0x7334],
+                128,
+            )],
+        );
+        test_nets(
+            "2001:db8:0000:0000:0000:8a2e:370:7334",
+            &[v6_net(
+                [0x2001, 0x0db8, 0, 0, 0, 0x8a2e, 0x370, 0x7334],
+                128,
+            )],
+        );
+        test_nets("::1", &[v6_net([0, 0, 0, 0, 0, 0, 0, 1], 128)]);
+
+        // failures
+        test_nets_invalid("d00f::b00f::/32");
+    }
+
+    #[test]
+    fn nets_ipv4_many() {
+        let _trace = trace_init();
+        let nets = &[
+            v4_net([10, 0, 1, 1], 24),
+            v4_net([10, 4, 0, 3], 32),
+            v4_net([192, 168, 0, 0], 16),
+            v4_net([127, 0, 0, 1], 32),
         ];
-        assert_eq!(
-            parse_ip_set("127.0.0.1"),
-            Ok(ips[..1].iter().cloned().collect())
+
+        test_nets("10.0.1.1/24,10.4.0.3,192.168.0.0/16,127.0.0.1", &nets[..]);
+        // a comma with nothing in it is ignored
+        test_nets(
+            "10.0.1.1/24,10.4.0.3,,192.168.0.0/16,,,127.0.0.1",
+            &nets[..],
         );
-        assert_eq!(
-            parse_ip_set("127.0.0.1,10.0.2.42"),
-            Ok(ips[..2].iter().cloned().collect())
+        test_nets(
+            "10.0.1.1/24,10.4.0.3/32,192.168.0.0/16,127.0.0.1/32",
+            &nets[..],
         );
-        assert_eq!(
-            parse_ip_set("127.0.0.1,10.0.2.42,192.168.0.69"),
-            Ok(ips[..3].iter().cloned().collect())
+
+        // failures
+        test_nets_invalid("10.0.1.1/24,10.4.0.3,192.168.0.0/16,localhost");
+        test_nets_invalid("10.0.1.1/24,10.4.0.3,192.168.0.0.9,localhost");
+        test_nets_invalid("10.0.1.1/24,10.4.0.3,192.168.0.0.9,127.0.0.1");
+        test_nets_invalid("10.0.1.1/24,10.4.0.3,192.168.0.0.9,256.0.0.0/32");
+    }
+
+    #[test]
+    fn nets_ipv6_many() {
+        let _trace = trace_init();
+        let nets = &[
+            v6_net([0xf00d, 0, 0, 0, 0, 0, 0, 0], 32),
+            v6_net([0xf00d, 0xd00d, 0, 0, 0, 0, 0, 0], 16),
+            v6_net([0xfd00, 0x1234, 0x5678, 0, 0, 0, 0, 0], 24),
+            v6_net([0x2001, 0x0db8, 0, 0, 0, 0x8a2e, 0x370, 0x7334], 128),
+            v6_net([0, 0, 0, 0, 0, 0, 0, 1], 128),
+        ];
+
+        test_nets(
+            "f00d::/32,f00d:d00d::/16,fd00:1234:5678::/24,2001:db8::8a2e:370:7334,::1",
+            &nets[..],
         );
-        assert!(parse_ip_set("blaah").is_err());
-        assert!(parse_ip_set("10.4.0.555").is_err());
-        assert!(parse_ip_set("10.4.0.3,foobar,192.168.0.69").is_err());
-        assert!(parse_ip_set("10.0.1.1/24").is_err());
+        // a comma with nothing in it is ignored
+        test_nets(
+            "f00d::/32,f00d:d00d::/16,,fd00:1234:5678::/24,2001:db8::8a2e:370:7334,,,,::1",
+            &nets[..],
+        );
+        test_nets("f00d::/32,f00d:d00d::/16,fd00:1234:5678::/24,2001:db8:0000:0000:0000:8a2e:370:7334,::1", &nets[..]);
+        test_nets(
+            "f00d::/32,f00d:d00d::/16,fd00:1234:5678::/24,2001:db8::8a2e:370:7334/128,::1",
+            &nets[..],
+        );
+        // failures
+        test_nets_invalid(
+            "f00d::/32,f00d:d00d::/16,fd00:1234:5678::/24,2001:db8::8a2e:370:7334,localhost",
+        );
+        test_nets_invalid("f00d::/32,f00d:d00d::/16,fd00:1234:5678::/24,2001:db8:0000:0000:0000:0000:8a2e:370:7334,::1");
+    }
+
+    #[test]
+    fn nets_both() {
+        let _trace = trace_init();
+
+        let nets = &[
+            v4_net([10, 0, 1, 1], 24),
+            v4_net([10, 4, 0, 3], 32),
+            v4_net([192, 168, 0, 0], 16),
+            v4_net([127, 0, 0, 1], 32),
+            v6_net([0xf00d, 0, 0, 0, 0, 0, 0, 0], 32),
+            v6_net([0xf00d, 0xd00d, 0, 0, 0, 0, 0, 0], 16),
+            v6_net([0xfd00, 0x1234, 0x5678, 0, 0, 0, 0, 0], 24),
+            v6_net([0x2001, 0x0db8, 0, 0, 0, 0x8a2e, 0x370, 0x7334], 128),
+            v6_net([0, 0, 0, 0, 0, 0, 0, 1], 128),
+        ];
+        test_nets(
+            "10.0.1.1/24,10.4.0.3,192.168.0.0/16,127.0.0.1,f00d::/32,f00d:d00d::/16,fd00:1234:5678::/24,2001:db8::8a2e:370:7334,::1",
+            &nets[..],
+        );
+        test_nets(
+            "10.0.1.1/24,10.4.0.3,,192.168.0.0/16,,,127.0.0.1,f00d::/32,f00d:d00d::/16,,fd00:1234:5678::/24,2001:db8::8a2e:370:7334,,,,::1",
+            &nets[..],
+        );
+    }
+
+    fn v4_net(ip: impl Into<Ipv4Addr>, prefix: u8) -> IpNet {
+        let ip = ip.into();
+        IpNet::from(Ipv4Net::new(ip, prefix).expect("prefix length must be valid"))
+    }
+
+    fn v6_net(ip: impl Into<Ipv6Addr>, prefix: u8) -> IpNet {
+        let ip = ip.into();
+        IpNet::from(Ipv6Net::new(ip, prefix).expect("prefix length must be valid"))
     }
 }
