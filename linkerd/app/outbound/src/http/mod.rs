@@ -1,5 +1,6 @@
 pub mod detect;
 mod endpoint;
+mod handle_proxy_error;
 pub mod logical;
 mod require_id_header;
 mod server;

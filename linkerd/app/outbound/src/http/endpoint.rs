@@ -1,3 +1,4 @@
+use super::handle_proxy_error;
 use super::require_id_header;
 use crate::Outbound;
 use linkerd_app_core::{
@@ -39,6 +40,7 @@ impl<C> Outbound<C> {
                 .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
                 .check_service::<T>()
                 .into_new_service()
+                .push(handle_proxy_error::NewHandleProxyError::layer())
                 .push_new_reconnect(backoff)
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
