@@ -25,8 +25,10 @@ use self::{
 use linkerd_app_core::{
     config::{ConnectConfig, PortSet, ProxyConfig, ServerConfig},
     detect, drain, io, metrics, profiles,
-    proxy::tcp,
-    serve, svc, tls,
+    proxy::{identity::LocalCrtKey, tcp},
+    serve,
+    svc::{self, ExtractParam, InsertParam},
+    tls,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, Infallible, NameMatch, ProxyRuntime,
 };
@@ -47,6 +49,12 @@ pub struct Inbound<S> {
     config: Config,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
+}
+
+#[derive(Clone)]
+struct TlsParams {
+    timeout: tls::server::Timeout,
+    identity: Option<LocalCrtKey>,
 }
 
 // === impl Inbound ===
@@ -272,10 +280,10 @@ where
                     .push(rt.metrics.transport.layer_accept())
                     .push_request_filter(TcpAccept::try_from)
                     .push(svc::BoxNewService::layer())
-                    .push(tls::NewDetectTls::layer(
-                        rt.identity.clone(),
-                        detect_timeout,
-                    ))
+                    .push(tls::NewDetectTls::layer(TlsParams {
+                        timeout: tls::server::Timeout(detect_timeout),
+                        identity: rt.identity.clone(),
+                    }))
             })
             .map_stack(|cfg, _, detect| {
                 let disable_detect = cfg.disable_protocol_detection_for_ports.clone();
@@ -317,4 +325,29 @@ where
 
 fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
     metrics::StackLabels::inbound(proto, name)
+}
+
+// === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        self.timeout
+    }
+}
+
+impl<T> ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+        self.identity.clone()
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
+    }
 }

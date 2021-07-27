@@ -5,7 +5,7 @@ use linkerd_app_core::{
     metrics::{self, FmtMetrics},
     proxy::{http, identity::LocalCrtKey},
     serve,
-    svc::{self, Param},
+    svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
@@ -36,6 +36,13 @@ struct NonHttpClient(Remote<ClientAddr>);
 #[error("Unexpected TLS connection to {} from {}", self.0, self.1)]
 struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
 
+#[derive(Clone)]
+struct TlsParams {
+    identity: Option<LocalCrtKey>,
+}
+
+const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
+
 // === impl Config ===
 
 impl Config {
@@ -55,8 +62,6 @@ impl Config {
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
     {
-        const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
-
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
         let (ready, latch) = crate::server::Readiness::new();
@@ -73,7 +78,7 @@ impl Config {
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push_request_filter(
                 |(version, tcp): (
-                    Result<Option<http::Version>, detect::DetectTimeout<_>>,
+                    Result<Option<http::Version>, detect::DetectTimeoutError<_>>,
                     TcpAccept,
                 )| {
                     match version {
@@ -130,7 +135,9 @@ impl Config {
                 }
             })
             .push(svc::BoxNewService::layer())
-            .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
+            .push(tls::NewDetectTls::layer(TlsParams {
+                identity,
+            }))
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
@@ -139,5 +146,30 @@ impl Config {
             latch,
             serve,
         })
+    }
+}
+
+// === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        tls::server::Timeout(DETECT_TIMEOUT)
+    }
+}
+
+impl<T> ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+        self.identity.clone()
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
     }
 }
