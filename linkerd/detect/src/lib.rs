@@ -25,11 +25,11 @@ pub trait Detect<I>: Clone + Send + Sync + 'static {
         -> Result<Option<Self::Protocol>, Error>;
 }
 
-pub type DetectResult<P> = Result<Option<P>, DetectTimeout<P>>;
+pub type DetectResult<P> = Result<Option<P>, DetectTimeoutError<P>>;
 
 #[derive(Error)]
 #[error("{} protocol detection timed out after {:?}", std::any::type_name::<P>(), .0)]
-pub struct DetectTimeout<P>(time::Duration, std::marker::PhantomData<P>);
+pub struct DetectTimeoutError<P>(time::Duration, std::marker::PhantomData<P>);
 
 #[derive(Copy, Clone, Debug)]
 pub struct NewDetectService<D, N> {
@@ -131,7 +131,7 @@ where
                     debug!(?protocol, elapsed = ?t0.elapsed(), "DetectResult");
                     Ok(protocol)
                 }
-                Err(_) => Err(DetectTimeout(timeout, std::marker::PhantomData)),
+                Err(_) => Err(DetectTimeoutError(timeout, std::marker::PhantomData)),
                 Ok(Err(e)) => return Err(e),
             };
 
@@ -157,9 +157,9 @@ where
     }
 }
 
-// === impl DetectTimeout ===
+// === impl DetectTimeoutError ===
 
-impl<P> fmt::Debug for DetectTimeout<P> {
+impl<P> fmt::Debug for DetectTimeoutError<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple(std::any::type_name::<Self>())
             .field(&self.0)

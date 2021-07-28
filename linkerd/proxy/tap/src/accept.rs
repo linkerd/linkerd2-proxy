@@ -5,7 +5,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_io as io;
 use linkerd_proxy_http::{trace, HyperServerSvc};
-use linkerd_tls::{self as tls, server::Connection};
+use linkerd_tls::{self as tls};
 use std::{
     collections::HashSet,
     future::Future,
@@ -20,6 +20,8 @@ pub struct AcceptPermittedClients {
     permitted_client_ids: Arc<HashSet<tls::ClientId>>,
     server: Server,
 }
+
+type Connection<T, I> = ((tls::ConditionalServerTls, T), tls::server::Io<I>);
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 

@@ -57,9 +57,70 @@ pub trait Param<T> {
     fn param(&self) -> T;
 }
 
+/// A strategy for obtaining a `P`-typed parameters from a `T`-typed target.
+///
+/// This allows stack modules to be decoupled from whether a parameter is known at construction-time
+/// or instantiation-time.
+pub trait ExtractParam<P, T> {
+    fn extract_param(&self, t: &T) -> P;
+}
+
+/// A strategy for setting `P`-typed parameters on a `T`-typed target, potentially altering the
+/// target type.
+pub trait InsertParam<P, T> {
+    type Target;
+
+    fn insert_param(&self, param: P, target: T) -> Self::Target;
+}
+
+/// === Param ===
+
 /// The identity `Param`.
 impl<T: ToOwned> Param<T::Owned> for T {
+    #[inline]
     fn param(&self) -> T::Owned {
         self.to_owned()
+    }
+}
+
+/// === ExtractParam ===
+
+impl<P, T: Param<P>> ExtractParam<P, T> for () {
+    #[inline]
+    fn extract_param(&self, t: &T) -> P {
+        t.param()
+    }
+}
+
+impl<F, P, T> ExtractParam<P, T> for F
+where
+    F: Fn(&T) -> P,
+{
+    #[inline]
+    fn extract_param(&self, target: &T) -> P {
+        (self)(target)
+    }
+}
+
+/// === InsertParam ===
+
+impl<P, T> InsertParam<P, T> for () {
+    type Target = (P, T);
+
+    #[inline]
+    fn insert_param(&self, param: P, target: T) -> (P, T) {
+        (param, target)
+    }
+}
+
+impl<F, P, T, U> InsertParam<P, T> for F
+where
+    F: Fn(P, T) -> U,
+{
+    type Target = U;
+
+    #[inline]
+    fn insert_param(&self, param: P, target: T) -> U {
+        (self)(param, target)
     }
 }

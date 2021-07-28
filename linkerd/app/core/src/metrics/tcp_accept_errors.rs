@@ -5,7 +5,7 @@ use crate::{
 };
 use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
-use linkerd_tls::server::DetectTimeout as TlsDetectTimeout;
+use linkerd_tls::server::ServerTlsTimeoutError;
 use parking_lot::Mutex;
 use std::{collections::HashMap, fmt};
 
@@ -89,7 +89,7 @@ impl LabelError<Error> for LabelAcceptErrors {
     fn label_error(&self, err: &Error) -> Self::Labels {
         let mut curr: Option<&dyn std::error::Error> = Some(err.as_ref());
         while let Some(err) = curr {
-            if err.is::<TlsDetectTimeout>() {
+            if err.is::<ServerTlsTimeoutError>() {
                 return AcceptErrors::TlsDetectTimeout;
             } else if err.is::<std::io::Error>() {
                 // We ignore the error code because we want all labels to be consistent.
