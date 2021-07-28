@@ -72,11 +72,11 @@ impl TcpAccept {
     }
 }
 
-impl<T> From<tls::server::Meta<T>> for TcpAccept
+impl<T> From<(tls::ConditionalServerTls, T)> for TcpAccept
 where
     T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
 {
-    fn from((tls, addrs): tls::server::Meta<T>) -> Self {
+    fn from((tls, addrs): (tls::ConditionalServerTls, T)) -> Self {
         let OrigDstAddr(target_addr) = addrs.param();
         Self {
             target_addr,

@@ -2,7 +2,7 @@ use crate::{target::TcpEndpoint, Inbound};
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
-    svc::{self, Param},
+    svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
@@ -54,6 +54,12 @@ pub struct ClientInfo {
 
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
+
+#[derive(Clone)]
+struct TlsParams {
+    timeout: tls::server::Timeout,
+    identity: Option<WithTransportHeaderAlpn>,
+}
 
 impl<N> Inbound<N> {
     /// Builds a stack that handles connections that target the proxy's inbound port
@@ -152,10 +158,10 @@ impl<N> Inbound<N> {
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::BoxNewService::layer())
-                .push(tls::NewDetectTls::layer(
-                    rt.identity.clone().map(WithTransportHeaderAlpn),
-                    detect_timeout,
-                ))
+                .push(tls::NewDetectTls::layer(TlsParams {
+                    timeout: tls::server::Timeout(detect_timeout),
+                    identity: rt.identity.clone().map(WithTransportHeaderAlpn),
+                }))
                 .check_new_service::<T, I>()
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
@@ -244,5 +250,30 @@ impl From<RefusedNoHeader> for Error {
             io::ErrorKind::ConnectionRefused,
             "Non-transport-header connection refused",
         ))
+    }
+}
+
+// === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        self.timeout
+    }
+}
+
+impl<T> ExtractParam<Option<WithTransportHeaderAlpn>, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Option<WithTransportHeaderAlpn> {
+        self.identity.clone()
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
     }
 }

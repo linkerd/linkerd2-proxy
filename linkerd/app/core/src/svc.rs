@@ -6,8 +6,9 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, Fail, Filter,
-    MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
+    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    Filter, InsertParam, MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate,
+    UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};

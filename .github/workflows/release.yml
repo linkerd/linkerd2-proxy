@@ -86,7 +86,7 @@ jobs:
         run: ls -R artifacts
 
       - name: release
-        uses: softprops/action-gh-release@08e53e60c840b6d34ed49473f9ab939eb801dbc4
+        uses: softprops/action-gh-release@fb0163a75bee697a9cfec2c931801de7c7f10042
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
