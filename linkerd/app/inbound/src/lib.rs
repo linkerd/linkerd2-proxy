@@ -311,7 +311,7 @@ where
                     )
                     .push_switch(
                         // If the connection targets the inbound proxy port, the connection is most
-                        // likely using opaque transport to target an alternate port, or possible an
+                        // likely using opaque transport to target an alternate port, or possibly an
                         // outbound target if the proxy is configured as a gateway. The direct stack
                         // handles these connections.
                         move |t: T| -> Result<_, Infallible> {
