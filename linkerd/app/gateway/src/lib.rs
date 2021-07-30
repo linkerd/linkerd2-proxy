@@ -232,10 +232,11 @@ where
         .into_stack()
         .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
         .push(svc::BoxNewService::layer())
-        .push(detect::NewDetectService::layer(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
-        ));
+        .push(detect::NewDetectService::layer(detect::Config {
+            detect: http::DetectHttp::default(),
+            capacity: 1024,
+            timeout: detect_protocol_timeout,
+        }));
 
     // When a transported connection is received, use the header's target to
     // drive routing.

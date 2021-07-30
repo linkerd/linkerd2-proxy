@@ -3,7 +3,7 @@ use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     detect, io,
     svc::{self, Param},
-    Error,
+    Error, Infallible,
 };
 use tracing::debug_span;
 
@@ -61,19 +61,19 @@ impl<N> Outbound<N> {
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
                 .push(svc::BoxNewService::layer())
-                .push(detect::NewDetectService::layer(
-                    detect_protocol_timeout,
-                    http::DetectHttp::default(),
-                ))
+                .push(detect::NewDetectService::layer(detect::Config::<
+                    http::DetectHttp,
+                >::from_timeout(
+                    detect_protocol_timeout
+                )))
                 .push_switch(
                     // When the target is marked as as opaque, we skip HTTP
                     // detection and just use the TCP stack directly.
-                    |target: T| -> Result<_, Error> {
+                    |target: T| -> Result<_, Infallible> {
                         if let Some(Skip) = target.param() {
-                            Ok(svc::Either::B(target))
-                        } else {
-                            Ok(svc::Either::A(target))
+                            return Ok(svc::Either::B(target));
                         }
+                        Ok(svc::Either::A(target))
                     },
                     skipped,
                 )
