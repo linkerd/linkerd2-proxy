@@ -23,9 +23,7 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 impl<H> Inbound<H> {
-    pub fn push_http_server<T, I, HSvc>(
-        self,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
@@ -351,7 +349,7 @@ pub mod fuzz_logic {
         rt: ProxyRuntime,
         profiles: resolver::Profiles,
         connect: Connect<Remote<ServerAddr>>,
-    ) -> svc::BoxNewService<HttpAccept, svc::BoxService<I, (), linkerd_app_core::Error>>
+    ) -> svc::BoxNewTcp<HttpAccept, I>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
