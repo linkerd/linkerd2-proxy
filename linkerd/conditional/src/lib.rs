@@ -16,7 +16,7 @@ where
 {
     pub fn as_ref(&self) -> Conditional<&'_ C, R> {
         match self {
-            Conditional::Some(c) => Conditional::Some(&c),
+            Conditional::Some(c) => Conditional::Some(c),
             Conditional::None(r) => Conditional::None(*r),
         }
     }

@@ -72,7 +72,7 @@ where
 
     fn prefix_key<N: fmt::Display>(&self, name: N) -> Prefixed<'_, N> {
         Prefixed {
-            prefix: &self.prefix,
+            prefix: self.prefix,
             name,
         }
     }

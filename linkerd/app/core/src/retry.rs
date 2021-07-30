@@ -70,10 +70,10 @@ impl RetryPolicy {
         // only if the request contains a `content-length` header and the
         // content length is >= 64 kb.
         let has_body = !req.body().is_end_stream();
-        if has_body && content_length(&req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
+        if has_body && content_length(req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
             tracing::trace!(
                 req.has_body = has_body,
-                req.content_length = ?content_length(&req),
+                req.content_length = ?content_length(req),
                 "not retryable",
             );
             return false;
@@ -81,7 +81,7 @@ impl RetryPolicy {
 
         tracing::trace!(
             req.has_body = has_body,
-            req.content_length = ?content_length(&req),
+            req.content_length = ?content_length(req),
             "retryable",
         );
         true
@@ -123,7 +123,7 @@ where
     }
 
     fn clone_request(&self, req: &http::Request<A>) -> Option<http::Request<A>> {
-        let can_retry = self.can_retry(&req);
+        let can_retry = self.can_retry(req);
         debug_assert!(
             can_retry,
             "The retry policy attempted to clone an un-retryable request. This is unexpected."

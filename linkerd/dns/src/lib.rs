@@ -184,7 +184,7 @@ mod tests {
         ];
 
         for case in VALID {
-            let name = Name::from_str(&case.input);
+            let name = Name::from_str(case.input);
             assert_eq!(name.as_ref().map(|x| x.as_ref()), Ok(case.output));
         }
 

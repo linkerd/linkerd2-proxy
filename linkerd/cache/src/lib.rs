@@ -71,7 +71,7 @@ where
             target,
             idle,
             handle.clone(),
-            Arc::downgrade(&cache),
+            Arc::downgrade(cache),
         ));
         handle
     }
