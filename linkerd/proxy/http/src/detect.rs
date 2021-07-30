@@ -82,9 +82,9 @@ mod tests {
         let _trace = linkerd_tracing::test::trace_init();
 
         for read in &[H2_PREFACE, H2_AND_GARBAGE] {
-            debug!(read = ?std::str::from_utf8(&read).unwrap());
+            debug!(read = ?std::str::from_utf8(read).unwrap());
             let mut buf = BytesMut::with_capacity(1024);
-            let mut io = io::Builder::new().read(&read).build();
+            let mut io = io::Builder::new().read(read).build();
             let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
             assert_eq!(kind, Some(Version::H2));
         }
@@ -102,9 +102,9 @@ mod tests {
             assert_eq!(kind, None);
         }
 
-        debug!(read = ?std::str::from_utf8(&HTTP11_LINE).unwrap());
+        debug!(read = ?std::str::from_utf8(HTTP11_LINE).unwrap());
         let mut buf = BytesMut::with_capacity(1024);
-        let mut io = io::Builder::new().read(&HTTP11_LINE).build();
+        let mut io = io::Builder::new().read(HTTP11_LINE).build();
         let kind = DetectHttp(()).detect(&mut io, &mut buf).await.unwrap();
         assert_eq!(kind, Some(Version::Http1));
 

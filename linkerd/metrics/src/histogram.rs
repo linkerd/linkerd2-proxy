@@ -92,7 +92,7 @@ impl<V: Into<u64>, F: Factor> Histogram<V, F> {
 impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
     /// Assert the bucket containing `le` has a count of at least `at_least`.
     pub fn assert_bucket_at_least(&self, le: f64, at_least: f64) {
-        for (&bucket, ref count) in self {
+        for (&bucket, count) in self {
             if bucket >= le {
                 let count = count.value();
                 assert!(count >= at_least, "le={:?}; bucket={:?};", le, bucket);
@@ -103,7 +103,7 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
 
     /// Assert the bucket containing `le` has a count of exactly `exactly`.
     pub fn assert_bucket_exactly(&self, le: f64, exactly: f64) -> &Self {
-        for (&bucket, ref count) in self {
+        for (&bucket, count) in self {
             if bucket >= le {
                 let count = count.value();
                 assert_eq!(
@@ -147,7 +147,7 @@ impl<V: Into<u64>, F: Factor + std::fmt::Debug> Histogram<V, F> {
         // We set this to true after we've iterated past the first bucket
         // whose upper bound is >= `value`.
         let mut past_le = false;
-        for (&bucket, ref count) in self {
+        for (&bucket, count) in self {
             if bucket < value {
                 continue;
             }
@@ -335,7 +335,7 @@ mod tests {
 
     quickcheck! {
         fn bucket_incremented(obs: u64) -> bool {
-            let hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(BOUNDS);
             hist.add(obs);
             // The bucket containing `obs` must have count 1.
             hist.assert_bucket_exactly(obs as f64, 1.0)
@@ -349,7 +349,7 @@ mod tests {
         }
 
         fn sum_equals_total_of_observations(observations: Vec<u64>) -> bool {
-            let hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(BOUNDS);
 
             let expected_sum = Counter::<()>::default();
             for obs in observations {
@@ -361,19 +361,19 @@ mod tests {
         }
 
         fn count_equals_number_of_observations(observations: Vec<u64>) -> bool {
-            let hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(BOUNDS);
 
             for obs in &observations {
                 hist.add(*obs);
             }
 
-            let count = hist.buckets.iter().map(|ref c| c.value()).sum::<f64>();
+            let count = hist.buckets.iter().map(|c| c.value()).sum::<f64>();
             count == observations.len() as f64
         }
 
         fn multiple_observations_increment_buckets(observations: Vec<u64>) -> bool {
             let mut buckets_and_counts: HashMap<usize, f64> = HashMap::new();
-            let hist = Histogram::<u64>::new(&BOUNDS);
+            let hist = Histogram::<u64>::new(BOUNDS);
 
             for obs in observations {
                 let incremented_bucket = &BOUNDS.0.iter()

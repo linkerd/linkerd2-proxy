@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use linkerd_error::Error;
@@ -184,7 +183,7 @@ mod tests {
         ];
 
         for case in VALID {
-            let name = Name::from_str(&case.input);
+            let name = Name::from_str(case.input);
             assert_eq!(name.as_ref().map(|x| x.as_ref()), Ok(case.output));
         }
 

@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use self::{requests::Requests, retries::Retries};
 use linkerd_metrics::SharedStore;
@@ -72,7 +71,7 @@ where
 
     fn prefix_key<N: fmt::Display>(&self, name: N) -> Prefixed<'_, N> {
         Prefixed {
-            prefix: &self.prefix,
+            prefix: self.prefix,
             name,
         }
     }

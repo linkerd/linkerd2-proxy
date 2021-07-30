@@ -67,7 +67,7 @@ where
         V: LastUpdate,
     {
         self.inner
-            .retain(|_, metric| Arc::strong_count(&metric) > 1 || metric.last_update() >= epoch)
+            .retain(|_, metric| Arc::strong_count(metric) > 1 || metric.last_update() >= epoch)
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.

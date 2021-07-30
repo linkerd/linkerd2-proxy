@@ -2,7 +2,6 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 #![recursion_limit = "256"]
 #![type_length_limit = "16289823"]
 // It's not clear where this originates.

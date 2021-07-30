@@ -930,7 +930,7 @@ pub fn parse_identity_config<S: Strings>(
     strings: &S,
 ) -> Result<Option<(ControlAddr, identity::certify::Config)>, EnvError> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
-    let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |ref s| {
+    let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
     let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
@@ -1037,7 +1037,7 @@ pub fn parse_identity_config<S: Strings>(
                 );
             }
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
-            let svc_env: &str = &s.as_str();
+            let svc_env: &str = s.as_str();
             for (unset, name) in &[
                 (addr.is_none(), svc_env),
                 (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),

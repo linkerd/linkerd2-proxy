@@ -1,7 +1,6 @@
 //! Conditionally reconnects with a pluggable recovery/backoff strategy.
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 #[cfg(test)]
 mod tests;
