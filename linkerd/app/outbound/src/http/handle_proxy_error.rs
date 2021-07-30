@@ -79,3 +79,94 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::NewHandleProxyError;
+    use crate::{
+        http::{BoxBody, Endpoint, NewServeHttp, Request, Response, Version},
+        test_util::{
+            self, future,
+            support::{self, connect::Connect, http_util},
+        },
+        transport::addrs::{Remote, ServerAddr},
+        Config, Outbound,
+    };
+    use hyper::{client::conn::Builder, server::conn::Http, service, Body};
+    use linkerd_app_core::{
+        errors::L5D_PROXY_ERROR,
+        io,
+        proxy::api_resolve::Metadata,
+        svc::NewService,
+        svc::{BoxNewService, BoxService},
+        tls::{ConditionalClientTls, NoClientTls},
+        Error, Infallible, ProxyRuntime,
+    };
+    use linkerd_tracing::test;
+    use std::net::SocketAddr;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test() {
+        let _trace = test::trace_init();
+
+        // Build the outbound server
+        let (rt, _shutdown) = test_util::runtime();
+        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+        let connect = support::connect().endpoint_fn_boxed(addr, |_: Endpoint| serve());
+        let config = test_util::default_config();
+        let mut outbound = build_outbound(config, rt, connect);
+
+        // Build the service that responds with the L5D_PROXY_ERROR header
+        // set.
+        let service = outbound.new_service(Endpoint {
+            addr: Remote(ServerAddr(addr)),
+            tls: ConditionalClientTls::None(NoClientTls::Disabled),
+            metadata: Metadata::default(),
+            logical_addr: None,
+            protocol: Version::Http1,
+            opaque_protocol: false,
+        });
+
+        let mut builder = Builder::new();
+        let (mut client, bg) = http_util::connect_and_accept(&mut builder, service).await;
+
+        todo!()
+    }
+
+    fn build_outbound<I>(
+        config: Config,
+        rt: ProxyRuntime,
+        connect: Connect<Endpoint>,
+    ) -> BoxNewService<Endpoint, BoxService<I, (), Error>>
+    where
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
+    {
+        Outbound::new(config.clone(), rt.clone())
+            .with_stack(connect)
+            .push_http_endpoint::<_, BoxBody>()
+            .into_stack()
+            .push(NewHandleProxyError::layer())
+            .push(NewServeHttp::layer(
+                config.proxy.server.h2_settings,
+                rt.drain,
+            ))
+            .push_on_response(BoxService::layer())
+            .push(BoxNewService::layer())
+            .into_inner()
+    }
+
+    fn serve() -> io::Result<io::BoxedIo> {
+        let (client_io, server_io) = io::duplex(4096);
+        let http = Http::new();
+        let service = service::service_fn(move |_: Request<Body>| {
+            let response = Response::builder()
+                .status(http::StatusCode::BAD_GATEWAY)
+                .header(L5D_PROXY_ERROR, "proxy received invalid response")
+                .body(hyper::Body::default())
+                .unwrap();
+            future::ok::<_, Infallible>(response)
+        });
+        tokio::spawn(http.serve_connection(server_io, service));
+        Ok(io::BoxedIo::new(client_io))
+    }
+}
