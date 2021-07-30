@@ -179,14 +179,10 @@ impl<S> Stack<S> {
     /// `ConnectTimeout` error.
     ///
     /// Note that any timeouts errors from the inner service will be wrapped as well.
-    pub fn push_connect_timeout<T>(
+    pub fn push_connect_timeout(
         self,
         timeout: Duration,
-    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>>
-    where
-        S: Service<T>,
-        S::Error: Into<Error>,
-    {
+    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
         self.push_timeout(timeout)
             .push(MapErrLayer::new(move |err: Error| {
                 if err.is::<tower::timeout::error::Elapsed>() {

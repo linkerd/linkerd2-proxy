@@ -10,7 +10,6 @@
 mod allow_discovery;
 pub mod direct;
 pub mod http;
-mod prevent_loop;
 mod require_identity;
 pub mod target;
 #[cfg(any(test, fuzzing))]
@@ -18,7 +17,6 @@ pub(crate) mod test_util;
 
 pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
 use self::{
-    prevent_loop::PreventLoop,
     require_identity::RequireIdentityForPorts,
     target::{HttpAccept, TcpAccept},
 };
@@ -107,6 +105,7 @@ impl Inbound<()> {
     // forwarding and HTTP proxying).
     pub fn into_tcp_connect<T>(
         self,
+        proxy_port: u16,
     ) -> Inbound<
         impl svc::Service<
                 T,
@@ -127,11 +126,21 @@ impl Inbound<()> {
                 ..
             } = config.proxy.connect;
 
+            #[derive(Debug, thiserror::Error)]
+            #[error("inbound connection must not target port {0}")]
+            struct Loop(u16);
+
             svc::stack(transport::ConnectTcp::new(*keepalive))
-                .push_map_target(|t: T| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
                 // Limits the time we wait for a connection to be established.
                 .push_connect_timeout(*timeout)
-                .push(svc::stack::BoxFuture::layer())
+                // Prevent connections that would target the inbound proxy port from looping.
+                .push_request_filter(move |t: T| {
+                    let port = t.param();
+                    if port == proxy_port {
+                        return Err(Loop(port));
+                    }
+                    Ok(Remote(ServerAddr(([127, 0, 0, 1], port).into())))
+                })
         })
     }
 
@@ -162,7 +171,7 @@ impl Inbound<()> {
         let serve = async move {
             let shutdown = self.runtime.drain.clone().signaled();
             let stack = self
-                .into_tcp_connect()
+                .into_tcp_connect(la.port())
                 .push_server(la.port(), profiles, gateway)
                 .into_inner();
             serve::serve(listen, stack, shutdown).await
@@ -181,7 +190,6 @@ where
 {
     pub fn push_tcp_forward<I>(
         self,
-        server_port: u16,
     ) -> Inbound<
         svc::BoxNewService<
             TcpEndpoint,
@@ -193,13 +201,10 @@ where
         I: Debug + Send + Sync + Unpin + 'static,
     {
         self.map_stack(|_, rt, connect| {
-            let prevent_loop = PreventLoop::from(server_port);
-
             // Forwards TCP streams that cannot be decoded as HTTP.
             //
             // Looping is always prevented.
             connect
-                .push_request_filter(prevent_loop)
                 .push(rt.metrics.transport.layer_connect())
                 .push_make_thunk()
                 .push_on_response(
@@ -215,7 +220,7 @@ where
 
     pub fn push_server<T, I, G, GSvc, P>(
         self,
-        server_port: u16,
+        proxy_port: u16,
         profiles: P,
         gateway: G,
     ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
@@ -236,7 +241,7 @@ where
         // Handles inbound connections that target an opaque port.
         let opaque = self
             .clone()
-            .push_tcp_forward(server_port)
+            .push_tcp_forward()
             .map_stack(|_, rt, tcp| {
                 tcp.push_map_target(TcpEndpoint::from)
                     .push(rt.metrics.transport.layer_accept())
@@ -245,7 +250,7 @@ where
             .into_stack();
 
         // Handles inbound connections that could not be detected as HTTP.
-        let tcp = self.clone().push_tcp_forward(server_port);
+        let tcp = self.clone().push_tcp_forward();
 
         // Handles connections targeting the inbound proxy port--either by acting as a gateway to
         // the outbound stack or by forwarding connections locally (for opauque transport).
@@ -285,31 +290,37 @@ where
                         identity: rt.identity.clone(),
                     }))
             })
-            .map_stack(|cfg, _, detect| {
+            .map_stack(|cfg, rt, detect| {
                 let disable_detect = cfg.disable_protocol_detection_for_ports.clone();
                 detect
                     .instrument(|_: &_| debug_span!("proxy"))
                     .push_switch(
+                        // If the connection targets a port on which protocol detection is disabled,
+                        // then we forward it directly to the application, bypassing protocol
+                        // detection.
                         move |t: T| -> Result<_, Infallible> {
                             let OrigDstAddr(addr) = t.param();
-                            if !disable_detect.contains(&addr.port()) {
-                                Ok(svc::Either::A(t))
-                            } else {
-                                Ok(svc::Either::B(TcpAccept::port_skipped(t)))
+                            if disable_detect.contains(&addr.port()) {
+                                return Ok(svc::Either::B(TcpAccept::port_skipped(t)));
                             }
+                            Ok(svc::Either::A(t))
                         },
                         opaque
                             .instrument(|_: &TcpAccept| debug_span!("forward"))
                             .into_inner(),
                     )
-                    .check_new_service::<T, I>()
-                    .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
-            })
-            .map_stack(|_, rt, accept| {
-                accept
                     .push_switch(
-                        PreventLoop::from(server_port).to_switch(),
+                        // If the connection targets the inbound proxy port, the connection is most
+                        // likely using opaque transport to target an alternate port, or possibly an
+                        // outbound target if the proxy is configured as a gateway. The direct stack
+                        // handles these connections.
+                        move |t: T| -> Result<_, Infallible> {
+                            let OrigDstAddr(a) = t.param();
+                            if a.port() == proxy_port {
+                                return Ok(svc::Either::B(t));
+                            }
+                            Ok(svc::Either::A(t))
+                        },
                         direct.into_inner(),
                     )
                     .instrument(|a: &T| {
