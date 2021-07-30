@@ -52,7 +52,7 @@ impl<L, K: FmtLabels + Hash + Eq, S> RecordError<L, K, S> {
     where
         L: LabelError<E, Labels = K> + Clone,
     {
-        let labels = label.label_error(&err);
+        let labels = label.label_error(err);
         errors
             .lock()
             .entry(labels)

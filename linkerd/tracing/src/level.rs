@@ -11,7 +11,7 @@ impl Handle {
     }
 
     pub fn set_from(&self, bytes: impl AsRef<[u8]>) -> Result<(), String> {
-        let body = std::str::from_utf8(&bytes.as_ref()).map_err(|e| format!("{}", e))?;
+        let body = std::str::from_utf8(bytes.as_ref()).map_err(|e| format!("{}", e))?;
         trace!(request.body = ?body);
         self.set_level(body).map_err(|e| format!("{}", e))
     }
