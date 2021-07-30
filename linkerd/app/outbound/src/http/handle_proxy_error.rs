@@ -66,7 +66,11 @@ where
         Box::pin(async move {
             match response.await {
                 Ok(rsp) => {
-                    if let Some(_) = rsp.headers().get(linkerd_app_core::errors::L5D_PROXY_ERROR) {
+                    if rsp
+                        .headers()
+                        .get(linkerd_app_core::errors::L5D_PROXY_ERROR)
+                        .is_some()
+                    {
                         // Gracefully teardown the accepted connection.
                         if let Some(ClientHandle { close, .. }) = client {
                             close.close();
@@ -84,7 +88,7 @@ where
 mod test {
     use super::NewHandleProxyError;
     use crate::{
-        http::{BoxBody, Endpoint, NewServeHttp, Request, Response, Version},
+        http::{Endpoint, NewServeHttp, Request, Response, Version},
         test_util::{
             self, future,
             support::{self, connect::Connect, http_util},
@@ -102,6 +106,7 @@ mod test {
         tls::{ConditionalClientTls, NoClientTls},
         Error, Infallible, ProxyRuntime,
     };
+    use linkerd_proxy_http::BoxRequest;
     use linkerd_tracing::test;
     use std::net::SocketAddr;
 
@@ -143,13 +148,15 @@ mod test {
     {
         Outbound::new(config.clone(), rt.clone())
             .with_stack(connect)
-            .push_http_endpoint::<_, BoxBody>()
-            .into_stack()
+            .push_http_endpoint()
             .push(NewHandleProxyError::layer())
+            .push_http_server()
+            .map_stack(|_, _, s| s.push_on_response(BoxRequest::layer()))
             .push(NewServeHttp::layer(
                 config.proxy.server.h2_settings,
                 rt.drain,
             ))
+            .into_stack()
             .push_on_response(BoxService::layer())
             .push(BoxNewService::layer())
             .into_inner()
