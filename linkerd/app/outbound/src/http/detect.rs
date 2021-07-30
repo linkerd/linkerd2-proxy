@@ -1,6 +1,6 @@
 use crate::{http, Outbound};
 use linkerd_app_core::{
-    config::{ProxyConfig, ServerConfig},
+    config::ServerConfig,
     detect, io,
     svc::{self, Param},
     Error, Infallible,
@@ -32,11 +32,7 @@ impl<N> Outbound<N> {
         U: From<(http::Version, T)> + svc::Param<http::Version> + 'static,
     {
         self.map_stack(|config, rt, tcp| {
-            let ProxyConfig {
-                server: ServerConfig { h2_settings, .. },
-                detect_protocol_timeout,
-                ..
-            } = config.proxy;
+            let ServerConfig { h2_settings, .. } = config.proxy.server;
 
             let skipped = tcp
                 .clone()
@@ -61,11 +57,7 @@ impl<N> Outbound<N> {
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
                 .push(svc::BoxNewService::layer())
-                .push(detect::NewDetectService::layer(detect::Config::<
-                    http::DetectHttp,
-                >::from_timeout(
-                    detect_protocol_timeout
-                )))
+                .push(detect::NewDetectService::layer(config.proxy.detect_http()))
                 .push_switch(
                     // When the target is marked as as opaque, we skip HTTP
                     // detection and just use the TCP stack directly.

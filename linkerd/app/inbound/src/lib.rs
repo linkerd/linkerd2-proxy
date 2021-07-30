@@ -276,11 +276,7 @@ where
                     ))
                     .push_map_target(detect::allow_timeout)
                     .push(svc::BoxNewService::layer())
-                    .push(detect::NewDetectService::layer(detect::Config::<
-                        http::DetectHttp,
-                    >::from_timeout(
-                        detect_timeout
-                    )))
+                    .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
                     .check_new_service::<TcpAccept, _>()
                     .push_request_filter(require_id)
                     .push(rt.metrics.transport.layer_accept())
