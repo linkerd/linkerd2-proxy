@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 use http::header::AsHeaderName;
 use http::uri::Authority;
 use linkerd_error::Error;

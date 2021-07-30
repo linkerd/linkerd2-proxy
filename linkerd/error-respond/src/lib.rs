@@ -2,7 +2,6 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 use futures::{ready, TryFuture};
 use linkerd_error::Error;
 use pin_project::pin_project;
