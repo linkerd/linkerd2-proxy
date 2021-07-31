@@ -90,8 +90,36 @@ impl<C> Inbound<C> {
                     .check_new_service::<TlsAccept, _>()
                     .push(rt.metrics.transport.layer_accept())
                     .check_new_service::<TlsAccept, _>()
-                    .push_map_target(|(tls, inner): (tls::ConditionalServerTls, Accept)| {
-                        TlsAccept { tls, inner }
+                    .push_request_filter(|(tls, inner): (tls::ConditionalServerTls, Accept)| {
+                        #[derive(Debug, thiserror::Error)]
+                        #[error("identity required on port {0}")]
+                        struct IdentityRequired(u16);
+
+                        match (inner.policy, &tls) {
+                            // Permit all connections if no authentication is required.
+                            (port_policies::AllowPolicy::Unauthenticated { .. }, _) => {
+                                Ok(TlsAccept { tls, inner })
+                            }
+                            // Permit connections with a validated client identity if authentication
+                            // is required.
+                            (
+                                port_policies::AllowPolicy::Authenticated,
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                    client_id: Some(_),
+                                    ..
+                                }),
+                            ) => Ok(TlsAccept { tls, inner }),
+                            // Permit terminated TLS connections when client authentication is not
+                            // required.
+                            (
+                                port_policies::AllowPolicy::TlsUnauthenticated,
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                    ..
+                                }),
+                            ) => Ok(TlsAccept { tls, inner }),
+                            // Otherwise, reject the connection.
+                            _ => Err(IdentityRequired(inner.orig_dst_addr.as_ref().port())),
+                        }
                     })
                     .check_new_service::<(tls::ConditionalServerTls, Accept), _>()
                     .push(svc::BoxNewService::layer())
