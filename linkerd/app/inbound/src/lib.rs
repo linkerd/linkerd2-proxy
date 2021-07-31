@@ -17,7 +17,7 @@ pub(crate) mod test_util;
 
 pub use self::{
     port_policies::PortPolicies,
-    target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
+    target::{HttpEndpoint, Logical, TcpEndpoint},
 };
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, ServerConfig},
@@ -171,13 +171,11 @@ impl Inbound<()> {
     }
 }
 
-impl<T> Inbound<T> {
-    pub fn push<L: svc::layer::Layer<T>>(self, layer: L) -> Inbound<L::Service> {
+impl<S> Inbound<S> {
+    pub fn push<L: svc::layer::Layer<S>>(self, layer: L) -> Inbound<L::Service> {
         self.map_stack(|_, _, stack| stack.push(layer))
     }
-}
 
-impl<S> Inbound<S> {
     // Forwards TCP streams that cannot be decoded as HTTP.
     //
     // Looping is always prevented.

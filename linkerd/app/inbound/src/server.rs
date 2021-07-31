@@ -1,7 +1,7 @@
-use crate::{direct, http, port_policies, target::TcpEndpoint, Inbound};
+use crate::{direct, port_policies, target::TcpEndpoint, Inbound};
 use linkerd_app_core::{
     detect, identity, io, profiles,
-    proxy::identity::LocalCrtKey,
+    proxy::{http, identity::LocalCrtKey},
     svc, tls,
     transport::addrs::{ClientAddr, OrigDstAddr, Remote},
     Error,
@@ -130,7 +130,7 @@ impl<C> Inbound<C> {
 
 impl svc::Param<u16> for TlsAccept {
     fn param(&self) -> u16 {
-        self.accept.orig_dst_addr.0.port()
+        self.inner.orig_dst_addr.0.port()
     }
 }
 
