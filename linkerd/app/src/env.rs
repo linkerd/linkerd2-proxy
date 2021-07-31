@@ -489,24 +489,53 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Ensure that connections thaat directly target the inbound port are
         // secured (unless identity is disabled).
         let inbound_port = server.addr.as_ref().port();
-        if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
-            debug!(
-                "Adding {} to {}",
-                inbound_port, ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
-            );
-            require_identity_for_inbound_ports.insert(inbound_port);
-        }
+        let port_policies = {
+            if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
+                debug!(
+                    "Adding {} to {}",
+                    inbound_port, ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
+                );
+                require_identity_for_inbound_ports.insert(inbound_port);
+            }
 
-        // Ensure that the inbound port does not disable protocol detection, as
-        // is required for opaque transport.
-        let inbound_opaque_ports = inbound_disable_ports?.unwrap_or_default();
-        if inbound_opaque_ports.contains(&inbound_port) {
-            error!(
-                "{} must not contain {} ({})",
-                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, ENV_INBOUND_LISTEN_ADDR, inbound_port
-            );
-            return Err(EnvError::InvalidEnvVar);
-        }
+            // Ensure that the inbound port does not disable protocol detection, as
+            // is required for opaque transport.
+            let inbound_opaque_ports = inbound_disable_ports?.unwrap_or_default();
+            if inbound_opaque_ports.contains(&inbound_port) {
+                error!(
+                    "{} must not contain {} ({})",
+                    ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                    ENV_INBOUND_LISTEN_ADDR,
+                    inbound_port
+                );
+                return Err(EnvError::InvalidEnvVar);
+            }
+
+            for p in require_identity_for_inbound_ports.iter() {
+                if inbound_opaque_ports.contains(p) {
+                    error!(
+                        "{} must not overlap with {} ({})",
+                        ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                        ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
+                        p
+                    );
+                    return Err(EnvError::InvalidEnvVar);
+                }
+            }
+
+            port_policies::PortPolicies::new(
+                port_policies::AllowPolicy::Unauthenticated { skip_detect: false }.into(),
+                require_identity_for_inbound_ports
+                    .into_iter()
+                    .map(|p| (p, port_policies::AllowPolicy::Authenticated))
+                    .chain(inbound_opaque_ports.into_iter().map(|p| {
+                        (
+                            p,
+                            port_policies::AllowPolicy::Unauthenticated { skip_detect: true },
+                        )
+                    })),
+            )
+        };
 
         inbound::Config {
             allow_discovery: NameMatch::new(dst_profile_suffixes),
@@ -521,7 +550,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 detect_protocol_timeout,
             },
             // FIXME
-            port_policies: port_policies::AllowPolicy::Unauthenticated.into(),
+            port_policies,
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
         }

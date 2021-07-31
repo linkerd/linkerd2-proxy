@@ -24,7 +24,7 @@ pub enum AllowPolicy {
     /// Allows all terminated TLS connections, including those with no client ID.
     TlsUnauthenticated,
     /// Allows all unauthenticated connections.
-    Unauthenticated,
+    Unauthenticated { skip_detect: bool },
 }
 
 /// A hasher for ports.
@@ -55,18 +55,32 @@ impl PortPolicies {
     }
 }
 
-impl From<AllowPolicy> for PortPolicies {
-    fn from(default: AllowPolicy) -> Self {
-        DefaultPolicy::Allow(default).into()
+impl PortPolicies {
+    pub fn new(default: DefaultPolicy, iter: impl IntoIterator<Item = (u16, AllowPolicy)>) -> Self {
+        Self {
+            default,
+            by_port: Arc::new(iter.into_iter().collect::<Map>()),
+        }
     }
 }
 
 impl From<DefaultPolicy> for PortPolicies {
     fn from(default: DefaultPolicy) -> Self {
-        Self {
-            default,
-            by_port: Default::default(),
-        }
+        Self::new(default, None)
+    }
+}
+
+impl From<AllowPolicy> for PortPolicies {
+    fn from(default: AllowPolicy) -> Self {
+        DefaultPolicy::from(default).into()
+    }
+}
+
+// === impl DefaultPolicy ===
+
+impl From<AllowPolicy> for DefaultPolicy {
+    fn from(default: AllowPolicy) -> Self {
+        DefaultPolicy::Allow(default)
     }
 }
 
