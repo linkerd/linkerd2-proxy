@@ -1,13 +1,13 @@
-use crate::app_core::{svc::Param, tls, Error};
-use crate::io;
-use crate::ContextError;
+use crate::{
+    app_core::{svc, tls, Error},
+    io, ContextError,
+};
 use futures::FutureExt;
 use hyper::{
     body::HttpBody,
     client::conn::{Builder as ClientBuilder, SendRequest},
     Body, Request, Response,
 };
-use linkerd_app_core::svc::BoxService;
 use std::{
     future::Future,
     sync::{Arc, Mutex},
@@ -23,7 +23,7 @@ pub struct Server {
 
 type HandleFuture = Box<dyn (FnMut(Request<Body>) -> Result<Response<Body>, Error>) + Send>;
 
-type BoxServer = BoxService<io::DuplexStream, (), Error>;
+type BoxServer = svc::BoxTcp<io::DuplexStream>;
 
 impl Default for Server {
     fn default() -> Self {
@@ -149,7 +149,7 @@ impl Server {
     pub fn run<E>(self) -> impl (FnMut(E) -> io::Result<io::BoxedIo>) + Send + 'static
     where
         E: std::fmt::Debug,
-        E: Param<tls::ConditionalClientTls>,
+        E: svc::Param<tls::ConditionalClientTls>,
     {
         let Self { f, settings } = self;
         let f = Arc::new(Mutex::new(f));

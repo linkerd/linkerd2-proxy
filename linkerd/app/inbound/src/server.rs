@@ -42,7 +42,7 @@ impl<C> Inbound<C> {
         proxy_port: u16,
         profiles: P,
         gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
         C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
