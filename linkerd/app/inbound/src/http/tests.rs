@@ -21,60 +21,6 @@ use linkerd_tracing::test::trace_init;
 use std::net::SocketAddr;
 use tracing::Instrument;
 
-#[derive(Clone, Debug)]
-struct Target(http::Version);
-
-impl Target {
-    const HTTP1: Self = Self(http::Version::Http1);
-    const H2: Self = Self(http::Version::H2);
-
-    fn addr() -> SocketAddr {
-        ([192, 0, 2, 2], 80).into()
-    }
-}
-
-impl svc::Param<OrigDstAddr> for Target {
-    fn param(&self) -> OrigDstAddr {
-        OrigDstAddr(Self::addr())
-    }
-}
-
-impl svc::Param<Remote<ServerAddr>> for Target {
-    fn param(&self) -> Remote<ServerAddr> {
-        Remote(ServerAddr(Self::addr()))
-    }
-}
-
-impl svc::Param<Remote<ClientAddr>> for Target {
-    fn param(&self) -> Remote<ClientAddr> {
-        Remote(ClientAddr(([192, 0, 2, 3], 50000).into()))
-    }
-}
-
-impl svc::Param<http::Version> for Target {
-    fn param(&self) -> http::Version {
-        self.0
-    }
-}
-
-impl svc::Param<tls::ConditionalServerTls> for Target {
-    fn param(&self) -> tls::ConditionalServerTls {
-        tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello)
-    }
-}
-
-impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
-    fn param(&self) -> http::normalize_uri::DefaultAuthority {
-        http::normalize_uri::DefaultAuthority(None)
-    }
-}
-
-impl svc::Param<Option<identity::Name>> for Target {
-    fn param(&self) -> Option<identity::Name> {
-        None
-    }
-}
-
 fn build_server<I>(
     cfg: Config,
     rt: ProxyRuntime,
@@ -115,7 +61,7 @@ async fn unmeshed_http1_hello_world() {
     // Build the outbound server
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(Target::H2);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::HTTP1);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
@@ -419,4 +365,60 @@ fn connect_timeout(
             .instrument(span),
         )
     })
+}
+
+#[derive(Clone, Debug)]
+struct Target(http::Version);
+
+// === impl Target ===
+
+impl Target {
+    const HTTP1: Self = Self(http::Version::Http1);
+    const H2: Self = Self(http::Version::H2);
+
+    fn addr() -> SocketAddr {
+        ([127, 0, 0, 1], 80).into()
+    }
+}
+
+impl svc::Param<OrigDstAddr> for Target {
+    fn param(&self) -> OrigDstAddr {
+        OrigDstAddr(([192, 0, 2, 2], 80).into())
+    }
+}
+
+impl svc::Param<Remote<ServerAddr>> for Target {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(Self::addr()))
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for Target {
+    fn param(&self) -> Remote<ClientAddr> {
+        Remote(ClientAddr(([192, 0, 2, 3], 50000).into()))
+    }
+}
+
+impl svc::Param<http::Version> for Target {
+    fn param(&self) -> http::Version {
+        self.0
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for Target {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello)
+    }
+}
+
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(None)
+    }
+}
+
+impl svc::Param<Option<identity::Name>> for Target {
+    fn param(&self) -> Option<identity::Name> {
+        None
+    }
 }

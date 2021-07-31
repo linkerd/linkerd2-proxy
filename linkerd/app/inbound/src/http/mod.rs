@@ -13,22 +13,22 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use crate::{
-        target::{HttpAccept, TcpAccept, TcpEndpoint},
+        target::TcpEndpoint,
         test_util::{
             support::{connect::Connect, http_util, profile, resolver},
             *,
         },
         Config, Inbound,
     };
-    use hyper::http;
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
     use libfuzzer_sys::arbitrary::Arbitrary;
     use linkerd_app_core::{
-        io, proxy,
+        identity, io,
+        proxy::http,
         svc::{self, NewService, Param},
         tls,
-        transport::{ClientAddr, Remote, ServerAddr},
-        Conditional, NameAddr, ProxyRuntime,
+        transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
+        NameAddr, ProxyRuntime,
     };
     pub use linkerd_app_test as support;
     use linkerd_app_test::*;
@@ -46,16 +46,8 @@ pub mod fuzz_logic {
         let mut server = hyper::server::conn::Http::new();
         server.http1_only(true);
         let mut client = ClientBuilder::new();
-        let accept = HttpAccept {
-            version: proxy::http::Version::Http1,
-            tcp: TcpAccept {
-                target_addr: ([127, 0, 0, 1], 5550).into(),
-                client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-                tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-            },
-        };
         let connect =
-            support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_fuzz_server(server));
+            support::connect().endpoint_fn_boxed(Target::addr(), hello_fuzz_server(server));
         let profiles = profile::resolver();
         let profile_tx = profiles
             .profile_tx(NameAddr::from_str_and_port("foo.svc.cluster.local", 5550).unwrap());
@@ -64,7 +56,7 @@ pub mod fuzz_logic {
         // Build the outbound server
         let cfg = default_config();
         let (rt, _shutdown) = runtime();
-        let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(accept);
+        let server = build_fuzz_server(cfg, rt, profiles, connect).new_service(Target::HTTP1);
         let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
         // Now send all of the requests
@@ -73,9 +65,9 @@ pub mod fuzz_logic {
                 if let Ok(header_name) = std::str::from_utf8(&inp.header_name[..]) {
                     if let Ok(header_value) = std::str::from_utf8(&inp.header_value[..]) {
                         let http_method = if inp.http_method {
-                            http::Method::GET
+                            hyper::http::Method::GET
                         } else {
-                            http::Method::POST
+                            hyper::http::Method::POST
                         };
 
                         if let Ok(req) = Request::builder()
@@ -98,7 +90,7 @@ pub mod fuzz_logic {
 
         drop(client);
         // It's okay if the background task returns an error, as this would
-        // indcate that the proxy closed the connection --- which it will do on
+        // indicate that the proxy closed the connection --- which it will do on
         // invalid inputs. We want to ensure that the proxy doesn't crash in the
         // face of these inputs, and the background task will panic in this
         // case.
@@ -127,7 +119,7 @@ pub mod fuzz_logic {
         rt: ProxyRuntime,
         profiles: resolver::Profiles,
         connect: Connect<Remote<ServerAddr>>,
-    ) -> svc::BoxNewTcp<HttpAccept, I>
+    ) -> svc::BoxNewTcp<Target, I>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
@@ -170,6 +162,61 @@ pub mod fuzz_logic {
             }
 
             dbg.finish()
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct Target(http::Version);
+
+    // === impl Target ===
+
+    impl Target {
+        const HTTP1: Self = Self(http::Version::Http1);
+
+        fn addr() -> SocketAddr {
+            ([192, 0, 2, 2], 80).into()
+        }
+    }
+
+    impl svc::Param<OrigDstAddr> for Target {
+        fn param(&self) -> OrigDstAddr {
+            OrigDstAddr(Self::addr())
+        }
+    }
+
+    impl svc::Param<Remote<ServerAddr>> for Target {
+        fn param(&self) -> Remote<ServerAddr> {
+            Remote(ServerAddr(Self::addr()))
+        }
+    }
+
+    impl svc::Param<Remote<ClientAddr>> for Target {
+        fn param(&self) -> Remote<ClientAddr> {
+            Remote(ClientAddr(([192, 0, 2, 3], 50000).into()))
+        }
+    }
+
+    impl svc::Param<http::Version> for Target {
+        fn param(&self) -> http::Version {
+            self.0
+        }
+    }
+
+    impl svc::Param<tls::ConditionalServerTls> for Target {
+        fn param(&self) -> tls::ConditionalServerTls {
+            tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello)
+        }
+    }
+
+    impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
+        fn param(&self) -> http::normalize_uri::DefaultAuthority {
+            http::normalize_uri::DefaultAuthority(None)
+        }
+    }
+
+    impl svc::Param<Option<identity::Name>> for Target {
+        fn param(&self) -> Option<identity::Name> {
+            None
         }
     }
 }

@@ -57,7 +57,7 @@ impl PortPolicies {
 
 impl From<AllowPolicy> for PortPolicies {
     fn from(default: AllowPolicy) -> Self {
-        default.into()
+        DefaultPolicy::Allow(default).into()
     }
 }
 
