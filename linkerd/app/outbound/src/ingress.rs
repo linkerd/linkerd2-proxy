@@ -74,6 +74,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
 
         let http_endpoint = self.into_stack();
 
+        let detect_http = config.proxy.detect_http();
         let Config {
             allow_discovery,
             proxy:
@@ -81,7 +82,6 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     server: ServerConfig { h2_settings, .. },
                     dispatch_timeout,
                     max_in_flight_requests,
-                    detect_protocol_timeout,
                     buffer_capacity,
                     cache_max_idle_age,
                     ..
@@ -223,10 +223,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             .push_cache(cache_max_idle_age)
             .push_map_target(detect::allow_timeout)
             .push(svc::BoxNewService::layer())
-            .push(detect::NewDetectService::layer(
-                detect_protocol_timeout,
-                http::DetectHttp::default(),
-            ))
+            .push(detect::NewDetectService::layer(detect_http))
             .push(rt.metrics.transport.layer_accept())
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
             .push_map_target(|a: T| {

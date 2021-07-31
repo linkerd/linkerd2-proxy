@@ -93,7 +93,6 @@ where
     let ProxyConfig {
         buffer_capacity,
         cache_max_idle_age,
-        detect_protocol_timeout,
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
@@ -232,8 +231,7 @@ where
         .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
         .push(svc::BoxNewService::layer())
         .push(detect::NewDetectService::layer(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
+            inbound.config().proxy.detect_http(),
         ));
 
     // When a transported connection is received, use the header's target to

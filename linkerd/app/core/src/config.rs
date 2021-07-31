@@ -1,6 +1,6 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
-    proxy::http::{h1, h2},
+    proxy::http::{self, h1, h2},
     svc::Param,
     transport::{Keepalive, ListenAddr},
 };
@@ -31,6 +31,14 @@ pub struct ProxyConfig {
     pub dispatch_timeout: Duration,
     pub max_in_flight_requests: usize,
     pub detect_protocol_timeout: Duration,
+}
+
+// === impl ProxyConfig ===
+
+impl ProxyConfig {
+    pub fn detect_http(&self) -> linkerd_detect::Config<http::DetectHttp> {
+        linkerd_detect::Config::from_timeout(self.detect_protocol_timeout)
+    }
 }
 
 // === impl ServerConfig ===

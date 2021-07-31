@@ -83,10 +83,7 @@ impl<C> Inbound<C> {
                     ))
                     .push(svc::BoxNewService::layer())
                     .push_map_target(detect::allow_timeout)
-                    .push(detect::NewDetectService::layer(
-                        detect_timeout,
-                        http::DetectHttp::default(),
-                    ))
+                    .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
                     .push(rt.metrics.transport.layer_accept())
                     .push_map_target(|(tls, inner)| TlsAccept { tls, inner })
                     .push(svc::BoxNewService::layer())
