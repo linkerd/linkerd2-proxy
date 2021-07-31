@@ -8,7 +8,7 @@ use linkerd_app_core::{
         addrs::{ClientAddr, OrigDstAddr, Remote},
         ServerAddr,
     },
-    Error,
+    Error, Infallible,
 };
 use std::fmt::Debug;
 use tracing::{debug_span, info_span};
@@ -81,7 +81,6 @@ impl<C> Inbound<C> {
                             .push_tcp_forward()
                             .into_stack()
                             .push_map_target(TcpEndpoint::from_param)
-                            .check_clone_new_service::<TlsAccept, _>()
                             .push_on_response(svc::BoxService::layer())
                             .into_inner(),
                     ))
@@ -100,6 +99,21 @@ impl<C> Inbound<C> {
                         timeout: tls::server::Timeout(detect_timeout),
                         identity: rt.identity.clone(),
                     }))
+                    .push_switch(
+                        |a: Accept| -> Result<_, Infallible> {
+                            if let port_policies::AllowPolicy::Unauthenticated {
+                                skip_detect: false,
+                            } = a.policy
+                            {
+                                return Ok(svc::Either::B(a));
+                            }
+                            Ok(svc::Either::A(a))
+                        },
+                        tcp.clone()
+                            .push_tcp_forward()
+                            .into_stack()
+                            .push_map_target(TcpEndpoint::from_param),
+                    )
             })
             .map_stack(|cfg, rt, accept| {
                 let port_policies = cfg.port_policies.clone();
@@ -135,11 +149,19 @@ impl<C> Inbound<C> {
     }
 }
 
+// === impl Accept ===
+
+impl svc::Param<u16> for Accept {
+    fn param(&self) -> u16 {
+        self.orig_dst_addr.0.port()
+    }
+}
+
 // === impl TlsAccept ===
 
 impl svc::Param<u16> for TlsAccept {
     fn param(&self) -> u16 {
-        self.inner.orig_dst_addr.0.port()
+        self.inner.param()
     }
 }
 
