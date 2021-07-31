@@ -136,7 +136,7 @@ impl<C> Inbound<C> {
                     .push_switch(
                         |a: Accept| -> Result<_, Infallible> {
                             if let port_policies::AllowPolicy::Unauthenticated {
-                                skip_detect: false,
+                                skip_detect: true,
                             } = a.policy
                             {
                                 return Ok(svc::Either::B(a));
