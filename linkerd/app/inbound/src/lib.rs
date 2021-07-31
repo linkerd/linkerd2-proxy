@@ -15,7 +15,6 @@ pub mod target;
 pub(crate) mod test_util;
 
 pub use self::port_policies::PortPolicies;
-use self::target::TcpEndpoint;
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, ServerConfig},
     drain, io, metrics, profiles,
@@ -176,18 +175,19 @@ impl<S> Inbound<S> {
     // Forwards TCP streams that cannot be decoded as HTTP.
     //
     // Looping is always prevented.
-    pub fn push_tcp_forward<I>(
+    pub fn push_tcp_forward<T, I>(
         self,
     ) -> Inbound<
         svc::BoxNewService<
-            TcpEndpoint,
+            T,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
+        T: svc::Param<transport::labels::Key> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite,
         I: Debug + Send + Sync + Unpin + 'static,
-        S: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
+        S: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
         S::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         S::Error: Into<Error>,
         S::Future: Send,
@@ -202,7 +202,7 @@ impl<S> Inbound<S> {
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
                 .push(svc::BoxNewService::layer())
-                .check_new::<TcpEndpoint>()
+                .check_new::<T>()
         })
     }
 }
