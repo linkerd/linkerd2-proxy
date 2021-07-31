@@ -8,6 +8,7 @@ use crate::core::{
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
+use inbound::port_policies;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -519,10 +520,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
+            // FIXME
+            port_policies: port_policies::AllowPolicy::Unauthenticated.into(),
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
-            disable_protocol_detection_for_ports: inbound_opaque_ports.into_iter().collect(),
         }
     };
 
