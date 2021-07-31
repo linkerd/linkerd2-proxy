@@ -1,21 +1,14 @@
 use super::set_identity_header::NewSetIdentityHeader;
-use crate::{
-    allow_discovery::AllowProfile,
-    target::{self, /*HttpAccept,*/ HttpEndpoint, Logical, TcpEndpoint},
-    Inbound,
-};
+use crate::Inbound;
 pub use linkerd_app_core::proxy::http::{
     normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
     Version,
 };
 use linkerd_app_core::{
-    classify,
     config::{ProxyConfig, ServerConfig},
-    dst, errors, http_tracing, identity, io, profiles,
-    proxy::{http, tap},
+    errors, http_tracing, identity, io,
+    proxy::http,
     svc::{self, Param},
-    tls,
-    transport::{Remote, ServerAddr},
     Error,
 };
 use tracing::debug_span;
@@ -66,7 +59,10 @@ impl<H> Inbound<H> {
                         .push(rt.metrics.http_errors.clone())
                         // Synthesizes responses for proxy errors.
                         .push(errors::layer())
-                        .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
+                        .push(http_tracing::server(
+                            rt.span_sink.clone(),
+                            super::trace_labels(),
+                        ))
                         // Record when an HTTP/1 URI was in absolute form
                         .push(http::normalize_uri::MarkAbsoluteForm::layer())
                         .push(http::BoxRequest::layer())

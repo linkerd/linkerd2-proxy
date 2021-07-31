@@ -6,7 +6,6 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-mod allow_discovery;
 pub mod direct;
 pub mod http;
 pub mod port_policies;
@@ -15,10 +14,8 @@ pub mod target;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::{
-    port_policies::PortPolicies,
-    target::{HttpEndpoint, Logical, TcpEndpoint},
-};
+pub use self::port_policies::PortPolicies;
+use self::target::TcpEndpoint;
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, ServerConfig},
     drain, io, metrics, profiles,
