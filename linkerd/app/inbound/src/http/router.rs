@@ -1,4 +1,4 @@
-use crate::{target::TcpEndpoint, Inbound};
+use crate::Inbound;
 use linkerd_app_core::{
     classify, dst, http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
@@ -33,7 +33,7 @@ struct Logical {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct HttpEndpoint {
+pub struct HttpEndpoint {
     port: u16,
     settings: http::client::Settings,
     tls: tls::ConditionalServerTls,
@@ -41,13 +41,7 @@ struct HttpEndpoint {
 
 // === impl Inbound ===
 
-impl<C> Inbound<C>
-where
-    C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-    C::Error: Into<Error>,
-    C::Future: Send,
-{
+impl<C> Inbound<C> {
     pub fn push_http_router<T, P>(
         self,
         profiles: P,
@@ -71,13 +65,16 @@ where
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
+        C: svc::Service<HttpEndpoint> + Clone + Send + Sync + Unpin + 'static,
+        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        C::Error: Into<Error>,
+        C::Future: Send,
     {
         self.map_stack(|config, rt, connect| {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let endpoint = connect
                 .push(svc::stack::BoxFuture::layer())
                 .push(rt.metrics.transport.layer_connect())
-                .push_map_target(TcpEndpoint::from_param)
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
@@ -158,7 +155,7 @@ where
                         }
                         Ok(svc::Either::B(target))
                     },
-                    no_profile.clone(),
+                    no_profile,
                 )
                 .push(profiles::discover::layer(profiles, move |t: Target| {
                     let addr = t.logical.ok_or_else(|| {
@@ -386,5 +383,11 @@ impl From<Target> for HttpEndpoint {
             settings: target.http.into(),
             tls: target.tls,
         }
+    }
+}
+
+impl Param<transport::labels::Key> for HttpEndpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::InboundConnect
     }
 }

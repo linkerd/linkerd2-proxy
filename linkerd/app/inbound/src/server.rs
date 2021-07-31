@@ -1,4 +1,4 @@
-use crate::{direct, port_policies, target::TcpEndpoint, Inbound};
+use crate::{direct, port_policies, Inbound};
 use linkerd_app_core::{
     detect, identity, io, profiles,
     proxy::{http, identity::LocalCrtKey},
@@ -30,6 +30,11 @@ struct TlsAccept {
 struct HttpAccept {
     inner: TlsAccept,
     http: http::Version,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TcpEndpoint {
+    pub port: u16,
 }
 
 #[derive(Clone)]
@@ -67,7 +72,8 @@ impl<C> Inbound<C> {
     {
         let tcp = self.clone();
 
-        self.push_http_router(profiles)
+        self.map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
+            .push_http_router(profiles)
             .push_http_server()
             .map_stack(|cfg, rt, http| {
                 let detect_timeout = cfg.proxy.detect_protocol_timeout;
@@ -250,6 +256,26 @@ impl svc::Param<Option<identity::Name>> for HttpAccept {
                 } => Some(id.clone().0),
                 _ => None,
             })
+    }
+}
+
+// === impl TcpAccept ===
+
+impl TcpEndpoint {
+    pub fn from_param<T: svc::Param<u16>>(t: T) -> Self {
+        Self { port: t.param() }
+    }
+}
+
+impl svc::Param<u16> for TcpEndpoint {
+    fn param(&self) -> u16 {
+        self.port
+    }
+}
+
+impl svc::Param<transport::labels::Key> for TcpEndpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::InboundConnect
     }
 }
 

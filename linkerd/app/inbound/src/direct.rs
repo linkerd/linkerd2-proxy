@@ -1,4 +1,4 @@
-use crate::{target::TcpEndpoint, Inbound};
+use crate::{server::TcpEndpoint, Inbound};
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,

@@ -1,5 +1,4 @@
 use crate::{
-    target::TcpEndpoint,
     test_util::{
         support::{connect::Connect, http_util, profile, resolver},
         *,
@@ -30,14 +29,13 @@ fn build_server<I>(
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
-    // Mocks to_tcp_connect.
-    let connect = svc::stack(connect)
-        .push_map_target(|t: TcpEndpoint| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
-        .push_connect_timeout(cfg.proxy.connect.timeout)
-        .into_inner();
-
     Inbound::new(cfg, rt)
         .with_stack(connect)
+        .map_stack(|cfg, _, s| {
+            s.push_map_target(|p| Remote(ServerAddr(([127, 0, 0, 1], p).into())))
+                .push_map_target(|t| Param::<u16>::param(&t))
+                .push_connect_timeout(cfg.proxy.connect.timeout)
+        })
         .push_http_router(profiles)
         .push_http_server()
         .into_inner()

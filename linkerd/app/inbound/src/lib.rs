@@ -10,7 +10,6 @@ pub mod direct;
 pub mod http;
 pub mod port_policies;
 mod server;
-pub mod target;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
