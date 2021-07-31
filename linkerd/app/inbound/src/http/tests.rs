@@ -1,5 +1,5 @@
 use crate::{
-    target::{HttpAccept, TcpAccept, TcpEndpoint},
+    target::TcpEndpoint,
     test_util::{
         support::{connect::Connect, http_util, profile, resolver},
         *,
@@ -9,22 +9,78 @@ use crate::{
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     errors::L5D_PROXY_ERROR,
-    io, proxy,
+    identity, io,
+    proxy::http,
     svc::{self, NewService, Param},
     tls,
-    transport::{ClientAddr, Remote, ServerAddr},
-    Conditional, NameAddr, ProxyRuntime,
+    transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
+    NameAddr, ProxyRuntime,
 };
 use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
+use std::net::SocketAddr;
 use tracing::Instrument;
+
+#[derive(Clone, Debug)]
+struct Target(http::Version);
+
+impl Target {
+    const HTTP1: Self = Self(http::Version::Http1);
+    const H2: Self = Self(http::Version::H2);
+
+    fn addr() -> SocketAddr {
+        ([192, 0, 2, 2], 80).into()
+    }
+}
+
+impl svc::Param<OrigDstAddr> for Target {
+    fn param(&self) -> OrigDstAddr {
+        OrigDstAddr(Self::addr())
+    }
+}
+
+impl svc::Param<Remote<ServerAddr>> for Target {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(Self::addr()))
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for Target {
+    fn param(&self) -> Remote<ClientAddr> {
+        Remote(ClientAddr(([192, 0, 2, 3], 50000).into()))
+    }
+}
+
+impl svc::Param<http::Version> for Target {
+    fn param(&self) -> http::Version {
+        self.0
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for Target {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello)
+    }
+}
+
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
+    fn param(&self) -> http::normalize_uri::DefaultAuthority {
+        http::normalize_uri::DefaultAuthority(None)
+    }
+}
+
+impl svc::Param<Option<identity::Name>> for Target {
+    fn param(&self) -> Option<identity::Name> {
+        None
+    }
+}
 
 fn build_server<I>(
     cfg: Config,
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
-) -> svc::BoxNewTcp<HttpAccept, I>
+) -> svc::BoxNewTcp<Target, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
@@ -48,18 +104,8 @@ async fn unmeshed_http1_hello_world() {
     let mut client = ClientBuilder::new();
     let _trace = trace_init();
 
-    let accept = HttpAccept {
-        version: proxy::http::Version::Http1,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect =
-        support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
+    let connect = support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -69,11 +115,11 @@ async fn unmeshed_http1_hello_world() {
     // Build the outbound server
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::H2);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -95,18 +141,8 @@ async fn downgrade_origin_form() {
     client.http2_only(true);
     let _trace = trace_init();
 
-    let accept = HttpAccept {
-        version: proxy::http::Version::H2,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect =
-        support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
+    let connect = support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -116,11 +152,11 @@ async fn downgrade_origin_form() {
     // Build the outbound server
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::H2);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1")
@@ -143,18 +179,8 @@ async fn downgrade_absolute_form() {
     client.http2_only(true);
     let _trace = trace_init();
 
-    let accept = HttpAccept {
-        version: proxy::http::Version::H2,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-
     // Build a mock "connector" that returns the upstream "server" IO.
-    let connect =
-        support::connect().endpoint_fn_boxed(accept.tcp.target_addr, hello_server(server));
+    let connect = support::connect().endpoint_fn_boxed(Target::addr(), hello_server(server));
 
     let profiles = profile::resolver();
     let profile_tx =
@@ -164,11 +190,11 @@ async fn downgrade_absolute_form() {
     // Build the outbound server
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::H2);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1; absolute-form")
@@ -188,15 +214,7 @@ async fn http1_bad_gateway_response_error_header() {
     let _trace = trace_init();
 
     // Build a mock connect that always errors.
-    let accept = HttpAccept {
-        version: proxy::http::Version::Http1,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-    let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, connect_error());
+    let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors so that responses
     // are BAD_GATEWAY.
@@ -207,13 +225,13 @@ async fn http1_bad_gateway_response_error_header() {
     profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::HTTP1);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -237,15 +255,7 @@ async fn http1_connect_timeout_response_error_header() {
     // Build a mock connect that sleeps longer than the default inbound
     // connect timeout.
     let server = hyper::server::conn::Http::new();
-    let accept = HttpAccept {
-        version: proxy::http::Version::Http1,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-    let connect = support::connect().endpoint(accept.tcp.target_addr, connect_timeout(server));
+    let connect = support::connect().endpoint(Target::addr(), connect_timeout(server));
 
     // Build a client using the connect that always sleeps so that responses
     // are GATEWAY_TIMEOUT.
@@ -256,13 +266,13 @@ async fn http1_connect_timeout_response_error_header() {
     profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::HTTP1);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -283,15 +293,7 @@ async fn h2_response_error_header() {
     let _trace = trace_init();
 
     // Build a mock connect that always errors.
-    let accept = HttpAccept {
-        version: proxy::http::Version::H2,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-    let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, connect_error());
+    let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
     let mut client = ClientBuilder::new();
@@ -302,13 +304,13 @@ async fn h2_response_error_header() {
     profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::H2);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is SERVICE_UNAVAILABLE with the
     // expected header message.
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -332,15 +334,7 @@ async fn grpc_response_error_header() {
     let _trace = trace_init();
 
     // Build a mock connect that always errors.
-    let accept = HttpAccept {
-        version: proxy::http::Version::H2,
-        tcp: TcpAccept {
-            target_addr: ([127, 0, 0, 1], 5550).into(),
-            client_addr: Remote(ClientAddr(([10, 0, 0, 41], 6894).into())),
-            tls: Conditional::None(tls::server::NoServerTls::NoClientHello),
-        },
-    };
-    let connect = support::connect().endpoint_fn_boxed(accept.tcp.target_addr, connect_error());
+    let connect = support::connect().endpoint_fn_boxed(Target::addr(), connect_error());
 
     // Build a client using the connect that always errors.
     let mut client = ClientBuilder::new();
@@ -351,13 +345,13 @@ async fn grpc_response_error_header() {
     profile_tx.send(profile::Profile::default()).unwrap();
     let cfg = default_config();
     let (rt, _shutdown) = runtime();
-    let server = build_server(cfg, rt, profiles, connect).new_service(accept);
+    let server = build_server(cfg, rt, profiles, connect).new_service(Target::H2);
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     // Send a request and assert that it is OK with the expected header
     // message.
     let req = Request::builder()
-        .method(http::Method::GET)
+        .method(::http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
         .body(Body::default())

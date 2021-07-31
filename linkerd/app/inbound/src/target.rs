@@ -123,10 +123,10 @@ impl svc::Param<transport::labels::Key> for TcpEndpoint {
     }
 }
 
-// Needed by `linkerd_app_test::Connect`
-#[cfg(test)]
-impl From<TcpEndpoint> for SocketAddr {
-    fn from(ep: TcpEndpoint) -> SocketAddr {
-        SocketAddr::from(([127, 0, 0, 1], ep.port))
-    }
-}
+// // Needed by `linkerd_app_test::Connect`
+// #[cfg(test)]
+// impl From<TcpEndpoint> for SocketAddr {
+//     fn from(ep: TcpEndpoint) -> SocketAddr {
+//         SocketAddr::from(([127, 0, 0, 1], ep.port))
+//     }
+// }
