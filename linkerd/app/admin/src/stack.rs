@@ -10,7 +10,6 @@ use linkerd_app_core::{
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use linkerd_app_inbound::target::{HttpAccept, Target, TcpAccept};
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;

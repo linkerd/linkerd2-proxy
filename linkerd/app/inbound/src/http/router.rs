@@ -338,7 +338,7 @@ impl tap::Inspect for Target {
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {
         req.extensions()
             .get::<tls::ConditionalServerTls>()
-            .map(|tls| tls.clone())
+            .cloned()
             .unwrap_or_else(|| tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
     }
 

@@ -3,7 +3,11 @@ use linkerd_app_core::{
     detect, identity, io, profiles,
     proxy::{http, identity::LocalCrtKey},
     svc, tls,
-    transport::addrs::{ClientAddr, OrigDstAddr, Remote},
+    transport::{
+        self,
+        addrs::{ClientAddr, OrigDstAddr, Remote},
+        ServerAddr,
+    },
     Error,
 };
 use std::fmt::Debug;
@@ -84,8 +88,13 @@ impl<C> Inbound<C> {
                     .push(svc::BoxNewService::layer())
                     .push_map_target(detect::allow_timeout)
                     .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
+                    .check_new_service::<TlsAccept, _>()
                     .push(rt.metrics.transport.layer_accept())
-                    .push_map_target(|(tls, inner)| TlsAccept { tls, inner })
+                    .check_new_service::<TlsAccept, _>()
+                    .push_map_target(|(tls, inner): (tls::ConditionalServerTls, Accept)| {
+                        TlsAccept { tls, inner }
+                    })
+                    .check_new_service::<(tls::ConditionalServerTls, Accept), _>()
                     .push(svc::BoxNewService::layer())
                     .push(tls::NewDetectTls::layer(TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
@@ -134,11 +143,39 @@ impl svc::Param<u16> for TlsAccept {
     }
 }
 
+impl svc::Param<transport::labels::Key> for TlsAccept {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::Accept {
+            direction: transport::labels::Direction::In,
+            tls: self.tls.clone(),
+            target_addr: self.inner.orig_dst_addr.into(),
+        }
+    }
+}
+
 // === impl HttpAccept ===
 
 impl svc::Param<http::Version> for HttpAccept {
     fn param(&self) -> http::Version {
         self.http
+    }
+}
+
+impl svc::Param<Remote<ServerAddr>> for HttpAccept {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(self.inner.inner.orig_dst_addr.into()))
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for HttpAccept {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.inner.inner.client_addr
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for HttpAccept {
+    fn param(&self) -> tls::ConditionalServerTls {
+        self.inner.tls.clone()
     }
 }
 
