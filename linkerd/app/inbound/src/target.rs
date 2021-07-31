@@ -14,24 +14,16 @@ use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpAccept {
-    pub target_addr: SocketAddr,
-    pub client_addr: Remote<ClientAddr>,
-    pub tls: tls::ConditionalServerTls,
+    target_addr: Remote<ServerAddr>,
+    client_addr: Remote<ClientAddr>,
+    tls: tls::ConditionalServerTls,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct HttpAccept {
-    pub tcp: TcpAccept,
-    pub version: http::Version,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Target {
-    pub dst: Addr,
-    pub target_addr: SocketAddr,
-    pub http_version: http::Version,
-    pub tls: tls::ConditionalServerTls,
-}
+// #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+// pub struct HttpAccept {
+//     pub tcp: TcpAccept,
+//     pub version: http::Version,
+// }
 
 #[derive(Clone, Debug)]
 pub struct Logical {
@@ -49,11 +41,6 @@ pub struct HttpEndpoint {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TcpEndpoint {
     pub port: u16,
-}
-
-#[derive(Clone, Debug)]
-pub struct RequestTarget {
-    accept: HttpAccept,
 }
 
 // === impl TcpAccept ===
@@ -110,6 +97,7 @@ impl Param<transport::labels::Key> for TcpAccept {
 
 // === impl HttpAccept ===
 
+/*
 impl From<(http::Version, TcpAccept)> for HttpAccept {
     fn from((version, tcp): (http::Version, TcpAccept)) -> Self {
         Self { version, tcp }
@@ -145,6 +133,7 @@ impl Param<Option<identity::Name>> for HttpAccept {
             })
     }
 }
+ */
 
 // === impl HttpEndpoint ===
 
@@ -166,11 +155,9 @@ impl From<Target> for HttpEndpoint {
 
 // === TcpEndpoint ===
 
-impl From<TcpAccept> for TcpEndpoint {
-    fn from(tcp: TcpAccept) -> Self {
-        Self {
-            port: tcp.target_addr.port(),
-        }
+impl TcpEndpoint {
+    pub fn from_param<T: svc::Param<u16>>(t: T) -> Self {
+        Self { port: t.param() }
     }
 }
 
@@ -218,16 +205,16 @@ pub(super) fn route((route, logical): (profiles::http::Route, Logical)) -> dst::
 
 // === impl Target ===
 
-impl From<HttpAccept> for Target {
-    fn from(HttpAccept { version, tcp }: HttpAccept) -> Self {
-        Self {
-            dst: tcp.target_addr.into(),
-            target_addr: tcp.target_addr,
-            http_version: version,
-            tls: tcp.tls,
-        }
-    }
-}
+// impl From<HttpAccept> for Target {
+//     fn from(HttpAccept { version, tcp }: HttpAccept) -> Self {
+//         Self {
+//             dst: tcp.target_addr.into(),
+//             target_addr: tcp.target_addr,
+//             http_version: version,
+//             tls: tcp.tls,
+//         }
+//     }
+// }
 
 impl From<Logical> for Target {
     fn from(Logical { target, .. }: Logical) -> Self {

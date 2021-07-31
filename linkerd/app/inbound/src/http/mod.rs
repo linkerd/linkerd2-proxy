@@ -5,7 +5,7 @@ mod tests;
 use self::set_identity_header::NewSetIdentityHeader;
 use crate::{
     allow_discovery::AllowProfile,
-    target::{self, HttpAccept, HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint},
+    target::{self, /*HttpAccept,*/ HttpEndpoint, Logical, TcpEndpoint},
     Inbound,
 };
 pub use linkerd_app_core::proxy::http::{
@@ -18,9 +18,26 @@ use linkerd_app_core::{
     dst, errors, http_tracing, identity, io, profiles,
     proxy::{http, tap},
     svc::{self, Param},
+    tls,
+    transport::{Remote, ServerAddr},
     Error,
 };
 use tracing::debug_span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Target {
+    pub logical: Option<profiles::LogicalAddr>,
+    pub addr: Remote<ServerAddr>,
+    pub http: http::Version,
+    pub tls: tls::ConditionalServerTls,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestTarget {
+    addr: Remote<ServerAddr>,
+    http: http::Version,
+    tls: tls::ConditionalServerTls,
+}
 
 impl<H> Inbound<H> {
     pub fn push_http_server<T, I, HSvc>(
@@ -92,12 +109,12 @@ where
     C::Error: Into<Error>,
     C::Future: Send,
 {
-    pub fn push_http_router<P>(
+    pub fn push_http_router<T, P>(
         self,
         profiles: P,
     ) -> Inbound<
         svc::BoxNewService<
-            HttpAccept,
+            T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
                     Response = http::Response<http::BoxBody>,
@@ -107,6 +124,8 @@ where
         >,
     >
     where
+        T: Param<Version>,
+        T: Clone + Send + 'static,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
         P::Error: Send,
@@ -116,7 +135,7 @@ where
             let endpoint = connect
                 .push(svc::stack::BoxFuture::layer())
                 .push(rt.metrics.transport.layer_connect())
-                .push_map_target(TcpEndpoint::from)
+                .push_map_target(TcpEndpoint::from_param)
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,

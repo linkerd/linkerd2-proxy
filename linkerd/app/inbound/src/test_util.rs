@@ -1,4 +1,4 @@
-use crate::{Config, RequireIdentityForPorts};
+use crate::{port_policies, Config};
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
@@ -47,8 +47,7 @@ pub fn default_config() -> Config {
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(10),
         },
-        require_identity_for_inbound_ports: RequireIdentityForPorts::from(None),
-        disable_protocol_detection_for_ports: Default::default(),
+        port_policies: port_policies::AllowPolicy::Unauthenticated.into(),
         profile_idle_timeout: Duration::from_millis(500),
     }
 }
