@@ -222,7 +222,7 @@ where
         proxy_port: u16,
         profiles: P,
         gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
         T: Clone + Send + 'static,
@@ -280,6 +280,7 @@ where
                         detect_timeout,
                         http::DetectHttp::default(),
                     ))
+                    .check_new_service::<TcpAccept, _>()
                     .push_request_filter(require_id)
                     .push(rt.metrics.transport.layer_accept())
                     .push_request_filter(TcpAccept::try_from)

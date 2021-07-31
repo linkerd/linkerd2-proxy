@@ -36,6 +36,10 @@ pub type BoxHttp<B = http::BoxBody> =
 
 pub type BoxNewHttp<T, B = http::BoxBody> = BoxNewService<T, BoxHttp<B>>;
 
+pub type BoxTcp<I> = BoxService<I, (), Error>;
+
+pub type BoxNewTcp<T, I> = BoxNewService<T, BoxTcp<I>>;
+
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
 
