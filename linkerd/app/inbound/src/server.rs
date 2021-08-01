@@ -133,6 +133,8 @@ impl<C> Inbound<C> {
                         identity: rt.identity.clone(),
                     }))
                     .push_switch(
+                        // If this port's policy indicates that authentication is not required and
+                        // detection should be skipped, use the TCP stack directly.
                         |a: Accept| -> Result<_, Infallible> {
                             if let port_policies::AllowPolicy::Unauthenticated {
                                 skip_detect: true,
