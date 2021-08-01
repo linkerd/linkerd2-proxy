@@ -43,6 +43,10 @@ struct TlsParams {
     identity: Option<LocalCrtKey>,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("identity required on port {0}")]
+struct IdentityRequired(u16);
+
 // === impl Inbound ===
 
 impl<C> Inbound<C> {
@@ -97,10 +101,6 @@ impl<C> Inbound<C> {
                     .push(rt.metrics.transport.layer_accept())
                     .check_new_service::<TlsAccept, _>()
                     .push_request_filter(|(tls, inner): (tls::ConditionalServerTls, Accept)| {
-                        #[derive(Debug, thiserror::Error)]
-                        #[error("identity required on port {0}")]
-                        struct IdentityRequired(u16);
-
                         match (inner.policy, &tls) {
                             // Permit all connections if no authentication is required.
                             (port_policies::AllowPolicy::Unauthenticated { .. }, _) => {
@@ -145,8 +145,8 @@ impl<C> Inbound<C> {
                         },
                         tcp.clone()
                             .push_tcp_forward()
-                            .into_stack()
-                            .push_map_target(TcpEndpoint::from_param),
+                            .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
+                            .into_inner(),
                     )
             })
             .map_stack(|cfg, rt, accept| {
