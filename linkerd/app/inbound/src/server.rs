@@ -1,4 +1,4 @@
-use crate::{direct, port_policies, Inbound};
+use crate::{port_policies, Inbound};
 use linkerd_app_core::{
     detect, identity, io, profiles,
     proxy::{http, identity::LocalCrtKey},
@@ -11,7 +11,7 @@ use linkerd_app_core::{
     Error, Infallible,
 };
 use std::fmt::Debug;
-use tracing::{debug_span, info_span};
+use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Accept {
@@ -50,11 +50,11 @@ struct IdentityRequired(u16);
 // === impl Inbound ===
 
 impl<C> Inbound<C> {
-    pub fn push_server<T, I, G, GSvc, P>(
+    pub fn push_server<T, I, D, DSvc, P>(
         self,
         proxy_port: u16,
         profiles: P,
-        gateway: G,
+        direct: D,
     ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
@@ -65,11 +65,10 @@ impl<C> Inbound<C> {
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
-        G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
-        GSvc::Error: Into<Error>,
-        GSvc::Future: Send,
+        D: svc::NewService<T, Service = DSvc> + Clone + Send + Sync + Unpin + 'static,
+        DSvc: svc::Service<I, Response = ()> + Send + 'static,
+        DSvc::Error: Into<Error>,
+        DSvc::Future: Send,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
         P::Error: Send,
         P::Future: Send,
@@ -158,7 +157,6 @@ impl<C> Inbound<C> {
                             if addr.port() == proxy_port {
                                 return Ok(svc::Either::B(t));
                             }
-
                             let policy = port_policies.check_allowed(addr.port())?;
                             Ok(svc::Either::A(Accept {
                                 client_addr: t.param(),
@@ -166,11 +164,7 @@ impl<C> Inbound<C> {
                                 policy,
                             }))
                         },
-                        tcp.push_tcp_forward()
-                            .push_direct(gateway)
-                            .into_stack()
-                            .instrument(|_: &_| debug_span!("direct"))
-                            .into_inner(),
+                        direct,
                     )
                     .push(rt.metrics.tcp_accept_errors.layer())
                     .instrument(|t: &T| {

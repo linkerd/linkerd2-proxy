@@ -155,11 +155,21 @@ impl Inbound<()> {
 
         let serve = async move {
             let shutdown = self.runtime.drain.clone().signaled();
-            let stack = self
+
+            let direct = self
+                .clone()
                 .into_tcp_connect(la.port())
-                .push_server(la.port(), profiles, gateway)
+                .push_tcp_forward()
+                .push_direct(gateway)
+                .into_stack()
+                .instrument(|_: &_| debug_span!("direct"))
                 .into_inner();
-            serve::serve(listen, stack, shutdown).await
+
+            let server = self
+                .into_tcp_connect(la.port())
+                .push_server(la.port(), profiles, direct)
+                .into_inner();
+            serve::serve(listen, server, shutdown).await
         };
 
         (Local(ServerAddr(la)), serve)
