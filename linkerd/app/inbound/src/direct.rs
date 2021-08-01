@@ -101,6 +101,10 @@ impl<N> Inbound<N> {
                 // TCP forwarding, or we may be processing an HTTP gateway connection.
                 // HTTP gateway connections that have a transport header must provide a
                 // target name as a part of the header.
+                //
+                // TODO: Apply port policies. This isn't necessary for now, since these connections
+                // always have a client identity. We'll need to honor client restrictions once those
+                // are supported, though.
                 .push_switch(
                     |(h, client): (TransportHeader, ClientInfo)| match h {
                         TransportHeader {
