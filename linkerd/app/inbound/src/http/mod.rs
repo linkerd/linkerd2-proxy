@@ -13,7 +13,7 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
 #[cfg(fuzzing)]
 pub mod fuzz_logic {
     use crate::{
-        target::TcpEndpoint,
+        http::router::HttpEndpoint,
         test_util::{
             support::{connect::Connect, http_util, profile, resolver},
             *,
@@ -124,7 +124,7 @@ pub mod fuzz_logic {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
         let connect = svc::stack(connect)
-            .push_map_target(|t: TcpEndpoint| {
+            .push_map_target(|t: HttpEndpoint| {
                 Remote(ServerAddr(([127, 0, 0, 1], t.param()).into()))
             })
             .into_inner();

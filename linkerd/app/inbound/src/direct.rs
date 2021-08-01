@@ -1,4 +1,4 @@
-use crate::{server::TcpEndpoint, Inbound};
+use crate::Inbound;
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
@@ -76,7 +76,7 @@ impl<N> Inbound<N> {
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<u16, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
@@ -93,7 +93,7 @@ impl<N> Inbound<N> {
         self.map_stack(|config, rt, tcp| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
 
-            tcp.instrument(|_: &TcpEndpoint| debug_span!("opaque"))
+            tcp.instrument(|_: &_| debug_span!("opaque"))
                 // When the transport header is present, it may be used for either local
                 // TCP forwarding, or we may be processing an HTTP gateway connection.
                 // HTTP gateway connections that have a transport header must provide a
@@ -108,7 +108,7 @@ impl<N> Inbound<N> {
                             port,
                             name: None,
                             protocol: None,
-                        } => Ok(svc::Either::A(TcpEndpoint { port })),
+                        } => Ok(svc::Either::A(port)),
                         TransportHeader {
                             port,
                             name: Some(name),

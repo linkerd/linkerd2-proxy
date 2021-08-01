@@ -13,8 +13,6 @@ mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-use crate::server::TcpEndpoint;
-
 pub use self::port_policies::PortPolicies;
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, ServerConfig},
@@ -40,6 +38,11 @@ pub struct Inbound<S> {
     config: Config,
     runtime: ProxyRuntime,
     stack: svc::Stack<S>,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct TcpEndpoint {
+    port: u16,
 }
 
 // === impl Inbound ===
@@ -171,6 +174,7 @@ impl Inbound<()> {
                 .clone()
                 .into_tcp_connect(la.port())
                 .push_tcp_forward()
+                .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
                 .push_direct(gateway)
                 .into_stack()
                 .instrument(|_: &_| debug_span!("direct"))
@@ -180,7 +184,8 @@ impl Inbound<()> {
                 .into_tcp_connect(la.port())
                 .push_http_router(profiles)
                 .push_http_server()
-                .push_server(la.port(), forward, direct)
+                .push_detect(forward)
+                .push_accept(la.port(), direct)
                 .into_inner();
             serve::serve(listen, server, shutdown).await
         };
@@ -231,4 +236,24 @@ impl<S> Inbound<S> {
 
 fn stack_labels(proto: &'static str, name: &'static str) -> metrics::StackLabels {
     metrics::StackLabels::inbound(proto, name)
+}
+
+// === impl TcpEndpoint ===
+
+impl TcpEndpoint {
+    pub fn from_param<T: svc::Param<u16>>(t: T) -> Self {
+        Self { port: t.param() }
+    }
+}
+
+impl svc::Param<u16> for TcpEndpoint {
+    fn param(&self) -> u16 {
+        self.port
+    }
+}
+
+impl svc::Param<transport::labels::Key> for TcpEndpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::InboundConnect
+    }
 }

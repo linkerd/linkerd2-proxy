@@ -14,7 +14,7 @@ use std::fmt::Debug;
 use tracing::info_span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Accept {
+pub struct Accept {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
     policy: port_policies::AllowPolicy,
@@ -32,11 +32,6 @@ pub struct HttpAccept {
     http: http::Version,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TcpEndpoint {
-    pub port: u16,
-}
-
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
@@ -50,15 +45,62 @@ struct IdentityRequired(u16);
 // === impl Inbound ===
 
 impl<N> Inbound<N> {
-    pub fn push_server<T, I, NSvc, F, FSvc, D, DSvc>(
+    /// Builds a stack that accepts connections. Connections to the proxy port are diverted to the
+    /// 'direct' stack; otherwise connections are associated with a policy and passed to the inner
+    /// stack.
+    pub fn push_accept<T, I, NSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        forward: F,
         direct: D,
     ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
         T: Clone + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: Debug + Send + Sync + Unpin + 'static,
+        N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<I, Response = ()>,
+        NSvc: Send + Unpin + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+        D: svc::NewService<T, Service = DSvc> + Clone + Send + Sync + Unpin + 'static,
+        DSvc: svc::Service<I, Response = ()> + Send + 'static,
+        DSvc::Error: Into<Error>,
+        DSvc::Future: Send,
+    {
+        self.map_stack(|cfg, rt, accept| {
+            let port_policies = cfg.port_policies.clone();
+            accept
+                .push_switch(
+                    move |t: T| -> Result<_, Error> {
+                        let OrigDstAddr(addr) = t.param();
+                        if addr.port() == proxy_port {
+                            return Ok(svc::Either::B(t));
+                        }
+                        let policy = port_policies.check_allowed(addr.port())?;
+                        Ok(svc::Either::A(Accept {
+                            client_addr: t.param(),
+                            orig_dst_addr: t.param(),
+                            policy,
+                        }))
+                    },
+                    direct,
+                )
+                .push(rt.metrics.tcp_accept_errors.layer())
+                .instrument(|t: &T| {
+                    let OrigDstAddr(addr) = t.param();
+                    info_span!("server", port = addr.port())
+                })
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+        })
+    }
+
+    /// Builds a stack that handles protocol detection according to the port's policy. If the
+    /// connection is determined to be HTTP, the inner stack is used; otherwise the connection is
+    /// passed to the provided 'forward' stack.
+    pub fn push_detect<I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<Accept, I>>
+    where
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<HttpAccept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -70,10 +112,6 @@ impl<N> Inbound<N> {
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Clone + Send + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
-        D: svc::NewService<T, Service = DSvc> + Clone + Send + Sync + Unpin + 'static,
-        DSvc: svc::Service<I, Response = ()> + Send + 'static,
-        DSvc::Error: Into<Error>,
-        DSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, http| {
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
@@ -142,30 +180,6 @@ impl<N> Inbound<N> {
                         })
                         .into_inner(),
                 )
-        })
-        .map_stack(|cfg, rt, accept| {
-            let port_policies = cfg.port_policies.clone();
-            accept
-                .push_switch(
-                    move |t: T| -> Result<_, Error> {
-                        let OrigDstAddr(addr) = t.param();
-                        if addr.port() == proxy_port {
-                            return Ok(svc::Either::B(t));
-                        }
-                        let policy = port_policies.check_allowed(addr.port())?;
-                        Ok(svc::Either::A(Accept {
-                            client_addr: t.param(),
-                            orig_dst_addr: t.param(),
-                            policy,
-                        }))
-                    },
-                    direct,
-                )
-                .push(rt.metrics.tcp_accept_errors.layer())
-                .instrument(|t: &T| {
-                    let OrigDstAddr(addr) = t.param();
-                    info_span!("server", port = addr.port())
-                })
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
@@ -245,26 +259,6 @@ impl svc::Param<Option<identity::Name>> for HttpAccept {
                 } => Some(id.clone().0),
                 _ => None,
             })
-    }
-}
-
-// === impl TcpAccept ===
-
-impl TcpEndpoint {
-    pub fn from_param<T: svc::Param<u16>>(t: T) -> Self {
-        Self { port: t.param() }
-    }
-}
-
-impl svc::Param<u16> for TcpEndpoint {
-    fn param(&self) -> u16 {
-        self.port
-    }
-}
-
-impl svc::Param<transport::labels::Key> for TcpEndpoint {
-    fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::InboundConnect
     }
 }
 
