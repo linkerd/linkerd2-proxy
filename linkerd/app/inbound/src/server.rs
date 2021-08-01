@@ -1,6 +1,6 @@
 use crate::{port_policies, Inbound};
 use linkerd_app_core::{
-    detect, identity, io, profiles,
+    detect, identity, io,
     proxy::{http, identity::LocalCrtKey},
     svc, tls,
     transport::{
@@ -21,13 +21,13 @@ struct Accept {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct TlsAccept {
+pub struct TlsAccept {
     inner: Accept,
     tls: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct HttpAccept {
+pub struct HttpAccept {
     inner: TlsAccept,
     http: http::Version,
 }
@@ -49,133 +49,126 @@ struct IdentityRequired(u16);
 
 // === impl Inbound ===
 
-impl<C> Inbound<C> {
-    pub fn push_server<T, I, D, DSvc, P>(
+impl<N> Inbound<N> {
+    pub fn push_server<T, I, NSvc, F, FSvc, D, DSvc>(
         self,
         proxy_port: u16,
-        profiles: P,
+        forward: F,
         direct: D,
     ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
-        C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
-        C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-        C::Error: Into<Error>,
-        C::Future: Send,
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
+        N: svc::NewService<HttpAccept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<io::BoxedIo, Response = ()>,
+        NSvc: Send + Unpin + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+        F: svc::NewService<TlsAccept, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Clone + Send + 'static,
+        FSvc::Error: Into<Error>,
+        FSvc::Future: Send,
         D: svc::NewService<T, Service = DSvc> + Clone + Send + Sync + Unpin + 'static,
         DSvc: svc::Service<I, Response = ()> + Send + 'static,
         DSvc::Error: Into<Error>,
         DSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Error: Send,
-        P::Future: Send,
     {
-        let tcp = self.clone();
+        self.map_stack(|cfg, rt, http| {
+            let detect_timeout = cfg.proxy.detect_protocol_timeout;
 
-        self.map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
-            .push_http_router(profiles)
-            .push_http_server()
-            .map_stack(|cfg, rt, http| {
-                let detect_timeout = cfg.proxy.detect_protocol_timeout;
-
-                http.check_new_service::<HttpAccept, _>()
-                    .push_map_target(|(http, inner)| HttpAccept { http, inner })
-                    .push(svc::UnwrapOr::layer(
-                        // When HTTP detection fails, forward the connection to the application as
-                        // an opaque TCP stream.
-                        tcp.clone()
-                            .push_tcp_forward()
-                            .into_stack()
-                            .push_map_target(TcpEndpoint::from_param)
-                            .push_on_response(svc::BoxService::layer())
-                            .into_inner(),
-                    ))
-                    .push(svc::BoxNewService::layer())
-                    .push_map_target(detect::allow_timeout)
-                    .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
-                    .check_new_service::<TlsAccept, _>()
-                    .push(rt.metrics.transport.layer_accept())
-                    .check_new_service::<TlsAccept, _>()
-                    .push_request_filter(|(tls, inner): (tls::ConditionalServerTls, Accept)| {
-                        match (inner.policy, &tls) {
-                            // Permit all connections if no authentication is required.
-                            (port_policies::AllowPolicy::Unauthenticated { .. }, _) => {
-                                Ok(TlsAccept { tls, inner })
-                            }
-                            // Permit connections with a validated client identity if authentication
-                            // is required.
-                            (
-                                port_policies::AllowPolicy::Authenticated,
-                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                                    client_id: Some(_),
-                                    ..
-                                }),
-                            ) => Ok(TlsAccept { tls, inner }),
-                            // Permit terminated TLS connections when client authentication is not
-                            // required.
-                            (
-                                port_policies::AllowPolicy::TlsUnauthenticated,
-                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                                    ..
-                                }),
-                            ) => Ok(TlsAccept { tls, inner }),
-                            // Otherwise, reject the connection.
-                            _ => Err(IdentityRequired(inner.orig_dst_addr.as_ref().port())),
+            http.check_new_service::<HttpAccept, _>()
+                .push_map_target(|(http, inner)| HttpAccept { http, inner })
+                .push(svc::UnwrapOr::layer(
+                    // When HTTP detection fails, forward the connection to the application as
+                    // an opaque TCP stream.
+                    svc::stack(forward.clone()).into_inner(),
+                ))
+                .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                .push(svc::BoxNewService::layer())
+                .push_map_target(detect::allow_timeout)
+                .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
+                .check_new_service::<TlsAccept, _>()
+                .push(rt.metrics.transport.layer_accept())
+                .check_new_service::<TlsAccept, _>()
+                .push_request_filter(|(tls, inner): (tls::ConditionalServerTls, Accept)| {
+                    match (inner.policy, &tls) {
+                        // Permit all connections if no authentication is required.
+                        (port_policies::AllowPolicy::Unauthenticated { .. }, _) => {
+                            Ok(TlsAccept { tls, inner })
                         }
-                    })
-                    .check_new_service::<(tls::ConditionalServerTls, Accept), _>()
-                    .push(svc::BoxNewService::layer())
-                    .push(tls::NewDetectTls::layer(TlsParams {
-                        timeout: tls::server::Timeout(detect_timeout),
-                        identity: rt.identity.clone(),
-                    }))
-                    .push_switch(
-                        // If this port's policy indicates that authentication is not required and
-                        // detection should be skipped, use the TCP stack directly.
-                        |a: Accept| -> Result<_, Infallible> {
-                            if let port_policies::AllowPolicy::Unauthenticated {
-                                skip_detect: true,
-                            } = a.policy
-                            {
-                                return Ok(svc::Either::B(a));
-                            }
-                            Ok(svc::Either::A(a))
-                        },
-                        tcp.clone()
-                            .push_tcp_forward()
-                            .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
-                            .into_inner(),
-                    )
-            })
-            .map_stack(|cfg, rt, accept| {
-                let port_policies = cfg.port_policies.clone();
-                accept
-                    .push_switch(
-                        move |t: T| -> Result<_, Error> {
-                            let OrigDstAddr(addr) = t.param();
-                            if addr.port() == proxy_port {
-                                return Ok(svc::Either::B(t));
-                            }
-                            let policy = port_policies.check_allowed(addr.port())?;
-                            Ok(svc::Either::A(Accept {
-                                client_addr: t.param(),
-                                orig_dst_addr: t.param(),
-                                policy,
-                            }))
-                        },
-                        direct,
-                    )
-                    .push(rt.metrics.tcp_accept_errors.layer())
-                    .instrument(|t: &T| {
+                        // Permit connections with a validated client identity if authentication
+                        // is required.
+                        (
+                            port_policies::AllowPolicy::Authenticated,
+                            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                client_id: Some(_),
+                                ..
+                            }),
+                        ) => Ok(TlsAccept { tls, inner }),
+                        // Permit terminated TLS connections when client authentication is not
+                        // required.
+                        (
+                            port_policies::AllowPolicy::TlsUnauthenticated,
+                            tls::ConditionalServerTls::Some(tls::ServerTls::Established { .. }),
+                        ) => Ok(TlsAccept { tls, inner }),
+                        // Otherwise, reject the connection.
+                        _ => Err(IdentityRequired(inner.orig_dst_addr.as_ref().port())),
+                    }
+                })
+                .check_new_service::<(tls::ConditionalServerTls, Accept), _>()
+                .push(svc::BoxNewService::layer())
+                .push(tls::NewDetectTls::layer(TlsParams {
+                    timeout: tls::server::Timeout(detect_timeout),
+                    identity: rt.identity.clone(),
+                }))
+                .push_switch(
+                    // If this port's policy indicates that authentication is not required and
+                    // detection should be skipped, use the TCP stack directly.
+                    |a: Accept| -> Result<_, Infallible> {
+                        if let port_policies::AllowPolicy::Unauthenticated { skip_detect: true } =
+                            a.policy
+                        {
+                            return Ok(svc::Either::B(a));
+                        }
+                        Ok(svc::Either::A(a))
+                    },
+                    svc::stack(forward)
+                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .push_map_target(|inner: Accept| TlsAccept {
+                            inner,
+                            tls: tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped),
+                        })
+                        .into_inner(),
+                )
+        })
+        .map_stack(|cfg, rt, accept| {
+            let port_policies = cfg.port_policies.clone();
+            accept
+                .push_switch(
+                    move |t: T| -> Result<_, Error> {
                         let OrigDstAddr(addr) = t.param();
-                        info_span!("server", port = addr.port())
-                    })
-                    .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
-            })
+                        if addr.port() == proxy_port {
+                            return Ok(svc::Either::B(t));
+                        }
+                        let policy = port_policies.check_allowed(addr.port())?;
+                        Ok(svc::Either::A(Accept {
+                            client_addr: t.param(),
+                            orig_dst_addr: t.param(),
+                            policy,
+                        }))
+                    },
+                    direct,
+                )
+                .push(rt.metrics.tcp_accept_errors.layer())
+                .instrument(|t: &T| {
+                    let OrigDstAddr(addr) = t.param();
+                    info_span!("server", port = addr.port())
+                })
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
+        })
     }
 }
 

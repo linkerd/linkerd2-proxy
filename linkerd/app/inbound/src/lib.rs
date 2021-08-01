@@ -13,6 +13,8 @@ mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
+use crate::server::TcpEndpoint;
+
 pub use self::port_policies::PortPolicies;
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig, ServerConfig},
@@ -156,6 +158,15 @@ impl Inbound<()> {
         let serve = async move {
             let shutdown = self.runtime.drain.clone().signaled();
 
+            let forward = self
+                .clone()
+                .into_tcp_connect(la.port())
+                .push_tcp_forward()
+                .into_stack()
+                .push_map_target(TcpEndpoint::from_param)
+                .instrument(|_: &_| debug_span!("tcp"))
+                .into_inner();
+
             let direct = self
                 .clone()
                 .into_tcp_connect(la.port())
@@ -167,7 +178,9 @@ impl Inbound<()> {
 
             let server = self
                 .into_tcp_connect(la.port())
-                .push_server(la.port(), profiles, direct)
+                .push_http_router(profiles)
+                .push_http_server()
+                .push_server(la.port(), forward, direct)
                 .into_inner();
             serve::serve(listen, server, shutdown).await
         };
@@ -195,7 +208,7 @@ impl<S> Inbound<S> {
     where
         T: svc::Param<transport::labels::Key> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite,
-        I: Debug + Send + Sync + Unpin + 'static,
+        I: Debug + Send + Unpin + 'static,
         S: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
         S::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
         S::Error: Into<Error>,

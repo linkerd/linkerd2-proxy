@@ -70,10 +70,7 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub fn push_direct<T, I, NSvc, G, GSvc>(
-        self,
-        gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    pub fn push_direct<T, I, NSvc, G, GSvc>(self, gateway: G) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
