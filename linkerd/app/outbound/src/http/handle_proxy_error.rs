@@ -42,17 +42,16 @@ impl<S, A, B> Service<Request<A>> for HandleProxyError<S>
 where
     S: Service<Request<A>, Response = Response<B>>,
     S::Response: Send,
-    S::Error: Into<Error> + Send,
     S::Future: Send + 'static,
     A: Send + 'static,
     B: Send + 'static,
 {
     type Response = S::Response;
-    type Error = Error;
-    type Future = Pin<Box<dyn Future<Output = Result<S::Response, Error>> + Send + 'static>>;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(Into::into)
+        self.inner.poll_ready(cx)
     }
 
     fn call(&mut self, req: Request<A>) -> Self::Future {
@@ -72,7 +71,7 @@ where
                     }
                     Ok(rsp)
                 }
-                Err(e) => Err(e.into()),
+                Err(e) => Err(e),
             }
         })
     }
