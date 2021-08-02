@@ -548,7 +548,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            // FIXME
             port_policies,
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
