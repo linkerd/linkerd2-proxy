@@ -141,7 +141,7 @@ where
         let target = self.target.clone();
         let mut inner = self.inner.clone();
         Box::pin(async move {
-            trace!("Starting protocol detection");
+            trace!(%capacity, ?timeout, "Starting protocol detection");
             let t0 = time::Instant::now();
 
             let mut buf = BytesMut::with_capacity(capacity);
