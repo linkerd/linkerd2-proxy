@@ -1,99 +1,105 @@
-use crate::{
-    port_policies::{self, AllowPolicy},
-    Inbound,
-};
+use crate::{direct, Inbound};
 use linkerd_app_core::{
-    io, svc,
-    transport::addrs::{ClientAddr, OrigDstAddr, Remote},
+    config::ServerConfig,
+    io, profiles, serve, svc,
+    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error,
 };
-use std::fmt::Debug;
-use tracing::info_span;
+use std::{fmt::Debug, future::Future};
+use tracing::debug_span;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Accept {
-    client_addr: Remote<ClientAddr>,
-    orig_dst_addr: OrigDstAddr,
-    policy: port_policies::AllowPolicy,
+#[derive(Copy, Clone, Debug)]
+struct TcpEndpoint {
+    port: u16,
 }
 
 // === impl Inbound ===
 
-impl<N> Inbound<N> {
-    /// Builds a stack that accepts connections. Connections to the proxy port are diverted to the
-    /// 'direct' stack; otherwise connections are associated with a policy and passed to the inner
-    /// stack.
-    pub fn push_accept<T, I, NSvc, D, DSvc>(
+impl Inbound<()> {
+    pub fn serve<B, G, GSvc, P>(
         self,
-        proxy_port: u16,
-        direct: D,
-    ) -> Inbound<svc::BoxNewTcp<T, I>>
+        bind: B,
+        profiles: P,
+        gateway: G,
+    ) -> (Local<ServerAddr>, impl Future<Output = ()> + Send)
     where
-        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
-        T: Clone + Send + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<Accept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<I, Response = ()>,
-        NSvc: Send + Unpin + 'static,
-        NSvc::Error: Into<Error>,
-        NSvc::Future: Send,
-        D: svc::NewService<T, Service = DSvc> + Clone + Send + Sync + Unpin + 'static,
-        DSvc: svc::Service<I, Response = ()> + Send + 'static,
-        DSvc::Error: Into<Error>,
-        DSvc::Future: Send,
+        B: Bind<ServerConfig>,
+        B::Addrs: svc::Param<Remote<ClientAddr>>
+            + svc::Param<Local<ServerAddr>>
+            + svc::Param<OrigDstAddr>,
+        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
+        G: Clone + Send + Sync + Unpin + 'static,
+        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,
+        GSvc::Error: Into<Error>,
+        GSvc::Future: Send,
+        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
+        P::Error: Send,
+        P::Future: Send,
     {
-        self.map_stack(|cfg, rt, accept| {
-            let port_policies = cfg.port_policies.clone();
-            accept
-                .push_switch(
-                    move |t: T| -> Result<_, Error> {
-                        let OrigDstAddr(addr) = t.param();
-                        if addr.port() == proxy_port {
-                            return Ok(svc::Either::B(t));
-                        }
-                        let policy = port_policies.check_allowed(addr.port())?;
-                        Ok(svc::Either::A(Accept {
-                            client_addr: t.param(),
-                            orig_dst_addr: t.param(),
-                            policy,
-                        }))
-                    },
-                    direct,
-                )
-                .push(rt.metrics.tcp_accept_errors.layer())
-                .instrument(|t: &T| {
-                    let OrigDstAddr(addr) = t.param();
-                    info_span!("server", port = addr.port())
-                })
-                .push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
-        })
+        let (Local(ServerAddr(la)), listen) = bind
+            .bind(&self.config.proxy.server)
+            .expect("Failed to bind inbound listener");
+
+        let serve = async move {
+            let shutdown = self.runtime.drain.clone().signaled();
+
+            // Handles connections to ports that can't be determined to be HTTP.
+            let forward = self
+                .clone()
+                .into_tcp_connect(la.port())
+                .push_tcp_forward()
+                .into_stack()
+                .push_map_target(TcpEndpoint::from_param)
+                .instrument(|_: &_| debug_span!("tcp"))
+                .into_inner();
+
+            // Handles connections that target the inbound proxy port.
+            let direct = self
+                .clone()
+                .into_tcp_connect(la.port())
+                .push_tcp_forward()
+                .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
+                .push_direct(gateway)
+                .into_stack()
+                .instrument(|_: &_| debug_span!("direct"))
+                .into_inner();
+
+            // Handles HTTP connections.
+            let http = self
+                .into_tcp_connect(la.port())
+                .push_http_router(profiles)
+                .push_http_server();
+
+            // Determines how to handle an inbound connection, dispatching it to the appropriate
+            // stack.
+            let server = http
+                .push_detect(forward)
+                .push_accept(la.port(), direct)
+                .into_inner();
+
+            serve::serve(listen, server, shutdown).await
+        };
+
+        (Local(ServerAddr(la)), serve)
     }
 }
 
-// === impl Accept ===
+// === impl TcpEndpoint ===
 
-impl svc::Param<u16> for Accept {
+impl TcpEndpoint {
+    pub fn from_param<T: svc::Param<u16>>(t: T) -> Self {
+        Self { port: t.param() }
+    }
+}
+
+impl svc::Param<u16> for TcpEndpoint {
     fn param(&self) -> u16 {
-        self.orig_dst_addr.0.port()
+        self.port
     }
 }
 
-impl svc::Param<OrigDstAddr> for Accept {
-    fn param(&self) -> OrigDstAddr {
-        self.orig_dst_addr
-    }
-}
-
-impl svc::Param<Remote<ClientAddr>> for Accept {
-    fn param(&self) -> Remote<ClientAddr> {
-        self.client_addr
-    }
-}
-
-impl svc::Param<AllowPolicy> for Accept {
-    fn param(&self) -> AllowPolicy {
-        self.policy
+impl svc::Param<transport::labels::Key> for TcpEndpoint {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::InboundConnect
     }
 }
