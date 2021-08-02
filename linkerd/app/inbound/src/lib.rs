@@ -161,6 +161,7 @@ impl Inbound<()> {
         let serve = async move {
             let shutdown = self.runtime.drain.clone().signaled();
 
+            // Handles connections to ports that can't be determined to be HTTP.
             let forward = self
                 .clone()
                 .into_tcp_connect(la.port())
@@ -170,6 +171,7 @@ impl Inbound<()> {
                 .instrument(|_: &_| debug_span!("tcp"))
                 .into_inner();
 
+            // Handles connections that target the inbound proxy port.
             let direct = self
                 .clone()
                 .into_tcp_connect(la.port())
@@ -180,13 +182,19 @@ impl Inbound<()> {
                 .instrument(|_: &_| debug_span!("direct"))
                 .into_inner();
 
-            let server = self
+            // Handles HTTP connections.
+            let http = self
                 .into_tcp_connect(la.port())
                 .push_http_router(profiles)
-                .push_http_server()
+                .push_http_server();
+
+            // Determines how to handle an inbound connection, dispatching it to the appropriate
+            // stack.
+            let server = http
                 .push_detect(forward)
                 .push_accept(la.port(), direct)
                 .into_inner();
+
             serve::serve(listen, server, shutdown).await
         };
 
