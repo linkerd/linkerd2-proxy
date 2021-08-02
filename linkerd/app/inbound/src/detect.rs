@@ -54,7 +54,7 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = ()> + Clone + Send + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
@@ -230,5 +230,94 @@ impl<T> svc::InsertParam<tls::ConditionalServerTls, T> for TlsParams {
     #[inline]
     fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
         (tls, target)
+    }
+}
+
+// TODO figure out how to test authenticated requirements -- probably by splitting TLS detection.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util;
+    use futures::future;
+    use io::AsyncWriteExt;
+    use linkerd_app_core::{
+        svc::{NewService, ServiceExt},
+        Error,
+    };
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn skip_detect() {
+        let (io, _) = io::duplex(1);
+        inbound()
+            .with_stack(new_panic("detect stack must not be used"))
+            .push_detect(new_ok())
+            .into_inner()
+            .new_service(Target(AllowPolicy::Unauthenticated { skip_detect: true }))
+            .oneshot(io)
+            .await
+            .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn non_http() {
+        let (ior, mut iow) = io::duplex(100);
+        iow.write_all(b"foo\r\nbar\r\nblah\r\n").await.unwrap();
+        inbound()
+            .with_stack(new_panic("http stack must not be used"))
+            .push_detect(new_ok())
+            .into_inner()
+            .new_service(Target(AllowPolicy::Unauthenticated { skip_detect: false }))
+            .oneshot(ior)
+            .await
+            .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn http() {
+        let (ior, mut iow) = io::duplex(100);
+        iow.write_all(b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n")
+            .await
+            .unwrap();
+        inbound()
+            .with_stack(new_ok())
+            .push_detect(new_panic("tcp stack must not be used"))
+            .into_inner()
+            .new_service(Target(AllowPolicy::Unauthenticated { skip_detect: false }))
+            .oneshot(ior)
+            .await
+            .expect("should succeed");
+    }
+
+    fn inbound() -> Inbound<()> {
+        Inbound::new(test_util::default_config(), test_util::runtime().0)
+    }
+
+    fn new_panic<T>(msg: &'static str) -> svc::BoxNewTcp<T, io::BoxedIo> {
+        svc::BoxNewService::new(move |_| panic!("{}", msg))
+    }
+
+    fn new_ok<T>() -> svc::BoxNewTcp<T, io::BoxedIo> {
+        svc::BoxNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
+    }
+
+    #[derive(Clone, Debug)]
+    struct Target(AllowPolicy);
+
+    impl svc::Param<AllowPolicy> for Target {
+        fn param(&self) -> AllowPolicy {
+            self.0
+        }
+    }
+
+    impl svc::Param<OrigDstAddr> for Target {
+        fn param(&self) -> OrigDstAddr {
+            OrigDstAddr(([192, 0, 2, 2], 1000).into())
+        }
+    }
+
+    impl svc::Param<Remote<ClientAddr>> for Target {
+        fn param(&self) -> Remote<ClientAddr> {
+            Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
+        }
     }
 }
