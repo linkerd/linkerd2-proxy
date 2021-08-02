@@ -6,8 +6,9 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+mod detect;
 pub mod direct;
-pub mod http;
+mod http;
 pub mod port_policies;
 mod server;
 #[cfg(any(test, fuzzing))]
