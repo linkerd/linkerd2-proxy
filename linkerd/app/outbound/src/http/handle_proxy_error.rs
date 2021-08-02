@@ -1,5 +1,6 @@
 use http::{Request, Response};
 use linkerd_app_core::{
+    errors::L5D_PROXY_ERROR,
     svc::{layer, NewService, Service},
     Error,
 };
@@ -66,10 +67,8 @@ where
         Box::pin(async move {
             match response.await {
                 Ok(rsp) => {
-                    if let Some(message) =
-                        rsp.headers().get(linkerd_app_core::errors::L5D_PROXY_ERROR)
-                    {
-                        tracing::info!(?message, "response contained L5D_PROXY_ERROR header");
+                    if let Some(message) = rsp.headers().get(L5D_PROXY_ERROR) {
+                        tracing::info!(?message, "response contained `{}` header", L5D_PROXY_ERROR);
                         // Gracefully teardown the accepted connection.
                         if let Some(ClientHandle { close, .. }) = client {
                             tracing::info!("connection closed");
