@@ -10,6 +10,10 @@ use std::{
     task::{Context, Poll},
 };
 
+/// PeerProxyErrors will close the accepted connection if the response is from
+/// a peer proxy and the L5D_PROXY_ERROR header is set. This means the peer
+/// proxy encountered an inbound connection error with its application and
+/// therefore the accepted connection should be torn down.
 #[derive(Clone, Debug)]
 pub struct PeerProxyErrors<N> {
     inner: N,
