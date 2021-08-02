@@ -21,8 +21,6 @@ pub enum DefaultPolicy {
 pub enum AllowPolicy {
     /// Allows all connections with an authenticated client ID.
     Authenticated,
-    /// Allows all terminated TLS connections, including those with no client ID.
-    TlsUnauthenticated,
     /// Allows all unauthenticated connections.
     Unauthenticated { skip_detect: bool },
 }

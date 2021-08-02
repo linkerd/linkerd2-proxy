@@ -88,12 +88,6 @@ impl<N> Inbound<N> {
                                 ..
                             }),
                         ) => Ok(Tls::from_params(&t, tls)),
-                        // Permit terminated TLS connections when client authentication is not
-                        // required.
-                        (
-                            AllowPolicy::TlsUnauthenticated,
-                            tls::ConditionalServerTls::Some(tls::ServerTls::Established { .. }),
-                        ) => Ok(Tls::from_params(&t, tls)),
                         // Otherwise, reject the connection.
                         _ => {
                             let OrigDstAddr(a) = t.param();
