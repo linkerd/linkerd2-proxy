@@ -66,13 +66,13 @@ where
         Box::pin(async move {
             match response.await {
                 Ok(rsp) => {
-                    if rsp
-                        .headers()
-                        .get(linkerd_app_core::errors::L5D_PROXY_ERROR)
-                        .is_some()
+                    if let Some(message) =
+                        rsp.headers().get(linkerd_app_core::errors::L5D_PROXY_ERROR)
                     {
+                        tracing::info!(?message, "response contained L5D_PROXY_ERROR header");
                         // Gracefully teardown the accepted connection.
                         if let Some(ClientHandle { close, .. }) = client {
+                            tracing::info!("connection closed");
                             close.close();
                         }
                     }
