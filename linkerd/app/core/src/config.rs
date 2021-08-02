@@ -1,6 +1,6 @@
 pub use crate::exp_backoff::ExponentialBackoff;
 use crate::{
-    proxy::http::{h1, h2},
+    proxy::http::{self, h1, h2},
     svc::Param,
     transport::{Keepalive, ListenAddr},
 };
@@ -49,6 +49,14 @@ pub type PortSet = HashSet<u16, BuildHasherDefault<PortHasher>>;
 /// the integer values as hashes directly.
 #[derive(Default)]
 pub struct PortHasher(u16);
+
+// === impl ProxyConfig ===
+
+impl ProxyConfig {
+    pub fn detect_http(&self) -> linkerd_detect::Config<http::DetectHttp> {
+        linkerd_detect::Config::from_timeout(self.detect_protocol_timeout)
+    }
+}
 
 // === impl ServerConfig ===
 
