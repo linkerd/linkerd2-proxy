@@ -13,16 +13,16 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TlsAccept {
+pub struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
     policy: AllowPolicy,
-    tls: tls::ConditionalServerTls,
+    status: tls::ConditionalServerTls,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct HttpAccept {
-    inner: TlsAccept,
+pub struct Http {
+    tls: Tls,
     http: http::Version,
 }
 
@@ -48,12 +48,12 @@ impl<N> Inbound<N> {
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<HttpAccept, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<Http, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<io::BoxedIo, Response = ()>,
         NSvc: Send + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        F: svc::NewService<TlsAccept, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Clone + Send + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
@@ -61,8 +61,8 @@ impl<N> Inbound<N> {
         self.map_stack(|cfg, rt, http| {
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
 
-            http.check_new_service::<HttpAccept, _>()
-                .push_map_target(|(http, inner)| HttpAccept { http, inner })
+            http.check_new_service::<Http, _>()
+                .push_map_target(|(http, tls)| Http { http, tls })
                 .push(svc::UnwrapOr::layer(
                     // When HTTP detection fails, forward the connection to the application as
                     // an opaque TCP stream.
@@ -72,15 +72,13 @@ impl<N> Inbound<N> {
                 .push(svc::BoxNewService::layer())
                 .push_map_target(detect::allow_timeout)
                 .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
-                .check_new_service::<TlsAccept, _>()
+                .check_new_service::<Tls, _>()
                 .push(rt.metrics.transport.layer_accept())
-                .check_new_service::<TlsAccept, _>()
+                .check_new_service::<Tls, _>()
                 .push_request_filter(|(tls, t): (tls::ConditionalServerTls, T)| {
                     match (t.param(), &tls) {
                         // Permit all connections if no authentication is required.
-                        (AllowPolicy::Unauthenticated { .. }, _) => {
-                            Ok(TlsAccept::from_params(&t, tls))
-                        }
+                        (AllowPolicy::Unauthenticated { .. }, _) => Ok(Tls::from_params(&t, tls)),
                         // Permit connections with a validated client identity if authentication
                         // is required.
                         (
@@ -89,13 +87,13 @@ impl<N> Inbound<N> {
                                 client_id: Some(_),
                                 ..
                             }),
-                        ) => Ok(TlsAccept::from_params(&t, tls)),
+                        ) => Ok(Tls::from_params(&t, tls)),
                         // Permit terminated TLS connections when client authentication is not
                         // required.
                         (
                             AllowPolicy::TlsUnauthenticated,
                             tls::ConditionalServerTls::Some(tls::ServerTls::Established { .. }),
-                        ) => Ok(TlsAccept::from_params(&t, tls)),
+                        ) => Ok(Tls::from_params(&t, tls)),
                         // Otherwise, reject the connection.
                         _ => {
                             let OrigDstAddr(a) = t.param();
@@ -120,11 +118,11 @@ impl<N> Inbound<N> {
                     },
                     svc::stack(forward)
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push_map_target(|t: T| TlsAccept {
+                        .push_map_target(|t: T| Tls {
                             client_addr: t.param(),
                             orig_dst_addr: t.param(),
                             policy: t.param(),
-                            tls: tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped),
+                            status: tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped),
                         })
                         .into_inner(),
                 )
@@ -134,10 +132,10 @@ impl<N> Inbound<N> {
     }
 }
 
-// === impl TlsAccept ===
+// === impl Tls ===
 
-impl TlsAccept {
-    fn from_params<T>(t: &T, tls: tls::ConditionalServerTls) -> Self
+impl Tls {
+    fn from_params<T>(t: &T, status: tls::ConditionalServerTls) -> Self
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + svc::Param<AllowPolicy>,
     {
@@ -145,66 +143,66 @@ impl TlsAccept {
             client_addr: t.param(),
             orig_dst_addr: t.param(),
             policy: t.param(),
-            tls,
+            status,
         }
     }
 }
 
-impl svc::Param<u16> for TlsAccept {
+impl svc::Param<u16> for Tls {
     fn param(&self) -> u16 {
         self.orig_dst_addr.as_ref().port()
     }
 }
 
-impl svc::Param<transport::labels::Key> for TlsAccept {
+impl svc::Param<transport::labels::Key> for Tls {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::Accept {
             direction: transport::labels::Direction::In,
-            tls: self.tls.clone(),
+            tls: self.status.clone(),
             target_addr: self.orig_dst_addr.into(),
         }
     }
 }
 
-// === impl HttpAccept ===
+// === impl Http ===
 
-impl svc::Param<http::Version> for HttpAccept {
+impl svc::Param<http::Version> for Http {
     fn param(&self) -> http::Version {
         self.http
     }
 }
 
-impl svc::Param<Remote<ServerAddr>> for HttpAccept {
+impl svc::Param<Remote<ServerAddr>> for Http {
     fn param(&self) -> Remote<ServerAddr> {
-        Remote(ServerAddr(self.inner.orig_dst_addr.into()))
+        Remote(ServerAddr(self.tls.orig_dst_addr.into()))
     }
 }
 
-impl svc::Param<Remote<ClientAddr>> for HttpAccept {
+impl svc::Param<Remote<ClientAddr>> for Http {
     fn param(&self) -> Remote<ClientAddr> {
-        self.inner.client_addr
+        self.tls.client_addr
     }
 }
 
-impl svc::Param<tls::ConditionalServerTls> for HttpAccept {
+impl svc::Param<tls::ConditionalServerTls> for Http {
     fn param(&self) -> tls::ConditionalServerTls {
-        self.inner.tls.clone()
+        self.tls.status.clone()
     }
 }
 
-impl svc::Param<http::normalize_uri::DefaultAuthority> for HttpAccept {
+impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         http::normalize_uri::DefaultAuthority(Some(
-            std::str::FromStr::from_str(&self.inner.orig_dst_addr.to_string())
+            std::str::FromStr::from_str(&self.tls.orig_dst_addr.to_string())
                 .expect("Address must be a valid authority"),
         ))
     }
 }
 
-impl svc::Param<Option<identity::Name>> for HttpAccept {
+impl svc::Param<Option<identity::Name>> for Http {
     fn param(&self) -> Option<identity::Name> {
-        self.inner
-            .tls
+        self.tls
+            .status
             .value()
             .and_then(|server_tls| match server_tls {
                 tls::ServerTls::Established {
