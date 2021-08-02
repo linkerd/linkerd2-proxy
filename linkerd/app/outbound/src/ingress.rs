@@ -50,11 +50,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is HTTP.
-    pub fn into_ingress<T, I, P, R>(
-        self,
-        profiles: P,
-        resolve: R,
-    ) -> svc::BoxNewService<T, svc::BoxService<I, (), Error>>
+    pub fn into_ingress<T, I, P, R>(self, profiles: P, resolve: R) -> svc::BoxNewTcp<T, I>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,

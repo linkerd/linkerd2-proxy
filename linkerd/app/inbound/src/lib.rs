@@ -222,7 +222,7 @@ where
         proxy_port: u16,
         profiles: P,
         gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
         T: Clone + Send + 'static,

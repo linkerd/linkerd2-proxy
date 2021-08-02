@@ -5,7 +5,7 @@ use linkerd_app_core::{
     proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
     svc, tls,
     transport::{self, addrs::*},
-    transport_header, Conditional, Error,
+    transport_header, Conditional,
 };
 use std::{fmt, net::SocketAddr};
 
@@ -190,9 +190,7 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
 // === Outbound ===
 
 impl<S> Outbound<S> {
-    pub fn push_endpoint<I>(
-        self,
-    ) -> Outbound<svc::BoxNewService<tcp::Endpoint, svc::BoxService<I, (), Error>>>
+    pub fn push_endpoint<I>(self) -> Outbound<svc::BoxNewTcp<tcp::Endpoint, I>>
     where
         Self: Clone + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
@@ -220,7 +218,10 @@ pub mod tests {
     use super::*;
     use crate::test_util::*;
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request};
-    use linkerd_app_core::svc::{NewService, Service, ServiceExt};
+    use linkerd_app_core::{
+        svc::{NewService, Service, ServiceExt},
+        Error,
+    };
     use tokio::time;
 
     /// Tests that socket errors cause HTTP clients to be disconnected.

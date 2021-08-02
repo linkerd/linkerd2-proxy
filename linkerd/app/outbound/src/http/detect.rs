@@ -11,10 +11,7 @@ use tracing::debug_span;
 pub struct Skip;
 
 impl<N> Outbound<N> {
-    pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(
-        self,
-        http: H,
-    ) -> Outbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::BoxNewTcp<T, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,
