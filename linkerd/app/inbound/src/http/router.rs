@@ -102,11 +102,6 @@ impl<C> Inbound<C> {
                 .check_new_service::<Target, http::Request<_>>();
 
             let allow_profile = config.allow_discovery.clone();
-            let no_profile = target
-                .clone()
-                .push_on_response(http::BoxResponse::layer())
-                .check_new_service::<Target, http::Request<_>>()
-                .into_inner();
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
@@ -143,6 +138,9 @@ impl<C> Inbound<C> {
                 ))
                 .push_on_response(http::BoxResponse::layer())
                 .push_switch(
+                    // If the profile was resolved to a logical (service) address, build a profile
+                    // stack to include route-level metrics, etc. Otherwise, skip this stack and use
+                    // the underlying target stack directly.
                     |(rx, target): (Option<profiles::Receiver>, Target)| -> Result<_, Infallible> {
                         if let Some(rx) = rx {
                             if let Some(addr) = rx.borrow().logical_addr() {
@@ -155,9 +153,16 @@ impl<C> Inbound<C> {
                         }
                         Ok(svc::Either::B(target))
                     },
-                    no_profile,
+                    target
+                        .clone()
+                        .push_on_response(http::BoxResponse::layer())
+                        .check_new_service::<Target, http::Request<_>>()
+                        .into_inner(),
                 )
                 .push(profiles::discover::layer(profiles, move |t: Target| {
+                    // If the target includes a logical named address and it exists in the set of
+                    // allowed discovery suffixes, use that address for discovery. Otherwise, fail
+                    // discovery (so that we skip the profile stack above).
                     let addr = t.logical.ok_or_else(|| {
                         DiscoveryRejected::new("inbound profile discovery requires DNS names")
                     })?;
@@ -213,8 +218,8 @@ impl<C> Inbound<C> {
                     (http::Version::Http1, Some(name)) => debug_span!("http1", %name),
                 })
                 // Routes each request to a target, obtains a service for that target, and
-                // dispatches the request. Since NewRouter moves the NewService into the service
-                // type, so minimize it's type footprint with a Box.
+                // dispatches the request. NewRouter moves the NewService into the service type, so
+                // minimize it's type footprint with a Box.
                 .push(svc::BoxNewService::layer())
                 .push(svc::NewRouter::layer(|t: T| RequestTarget {
                     addr: t.param(),
@@ -239,6 +244,10 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for RequestTarget {
         };
         use std::{convert::TryInto, str::FromStr};
 
+        // Try to read a logical named address from the request. First check the canonical-dst
+        // header as set by the client proxy; otherwise fallback to the request's `:authority` or
+        // `host` headers. If these values include a numeric address, no logical name will be used.
+        // This value is used for profile discovery.
         let logical = req
             .headers()
             .get(CANONICAL_DST_HEADER)
