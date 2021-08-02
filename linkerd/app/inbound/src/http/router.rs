@@ -286,17 +286,6 @@ impl Param<profiles::Receiver> for Logical {
 
 // === impl Target ===
 
-// impl From<HttpAccept> for Target {
-//     fn from(HttpAccept { version, tcp }: HttpAccept) -> Self {
-//         Self {
-//             dst: tcp.target_addr.into(),
-//             target_addr: tcp.target_addr,
-//             http_version: version,
-//             tls: tcp.tls,
-//         }
-//     }
-// }
-
 impl From<Logical> for Target {
     fn from(Logical { target, .. }: Logical) -> Self {
         target
