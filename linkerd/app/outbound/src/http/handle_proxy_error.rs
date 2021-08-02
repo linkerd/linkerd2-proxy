@@ -12,16 +12,11 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct NewHandleProxyError<N> {
-    inner: N,
-}
-
-#[derive(Clone, Debug)]
 pub struct HandleProxyError<N> {
     inner: N,
 }
 
-impl<N> NewHandleProxyError<N> {
+impl<N> HandleProxyError<N> {
     fn new(inner: N) -> Self {
         Self { inner }
     }
@@ -31,7 +26,7 @@ impl<N> NewHandleProxyError<N> {
     }
 }
 
-impl<T, N> NewService<T> for NewHandleProxyError<N>
+impl<T, N> NewService<T> for HandleProxyError<N>
 where
     N: NewService<T>,
 {
@@ -85,7 +80,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::NewHandleProxyError;
+    use super::HandleProxyError;
     use crate::{
         http::{Endpoint, NewServeHttp, Request, Response, StatusCode, Version},
         test_util::{
@@ -165,7 +160,7 @@ mod test {
         Outbound::new(config.clone(), rt.clone())
             .with_stack(connect)
             .push_http_endpoint()
-            .push(NewHandleProxyError::layer())
+            .push(HandleProxyError::layer())
             .push_http_server()
             .map_stack(|_, _, s| s.push_on_response(BoxRequest::layer()))
             .push(NewServeHttp::layer(
