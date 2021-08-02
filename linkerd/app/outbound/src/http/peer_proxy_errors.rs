@@ -11,11 +11,11 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct HandleProxyError<N> {
+pub struct PeerProxyErrors<N> {
     inner: N,
 }
 
-impl<N> HandleProxyError<N> {
+impl<N> PeerProxyErrors<N> {
     fn new(inner: N) -> Self {
         Self { inner }
     }
@@ -25,19 +25,19 @@ impl<N> HandleProxyError<N> {
     }
 }
 
-impl<T, N> NewService<T> for HandleProxyError<N>
+impl<T, N> NewService<T> for PeerProxyErrors<N>
 where
     N: NewService<T>,
 {
-    type Service = HandleProxyError<N::Service>;
+    type Service = PeerProxyErrors<N::Service>;
 
     fn new_service(&mut self, target: T) -> Self::Service {
         let inner = self.inner.new_service(target);
-        HandleProxyError { inner }
+        PeerProxyErrors { inner }
     }
 }
 
-impl<S, A, B> Service<Request<A>> for HandleProxyError<S>
+impl<S, A, B> Service<Request<A>> for PeerProxyErrors<S>
 where
     S: Service<Request<A>, Response = Response<B>>,
     S::Response: Send,
@@ -74,7 +74,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::HandleProxyError;
+    use super::PeerProxyErrors;
     use crate::{
         http::{Endpoint, NewServeHttp, Request, Response, StatusCode, Version},
         test_util::{
@@ -154,7 +154,7 @@ mod test {
         Outbound::new(config.clone(), rt.clone())
             .with_stack(connect)
             .push_http_endpoint()
-            .push(HandleProxyError::layer())
+            .push(PeerProxyErrors::layer())
             .push_http_server()
             .map_stack(|_, _, s| s.push_on_response(BoxRequest::layer()))
             .push(NewServeHttp::layer(
