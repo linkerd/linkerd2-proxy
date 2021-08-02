@@ -27,6 +27,9 @@ use linkerd_app_core::{
 use std::{fmt::Debug, time::Duration};
 use tracing::debug_span;
 
+#[cfg(fuzzing)]
+pub use self::http::fuzz as http_fuzz;
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub allow_discovery: NameMatch,

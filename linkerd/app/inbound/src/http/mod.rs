@@ -11,7 +11,7 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
 }
 
 #[cfg(fuzzing)]
-pub mod fuzz_logic {
+pub mod fuzz {
     use crate::{
         http::router::HttpEndpoint,
         test_util::{
