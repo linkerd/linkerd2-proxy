@@ -7,6 +7,7 @@ use futures::future;
 use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::ReplayBody;
+use linkerd_proxy_http::ClientHandle;
 use linkerd_retry as retry;
 use linkerd_stack::{layer, Either, Param};
 use std::sync::Arc;
@@ -137,6 +138,12 @@ where
         *clone.uri_mut() = req.uri().clone();
         *clone.headers_mut() = req.headers().clone();
         *clone.version_mut() = req.version();
+
+        // If the ClientHandle extension is present, clone it into the new
+        // request.
+        if let Some(client_handle) = req.extensions().get::<ClientHandle>().cloned() {
+            clone.extensions_mut().insert(client_handle);
+        }
 
         Some(clone)
     }
