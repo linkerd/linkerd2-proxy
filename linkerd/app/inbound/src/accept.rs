@@ -94,3 +94,82 @@ impl svc::Param<AllowPolicy> for Accept {
         self.policy
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{test_util, DefaultPolicy, PortPolicies};
+    use futures::future;
+    use linkerd_app_core::{
+        svc::{NewService, ServiceExt},
+        Error,
+    };
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn default_allow() {
+        let (io, _) = io::duplex(1);
+        inbound(AllowPolicy::Unauthenticated { skip_detect: false })
+            .with_stack(new_ok())
+            .push_accept(999, new_panic("direct stack must not be built"))
+            .into_inner()
+            .new_service(Target(1000))
+            .oneshot(io)
+            .await
+            .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn default_deny() {
+        let (io, _) = io::duplex(1);
+        inbound(DefaultPolicy::Deny)
+            .with_stack(new_ok())
+            .push_accept(999, new_panic("direct stack must not be built"))
+            .into_inner()
+            .new_service(Target(1000))
+            .oneshot(io)
+            .await
+            .expect_err("should be denied");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn direct() {
+        let (io, _) = io::duplex(1);
+        inbound(DefaultPolicy::Deny)
+            .with_stack(new_panic("detect stack must not be built"))
+            .push_accept(999, new_ok())
+            .into_inner()
+            .new_service(Target(999))
+            .oneshot(io)
+            .await
+            .expect("should succeed");
+    }
+
+    fn inbound(port_policies: impl Into<PortPolicies>) -> Inbound<()> {
+        let mut c = test_util::default_config();
+        c.port_policies = port_policies.into();
+        Inbound::new(c, test_util::runtime().0)
+    }
+
+    fn new_panic<T>(msg: &'static str) -> svc::BoxNewTcp<T, io::DuplexStream> {
+        svc::BoxNewService::new(move |_| panic!("{}", msg))
+    }
+
+    fn new_ok<T>() -> svc::BoxNewTcp<T, io::DuplexStream> {
+        svc::BoxNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
+    }
+
+    #[derive(Clone, Debug)]
+    struct Target(u16);
+
+    impl svc::Param<OrigDstAddr> for Target {
+        fn param(&self) -> OrigDstAddr {
+            OrigDstAddr(([192, 0, 2, 2], self.0).into())
+        }
+    }
+
+    impl svc::Param<Remote<ClientAddr>> for Target {
+        fn param(&self) -> Remote<ClientAddr> {
+            Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
+        }
+    }
+}
