@@ -1,7 +1,4 @@
-use crate::{
-    port_policies::{self, AllowPolicy},
-    Inbound,
-};
+use crate::{AllowPolicy, Inbound};
 use linkerd_app_core::{
     io, svc,
     transport::addrs::{ClientAddr, OrigDstAddr, Remote},
@@ -14,7 +11,7 @@ use tracing::info_span;
 pub struct Accept {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
-    policy: port_policies::AllowPolicy,
+    policy: AllowPolicy,
 }
 
 // === impl Inbound ===

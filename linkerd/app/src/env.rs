@@ -8,7 +8,6 @@ use crate::core::{
     Addr, AddrMatch, Conditional, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use inbound::port_policies;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -523,15 +522,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 }
             }
 
-            port_policies::PortPolicies::new(
-                port_policies::AllowPolicy::Unauthenticated { skip_detect: false }.into(),
+            inbound::PortPolicies::new(
+                inbound::AllowPolicy::Unauthenticated { skip_detect: false }.into(),
                 require_identity_for_inbound_ports
                     .into_iter()
-                    .map(|p| (p, port_policies::AllowPolicy::Authenticated))
+                    .map(|p| (p, inbound::AllowPolicy::Authenticated))
                     .chain(inbound_opaque_ports.into_iter().map(|p| {
                         (
                             p,
-                            port_policies::AllowPolicy::Unauthenticated { skip_detect: true },
+                            inbound::AllowPolicy::Unauthenticated { skip_detect: true },
                         )
                     })),
             )

@@ -1,4 +1,4 @@
-use crate::{port_policies::AllowPolicy, Inbound};
+use crate::{AllowPolicy, Inbound};
 use linkerd_app_core::{
     detect, identity, io,
     proxy::{http, identity::LocalCrtKey},
