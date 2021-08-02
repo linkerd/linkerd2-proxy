@@ -88,7 +88,7 @@ where
 mod test {
     use super::NewHandleProxyError;
     use crate::{
-        http::{Endpoint, NewServeHttp, Request, Response, Version},
+        http::{Endpoint, NewServeHttp, Request, Response, StatusCode, Version},
         test_util::{
             self, future,
             support::{self, connect::Connect, http_util},
@@ -111,18 +111,18 @@ mod test {
     use std::net::SocketAddr;
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test() {
+    async fn connection_closes_after_response_header() {
         let _trace = test::trace_init();
 
-        // Build the outbound server
+        // Build the outbound server that responds with the L5D_PROXY_ERROR
+        // header set.
         let (rt, _shutdown) = test_util::runtime();
-        let addr = SocketAddr::new([192, 0, 2, 41].into(), 2041);
+        let addr = SocketAddr::new([127, 0, 0, 1].into(), 12345);
         let connect = support::connect().endpoint_fn_boxed(addr, |_: Endpoint| serve());
         let config = test_util::default_config();
         let mut outbound = build_outbound(config, rt, connect);
 
-        // Build the service that responds with the L5D_PROXY_ERROR header
-        // set.
+        // Build the otubound service.
         let service = outbound.new_service(Endpoint {
             addr: Remote(ServerAddr(addr)),
             tls: ConditionalClientTls::None(NoClientTls::Disabled),
@@ -132,10 +132,27 @@ mod test {
             opaque_protocol: false,
         });
 
+        // Build the client that should be closed after receiving a response
+        // with the L5D_PROXY_ERROR header.
         let mut builder = Builder::new();
         let (mut client, bg) = http_util::connect_and_accept(&mut builder, service).await;
 
-        todo!()
+        let request = Request::builder()
+            .uri("http://foo.example.com")
+            .body(Body::default())
+            .unwrap();
+        let response = http_util::http_request(&mut client, request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let message = response
+            .headers()
+            .get(L5D_PROXY_ERROR)
+            .expect("response did not contain L5D_PROXY_ERROR header");
+        assert_eq!(message, "proxy received invalid response");
+
+        // The client's background task should be completed without dropping
+        // the client because the connection was closed after encountering a
+        // response that contains the L5D_PROXY_ERROR header.
+        let _ = bg.await;
     }
 
     fn build_outbound<I>(
@@ -156,8 +173,7 @@ mod test {
                 config.proxy.server.h2_settings,
                 rt.drain,
             ))
-            .into_stack()
-            .push_on_response(BoxService::layer())
+            .map_stack(|_, _, s| s.push_on_response(BoxService::layer()))
             .push(BoxNewService::layer())
             .into_inner()
     }
@@ -167,7 +183,7 @@ mod test {
         let http = Http::new();
         let service = service::service_fn(move |_: Request<Body>| {
             let response = Response::builder()
-                .status(http::StatusCode::BAD_GATEWAY)
+                .status(StatusCode::BAD_GATEWAY)
                 .header(L5D_PROXY_ERROR, "proxy received invalid response")
                 .body(hyper::Body::default())
                 .unwrap();
