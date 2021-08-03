@@ -67,7 +67,7 @@ where
                 tracing::info!(?message, "response contained `{}` header", L5D_PROXY_ERROR);
                 // Gracefully teardown the accepted connection.
                 if let Some(ClientHandle { close, .. }) = client {
-                    tracing::info!("connection closed");
+                    tracing::trace!("connection closed");
                     close.close();
                 }
             }
