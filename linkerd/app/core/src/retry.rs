@@ -139,8 +139,9 @@ where
         *clone.headers_mut() = req.headers().clone();
         *clone.version_mut() = req.version();
 
-        // If the ClientHandle extension is present, clone it into the new
-        // request.
+        // The cloned request may also need the ability to tear down the
+        // client connection if the response from a peer proxy has the
+        // l5d-proxy-error header, so ensure it also has a `ClientHandle`.
         if let Some(client_handle) = req.extensions().get::<ClientHandle>().cloned() {
             clone.extensions_mut().insert(client_handle);
         }
