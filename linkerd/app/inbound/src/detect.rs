@@ -58,15 +58,17 @@ impl<N> Inbound<N> {
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
+        const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
+            tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
+
         self.map_stack(|cfg, rt, http| {
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
 
-            http.check_new_service::<Http, _>()
-                .push_map_target(|(http, tls)| Http { http, tls })
+            http.push_map_target(|(http, tls)| Http { http, tls })
                 .push(svc::UnwrapOr::layer(
                     // When HTTP detection fails, forward the connection to the application as
                     // an opaque TCP stream.
-                    svc::stack(forward.clone()).into_inner(),
+                    forward.clone(),
                 ))
                 .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(svc::BoxNewService::layer())
@@ -112,12 +114,7 @@ impl<N> Inbound<N> {
                     },
                     svc::stack(forward)
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push_map_target(|t: T| Tls {
-                            client_addr: t.param(),
-                            orig_dst_addr: t.param(),
-                            policy: t.param(),
-                            status: tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped),
-                        })
+                        .push_map_target(|t: T| Tls::from_params(&t, TLS_PORT_SKIPPED))
                         .into_inner(),
                 )
                 .push_on_response(svc::BoxService::layer())
