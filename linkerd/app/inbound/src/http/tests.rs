@@ -63,7 +63,7 @@ async fn unmeshed_http1_hello_world() {
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -100,7 +100,7 @@ async fn downgrade_origin_form() {
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1")
@@ -138,7 +138,7 @@ async fn downgrade_absolute_form() {
     let (mut client, bg) = http_util::connect_and_accept(&mut client, server).await;
 
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550/")
         .header(http::header::HOST, "foo.svc.cluster.local")
         .header("l5d-orig-proto", "HTTP/1.1; absolute-form")
@@ -175,7 +175,7 @@ async fn http1_bad_gateway_response_error_header() {
     // Send a request and assert that it is a BAD_GATEWAY with the expected
     // header message.
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -216,7 +216,7 @@ async fn http1_connect_timeout_response_error_header() {
     // Send a request and assert that it is a GATEWAY_TIMEOUT with the
     // expected header message.
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -254,7 +254,7 @@ async fn h2_response_error_header() {
     // Send a request and assert that it is SERVICE_UNAVAILABLE with the
     // expected header message.
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .body(Body::default())
         .unwrap();
@@ -295,7 +295,7 @@ async fn grpc_response_error_header() {
     // Send a request and assert that it is OK with the expected header
     // message.
     let req = Request::builder()
-        .method(::http::Method::GET)
+        .method(http::Method::GET)
         .uri("http://foo.svc.cluster.local:5550")
         .header(http::header::CONTENT_TYPE, "application/grpc")
         .body(Body::default())

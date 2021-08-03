@@ -38,7 +38,7 @@ pub use self::{
 };
 pub use http::{
     header::{self, HeaderName, HeaderValue},
-    uri, Request, Response, StatusCode,
+    uri, Method, Request, Response, StatusCode,
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};
