@@ -1,4 +1,4 @@
-use crate::{target::TcpEndpoint, Inbound};
+use crate::Inbound;
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
@@ -70,16 +70,13 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub fn push_direct<T, I, NSvc, G, GSvc>(
-        self,
-        gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    pub fn push_direct<T, I, NSvc, G, GSvc>(self, gateway: G) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<u16, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
@@ -96,18 +93,22 @@ impl<N> Inbound<N> {
         self.map_stack(|config, rt, tcp| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
 
-            tcp.instrument(|_: &TcpEndpoint| debug_span!("opaque"))
+            tcp.instrument(|_: &_| debug_span!("opaque"))
                 // When the transport header is present, it may be used for either local
                 // TCP forwarding, or we may be processing an HTTP gateway connection.
                 // HTTP gateway connections that have a transport header must provide a
                 // target name as a part of the header.
+                //
+                // TODO: Apply port policies. This isn't necessary for now, since these connections
+                // always have a client identity. We'll need to honor client restrictions once those
+                // are supported, though.
                 .push_switch(
                     |(h, client): (TransportHeader, ClientInfo)| match h {
                         TransportHeader {
                             port,
                             name: None,
                             protocol: None,
-                        } => Ok(svc::Either::A(TcpEndpoint { port })),
+                        } => Ok(svc::Either::A(port)),
                         TransportHeader {
                             port,
                             name: Some(name),
