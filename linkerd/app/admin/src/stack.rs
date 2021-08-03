@@ -5,12 +5,11 @@ use linkerd_app_core::{
     metrics::{self, FmtMetrics},
     proxy::{http, identity::LocalCrtKey},
     serve,
-    svc::{self, Param},
+    svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
-    transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
+    transport::{self, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
-use linkerd_app_inbound::target::{HttpAccept, Target, TcpAccept};
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -36,6 +35,26 @@ struct NonHttpClient(Remote<ClientAddr>);
 #[error("Unexpected TLS connection to {} from {}", self.0, self.1)]
 struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
 
+#[derive(Clone, Debug)]
+struct Tcp {
+    addr: Local<ServerAddr>,
+    client: Remote<ClientAddr>,
+    tls: tls::ConditionalServerTls,
+}
+
+#[derive(Clone, Debug)]
+struct Http {
+    tcp: Tcp,
+    version: http::Version,
+}
+
+#[derive(Clone)]
+struct TlsParams {
+    identity: Option<LocalCrtKey>,
+}
+
+const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
+
 // === impl Config ===
 
 impl Config {
@@ -55,37 +74,33 @@ impl Config {
         B: Bind<ServerConfig>,
         B::Addrs: svc::Param<Remote<ClientAddr>> + svc::Param<Local<ServerAddr>>,
     {
-        const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
-
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
-        let admin = svc::stack(admin)
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Target>())
+        let admin = svc::stack(move |_| admin.clone())
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
             .push_on_response(
                 svc::layers()
                     .push(metrics.http_errors.clone())
                     .push(errors::layer())
                     .push(http::BoxResponse::layer()),
             )
-            .push_map_target(Target::from)
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push_request_filter(
-                |(version, tcp): (
-                    Result<Option<http::Version>, detect::DetectTimeout<_>>,
-                    TcpAccept,
+                |(http, tcp): (
+                    Result<Option<http::Version>, detect::DetectTimeoutError<_>>,
+                    Tcp,
                 )| {
-                    match version {
-                        Ok(Some(version)) => Ok(HttpAccept::from((version, tcp))),
-                        // If detection timed out, we can make an educated guess
-                        // at the proper behavior:
-                        // - If the connection was meshed, it was most likely
-                        //   transported over HTTP/2.
-                        // - If the connection was unmehsed, it was mostly
-                        //   likely HTTP/1.
-                        // - If we received some unexpected SNI, the client is
-                        //   mostly likely confused/stale.
+                    match http {
+                        Ok(Some(version)) => Ok(Http { version, tcp }),
+                        // If detection timed out, we can make an educated guess at the proper
+                        // behavior:
+                        // - If the connection was meshed, it was most likely transported over
+                        //   HTTP/2.
+                        // - If the connection was unmeshed, it was mostly likely HTTP/1.
+                        // - If we received some unexpected SNI, the client is mostly likely
+                        //   confused/stale.
                         Err(_timeout) => {
                             let version = match tcp.tls.clone() {
                                 tls::ConditionalServerTls::None(_) => http::Version::Http1,
@@ -96,41 +111,37 @@ impl Config {
                                     sni,
                                 }) => {
                                     debug_assert!(false, "If we know the stream is non-mesh TLS, we should be able to prove its not HTTP.");
-                                    return Err(Error::from(UnexpectedSni(sni, tcp.client_addr)));
+                                    return Err(Error::from(UnexpectedSni(sni, tcp.client)));
                                 }
                             };
                             debug!(%version, "HTTP detection timed out; assuming HTTP");
-                            Ok(HttpAccept::from((version, tcp)))
+                            Ok(Http { version, tcp })
                         }
-                        // If the connection failed HTTP detection, check if we
-                        // detected TLS for another target. This might indicate
-                        // that the client is confused/stale.
+                        // If the connection failed HTTP detection, check if we detected TLS for
+                        // another target. This might indicate that the client is confused/stale.
                         Ok(None) => match tcp.tls {
                             tls::ConditionalServerTls::Some(tls::ServerTls::Passthru { sni }) => {
-                                Err(UnexpectedSni(sni, tcp.client_addr).into())
+                                Err(UnexpectedSni(sni, tcp.client).into())
                             }
-                            _ => Err(NonHttpClient(tcp.client_addr).into()),
+                            _ => Err(NonHttpClient(tcp.client).into()),
                         },
                     }
                 },
             )
             .push(svc::BoxNewService::layer())
-            .push(detect::NewDetectService::layer(
-                DETECT_TIMEOUT,
-                http::DetectHttp::default(),
-            ))
+            .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
             .push(metrics.transport.layer_accept())
             .push_map_target(|(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
-                // TODO this should use an admin-specific target type.
-                let Local(ServerAddr(target_addr)) = addrs.param();
-                TcpAccept {
+                Tcp {
                     tls,
-                    client_addr: addrs.param(),
-                    target_addr,
+                    client: addrs.param(),
+                    addr: addrs.param(),
                 }
             })
             .push(svc::BoxNewService::layer())
-            .push(tls::NewDetectTls::layer(identity, DETECT_TIMEOUT))
+            .push(tls::NewDetectTls::layer(TlsParams {
+                identity,
+            }))
             .into_inner();
 
         let serve = Box::pin(serve::serve(listen, admin, drain.signaled()));
@@ -139,5 +150,61 @@ impl Config {
             latch,
             serve,
         })
+    }
+}
+
+// === impl Tcp ===
+
+impl Param<transport::labels::Key> for Tcp {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::Accept {
+            direction: transport::labels::Direction::In,
+            tls: self.tls.clone(),
+            target_addr: self.addr.into(),
+        }
+    }
+}
+
+// === impl Http ===
+
+impl Param<http::Version> for Http {
+    fn param(&self) -> http::Version {
+        self.version
+    }
+}
+
+impl Param<metrics::EndpointLabels> for Http {
+    fn param(&self) -> metrics::EndpointLabels {
+        metrics::InboundEndpointLabels {
+            tls: self.tcp.tls.clone(),
+            authority: None,
+            target_addr: self.tcp.addr.into(),
+        }
+        .into()
+    }
+}
+
+// === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        tls::server::Timeout(DETECT_TIMEOUT)
+    }
+}
+
+impl<T> ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+        self.identity.clone()
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
     }
 }

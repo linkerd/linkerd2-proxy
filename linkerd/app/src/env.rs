@@ -488,24 +488,53 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Ensure that connections thaat directly target the inbound port are
         // secured (unless identity is disabled).
         let inbound_port = server.addr.as_ref().port();
-        if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
-            debug!(
-                "Adding {} to {}",
-                inbound_port, ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
-            );
-            require_identity_for_inbound_ports.insert(inbound_port);
-        }
+        let port_policies = {
+            if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
+                debug!(
+                    "Adding {} to {}",
+                    inbound_port, ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
+                );
+                require_identity_for_inbound_ports.insert(inbound_port);
+            }
 
-        // Ensure that the inbound port does not disable protocol detection, as
-        // is required for opaque transport.
-        let inbound_opaque_ports = inbound_disable_ports?.unwrap_or_default();
-        if inbound_opaque_ports.contains(&inbound_port) {
-            error!(
-                "{} must not contain {} ({})",
-                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION, ENV_INBOUND_LISTEN_ADDR, inbound_port
-            );
-            return Err(EnvError::InvalidEnvVar);
-        }
+            // Ensure that the inbound port does not disable protocol detection, as
+            // is required for opaque transport.
+            let inbound_opaque_ports = inbound_disable_ports?.unwrap_or_default();
+            if inbound_opaque_ports.contains(&inbound_port) {
+                error!(
+                    "{} must not contain {} ({})",
+                    ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                    ENV_INBOUND_LISTEN_ADDR,
+                    inbound_port
+                );
+                return Err(EnvError::InvalidEnvVar);
+            }
+
+            for p in require_identity_for_inbound_ports.iter() {
+                if inbound_opaque_ports.contains(p) {
+                    error!(
+                        "{} must not overlap with {} ({})",
+                        ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                        ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
+                        p
+                    );
+                    return Err(EnvError::InvalidEnvVar);
+                }
+            }
+
+            inbound::PortPolicies::new(
+                inbound::AllowPolicy::Unauthenticated { skip_detect: false }.into(),
+                require_identity_for_inbound_ports
+                    .into_iter()
+                    .map(|p| (p, inbound::AllowPolicy::Authenticated))
+                    .chain(inbound_opaque_ports.into_iter().map(|p| {
+                        (
+                            p,
+                            inbound::AllowPolicy::Unauthenticated { skip_detect: true },
+                        )
+                    })),
+            )
+        };
 
         inbound::Config {
             allow_discovery: NameMatch::new(dst_profile_suffixes),
@@ -519,10 +548,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            require_identity_for_inbound_ports: require_identity_for_inbound_ports.into(),
+            port_policies,
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
-            disable_protocol_detection_for_ports: inbound_opaque_ports.into_iter().collect(),
         }
     };
 
@@ -930,7 +958,7 @@ pub fn parse_identity_config<S: Strings>(
     strings: &S,
 ) -> Result<Option<(ControlAddr, identity::certify::Config)>, EnvError> {
     let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
-    let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |ref s| {
+    let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
     let dir = parse(strings, ENV_IDENTITY_DIR, |ref s| Ok(PathBuf::from(s)));
@@ -1037,7 +1065,7 @@ pub fn parse_identity_config<S: Strings>(
                 );
             }
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
-            let svc_env: &str = &s.as_str();
+            let svc_env: &str = s.as_str();
             for (unset, name) in &[
                 (addr.is_none(), svc_env),
                 (trust_anchors.is_none(), ENV_IDENTITY_TRUST_ANCHORS),

@@ -105,7 +105,7 @@ where
             let mut proxies = HashMap::with_capacity(http_routes.len());
             for (_, ref route) in &http_routes {
                 // Reuse the prior services whenever possible.
-                let proxy = self.proxies.remove(&route).unwrap_or_else(|| {
+                let proxy = self.proxies.remove(route).unwrap_or_else(|| {
                     debug!(?route, "Creating HTTP route");
                     self.new_route
                         .new_service((route.clone(), self.target.clone()))

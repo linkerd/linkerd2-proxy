@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 mod layer;
 mod service;
@@ -60,7 +59,7 @@ impl<K: FmtLabels + Hash + Eq> FmtMetrics for Registry<K> {
         }
 
         self.metric.fmt_help(f)?;
-        self.metric.fmt_scopes(f, errors.iter(), |c| &c)?;
+        self.metric.fmt_scopes(f, errors.iter(), |c| c)?;
 
         Ok(())
     }

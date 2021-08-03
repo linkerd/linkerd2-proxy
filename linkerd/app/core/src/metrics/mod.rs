@@ -2,7 +2,8 @@ mod tcp_accept_errors;
 
 use crate::{
     classify::{Class, SuccessOrFailure},
-    control, dst, errors, http_metrics, http_metrics as metrics, opencensus, stack_metrics,
+    control, dst, errors, http_metrics, http_metrics as metrics, opencensus, profiles,
+    stack_metrics,
     svc::Param,
     telemetry, tls,
     transport::{
@@ -86,7 +87,7 @@ pub struct StackLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RouteLabels {
     direction: Direction,
-    target: Addr,
+    addr: profiles::LogicalAddr,
     labels: Option<String>,
 }
 
@@ -232,7 +233,7 @@ impl FmtLabels for ControlLabels {
 impl Param<RouteLabels> for dst::Route {
     fn param(&self) -> RouteLabels {
         RouteLabels {
-            target: self.target.clone(),
+            addr: self.addr.clone(),
             direction: self.direction,
             labels: prefix_labels("rt", self.route.labels().iter()),
         }
@@ -242,7 +243,7 @@ impl Param<RouteLabels> for dst::Route {
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
-        write!(f, ",dst=\"{}\"", self.target)?;
+        write!(f, ",dst=\"{}\"", self.addr)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;

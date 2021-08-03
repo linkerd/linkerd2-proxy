@@ -19,7 +19,7 @@ use hyper::{
 use linkerd_app_core::{
     metrics::{self as metrics, FmtMetrics},
     proxy::http::ClientHandle,
-    svc, trace, Error,
+    trace, Error,
 };
 use std::{
     future::Future,
@@ -147,13 +147,6 @@ impl<M> Admin<M> {
             .get::<ClientHandle>()
             .map(|a| a.addr.ip().is_loopback())
             .unwrap_or(false)
-    }
-}
-
-impl<M: FmtMetrics + Clone, T> svc::NewService<T> for Admin<M> {
-    type Service = Self;
-    fn new_service(&mut self, _: T) -> Self::Service {
-        self.clone()
     }
 }
 

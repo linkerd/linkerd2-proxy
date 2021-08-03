@@ -13,7 +13,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::BoxNewService<(Option<profiles::Receiver>, T), svc::BoxService<I, (), Error>>>
+    ) -> Outbound<svc::BoxNewTcp<(Option<profiles::Receiver>, T), I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,

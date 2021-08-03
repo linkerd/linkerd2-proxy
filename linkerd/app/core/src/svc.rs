@@ -6,8 +6,9 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, Fail, Filter,
-    MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
+    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    Filter, InsertParam, MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate,
+    UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
 pub use linkerd_timeout::{self as timeout, FailFast};
@@ -34,6 +35,10 @@ pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
 
 pub type BoxNewHttp<T, B = http::BoxBody> = BoxNewService<T, BoxHttp<B>>;
+
+pub type BoxTcp<I> = BoxService<I, (), Error>;
+
+pub type BoxNewTcp<T, I> = BoxNewService<T, BoxTcp<I>>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -178,14 +183,10 @@ impl<S> Stack<S> {
     /// `ConnectTimeout` error.
     ///
     /// Note that any timeouts errors from the inner service will be wrapped as well.
-    pub fn push_connect_timeout<T>(
+    pub fn push_connect_timeout(
         self,
         timeout: Duration,
-    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>>
-    where
-        S: Service<T>,
-        S::Error: Into<Error>,
-    {
+    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
         self.push_timeout(timeout)
             .push(MapErrLayer::new(move |err: Error| {
                 if err.is::<tower::timeout::error::Elapsed>() {

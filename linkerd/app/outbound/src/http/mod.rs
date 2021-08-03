@@ -83,7 +83,7 @@ impl Logical {
         use linkerd_app_core::metrics::Direction;
         dst::Route {
             route,
-            target: logical.addr(),
+            addr: logical.logical_addr,
             direction: Direction::Out,
         }
     }

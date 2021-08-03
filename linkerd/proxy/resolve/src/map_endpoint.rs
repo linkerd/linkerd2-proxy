@@ -117,7 +117,7 @@ where
                 resolve::Update::Add(eps) => {
                     let mut update = Vec::with_capacity(eps.len());
                     for (a, ep) in eps.into_iter() {
-                        let ep = this.map.map_endpoint(&this.target, a, ep);
+                        let ep = this.map.map_endpoint(this.target, a, ep);
                         update.push((a, ep));
                     }
                     resolve::Update::Add(update)
@@ -125,7 +125,7 @@ where
                 resolve::Update::Reset(eps) => {
                     let mut update = Vec::with_capacity(eps.len());
                     for (a, ep) in eps.into_iter() {
-                        let ep = this.map.map_endpoint(&this.target, a, ep);
+                        let ep = this.map.map_endpoint(this.target, a, ep);
                         update.push((a, ep));
                     }
                     resolve::Update::Reset(update)

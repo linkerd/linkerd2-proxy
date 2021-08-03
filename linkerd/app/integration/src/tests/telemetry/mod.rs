@@ -1414,6 +1414,6 @@ async fn metrics_compression() {
     assert_eq!(client.get("/").await, "hello");
 
     for &encoding in encodings {
-        assert_eventually_contains!(do_scrape(encoding).await, &metric.set_value(2u64));
+        assert_eventually_contains!(do_scrape(encoding).await, metric.set_value(2u64));
     }
 }

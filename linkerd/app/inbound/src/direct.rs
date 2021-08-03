@@ -1,8 +1,8 @@
-use crate::{target::TcpEndpoint, Inbound};
+use crate::Inbound;
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
-    svc::{self, Param},
+    svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
@@ -55,6 +55,12 @@ pub struct ClientInfo {
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 
+#[derive(Clone)]
+struct TlsParams {
+    timeout: tls::server::Timeout,
+    identity: Option<WithTransportHeaderAlpn>,
+}
+
 impl<N> Inbound<N> {
     /// Builds a stack that handles connections that target the proxy's inbound port
     /// (i.e. without an SO_ORIGINAL_DST setting). This port behaves differently from
@@ -64,16 +70,13 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub fn push_direct<T, I, NSvc, G, GSvc>(
-        self,
-        gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    pub fn push_direct<T, I, NSvc, G, GSvc>(self, gateway: G) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<TcpEndpoint, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<u16, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
@@ -90,18 +93,22 @@ impl<N> Inbound<N> {
         self.map_stack(|config, rt, tcp| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
 
-            tcp.instrument(|_: &TcpEndpoint| debug_span!("opaque"))
+            tcp.instrument(|_: &_| debug_span!("opaque"))
                 // When the transport header is present, it may be used for either local
                 // TCP forwarding, or we may be processing an HTTP gateway connection.
                 // HTTP gateway connections that have a transport header must provide a
                 // target name as a part of the header.
+                //
+                // TODO: Apply port policies. This isn't necessary for now, since these connections
+                // always have a client identity. We'll need to honor client restrictions once those
+                // are supported, though.
                 .push_switch(
                     |(h, client): (TransportHeader, ClientInfo)| match h {
                         TransportHeader {
                             port,
                             name: None,
                             protocol: None,
-                        } => Ok(svc::Either::A(TcpEndpoint { port })),
+                        } => Ok(svc::Either::A(port)),
                         TransportHeader {
                             port,
                             name: Some(name),
@@ -152,10 +159,10 @@ impl<N> Inbound<N> {
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::BoxNewService::layer())
-                .push(tls::NewDetectTls::layer(
-                    rt.identity.clone().map(WithTransportHeaderAlpn),
-                    detect_timeout,
-                ))
+                .push(tls::NewDetectTls::layer(TlsParams {
+                    timeout: tls::server::Timeout(detect_timeout),
+                    identity: rt.identity.clone().map(WithTransportHeaderAlpn),
+                }))
                 .check_new_service::<T, I>()
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
@@ -244,5 +251,30 @@ impl From<RefusedNoHeader> for Error {
             io::ErrorKind::ConnectionRefused,
             "Non-transport-header connection refused",
         ))
+    }
+}
+
+// === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        self.timeout
+    }
+}
+
+impl<T> ExtractParam<Option<WithTransportHeaderAlpn>, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Option<WithTransportHeaderAlpn> {
+        self.identity.clone()
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
     }
 }

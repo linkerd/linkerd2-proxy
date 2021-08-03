@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 mod gateway;
 #[cfg(test)]
@@ -75,7 +74,7 @@ pub fn stack<I, O, P, R>(
     outbound: Outbound<O>,
     profiles: P,
     resolve: R,
-) -> svc::BoxNewService<GatewayConnection, svc::BoxService<I, (), Error>>
+) -> svc::BoxNewTcp<GatewayConnection, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
@@ -94,7 +93,6 @@ where
     let ProxyConfig {
         buffer_capacity,
         cache_max_idle_age,
-        detect_protocol_timeout,
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
@@ -233,8 +231,7 @@ where
         .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
         .push(svc::BoxNewService::layer())
         .push(detect::NewDetectService::layer(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
+            inbound.config().proxy.detect_http(),
         ));
 
     // When a transported connection is received, use the header's target to
