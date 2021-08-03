@@ -19,7 +19,7 @@ pub struct ClientHandle {
 
 /// A handle that signals the client connection to close.
 #[derive(Clone, Debug)]
-pub struct Close(Arc<Notify>);
+pub struct Close(pub Arc<Notify>);
 
 pub type Closed = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 

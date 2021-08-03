@@ -78,7 +78,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::PeerProxyErrors;
     use crate::{
         http::{Endpoint, NewServeHttp, Request, Response, StatusCode, Version},
         test_util::{
@@ -129,10 +128,11 @@ mod test {
         let mut builder = Builder::new();
         let (mut client, bg) = http_util::connect_and_accept(&mut builder, service).await;
 
-        let request = Request::builder()
+        let mut request = Request::builder()
             .uri("http://foo.example.com")
             .body(Body::default())
             .unwrap();
+        request = test_util::add_client_handle(request, addr);
         let response = http_util::http_request(&mut client, request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let message = response
@@ -158,7 +158,6 @@ mod test {
         Outbound::new(config.clone(), rt.clone())
             .with_stack(connect)
             .push_http_endpoint()
-            .push(PeerProxyErrors::layer())
             .push_http_server()
             .map_stack(|_, _, s| s.push_on_response(BoxRequest::layer()))
             .push(NewServeHttp::layer(
