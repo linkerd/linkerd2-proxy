@@ -11,6 +11,7 @@ use linkerd_app_core::{
 use std::{borrow::Borrow, net::SocketAddr};
 use tracing::{debug, debug_span};
 
+/// Describes an HTTP client target.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http {
     port: u16,
@@ -18,20 +19,24 @@ pub struct Http {
     tls: tls::ConditionalServerTls,
 }
 
+/// Builds `Logical` targets for each HTTP request.
 #[derive(Clone, Debug)]
 struct LogicalPerRequest {
     addr: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
 }
 
+/// Describes a logical request target.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Logical {
+    /// The request's logical destination. Used for profile discovery.
     logical: Option<NameAddr>,
     addr: Remote<ServerAddr>,
     http: http::Version,
     tls: tls::ConditionalServerTls,
 }
 
+/// Describes a resolved profile for a logical service.
 #[derive(Clone, Debug)]
 struct Profile {
     addr: profiles::LogicalAddr,
