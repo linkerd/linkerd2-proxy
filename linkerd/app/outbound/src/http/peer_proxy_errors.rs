@@ -10,10 +10,10 @@ use std::{
     task::{Context, Poll},
 };
 
-/// PeerProxyErrors will close the accepted connection if the response is from
-/// a peer proxy and the L5D_PROXY_ERROR header is set. This means the peer
-/// proxy encountered an inbound connection error with its application and
-/// therefore the accepted connection should be torn down.
+/// Close the accepted connection if the response from a peer proxy has the
+/// l5d-proxy-error header. This means the peer proxy encountered an inbound
+/// connection error with its application and therefore the accepted
+/// connection should be torn down.
 #[derive(Clone, Debug)]
 pub struct PeerProxyErrors<N> {
     inner: N,
@@ -105,7 +105,7 @@ mod test {
     async fn connection_closes_after_response_header() {
         let _trace = test::trace_init();
 
-        // Build the outbound server that responds with the L5D_PROXY_ERROR
+        // Build the outbound server that responds with the l5d-proxy-error
         // header set.
         let (rt, _shutdown) = test_util::runtime();
         let addr = SocketAddr::new([127, 0, 0, 1].into(), 12345);
@@ -124,7 +124,7 @@ mod test {
         });
 
         // Build the client that should be closed after receiving a response
-        // with the L5D_PROXY_ERROR header.
+        // with the l5d-proxy-error header.
         let mut builder = Builder::new();
         let (mut client, bg) = http_util::connect_and_accept(&mut builder, service).await;
 
@@ -138,12 +138,12 @@ mod test {
         let message = response
             .headers()
             .get(L5D_PROXY_ERROR)
-            .expect("response did not contain L5D_PROXY_ERROR header");
+            .expect("response did not contain l5d-proxy-error header");
         assert_eq!(message, "proxy received invalid response");
 
         // The client's background task should be completed without dropping
         // the client because the connection was closed after encountering a
-        // response that contains the L5D_PROXY_ERROR header.
+        // response that contains the l5d-proxy-error header.
         let _ = bg.await;
     }
 
