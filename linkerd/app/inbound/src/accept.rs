@@ -44,6 +44,9 @@ impl<N> Inbound<N> {
             let port_policies = cfg.port_policies.clone();
             accept
                 .push_switch(
+                    // Switch to the `direct` stack when a connection's original destination
+                    // is the proxy's inbound port. Otherwise, check that connections are allowed on
+                    // the port and obtain the port's policy before processing the connection.
                     move |t: T| -> Result<_, Error> {
                         let OrigDstAddr(addr) = t.param();
                         if addr.port() == proxy_port {
