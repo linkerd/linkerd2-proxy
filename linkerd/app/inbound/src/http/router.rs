@@ -195,7 +195,7 @@ impl<C> Inbound<C> {
                     svc::layers()
                         .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
                         .push(svc::FailFast::layer(
-                            "HTTP Profile",
+                            "HTTP Logical",
                             config.proxy.dispatch_timeout,
                         ))
                         .push_spawn_buffer(config.proxy.buffer_capacity),
