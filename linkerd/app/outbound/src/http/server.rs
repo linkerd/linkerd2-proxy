@@ -1,7 +1,6 @@
+use super::peer_proxy_errors::PeerProxyErrors;
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{config, errors, http_tracing, svc, Error};
-
-use super::peer_proxy_errors::PeerProxyErrors;
 
 impl<N> Outbound<N> {
     pub fn push_http_server<T, NSvc>(
