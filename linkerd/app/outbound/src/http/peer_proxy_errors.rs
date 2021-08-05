@@ -42,7 +42,6 @@ where
     S: svc::Service<http::Request<A>, Response = http::Response<B>>,
     S::Response: Send,
     S::Future: Send + 'static,
-    A: Send + 'static,
     B: Send + 'static,
 {
     type Response = S::Response;
