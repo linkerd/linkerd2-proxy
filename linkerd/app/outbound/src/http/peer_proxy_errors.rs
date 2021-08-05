@@ -54,19 +54,23 @@ where
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        let client = req.extensions().get::<ClientHandle>().cloned();
-        debug_assert!(client.is_some(), "Missing client handle");
+        let client = req
+            .extensions()
+            .get::<ClientHandle>()
+            .cloned()
+            .expect("missing client handle");
 
         Box::pin(self.inner.call(req).map_ok(move |rsp| {
             if let Some(msg) = rsp.headers().get(L5D_PROXY_ERROR) {
-                tracing::debug!(?msg, "Received an error response from a peer proxy");
+                tracing::debug!(
+                    ?msg,
+                    "Received an error response from a peer proxy; closing connection"
+                );
 
                 // Signal that the proxy's server-side connection should be terminated. This handles
                 // the remote error as if the local proxy encountered an error.
-                if let Some(ClientHandle { close, .. }) = client {
-                    tracing::trace!("connection closed");
-                    close.close();
-                }
+                let ClientHandle { close, .. } = client;
+                close.close();
             }
 
             rsp
