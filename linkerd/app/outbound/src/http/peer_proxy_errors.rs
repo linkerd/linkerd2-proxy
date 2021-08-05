@@ -84,20 +84,18 @@ mod test {
             self, future,
             support::{self, connect::Connect, http_util},
         },
-        transport::addrs::{Remote, ServerAddr},
         Config, Outbound,
     };
     use hyper::{client::conn::Builder, server::conn::Http, service, Body};
     use linkerd_app_core::{
         errors::L5D_PROXY_ERROR,
         io,
-        proxy::api_resolve::Metadata,
-        svc::NewService,
-        svc::{BoxNewService, BoxService},
+        proxy::{api_resolve::Metadata, http::BoxRequest},
+        svc::{BoxNewService, BoxService, NewService},
         tls::{ConditionalClientTls, NoClientTls},
+        transport::{Remote, ServerAddr},
         Error, Infallible, ProxyRuntime,
     };
-    use linkerd_proxy_http::BoxRequest;
     use linkerd_tracing::test;
     use std::net::SocketAddr;
 
@@ -132,7 +130,7 @@ mod test {
             .uri("http://foo.example.com")
             .body(Body::default())
             .unwrap();
-        request = test_util::add_client_handle(request, addr);
+        let closed = test_util::set_client_handle(&mut request, addr);
         let response = http_util::http_request(&mut client, request).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let message = response
@@ -145,6 +143,11 @@ mod test {
         // the client because the connection was closed after encountering a
         // response that contains the l5d-proxy-error header.
         let _ = bg.await;
+
+        // The client handle close future should fire.
+        tokio::time::timeout(tokio::time::Duration::from_secs(10), closed)
+            .await
+            .expect("client handle must close");
     }
 
     fn build_outbound<I>(

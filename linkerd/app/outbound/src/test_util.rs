@@ -4,16 +4,14 @@ pub use ipnet::IpNet;
 use linkerd_app_core::{
     config, drain, exp_backoff, metrics,
     proxy::{
-        http::{h1, h2},
+        http::{h1, h2, ClientHandle},
         tap,
     },
     transport::{Keepalive, ListenAddr},
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
-use linkerd_proxy_http::{ClientHandle, Close};
-use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
-use tokio::sync::Notify;
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 pub fn default_config() -> Config {
     Config {
@@ -63,12 +61,8 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     (runtime, drain_tx)
 }
 
-pub fn add_client_handle<B>(mut request: Request<B>, addr: SocketAddr) -> Request<B> {
-    let notify = Arc::new(Notify::new());
-    let handle = ClientHandle {
-        addr,
-        close: Close(notify),
-    };
-    request.extensions_mut().insert(handle);
-    request
+pub fn set_client_handle<B>(req: &mut Request<B>, addr: SocketAddr) -> impl Future<Output = ()> {
+    let (handle, closed) = ClientHandle::new(addr);
+    req.extensions_mut().insert(handle);
+    closed
 }

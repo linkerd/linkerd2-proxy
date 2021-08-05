@@ -112,7 +112,7 @@ mod test {
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
+        let _ = set_client_handle(&mut req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
@@ -149,7 +149,7 @@ mod test {
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
+        let _ = set_client_handle(&mut req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
@@ -194,7 +194,7 @@ mod test {
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
+        let _ = set_client_handle(&mut req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert_eq!(
@@ -243,7 +243,7 @@ mod test {
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
+        let _ = set_client_handle(&mut req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
