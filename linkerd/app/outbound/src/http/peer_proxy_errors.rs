@@ -1,9 +1,9 @@
 use http::{Request, Response};
 use linkerd_app_core::{
     errors::L5D_PROXY_ERROR,
+    proxy::http::ClientHandle,
     svc::{layer, NewService, Service},
 };
-use linkerd_proxy_http::ClientHandle;
 use std::{
     future::Future,
     pin::Pin,

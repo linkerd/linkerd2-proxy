@@ -21,7 +21,6 @@ futures = { version = "0.3", default-features = false }
 linkerd-app-core = { path = "../core" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
-linkerd-proxy-http = { path = "../../proxy/http" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
 tower = { version = "0.4.8", features = ["util"] }
