@@ -37,7 +37,7 @@ impl<T: Param<Remote<ServerAddr>>> tower::Service<T> for ConnectTcp {
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;
             super::set_nodelay_or_warn(&io);
-            super::set_keepalive_or_warn(&io, keepalive);
+            let io = super::set_keepalive(io, keepalive)?;
             debug!(
                 local.addr = %io.local_addr().expect("cannot load local addr"),
                 ?keepalive,

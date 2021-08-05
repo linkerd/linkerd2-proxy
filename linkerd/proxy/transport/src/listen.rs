@@ -66,7 +66,7 @@ where
         let accept = TcpListenerStream::new(listen).map(move |res| {
             let tcp = res?;
             super::set_nodelay_or_warn(&tcp);
-            super::set_keepalive_or_warn(&tcp, keepalive);
+            let tcp = super::set_keepalive(tcp, keepalive)?;
             let client = Remote(ClientAddr(tcp.peer_addr()?));
             Ok((Addrs { server, client }, tcp))
         });
