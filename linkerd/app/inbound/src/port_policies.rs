@@ -23,6 +23,9 @@ pub enum AllowPolicy {
     Authenticated,
     /// Allows all unauthenticated connections.
     Unauthenticated { skip_detect: bool },
+    /// Allows all TLS connections (authenticated or otherwise), but denies
+    /// non-TLS unauthenticated connections.
+    TlsUnauthenticated,
 }
 
 /// A hasher for ports.
