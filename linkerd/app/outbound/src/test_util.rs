@@ -1,17 +1,17 @@
-use crate::{http::Request, Config};
+use crate::Config;
 pub use futures::prelude::*;
 pub use ipnet::IpNet;
 use linkerd_app_core::{
     config, drain, exp_backoff, metrics,
     proxy::{
-        http::{h1, h2, ClientHandle},
+        http::{h1, h2},
         tap,
     },
     transport::{Keepalive, ListenAddr},
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{str::FromStr, time::Duration};
 
 pub fn default_config() -> Config {
     Config {
@@ -59,10 +59,4 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
         drain,
     };
     (runtime, drain_tx)
-}
-
-pub fn set_client_handle<B>(req: &mut Request<B>, addr: SocketAddr) -> impl Future<Output = ()> {
-    let (handle, closed) = ClientHandle::new(addr);
-    req.extensions_mut().insert(handle);
-    closed
 }

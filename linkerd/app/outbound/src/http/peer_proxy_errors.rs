@@ -77,7 +77,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util;
     use futures::future;
     use linkerd_app_core::{
         svc::{self, ServiceExt},
@@ -96,7 +95,8 @@ mod test {
             .uri("http://foo.example.com")
             .body(hyper::Body::default())
             .unwrap();
-        let closed = test_util::set_client_handle(&mut req, ([192, 0, 2, 3], 50000).into());
+        let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
+        req.extensions_mut().insert(handle);
 
         const ERROR_MSG: &str = "something bad happened";
         let svc = PeerProxyErrors::new(svc::mk(move |_: http::Request<hyper::Body>| {
