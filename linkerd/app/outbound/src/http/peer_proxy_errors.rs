@@ -54,7 +54,7 @@ where
     }
 
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        let client = req
+        let ClientHandle { close, .. } = req
             .extensions()
             .get::<ClientHandle>()
             .cloned()
@@ -69,7 +69,6 @@ where
 
                 // Signal that the proxy's server-side connection should be terminated. This handles
                 // the remote error as if the local proxy encountered an error.
-                let ClientHandle { close, .. } = client;
                 close.close();
             }
 
