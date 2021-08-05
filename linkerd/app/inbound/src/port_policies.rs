@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     hash::{BuildHasherDefault, Hasher},
+    str::FromStr,
     sync::Arc,
 };
 use thiserror::Error;
@@ -40,6 +41,10 @@ type Map = HashMap<u16, AllowPolicy, BuildHasherDefault<PortHasher>>;
 #[derive(Clone, Debug, Error)]
 #[error("connection denied on unknown port {0}")]
 pub struct DeniedUnknownPort(u16);
+
+#[derive(Clone, Debug, Error)]
+#[error("expected one of `deny`, `authenticated`, `unauthenticated`, or `tls-unauthenticated`")]
+pub struct ParsePolicyError(());
 
 // === impl PortPolicies ===
 
@@ -82,6 +87,33 @@ impl From<AllowPolicy> for PortPolicies {
 impl From<AllowPolicy> for DefaultPolicy {
     fn from(default: AllowPolicy) -> Self {
         DefaultPolicy::Allow(default)
+    }
+}
+
+impl FromStr for DefaultPolicy {
+    type Err = ParsePolicyError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s == "deny" {
+            return Ok(Self::Deny);
+        }
+
+        AllowPolicy::from_str(s).map(Self::Allow)
+    }
+}
+
+// === impl AllowPolicy ===
+
+impl FromStr for AllowPolicy {
+    type Err = ParsePolicyError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        match s {
+            "authenticated" => Ok(Self::Authenticated),
+            "unauthenticated" => Ok(Self::Unauthenticated { skip_detect: false }),
+            "tls-unauthenticated" => Ok(Self::TlsUnauthenticated),
+            _ => Err(ParsePolicyError(())),
+        }
     }
 }
 
