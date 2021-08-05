@@ -60,10 +60,56 @@ impl<N> Inbound<N> {
     {
         const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
             tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
+        self.push_detect_http(forward.clone())
+            .map_stack(|cfg, rt, detect| {
+                let detect_timeout = cfg.proxy.detect_protocol_timeout;
+                detect
+                    .push(tls::NewDetectTls::layer(TlsParams {
+                        timeout: tls::server::Timeout(detect_timeout),
+                        identity: rt.identity.clone(),
+                    }))
+                    .push_switch(
+                        // If this port's policy indicates that authentication is not required and
+                        // detection should be skipped, use the TCP stack directly.
+                        |t: T| -> Result<_, Infallible> {
+                            if let AllowPolicy::Unauthenticated { skip_detect: true } = t.param() {
+                                return Ok(svc::Either::B(t));
+                            }
+                            Ok(svc::Either::A(t))
+                        },
+                        svc::stack(forward)
+                            .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                            .push_map_target(|t: T| Tls::from_params(&t, TLS_PORT_SKIPPED))
+                            .into_inner(),
+                    )
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
+            })
+    }
 
+    /// Builds a stack that handles HTTP detection once TLS detection has been
+    /// performed. If the connection is determined to be HTTP, the inner stack
+    /// is used; otherwise the connection is passed to the provided 'forward' stack.
+    fn push_detect_http<T, I, NSvc, F, FSvc>(
+        self,
+        forward: F,
+    ) -> Inbound<svc::BoxNewTcp<(tls::ConditionalServerTls, T), I>>
+    where
+        T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
+        T: Clone + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
+        I: Debug + Send + Sync + Unpin + 'static,
+        N: svc::NewService<Http, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<io::BoxedIo, Response = ()>,
+        NSvc: Send + Unpin + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+        F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
+        FSvc::Error: Into<Error>,
+        FSvc::Future: Send,
+    {
         self.map_stack(|cfg, rt, http| {
-            let detect_timeout = cfg.proxy.detect_protocol_timeout;
-
             http.push_map_target(|(http, tls)| Http { http, tls })
                 .push(svc::UnwrapOr::layer(
                     // When HTTP detection fails, forward the connection to the application as
@@ -103,25 +149,6 @@ impl<N> Inbound<N> {
                     }
                 })
                 .check_new_service::<(tls::ConditionalServerTls, T), _>()
-                .push(svc::BoxNewService::layer())
-                .push(tls::NewDetectTls::layer(TlsParams {
-                    timeout: tls::server::Timeout(detect_timeout),
-                    identity: rt.identity.clone(),
-                }))
-                .push_switch(
-                    // If this port's policy indicates that authentication is not required and
-                    // detection should be skipped, use the TCP stack directly.
-                    |t: T| -> Result<_, Infallible> {
-                        if let AllowPolicy::Unauthenticated { skip_detect: true } = t.param() {
-                            return Ok(svc::Either::B(t));
-                        }
-                        Ok(svc::Either::A(t))
-                    },
-                    svc::stack(forward)
-                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push_map_target(|t: T| Tls::from_params(&t, TLS_PORT_SKIPPED))
-                        .into_inner(),
-                )
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
