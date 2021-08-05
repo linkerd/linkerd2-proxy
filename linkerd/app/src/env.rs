@@ -541,17 +541,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             })?
             .unwrap_or_default();
 
+            const ALLOW_OPAQUE: inbound::AllowPolicy =
+                inbound::AllowPolicy::Unauthenticated { skip_detect: true };
             inbound::PortPolicies::new(
                 default,
                 require_identity_for_inbound_ports
                     .into_iter()
                     .map(|p| (p, inbound::AllowPolicy::Authenticated))
-                    .chain(inbound_opaque_ports.into_iter().map(|p| {
-                        (
-                            p,
-                            inbound::AllowPolicy::Unauthenticated { skip_detect: true },
-                        )
-                    })),
+                    .chain(inbound_opaque_ports.into_iter().map(|p| (p, ALLOW_OPAQUE))),
             )
         };
 
