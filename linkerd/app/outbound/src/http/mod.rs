@@ -1,6 +1,7 @@
 pub mod detect;
 mod endpoint;
 pub mod logical;
+mod peer_proxy_errors;
 mod require_id_header;
 mod server;
 

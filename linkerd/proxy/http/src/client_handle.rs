@@ -39,10 +39,8 @@ impl Close {
     }
 }
 
-// === SetClientHandle ===
-
-impl<S> SetClientHandle<S> {
-    pub fn new(addr: SocketAddr, inner: S) -> (Self, Closed) {
+impl ClientHandle {
+    pub fn new(addr: SocketAddr) -> (ClientHandle, Closed) {
         let notify = Arc::new(Notify::new());
         let handle = ClientHandle {
             addr,
@@ -51,6 +49,15 @@ impl<S> SetClientHandle<S> {
         let closed = Box::pin(async move {
             notify.notified().await;
         });
+        (handle, closed)
+    }
+}
+
+// === SetClientHandle ===
+
+impl<S> SetClientHandle<S> {
+    pub fn new(addr: SocketAddr, inner: S) -> (Self, Closed) {
+        let (handle, closed) = ClientHandle::new(addr);
         (Self { inner, handle }, closed)
     }
 }
