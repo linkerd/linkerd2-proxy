@@ -537,8 +537,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             }
 
             let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
-                s.parse::<inbound::port_policies::DefaultPolicy>()
-                    .map_err(ParseError::from)
+                s.parse().map_err(ParseError::from)
             })?
             .unwrap_or_default();
 
