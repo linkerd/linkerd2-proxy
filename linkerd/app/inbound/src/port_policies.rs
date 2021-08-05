@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     hash::{BuildHasherDefault, Hasher},
+    str::FromStr,
     sync::Arc,
 };
 use thiserror::Error;
@@ -23,6 +24,9 @@ pub enum AllowPolicy {
     Authenticated,
     /// Allows all unauthenticated connections.
     Unauthenticated { skip_detect: bool },
+    /// Allows all TLS connections (authenticated or otherwise), but denies
+    /// non-TLS unauthenticated connections.
+    TlsUnauthenticated,
 }
 
 /// A hasher for ports.
@@ -37,6 +41,10 @@ type Map = HashMap<u16, AllowPolicy, BuildHasherDefault<PortHasher>>;
 #[derive(Clone, Debug, Error)]
 #[error("connection denied on unknown port {0}")]
 pub struct DeniedUnknownPort(u16);
+
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[error("expected one of `deny`, `authenticated`, `unauthenticated`, or `tls-unauthenticated`")]
+pub struct ParsePolicyError(());
 
 // === impl PortPolicies ===
 
@@ -76,9 +84,45 @@ impl From<AllowPolicy> for PortPolicies {
 
 // === impl DefaultPolicy ===
 
+impl Default for DefaultPolicy {
+    fn default() -> Self {
+        // XXX(eliza): defining this via a `Default` impl feels *idiomatic* but
+        // maybe it's more correct for the default value to be defined via a
+        // const in the `linkerd_app::env` module?
+        Self::Allow(AllowPolicy::Unauthenticated { skip_detect: false })
+    }
+}
+
 impl From<AllowPolicy> for DefaultPolicy {
     fn from(default: AllowPolicy) -> Self {
         DefaultPolicy::Allow(default)
+    }
+}
+
+impl FromStr for DefaultPolicy {
+    type Err = ParsePolicyError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s == "deny" {
+            return Ok(Self::Deny);
+        }
+
+        AllowPolicy::from_str(s).map(Self::Allow)
+    }
+}
+
+// === impl AllowPolicy ===
+
+impl FromStr for AllowPolicy {
+    type Err = ParsePolicyError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        match s {
+            "authenticated" => Ok(Self::Authenticated),
+            "unauthenticated" => Ok(Self::Unauthenticated { skip_detect: false }),
+            "tls-unauthenticated" => Ok(Self::TlsUnauthenticated),
+            _ => Err(ParsePolicyError(())),
+        }
     }
 }
 
