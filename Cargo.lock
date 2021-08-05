@@ -744,6 +744,7 @@ dependencies = [
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
+ "linkerd-error",
  "linkerd-io",
  "linkerd-tracing",
  "thiserror",

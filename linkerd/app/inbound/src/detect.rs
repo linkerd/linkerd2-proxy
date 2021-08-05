@@ -262,7 +262,6 @@ impl<T> svc::InsertParam<tls::ConditionalServerTls, T> for TlsParams {
     }
 }
 
-// TODO figure out how to test authenticated requirements -- probably by splitting TLS detection.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,9 +270,13 @@ mod tests {
     use io::AsyncWriteExt;
     use linkerd_app_core::{
         svc::{NewService, ServiceExt},
-        Error,
+        trace, Error,
     };
+    use linkerd_error::is_error;
+    use std::str::FromStr;
 
+    const HTTP: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
+    const NOT_HTTP: &[u8] = b"foo\r\nbar\r\nblah\r\n";
     #[tokio::test(flavor = "current_thread")]
     async fn skip_detect() {
         let (io, _) = io::duplex(1);
@@ -290,7 +293,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn non_http() {
         let (ior, mut iow) = io::duplex(100);
-        iow.write_all(b"foo\r\nbar\r\nblah\r\n").await.unwrap();
+        iow.write_all(NOT_HTTP).await.unwrap();
         inbound()
             .with_stack(new_panic("http stack must not be used"))
             .push_detect(new_ok())
@@ -304,9 +307,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn http() {
         let (ior, mut iow) = io::duplex(100);
-        iow.write_all(b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n")
-            .await
-            .unwrap();
+        iow.write_all(HTTP).await.unwrap();
         inbound()
             .with_stack(new_ok())
             .push_detect(new_panic("tcp stack must not be used"))
@@ -315,6 +316,254 @@ mod tests {
             .oneshot(ior)
             .await
             .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tls_unauthenticated_http() {
+        let _trace = trace::test::trace_init();
+        let mut inbound = inbound()
+            .with_stack(new_ok())
+            // Skip pushing a TLS detection stack in this test.
+            .push_detect_http(new_panic("tcp stack must not be used"))
+            .into_inner();
+        let target = Target(AllowPolicy::TlsUnauthenticated);
+
+        // No TLS -- should fail with `IdentityRequired`
+        let error = test_tls(
+            tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
+            target.clone(),
+            &mut inbound,
+            HTTP,
+        )
+        .await
+        .expect_err("connection without TLS should be denied");
+        assert!(
+            is_error::<IdentityRequired>(error.as_ref()),
+            "expected error to be `IdentityRequired`; error={:#?}",
+            error
+        );
+
+        // TLS detected, authenticated client ID -- should be allowed
+        let client_id = Some(tls::ClientId::from(
+            identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+                .unwrap(),
+        ));
+        test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            HTTP,
+        )
+        .await
+        .expect("TLS with authenticated client ID should be allowed");
+
+        // TLS detected, no client ID -- should be allowed
+        test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: None,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            HTTP,
+        )
+        .await
+        .expect("TLS without authenticated client ID should be allowed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tls_unauthenticated_non_http() {
+        let _trace = trace::test::trace_init();
+        let mut inbound = inbound()
+            .with_stack(new_panic("http stack must not be used"))
+            // Skip pushing a TLS detection stack in this test.
+            .push_detect_http(new_ok())
+            .into_inner();
+        let target = Target(AllowPolicy::TlsUnauthenticated);
+
+        // No TLS -- should fail with `IdentityRequired`
+        let error = test_tls(
+            tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect_err("connection without TLS should be denied");
+        assert!(
+            is_error::<IdentityRequired>(error.as_ref()),
+            "expected error to be `IdentityRequired`; error={:#?}",
+            error
+        );
+
+        // TLS detected, authenticated client ID -- should be allowed
+        let client_id = Some(tls::ClientId::from(
+            identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+                .unwrap(),
+        ));
+        test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect("TLS with authenticated client ID should be allowed");
+
+        // TLS detected, no client ID -- should be allowed
+        test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: None,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect("TLS without authenticated client ID should be allowed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tls_authenticated_http() {
+        let _trace = trace::test::trace_init();
+        let mut inbound = inbound()
+            .with_stack(new_ok())
+            // Skip pushing a TLS detection stack in this test.
+            .push_detect_http(new_panic("tcp stack must not be used"))
+            .into_inner();
+        let target = Target(AllowPolicy::Authenticated);
+
+        // No TLS -- should fail with `IdentityRequired`
+        let error = test_tls(
+            tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
+            target.clone(),
+            &mut inbound,
+            HTTP,
+        )
+        .await
+        .expect_err("connection without TLS should be denied");
+        assert!(
+            is_error::<IdentityRequired>(error.as_ref()),
+            "expected error to be `IdentityRequired`; error={:#?}",
+            error
+        );
+
+        // TLS detected, authenticated client ID -- should be allowed
+        let client_id = Some(tls::ClientId::from(
+            identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+                .unwrap(),
+        ));
+        test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            HTTP,
+        )
+        .await
+        .expect("TLS with authenticated client ID should be allowed");
+
+        // TLS detected, no client ID -- should be denied
+        let error = test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: None,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect_err("unauthenticated TLS connection should be denied");
+        assert!(
+            is_error::<IdentityRequired>(error.as_ref()),
+            "expected error to be `IdentityRequired`; error={:#?}",
+            error
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tls_authenticated_non_http() {
+        let _trace = trace::test::trace_init();
+        let mut inbound = inbound()
+            .with_stack(new_panic("http stack must not be used"))
+            // Skip pushing a TLS detection stack in this test.
+            .push_detect_http(new_ok())
+            .into_inner();
+        let target = Target(AllowPolicy::Authenticated);
+
+        // No TLS -- should fail with `IdentityRequired`
+        let error = test_tls(
+            tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect_err("connection without TLS should be denied");
+        assert!(
+            is_error::<IdentityRequired>(error.as_ref()),
+            "expected error to be `IdentityRequired`; error={:#?}",
+            error
+        );
+
+        // TLS detected, authenticated client ID -- should be allowed
+        let client_id = Some(tls::ClientId::from(
+            identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
+                .unwrap(),
+        ));
+        test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect("TLS with authenticated client ID should be allowed");
+
+        // TLS detected, no client ID -- should be denied
+        let error = test_tls(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: None,
+                negotiated_protocol: None,
+            }),
+            target.clone(),
+            &mut inbound,
+            NOT_HTTP,
+        )
+        .await
+        .expect_err("unauthenticated TLS connection should be denied");
+        assert!(
+            is_error::<IdentityRequired>(error.as_ref()),
+            "expected error to be `IdentityRequired`; error={:#?}",
+            error
+        );
+    }
+
+    #[tracing::instrument(level = "info", skip(inbound, msg))]
+    async fn test_tls(
+        tls: tls::ConditionalServerTls,
+        target: Target,
+        inbound: &mut svc::BoxNewTcp<(tls::ConditionalServerTls, Target), io::DuplexStream>,
+        msg: &[u8],
+    ) -> Result<(), Error> {
+        let (ior, mut iow) = io::duplex(100);
+        iow.write_all(msg).await.unwrap();
+        let result = inbound.new_service((tls, target)).oneshot(ior).await;
+        tracing::info!(?result);
+        result
     }
 
     fn inbound() -> Inbound<()> {
