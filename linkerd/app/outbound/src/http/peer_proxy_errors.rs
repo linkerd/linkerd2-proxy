@@ -86,40 +86,42 @@ mod test {
         Infallible,
     };
     use linkerd_tracing::test;
+    use tokio::time;
 
     #[tokio::test(flavor = "current_thread")]
     async fn connection_closes_after_response_header() {
         let _trace = test::trace_init();
 
-        let service = PeerProxyErrors::new(svc::mk(move |_: http::Request<hyper::Body>| {
-            let response = http::Response::builder()
-                .status(http::StatusCode::BAD_GATEWAY)
-                .header(L5D_PROXY_ERROR, "proxy received invalid response")
-                .body(hyper::Body::default())
-                .unwrap();
-            future::ok::<_, Infallible>(response)
-        }));
-
         // Build the client that should be closed after receiving a response
         // with the l5d-proxy-error header.
-        let mut request = http::Request::builder()
+        let mut req = http::Request::builder()
             .uri("http://foo.example.com")
             .body(hyper::Body::default())
             .unwrap();
-        let closed = test_util::set_client_handle(&mut request, ([192, 0, 2, 3], 50000).into());
-        let response = service
-            .oneshot(request)
-            .await
-            .expect("request must succeed");
-        assert_eq!(response.status(), http::StatusCode::BAD_GATEWAY);
-        let message = response
-            .headers()
-            .get(L5D_PROXY_ERROR)
-            .expect("response did not contain l5d-proxy-error header");
-        assert_eq!(message, "proxy received invalid response");
+        let closed = test_util::set_client_handle(&mut req, ([192, 0, 2, 3], 50000).into());
+
+        const ERROR_MSG: &str = "something bad happened";
+        let svc = PeerProxyErrors::new(svc::mk(move |_: http::Request<hyper::Body>| {
+            future::ok::<_, Infallible>(
+                http::Response::builder()
+                    .status(http::StatusCode::BAD_GATEWAY)
+                    .header(L5D_PROXY_ERROR, ERROR_MSG)
+                    .body(hyper::Body::default())
+                    .unwrap(),
+            )
+        }));
+
+        let rsp = svc.oneshot(req).await.expect("request must succeed");
+        assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            rsp.headers()
+                .get(L5D_PROXY_ERROR)
+                .expect("response did not contain l5d-proxy-error header"),
+            ERROR_MSG
+        );
 
         // The client handle close future should fire.
-        tokio::time::timeout(tokio::time::Duration::from_secs(10), closed)
+        time::timeout(time::Duration::from_secs(10), closed)
             .await
             .expect("client handle must close");
     }
