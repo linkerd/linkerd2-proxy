@@ -1,4 +1,3 @@
-use super::peer_proxy_errors;
 use super::require_id_header;
 use crate::Outbound;
 use linkerd_app_core::{
@@ -40,7 +39,6 @@ impl<C> Outbound<C> {
                 .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
                 .check_service::<T>()
                 .into_new_service()
-                .push(peer_proxy_errors::PeerProxyErrors::layer())
                 .push_new_reconnect(backoff)
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
@@ -107,12 +105,11 @@ mod test {
             metadata: Metadata::default(),
         });
 
-        let mut req = http::Request::builder()
+        let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
@@ -144,12 +141,11 @@ mod test {
             metadata: Metadata::default(),
         });
 
-        let mut req = http::Request::builder()
+        let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());
@@ -189,12 +185,11 @@ mod test {
             ),
         });
 
-        let mut req = http::Request::builder()
+        let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert_eq!(
@@ -238,12 +233,11 @@ mod test {
             ),
         });
 
-        let mut req = http::Request::builder()
+        let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
             .body(http::BoxBody::default())
             .unwrap();
-        req = add_client_handle(req, addr);
         let rsp = svc.oneshot(req).await.unwrap();
         assert_eq!(rsp.status(), http::StatusCode::NO_CONTENT);
         assert!(rsp.headers().get(WAS_ORIG_PROTO).is_none());

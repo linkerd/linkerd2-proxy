@@ -1,4 +1,4 @@
-use crate::{http::Request, Config};
+use crate::Config;
 pub use futures::prelude::*;
 pub use ipnet::IpNet;
 use linkerd_app_core::{
@@ -11,9 +11,7 @@ use linkerd_app_core::{
     IpMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
-use linkerd_proxy_http::{ClientHandle, Close};
-use std::{net::SocketAddr, str::FromStr, sync::Arc, time::Duration};
-use tokio::sync::Notify;
+use std::{str::FromStr, time::Duration};
 
 pub fn default_config() -> Config {
     Config {
@@ -61,14 +59,4 @@ pub fn runtime() -> (ProxyRuntime, drain::Signal) {
         drain,
     };
     (runtime, drain_tx)
-}
-
-pub fn add_client_handle<B>(mut request: Request<B>, addr: SocketAddr) -> Request<B> {
-    let notify = Arc::new(Notify::new());
-    let handle = ClientHandle {
-        addr,
-        close: Close(notify),
-    };
-    request.extensions_mut().insert(handle);
-    request
 }

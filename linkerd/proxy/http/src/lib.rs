@@ -25,7 +25,7 @@ pub mod upgrade;
 mod version;
 
 pub use self::{
-    client_handle::{ClientHandle, Close, SetClientHandle},
+    client_handle::{ClientHandle, SetClientHandle},
     detect::DetectHttp,
     glue::{HyperServerSvc, UpgradeBody},
     header_from_target::NewHeaderFromTarget,

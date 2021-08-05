@@ -1,9 +1,5 @@
-use http::{Request, Response};
-use linkerd_app_core::{
-    errors::L5D_PROXY_ERROR,
-    svc::{layer, NewService, Service},
-};
-use linkerd_proxy_http::ClientHandle;
+use futures::prelude::*;
+use linkerd_app_core::{errors::L5D_PROXY_ERROR, proxy::http::ClientHandle, svc};
 use std::{
     future::Future,
     pin::Pin,
@@ -24,14 +20,14 @@ impl<N> PeerProxyErrors<N> {
         Self { inner }
     }
 
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
-        layer::mk(Self::new)
+    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone + Copy {
+        svc::layer::mk(Self::new)
     }
 }
 
-impl<T, N> NewService<T> for PeerProxyErrors<N>
+impl<T, N> svc::NewService<T> for PeerProxyErrors<N>
 where
-    N: NewService<T>,
+    N: svc::NewService<T>,
 {
     type Service = PeerProxyErrors<N::Service>;
 
@@ -41,146 +37,90 @@ where
     }
 }
 
-impl<S, A, B> Service<Request<A>> for PeerProxyErrors<S>
+impl<S, A, B> svc::Service<http::Request<A>> for PeerProxyErrors<S>
 where
-    S: Service<Request<A>, Response = Response<B>>,
+    S: svc::Service<http::Request<A>, Response = http::Response<B>>,
     S::Response: Send,
     S::Future: Send + 'static,
-    A: Send + 'static,
     B: Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send + 'static>>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request<A>) -> Self::Future {
+    fn call(&mut self, req: http::Request<A>) -> Self::Future {
         let client = req.extensions().get::<ClientHandle>().cloned();
         debug_assert!(client.is_some(), "Missing client handle");
-        let response = self.inner.call(req);
-        Box::pin(async move {
-            let response = response.await?;
-            if let Some(message) = response.headers().get(L5D_PROXY_ERROR) {
-                tracing::info!(?message, "response contained `{}` header", L5D_PROXY_ERROR);
-                // Gracefully teardown the accepted connection.
+
+        Box::pin(self.inner.call(req).map_ok(move |rsp| {
+            if let Some(msg) = rsp.headers().get(L5D_PROXY_ERROR) {
+                tracing::debug!(?msg, "Received an error response from a peer proxy");
+
+                // Signal that the proxy's server-side connection should be terminated. This handles
+                // the remote error as if the local proxy encountered an error.
                 if let Some(ClientHandle { close, .. }) = client {
                     tracing::trace!("connection closed");
                     close.close();
                 }
             }
-            Ok(response)
-        })
+
+            rsp
+        }))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        http::{Endpoint, NewServeHttp, Request, Response, StatusCode, Version},
-        test_util::{
-            self, future,
-            support::{self, connect::Connect, http_util},
-        },
-        transport::addrs::{Remote, ServerAddr},
-        Config, Outbound,
-    };
-    use hyper::{client::conn::Builder, server::conn::Http, service, Body};
+    use super::*;
+    use futures::future;
     use linkerd_app_core::{
-        errors::L5D_PROXY_ERROR,
-        io,
-        proxy::api_resolve::Metadata,
-        svc::NewService,
-        svc::{BoxNewService, BoxService},
-        tls::{ConditionalClientTls, NoClientTls},
-        Error, Infallible, ProxyRuntime,
+        svc::{self, ServiceExt},
+        Infallible,
     };
-    use linkerd_proxy_http::BoxRequest;
     use linkerd_tracing::test;
-    use std::net::SocketAddr;
+    use tokio::time;
 
     #[tokio::test(flavor = "current_thread")]
     async fn connection_closes_after_response_header() {
         let _trace = test::trace_init();
 
-        // Build the outbound server that responds with the l5d-proxy-error
-        // header set.
-        let (rt, _shutdown) = test_util::runtime();
-        let addr = SocketAddr::new([127, 0, 0, 1].into(), 12345);
-        let connect = support::connect().endpoint_fn_boxed(addr, |_: Endpoint| serve());
-        let config = test_util::default_config();
-        let mut outbound = build_outbound(config, rt, connect);
-
-        // Build the otubound service.
-        let service = outbound.new_service(Endpoint {
-            addr: Remote(ServerAddr(addr)),
-            tls: ConditionalClientTls::None(NoClientTls::Disabled),
-            metadata: Metadata::default(),
-            logical_addr: None,
-            protocol: Version::Http1,
-            opaque_protocol: false,
-        });
-
         // Build the client that should be closed after receiving a response
         // with the l5d-proxy-error header.
-        let mut builder = Builder::new();
-        let (mut client, bg) = http_util::connect_and_accept(&mut builder, service).await;
-
-        let mut request = Request::builder()
+        let mut req = http::Request::builder()
             .uri("http://foo.example.com")
-            .body(Body::default())
+            .body(hyper::Body::default())
             .unwrap();
-        request = test_util::add_client_handle(request, addr);
-        let response = http_util::http_request(&mut client, request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        let message = response
-            .headers()
-            .get(L5D_PROXY_ERROR)
-            .expect("response did not contain l5d-proxy-error header");
-        assert_eq!(message, "proxy received invalid response");
+        let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
+        req.extensions_mut().insert(handle);
 
-        // The client's background task should be completed without dropping
-        // the client because the connection was closed after encountering a
-        // response that contains the l5d-proxy-error header.
-        let _ = bg.await;
-    }
+        const ERROR_MSG: &str = "something bad happened";
+        let svc = PeerProxyErrors::new(svc::mk(move |_: http::Request<hyper::Body>| {
+            future::ok::<_, Infallible>(
+                http::Response::builder()
+                    .status(http::StatusCode::BAD_GATEWAY)
+                    .header(L5D_PROXY_ERROR, ERROR_MSG)
+                    .body(hyper::Body::default())
+                    .unwrap(),
+            )
+        }));
 
-    fn build_outbound<I>(
-        config: Config,
-        rt: ProxyRuntime,
-        connect: Connect<Endpoint>,
-    ) -> BoxNewService<Endpoint, BoxService<I, (), Error>>
-    where
-        I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
-    {
-        Outbound::new(config.clone(), rt.clone())
-            .with_stack(connect)
-            .push_http_endpoint()
-            .push_http_server()
-            .map_stack(|_, _, s| s.push_on_response(BoxRequest::layer()))
-            .push(NewServeHttp::layer(
-                config.proxy.server.h2_settings,
-                rt.drain,
-            ))
-            .map_stack(|_, _, s| s.push_on_response(BoxService::layer()))
-            .push(BoxNewService::layer())
-            .into_inner()
-    }
+        let rsp = svc.oneshot(req).await.expect("request must succeed");
+        assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            rsp.headers()
+                .get(L5D_PROXY_ERROR)
+                .expect("response did not contain l5d-proxy-error header"),
+            ERROR_MSG
+        );
 
-    fn serve() -> io::Result<io::BoxedIo> {
-        let (client_io, server_io) = io::duplex(4096);
-        let http = Http::new();
-        let service = service::service_fn(move |_: Request<Body>| {
-            let response = Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .header(L5D_PROXY_ERROR, "proxy received invalid response")
-                .body(hyper::Body::default())
-                .unwrap();
-            future::ok::<_, Infallible>(response)
-        });
-        tokio::spawn(http.serve_connection(server_io, service));
-        Ok(io::BoxedIo::new(client_io))
+        // The client handle close future should fire.
+        time::timeout(time::Duration::from_secs(10), closed)
+            .await
+            .expect("client handle must close");
     }
 }
