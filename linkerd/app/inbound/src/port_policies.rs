@@ -42,7 +42,7 @@ type Map = HashMap<u16, AllowPolicy, BuildHasherDefault<PortHasher>>;
 #[error("connection denied on unknown port {0}")]
 pub struct DeniedUnknownPort(u16);
 
-#[derive(Clone, Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[error("expected one of `deny`, `authenticated`, `unauthenticated`, or `tls-unauthenticated`")]
 pub struct ParsePolicyError(());
 
@@ -83,6 +83,15 @@ impl From<AllowPolicy> for PortPolicies {
 }
 
 // === impl DefaultPolicy ===
+
+impl Default for DefaultPolicy {
+    fn default() -> Self {
+        // XXX(eliza): defining this via a `Default` impl feels *idiomatic* but
+        // maybe it's more correct for the default value to be defined via a
+        // const in the `linkerd_app::env` module?
+        Self::Allow(AllowPolicy::Unauthenticated { skip_detect: false })
+    }
+}
 
 impl From<AllowPolicy> for DefaultPolicy {
     fn from(default: AllowPolicy) -> Self {

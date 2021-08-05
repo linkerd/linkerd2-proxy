@@ -75,6 +75,12 @@ pub enum ParseError {
     InvalidTokenSource,
     #[error("invalid trust anchors")]
     InvalidTrustAnchors,
+    #[error("not a valid port policy: {0}")]
+    NotAPortPolicy(
+        #[from]
+        #[source]
+        inbound::port_policies::ParsePolicyError,
+    ),
 }
 
 // Environment variables to look at when loading the configuration
@@ -149,6 +155,14 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 
 pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
+
+/// Configures the default port policy for inbound connections.
+///
+/// This must parse to a valid port policy (one of: `deny`, `authenticated`,
+/// `unauthenticated`, or `tls-unauthenticated` ).
+///
+/// By default, this is `unauthenticated`.
+pub const ENV_INBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_INBOUND_DEFAULT_POLICY";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
@@ -522,8 +536,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 }
             }
 
+            let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
+                s.parse::<inbound::port_policies::DefaultPolicy>()
+                    .map_err(ParseError::from)
+            })?
+            .unwrap_or_default();
+
             inbound::PortPolicies::new(
-                inbound::AllowPolicy::Unauthenticated { skip_detect: false }.into(),
+                default,
                 require_identity_for_inbound_ports
                     .into_iter()
                     .map(|p| (p, inbound::AllowPolicy::Authenticated))
