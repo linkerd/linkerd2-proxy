@@ -59,9 +59,10 @@ where
 
         Box::pin(self.inner.call(req).map_ok(move |rsp| {
             if let Some(msg) = rsp.headers().get(L5D_PROXY_ERROR) {
-                tracing::debug!(header = %L5D_PROXY_ERROR, ?msg);
+                tracing::debug!(?msg, "Received an error response from a peer proxy");
 
-                // Gracefully teardown the accepted connection.
+                // Signal that the proxy's server-side connection should be terminated. This handles
+                // the remote error as if the local proxy encountered an error.
                 if let Some(ClientHandle { close, .. }) = client {
                     tracing::trace!("connection closed");
                     close.close();
