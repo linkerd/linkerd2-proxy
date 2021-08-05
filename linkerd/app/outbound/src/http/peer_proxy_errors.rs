@@ -1,9 +1,5 @@
-use http::{Request, Response};
-use linkerd_app_core::{
-    errors::L5D_PROXY_ERROR,
-    proxy::http::ClientHandle,
-    svc::{layer, NewService, Service},
-};
+use futures::prelude::*;
+use linkerd_app_core::{errors::L5D_PROXY_ERROR, proxy::http::ClientHandle, svc};
 use std::{
     future::Future,
     pin::Pin,
@@ -24,14 +20,14 @@ impl<N> PeerProxyErrors<N> {
         Self { inner }
     }
 
-    pub fn layer() -> impl layer::Layer<N, Service = Self> + Clone + Copy {
-        layer::mk(Self::new)
+    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone + Copy {
+        svc::layer::mk(Self::new)
     }
 }
 
-impl<T, N> NewService<T> for PeerProxyErrors<N>
+impl<T, N> svc::NewService<T> for PeerProxyErrors<N>
 where
-    N: NewService<T>,
+    N: svc::NewService<T>,
 {
     type Service = PeerProxyErrors<N::Service>;
 
@@ -41,9 +37,9 @@ where
     }
 }
 
-impl<S, A, B> Service<Request<A>> for PeerProxyErrors<S>
+impl<S, A, B> svc::Service<http::Request<A>> for PeerProxyErrors<S>
 where
-    S: Service<Request<A>, Response = Response<B>>,
+    S: svc::Service<http::Request<A>, Response = http::Response<B>>,
     S::Response: Send,
     S::Future: Send + 'static,
     A: Send + 'static,
@@ -53,26 +49,28 @@ where
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send + 'static>>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request<A>) -> Self::Future {
+    fn call(&mut self, req: http::Request<A>) -> Self::Future {
         let client = req.extensions().get::<ClientHandle>().cloned();
         debug_assert!(client.is_some(), "Missing client handle");
-        let response = self.inner.call(req);
-        Box::pin(async move {
-            let response = response.await?;
-            if let Some(message) = response.headers().get(L5D_PROXY_ERROR) {
-                tracing::info!(?message, "response contained `{}` header", L5D_PROXY_ERROR);
+
+        Box::pin(self.inner.call(req).map_ok(move |rsp| {
+            if let Some(msg) = rsp.headers().get(L5D_PROXY_ERROR) {
+                tracing::debug!(header = %L5D_PROXY_ERROR, ?msg);
+
                 // Gracefully teardown the accepted connection.
                 if let Some(ClientHandle { close, .. }) = client {
                     tracing::trace!("connection closed");
                     close.close();
                 }
             }
-            Ok(response)
-        })
+
+            rsp
+        }))
     }
 }
 
