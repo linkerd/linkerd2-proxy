@@ -39,7 +39,10 @@ fn set_nodelay_or_warn(socket: &TcpStream) {
     }
 }
 
-fn set_keepalive(tcp: TcpStream, keepalive_duration: Option<Duration>) -> io::Result<TcpStream> {
+fn set_keepalive_or_warn(
+    tcp: TcpStream,
+    keepalive_duration: Option<Duration>,
+) -> io::Result<TcpStream> {
     let sock = {
         let stream = tokio::net::TcpStream::into_std(tcp)?;
         socket2::Socket::from(stream)
@@ -47,7 +50,9 @@ fn set_keepalive(tcp: TcpStream, keepalive_duration: Option<Duration>) -> io::Re
     let ka = keepalive_duration
         .into_iter()
         .fold(TcpKeepalive::new(), |k, t| k.with_time(t));
-    sock.set_tcp_keepalive(&ka)?;
+    if let Err(e) = sock.set_tcp_keepalive(&ka) {
+        tracing::warn!("failed to set keepalive: {}", e);
+    }
     let stream: std::net::TcpStream = socket2::Socket::into(sock);
     tokio::net::TcpStream::from_std(stream)
 }
