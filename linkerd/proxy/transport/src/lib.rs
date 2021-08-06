@@ -3,7 +3,7 @@
 //! Uses unsafe code to interact with socket options for keepalive and SO_ORIGINAL_DST.
 
 #![deny(warnings, rust_2018_idioms)]
-//#![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 pub mod addrs;
 mod connect;
