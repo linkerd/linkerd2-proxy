@@ -1280,6 +1280,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "linkerd-server-policy"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "ipnet",
+]
+
+[[package]]
 name = "linkerd-service-profiles"
 version = "0.1.0"
 dependencies = [
