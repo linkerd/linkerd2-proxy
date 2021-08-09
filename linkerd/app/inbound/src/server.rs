@@ -73,7 +73,8 @@ impl Inbound<()> {
             // Determines how to handle an inbound connection, dispatching it to the appropriate
             // stack.
             let server = http
-                .push_detect(forward)
+                .push_detect_http(forward.clone())
+                .push_detect_tls(forward)
                 .push_accept(la.port(), direct)
                 .into_inner();
 

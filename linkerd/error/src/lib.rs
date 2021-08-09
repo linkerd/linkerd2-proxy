@@ -7,3 +7,7 @@ pub use self::recover::Recover;
 pub use std::convert::Infallible;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
+
+pub fn is_error<E: std::error::Error + 'static>(e: &(dyn std::error::Error + 'static)) -> bool {
+    e.is::<E>() || e.source().map(is_error::<E>).unwrap_or(false)
+}
