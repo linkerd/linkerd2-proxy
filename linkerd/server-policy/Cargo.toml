@@ -6,6 +6,10 @@ edition = "2018"
 publish = false
 
 [dependencies]
-futures = { version = "0.3", default-features = false }
+async-stream = "0.3"
+futures = { version = "0.3", default-features = false, features = ["alloc"]  }
 ipnet = "2"
 #linkerd2-proxy-api = { version = "0.2", features = ["inbound", "client"] }
+
+[dev-dependencies]
+quickcheck = "1"

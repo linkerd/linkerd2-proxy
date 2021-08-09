@@ -1,4 +1,4 @@
-use futures::prelude::*;
+use futures::{future, prelude::*, stream};
 use ipnet::IpNet;
 use std::{
     collections::{HashMap, HashSet},
@@ -56,6 +56,23 @@ pub enum Authn {
 #[derive(Clone, Debug)]
 pub struct Suffix {
     ends_with: String,
+}
+
+// === impl ServerPolicy ===
+
+/// A stub implementation of DisicoverServerPolicy that returns a single static policy and never
+/// updates.
+impl DiscoverServerPolicy for ServerPolicy {
+    type Stream = stream::BoxStream<'static, Self>;
+    type Future = future::Ready<Self::Stream>;
+
+    fn discover(&self, _port: u16) -> Self::Future {
+        let policy = self.clone();
+        future::ready(Box::pin(async_stream::stream! {
+            yield policy;
+            future::pending::<()>().await;
+        }))
+    }
 }
 
 // === impl Network ===
