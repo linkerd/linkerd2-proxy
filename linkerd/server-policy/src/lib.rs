@@ -34,7 +34,7 @@ pub enum Protocol {
 pub struct Authz {
     pub networks: Vec<Network>,
     pub authn: Authn,
-    labels: HashMap<String, String>,
+    pub labels: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -60,7 +60,7 @@ pub struct Suffix {
 
 // === impl ServerPolicy ===
 
-/// A stub implementation of DisicoverServerPolicy that returns a single static policy and never
+/// A stub implementation of DiscoverServerPolicy that returns a single static policy and never
 /// updates.
 impl DiscoverServerPolicy for ServerPolicy {
     type Stream = stream::BoxStream<'static, Self>;
@@ -78,6 +78,7 @@ impl DiscoverServerPolicy for ServerPolicy {
 // === impl Network ===
 
 impl Network {
+    #[inline]
     pub fn contains(&self, addr: &IpAddr) -> bool {
         self.net.contains(addr) && !self.except.iter().any(|net| net.contains(addr))
     }
@@ -97,6 +98,7 @@ impl From<Vec<String>> for Suffix {
 }
 
 impl Suffix {
+    #[inline]
     pub fn contains(&self, name: &str) -> bool {
         name.ends_with(&self.ends_with)
     }
