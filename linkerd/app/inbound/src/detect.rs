@@ -276,6 +276,7 @@ mod tests {
 
     const HTTP: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
     const NOT_HTTP: &[u8] = b"foo\r\nbar\r\nblah\r\n";
+
     #[tokio::test(flavor = "current_thread")]
     async fn skip_detect() {
         let (io, _) = io::duplex(1);
