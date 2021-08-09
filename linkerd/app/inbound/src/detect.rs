@@ -268,10 +268,10 @@ mod tests {
     use futures::future;
     use io::AsyncWriteExt;
     use linkerd_app_core::{
+        is_error,
         svc::{NewService, ServiceExt},
         trace, Error,
     };
-    use linkerd_error::is_error;
     use std::str::FromStr;
 
     const HTTP: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
