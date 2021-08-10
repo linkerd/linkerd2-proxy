@@ -124,7 +124,11 @@ pub mod fuzz {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
         let connect = svc::stack(connect)
-            .push_map_target(|t: Http| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
+            .map_stack(|cfg, _, s| {
+                s.push_map_target(|p| Remote(ServerAddr(([127, 0, 0, 1], p).into())))
+                    .push_map_target(|t| Param::<u16>::param(&t))
+                    .push_connect_timeout(cfg.proxy.connect.timeout)
+            })
             .into_inner();
         Inbound::new(cfg, rt)
             .with_stack(connect)
@@ -172,7 +176,7 @@ pub mod fuzz {
         const HTTP1: Self = Self(http::Version::Http1);
 
         fn addr() -> SocketAddr {
-            ([192, 0, 2, 2], 80).into()
+            ([127, 0, 0, 1], 80).into()
         }
     }
 
