@@ -499,8 +499,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             return Err(EnvError::InvalidEnvVar);
         }
 
-        // Ensure that connections t directly target the inbound port are
-        // secured (unless identity is disabled).
+        // Ensure that connections that directly target the inbound port are secured (unless
+        // identity is disabled).
         let inbound_port = server.addr.as_ref().port();
         let port_policies = {
             if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
