@@ -273,7 +273,7 @@ mod tests {
                 protocol: Protocol::Opaque,
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
-                    networks: vec![ipnet::IpNet::from(client_addr().ip()).into()],
+                    networks: vec![client_addr().ip().into()],
                     labels: None.into_iter().collect(),
                 }],
                 labels: None.into_iter().collect(),

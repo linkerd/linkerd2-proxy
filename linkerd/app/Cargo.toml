@@ -16,7 +16,6 @@ allow-loopback = ["linkerd-app-outbound/allow-loopback"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false }
-ipnet = "2.3"
 linkerd-app-admin = { path = "./admin" }
 linkerd-app-core = { path = "./core" }
 linkerd-app-gateway = { path = "./gateway" }

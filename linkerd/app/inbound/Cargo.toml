@@ -28,7 +28,6 @@ libfuzzer-sys = { version = "0.4.2", features = ["arbitrary-derive"] }
 
 [dev-dependencies]
 hyper = { version = "0.14.11", features = ["http1", "http2"] }
-ipnet = "2"
 linkerd-app-test = { path = "../test" }
 linkerd-io = { path = "../../io", features = ["tokio-test"] }
 tokio = { version = "1", features = ["full", "macros"] }

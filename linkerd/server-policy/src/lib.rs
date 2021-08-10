@@ -1,7 +1,8 @@
-use ipnet::IpNet;
+mod network;
+
+pub use self::network::Network;
 use std::{
     collections::{HashMap, HashSet},
-    net::IpAddr,
     time,
 };
 
@@ -29,12 +30,6 @@ pub struct Authorization {
     pub labels: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Network {
-    pub net: IpNet,
-    pub except: Vec<IpNet>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Authentication {
     Unauthenticated,
@@ -48,38 +43,6 @@ pub enum Authentication {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Suffix {
     ends_with: String,
-}
-
-// === impl Network ===
-
-impl From<IpNet> for Network {
-    fn from(net: IpNet) -> Self {
-        Self {
-            net,
-            except: vec![],
-        }
-    }
-}
-
-impl From<ipnet::Ipv4Net> for Network {
-    fn from(net: ipnet::Ipv4Net) -> Self {
-        Self::from(IpNet::from(net))
-    }
-}
-
-impl From<ipnet::Ipv6Net> for Network {
-    fn from(net: ipnet::Ipv6Net) -> Self {
-        Self::from(IpNet::from(net))
-    }
-}
-
-impl Network {
-    #[inline]
-    pub fn contains(&self, addr: &IpAddr) -> bool {
-        let contains_ip = self.net.contains(addr);
-        let exception = self.except.iter().any(|net| net.contains(addr));
-        contains_ip && !exception
-    }
 }
 
 // === impl Suffix ===

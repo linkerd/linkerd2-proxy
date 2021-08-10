@@ -221,7 +221,7 @@ impl Hasher for PortHasher {
 mod tests {
     use super::*;
     use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-    use std::{collections::HashSet, str::FromStr};
+    use std::collections::HashSet;
 
     #[tokio::test(flavor = "current_thread")]
     async fn unauthenticated_allowed() {
@@ -229,7 +229,7 @@ mod tests {
             protocol: Protocol::Opaque,
             authorizations: vec![Authorization {
                 authentication: Authentication::Unauthenticated,
-                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
                 labels: vec![("authz".to_string(), "unauth".to_string())]
                     .into_iter()
                     .collect(),
@@ -272,7 +272,7 @@ mod tests {
                     suffixes: vec![],
                     identities: vec![client_id().to_string()].into_iter().collect(),
                 },
-                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
                 labels: vec![("authz".to_string(), "tls-auth".to_string())]
                     .into_iter()
                     .collect(),
@@ -334,7 +334,7 @@ mod tests {
                         "local".to_string(),
                     ])],
                 },
-                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
                 labels: vec![("authz".to_string(), "tls-auth".to_string())]
                     .into_iter()
                     .collect(),
@@ -388,7 +388,7 @@ mod tests {
             protocol: Protocol::Opaque,
             authorizations: vec![Authorization {
                 authentication: Authentication::TlsUnauthenticated,
-                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                networks: vec!["192.0.2.0/24".parse().unwrap()],
                 labels: vec![("authz".to_string(), "tls-unauth".to_string())]
                     .into_iter()
                     .collect(),

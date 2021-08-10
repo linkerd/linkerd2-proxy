@@ -89,7 +89,7 @@ mod tests {
     use crate::test_util::*;
     use linkerd_app_core::{
         svc::{NewService, Service, ServiceExt},
-        AddrMatch,
+        AddrMatch, IpNet,
     };
     use std::{
         net::{IpAddr, SocketAddr},
@@ -315,10 +315,8 @@ mod tests {
         let cfg = {
             let mut cfg = default_config();
             // Permits resolutions for only 192.0.2.66/32.
-            cfg.allow_discovery = AddrMatch::new(
-                None,
-                Some(ipnet::IpNet::from(IpAddr::from([192, 0, 2, 66]))),
-            );
+            cfg.allow_discovery =
+                AddrMatch::new(None, Some(IpNet::from(IpAddr::from([192, 0, 2, 66]))));
             cfg
         };
         let (rt, _shutdown) = runtime();

@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub use drain;
+pub use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
 pub use linkerd_conditional::Conditional;

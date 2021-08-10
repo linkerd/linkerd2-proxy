@@ -5,7 +5,7 @@ use crate::core::{
     proxy::http::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
-    Addr, AddrMatch, Conditional, NameMatch,
+    Addr, AddrMatch, Conditional, IpNet, Ipv4Net, Ipv6Net, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use inbound::{port_policies, Authentication, Authorization, DefaultPolicy, ServerPolicy};
@@ -908,12 +908,12 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
     dns::Suffix::from_str(s).map_err(|_| ParseError::NotADomainSuffix)
 }
 
-fn parse_networks(list: &str) -> Result<HashSet<ipnet::IpNet>, ParseError> {
+fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     let mut nets = HashSet::new();
     for input in list.split(',') {
         let input = input.trim();
         if !input.is_empty() {
-            let net = ipnet::IpNet::from_str(input).map_err(|error| {
+            let net = IpNet::from_str(input).map_err(|error| {
                 error!(%input, %error, "Invalid network");
                 ParseError::NotANetwork
             })?;
@@ -940,10 +940,7 @@ pub fn parse_server_policy(s: &str, detect_timeout: Duration) -> Result<ServerPo
                 timeout: detect_timeout,
             },
             authorizations: vec![Authorization {
-                networks: vec![
-                    ipnet::Ipv4Net::default().into(),
-                    ipnet::Ipv6Net::default().into(),
-                ],
+                networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
                 authentication: Authentication::TlsAuthenticated {
                     identities: Default::default(),
                     suffixes: vec![port_policies::Suffix::from(vec![])],
@@ -962,10 +959,7 @@ pub fn parse_server_policy(s: &str, detect_timeout: Duration) -> Result<ServerPo
                 timeout: detect_timeout,
             },
             authorizations: vec![Authorization {
-                networks: vec![
-                    ipnet::Ipv4Net::default().into(),
-                    ipnet::Ipv6Net::default().into(),
-                ],
+                networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
                 authentication: Authentication::TlsUnauthenticated,
                 labels: Some(("authz".to_string(), "tls-unauthenticated".to_string()))
                     .into_iter()
@@ -981,10 +975,7 @@ pub fn parse_server_policy(s: &str, detect_timeout: Duration) -> Result<ServerPo
                 timeout: detect_timeout,
             },
             authorizations: vec![Authorization {
-                networks: vec![
-                    ipnet::Ipv4Net::default().into(),
-                    ipnet::Ipv6Net::default().into(),
-                ],
+                networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
                 authentication: Authentication::Unauthenticated,
                 labels: Some(("authz".to_string(), "unauthenticated".to_string()))
                     .into_iter()

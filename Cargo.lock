@@ -626,7 +626,6 @@ name = "linkerd-app"
 version = "0.1.0"
 dependencies = [
  "futures",
- "ipnet",
  "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-gateway",
@@ -751,7 +750,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "ipnet",
  "libfuzzer-sys",
  "linkerd-app-core",
  "linkerd-app-test",
@@ -802,7 +800,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "ipnet",
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-http-retry",

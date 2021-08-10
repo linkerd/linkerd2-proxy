@@ -116,7 +116,7 @@ mod tests {
             protocol: linkerd_server_policy::Protocol::Opaque,
             authorizations: vec![Authorization {
                 authentication: Authentication::Unauthenticated,
-                networks: vec![ipnet::Ipv4Net::default().into()],
+                networks: vec![Default::default()],
                 labels: Default::default(),
             }],
             labels: Default::default(),
