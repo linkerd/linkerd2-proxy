@@ -32,8 +32,10 @@ pub(crate) struct AllowPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Permitted {
     pub protocol: Protocol,
-    pub labels: BTreeMap<String, String>,
     pub tls: tls::ConditionalServerTls,
+
+    // We want predictable ordering of labels, so we use a BTreeMap.
+    pub labels: BTreeMap<String, String>,
 }
 
 /// A hasher for ports.
@@ -49,7 +51,7 @@ type Map = HashMap<u16, Arc<ServerPolicy>, BuildHasherDefault<PortHasher>>;
 #[error("connection denied on unknown port {0}")]
 pub(crate) struct DeniedUnknownPort(u16);
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 #[error("unauthorized connection from {client_addr} with identity {tls:?} to {dst_addr}")]
 pub(crate) struct DeniedUnauthorized {
     client_addr: Remote<ClientAddr>,
@@ -88,6 +90,12 @@ impl From<ServerPolicy> for PortPolicies {
 }
 
 impl PortPolicies {
+    /// Checks that the destination port is configured to allow traffic.
+    ///
+    /// If the port is not explicitly configured, then the default policy is used. If the default
+    /// policy is `deny`, then a `DeniedUnknownPort` error is returned; otherwise an `AllowPolicy`
+    /// is returned that can be used to check whether the connection is permitted via
+    /// [`AllowPolicy::check_authorized`].
     pub(crate) fn check_allowed(
         &self,
         client: Remote<ClientAddr>,
@@ -135,6 +143,8 @@ impl AllowPolicy {
         self.server.protocol == Protocol::Opaque
     }
 
+    /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections
+    /// given the provided TLS state.
     pub(crate) fn check_authorized(
         &self,
         tls: tls::ConditionalServerTls,
