@@ -5,10 +5,10 @@ use crate::core::{
     proxy::http::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
-    Addr, AddrMatch, Conditional, IpNet, Ipv4Net, Ipv6Net, NameMatch,
+    Addr, AddrMatch, Conditional, IpNet, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use inbound::{port_policies, Authentication, Authorization, DefaultPolicy, ServerPolicy};
+use inbound::port_policies;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -539,16 +539,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
                 parse_default_policy(s, detect_protocol_timeout)
             })?
-            .unwrap_or_else(|| all_unauthenticated_server_policy(detect_protocol_timeout).into());
+            .unwrap_or_else(|| {
+                port_policies::all_unauthenticated_server_policy(detect_protocol_timeout).into()
+            });
 
-            let allow_authed = all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
+            let allow_authed =
+                port_policies::all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
             let allow_opaque = match default.clone() {
-                DefaultPolicy::Allow(p) => {
+                port_policies::DefaultPolicy::Allow(p) => {
                     let mut p = (*p).clone();
-                    p.protocol = inbound::Protocol::Opaque;
+                    p.protocol = inbound::port_policies::Protocol::Opaque;
                     Some(p)
                 }
-                DefaultPolicy::Deny => {
+                port_policies::DefaultPolicy::Deny => {
                     tracing::warn!("inbound opaque ports configuration is ignored when the default policy is 'deny'");
                     None
                 }
@@ -919,73 +922,24 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     Ok(nets)
 }
 
-fn parse_default_policy(s: &str, detect_timeout: Duration) -> Result<DefaultPolicy, ParseError> {
+fn parse_default_policy(
+    s: &str,
+    detect_timeout: Duration,
+) -> Result<port_policies::DefaultPolicy, ParseError> {
     match s {
-        "deny" => Ok(DefaultPolicy::Deny),
-        name => parse_server_policy(name, detect_timeout).map(Into::into),
-    }
-}
-
-fn parse_server_policy(s: &str, detect_timeout: Duration) -> Result<ServerPolicy, ParseError> {
-    match s {
-        "all-authenticated" => Ok(all_authenticated_server_policy(detect_timeout)),
-        "all-unauthenticated" => Ok(all_unauthenticated_server_policy(detect_timeout)),
-        "all-mtls-unauthenticated" => Ok(all_mtls_unauthenticated_server_policy(detect_timeout)),
+        "deny" => Ok(port_policies::DefaultPolicy::Deny),
+        "all-authenticated" => {
+            Ok(port_policies::all_authenticated_server_policy(detect_timeout).into())
+        }
+        "all-unauthenticated" => {
+            Ok(port_policies::all_unauthenticated_server_policy(detect_timeout).into())
+        }
+        "all-mtls-unauthenticated" => {
+            Ok(port_policies::all_mtls_unauthenticated_server_policy(detect_timeout).into())
+        }
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
 }
-
-fn all_authenticated_server_policy(timeout: Duration) -> ServerPolicy {
-    ServerPolicy {
-        protocol: inbound::Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-            authentication: Authentication::TlsAuthenticated {
-                identities: Default::default(),
-                suffixes: vec![port_policies::Suffix::from(vec![])],
-            },
-            labels: Some(("authz".to_string(), "_all-authenticated".to_string()))
-                .into_iter()
-                .collect(),
-        }],
-        labels: Some(("server".to_string(), "_default".to_string()))
-            .into_iter()
-            .collect(),
-    }
-}
-
-fn all_unauthenticated_server_policy(timeout: Duration) -> ServerPolicy {
-    ServerPolicy {
-        protocol: inbound::Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-            authentication: Authentication::Unauthenticated,
-            labels: Some(("authz".to_string(), "_all-unauthenticated".to_string()))
-                .into_iter()
-                .collect(),
-        }],
-        labels: Some(("server".to_string(), "_default".to_string()))
-            .into_iter()
-            .collect(),
-    }
-}
-
-fn all_mtls_unauthenticated_server_policy(timeout: Duration) -> ServerPolicy {
-    ServerPolicy {
-        protocol: inbound::Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-            authentication: Authentication::TlsUnauthenticated,
-            labels: Some(("authz".to_string(), "_all-unauthenticated-tls".to_string()))
-                .into_iter()
-                .collect(),
-        }],
-        labels: Some(("server".to_string(), "_default".to_string()))
-            .into_iter()
-            .collect(),
-    }
-}
-
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,
