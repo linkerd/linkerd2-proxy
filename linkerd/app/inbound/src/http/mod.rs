@@ -172,7 +172,7 @@ pub mod fuzz {
         const HTTP1: Self = Self(http::Version::Http1);
 
         fn addr() -> SocketAddr {
-            ([192, 0, 2, 2], 80).into()
+            ([127, 0, 0, 1], 80).into()
         }
     }
 
