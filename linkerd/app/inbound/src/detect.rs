@@ -100,9 +100,11 @@ impl<N> Inbound<N> {
         })
     }
 
-    /// Builds a stack that handles HTTP detection once TLS detection has been
-    /// performed. If the connection is determined to be HTTP, the inner stack
-    /// is used; otherwise the connection is passed to the provided 'forward' stack.
+    /// Builds a stack that handles HTTP detection once TLS detection has been performed. If the
+    /// connection is determined to be HTTP, the inner stack is used; otherwise the connection is
+    /// passed to the provided 'forward' stack.
+    ///
+    /// TODO: use the target's protocol to bypass HTTP detection in more cases.
     pub(crate) fn push_detect_http<I, NSvc, F, FSvc>(
         self,
         forward: F,
