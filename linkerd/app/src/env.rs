@@ -539,13 +539,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
                 parse_default_policy(s, detect_protocol_timeout)
             })?
-            .unwrap_or_else(|| {
-                parse_default_policy("unauthenticated", detect_protocol_timeout)
-                    .expect("unauthenticated must be a valid default policy")
-            });
+            .unwrap_or_else(|| all_unauthenticated_server_policy(detect_protocol_timeout).into());
 
-            let allow_authed = parse_server_policy("tls-authenticated", detect_protocol_timeout)
-                .expect("tls-authenticated must be a valid default policy");
+            let allow_authed = all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
             let allow_opaque = match default.clone() {
                 DefaultPolicy::Allow(p) => {
                     let mut p = (*p).clone();
@@ -923,70 +919,70 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     Ok(nets)
 }
 
-pub fn parse_default_policy(
-    s: &str,
-    detect_timeout: Duration,
-) -> Result<DefaultPolicy, ParseError> {
+fn parse_default_policy(s: &str, detect_timeout: Duration) -> Result<DefaultPolicy, ParseError> {
     match s {
         "deny" => Ok(DefaultPolicy::Deny),
         name => parse_server_policy(name, detect_timeout).map(Into::into),
     }
 }
 
-pub fn parse_server_policy(s: &str, detect_timeout: Duration) -> Result<ServerPolicy, ParseError> {
+fn parse_server_policy(s: &str, detect_timeout: Duration) -> Result<ServerPolicy, ParseError> {
     match s {
-        "tls-authenticated" => Ok(ServerPolicy {
-            protocol: inbound::Protocol::Detect {
-                timeout: detect_timeout,
-            },
-            authorizations: vec![Authorization {
-                networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-                authentication: Authentication::TlsAuthenticated {
-                    identities: Default::default(),
-                    suffixes: vec![port_policies::Suffix::from(vec![])],
-                },
-                labels: Some(("authz".to_string(), "tls-authenticated".to_string()))
-                    .into_iter()
-                    .collect(),
-            }],
-            labels: Some(("server".to_string(), "_default".to_string()))
-                .into_iter()
-                .collect(),
-        }),
-
-        "tls-unauthenticated" => Ok(ServerPolicy {
-            protocol: inbound::Protocol::Detect {
-                timeout: detect_timeout,
-            },
-            authorizations: vec![Authorization {
-                networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-                authentication: Authentication::TlsUnauthenticated,
-                labels: Some(("authz".to_string(), "tls-unauthenticated".to_string()))
-                    .into_iter()
-                    .collect(),
-            }],
-            labels: Some(("server".to_string(), "_default".to_string()))
-                .into_iter()
-                .collect(),
-        }),
-
-        "unauthenticated" => Ok(ServerPolicy {
-            protocol: inbound::Protocol::Detect {
-                timeout: detect_timeout,
-            },
-            authorizations: vec![Authorization {
-                networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-                authentication: Authentication::Unauthenticated,
-                labels: Some(("authz".to_string(), "unauthenticated".to_string()))
-                    .into_iter()
-                    .collect(),
-            }],
-            labels: Some(("server".to_string(), "_default".to_string()))
-                .into_iter()
-                .collect(),
-        }),
-
+        "all-authenticated" => Ok(all_authenticated_server_policy(detect_timeout)),
+        "all-unauthenticated" => Ok(all_unauthenticated_server_policy(detect_timeout)),
+        "all-mtls-unauthenticated" => Ok(all_mtls_unauthenticated_server_policy(detect_timeout)),
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
+    }
+}
+
+fn all_authenticated_server_policy(timeout: Duration) -> ServerPolicy {
+    ServerPolicy {
+        protocol: inbound::Protocol::Detect { timeout },
+        authorizations: vec![Authorization {
+            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
+            authentication: Authentication::TlsAuthenticated {
+                identities: Default::default(),
+                suffixes: vec![port_policies::Suffix::from(vec![])],
+            },
+            labels: Some(("authz".to_string(), "_all-authenticated".to_string()))
+                .into_iter()
+                .collect(),
+        }],
+        labels: Some(("server".to_string(), "_default".to_string()))
+            .into_iter()
+            .collect(),
+    }
+}
+
+fn all_unauthenticated_server_policy(timeout: Duration) -> ServerPolicy {
+    ServerPolicy {
+        protocol: inbound::Protocol::Detect { timeout },
+        authorizations: vec![Authorization {
+            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
+            authentication: Authentication::Unauthenticated,
+            labels: Some(("authz".to_string(), "_all-unauthenticated".to_string()))
+                .into_iter()
+                .collect(),
+        }],
+        labels: Some(("server".to_string(), "_default".to_string()))
+            .into_iter()
+            .collect(),
+    }
+}
+
+fn all_mtls_unauthenticated_server_policy(timeout: Duration) -> ServerPolicy {
+    ServerPolicy {
+        protocol: inbound::Protocol::Detect { timeout },
+        authorizations: vec![Authorization {
+            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
+            authentication: Authentication::TlsUnauthenticated,
+            labels: Some(("authz".to_string(), "_all-unauthenticated-tls".to_string()))
+                .into_iter()
+                .collect(),
+        }],
+        labels: Some(("server".to_string(), "_default".to_string()))
+            .into_iter()
+            .collect(),
     }
 }
 

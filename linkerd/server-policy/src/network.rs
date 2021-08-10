@@ -49,10 +49,8 @@ impl From<std::net::Ipv6Addr> for Network {
 
 impl Network {
     #[inline]
-    pub fn contains(&self, addr: &std::net::IpAddr) -> bool {
-        let contains_ip = self.net.contains(addr);
-        let exception = self.except.iter().any(|net| net.contains(addr));
-        contains_ip && !exception
+    pub fn contains(&self, ip: &std::net::IpAddr) -> bool {
+        self.net.contains(ip) && !self.except.iter().any(|net| net.contains(ip))
     }
 }
 

@@ -10,7 +10,6 @@ publish = false
 async-stream = "0.3"
 futures = { version = "0.3", default-features = false, features = ["alloc"]  }
 ipnet = "2"
-#linkerd2-proxy-api = { version = "0.2", features = ["inbound", "client"] }
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }
