@@ -7,7 +7,7 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 use tracing::info_span;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Accept {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
@@ -94,7 +94,7 @@ impl svc::Param<Remote<ClientAddr>> for Accept {
 
 impl svc::Param<AllowPolicy> for Accept {
     fn param(&self) -> AllowPolicy {
-        self.policy
+        self.policy.clone()
     }
 }
 
@@ -107,11 +107,21 @@ mod tests {
         svc::{NewService, ServiceExt},
         Error,
     };
+    use linkerd_server_policy::{Authentication, Authorization, ServerPolicy};
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        inbound(AllowPolicy::Unauthenticated { skip_detect: false })
+        let allow = AllowPolicy::new(ServerPolicy {
+            protocol: linkerd_server_policy::Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![ipnet::Ipv4Net::default().into()],
+                labels: Default::default(),
+            }],
+            labels: Default::default(),
+        });
+        inbound(allow)
             .with_stack(new_ok())
             .push_accept(999, new_panic("direct stack must not be built"))
             .into_inner()

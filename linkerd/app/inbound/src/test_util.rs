@@ -12,6 +12,7 @@ use linkerd_app_core::{
     NameMatch, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
+use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
 use std::time::Duration;
 
 pub fn default_config() -> Config {
@@ -47,7 +48,18 @@ pub fn default_config() -> Config {
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(10),
         },
-        port_policies: AllowPolicy::Unauthenticated { skip_detect: false }.into(),
+        port_policies: AllowPolicy::new(ServerPolicy {
+            protocol: Protocol::Detect {
+                timeout: std::time::Duration::from_secs(10),
+            },
+            authorizations: vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![ipnet::Ipv4Net::default().into()],
+                labels: Default::default(),
+            }],
+            labels: Default::default(),
+        })
+        .into(),
         profile_idle_timeout: Duration::from_millis(500),
     }
 }

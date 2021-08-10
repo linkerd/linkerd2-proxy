@@ -13,14 +13,14 @@ trait DiscoverServerPolicy {
     fn discover(&self, port: u16) -> Self::Future;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
-    pub authorizations: Vec<Authz>,
     pub protocol: Protocol,
+    pub authorizations: Vec<Authorization>,
     pub labels: HashMap<String, String>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Protocol {
     Detect { timeout: time::Duration },
     Http1,
@@ -30,21 +30,21 @@ pub enum Protocol {
     Tls,
 }
 
-#[derive(Clone, Debug)]
-pub struct Authz {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Authorization {
     pub networks: Vec<Network>,
-    pub authn: Authn,
+    pub authentication: Authentication,
     pub labels: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Network {
     pub net: IpNet,
     pub except: Vec<IpNet>,
 }
 
-#[derive(Clone, Debug)]
-pub enum Authn {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Authentication {
     Unauthenticated,
     TlsUnauthenticated,
     TlsAuthenticated {
@@ -53,7 +53,7 @@ pub enum Authn {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Suffix {
     ends_with: String,
 }
@@ -76,6 +76,27 @@ impl DiscoverServerPolicy for ServerPolicy {
 }
 
 // === impl Network ===
+
+impl From<IpNet> for Network {
+    fn from(net: IpNet) -> Self {
+        Self {
+            net: net.into(),
+            except: vec![],
+        }
+    }
+}
+
+impl From<ipnet::Ipv4Net> for Network {
+    fn from(net: ipnet::Ipv4Net) -> Self {
+        Self::from(IpNet::from(net))
+    }
+}
+
+impl From<ipnet::Ipv6Net> for Network {
+    fn from(net: ipnet::Ipv6Net) -> Self {
+        Self::from(IpNet::from(net))
+    }
+}
 
 impl Network {
     #[inline]

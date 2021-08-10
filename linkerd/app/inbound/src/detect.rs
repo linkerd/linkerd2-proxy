@@ -1,4 +1,4 @@
-use crate::{AllowPolicy, Inbound};
+use crate::{AllowPolicy, Inbound, Protocol};
 use linkerd_app_core::{
     detect, identity, io,
     proxy::{http, identity::LocalCrtKey},
@@ -8,11 +8,11 @@ use linkerd_app_core::{
         addrs::{ClientAddr, OrigDstAddr, Remote},
         ServerAddr,
     },
-    Error, Infallible,
+    Error, Infallible, Result,
 };
 use std::fmt::Debug;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
@@ -20,7 +20,7 @@ pub struct Tls {
     status: tls::ConditionalServerTls,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Http {
     tls: Tls,
     http: http::Version,
@@ -71,7 +71,8 @@ impl<N> Inbound<N> {
                 // If this port's policy indicates that authentication is not required and
                 // detection should be skipped, use the TCP stack directly.
                 |t: T| -> Result<_, Infallible> {
-                    if let AllowPolicy::Unauthenticated { skip_detect: true } = t.param() {
+                    let p: AllowPolicy = t.param();
+                    if let Protocol::Opaque = p.protocol() {
                         return Ok(svc::Either::B(t));
                     }
                     Ok(svc::Either::A(t))
@@ -122,30 +123,10 @@ impl<N> Inbound<N> {
                 .check_new_service::<Tls, _>()
                 .push(rt.metrics.transport.layer_accept())
                 .check_new_service::<Tls, _>()
-                .push_request_filter(|(tls, t): (tls::ConditionalServerTls, T)| {
-                    match (t.param(), &tls) {
-                        // Permit all connections if no authentication is required.
-                        (AllowPolicy::Unauthenticated { .. }, _) => Ok(Tls::from_params(&t, tls)),
-                        // Permit connections with a validated client identity if authentication
-                        // is required.
-                        (
-                            AllowPolicy::Authenticated,
-                            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                                client_id: Some(_),
-                                ..
-                            }),
-                        ) => Ok(Tls::from_params(&t, tls)),
-                        // Permit any TLS connection if TLS is required but
-                        // authentication is not.
-                        (AllowPolicy::TlsUnauthenticated, tls::ConditionalServerTls::Some(_)) => {
-                            Ok(Tls::from_params(&t, tls))
-                        }
-                        // Otherwise, reject the connection.
-                        _ => {
-                            let OrigDstAddr(a) = t.param();
-                            Err(IdentityRequired(a.port()))
-                        }
-                    }
+                .push_request_filter(|(tls, t): (tls::ConditionalServerTls, T)| -> Result<Tls> {
+                    let policy: AllowPolicy = t.param();
+                    policy.check(&t, &tls)?;
+                    Ok(Tls::from_params(&t, tls))
                 })
                 .check_new_service::<(tls::ConditionalServerTls, T), _>()
                 .push_on_response(svc::BoxService::layer())
@@ -264,7 +245,7 @@ impl<T> svc::InsertParam<tls::ConditionalServerTls, T> for TlsParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util;
+    use crate::{port_policies::NotPermitted, test_util};
     use futures::future;
     use io::AsyncWriteExt;
     use linkerd_app_core::{
@@ -272,6 +253,7 @@ mod tests {
         svc::{NewService, ServiceExt},
         trace, Error,
     };
+    use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
     use std::str::FromStr;
 
     const HTTP: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
@@ -279,13 +261,24 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn skip_detect() {
+        let allow = AllowPolicy::new(ServerPolicy {
+            protocol: Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![ipnet::Ipv4Net::default().into()],
+                labels: Default::default(),
+            }],
+            labels: Default::default(),
+        });
+
         let (io, _) = io::duplex(1);
+
         inbound()
             .with_stack(new_panic("detect stack must not be used"))
             .push_detect_http(new_ok())
             .push_detect_tls(new_ok())
             .into_inner()
-            .new_service(Target(AllowPolicy::Unauthenticated { skip_detect: true }))
+            .new_service(Target(allow))
             .oneshot(io)
             .await
             .expect("should succeed");
@@ -300,7 +293,7 @@ mod tests {
             .push_detect_http(new_ok())
             .push_detect_tls(new_ok())
             .into_inner()
-            .new_service(Target(AllowPolicy::Unauthenticated { skip_detect: false }))
+            .new_service(Target(allow_detect_unauthenticated()))
             .oneshot(ior)
             .await
             .expect("should succeed");
@@ -315,7 +308,7 @@ mod tests {
             .push_detect_http(new_panic("tcp stack must not be used"))
             .push_detect_tls(new_panic("tcp stack must not be used"))
             .into_inner()
-            .new_service(Target(AllowPolicy::Unauthenticated { skip_detect: false }))
+            .new_service(Target(allow_detect_unauthenticated()))
             .oneshot(ior)
             .await
             .expect("should succeed");
@@ -331,7 +324,7 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::Unauthenticated { skip_detect: false },
+            allow_detect_unauthenticated(),
             inbound,
             HTTP,
             &[
@@ -371,7 +364,7 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::Unauthenticated { skip_detect: false },
+            allow_detect_unauthenticated(),
             inbound,
             NOT_HTTP,
             &[
@@ -411,7 +404,17 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::TlsUnauthenticated,
+            AllowPolicy::new(ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![Authorization {
+                    authentication: Authentication::TlsUnauthenticated,
+                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    labels: Default::default(),
+                }],
+                labels: Default::default(),
+            }),
             inbound,
             HTTP,
             &[
@@ -451,7 +454,17 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::TlsUnauthenticated,
+            AllowPolicy::new(ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![Authorization {
+                    authentication: Authentication::TlsUnauthenticated,
+                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    labels: Default::default(),
+                }],
+                labels: Default::default(),
+            }),
             inbound,
             NOT_HTTP,
             &[
@@ -491,7 +504,20 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::Authenticated,
+            AllowPolicy::new(ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![Authorization {
+                    authentication: Authentication::TlsAuthenticated {
+                        identities: Default::default(),
+                        suffixes: vec![Suffix::from(vec![])],
+                    },
+                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    labels: Default::default(),
+                }],
+                labels: Default::default(),
+            }),
             inbound,
             HTTP,
             &[
@@ -506,7 +532,7 @@ mod tests {
                         client_id,
                         negotiated_protocol: None,
                     }),
-                    Ok("authenticated TLS connectionshould be allowed"),
+                    Ok("authenticated TLS connection should be allowed"),
                 ),
                 // TLS detected, unauthenticated client ID -- should be denied
                 (
@@ -531,7 +557,20 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::Authenticated,
+            AllowPolicy::new(ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![Authorization {
+                    authentication: Authentication::TlsAuthenticated {
+                        identities: Default::default(),
+                        suffixes: vec![Suffix::from(vec![])],
+                    },
+                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    labels: Default::default(),
+                }],
+                labels: Default::default(),
+            }),
             inbound,
             NOT_HTTP,
             &[
@@ -584,6 +623,7 @@ mod tests {
             tracing::info!(?result);
             result
         }
+
         let target = Target(policy);
         for (tls, result) in cases {
             match result {
@@ -597,7 +637,7 @@ mod tests {
                         .await
                         .expect_err(errmsg);
                     assert!(
-                        is_error::<IdentityRequired>(error.as_ref()),
+                        is_error::<NotPermitted>(error.as_ref()),
                         "expected error to be `IdentityRequired`; error={:#?}",
                         error
                     );
@@ -611,6 +651,20 @@ mod tests {
             identity::Name::from_str("foo.ns1.serviceaccount.identity.linkerd.cluster.local")
                 .unwrap(),
         ))
+    }
+
+    fn allow_detect_unauthenticated() -> AllowPolicy {
+        AllowPolicy::new(ServerPolicy {
+            protocol: Protocol::Detect {
+                timeout: std::time::Duration::from_secs(10),
+            },
+            authorizations: vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![ipnet::Ipv4Net::default().into()],
+                labels: Default::default(),
+            }],
+            labels: Default::default(),
+        })
     }
 
     fn inbound() -> Inbound<()> {
@@ -630,7 +684,7 @@ mod tests {
 
     impl svc::Param<AllowPolicy> for Target {
         fn param(&self) -> AllowPolicy {
-            self.0
+            self.0.clone()
         }
     }
 

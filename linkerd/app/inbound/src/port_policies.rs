@@ -1,7 +1,13 @@
+use linkerd_app_core::{
+    svc::Param,
+    tls,
+    transport::{ClientAddr, OrigDstAddr, Remote},
+};
+pub use linkerd_server_policy::Protocol;
+use linkerd_server_policy::{Authentication, ServerPolicy};
 use std::{
     collections::HashMap,
     hash::{BuildHasherDefault, Hasher},
-    str::FromStr,
     sync::Arc,
 };
 use thiserror::Error;
@@ -12,22 +18,14 @@ pub struct PortPolicies {
     default: DefaultPolicy,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultPolicy {
     Allow(AllowPolicy),
     Deny,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AllowPolicy {
-    /// Allows all connections with an authenticated client ID.
-    Authenticated,
-    /// Allows all unauthenticated connections.
-    Unauthenticated { skip_detect: bool },
-    /// Allows all TLS connections (authenticated or otherwise), but denies
-    /// non-TLS unauthenticated connections.
-    TlsUnauthenticated,
-}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AllowPolicy(ServerPolicy);
 
 /// A hasher for ports.
 ///
@@ -46,20 +44,15 @@ pub struct DeniedUnknownPort(u16);
 #[error("expected one of `deny`, `authenticated`, `unauthenticated`, or `tls-unauthenticated`")]
 pub struct ParsePolicyError(());
 
-// === impl PortPolicies ===
-
-impl PortPolicies {
-    pub fn check_allowed(&self, port: u16) -> Result<AllowPolicy, DeniedUnknownPort> {
-        self.by_port
-            .get(&port)
-            .cloned()
-            .map(Ok)
-            .unwrap_or(match self.default {
-                DefaultPolicy::Allow(a) => Ok(a),
-                DefaultPolicy::Deny => Err(DeniedUnknownPort(port)),
-            })
-    }
+#[derive(Debug, thiserror::Error)]
+#[error("connection not permitted from {client_addr} with identity {tls:?} to {dst_addr}")]
+pub(crate) struct NotPermitted {
+    client_addr: Remote<ClientAddr>,
+    dst_addr: OrigDstAddr,
+    tls: tls::ConditionalServerTls,
 }
+
+// === impl PortPolicies ===
 
 impl PortPolicies {
     pub fn new(default: DefaultPolicy, iter: impl IntoIterator<Item = (u16, AllowPolicy)>) -> Self {
@@ -82,16 +75,20 @@ impl From<AllowPolicy> for PortPolicies {
     }
 }
 
-// === impl DefaultPolicy ===
-
-impl Default for DefaultPolicy {
-    fn default() -> Self {
-        // XXX(eliza): defining this via a `Default` impl feels *idiomatic* but
-        // maybe it's more correct for the default value to be defined via a
-        // const in the `linkerd_app::env` module?
-        Self::Allow(AllowPolicy::Unauthenticated { skip_detect: false })
+impl PortPolicies {
+    pub fn check_allowed(&self, port: u16) -> Result<AllowPolicy, DeniedUnknownPort> {
+        self.by_port
+            .get(&port)
+            .cloned()
+            .map(Ok)
+            .unwrap_or(match &self.default {
+                DefaultPolicy::Allow(a) => Ok(a.clone()),
+                DefaultPolicy::Deny => Err(DeniedUnknownPort(port)),
+            })
     }
 }
+
+// === impl DefaultPolicy ===
 
 impl From<AllowPolicy> for DefaultPolicy {
     fn from(default: AllowPolicy) -> Self {
@@ -99,6 +96,7 @@ impl From<AllowPolicy> for DefaultPolicy {
     }
 }
 
+/*
 impl FromStr for DefaultPolicy {
     type Err = ParsePolicyError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -110,9 +108,70 @@ impl FromStr for DefaultPolicy {
         AllowPolicy::from_str(s).map(Self::Allow)
     }
 }
+ */
 
 // === impl AllowPolicy ===
 
+impl AllowPolicy {
+    #[cfg(test)]
+    pub(crate) fn new(p: ServerPolicy) -> Self {
+        Self(p)
+    }
+
+    pub(crate) fn protocol(&self) -> Protocol {
+        self.0.protocol
+    }
+
+    pub(crate) fn check<T>(
+        &self,
+        t: &T,
+        tls: &tls::ConditionalServerTls,
+    ) -> Result<HashMap<String, String>, NotPermitted>
+    where
+        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
+    {
+        let Remote(ClientAddr(addr)) = t.param();
+        for authz in self.0.authorizations.iter() {
+            if authz.networks.iter().any(|n| n.contains(&addr.ip())) {
+                match authz.authentication {
+                    Authentication::Unauthenticated => return Ok(authz.labels.clone()),
+                    Authentication::TlsUnauthenticated => {
+                        if let tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                            ..
+                        }) = tls
+                        {
+                            return Ok(authz.labels.clone());
+                        }
+                    }
+                    Authentication::TlsAuthenticated {
+                        ref identities,
+                        ref suffixes,
+                    } => {
+                        if let tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                            client_id: Some(tls::server::ClientId(id)),
+                            ..
+                        }) = tls
+                        {
+                            if identities.contains(id.as_ref())
+                                || suffixes.iter().any(|s| s.contains(id.as_ref()))
+                            {
+                                return Ok(authz.labels.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(NotPermitted {
+            client_addr: t.param(),
+            dst_addr: t.param(),
+            tls: tls.clone(),
+        })
+    }
+}
+
+/*
 impl FromStr for AllowPolicy {
     type Err = ParsePolicyError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -125,6 +184,7 @@ impl FromStr for AllowPolicy {
         }
     }
 }
+*/
 
 // === impl PortHasher ===
 
