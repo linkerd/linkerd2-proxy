@@ -316,7 +316,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT,
         parse_number,
     );
-    let outbound_max_idle_per_endoint = parse(
+    let outbound_max_idle_per_endpoint = parse(
         strings,
         ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT,
         parse_number,
@@ -410,7 +410,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let cache_max_idle_age =
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
-            outbound_max_idle_per_endoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
+            outbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let keepalive = Keepalive(outbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
@@ -499,7 +499,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             return Err(EnvError::InvalidEnvVar);
         }
 
-        // Ensure that connections thaat directly target the inbound port are
+        // Ensure that connections t directly target the inbound port are
         // secured (unless identity is disabled).
         let inbound_port = server.addr.as_ref().port();
         let port_policies = {
