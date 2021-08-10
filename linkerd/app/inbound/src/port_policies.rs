@@ -1,10 +1,8 @@
 use linkerd_app_core::{
-    svc::Param,
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
-use linkerd_server_policy::{Authentication, Authorization};
-pub use linkerd_server_policy::{Protocol, ServerPolicy};
+pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
     collections::{BTreeMap, HashMap},
     hash::{BuildHasherDefault, Hasher},
@@ -25,14 +23,14 @@ pub enum DefaultPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AllowPolicy {
+pub(crate) struct AllowPolicy {
     client: Remote<ClientAddr>,
     dst: OrigDstAddr,
     server: Arc<ServerPolicy>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Permitted {
+pub(crate) struct Permitted {
     pub protocol: Protocol,
     pub labels: BTreeMap<String, String>,
     pub tls: tls::ConditionalServerTls,
@@ -49,11 +47,7 @@ type Map = HashMap<u16, Arc<ServerPolicy>, BuildHasherDefault<PortHasher>>;
 
 #[derive(Clone, Debug, Error)]
 #[error("connection denied on unknown port {0}")]
-pub struct DeniedUnknownPort(u16);
-
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
-#[error("expected one of `deny`, `authenticated`, `unauthenticated`, or `tls-unauthenticated`")]
-pub struct ParsePolicyError(());
+pub(crate) struct DeniedUnknownPort(u16);
 
 #[derive(Debug, thiserror::Error)]
 #[error("unauthorized connection from {client_addr} with identity {tls:?} to {dst_addr}")]
@@ -94,13 +88,11 @@ impl From<ServerPolicy> for PortPolicies {
 }
 
 impl PortPolicies {
-    pub(crate) fn check_allowed<T>(&self, t: &T) -> Result<AllowPolicy, DeniedUnknownPort>
-    where
-        T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
-    {
-        let Remote(ClientAddr(client)) = t.param();
-        let OrigDstAddr(dst) = t.param();
-
+    pub(crate) fn check_allowed(
+        &self,
+        client: Remote<ClientAddr>,
+        dst: OrigDstAddr,
+    ) -> Result<AllowPolicy, DeniedUnknownPort> {
         let server =
             self.by_port
                 .get(&dst.port())
@@ -112,8 +104,8 @@ impl PortPolicies {
                 })?;
 
         Ok(AllowPolicy {
-            client: Remote(ClientAddr(client)),
-            dst: OrigDstAddr(dst),
+            client,
+            dst,
             server,
         })
     }
@@ -122,24 +114,10 @@ impl PortPolicies {
 // === impl DefaultPolicy ===
 
 impl From<ServerPolicy> for DefaultPolicy {
-    fn from(default: ServerPolicy) -> Self {
-        DefaultPolicy::Allow(default.into())
+    fn from(p: ServerPolicy) -> Self {
+        DefaultPolicy::Allow(p.into())
     }
 }
-
-/*
-impl FromStr for DefaultPolicy {
-    type Err = ParsePolicyError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        if s == "deny" {
-            return Ok(Self::Deny);
-        }
-
-        AllowPolicy::from_str(s).map(Self::Allow)
-    }
-}
- */
 
 // === impl AllowPolicy ===
 
@@ -161,8 +139,9 @@ impl AllowPolicy {
         &self,
         tls: tls::ConditionalServerTls,
     ) -> Result<Permitted, DeniedUnauthorized> {
+        let client = self.client.ip();
         for authz in self.server.authorizations.iter() {
-            if authz.networks.iter().any(|n| n.contains(&self.dst.ip())) {
+            if authz.networks.iter().any(|n| n.contains(&client)) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
                         return Ok(Permitted::new(&self.server, authz, tls));
@@ -205,21 +184,6 @@ impl AllowPolicy {
     }
 }
 
-/*
-impl FromStr for AllowPolicy {
-    type Err = ParsePolicyError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        match s {
-            "authenticated" => Ok(Self::Authenticated),
-            "unauthenticated" => Ok(Self::Unauthenticated { skip_detect: false }),
-            "tls-unauthenticated" => Ok(Self::TlsUnauthenticated),
-            _ => Err(ParsePolicyError(())),
-        }
-    }
-}
-*/
-
 // === impl Permitted ===
 
 impl Permitted {
@@ -250,5 +214,236 @@ impl Hasher for PortHasher {
     #[inline]
     fn finish(&self) -> u64 {
         self.0 as u64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
+    use std::{collections::HashSet, str::FromStr};
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn unauthenticated_allowed() {
+        let policy = ServerPolicy {
+            protocol: Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                labels: vec![("authz".to_string(), "unauth".to_string())]
+                    .into_iter()
+                    .collect(),
+            }],
+            labels: vec![("server".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+        };
+
+        let allowed = PortPolicies::from(policy.clone())
+            .check_allowed(client_addr(), orig_dst_addr())
+            .expect("port must be known");
+        assert_eq!(*allowed.server, policy);
+
+        let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
+        let permitted = allowed
+            .check_authorized(tls.clone())
+            .expect("unauthenticated connection must be permitted");
+        assert_eq!(
+            permitted,
+            Permitted {
+                tls,
+                protocol: policy.protocol,
+                labels: vec![
+                    ("authz".to_string(), "unauth".to_string()),
+                    ("server".to_string(), "test".to_string())
+                ]
+                .into_iter()
+                .collect()
+            }
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn authenticated_identity() {
+        let policy = ServerPolicy {
+            protocol: Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::TlsAuthenticated {
+                    suffixes: vec![],
+                    identities: vec![client_id().to_string()].into_iter().collect(),
+                },
+                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                labels: vec![("authz".to_string(), "tls-auth".to_string())]
+                    .into_iter()
+                    .collect(),
+            }],
+            labels: vec![("server".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+        };
+
+        let allowed = PortPolicies::from(policy.clone())
+            .check_allowed(client_addr(), orig_dst_addr())
+            .expect("port must be known");
+        assert_eq!(*allowed.server, policy);
+
+        let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(client_id()),
+            negotiated_protocol: None,
+        });
+        let permitted = allowed
+            .check_authorized(tls.clone())
+            .expect("unauthenticated connection must be permitted");
+        assert_eq!(
+            permitted,
+            Permitted {
+                tls,
+                protocol: policy.protocol,
+                labels: vec![
+                    ("authz".to_string(), "tls-auth".to_string()),
+                    ("server".to_string(), "test".to_string())
+                ]
+                .into_iter()
+                .collect()
+            }
+        );
+
+        allowed
+            .check_authorized(tls::ConditionalServerTls::Some(
+                tls::ServerTls::Established {
+                    client_id: Some(tls::ClientId(
+                        "othersa.testns.serviceaccount.identity.linkerd.cluster.local"
+                            .parse()
+                            .unwrap(),
+                    )),
+                    negotiated_protocol: None,
+                },
+            ))
+            .expect_err("policy must require a client identity");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn authenticated_suffix() {
+        let policy = ServerPolicy {
+            protocol: Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::TlsAuthenticated {
+                    identities: HashSet::default(),
+                    suffixes: vec![Suffix::from(vec![
+                        "cluster".to_string(),
+                        "local".to_string(),
+                    ])],
+                },
+                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                labels: vec![("authz".to_string(), "tls-auth".to_string())]
+                    .into_iter()
+                    .collect(),
+            }],
+            labels: vec![("server".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+        };
+
+        let allowed = PortPolicies::from(policy.clone())
+            .check_allowed(client_addr(), orig_dst_addr())
+            .expect("port must be known");
+        assert_eq!(*allowed.server, policy);
+
+        let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(client_id()),
+            negotiated_protocol: None,
+        });
+        assert_eq!(
+            allowed
+                .check_authorized(tls.clone())
+                .expect("unauthenticated connection must be permitted"),
+            Permitted {
+                tls,
+                protocol: policy.protocol,
+                labels: vec![
+                    ("authz".to_string(), "tls-auth".to_string()),
+                    ("server".to_string(), "test".to_string())
+                ]
+                .into_iter()
+                .collect()
+            }
+        );
+
+        let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(
+                "testsa.testns.serviceaccount.identity.linkerd.cluster.example.com"
+                    .parse()
+                    .unwrap(),
+            ),
+            negotiated_protocol: None,
+        });
+        allowed
+            .check_authorized(tls)
+            .expect_err("policy must require a client identity");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tls_unauthenticated() {
+        let policy = ServerPolicy {
+            protocol: Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::TlsUnauthenticated,
+                networks: vec![ipnet::IpNet::from_str("192.0.2.0/24").unwrap().into()],
+                labels: vec![("authz".to_string(), "tls-unauth".to_string())]
+                    .into_iter()
+                    .collect(),
+            }],
+            labels: vec![("server".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+        };
+
+        let allowed = PortPolicies::from(policy.clone())
+            .check_allowed(client_addr(), orig_dst_addr())
+            .expect("port must be known");
+        assert_eq!(*allowed.server, policy);
+
+        let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: None,
+            negotiated_protocol: None,
+        });
+        assert_eq!(
+            allowed
+                .check_authorized(tls.clone())
+                .expect("unauthenticated connection must be permitted"),
+            Permitted {
+                tls,
+                protocol: policy.protocol,
+                labels: vec![
+                    ("authz".to_string(), "tls-unauth".to_string()),
+                    ("server".to_string(), "test".to_string())
+                ]
+                .into_iter()
+                .collect()
+            }
+        );
+
+        let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Passthru {
+            sni: "othersa.testns.serviceaccount.identity.linkerd.cluster.example.com"
+                .parse()
+                .unwrap(),
+        });
+        allowed
+            .check_authorized(tls)
+            .expect_err("policy must require a TLS termination identity");
+    }
+
+    fn client_id() -> tls::ClientId {
+        "testsa.testns.serviceaccount.identity.linkerd.cluster.local"
+            .parse()
+            .unwrap()
+    }
+
+    fn client_addr() -> Remote<ClientAddr> {
+        Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
+    }
+
+    fn orig_dst_addr() -> OrigDstAddr {
+        OrigDstAddr(([192, 0, 2, 2], 1000).into())
     }
 }

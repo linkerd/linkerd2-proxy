@@ -1,4 +1,4 @@
-use crate::{AllowPolicy, Inbound};
+use crate::{port_policies::AllowPolicy, Inbound};
 use linkerd_app_core::{
     io, svc,
     transport::addrs::{ClientAddr, OrigDstAddr, Remote},
@@ -52,7 +52,7 @@ impl<N> Inbound<N> {
                         if addr.port() == proxy_port {
                             return Ok(svc::Either::B(t));
                         }
-                        let policy = port_policies.check_allowed(&t)?;
+                        let policy = port_policies.check_allowed(t.param(), t.param())?;
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
                             orig_dst_addr: t.param(),

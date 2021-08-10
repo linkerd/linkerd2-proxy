@@ -101,7 +101,9 @@ impl From<ipnet::Ipv6Net> for Network {
 impl Network {
     #[inline]
     pub fn contains(&self, addr: &IpAddr) -> bool {
-        self.net.contains(addr) && !self.except.iter().any(|net| net.contains(addr))
+        let contains_ip = self.net.contains(addr);
+        let exception = self.except.iter().any(|net| net.contains(addr));
+        contains_ip && !exception
     }
 }
 

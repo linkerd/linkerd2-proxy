@@ -15,7 +15,9 @@ mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::port_policies::{AllowPolicy, DefaultPolicy, PortPolicies};
+pub use self::port_policies::{
+    Authentication, Authorization, DefaultPolicy, PortPolicies, Protocol, ServerPolicy,
+};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     drain, io, metrics,
