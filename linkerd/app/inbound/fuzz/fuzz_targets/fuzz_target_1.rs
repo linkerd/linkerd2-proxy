@@ -13,7 +13,10 @@ fuzz_target!(|requests: Vec<http_fuzz::HttpRequestSpec>| {
         return;
     }
 
-    tokio::runtime::Runtime::new()
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .enable_io()
+        .build()
         .unwrap()
         .block_on(http_fuzz::fuzz_entry_raw(requests));
 });
