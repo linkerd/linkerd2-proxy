@@ -1,14 +1,12 @@
 name: Coverage
 
 on:
-  push:
-    branches: [main]
-  pull_request: {}
+  schedule:
+  # Run weekly on Sunday at midnight (UTC).
+  - cron: "0 0 * * 7"
 
 jobs:
   test:
-    if: |
-      !startsWith(github.event.pull_request.title, 'build(deps): ')
     name: codecov
     runs-on: ubuntu-latest
     timeout-minutes: 30
