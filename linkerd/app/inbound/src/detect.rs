@@ -1,4 +1,7 @@
-use crate::{AllowPolicy, Inbound, Protocol};
+use crate::{
+    port_policies::{DeniedUnauthorized, Permitted},
+    AllowPolicy, Inbound,
+};
 use linkerd_app_core::{
     detect, identity, io,
     proxy::{http, identity::LocalCrtKey},
@@ -8,7 +11,7 @@ use linkerd_app_core::{
         addrs::{ClientAddr, OrigDstAddr, Remote},
         ServerAddr,
     },
-    Error, Infallible, Result,
+    Error, Result,
 };
 use std::fmt::Debug;
 
@@ -16,8 +19,7 @@ use std::fmt::Debug;
 pub struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
-    policy: AllowPolicy,
-    status: tls::ConditionalServerTls,
+    permit: Permitted,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,27 +65,31 @@ impl<N> Inbound<N> {
             tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
         self.map_stack(|cfg, rt, tls| {
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
-            tls.push(tls::NewDetectTls::layer(TlsParams {
-                timeout: tls::server::Timeout(detect_timeout),
-                identity: rt.identity.clone(),
-            }))
-            .push_switch(
-                // If this port's policy indicates that authentication is not required and
-                // detection should be skipped, use the TCP stack directly.
-                |t: T| -> Result<_, Infallible> {
-                    let p: AllowPolicy = t.param();
-                    if let Protocol::Opaque = p.protocol() {
-                        return Ok(svc::Either::B(t));
-                    }
-                    Ok(svc::Either::A(t))
-                },
-                svc::stack(forward)
-                    .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
-                    .push_map_target(|t: T| Tls::from_params(&t, TLS_PORT_SKIPPED))
-                    .into_inner(),
-            )
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer())
+            tls.check_new_service::<(tls::ConditionalServerTls, T), tls::server::Io<I>>()
+                .push(tls::NewDetectTls::layer(TlsParams {
+                    timeout: tls::server::Timeout(detect_timeout),
+                    identity: rt.identity.clone(),
+                }))
+                .check_new_service::<T, I>()
+                .push_switch(
+                    // If this port's policy indicates that authentication is not required and
+                    // detection should be skipped, use the TCP stack directly.
+                    |t: T| -> Result<_, DeniedUnauthorized> {
+                        let policy: AllowPolicy = t.param();
+                        if policy.is_opaque() {
+                            let permit = policy.check_authorized(TLS_PORT_SKIPPED)?;
+                            return Ok(svc::Either::B(Tls::from_params(&t, permit)));
+                        }
+                        Ok(svc::Either::A(t))
+                    },
+                    svc::stack(forward)
+                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .check_new_service::<Tls, I>()
+                        .into_inner(),
+                )
+                .check_new_service::<T, I>()
+                .push_on_response(svc::BoxService::layer())
+                .push(svc::BoxNewService::layer())
         })
     }
 
@@ -125,8 +131,8 @@ impl<N> Inbound<N> {
                 .check_new_service::<Tls, _>()
                 .push_request_filter(|(tls, t): (tls::ConditionalServerTls, T)| -> Result<Tls> {
                     let policy: AllowPolicy = t.param();
-                    policy.check(&t, &tls)?;
-                    Ok(Tls::from_params(&t, tls))
+                    let permit = policy.check_authorized(tls)?;
+                    Ok(Tls::from_params(&t, permit))
                 })
                 .check_new_service::<(tls::ConditionalServerTls, T), _>()
                 .push_on_response(svc::BoxService::layer())
@@ -138,15 +144,14 @@ impl<N> Inbound<N> {
 // === impl Tls ===
 
 impl Tls {
-    fn from_params<T>(t: &T, status: tls::ConditionalServerTls) -> Self
+    fn from_params<T>(t: &T, permit: Permitted) -> Self
     where
-        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + svc::Param<AllowPolicy>,
+        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
     {
         Self {
             client_addr: t.param(),
             orig_dst_addr: t.param(),
-            policy: t.param(),
-            status,
+            permit,
         }
     }
 }
@@ -161,7 +166,7 @@ impl svc::Param<transport::labels::Key> for Tls {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::Accept {
             direction: transport::labels::Direction::In,
-            tls: self.status.clone(),
+            tls: self.permit.tls.clone(),
             target_addr: self.orig_dst_addr.into(),
         }
     }
@@ -189,7 +194,7 @@ impl svc::Param<Remote<ClientAddr>> for Http {
 
 impl svc::Param<tls::ConditionalServerTls> for Http {
     fn param(&self) -> tls::ConditionalServerTls {
-        self.tls.status.clone()
+        self.tls.permit.tls.clone()
     }
 }
 
@@ -205,7 +210,8 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
 impl svc::Param<Option<identity::Name>> for Http {
     fn param(&self) -> Option<identity::Name> {
         self.tls
-            .status
+            .permit
+            .tls
             .value()
             .and_then(|server_tls| match server_tls {
                 tls::ServerTls::Established {
@@ -245,7 +251,7 @@ impl<T> svc::InsertParam<tls::ConditionalServerTls, T> for TlsParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{port_policies::NotPermitted, test_util};
+    use crate::{port_policies::DeniedUnknownPort, test_util};
     use futures::future;
     use io::AsyncWriteExt;
     use linkerd_app_core::{
@@ -261,15 +267,19 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn skip_detect() {
-        let allow = AllowPolicy::new(ServerPolicy {
-            protocol: Protocol::Opaque,
-            authorizations: vec![Authorization {
-                authentication: Authentication::Unauthenticated,
-                networks: vec![ipnet::Ipv4Net::default().into()],
+        let allow = AllowPolicy::new(
+            client_addr(),
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Opaque,
+                authorizations: vec![Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    labels: Default::default(),
+                }],
                 labels: Default::default(),
-            }],
-            labels: Default::default(),
-        });
+            },
+        );
 
         let (io, _) = io::duplex(1);
 
@@ -404,17 +414,21 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::new(ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![Authorization {
-                    authentication: Authentication::TlsUnauthenticated,
-                    networks: vec![ipnet::Ipv4Net::default().into()],
+            AllowPolicy::new(
+                client_addr(),
+                orig_dst_addr(),
+                ServerPolicy {
+                    protocol: Protocol::Detect {
+                        timeout: std::time::Duration::from_secs(10),
+                    },
+                    authorizations: vec![Authorization {
+                        authentication: Authentication::TlsUnauthenticated,
+                        networks: vec![ipnet::Ipv4Net::default().into()],
+                        labels: Default::default(),
+                    }],
                     labels: Default::default(),
-                }],
-                labels: Default::default(),
-            }),
+                },
+            ),
             inbound,
             HTTP,
             &[
@@ -454,17 +468,21 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::new(ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![Authorization {
-                    authentication: Authentication::TlsUnauthenticated,
-                    networks: vec![ipnet::Ipv4Net::default().into()],
+            AllowPolicy::new(
+                client_addr(),
+                orig_dst_addr(),
+                ServerPolicy {
+                    protocol: Protocol::Detect {
+                        timeout: std::time::Duration::from_secs(10),
+                    },
+                    authorizations: vec![Authorization {
+                        authentication: Authentication::TlsUnauthenticated,
+                        networks: vec![ipnet::Ipv4Net::default().into()],
+                        labels: Default::default(),
+                    }],
                     labels: Default::default(),
-                }],
-                labels: Default::default(),
-            }),
+                },
+            ),
             inbound,
             NOT_HTTP,
             &[
@@ -504,20 +522,24 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::new(ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![Authorization {
-                    authentication: Authentication::TlsAuthenticated {
-                        identities: Default::default(),
-                        suffixes: vec![Suffix::from(vec![])],
+            AllowPolicy::new(
+                client_addr(),
+                orig_dst_addr(),
+                ServerPolicy {
+                    protocol: Protocol::Detect {
+                        timeout: std::time::Duration::from_secs(10),
                     },
-                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    authorizations: vec![Authorization {
+                        authentication: Authentication::TlsAuthenticated {
+                            identities: Default::default(),
+                            suffixes: vec![Suffix::from(vec![])],
+                        },
+                        networks: vec![ipnet::Ipv4Net::default().into()],
+                        labels: Default::default(),
+                    }],
                     labels: Default::default(),
-                }],
-                labels: Default::default(),
-            }),
+                },
+            ),
             inbound,
             HTTP,
             &[
@@ -557,20 +579,24 @@ mod tests {
             .into_inner();
         let client_id = client_id();
         test_allow_policy(
-            AllowPolicy::new(ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![Authorization {
-                    authentication: Authentication::TlsAuthenticated {
-                        identities: Default::default(),
-                        suffixes: vec![Suffix::from(vec![])],
+            AllowPolicy::new(
+                client_addr(),
+                orig_dst_addr(),
+                ServerPolicy {
+                    protocol: Protocol::Detect {
+                        timeout: std::time::Duration::from_secs(10),
                     },
-                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    authorizations: vec![Authorization {
+                        authentication: Authentication::TlsAuthenticated {
+                            identities: Default::default(),
+                            suffixes: vec![Suffix::from(vec![])],
+                        },
+                        networks: vec![ipnet::Ipv4Net::default().into()],
+                        labels: Default::default(),
+                    }],
                     labels: Default::default(),
-                }],
-                labels: Default::default(),
-            }),
+                },
+            ),
             inbound,
             NOT_HTTP,
             &[
@@ -637,7 +663,7 @@ mod tests {
                         .await
                         .expect_err(errmsg);
                     assert!(
-                        is_error::<NotPermitted>(error.as_ref()),
+                        is_error::<DeniedUnknownPort>(error.as_ref()),
                         "expected error to be `IdentityRequired`; error={:#?}",
                         error
                     );
@@ -653,18 +679,30 @@ mod tests {
         ))
     }
 
+    fn client_addr() -> Remote<ClientAddr> {
+        Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
+    }
+
+    fn orig_dst_addr() -> OrigDstAddr {
+        OrigDstAddr(([192, 0, 2, 2], 1000).into())
+    }
+
     fn allow_detect_unauthenticated() -> AllowPolicy {
-        AllowPolicy::new(ServerPolicy {
-            protocol: Protocol::Detect {
-                timeout: std::time::Duration::from_secs(10),
-            },
-            authorizations: vec![Authorization {
-                authentication: Authentication::Unauthenticated,
-                networks: vec![ipnet::Ipv4Net::default().into()],
+        AllowPolicy::new(
+            client_addr(),
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![ipnet::Ipv4Net::default().into()],
+                    labels: Default::default(),
+                }],
                 labels: Default::default(),
-            }],
-            labels: Default::default(),
-        })
+            },
+        )
     }
 
     fn inbound() -> Inbound<()> {
@@ -690,13 +728,13 @@ mod tests {
 
     impl svc::Param<OrigDstAddr> for Target {
         fn param(&self) -> OrigDstAddr {
-            OrigDstAddr(([192, 0, 2, 2], 1000).into())
+            orig_dst_addr()
         }
     }
 
     impl svc::Param<Remote<ClientAddr>> for Target {
         fn param(&self) -> Remote<ClientAddr> {
-            Remote(ClientAddr(([192, 0, 2, 3], 54321).into()))
+            client_addr()
         }
     }
 }

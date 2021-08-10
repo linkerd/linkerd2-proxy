@@ -80,7 +80,7 @@ impl DiscoverServerPolicy for ServerPolicy {
 impl From<IpNet> for Network {
     fn from(net: IpNet) -> Self {
         Self {
-            net: net.into(),
+            net,
             except: vec![],
         }
     }

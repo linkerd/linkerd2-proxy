@@ -44,15 +44,15 @@ impl<N> Inbound<N> {
             let port_policies = cfg.port_policies.clone();
             accept
                 .push_switch(
-                    // Switch to the `direct` stack when a connection's original destination
-                    // is the proxy's inbound port. Otherwise, check that connections are allowed on
-                    // the port and obtain the port's policy before processing the connection.
+                    // Switch to the `direct` stack when a connection's original destination is the
+                    // proxy's inbound port. Otherwise, check that connections are allowed on the
+                    // port and obtain the port's policy before processing the connection.
                     move |t: T| -> Result<_, Error> {
                         let OrigDstAddr(addr) = t.param();
                         if addr.port() == proxy_port {
                             return Ok(svc::Either::B(t));
                         }
-                        let policy = port_policies.check_allowed(addr.port())?;
+                        let policy = port_policies.check_allowed(&t)?;
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
                             orig_dst_addr: t.param(),
@@ -112,7 +112,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        let allow = AllowPolicy::new(ServerPolicy {
+        let allow = ServerPolicy {
             protocol: linkerd_server_policy::Protocol::Opaque,
             authorizations: vec![Authorization {
                 authentication: Authentication::Unauthenticated,
@@ -120,7 +120,7 @@ mod tests {
                 labels: Default::default(),
             }],
             labels: Default::default(),
-        });
+        };
         inbound(allow)
             .with_stack(new_ok())
             .push_accept(999, new_panic("direct stack must not be built"))
