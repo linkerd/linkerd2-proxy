@@ -29,8 +29,7 @@ use tokio::{
     sync::mpsc,
     time::{self, Duration},
 };
-use tracing::instrument::Instrument;
-use tracing::{debug, info, info_span};
+use tracing::{debug, info, info_span, Instrument};
 
 /// Spawns a sidecar proxy.
 ///
@@ -115,8 +114,10 @@ impl Config {
 
         let dns = dns.build();
 
+        // Ensure that we've obtained a valid identity before binding any servers.
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+
         let report = identity.metrics().and_then(report);
 
         let (drain_tx, drain_rx) = drain::channel();
@@ -190,14 +191,40 @@ impl Config {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) =
-            inbound.serve(bind_in, dst.profiles.clone(), gateway_stack);
-        let (outbound_addr, outbound_serve) = outbound.serve(bind_out, dst.profiles, dst.resolve);
+        // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
+        // stacks until the proxy starts running.
+        let (inbound_addr, inbound_listen) = bind_in
+            .bind(&inbound.config().proxy.server)
+            .expect("Failed to bind inbound listener");
 
-        let start_proxy = Box::pin(async move {
-            tokio::spawn(outbound_serve.instrument(info_span!("outbound")));
-            tokio::spawn(inbound_serve.instrument(info_span!("inbound")));
-        });
+        let (outbound_addr, outbound_listen) = bind_out
+            .bind(&outbound.config().proxy.server)
+            .expect("Failed to bind outbound listener");
+
+        // Build a task that initializes and runs the proxy stacks.
+        let start_proxy = {
+            let inbound_addr = inbound_addr;
+            let profiles = dst.profiles;
+            let resolve = dst.resolve;
+
+            Box::pin(async move {
+                // TODO(ver): Block on identity.
+
+                tokio::spawn(
+                    outbound
+                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .instrument(info_span!("outbound")),
+                );
+
+                // TODO(ver): Block on policy.
+
+                tokio::spawn(
+                    inbound
+                        .serve(inbound_addr, inbound_listen, profiles, gateway_stack)
+                        .instrument(info_span!("inbound")),
+                );
+            })
+        };
 
         Ok(App {
             admin,
