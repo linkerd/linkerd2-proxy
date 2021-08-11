@@ -5,7 +5,7 @@ use crate::core::{
     proxy::http::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
-    Addr, AddrMatch, Conditional, IpNet, NameMatch,
+    Addr, AddrMatch, Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
 use inbound::port_policies;
@@ -449,7 +449,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     };
 
     let gateway = gateway::Config {
-        allow_discovery: NameMatch::new(gateway_suffixes?.unwrap_or_default()),
+        allow_discovery: gateway_suffixes?.into_iter().flatten().collect(),
     };
 
     let inbound = {
@@ -570,7 +570,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         };
 
         inbound::Config {
-            allow_discovery: NameMatch::new(dst_profile_suffixes),
+            allow_discovery: dst_profile_suffixes.into_iter().collect(),
             proxy: ProxyConfig {
                 server,
                 connect,
