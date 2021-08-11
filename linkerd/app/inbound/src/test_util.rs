@@ -9,7 +9,7 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    NameMatch, ProxyRuntime,
+    ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
@@ -20,7 +20,7 @@ pub fn default_config() -> Config {
         .parse::<Suffix>()
         .expect("`svc.cluster.local.` suffix is definitely valid");
     Config {
-        allow_discovery: NameMatch::new(Some(cluster_local)),
+        allow_discovery: Some(cluster_local).into_iter().collect(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
                 addr: ListenAddr(([0, 0, 0, 0], 0).into()),
