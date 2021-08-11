@@ -16,14 +16,13 @@ struct TcpEndpoint {
 // === impl Inbound ===
 
 impl Inbound<()> {
-    pub async fn serve<L, A, I, G, GSvc, P>(
+    pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,
-        listen: L,
+        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
         profiles: P,
         gateway: G,
     ) where
-        L: Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
         A: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,

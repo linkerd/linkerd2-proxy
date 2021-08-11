@@ -120,9 +120,12 @@ impl<S> Outbound<S> {
 }
 
 impl Outbound<()> {
-    pub async fn serve<L, A, I, P, R>(self, listen: L, profiles: P, resolve: R)
-    where
-        L: Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+    pub async fn serve<A, I, P, R>(
+        self,
+        listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        profiles: P,
+        resolve: R,
+    ) where
         A: Param<Remote<ClientAddr>> + Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Unpin + Send + Sync + 'static,
