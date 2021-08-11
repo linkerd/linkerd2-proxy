@@ -9,6 +9,7 @@ use pin_project::pin_project;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 use tokio::sync::watch;
 use tokio::time::{self, Sleep};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
@@ -42,8 +43,9 @@ pub struct LocalCrtKey {
 #[derive(Debug)]
 pub struct AwaitCrt(Option<LocalCrtKey>);
 
-#[derive(Copy, Clone, Debug)]
-pub struct LostDaemon;
+#[derive(Copy, Clone, Debug, Error)]
+#[error("identity initialization failed")]
+pub struct LostDaemon(());
 
 pub type CrtKeySender = watch::Sender<Option<id::CrtKey>>;
 
@@ -187,7 +189,7 @@ impl LocalCrtKey {
         while self.crt_key.borrow().is_none() {
             // If the sender is dropped, the daemon task has ended.
             if self.crt_key.changed().await.is_err() {
-                return Err(LostDaemon);
+                return Err(LostDaemon(()));
             }
         }
         Ok(self)
