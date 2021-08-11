@@ -616,7 +616,6 @@ name = "linkerd-app"
 version = "0.1.0"
 dependencies = [
  "futures",
- "ipnet",
  "linkerd-app-admin",
  "linkerd-app-core",
  "linkerd-app-gateway",
@@ -745,6 +744,7 @@ dependencies = [
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-io",
+ "linkerd-server-policy",
  "linkerd-tracing",
  "thiserror",
  "tokio",
@@ -790,7 +790,6 @@ dependencies = [
  "futures",
  "http",
  "hyper",
- "ipnet",
  "linkerd-app-core",
  "linkerd-app-test",
  "linkerd-http-retry",
@@ -1277,6 +1276,14 @@ dependencies = [
  "pin-project",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "linkerd-server-policy"
+version = "0.1.0"
+dependencies = [
+ "ipnet",
+ "quickcheck",
 ]
 
 [[package]]

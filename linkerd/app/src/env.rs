@@ -5,9 +5,10 @@ use crate::core::{
     proxy::http::{h1, h2},
     tls,
     transport::{Keepalive, ListenAddr},
-    Addr, AddrMatch, Conditional, NameMatch,
+    Addr, AddrMatch, Conditional, IpNet, NameMatch,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
+use inbound::port_policies;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -76,11 +77,7 @@ pub enum ParseError {
     #[error("invalid trust anchors")]
     InvalidTrustAnchors,
     #[error("not a valid port policy: {0}")]
-    NotAPortPolicy(
-        #[from]
-        #[source]
-        inbound::port_policies::ParsePolicyError,
-    ),
+    InvalidPortPolicy(String),
 }
 
 // Environment variables to look at when loading the configuration
@@ -163,6 +160,9 @@ pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
 ///
 /// By default, this is `unauthenticated`.
 pub const ENV_INBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_INBOUND_DEFAULT_POLICY";
+
+// pub const ENV_INBOUND_POLICY_ADDR: &str = "LINKERD2_PROXY_INBOUND_POLICY_ADDR";
+// pub const ENV_INBOUND_POLICY_IDENTITY: &str = "LINKERD2_PROXY_INBOUND_POLICY_IDENTITY";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
@@ -316,7 +316,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         ENV_INBOUND_MAX_IDLE_CONNS_PER_ENDPOINT,
         parse_number,
     );
-    let outbound_max_idle_per_endoint = parse(
+    let outbound_max_idle_per_endpoint = parse(
         strings,
         ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT,
         parse_number,
@@ -410,7 +410,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let cache_max_idle_age =
             outbound_cache_max_idle_age?.unwrap_or(DEFAULT_OUTBOUND_ROUTER_MAX_IDLE_AGE);
         let max_idle =
-            outbound_max_idle_per_endoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
+            outbound_max_idle_per_endpoint?.unwrap_or(DEFAULT_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT);
         let keepalive = Keepalive(outbound_connect_keepalive?);
         let connect = ConnectConfig {
             keepalive,
@@ -499,8 +499,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             return Err(EnvError::InvalidEnvVar);
         }
 
-        // Ensure that connections thaat directly target the inbound port are
-        // secured (unless identity is disabled).
+        // Ensure that connections that directly target the inbound port are secured (unless
+        // identity is disabled).
         let inbound_port = server.addr.as_ref().port();
         let port_policies = {
             if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
@@ -537,18 +537,35 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             }
 
             let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
-                s.parse().map_err(ParseError::from)
+                parse_default_policy(s, detect_protocol_timeout)
             })?
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                port_policies::all_unauthenticated_server_policy(detect_protocol_timeout).into()
+            });
 
-            const ALLOW_OPAQUE: inbound::AllowPolicy =
-                inbound::AllowPolicy::Unauthenticated { skip_detect: true };
+            let allow_authed =
+                port_policies::all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
+            let allow_opaque = match default.clone() {
+                port_policies::DefaultPolicy::Allow(p) => {
+                    let mut p = (*p).clone();
+                    p.protocol = inbound::port_policies::Protocol::Opaque;
+                    Some(p)
+                }
+                port_policies::DefaultPolicy::Deny => {
+                    tracing::warn!("inbound opaque ports configuration is ignored when the default policy is 'deny'");
+                    None
+                }
+            };
             inbound::PortPolicies::new(
                 default,
                 require_identity_for_inbound_ports
                     .into_iter()
-                    .map(|p| (p, inbound::AllowPolicy::Authenticated))
-                    .chain(inbound_opaque_ports.into_iter().map(|p| (p, ALLOW_OPAQUE))),
+                    .map(|p| (p, allow_authed.clone()))
+                    .chain(
+                        inbound_opaque_ports
+                            .into_iter()
+                            .filter_map(|p| allow_opaque.clone().map(move |a| (p, a))),
+                    ),
             )
         };
 
@@ -890,12 +907,12 @@ fn parse_dns_suffix(s: &str) -> Result<dns::Suffix, ParseError> {
     dns::Suffix::from_str(s).map_err(|_| ParseError::NotADomainSuffix)
 }
 
-fn parse_networks(list: &str) -> Result<HashSet<ipnet::IpNet>, ParseError> {
+fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
     let mut nets = HashSet::new();
     for input in list.split(',') {
         let input = input.trim();
         if !input.is_empty() {
-            let net = ipnet::IpNet::from_str(input).map_err(|error| {
+            let net = IpNet::from_str(input).map_err(|error| {
                 error!(%input, %error, "Invalid network");
                 ParseError::NotANetwork
             })?;
@@ -905,6 +922,24 @@ fn parse_networks(list: &str) -> Result<HashSet<ipnet::IpNet>, ParseError> {
     Ok(nets)
 }
 
+fn parse_default_policy(
+    s: &str,
+    detect_timeout: Duration,
+) -> Result<port_policies::DefaultPolicy, ParseError> {
+    match s {
+        "deny" => Ok(port_policies::DefaultPolicy::Deny),
+        "all-authenticated" => {
+            Ok(port_policies::all_authenticated_server_policy(detect_timeout).into())
+        }
+        "all-unauthenticated" => {
+            Ok(port_policies::all_unauthenticated_server_policy(detect_timeout).into())
+        }
+        "all-mtls-unauthenticated" => {
+            Ok(port_policies::all_mtls_unauthenticated_server_policy(detect_timeout).into())
+        }
+        name => Err(ParseError::InvalidPortPolicy(name.to_string())),
+    }
+}
 pub fn parse_backoff<S: Strings>(
     strings: &S,
     base: &str,

@@ -1,4 +1,4 @@
-use crate::{AllowPolicy, Inbound};
+use crate::{port_policies::AllowPolicy, Inbound};
 use linkerd_app_core::{
     io, svc,
     transport::addrs::{ClientAddr, OrigDstAddr, Remote},
@@ -7,7 +7,7 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 use tracing::info_span;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Accept {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
@@ -44,15 +44,15 @@ impl<N> Inbound<N> {
             let port_policies = cfg.port_policies.clone();
             accept
                 .push_switch(
-                    // Switch to the `direct` stack when a connection's original destination
-                    // is the proxy's inbound port. Otherwise, check that connections are allowed on
-                    // the port and obtain the port's policy before processing the connection.
+                    // Switch to the `direct` stack when a connection's original destination is the
+                    // proxy's inbound port. Otherwise, check that connections are allowed on the
+                    // port and obtain the port's policy before processing the connection.
                     move |t: T| -> Result<_, Error> {
                         let OrigDstAddr(addr) = t.param();
                         if addr.port() == proxy_port {
                             return Ok(svc::Either::B(t));
                         }
-                        let policy = port_policies.check_allowed(addr.port())?;
+                        let policy = port_policies.check_allowed(t.param(), t.param())?;
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
                             orig_dst_addr: t.param(),
@@ -94,7 +94,7 @@ impl svc::Param<Remote<ClientAddr>> for Accept {
 
 impl svc::Param<AllowPolicy> for Accept {
     fn param(&self) -> AllowPolicy {
-        self.policy
+        self.policy.clone()
     }
 }
 
@@ -107,11 +107,21 @@ mod tests {
         svc::{NewService, ServiceExt},
         Error,
     };
+    use linkerd_server_policy::{Authentication, Authorization, ServerPolicy};
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        inbound(AllowPolicy::Unauthenticated { skip_detect: false })
+        let allow = ServerPolicy {
+            protocol: linkerd_server_policy::Protocol::Opaque,
+            authorizations: vec![Authorization {
+                authentication: Authentication::Unauthenticated,
+                networks: vec![Default::default()],
+                labels: Default::default(),
+            }],
+            labels: Default::default(),
+        };
+        inbound(allow)
             .with_stack(new_ok())
             .push_accept(999, new_panic("direct stack must not be built"))
             .into_inner()

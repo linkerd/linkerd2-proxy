@@ -11,12 +11,13 @@
 #![forbid(unsafe_code)]
 
 pub use drain;
+pub use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 pub use linkerd_addr::{self as addr, Addr, NameAddr};
 pub use linkerd_cache as cache;
 pub use linkerd_conditional::Conditional;
 pub use linkerd_detect as detect;
 pub use linkerd_dns;
-pub use linkerd_error::{is_error, Error, Infallible, Recover};
+pub use linkerd_error::{is_error, Error, Infallible, Recover, Result};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
 pub use linkerd_identity as identity;
