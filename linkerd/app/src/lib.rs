@@ -203,12 +203,15 @@ impl Config {
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
+            let identity = identity.local();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
 
             Box::pin(async move {
-                // TODO(ver): Block on identity.
+                Self::await_identity(identity)
+                    .await
+                    .expect("failed to initialize identity");
 
                 tokio::spawn(
                     outbound
@@ -237,6 +240,30 @@ impl Config {
             start_proxy,
             tap,
         })
+    }
+
+    /// Waits for the proxy's identity to be certified.
+    ///
+    /// If this does not complete in a timely fashion, warnings are logged every 15s
+    async fn await_identity(id: Option<identity::LocalCrtKey>) -> Result<(), Error> {
+        let id = match id {
+            Some(id) => id,
+            None => return Ok(()),
+        };
+
+        tokio::pin! {
+            let fut = id.await_crt();
+        }
+
+        const TIMEOUT: time::Duration = time::Duration::from_secs(15);
+        loop {
+            tokio::select! {
+                res = (&mut fut) => return res.map(|_| ()).map_err(Into::into),
+                _ = time::sleep(TIMEOUT) => {
+                    tracing::warn!("Waiting for identity to be initialized...");
+                }
+            }
+        }
     }
 }
 

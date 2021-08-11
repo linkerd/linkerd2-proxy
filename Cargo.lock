@@ -1168,6 +1168,7 @@ dependencies = [
  "linkerd-tls",
  "linkerd2-proxy-api",
  "pin-project",
+ "thiserror",
  "tokio",
  "tonic",
  "tracing",
