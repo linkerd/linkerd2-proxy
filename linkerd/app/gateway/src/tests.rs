@@ -171,7 +171,9 @@ impl Test {
     }
 
     fn with_profile(mut self, profile: profiles::Receiver) -> Self {
-        let allow = NameMatch::new(Some(dns::Suffix::from_str(self.suffix).unwrap()));
+        let allow = Some(dns::Suffix::from_str(self.suffix).unwrap())
+            .into_iter()
+            .collect::<NameMatch>();
         if allow.matches(self.target.name()) {
             self.profile = Some(profile);
         }
