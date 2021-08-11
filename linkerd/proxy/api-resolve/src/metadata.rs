@@ -26,7 +26,7 @@ pub struct Metadata {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolHint {
-    /// We don't what the destination understands, so forward messages in the
+    /// We don't know what the destination understands, so forward messages in the
     /// protocol we received them in.
     Unknown,
     /// The destination can receive HTTP2 messages.
