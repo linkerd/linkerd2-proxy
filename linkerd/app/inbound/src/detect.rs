@@ -11,9 +11,10 @@ use linkerd_app_core::{
         addrs::{ClientAddr, OrigDstAddr, Remote},
         ServerAddr,
     },
-    Error,
+    Error, Infallible,
 };
-use std::fmt::Debug;
+use linkerd_server_policy::Protocol;
+use std::{fmt::Debug, time};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tls {
@@ -21,6 +22,15 @@ pub struct Tls {
     orig_dst_addr: OrigDstAddr,
     permit: Permitted,
 }
+
+#[derive(Clone, Debug)]
+struct Detect {
+    timeout: time::Duration,
+    tls: Tls,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ConfigureHttpDetect;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Http {
@@ -63,22 +73,34 @@ impl<N> Inbound<N> {
         const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
             tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
 
-        self.map_stack(|cfg, rt, tls| {
+        self.map_stack(|cfg, rt, detect| {
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
-            tls.check_new_service::<Tls, tls::server::Io<I>>()
-                .push_request_filter(
-                    |(tls, t): (tls::ConditionalServerTls, T)| -> Result<Tls, DeniedUnauthorized> {
+            detect
+                .push_switch(
+                    // Ensure that the connection is authorized before proceeding with protocol
+                    // detection.
+                    |(tls, t): (tls::ConditionalServerTls, T)| -> Result<_, Error> {
                         let policy: AllowPolicy = t.param();
                         let permit = policy.check_authorized(tls)?;
-                        Ok(Tls::from_params(&t, permit))
+
+                        // If the port is configured to support application TLS, it may have also
+                        // been wrapped in mesh identity. In any case, we don't actually validate
+                        // whether app TLS was employed, but we use this as a signal that we should
+                        // not perform additional protocol detection.
+                        if let Protocol::Tls = permit.protocol {
+                            return Ok(svc::Either::B(Tls::from_params(&t, permit)));
+                        }
+
+                        Ok(svc::Either::A(Tls::from_params(&t, permit)))
                     },
+                    svc::stack(forward.clone())
+                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .into_inner(),
                 )
-                .check_new_service::<(tls::ConditionalServerTls, T), tls::server::Io<I>>()
                 .push(tls::NewDetectTls::layer(TlsParams {
                     timeout: tls::server::Timeout(detect_timeout),
                     identity: rt.identity.clone(),
                 }))
-                .check_new_service::<T, I>()
                 .push_switch(
                     // If this port's policy indicates that authentication is not required and
                     // detection should be skipped, use the TCP stack directly.
@@ -94,7 +116,6 @@ impl<N> Inbound<N> {
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .check_new_service::<T, I>()
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
@@ -122,17 +143,36 @@ impl<N> Inbound<N> {
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
-        self.map_stack(|cfg, rt, http| {
-            http.push_map_target(|(http, tls)| Http { http, tls })
-                .push(svc::UnwrapOr::layer(
-                    // When HTTP detection fails, forward the connection to the application as
-                    // an opaque TCP stream.
-                    forward.clone(),
-                ))
+        self.map_stack(|_, rt, http| {
+            http.clone()
                 .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
-                .push(svc::BoxNewService::layer())
-                .push_map_target(detect::allow_timeout)
-                .push(detect::NewDetectService::layer(cfg.proxy.detect_http()))
+                .push_switch(
+                    // If we have a protocol hint, skip detection and just used the hinted HTTP
+                    // version.
+                    |tls: Tls| -> Result<_, Infallible> {
+                        let http = match tls.permit.protocol {
+                            Protocol::Detect { timeout } => {
+                                return Ok(svc::Either::B(Detect { timeout, tls }));
+                            }
+                            Protocol::Http1 => http::Version::Http1,
+                            Protocol::Http2 | Protocol::Grpc => http::Version::H2,
+                            _ => unreachable!("opaque protocols must not hit the HTTP stack"),
+                        };
+                        Ok(svc::Either::A(Http { http, tls }))
+                    },
+                    http.push_map_target(|(http, Detect { tls, .. })| Http { http, tls })
+                        .push(svc::UnwrapOr::layer(
+                            // When HTTP detection fails, forward the connection to the application as
+                            // an opaque TCP stream.
+                            svc::stack(forward.clone())
+                                .push_map_target(|Detect { tls, .. }| tls)
+                                .into_inner(),
+                        ))
+                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .push(svc::BoxNewService::layer())
+                        .push_map_target(detect::allow_timeout)
+                        .push(detect::NewDetectService::layer(ConfigureHttpDetect)),
+                )
                 .push(rt.metrics.transport.layer_accept())
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
@@ -168,6 +208,14 @@ impl svc::Param<transport::labels::Key> for Tls {
             tls: self.permit.tls.clone(),
             target_addr: self.orig_dst_addr.into(),
         }
+    }
+}
+
+// === impl ConfigureHttpDetect ===
+
+impl svc::ExtractParam<detect::Config<http::DetectHttp>, Detect> for ConfigureHttpDetect {
+    fn extract_param(&self, detect: &Detect) -> detect::Config<http::DetectHttp> {
+        detect::Config::from_timeout(detect.timeout)
     }
 }
 
@@ -344,6 +392,35 @@ mod tests {
 
         let (ior, mut iow) = io::duplex(100);
         iow.write_all(HTTP).await.unwrap();
+
+        inbound()
+            .with_stack(new_ok())
+            .push_detect_http(new_panic("tcp stack must not be used"))
+            .into_inner()
+            .new_service(target)
+            .oneshot(ior)
+            .await
+            .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn hinted_http() {
+        let _trace = trace::test::trace_init();
+
+        let target = Tls {
+            client_addr: client_addr(),
+            orig_dst_addr: orig_dst_addr(),
+            permit: Permitted {
+                protocol: Protocol::Http1,
+                labels: None.into_iter().collect(),
+                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                    client_id: Some(client_id()),
+                    negotiated_protocol: None,
+                }),
+            },
+        };
+
+        let (ior, _) = io::duplex(100);
 
         inbound()
             .with_stack(new_ok())
