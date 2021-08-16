@@ -666,7 +666,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let identity = identity_config?
         .map(|(addr, certify)| {
             // If the address doesn't have a server identity, then we're on localhost.
-            let connect = if addr.identity.is_none() {
+            let connect = if addr.addr.is_loopback() {
                 inbound.proxy.connect.clone()
             } else {
                 outbound.proxy.connect.clone()
