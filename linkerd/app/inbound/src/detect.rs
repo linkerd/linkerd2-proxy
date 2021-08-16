@@ -17,7 +17,7 @@ use linkerd_server_policy::Protocol;
 use std::{fmt::Debug, time};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Tls {
+pub(crate) struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
     permit: Permitted,
@@ -33,7 +33,7 @@ struct Detect {
 struct ConfigureHttpDetect;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Http {
+pub(crate) struct Http {
     tls: Tls,
     http: http::Version,
 }
@@ -50,10 +50,34 @@ impl<N> Inbound<N> {
     /// Builds a stack that handles TLS protocol detection according to the port's policy. If the
     /// connection is determined to be TLS, the inner stack is used; otherwise the connection is
     /// passed to the provided 'forward' stack.
-    pub(crate) fn push_detect_tls<T, I, NSvc, F, FSvc>(
+    pub(crate) fn push_detect<T, I, NSvc, F, FSvc>(
         self,
         forward: F,
     ) -> Inbound<svc::BoxNewTcp<T, I>>
+    where
+        T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
+        T: Clone + Send + 'static,
+        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
+        I: Debug + Send + Sync + Unpin + 'static,
+        N: svc::NewService<Http, Service = NSvc>,
+        N: Clone + Send + Sync + Unpin + 'static,
+        NSvc: svc::Service<io::BoxedIo, Response = ()>,
+        NSvc: Send + Unpin + 'static,
+        NSvc::Error: Into<Error>,
+        NSvc::Future: Send,
+        F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
+        FSvc::Error: Into<Error>,
+        FSvc::Future: Send,
+    {
+        self.push_detect_http(forward.clone())
+            .push_detect_tls(forward)
+    }
+
+    /// Builds a stack that handles TLS protocol detection according to the port's policy. If the
+    /// connection is determined to be TLS, the inner stack is used; otherwise the connection is
+    /// passed to the provided 'forward' stack.
+    fn push_detect_tls<T, I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
         T: Clone + Send + 'static,
@@ -126,10 +150,7 @@ impl<N> Inbound<N> {
     /// passed to the provided 'forward' stack.
     ///
     /// TODO: use the target's protocol to bypass HTTP detection in more cases.
-    pub(crate) fn push_detect_http<I, NSvc, F, FSvc>(
-        self,
-        forward: F,
-    ) -> Inbound<svc::BoxNewTcp<Tls, I>>
+    fn push_detect_http<I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<Tls, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
