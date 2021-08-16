@@ -1,14 +1,14 @@
+pub mod defaults;
+
 use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
-    Ipv4Net, Ipv6Net,
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
     collections::{BTreeMap, HashMap},
     hash::{BuildHasherDefault, Hasher},
     sync::Arc,
-    time::Duration,
 };
 use thiserror::Error;
 
@@ -63,59 +63,6 @@ pub(crate) struct DeniedUnauthorized {
     client_addr: Remote<ClientAddr>,
     dst_addr: OrigDstAddr,
     tls: tls::ConditionalServerTls,
-}
-
-// === defaults ===
-
-pub fn all_authenticated_server_policy(timeout: Duration) -> ServerPolicy {
-    ServerPolicy {
-        protocol: Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-            authentication: Authentication::TlsAuthenticated {
-                identities: Default::default(),
-                suffixes: vec![Suffix::from(vec![])],
-            },
-            labels: Some(("authz".to_string(), "_all-authenticated".to_string()))
-                .into_iter()
-                .collect(),
-        }],
-        labels: Some(("server".to_string(), "_default".to_string()))
-            .into_iter()
-            .collect(),
-    }
-}
-
-pub fn all_unauthenticated_server_policy(timeout: Duration) -> ServerPolicy {
-    ServerPolicy {
-        protocol: Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-            authentication: Authentication::Unauthenticated,
-            labels: Some(("authz".to_string(), "_all-unauthenticated".to_string()))
-                .into_iter()
-                .collect(),
-        }],
-        labels: Some(("server".to_string(), "_default".to_string()))
-            .into_iter()
-            .collect(),
-    }
-}
-
-pub fn all_mtls_unauthenticated_server_policy(timeout: Duration) -> ServerPolicy {
-    ServerPolicy {
-        protocol: Protocol::Detect { timeout },
-        authorizations: vec![Authorization {
-            networks: vec![Ipv4Net::default().into(), Ipv6Net::default().into()],
-            authentication: Authentication::TlsUnauthenticated,
-            labels: Some(("authz".to_string(), "_all-unauthenticated-tls".to_string()))
-                .into_iter()
-                .collect(),
-        }],
-        labels: Some(("server".to_string(), "_default".to_string()))
-            .into_iter()
-            .collect(),
-    }
 }
 
 // === impl PortPolicies ===

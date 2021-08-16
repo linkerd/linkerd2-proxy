@@ -540,11 +540,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 parse_default_policy(s, detect_protocol_timeout)
             })?
             .unwrap_or_else(|| {
-                policy::all_unauthenticated_server_policy(detect_protocol_timeout).into()
+                policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            let allow_authed =
-                policy::all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
+            let allow_authed = policy::defaults::all_mtls_unauthenticated(detect_protocol_timeout);
             let allow_opaque = match default.clone() {
                 policy::DefaultPolicy::Allow(p) => {
                     let mut p = (*p).clone();
@@ -928,12 +927,10 @@ fn parse_default_policy(
 ) -> Result<policy::DefaultPolicy, ParseError> {
     match s {
         "deny" => Ok(policy::DefaultPolicy::Deny),
-        "all-authenticated" => Ok(policy::all_authenticated_server_policy(detect_timeout).into()),
-        "all-unauthenticated" => {
-            Ok(policy::all_unauthenticated_server_policy(detect_timeout).into())
-        }
+        "all-authenticated" => Ok(policy::defaults::all_authenticated(detect_timeout).into()),
+        "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(detect_timeout).into()),
         "all-mtls-unauthenticated" => {
-            Ok(policy::all_mtls_unauthenticated_server_policy(detect_timeout).into())
+            Ok(policy::defaults::all_mtls_unauthenticated(detect_timeout).into())
         }
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
