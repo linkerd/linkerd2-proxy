@@ -1,7 +1,7 @@
 pub mod defaults;
 
 use linkerd_app_core::{
-    tls,
+    control, tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
@@ -18,15 +18,30 @@ pub(crate) trait CheckPolicy {
 }
 
 #[derive(Clone, Debug)]
-pub struct PortPolicies {
-    by_port: Arc<Map>,
-    default: DefaultPolicy,
+pub enum Config {
+    Discover {
+        control: control::Config,
+        default: DefaultPolicy,
+        workload: String,
+    },
+    Fixed {
+        default: DefaultPolicy,
+        ports: PortMap<ServerPolicy>,
+    },
 }
+
+pub type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultPolicy {
     Allow(Arc<ServerPolicy>),
     Deny,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PortPolicies {
+    default: DefaultPolicy,
+    ports: Arc<PortMap<Arc<ServerPolicy>>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,9 +64,7 @@ pub(crate) struct Permitted {
 /// Because ports are single `u16` values, we don't have to hash them; we can just use
 /// the integer values as hashes directly.
 #[derive(Default)]
-struct PortHasher(u16);
-
-type Map = HashMap<u16, Arc<ServerPolicy>, BuildHasherDefault<PortHasher>>;
+pub struct PortHasher(u16);
 
 #[derive(Clone, Debug, Error)]
 #[error("connection denied on unknown port {0}")]
@@ -65,19 +78,27 @@ pub(crate) struct DeniedUnauthorized {
     tls: tls::ConditionalServerTls,
 }
 
+// === impl Config ===
+
+impl Config {
+    pub(crate) fn into_policies(self) -> PortPolicies {
+        match self {
+            Self::Fixed { default, ports } => PortPolicies::new(default, ports.into_iter()),
+            Self::Discover { .. } => todo!(),
+        }
+    }
+}
+
 // === impl PortPolicies ===
 
 impl PortPolicies {
-    pub fn new(
-        default: DefaultPolicy,
-        iter: impl IntoIterator<Item = (u16, ServerPolicy)>,
-    ) -> Self {
+    fn new(default: DefaultPolicy, iter: impl IntoIterator<Item = (u16, ServerPolicy)>) -> Self {
         Self {
             default,
-            by_port: Arc::new(
+            ports: Arc::new(
                 iter.into_iter()
                     .map(|(p, s)| (p, Arc::new(s)))
-                    .collect::<Map>(),
+                    .collect::<PortMap<Arc<ServerPolicy>>>(),
             ),
         }
     }
@@ -104,7 +125,7 @@ impl CheckPolicy for PortPolicies {
     /// [`AllowPolicy::check_authorized`].
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
         let server =
-            self.by_port
+            self.ports
                 .get(&dst.port())
                 .cloned()
                 .map(Ok)

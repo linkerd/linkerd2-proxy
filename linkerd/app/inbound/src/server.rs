@@ -58,7 +58,7 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("direct"))
             .into_inner();
 
-        let policies = self.config.port_policies.clone();
+        let policies = self.config.policy.clone().into_policies();
 
         // Handles HTTP connections.
         let http = self

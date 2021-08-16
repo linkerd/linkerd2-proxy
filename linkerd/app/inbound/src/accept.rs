@@ -104,7 +104,10 @@ impl svc::Param<AllowPolicy> for Accept {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_util, DefaultPolicy, PortPolicies};
+    use crate::{
+        policy::{DefaultPolicy, PortPolicies},
+        test_util,
+    };
     use futures::future;
     use linkerd_app_core::{
         svc::{NewService, ServiceExt},

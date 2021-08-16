@@ -502,7 +502,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let inbound_port = server.addr.as_ref().port();
-        let port_policies = {
+        let policy = {
             if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
                 debug!(
                     "Adding {} to {}",
@@ -555,17 +555,18 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     None
                 }
             };
-            inbound::PortPolicies::new(
+            inbound::policy::Config::Fixed {
                 default,
-                require_identity_for_inbound_ports
+                ports: require_identity_for_inbound_ports
                     .into_iter()
                     .map(|p| (p, allow_authed.clone()))
                     .chain(
                         inbound_opaque_ports
                             .into_iter()
                             .filter_map(|p| allow_opaque.clone().map(move |a| (p, a))),
-                    ),
-            )
+                    )
+                    .collect(),
+            }
         };
 
         inbound::Config {
@@ -580,7 +581,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            port_policies,
+            policy,
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
         }
