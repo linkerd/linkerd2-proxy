@@ -8,7 +8,7 @@ use crate::core::{
     Addr, AddrMatch, Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use inbound::port_policies;
+use inbound::policy;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -540,18 +540,18 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 parse_default_policy(s, detect_protocol_timeout)
             })?
             .unwrap_or_else(|| {
-                port_policies::all_unauthenticated_server_policy(detect_protocol_timeout).into()
+                policy::all_unauthenticated_server_policy(detect_protocol_timeout).into()
             });
 
             let allow_authed =
-                port_policies::all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
+                policy::all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
             let allow_opaque = match default.clone() {
-                port_policies::DefaultPolicy::Allow(p) => {
+                policy::DefaultPolicy::Allow(p) => {
                     let mut p = (*p).clone();
-                    p.protocol = inbound::port_policies::Protocol::Opaque;
+                    p.protocol = inbound::policy::Protocol::Opaque;
                     Some(p)
                 }
-                port_policies::DefaultPolicy::Deny => {
+                policy::DefaultPolicy::Deny => {
                     tracing::warn!("inbound opaque ports configuration is ignored when the default policy is 'deny'");
                     None
                 }
@@ -925,17 +925,15 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
 fn parse_default_policy(
     s: &str,
     detect_timeout: Duration,
-) -> Result<port_policies::DefaultPolicy, ParseError> {
+) -> Result<policy::DefaultPolicy, ParseError> {
     match s {
-        "deny" => Ok(port_policies::DefaultPolicy::Deny),
-        "all-authenticated" => {
-            Ok(port_policies::all_authenticated_server_policy(detect_timeout).into())
-        }
+        "deny" => Ok(policy::DefaultPolicy::Deny),
+        "all-authenticated" => Ok(policy::all_authenticated_server_policy(detect_timeout).into()),
         "all-unauthenticated" => {
-            Ok(port_policies::all_unauthenticated_server_policy(detect_timeout).into())
+            Ok(policy::all_unauthenticated_server_policy(detect_timeout).into())
         }
         "all-mtls-unauthenticated" => {
-            Ok(port_policies::all_mtls_unauthenticated_server_policy(detect_timeout).into())
+            Ok(policy::all_mtls_unauthenticated_server_policy(detect_timeout).into())
         }
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }

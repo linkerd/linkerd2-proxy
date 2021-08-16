@@ -10,12 +10,12 @@ mod accept;
 mod detect;
 pub mod direct;
 mod http;
-pub mod port_policies;
+pub mod policy;
 mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::port_policies::{DefaultPolicy, PortPolicies, ServerPolicy};
+pub use self::policy::{DefaultPolicy, PortPolicies, ServerPolicy};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     drain, io, metrics,

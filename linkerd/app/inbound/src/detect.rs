@@ -1,5 +1,5 @@
 use crate::{
-    port_policies::{AllowPolicy, DeniedUnauthorized, Permitted},
+    policy::{AllowPolicy, DeniedUnauthorized, Permitted},
     Inbound,
 };
 use linkerd_app_core::{
@@ -72,12 +72,25 @@ impl<N> Inbound<N> {
     {
         self.push_detect_http(forward.clone())
             .push_detect_tls(forward)
+            .map_stack(|_, _, stack| {
+                stack
+                    .push_on_response(svc::BoxService::layer())
+                    .push(svc::BoxNewService::layer())
+            })
     }
 
     /// Builds a stack that handles TLS protocol detection according to the port's policy. If the
     /// connection is determined to be TLS, the inner stack is used; otherwise the connection is
     /// passed to the provided 'forward' stack.
-    fn push_detect_tls<T, I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<T, I>>
+    fn push_detect_tls<T, I, NSvc, F, FSvc>(
+        self,
+        forward: F,
+    ) -> Inbound<
+        impl svc::NewService<
+                T,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
+    >
     where
         T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
         T: Clone + Send + 'static,
@@ -140,8 +153,6 @@ impl<N> Inbound<N> {
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
         })
     }
 
@@ -150,7 +161,15 @@ impl<N> Inbound<N> {
     /// passed to the provided 'forward' stack.
     ///
     /// TODO: use the target's protocol to bypass HTTP detection in more cases.
-    fn push_detect_http<I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<Tls, I>>
+    fn push_detect_http<I, NSvc, F, FSvc>(
+        self,
+        forward: F,
+    ) -> Inbound<
+        impl svc::NewService<
+                Tls,
+                Service = impl svc::Service<I, Response = (), Error = Error, Future = impl Send>,
+            > + Clone,
+    >
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -195,8 +214,6 @@ impl<N> Inbound<N> {
                         .push(detect::NewDetectService::layer(ConfigureHttpDetect)),
                 )
                 .push(rt.metrics.transport.layer_accept())
-                .push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
         })
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    port_policies::{AllowPolicy, CheckPolicy},
+    policy::{AllowPolicy, CheckPolicy},
     Inbound,
 };
 use linkerd_app_core::{
