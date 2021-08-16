@@ -58,6 +58,8 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("direct"))
             .into_inner();
 
+        let policies = self.config.port_policies.clone();
+
         // Handles HTTP connections.
         let http = self
             .into_tcp_connect(addr.port())
@@ -69,7 +71,7 @@ impl Inbound<()> {
         let server = http
             .push_detect_http(forward.clone())
             .push_detect_tls(forward)
-            .push_accept(addr.port(), direct)
+            .push_accept(addr.port(), policies, direct)
             .into_inner();
 
         serve::serve(listen, server, shutdown).await;

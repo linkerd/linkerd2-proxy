@@ -81,7 +81,7 @@ impl<N> Inbound<N> {
                     // detection.
                     |(tls, t): (tls::ConditionalServerTls, T)| -> Result<_, Error> {
                         let policy: AllowPolicy = t.param();
-                        let permit = policy.check_authorized(tls)?;
+                        let permit = policy.check_authorized(t.param(), tls)?;
 
                         // If the port is configured to support application TLS, it may have also
                         // been wrapped in mesh identity. In any case, we don't actually validate
@@ -107,7 +107,7 @@ impl<N> Inbound<N> {
                     |t: T| -> Result<_, DeniedUnauthorized> {
                         let policy: AllowPolicy = t.param();
                         if policy.is_opaque() {
-                            let permit = policy.check_authorized(TLS_PORT_SKIPPED)?;
+                            let permit = policy.check_authorized(t.param(), TLS_PORT_SKIPPED)?;
                             return Ok(svc::Either::B(Tls::from_params(&t, permit)));
                         }
                         Ok(svc::Either::A(t))
@@ -315,7 +315,6 @@ mod tests {
         let _trace = trace::test::trace_init();
 
         let allow = AllowPolicy::new(
-            client_addr(),
             orig_dst_addr(),
             ServerPolicy {
                 protocol: Protocol::Opaque,

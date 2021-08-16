@@ -12,6 +12,11 @@ use std::{
 };
 use thiserror::Error;
 
+pub(crate) trait CheckPolicy {
+    /// Checks that the destination port is configured to allow traffic.
+    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
+}
+
 #[derive(Clone, Debug)]
 pub struct PortPolicies {
     by_port: Arc<Map>,
@@ -26,7 +31,6 @@ pub enum DefaultPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AllowPolicy {
-    client: Remote<ClientAddr>,
     dst: OrigDstAddr,
     server: Arc<ServerPolicy>,
 }
@@ -144,18 +148,14 @@ impl From<ServerPolicy> for PortPolicies {
     }
 }
 
-impl PortPolicies {
+impl CheckPolicy for PortPolicies {
     /// Checks that the destination port is configured to allow traffic.
     ///
     /// If the port is not explicitly configured, then the default policy is used. If the default
     /// policy is `deny`, then a `DeniedUnknownPort` error is returned; otherwise an `AllowPolicy`
     /// is returned that can be used to check whether the connection is permitted via
     /// [`AllowPolicy::check_authorized`].
-    pub(crate) fn check_allowed(
-        &self,
-        client: Remote<ClientAddr>,
-        dst: OrigDstAddr,
-    ) -> Result<AllowPolicy, DeniedUnknownPort> {
+    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
         let server =
             self.by_port
                 .get(&dst.port())
@@ -166,11 +166,7 @@ impl PortPolicies {
                     DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
                 })?;
 
-        Ok(AllowPolicy {
-            client,
-            dst,
-            server,
-        })
+        Ok(AllowPolicy { dst, server })
     }
 }
 
@@ -186,9 +182,8 @@ impl From<ServerPolicy> for DefaultPolicy {
 
 impl AllowPolicy {
     #[cfg(test)]
-    pub(crate) fn new(client: Remote<ClientAddr>, dst: OrigDstAddr, server: ServerPolicy) -> Self {
+    pub(crate) fn new(dst: OrigDstAddr, server: ServerPolicy) -> Self {
         Self {
-            client,
             dst,
             server: server.into(),
         }
@@ -202,9 +197,10 @@ impl AllowPolicy {
     /// given the provided TLS state.
     pub(crate) fn check_authorized(
         &self,
+        client_addr: Remote<ClientAddr>,
         tls: tls::ConditionalServerTls,
     ) -> Result<Permitted, DeniedUnauthorized> {
-        let client = self.client.ip();
+        let client = client_addr.ip();
         for authz in self.server.authorizations.iter() {
             if authz.networks.iter().any(|n| n.contains(&client)) {
                 match authz.authentication {
@@ -242,7 +238,7 @@ impl AllowPolicy {
         }
 
         Err(DeniedUnauthorized {
-            client_addr: self.client,
+            client_addr,
             dst_addr: self.dst,
             tls,
         })
@@ -305,13 +301,13 @@ mod tests {
         };
 
         let allowed = PortPolicies::from(policy.clone())
-            .check_allowed(client_addr(), orig_dst_addr())
+            .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
 
         let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
         let permitted = allowed
-            .check_authorized(tls.clone())
+            .check_authorized(client_addr(), tls.clone())
             .expect("unauthenticated connection must be permitted");
         assert_eq!(
             permitted,
@@ -348,7 +344,7 @@ mod tests {
         };
 
         let allowed = PortPolicies::from(policy.clone())
-            .check_allowed(client_addr(), orig_dst_addr())
+            .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
 
@@ -357,7 +353,7 @@ mod tests {
             negotiated_protocol: None,
         });
         let permitted = allowed
-            .check_authorized(tls.clone())
+            .check_authorized(client_addr(), tls.clone())
             .expect("unauthenticated connection must be permitted");
         assert_eq!(
             permitted,
@@ -373,17 +369,16 @@ mod tests {
             }
         );
 
+        let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(tls::ClientId(
+                "othersa.testns.serviceaccount.identity.linkerd.cluster.local"
+                    .parse()
+                    .unwrap(),
+            )),
+            negotiated_protocol: None,
+        });
         allowed
-            .check_authorized(tls::ConditionalServerTls::Some(
-                tls::ServerTls::Established {
-                    client_id: Some(tls::ClientId(
-                        "othersa.testns.serviceaccount.identity.linkerd.cluster.local"
-                            .parse()
-                            .unwrap(),
-                    )),
-                    negotiated_protocol: None,
-                },
-            ))
+            .check_authorized(client_addr(), tls)
             .expect_err("policy must require a client identity");
     }
 
@@ -410,7 +405,7 @@ mod tests {
         };
 
         let allowed = PortPolicies::from(policy.clone())
-            .check_allowed(client_addr(), orig_dst_addr())
+            .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
 
@@ -420,7 +415,7 @@ mod tests {
         });
         assert_eq!(
             allowed
-                .check_authorized(tls.clone())
+                .check_authorized(client_addr(), tls.clone())
                 .expect("unauthenticated connection must be permitted"),
             Permitted {
                 tls,
@@ -443,7 +438,7 @@ mod tests {
             negotiated_protocol: None,
         });
         allowed
-            .check_authorized(tls)
+            .check_authorized(client_addr(), tls)
             .expect_err("policy must require a client identity");
     }
 
@@ -464,7 +459,7 @@ mod tests {
         };
 
         let allowed = PortPolicies::from(policy.clone())
-            .check_allowed(client_addr(), orig_dst_addr())
+            .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
 
@@ -474,7 +469,7 @@ mod tests {
         });
         assert_eq!(
             allowed
-                .check_authorized(tls.clone())
+                .check_authorized(client_addr(), tls.clone())
                 .expect("unauthenticated connection must be permitted"),
             Permitted {
                 tls,
@@ -494,7 +489,7 @@ mod tests {
                 .unwrap(),
         });
         allowed
-            .check_authorized(tls)
+            .check_authorized(client_addr(), tls)
             .expect_err("policy must require a TLS termination identity");
     }
 
