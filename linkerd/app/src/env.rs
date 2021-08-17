@@ -341,21 +341,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|c| c.is_none())
         .unwrap_or(false);
 
-    let dst_addr = if id_disabled {
-        parse_control_addr_disable_identity(strings, ENV_DESTINATION_SVC_BASE)
-    } else {
-        parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
-    };
+    let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE, id_disabled);
 
     let hostname = strings.get(ENV_HOSTNAME);
 
     let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
 
-    let trace_collector_addr = if id_disabled {
-        parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
-    } else {
-        parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
-    };
+    let trace_collector_addr =
+        parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE, id_disabled);
 
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
 
@@ -969,12 +962,18 @@ pub fn parse_backoff<S: Strings>(
 pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
+    id_disabled: bool,
 ) -> Result<Option<ControlAddr>, EnvError> {
-    let a_env = format!("{}_ADDR", base);
-    let a = parse(strings, &a_env, parse_addr);
-    let n_env = format!("{}_NAME", base);
-    let n = parse(strings, &n_env, parse_identity);
-    match (a?, n?) {
+    let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
+    if id_disabled {
+        return Ok(a.map(|addr| ControlAddr {
+            addr,
+            identity: Conditional::None(tls::NoClientTls::Disabled),
+        }));
+    }
+
+    let n = parse(strings, &format!("{}_NAME", base), parse_identity)?;
+    match (a, n) {
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
@@ -984,30 +983,17 @@ pub fn parse_control_addr<S: Strings>(
             addr,
             identity: Conditional::Some(tls::ServerId(name).into()),
         })),
-        (Some(_), None) => {
-            error!("{} must be specified when {} is set", n_env, a_env);
-            Err(EnvError::InvalidEnvVar)
-        }
-        (None, Some(_)) => {
-            error!("{} must be specified when {} is set", a_env, n_env);
+        _ => {
+            error!("{}_ADDR and {}_NAME must be specified together", base, base);
             Err(EnvError::InvalidEnvVar)
         }
     }
 }
 
-pub fn parse_control_addr_disable_identity<S: Strings>(
-    strings: &S,
-    base: &str,
-) -> Result<Option<ControlAddr>, EnvError> {
-    let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let identity = Conditional::None(tls::NoClientTls::Disabled);
-    Ok(a.map(|addr| ControlAddr { addr, identity }))
-}
-
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
 ) -> Result<Option<(ControlAddr, identity::certify::Config)>, EnvError> {
-    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
+    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE, false);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
