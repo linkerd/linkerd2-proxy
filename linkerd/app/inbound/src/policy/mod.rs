@@ -12,6 +12,7 @@ use linkerd_app_core::{
     Error, Result,
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
+use parking_lot::RwLock;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
@@ -94,8 +95,6 @@ impl CheckPolicy for () {
 
 // === impl Config ===
 
-type Rx = tokio::sync::watch::Receiver<linkerd2_proxy_api::inbound::Server>;
-
 impl Config {
     pub(crate) async fn build(
         self,
@@ -116,11 +115,26 @@ impl Config {
                     let c = control.build(dns, metrics, identity).new_service(());
                     Discover::new(workload, c).into_watch(backoff)
                 };
-                let _rxs = Self::build_rxs(discover, ports).await?;
 
-                // TODO(ver):
-                // 1. Created a shared map of port policies
-                // 2. Spawn a task for each port and update the map
+                let mut rxs = Self::build_rxs(discover, ports).await?;
+                let mut ports = PortMap::<Arc<RwLock<ServerPolicy>>>::default();
+                for (port, rx) in rxs.iter_mut() {
+                    let p = rx.borrow_and_update().clone();
+                    let policy = Arc::new(RwLock::new(p));
+                    tokio::spawn({
+                        let mut rx = rx.clone();
+                        let policy = policy.clone();
+                        async move {
+                            loop {
+                                if rx.changed().await.is_err() {
+                                    return;
+                                }
+                                *policy.write() = rx.borrow().clone();
+                            }
+                        }
+                    });
+                    ports.insert(*port, policy);
+                }
 
                 Err("unimplemented".into())
             }
@@ -131,7 +145,9 @@ impl Config {
     fn build_rxs<S>(
         discover: discover::Watch<S>,
         ports: HashSet<u16>,
-    ) -> impl Future<Output = Result<PortMap<Rx>, tonic::Status>> + Send
+    ) -> impl Future<
+        Output = Result<PortMap<tokio::sync::watch::Receiver<ServerPolicy>>, tonic::Status>,
+    > + Send
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
