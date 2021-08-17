@@ -131,11 +131,11 @@ impl Config {
     fn build_rxs<S>(
         discover: discover::Watch<S>,
         ports: HashSet<u16>,
-    ) -> impl Future<Output = Result<PortMap<Rx>, tonic::Status>> + Send + 'static
+    ) -> impl Future<Output = Result<PortMap<Rx>, tonic::Status>> + Send
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
-        S::Future: Send + 'static,
+        S::Future: Send,
         S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
     {
         async move {
