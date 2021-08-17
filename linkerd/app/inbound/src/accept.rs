@@ -10,8 +10,8 @@ use linkerd_app_core::{
 use std::fmt::Debug;
 use tracing::info_span;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Accept {
+#[derive(Clone, Debug)]
+pub(crate) struct Accept {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
     policy: AllowPolicy,

@@ -50,10 +50,10 @@ pub enum DefaultPolicy {
 #[derive(Clone, Debug)]
 pub(crate) struct PortPolicies {
     default: DefaultPolicy,
-    ports: Arc<PortMap<Arc<ServerPolicy>>>,
+    ports: Arc<PortMap<Arc<RwLock<Arc<ServerPolicy>>>>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(crate) struct AllowPolicy {
     dst: OrigDstAddr,
     server: Arc<ServerPolicy>,
@@ -117,10 +117,10 @@ impl Config {
                 };
 
                 let mut rxs = Self::build_rxs(discover, ports).await?;
-                let mut ports = PortMap::<Arc<RwLock<ServerPolicy>>>::default();
+                let mut ports = PortMap::<Arc<RwLock<Arc<ServerPolicy>>>>::default();
                 for (port, rx) in rxs.iter_mut() {
                     let p = rx.borrow_and_update().clone();
-                    let policy = Arc::new(RwLock::new(p));
+                    let policy = Arc::new(RwLock::new(Arc::new(p)));
                     tokio::spawn({
                         let mut rx = rx.clone();
                         let policy = policy.clone();
@@ -129,7 +129,7 @@ impl Config {
                                 if rx.changed().await.is_err() {
                                     return;
                                 }
-                                *policy.write() = rx.borrow().clone();
+                                *policy.write() = Arc::new(rx.borrow().clone());
                             }
                         }
                     });
@@ -177,8 +177,8 @@ impl PortPolicies {
             default,
             ports: Arc::new(
                 iter.into_iter()
-                    .map(|(p, s)| (p, Arc::new(s)))
-                    .collect::<PortMap<Arc<ServerPolicy>>>(),
+                    .map(|(p, s)| (p, Arc::new(RwLock::new(Arc::new(s)))))
+                    .collect::<PortMap<Arc<RwLock<Arc<ServerPolicy>>>>>(),
             ),
         }
     }
@@ -204,15 +204,15 @@ impl CheckPolicy for PortPolicies {
     /// is returned that can be used to check whether the connection is permitted via
     /// [`AllowPolicy::check_authorized`].
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
-        let server =
-            self.ports
-                .get(&dst.port())
-                .cloned()
-                .map(Ok)
-                .unwrap_or(match &self.default {
-                    DefaultPolicy::Allow(a) => Ok(a.clone()),
-                    DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
-                })?;
+        let server = self
+            .ports
+            .get(&dst.port())
+            .map(|s| s.read().clone())
+            .map(Ok)
+            .unwrap_or(match &self.default {
+                DefaultPolicy::Allow(a) => Ok(a.clone()),
+                DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
+            })?;
 
         Ok(AllowPolicy { dst, server })
     }
