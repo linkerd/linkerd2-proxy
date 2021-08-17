@@ -12,7 +12,6 @@ use linkerd_app_core::{
     Error, Result,
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use parking_lot::RwLock;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
@@ -55,7 +54,7 @@ pub enum DefaultPolicy {
 #[derive(Clone, Debug)]
 pub(crate) struct PortPolicies {
     default: DefaultPolicy,
-    ports: Arc<PortMap<Arc<RwLock<Arc<ServerPolicy>>>>>,
+    ports: Arc<PortMap<watch::Receiver<Arc<ServerPolicy>>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -108,15 +107,22 @@ impl Config {
         identity: Option<LocalCrtKey>,
     ) -> Result<PortPolicies> {
         match self {
-            Self::Fixed { default, ports } => Ok(PortPolicies {
-                default,
-                ports: Arc::new(
-                    ports
-                        .into_iter()
-                        .map(|(p, s)| (p, Arc::new(RwLock::new(Arc::new(s)))))
-                        .collect(),
-                ),
-            }),
+            Self::Fixed { default, ports } => {
+                let rxs = ports
+                    .into_iter()
+                    .map(|(p, s)| {
+                        // When using a fixed policy, we don't need to watch for changes. It's
+                        // safe to discard the sender, as the receiver will continue to let us
+                        // borrow/clone each fixed policy.
+                        let (_, rx) = watch::channel(Arc::new(s));
+                        (p, rx)
+                    })
+                    .collect();
+                Ok(PortPolicies {
+                    default,
+                    ports: Arc::new(rxs),
+                })
+            }
             Self::Discover {
                 control,
                 ports,
@@ -128,11 +134,10 @@ impl Config {
                     let c = control.build(dns, metrics, identity).new_service(());
                     Discover::new(workload, c).into_watch(backoff)
                 };
-                let rxs = Self::build_rxs(discover, ports).await?;
-                let ports = Self::spawn_rxs(rxs);
+                let rxs = Self::spawn_watches(discover, ports).await?;
                 Ok(PortPolicies {
                     default,
-                    ports: Arc::new(ports),
+                    ports: Arc::new(rxs),
                 })
             }
         }
@@ -141,10 +146,10 @@ impl Config {
     // XXX(ver): rustc can't seem to figure out that this Future is `Send` unless we annotate it
     // explicitly, hence the manual async block.
     #[allow(clippy::manual_async_fn)]
-    fn build_rxs<S>(
+    fn spawn_watches<S>(
         discover: discover::Watch<S>,
         ports: HashSet<u16>,
-    ) -> impl Future<Output = Result<PortMap<watch::Receiver<ServerPolicy>>, tonic::Status>> + Send
+    ) -> impl Future<Output = Result<PortMap<watch::Receiver<Arc<ServerPolicy>>>, tonic::Status>> + Send
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
@@ -163,33 +168,6 @@ impl Config {
                 .into_iter()
                 .collect::<Result<PortMap<_>, tonic::Status>>()
         }
-    }
-
-    fn spawn_rxs(
-        mut rxs: PortMap<watch::Receiver<ServerPolicy>>,
-    ) -> PortMap<Arc<RwLock<Arc<ServerPolicy>>>> {
-        let mut ports = PortMap::<Arc<RwLock<Arc<ServerPolicy>>>>::default();
-
-        for (port, rx) in rxs.iter_mut() {
-            let p = rx.borrow_and_update().clone();
-            let policy = Arc::new(RwLock::new(Arc::new(p)));
-
-            tokio::spawn({
-                let mut rx = rx.clone();
-                let policy = policy.clone();
-                async move {
-                    loop {
-                        if rx.changed().await.is_err() {
-                            return;
-                        }
-                        *policy.write() = Arc::new(rx.borrow().clone());
-                    }
-                }
-            });
-
-            ports.insert(*port, policy);
-        }
-        ports
     }
 }
 
@@ -216,7 +194,7 @@ impl CheckPolicy for PortPolicies {
         let server = self
             .ports
             .get(&dst.port())
-            .map(|s| s.read().clone())
+            .map(|s| s.borrow().clone())
             .map(Ok)
             .unwrap_or(match &self.default {
                 DefaultPolicy::Allow(a) => Ok(a.clone()),
