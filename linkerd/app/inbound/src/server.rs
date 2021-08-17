@@ -1,11 +1,9 @@
-#![allow(warnings)]
-
-use crate::{direct, policy::PortPolicies, Inbound};
+use crate::{direct, Inbound};
 use futures::Stream;
 use linkerd_app_core::{
     dns, io, metrics, profiles, serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, Result,
+    Error,
 };
 use std::fmt::Debug;
 use tracing::debug_span;
@@ -62,15 +60,13 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("direct"))
             .into_inner();
 
-        let fut =
-            self.config
-                .policy
-                .clone()
-                .build(dns, control_metrics, self.runtime.identity.clone());
-        fn check(f: &(dyn std::future::Future<Output = Result<PortPolicies>> + Send + 'static)) {}
-        check(&fut);
-        let _policies = fut.await.expect("Failed to fetch port policy");
-        let policies = ();
+        let policies = self
+            .config
+            .policy
+            .clone()
+            .build(dns, control_metrics, self.runtime.identity.clone())
+            .await
+            .expect("Failed to fetch port policy");
 
         // Handles HTTP connections.
         let http = self

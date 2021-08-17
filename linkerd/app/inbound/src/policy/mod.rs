@@ -1,5 +1,3 @@
-#![allow(warnings)]
-
 pub mod defaults;
 pub mod discover;
 
@@ -8,18 +6,15 @@ use futures::prelude::*;
 use linkerd_app_core::{
     control, dns, metrics,
     proxy::{http, identity::LocalCrtKey},
-    svc::{self, NewService},
+    svc::NewService,
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use linkerd_tonic_watch::StreamWatch;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    future::Future,
     hash::{BuildHasherDefault, Hasher},
-    pin::Pin,
     sync::Arc,
 };
 use thiserror::Error;
@@ -102,41 +97,29 @@ impl CheckPolicy for () {
 type Rx = tokio::sync::watch::Receiver<linkerd2_proxy_api::inbound::Server>;
 
 impl Config {
-    pub(crate) fn build(
+    pub(crate) async fn build(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<LocalCrtKey>,
-    ) -> Pin<Box<dyn Future<Output = Result<PortPolicies>> + Send + 'static>>
-    where
-        Self: 'static,
-        dns::Resolver: 'static,
-        metrics::ControlHttp: 'static,
-        LocalCrtKey: 'static,
-    {
-        let fut = Box::pin(async move {
-            match self {
-                Self::Fixed { default, ports } => Ok(PortPolicies::new(default, ports.into_iter())),
-                Self::Discover {
-                    control,
-                    ports,
-                    workload,
-                    default: _,
-                } => {
-                    let discover = {
-                        let backoff = control.connect.backoff;
-                        let c = control.build(dns, metrics, identity).new_service(());
-                        Discover::new(workload, c).into_watch(backoff)
-                    };
-                    let _rx = Self::build_rxs(discover, ports);
-                    Err("unimplemented".into())
-                }
+    ) -> Result<PortPolicies> {
+        match self {
+            Self::Fixed { default, ports } => Ok(PortPolicies::new(default, ports.into_iter())),
+            Self::Discover {
+                control,
+                ports,
+                workload,
+                default: _,
+            } => {
+                let discover = {
+                    let backoff = control.connect.backoff;
+                    let c = control.build(dns, metrics, identity).new_service(());
+                    Discover::new(workload, c).into_watch(backoff)
+                };
+                let _rx = Self::build_rxs(discover, ports);
+                Err("unimplemented".into())
             }
-        });
-
-        fn check(f: &(dyn Future<Output = Result<PortPolicies>> + Send + 'static)) {}
-        check(&fut);
-        fut
+        }
     }
 
     async fn build_rxs<S>(
@@ -150,31 +133,13 @@ impl Config {
         S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
     {
         let futs = ports.into_iter().map(|port| {
-            let discover = discover.clone();
-            let f = discover
+            discover
+                .clone()
                 .spawn_watch(port)
-                .map_ok(move |rsp| (port, rsp.into_inner()));
-            fn check(f: &(dyn Future<Output = Result<(u16, Rx), tonic::Status>> + Send + 'static)) {
-            }
-            check(&f);
-            f
+                .map_ok(move |rsp| (port, rsp.into_inner()))
         });
-
-        fn check_futs(
-            f: &(impl Iterator<
-                Item = impl Future<Output = Result<(u16, Rx), tonic::Status>> + Send + 'static,
-            >),
-        ) {
-        }
-        check_futs(&futs);
-        let fut = futures::future::join_all(futs);
-
-        fn check_fut(
-            f: &(dyn Future<Output = Vec<Result<(u16, Rx), tonic::Status>>> + Send + 'static),
-        ) {
-        }
-        check_fut(&fut);
-        fut.await
+        futures::future::join_all(futs)
+            .await
             .into_iter()
             .collect::<Result<PortMap<_>, tonic::Status>>()
     }
