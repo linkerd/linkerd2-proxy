@@ -19,18 +19,23 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
+use tokio::sync::watch;
 
 pub(crate) trait CheckPolicy {
     /// Checks that the destination port is configured to allow traffic.
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
 }
 
+/// Configures inbound policies.
+///
+/// The proxy usually watches dynamic policies from the control plane, though it can also use
+/// 'fixed' policies configured at startup.
 #[derive(Clone, Debug)]
 pub enum Config {
     Discover {
         control: control::Config,
-        default: DefaultPolicy,
         workload: String,
+        default: DefaultPolicy,
         ports: HashSet<u16>,
     },
     Fixed {
@@ -103,51 +108,43 @@ impl Config {
         identity: Option<LocalCrtKey>,
     ) -> Result<PortPolicies> {
         match self {
-            Self::Fixed { default, ports } => Ok(PortPolicies::new(default, ports.into_iter())),
+            Self::Fixed { default, ports } => Ok(PortPolicies {
+                default,
+                ports: Arc::new(
+                    ports
+                        .into_iter()
+                        .map(|(p, s)| (p, Arc::new(RwLock::new(Arc::new(s)))))
+                        .collect(),
+                ),
+            }),
             Self::Discover {
                 control,
                 ports,
                 workload,
-                default: _,
+                default,
             } => {
                 let discover = {
                     let backoff = control.connect.backoff;
                     let c = control.build(dns, metrics, identity).new_service(());
                     Discover::new(workload, c).into_watch(backoff)
                 };
-
-                let mut rxs = Self::build_rxs(discover, ports).await?;
-                let mut ports = PortMap::<Arc<RwLock<Arc<ServerPolicy>>>>::default();
-                for (port, rx) in rxs.iter_mut() {
-                    let p = rx.borrow_and_update().clone();
-                    let policy = Arc::new(RwLock::new(Arc::new(p)));
-                    tokio::spawn({
-                        let mut rx = rx.clone();
-                        let policy = policy.clone();
-                        async move {
-                            loop {
-                                if rx.changed().await.is_err() {
-                                    return;
-                                }
-                                *policy.write() = Arc::new(rx.borrow().clone());
-                            }
-                        }
-                    });
-                    ports.insert(*port, policy);
-                }
-
-                Err("unimplemented".into())
+                let rxs = Self::build_rxs(discover, ports).await?;
+                let ports = Self::spawn_rxs(rxs);
+                Ok(PortPolicies {
+                    default,
+                    ports: Arc::new(ports),
+                })
             }
         }
     }
 
+    // XXX(ver): rustc can't seem to figure out that this Future is `Send` unless we annotate it
+    // explicitly, hence the manual async block.
     #[allow(clippy::manual_async_fn)]
     fn build_rxs<S>(
         discover: discover::Watch<S>,
         ports: HashSet<u16>,
-    ) -> impl Future<
-        Output = Result<PortMap<tokio::sync::watch::Receiver<ServerPolicy>>, tonic::Status>,
-    > + Send
+    ) -> impl Future<Output = Result<PortMap<watch::Receiver<ServerPolicy>>, tonic::Status>> + Send
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
@@ -167,32 +164,44 @@ impl Config {
                 .collect::<Result<PortMap<_>, tonic::Status>>()
         }
     }
+
+    fn spawn_rxs(
+        mut rxs: PortMap<watch::Receiver<ServerPolicy>>,
+    ) -> PortMap<Arc<RwLock<Arc<ServerPolicy>>>> {
+        let mut ports = PortMap::<Arc<RwLock<Arc<ServerPolicy>>>>::default();
+
+        for (port, rx) in rxs.iter_mut() {
+            let p = rx.borrow_and_update().clone();
+            let policy = Arc::new(RwLock::new(Arc::new(p)));
+
+            tokio::spawn({
+                let mut rx = rx.clone();
+                let policy = policy.clone();
+                async move {
+                    loop {
+                        if rx.changed().await.is_err() {
+                            return;
+                        }
+                        *policy.write() = Arc::new(rx.borrow().clone());
+                    }
+                }
+            });
+
+            ports.insert(*port, policy);
+        }
+        ports
+    }
 }
 
 // === impl PortPolicies ===
 
 impl PortPolicies {
-    fn new(default: DefaultPolicy, iter: impl IntoIterator<Item = (u16, ServerPolicy)>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn from_default(default: impl Into<DefaultPolicy>) -> Self {
         Self {
-            default,
-            ports: Arc::new(
-                iter.into_iter()
-                    .map(|(p, s)| (p, Arc::new(RwLock::new(Arc::new(s)))))
-                    .collect::<PortMap<Arc<RwLock<Arc<ServerPolicy>>>>>(),
-            ),
+            default: default.into(),
+            ports: Default::default(),
         }
-    }
-}
-
-impl From<DefaultPolicy> for PortPolicies {
-    fn from(default: DefaultPolicy) -> Self {
-        Self::new(default, None)
-    }
-}
-
-impl From<ServerPolicy> for PortPolicies {
-    fn from(default: ServerPolicy) -> Self {
-        DefaultPolicy::from(default).into()
     }
 }
 
@@ -348,7 +357,11 @@ mod tests {
                 .collect(),
         };
 
-        let allowed = PortPolicies::from(policy.clone())
+        let policies = PortPolicies {
+            default: policy.clone().into(),
+            ports: Default::default(),
+        };
+        let allowed = policies
             .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
@@ -391,7 +404,11 @@ mod tests {
                 .collect(),
         };
 
-        let allowed = PortPolicies::from(policy.clone())
+        let policies = PortPolicies {
+            default: policy.clone().into(),
+            ports: Default::default(),
+        };
+        let allowed = policies
             .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
@@ -452,7 +469,11 @@ mod tests {
                 .collect(),
         };
 
-        let allowed = PortPolicies::from(policy.clone())
+        let policies = PortPolicies {
+            default: policy.clone().into(),
+            ports: Default::default(),
+        };
+        let allowed = policies
             .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);
@@ -506,7 +527,11 @@ mod tests {
                 .collect(),
         };
 
-        let allowed = PortPolicies::from(policy.clone())
+        let policies = PortPolicies {
+            default: policy.clone().into(),
+            ports: Default::default(),
+        };
+        let allowed = policies
             .check_policy(orig_dst_addr())
             .expect("port must be known");
         assert_eq!(*allowed.server, policy);

@@ -118,7 +118,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        let policies = PortPolicies::from(ServerPolicy {
+        let policies = PortPolicies::from_default(ServerPolicy {
             protocol: linkerd_server_policy::Protocol::Opaque,
             authorizations: vec![Authorization {
                 authentication: Authentication::Unauthenticated,
@@ -139,7 +139,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_deny() {
-        let policies = PortPolicies::from(DefaultPolicy::Deny);
+        let policies = PortPolicies::from_default(DefaultPolicy::Deny);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_ok())
@@ -153,7 +153,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn direct() {
-        let policies = PortPolicies::from(DefaultPolicy::Deny);
+        let policies = PortPolicies::from_default(DefaultPolicy::Deny);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_panic("detect stack must not be built"))
