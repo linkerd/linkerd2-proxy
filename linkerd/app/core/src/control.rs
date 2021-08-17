@@ -38,19 +38,16 @@ type BalanceBody =
 
 type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
-pub type Client<B> = svc::Buffer<http::Request<B>, http::Response<RspBody>, Error>;
+pub type Client = svc::Buffer<http::Request<tonic::body::BoxBody>, http::Response<RspBody>, Error>;
 
 impl Config {
-    pub fn build<B, L>(
+    pub fn build<L>(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<L>,
-    ) -> svc::BoxNewService<(), Client<B>>
+    ) -> svc::BoxNewService<(), Client>
     where
-        B: http::HttpBody + Send + 'static,
-        B::Data: Send,
-        B::Error: Into<Error> + Send + Sync + 'static,
         L: Clone + svc::Param<tls::client::Config> + Send + Sync + 'static,
     {
         let addr = self.addr;

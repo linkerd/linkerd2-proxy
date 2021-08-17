@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
-use linkerd_error::Error;
+use linkerd_error::Result;
 use std::{fmt, net};
 use thiserror::Error;
 use tokio::time::{self, Instant};
@@ -61,7 +61,7 @@ impl Resolver {
         &self,
         name: &Name,
         default_port: u16,
-    ) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
+    ) -> Result<(Vec<net::SocketAddr>, time::Sleep)> {
         match self.resolve_srv(name).await {
             Ok(res) => Ok(res),
             Err(e) if e.is::<InvalidSrv>() => {
@@ -87,7 +87,7 @@ impl Resolver {
         Ok((ips, time::sleep_until(valid_until)))
     }
 
-    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep), Error> {
+    async fn resolve_srv(&self, name: &Name) -> Result<(Vec<net::SocketAddr>, time::Sleep)> {
         debug!(%name, "resolve_srv");
         let srv = self.dns.srv_lookup(name.as_ref()).await?;
         let valid_until = Instant::from_std(srv.as_lookup().valid_until());

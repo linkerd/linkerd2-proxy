@@ -1,9 +1,13 @@
+#![allow(warnings)]
+
 pub mod defaults;
 pub mod discover;
 
 use self::discover::Discover;
+use futures::prelude::*;
 use linkerd_app_core::{
     control, dns, metrics,
+    proxy::identity::LocalCrtKey,
     svc::{self, NewService},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
@@ -12,6 +16,7 @@ use linkerd_app_core::{
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    future::Future,
     hash::{BuildHasherDefault, Hasher},
     sync::Arc,
 };
@@ -84,20 +89,29 @@ pub(crate) struct DeniedUnauthorized {
     tls: tls::ConditionalServerTls,
 }
 
+impl CheckPolicy for () {
+    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
+        Err(DeniedUnknownPort(dst.port()))
+    }
+}
+
 // === impl Config ===
 
 impl Config {
-    pub(crate) async fn build<L>(
-        &self,
+    pub(crate) async fn build(
+        self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: Option<L>,
-    ) -> PortPolicies
+        identity: Option<LocalCrtKey>,
+    ) -> Result<PortPolicies>
     where
-        L: svc::Param<tls::client::Config> + Clone + Send + Sync + 'static,
+        Self: 'static,
+        dns::Resolver: 'static,
+        metrics::ControlHttp: 'static,
+        LocalCrtKey: 'static,
     {
-        match self.clone() {
-            Self::Fixed { default, ports } => PortPolicies::new(default, ports.into_iter()),
+        match self {
+            Self::Fixed { default, ports } => Ok(PortPolicies::new(default, ports.into_iter())),
             Self::Discover {
                 control,
                 ports,
@@ -111,21 +125,47 @@ impl Config {
                 };
 
                 let _rxs = {
+                    type Rx = tokio::sync::watch::Receiver<linkerd2_proxy_api::inbound::Server>;
+
                     let futs = ports.into_iter().map(|port| {
                         let watch = watch.clone();
-                        Box::pin(async move {
-                            let w = watch.spawn_watch(port).await?;
-                            Ok((port, w))
-                        })
+                        let f = watch
+                            .spawn_watch(port)
+                            .map_ok(move |rsp| (port, rsp.into_inner()));
+                        fn check(
+                            f: &(dyn Future<Output = Result<(u16, Rx), tonic::Status>>
+                                  + Send
+                                  + 'static),
+                        ) {
+                        }
+                        check(&f);
+                        f
                     });
-                    futures::future::join_all(futs)
-                        .await
+
+                    fn check_futs(
+                        f: &(impl Iterator<
+                            Item = impl Future<Output = Result<(u16, Rx), tonic::Status>>
+                                       + Send
+                                       + 'static,
+                        >),
+                    ) {
+                    }
+                    check_futs(&futs);
+                    let fut = futures::future::join_all(futs);
+
+                    fn check_fut(
+                        f: &(dyn Future<Output = Vec<Result<(u16, Rx), tonic::Status>>>
+                              + Send
+                              + 'static),
+                    ) {
+                    }
+                    check_fut(&fut);
+                    fut.await
                         .into_iter()
-                        .collect::<Result<PortMap<_>, tonic::Status>>()
-                        .expect("Failed to fetch port policy")
+                        .collect::<Result<PortMap<_>, tonic::Status>>()?;
                 };
 
-                todo!("Populate policies from watches")
+                Err("unimplemented".into())
             }
         }
     }
