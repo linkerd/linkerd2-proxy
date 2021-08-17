@@ -1,12 +1,16 @@
 pub mod defaults;
 
 use linkerd_app_core::{
-    control, tls,
+    control, dns, metrics,
+    proxy::http,
+    svc::{self, NewService},
+    tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
+    Result,
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     hash::{BuildHasherDefault, Hasher},
     sync::Arc,
 };
@@ -23,6 +27,7 @@ pub enum Config {
         control: control::Config,
         default: DefaultPolicy,
         workload: String,
+        ports: HashSet<u16>,
     },
     Fixed {
         default: DefaultPolicy,
@@ -81,10 +86,31 @@ pub(crate) struct DeniedUnauthorized {
 // === impl Config ===
 
 impl Config {
-    pub(crate) fn into_policies(self) -> PortPolicies {
+    pub(crate) fn build<L>(
+        &self,
+        dns: dns::Resolver,
+        metrics: metrics::ControlHttp,
+        identity: Option<L>,
+    ) -> PortPolicies
+    where
+        L: svc::Param<tls::client::Config> + Clone + Send + Sync + 'static,
+    {
         match self {
-            Self::Fixed { default, ports } => PortPolicies::new(default, ports.into_iter()),
-            Self::Discover { .. } => todo!(),
+            Self::Fixed { default, ports } => {
+                PortPolicies::new(default.clone(), ports.iter().map(|(p, s)| (*p, s.clone())))
+            }
+            Self::Discover {
+                control,
+                ports: _,
+                default: _,
+                workload: _,
+            } => {
+                let _client = control
+                    .clone()
+                    .build::<http::BoxBody, _>(dns, metrics, identity)
+                    .new_service(());
+                todo!()
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{direct, Inbound};
 use futures::Stream;
 use linkerd_app_core::{
-    io, profiles, serve, svc,
+    dns, io, metrics, profiles, serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error,
 };
@@ -20,6 +20,8 @@ impl Inbound<()> {
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        dns: dns::Resolver,
+        control_metrics: metrics::ControlHttp,
         profiles: P,
         gateway: G,
     ) where
@@ -58,7 +60,10 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("direct"))
             .into_inner();
 
-        let policies = self.config.policy.clone().into_policies();
+        let policies =
+            self.config
+                .policy
+                .build(dns, control_metrics, self.runtime.identity.clone())
 
         // Handles HTTP connections.
         let http = self
