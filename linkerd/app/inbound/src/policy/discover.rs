@@ -19,6 +19,8 @@ pub(super) struct Discover<S> {
 #[derive(Clone)]
 pub(super) struct GrpcRecover(ExponentialBackoff);
 
+pub(super) type Watch<S> = StreamWatch<GrpcRecover, Discover<S>>;
+
 impl<S> Discover<S>
 where
     S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error> + Clone,
@@ -31,7 +33,7 @@ where
         }
     }
 
-    pub(super) fn into_watch(self, backoff: ExponentialBackoff) -> StreamWatch<GrpcRecover, Self> {
+    pub(super) fn into_watch(self, backoff: ExponentialBackoff) -> Watch<S> {
         StreamWatch::new(GrpcRecover(backoff), self)
     }
 }
