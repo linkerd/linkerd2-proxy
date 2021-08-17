@@ -223,8 +223,6 @@ impl Config {
                         .instrument(info_span!("outbound")),
                 );
 
-                // TODO(ver): Block on policy.
-
                 tokio::spawn(
                     inbound
                         .serve(

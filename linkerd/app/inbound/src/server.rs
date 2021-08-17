@@ -60,10 +60,11 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("direct"))
             .into_inner();
 
-        let policies =
-            self.config
-                .policy
-                .build(dns, control_metrics, self.runtime.identity.clone())
+        let policies = self
+            .config
+            .policy
+            .build(dns, control_metrics, self.runtime.identity.clone())
+            .await;
 
         // Handles HTTP connections.
         let http = self

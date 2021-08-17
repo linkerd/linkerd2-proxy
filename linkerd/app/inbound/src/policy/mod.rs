@@ -1,8 +1,9 @@
 pub mod defaults;
+pub mod discover;
 
+use self::discover::Discover;
 use linkerd_app_core::{
     control, dns, metrics,
-    proxy::http,
     svc::{self, NewService},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
@@ -86,7 +87,7 @@ pub(crate) struct DeniedUnauthorized {
 // === impl Config ===
 
 impl Config {
-    pub(crate) fn build<L>(
+    pub(crate) async fn build<L>(
         &self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
@@ -95,21 +96,36 @@ impl Config {
     where
         L: svc::Param<tls::client::Config> + Clone + Send + Sync + 'static,
     {
-        match self {
-            Self::Fixed { default, ports } => {
-                PortPolicies::new(default.clone(), ports.iter().map(|(p, s)| (*p, s.clone())))
-            }
+        match self.clone() {
+            Self::Fixed { default, ports } => PortPolicies::new(default, ports.into_iter()),
             Self::Discover {
                 control,
-                ports: _,
+                ports,
+                workload,
                 default: _,
-                workload: _,
             } => {
-                let _client = control
-                    .clone()
-                    .build::<http::BoxBody, _>(dns, metrics, identity)
-                    .new_service(());
-                todo!()
+                let watch = {
+                    let backoff = control.connect.backoff;
+                    let c = control.build(dns, metrics, identity).new_service(());
+                    Discover::new(workload.clone(), c).into_watch(backoff)
+                };
+
+                let _rxs = {
+                    let futs = ports.into_iter().map(|port| {
+                        let watch = watch.clone();
+                        Box::pin(async move {
+                            let w = watch.spawn_watch(port).await?;
+                            Ok((port, w))
+                        })
+                    });
+                    futures::future::join_all(futs)
+                        .await
+                        .into_iter()
+                        .collect::<Result<PortMap<_>, tonic::Status>>()
+                        .expect("Failed to fetch port policy")
+                };
+
+                todo!("Populate policies from watches")
             }
         }
     }
