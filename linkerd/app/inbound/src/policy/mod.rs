@@ -116,32 +116,40 @@ impl Config {
                     let c = control.build(dns, metrics, identity).new_service(());
                     Discover::new(workload, c).into_watch(backoff)
                 };
-                let _rx = Self::build_rxs(discover, ports);
+                let _rxs = Self::build_rxs(discover, ports).await?;
+
+                // TODO(ver):
+                // 1. Created a shared map of port policies
+                // 2. Spawn a task for each port and update the map
+
                 Err("unimplemented".into())
             }
         }
     }
 
-    async fn build_rxs<S>(
+    #[allow(clippy::manual_async_fn)]
+    fn build_rxs<S>(
         discover: discover::Watch<S>,
         ports: HashSet<u16>,
-    ) -> Result<PortMap<Rx>, tonic::Status>
+    ) -> impl Future<Output = Result<PortMap<Rx>, tonic::Status>> + Send + 'static
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
         S::Future: Send + 'static,
         S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
     {
-        let futs = ports.into_iter().map(|port| {
-            discover
-                .clone()
-                .spawn_watch(port)
-                .map_ok(move |rsp| (port, rsp.into_inner()))
-        });
-        futures::future::join_all(futs)
-            .await
-            .into_iter()
-            .collect::<Result<PortMap<_>, tonic::Status>>()
+        async move {
+            let rxs = ports.into_iter().map(|port| {
+                discover
+                    .clone()
+                    .spawn_watch(port)
+                    .map_ok(move |rsp| (port, rsp.into_inner()))
+            });
+            futures::future::join_all(rxs)
+                .await
+                .into_iter()
+                .collect::<Result<PortMap<_>, tonic::Status>>()
+        }
     }
 }
 
