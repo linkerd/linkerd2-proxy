@@ -17,7 +17,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
 pub(crate) trait CheckPolicy {
-    /// Checks that the destination port is configured to allow traffic.
+    /// Checks that the destination address is configured to allow traffic.
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
 }
 
