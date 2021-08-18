@@ -229,9 +229,8 @@ impl AllowPolicy {
         client_addr: Remote<ClientAddr>,
         tls: tls::ConditionalServerTls,
     ) -> Result<Permitted, DeniedUnauthorized> {
-        let client = client_addr.ip();
         for authz in self.server.authorizations.iter() {
-            if authz.networks.iter().any(|n| n.contains(&client)) {
+            if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
                         return Ok(Permitted::new(&self.server, authz, tls));
