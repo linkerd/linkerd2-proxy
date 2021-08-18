@@ -548,6 +548,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 }
 
                 None => {
+                    let default_allow = match default.clone() {
+                        policy::DefaultPolicy::Allow(a) => a,
+                        policy::DefaultPolicy::Deny => {
+                            warn!("The default policy `deny` may not be used with a static policy configuration");
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                    };
+
                     // If the inbound is not configured to discover policies, then load basic policies from the environment:
                     // - ports that require authentication
                     // - ports that require some form of proxy-terminated TLS, though not
@@ -606,16 +614,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         let ports = inbound_disable_ports?
                             .unwrap_or_default()
                             .into_iter()
-                            .filter_map(|p| match default {
-                                policy::DefaultPolicy::Allow(ref a) => {
-                                    let mut sp = (**a).clone();
-                                    sp.protocol = inbound::policy::Protocol::Opaque;
-                                    Some((p, sp))
-                                }
-                                policy::DefaultPolicy::Deny => {
-                                    tracing::warn!("inbound opaque ports configuration is ignored when the default policy is 'deny'");
-                                    None
-                                }
+                            .map(move |p| {
+                                let mut sp = (*default_allow).clone();
+                                sp.protocol = inbound::policy::Protocol::Opaque;
+                                (p, sp)
                             })
                             .collect::<HashMap<_, inbound::policy::ServerPolicy>>();
                         // Ensure that the inbound port does not disable protocol detection, as
