@@ -75,7 +75,8 @@ pub async fn serve<M, S, I, A>(
                 }
             }
         }
-    };
+    }
+    .in_current_span();
 
     // Stop the accept loop when the shutdown signal fires.
     //
