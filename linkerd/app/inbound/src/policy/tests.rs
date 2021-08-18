@@ -2,8 +2,8 @@ use super::*;
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::collections::HashSet;
 
-#[tokio::test(flavor = "current_thread")]
-async fn unauthenticated_allowed() {
+#[test]
+fn unauthenticated_allowed() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -43,8 +43,8 @@ async fn unauthenticated_allowed() {
     );
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn authenticated_identity() {
+#[test]
+fn authenticated_identity() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -102,8 +102,8 @@ async fn authenticated_identity() {
         .expect_err("policy must require a client identity");
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn authenticated_suffix() {
+#[test]
+fn authenticated_suffix() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {
@@ -163,8 +163,8 @@ async fn authenticated_suffix() {
         .expect_err("policy must require a client identity");
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn tls_unauthenticated() {
+#[test]
+fn tls_unauthenticated() {
     let policy = ServerPolicy {
         protocol: Protocol::Opaque,
         authorizations: vec![Authorization {

@@ -449,14 +449,14 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn hinted_http() {
+    async fn hinted_http2() {
         let _trace = trace::test::trace_init();
 
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
             permit: Permitted {
-                protocol: Protocol::Http1,
+                protocol: Protocol::Http2,
                 labels: None.into_iter().collect(),
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
