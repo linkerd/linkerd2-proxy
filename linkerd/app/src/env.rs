@@ -517,7 +517,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     };
 
                     // The workload, which is opaque from the proxy's point-of-view, is sent to the
-                    // policy controller to
+                    // policy controller to support policy discovery.
                     let workload = policy_workload?.ok_or_else(|| {
                         error!(
                             "{} must be set with {}_ADDR",
