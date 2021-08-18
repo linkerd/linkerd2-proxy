@@ -55,10 +55,12 @@ impl<N> Inbound<N> {
                         if addr.port() == proxy_port {
                             return Ok(svc::Either::B(t));
                         }
-                        let policy = policies.check_policy(t.param())?;
+                        let orig_dst_addr = t.param();
+                        let policy = policies.check_policy(orig_dst_addr)?;
+                        tracing::debug!(?policy, "Accepted");
                         Ok(svc::Either::A(Accept {
                             client_addr: t.param(),
-                            orig_dst_addr: t.param(),
+                            orig_dst_addr,
                             policy,
                         }))
                     },
