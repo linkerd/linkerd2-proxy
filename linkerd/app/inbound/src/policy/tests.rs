@@ -18,10 +18,7 @@ async fn unauthenticated_allowed() {
             .collect(),
     };
 
-    let policies = PortPolicies {
-        default: policy.clone().into(),
-        ports: Default::default(),
-    };
+    let policies = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
@@ -65,10 +62,7 @@ async fn authenticated_identity() {
             .collect(),
     };
 
-    let policies = PortPolicies {
-        default: policy.clone().into(),
-        ports: Default::default(),
-    };
+    let policies = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
@@ -130,10 +124,7 @@ async fn authenticated_suffix() {
             .collect(),
     };
 
-    let policies = PortPolicies {
-        default: policy.clone().into(),
-        ports: Default::default(),
-    };
+    let policies = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
@@ -188,10 +179,7 @@ async fn tls_unauthenticated() {
             .collect(),
     };
 
-    let policies = PortPolicies {
-        default: policy.clone().into(),
-        ports: Default::default(),
-    };
+    let policies = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");

@@ -105,7 +105,7 @@ impl svc::Param<AllowPolicy> for Accept {
 mod tests {
     use super::*;
     use crate::{
-        policy::{DefaultPolicy, PortPolicies},
+        policy::{DefaultPolicy, Store},
         test_util,
     };
     use futures::future;
@@ -118,15 +118,18 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn default_allow() {
         let (io, _) = io::duplex(1);
-        let policies = PortPolicies::from_default(ServerPolicy {
-            protocol: linkerd_server_policy::Protocol::Opaque,
-            authorizations: vec![Authorization {
-                authentication: Authentication::Unauthenticated,
-                networks: vec![Default::default()],
+        let policies = Store::fixed(
+            ServerPolicy {
+                protocol: linkerd_server_policy::Protocol::Opaque,
+                authorizations: vec![Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![Default::default()],
+                    labels: Default::default(),
+                }],
                 labels: Default::default(),
-            }],
-            labels: Default::default(),
-        });
+            },
+            None,
+        );
         inbound()
             .with_stack(new_ok())
             .push_accept(999, policies, new_panic("direct stack must not be built"))
@@ -139,7 +142,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn default_deny() {
-        let policies = PortPolicies::from_default(DefaultPolicy::Deny);
+        let policies = Store::fixed(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_ok())
@@ -153,7 +156,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn direct() {
-        let policies = PortPolicies::from_default(DefaultPolicy::Deny);
+        let policies = Store::fixed(DefaultPolicy::Deny, None);
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_panic("detect stack must not be built"))

@@ -1,41 +1,30 @@
 mod config;
 pub mod defaults;
 mod discover;
+mod store;
 #[cfg(test)]
 mod tests;
 
 pub use self::config::Config;
+pub(crate) use self::store::Store;
 use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use std::{
-    collections::{BTreeMap, HashMap},
-    hash::{BuildHasherDefault, Hasher},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
-use tokio::sync::watch;
 
 pub(crate) trait CheckPolicy {
     /// Checks that the destination port is configured to allow traffic.
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
 }
 
-pub type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultPolicy {
     Allow(Arc<ServerPolicy>),
     Deny,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PortPolicies {
-    default: DefaultPolicy,
-    ports: Arc<PortMap<watch::Receiver<Arc<ServerPolicy>>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,13 +42,6 @@ pub(crate) struct Permitted {
     pub labels: BTreeMap<String, String>,
 }
 
-/// A hasher for ports.
-///
-/// Because ports are single `u16` values, we don't have to hash them; we can just use
-/// the integer values as hashes directly.
-#[derive(Default)]
-pub struct PortHasher(u16);
-
 #[derive(Clone, Debug, Error)]
 #[error("connection denied on unknown port {0}")]
 pub(crate) struct DeniedUnknownPort(u16);
@@ -71,41 +53,6 @@ pub(crate) struct DeniedUnauthorized {
     dst_addr: OrigDstAddr,
     tls: tls::ConditionalServerTls,
 }
-
-// === impl PortPolicies ===
-
-impl PortPolicies {
-    #[cfg(test)]
-    pub(crate) fn from_default(default: impl Into<DefaultPolicy>) -> Self {
-        Self {
-            default: default.into(),
-            ports: Default::default(),
-        }
-    }
-}
-
-impl CheckPolicy for PortPolicies {
-    /// Checks that the destination port is configured to allow traffic.
-    ///
-    /// If the port is not explicitly configured, then the default policy is used. If the default
-    /// policy is `deny`, then a `DeniedUnknownPort` error is returned; otherwise an `AllowPolicy`
-    /// is returned that can be used to check whether the connection is permitted via
-    /// [`AllowPolicy::check_authorized`].
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
-        let server = self
-            .ports
-            .get(&dst.port())
-            .map(|s| s.borrow().clone())
-            .map(Ok)
-            .unwrap_or(match &self.default {
-                DefaultPolicy::Allow(a) => Ok(a.clone()),
-                DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
-            })?;
-
-        Ok(AllowPolicy { dst, server })
-    }
-}
-
 // === impl DefaultPolicy ===
 
 impl From<ServerPolicy> for DefaultPolicy {
@@ -192,23 +139,5 @@ impl Permitted {
             labels,
             tls,
         }
-    }
-}
-
-// === impl PortHasher ===
-
-impl Hasher for PortHasher {
-    fn write(&mut self, _: &[u8]) {
-        unreachable!("hashing a `u16` calls `write_u16`");
-    }
-
-    #[inline]
-    fn write_u16(&mut self, port: u16) {
-        self.0 = port;
-    }
-
-    #[inline]
-    fn finish(&self) -> u64 {
-        self.0 as u64
     }
 }

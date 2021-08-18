@@ -1,0 +1,123 @@
+use super::{discover, AllowPolicy, CheckPolicy, DefaultPolicy, DeniedUnknownPort};
+use futures::prelude::*;
+use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error, Result};
+pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    hash::{BuildHasherDefault, Hasher},
+    sync::Arc,
+};
+use tokio::sync::watch;
+
+#[derive(Clone, Debug)]
+pub(crate) struct Store {
+    default: DefaultPolicy,
+    ports: Arc<PortMap<watch::Receiver<Arc<ServerPolicy>>>>,
+}
+
+type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
+
+/// A hasher for ports.
+///
+/// Because ports are single `u16` values, we don't have to hash them; we can just use
+/// the integer values as hashes directly.
+#[derive(Default)]
+struct PortHasher(u16);
+
+// === impl PortPolicies ===
+
+impl Store {
+    pub(crate) fn fixed(
+        default: impl Into<DefaultPolicy>,
+        ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
+    ) -> Self {
+        let rxs = ports
+            .into_iter()
+            .map(|(p, s)| {
+                // When using a fixed policy, we don't need to watch for changes. It's
+                // safe to discard the sender, as the receiver will continue to let us
+                // borrow/clone each fixed policy.
+                let (_, rx) = watch::channel(Arc::new(s));
+                (p, rx)
+            })
+            .collect();
+        Self {
+            default: default.into(),
+            ports: Arc::new(rxs),
+        }
+    }
+
+    // XXX(ver): rustc can't seem to figure out that this Future is `Send` unless we annotate it
+    // explicitly, hence the manual_async_fn.
+    #[allow(clippy::manual_async_fn)]
+    pub(super) fn discover<S>(
+        default: impl Into<DefaultPolicy>,
+        discover: discover::Watch<S>,
+        ports: HashSet<u16>,
+    ) -> impl Future<Output = Result<Self>> + Send
+    where
+        S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
+        S: Clone + Send + Sync + 'static,
+        S::Future: Send,
+        S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
+    {
+        let default = default.into();
+        async move {
+            let rxs = ports.into_iter().map(|port| {
+                discover
+                    .clone()
+                    .spawn_watch(port)
+                    .map_ok(move |rsp| (port, rsp.into_inner()))
+            });
+            let ports = futures::future::join_all(rxs)
+                .await
+                .into_iter()
+                .collect::<Result<PortMap<_>, tonic::Status>>()?;
+            Ok(Self {
+                default,
+                ports: Arc::new(ports),
+            })
+        }
+    }
+}
+
+impl CheckPolicy for Store {
+    /// Checks that the destination port is configured to allow traffic.
+    ///
+    /// If the port is not explicitly configured, then the default policy is used. If the default
+    /// policy is `deny`, then a `DeniedUnknownPort` error is returned; otherwise an `AllowPolicy`
+    /// is returned that can be used to check whether the connection is permitted via
+    /// [`AllowPolicy::check_authorized`].
+    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
+        let server = self
+            .ports
+            .get(&dst.port())
+            .map(|s| s.borrow().clone())
+            .map(Ok)
+            .unwrap_or(match &self.default {
+                DefaultPolicy::Allow(a) => Ok(a.clone()),
+                DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
+            })?;
+
+        Ok(AllowPolicy { dst, server })
+    }
+}
+
+// === impl PortHasher ===
+
+impl Hasher for PortHasher {
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("hashing a `u16` calls `write_u16`");
+    }
+
+    #[inline]
+    fn write_u16(&mut self, port: u16) {
+        self.0 = port;
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0 as u64
+    }
+}
