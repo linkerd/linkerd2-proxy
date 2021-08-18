@@ -183,18 +183,26 @@ impl<N> Inbound<N> {
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
-        self.map_stack(|_, rt, http| {
+        self.map_stack(|cfg, rt, http| {
+            let detect_timeout = cfg.proxy.detect_protocol_timeout;
             http.clone()
                 .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push_switch(
                     // If we have a protocol hint, skip detection and just used the hinted HTTP
                     // version.
-                    |tls: Tls| -> Result<_, Infallible> {
+                    move |tls: Tls| -> Result<_, Infallible> {
                         let http = match tls.permit.protocol {
                             Protocol::Detect { timeout } => {
                                 return Ok(svc::Either::B(Detect { timeout, tls }));
                             }
-                            Protocol::Http1 => http::Version::Http1,
+                            Protocol::Http1 => {
+                                // HTTP/1 services may actually be transported over HTTP/2
+                                // connections between proxies, so we have to do detection.
+                                return Ok(svc::Either::B(Detect {
+                                    timeout: detect_timeout,
+                                    tls,
+                                }));
+                            }
                             Protocol::Http2 | Protocol::Grpc => http::Version::H2,
                             _ => unreachable!("opaque protocols must not hit the HTTP stack"),
                         };
