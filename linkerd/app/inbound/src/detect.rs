@@ -352,7 +352,7 @@ mod tests {
     async fn detect_tls_opaque() {
         let _trace = trace::test::trace_init();
 
-        let allow = AllowPolicy::new(
+        let allow = AllowPolicy::for_test(
             orig_dst_addr(),
             ServerPolicy {
                 protocol: Protocol::Opaque,

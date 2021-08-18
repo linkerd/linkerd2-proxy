@@ -16,6 +16,7 @@ pub(crate) struct Store {
     ports: Arc<PortMap<watch::Receiver<Arc<ServerPolicy>>>>,
 }
 
+/// A `HashMap` optimized for lookups by port number.
 type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
 
 /// A hasher for ports.
@@ -48,13 +49,20 @@ impl Store {
         }
     }
 
+    /// Spawns a watch for each of the given ports.
+    ///
+    /// The returned future completes when a watch has been successfully created for all of the
+    /// provided ports. The store maintains these watches so that each time a policy is checked, it
+    /// may obtain the latest policy provided by the watch. An error is returned if any of the
+    /// watches cannot be established.
+    //
     // XXX(ver): rustc can't seem to figure out that this Future is `Send` unless we annotate it
     // explicitly, hence the manual_async_fn.
     #[allow(clippy::manual_async_fn)]
-    pub(super) fn discover<S>(
-        default: impl Into<DefaultPolicy>,
-        discover: discover::Watch<S>,
+    pub(super) fn spawn_discover<S>(
+        default: DefaultPolicy,
         ports: HashSet<u16>,
+        discover: discover::Watch<S>,
     ) -> impl Future<Output = Result<Self>> + Send
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
@@ -62,7 +70,6 @@ impl Store {
         S::Future: Send,
         S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
     {
-        let default = default.into();
         async move {
             let rxs = ports.into_iter().map(|port| {
                 discover
@@ -70,10 +77,12 @@ impl Store {
                     .spawn_watch(port)
                     .map_ok(move |rsp| (port, rsp.into_inner()))
             });
+
             let ports = futures::future::join_all(rxs)
                 .await
                 .into_iter()
                 .collect::<Result<PortMap<_>, tonic::Status>>()?;
+
             Ok(Self {
                 default,
                 ports: Arc::new(ports),

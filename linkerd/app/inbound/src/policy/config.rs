@@ -39,12 +39,12 @@ impl Config {
                 workload,
                 default,
             } => {
-                let discover = {
+                let watch = {
                     let backoff = control.connect.backoff;
                     let c = control.build(dns, metrics, identity).new_service(());
                     Discover::new(workload, c).into_watch(backoff)
                 };
-                Store::discover(default, discover, ports).await
+                Store::spawn_discover(default, ports, watch).await
             }
         }
     }

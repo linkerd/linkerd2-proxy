@@ -75,7 +75,10 @@ where
                     .map(|up| match up {
                         Ok(p) => match to_policy(p) {
                             Ok(p) => Ok(p.into()),
-                            Err(e) => Err(tonic::Status::invalid_argument(e.to_string())),
+                            Err(e) => Err(tonic::Status::invalid_argument(&*format!(
+                                "received invalid policy: {}",
+                                e
+                            ))),
                         },
                         Err(e) => Err(e),
                     })

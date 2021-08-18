@@ -65,7 +65,7 @@ impl From<ServerPolicy> for DefaultPolicy {
 
 impl AllowPolicy {
     #[cfg(test)]
-    pub(crate) fn new(dst: OrigDstAddr, server: ServerPolicy) -> Self {
+    pub(crate) fn for_test(dst: OrigDstAddr, server: ServerPolicy) -> Self {
         Self {
             dst,
             server: server.into(),
