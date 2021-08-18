@@ -631,28 +631,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                             );
                             return Err(EnvError::InvalidEnvVar);
                         }
-                        for p in require_identity_ports.keys() {
-                            if ports.contains_key(p) {
-                                error!(
-                                    "{} must not overlap with {} ({})",
-                                    ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-                                    ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
-                                    p
-                                );
-                                return Err(EnvError::InvalidEnvVar);
-                            }
-                        }
-                        for p in require_tls_ports.keys() {
-                            if ports.contains_key(p) {
-                                error!(
-                                    "{} must not overlap with {} ({})",
-                                    ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-                                    ENV_INBOUND_PORTS_REQUIRE_TLS,
-                                    p
-                                );
-                                return Err(EnvError::InvalidEnvVar);
-                            }
-                        }
                         ports
                     };
 
