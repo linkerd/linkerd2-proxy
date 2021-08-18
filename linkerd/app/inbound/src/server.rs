@@ -49,17 +49,6 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("tcp"))
             .into_inner();
 
-        // Handles connections that target the inbound proxy port.
-        let direct = self
-            .clone()
-            .into_tcp_connect(addr.port())
-            .push_tcp_forward()
-            .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
-            .push_direct(gateway)
-            .into_stack()
-            .instrument(|_: &_| debug_span!("direct"))
-            .into_inner();
-
         let policies = self
             .config
             .policy
@@ -67,6 +56,17 @@ impl Inbound<()> {
             .build(dns, control_metrics, self.runtime.identity.clone())
             .await
             .expect("Failed to fetch port policy");
+
+        // Handles connections that target the inbound proxy port.
+        let direct = self
+            .clone()
+            .into_tcp_connect(addr.port())
+            .push_tcp_forward()
+            .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
+            .push_direct(policies.clone(), gateway)
+            .into_stack()
+            .instrument(|_: &_| debug_span!("direct"))
+            .into_inner();
 
         // Handles HTTP connections.
         let http = self
