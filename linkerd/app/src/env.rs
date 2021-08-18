@@ -511,11 +511,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     let ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
                         Some(ports) => ports,
                         None => {
-                            error!(
-                                "{} must be set with {}_ADDR",
-                                ENV_INBOUND_PORTS, ENV_POLICY_SVC_BASE
-                            );
-                            return Err(EnvError::InvalidEnvVar);
+                            error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                            Default::default()
                         }
                     };
 
