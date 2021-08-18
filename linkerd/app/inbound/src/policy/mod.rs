@@ -91,12 +91,6 @@ pub(crate) struct DeniedUnauthorized {
     tls: tls::ConditionalServerTls,
 }
 
-impl CheckPolicy for () {
-    fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort> {
-        Err(DeniedUnknownPort(dst.port()))
-    }
-}
-
 // === impl Config ===
 
 impl Config {
