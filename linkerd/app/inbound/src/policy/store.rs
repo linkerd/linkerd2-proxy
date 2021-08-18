@@ -104,7 +104,7 @@ impl CheckPolicy for Store {
             .get(&dst.port())
             .map(|s| s.borrow().clone())
             .map(Ok)
-            .unwrap_or(match &self.default {
+            .unwrap_or_else(|| match &self.default {
                 DefaultPolicy::Allow(a) => Ok(a.clone()),
                 DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
             })?;
