@@ -335,7 +335,8 @@ mod tests {
     };
     use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
 
-    const HTTP: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
+    const HTTP1: &[u8] = b"GET / HTTP/1.1\r\nhost: example.com\r\n\r\n";
+    const HTTP2: &[u8] = b"PRI * HTTP/2.0\r\n";
     const NOT_HTTP: &[u8] = b"foo\r\nbar\r\nblah\r\n";
 
     #[tokio::test(flavor = "current_thread")]
@@ -418,7 +419,67 @@ mod tests {
         };
 
         let (ior, mut iow) = io::duplex(100);
-        iow.write_all(HTTP).await.unwrap();
+        iow.write_all(HTTP1).await.unwrap();
+
+        inbound()
+            .with_stack(new_ok())
+            .push_detect_http(new_panic("tcp stack must not be used"))
+            .into_inner()
+            .new_service(target)
+            .oneshot(ior)
+            .await
+            .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn hinted_http1() {
+        let _trace = trace::test::trace_init();
+
+        let target = Tls {
+            client_addr: client_addr(),
+            orig_dst_addr: orig_dst_addr(),
+            permit: Permitted {
+                protocol: Protocol::Http1,
+                labels: None.into_iter().collect(),
+                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                    client_id: Some(client_id()),
+                    negotiated_protocol: None,
+                }),
+            },
+        };
+
+        let (ior, mut iow) = io::duplex(100);
+        iow.write_all(HTTP1).await.unwrap();
+
+        inbound()
+            .with_stack(new_ok())
+            .push_detect_http(new_panic("tcp stack must not be used"))
+            .into_inner()
+            .new_service(target)
+            .oneshot(ior)
+            .await
+            .expect("should succeed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn hinted_http1_supports_http2() {
+        let _trace = trace::test::trace_init();
+
+        let target = Tls {
+            client_addr: client_addr(),
+            orig_dst_addr: orig_dst_addr(),
+            permit: Permitted {
+                protocol: Protocol::Http1,
+                labels: None.into_iter().collect(),
+                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                    client_id: Some(client_id()),
+                    negotiated_protocol: None,
+                }),
+            },
+        };
+
+        let (ior, mut iow) = io::duplex(100);
+        iow.write_all(HTTP2).await.unwrap();
 
         inbound()
             .with_stack(new_ok())
