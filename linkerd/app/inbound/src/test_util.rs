@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::{policy, Config};
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
@@ -48,18 +48,21 @@ pub fn default_config() -> Config {
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(10),
         },
-        port_policies: ServerPolicy {
-            protocol: Protocol::Detect {
-                timeout: std::time::Duration::from_secs(10),
-            },
-            authorizations: vec![Authorization {
-                authentication: Authentication::Unauthenticated,
-                networks: vec![Default::default()],
+        policy: policy::Config::Fixed {
+            default: ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![Authorization {
+                    authentication: Authentication::Unauthenticated,
+                    networks: vec![Default::default()],
+                    labels: Default::default(),
+                }],
                 labels: Default::default(),
-            }],
-            labels: Default::default(),
-        }
-        .into(),
+            }
+            .into(),
+            ports: Default::default(),
+        },
         profile_idle_timeout: Duration::from_millis(500),
     }
 }

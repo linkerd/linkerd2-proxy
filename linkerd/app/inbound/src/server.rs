@@ -1,7 +1,7 @@
 use crate::{direct, Inbound};
 use futures::Stream;
 use linkerd_app_core::{
-    io, profiles, serve, svc,
+    dns, io, metrics, profiles, serve, svc,
     transport::{self, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error,
 };
@@ -20,6 +20,8 @@ impl Inbound<()> {
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
+        dns: dns::Resolver,
+        control_metrics: metrics::ControlHttp,
         profiles: P,
         gateway: G,
     ) where
@@ -47,13 +49,21 @@ impl Inbound<()> {
             .instrument(|_: &_| debug_span!("tcp"))
             .into_inner();
 
+        let policies = self
+            .config
+            .policy
+            .clone()
+            .build(dns, control_metrics, self.runtime.identity.clone())
+            .await
+            .expect("Failed to fetch port policy");
+
         // Handles connections that target the inbound proxy port.
         let direct = self
             .clone()
             .into_tcp_connect(addr.port())
             .push_tcp_forward()
             .map_stack(|_, _, s| s.push_map_target(TcpEndpoint::from_param))
-            .push_direct(gateway)
+            .push_direct(policies.clone(), gateway)
             .into_stack()
             .instrument(|_: &_| debug_span!("direct"))
             .into_inner();
@@ -67,9 +77,8 @@ impl Inbound<()> {
         // Determines how to handle an inbound connection, dispatching it to the appropriate
         // stack.
         let server = http
-            .push_detect_http(forward.clone())
-            .push_detect_tls(forward)
-            .push_accept(addr.port(), direct)
+            .push_detect(forward)
+            .push_accept(addr.port(), policies, direct)
             .into_inner();
 
         serve::serve(listen, server, shutdown).await;

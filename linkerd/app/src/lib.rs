@@ -135,8 +135,8 @@ impl Config {
 
         let oc_collector = {
             let identity = identity.local();
-            let dns = dns.resolver;
-            let client_metrics = metrics.control;
+            let dns = dns.resolver.clone();
+            let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
             info_span!("opencensus")
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
@@ -207,6 +207,8 @@ impl Config {
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
+            let dns = dns.resolver;
+            let control_metrics = metrics.control;
 
             Box::pin(async move {
                 Self::await_identity(identity)
@@ -219,11 +221,16 @@ impl Config {
                         .instrument(info_span!("outbound")),
                 );
 
-                // TODO(ver): Block on policy.
-
                 tokio::spawn(
                     inbound
-                        .serve(inbound_addr, inbound_listen, profiles, gateway_stack)
+                        .serve(
+                            inbound_addr,
+                            inbound_listen,
+                            dns,
+                            control_metrics,
+                            profiles,
+                            gateway_stack,
+                        )
                         .instrument(info_span!("inbound")),
                 );
             })

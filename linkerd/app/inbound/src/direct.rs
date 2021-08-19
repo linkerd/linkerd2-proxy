@@ -1,4 +1,4 @@
-use crate::Inbound;
+use crate::{policy::CheckPolicy, Inbound};
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
@@ -6,9 +6,9 @@ use linkerd_app_core::{
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
-    Conditional, Error, Infallible, NameAddr,
+    Conditional, Error, NameAddr, Result,
 };
-use std::{convert::TryFrom, fmt::Debug, net::SocketAddr};
+use std::{convert::TryFrom, fmt::Debug};
 use thiserror::Error;
 use tracing::{debug_span, info_span};
 
@@ -49,7 +49,7 @@ pub struct ClientInfo {
     pub client_id: tls::ClientId,
     pub alpn: Option<tls::NegotiatedProtocol>,
     pub client_addr: Remote<ClientAddr>,
-    pub local_addr: SocketAddr,
+    pub local_addr: OrigDstAddr,
 }
 
 type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
@@ -70,7 +70,11 @@ impl<N> Inbound<N> {
     /// 2. TLS is required;
     /// 3. A transport header is expected. It's not strictly required, as
     ///    gateways may need to accept HTTP requests from older proxy versions
-    pub fn push_direct<T, I, NSvc, G, GSvc>(self, gateway: G) -> Inbound<svc::BoxNewTcp<T, I>>
+    pub(crate) fn push_direct<T, I, NSvc, G, GSvc>(
+        self,
+        policies: impl CheckPolicy + Clone + Send + Sync + 'static,
+        gateway: G,
+    ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
@@ -94,35 +98,70 @@ impl<N> Inbound<N> {
             let detect_timeout = config.proxy.detect_protocol_timeout;
 
             tcp.instrument(|_: &_| debug_span!("opaque"))
-                // When the transport header is present, it may be used for either local
-                // TCP forwarding, or we may be processing an HTTP gateway connection.
-                // HTTP gateway connections that have a transport header must provide a
-                // target name as a part of the header.
-                //
-                // TODO: Apply port policies. This isn't necessary for now, since these connections
-                // always have a client identity. We'll need to honor client restrictions once those
-                // are supported, though.
+                // When the transport header is present, it may be used for either local TCP
+                // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
+                // connections that have a transport header must provide a target name as a part of
+                // the header.
                 .push_switch(
-                    |(h, client): (TransportHeader, ClientInfo)| match h {
-                        TransportHeader {
-                            port,
-                            name: None,
-                            protocol: None,
-                        } => Ok(svc::Either::A(port)),
-                        TransportHeader {
-                            port,
-                            name: Some(name),
-                            protocol,
-                        } => Ok(svc::Either::B(GatewayTransportHeader {
-                            target: NameAddr::from((name, port)),
-                            protocol,
-                            client,
-                        })),
-                        TransportHeader {
-                            name: None,
-                            protocol: Some(_),
-                            ..
-                        } => Err(RefusedNoTarget),
+                    {
+                        let policies = policies.clone();
+                        move |(h, client): (TransportHeader, ClientInfo)| -> Result<_> {
+                            match h {
+                                TransportHeader {
+                                    port,
+                                    name: None,
+                                    protocol: None,
+                                } => {
+                                    // When the transport header targets an alternate port (but does
+                                    // not identify an alternate target name), we check the new
+                                    // target's policy to determine whether the client can access
+                                    // it.
+                                    let allow = policies.check_policy(OrigDstAddr(
+                                        (client.local_addr.ip(), port).into(),
+                                    ))?;
+                                    let tls = tls::ConditionalServerTls::Some(
+                                        tls::ServerTls::Established {
+                                            client_id: Some(client.client_id),
+                                            negotiated_protocol: client.alpn,
+                                        },
+                                    );
+                                    let _permit =
+                                        allow.check_authorized(client.client_addr, tls)?;
+                                    // TODO(ver) Use the permit's labels in metrics...
+                                    Ok(svc::Either::A(port))
+                                }
+                                TransportHeader {
+                                    port,
+                                    name: Some(name),
+                                    protocol,
+                                } => {
+                                    // When the transport header provides an alternate target, the
+                                    // connection is a gateway connection. We check the _gateway
+                                    // address's_ policy to determine whether the client is
+                                    // authorized to use this gateway.
+                                    let allow = policies.check_policy(client.local_addr)?;
+                                    let tls = tls::ConditionalServerTls::Some(
+                                        tls::ServerTls::Established {
+                                            client_id: Some(client.client_id.clone()),
+                                            negotiated_protocol: client.alpn.clone(),
+                                        },
+                                    );
+                                    let _permit =
+                                        allow.check_authorized(client.client_addr, tls)?;
+                                    // TODO(ver) Use the permit's labels in metrics...
+                                    Ok(svc::Either::B(GatewayTransportHeader {
+                                        target: NameAddr::from((name, port)),
+                                        protocol,
+                                        client,
+                                    }))
+                                }
+                                TransportHeader {
+                                    name: None,
+                                    protocol: Some(_),
+                                    ..
+                                } => Err(RefusedNoTarget.into()),
+                            }
+                        }
                     },
                     // HTTP detection is not necessary in this case, since the transport
                     // header indicates the connection's HTTP version.
@@ -140,10 +179,22 @@ impl<N> Inbound<N> {
                 // support legacy gateway clients.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .push_switch(
-                    |client: ClientInfo| {
+                    move |client: ClientInfo| -> Result<_> {
                         if client.header_negotiated() {
-                            Ok::<_, Infallible>(svc::Either::A(client))
+                            Ok(svc::Either::A(client))
                         } else {
+                            // When we receive legacy connections with no transport headers, we must
+                            // be receiving a gateway connection from an older client.  We check the
+                            // gateway address's policy to determine whether the client is
+                            // authorized to use this gateway.
+                            let allow = policies.check_policy(client.local_addr)?;
+                            let tls =
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                    client_id: Some(client.client_id.clone()),
+                                    negotiated_protocol: client.alpn.clone(),
+                                });
+                            let _permit = allow.check_authorized(client.client_addr, tls)?;
+                            // TODO(ver) Use the permit's labels in metrics...
                             Ok(svc::Either::B(GatewayConnection::Legacy(client)))
                         }
                     },
@@ -184,15 +235,12 @@ where
             Conditional::Some(tls::ServerTls::Established {
                 client_id: Some(client_id),
                 negotiated_protocol,
-            }) => {
-                let OrigDstAddr(local_addr) = addrs.param();
-                Ok(Self {
-                    client_id,
-                    alpn: negotiated_protocol,
-                    client_addr: addrs.param(),
-                    local_addr,
-                })
-            }
+            }) => Ok(Self {
+                client_id,
+                alpn: negotiated_protocol,
+                client_addr: addrs.param(),
+                local_addr: addrs.param(),
+            }),
             _ => Err(RefusedNoIdentity(()).into()),
         }
     }
@@ -215,7 +263,7 @@ impl Param<transport::labels::Key> for ClientInfo {
                 client_id: Some(self.client_id.clone()),
                 negotiated_protocol: self.alpn.clone(),
             }),
-            self.local_addr,
+            self.local_addr.into(),
         )
     }
 }

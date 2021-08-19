@@ -10,12 +10,12 @@ mod accept;
 mod detect;
 pub mod direct;
 mod http;
-pub mod port_policies;
+pub mod policy;
 mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::port_policies::{DefaultPolicy, PortPolicies, ServerPolicy};
+pub use self::policy::DefaultPolicy;
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     drain, io, metrics,
@@ -34,7 +34,7 @@ pub use self::http::fuzz as http_fuzz;
 pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
-    pub port_policies: PortPolicies,
+    pub policy: policy::Config,
     pub profile_idle_timeout: Duration,
 }
 

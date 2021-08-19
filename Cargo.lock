@@ -745,10 +745,13 @@ dependencies = [
  "linkerd-app-test",
  "linkerd-io",
  "linkerd-server-policy",
+ "linkerd-tonic-watch",
  "linkerd-tracing",
+ "linkerd2-proxy-api",
  "thiserror",
  "tokio",
  "tokio-test",
+ "tonic",
  "tower",
  "tracing",
 ]

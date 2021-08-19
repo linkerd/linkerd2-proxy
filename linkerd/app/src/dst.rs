@@ -7,7 +7,6 @@ use linkerd_app_core::{
     svc::NewService,
     Error, Recover,
 };
-use tonic::body::BoxBody;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -21,11 +20,10 @@ pub struct Dst {
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::Client<BackoffUnlessInvalidArgument, control::Client<BoxBody>>,
+    pub profiles: profiles::Client<BackoffUnlessInvalidArgument, control::Client>,
 
     /// Resolves endpoints.
-    pub resolve:
-        recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<control::Client<BoxBody>>>,
+    pub resolve: recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<control::Client>>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]

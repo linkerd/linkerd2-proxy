@@ -8,7 +8,7 @@ use crate::core::{
     Addr, AddrMatch, Conditional, IpNet,
 };
 use crate::{dns, gateway, identity, inbound, oc_collector, outbound};
-use inbound::port_policies;
+use inbound::policy;
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -18,7 +18,7 @@ use std::{
     time::Duration,
 };
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 
 /// The strings used to build a configuration.
 pub trait Strings {
@@ -153,6 +153,8 @@ pub const ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION: &str =
 pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
     "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_IDENTITY";
 
+pub const ENV_INBOUND_PORTS_REQUIRE_TLS: &str = "LINKERD2_PROXY_INBOUND_PORTS_REQUIRE_TLS";
+
 /// Configures the default port policy for inbound connections.
 ///
 /// This must parse to a valid port policy (one of: `deny`, `authenticated`,
@@ -161,8 +163,9 @@ pub const ENV_INBOUND_PORTS_REQUIRE_IDENTITY: &str =
 /// By default, this is `unauthenticated`.
 pub const ENV_INBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_INBOUND_DEFAULT_POLICY";
 
-// pub const ENV_INBOUND_POLICY_ADDR: &str = "LINKERD2_PROXY_INBOUND_POLICY_ADDR";
-// pub const ENV_INBOUND_POLICY_IDENTITY: &str = "LINKERD2_PROXY_INBOUND_POLICY_IDENTITY";
+pub const ENV_INBOUND_PORTS: &str = "LINKERD2_PROXY_INBOUND_PORTS";
+pub const ENV_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_POLICY_SVC";
+pub const ENV_POLICY_WORKLOAD: &str = "LINKERD2_PROXY_POLICY_WORKLOAD";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
@@ -341,25 +344,20 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .map(|c| c.is_none())
         .unwrap_or(false);
 
-    let dst_addr = if id_disabled {
-        parse_control_addr_disable_identity(strings, ENV_DESTINATION_SVC_BASE)
-    } else {
-        parse_control_addr(strings, ENV_DESTINATION_SVC_BASE)
-    };
-
     let hostname = strings.get(ENV_HOSTNAME);
 
     let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
 
-    let trace_collector_addr = if id_disabled {
-        parse_control_addr_disable_identity(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
-    } else {
-        parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE)
-    };
+    let trace_collector_addr =
+        parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE, id_disabled);
 
-    let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
+    let policy_addr = parse_control_addr(strings, ENV_POLICY_SVC_BASE, id_disabled);
+    let policy_workload = strings.get(ENV_POLICY_WORKLOAD);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
+
+    let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE, id_disabled);
+    let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
     let dst_profile_idle_timeout = parse(
         strings,
         ENV_DESTINATION_PROFILE_INITIAL_TIMEOUT,
@@ -488,85 +486,170 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let dispatch_timeout =
             inbound_dispatch_timeout?.unwrap_or(DEFAULT_INBOUND_DISPATCH_TIMEOUT);
 
-        let mut require_identity_for_inbound_ports =
-            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?.unwrap_or_default();
-
-        if id_disabled && !require_identity_for_inbound_ports.is_empty() {
-            error!(
-                "if {} is true, {} must be empty",
-                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_IDENTITY
-            );
-            return Err(EnvError::InvalidEnvVar);
-        }
-
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
-        let inbound_port = server.addr.as_ref().port();
-        let port_policies = {
-            if !id_disabled && !require_identity_for_inbound_ports.contains(&inbound_port) {
-                debug!(
-                    "Adding {} to {}",
-                    inbound_port, ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
-                );
-                require_identity_for_inbound_ports.insert(inbound_port);
-            }
+        let policy = {
+            let inbound_port = server.addr.as_ref().port();
 
-            // Ensure that the inbound port does not disable protocol detection, as
-            // is required for opaque transport.
-            let inbound_opaque_ports = inbound_disable_ports?.unwrap_or_default();
-            if inbound_opaque_ports.contains(&inbound_port) {
-                error!(
-                    "{} must not contain {} ({})",
-                    ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-                    ENV_INBOUND_LISTEN_ADDR,
-                    inbound_port
-                );
-                return Err(EnvError::InvalidEnvVar);
-            }
-
-            for p in require_identity_for_inbound_ports.iter() {
-                if inbound_opaque_ports.contains(p) {
-                    error!(
-                        "{} must not overlap with {} ({})",
-                        ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
-                        ENV_INBOUND_PORTS_REQUIRE_IDENTITY,
-                        p
-                    );
-                    return Err(EnvError::InvalidEnvVar);
-                }
-            }
-
+            // We always configure a default policy. This policy applies when no other policy is
+            // configured, especially when the port is not documented in via `ENV_INBOUND_PORTS`.
             let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
                 parse_default_policy(s, detect_protocol_timeout)
             })?
             .unwrap_or_else(|| {
-                port_policies::all_unauthenticated_server_policy(detect_protocol_timeout).into()
+                warn!(
+                    "{} was not set; using `all-unauthenticated`",
+                    ENV_INBOUND_DEFAULT_POLICY
+                );
+                policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            let allow_authed =
-                port_policies::all_mtls_unauthenticated_server_policy(detect_protocol_timeout);
-            let allow_opaque = match default.clone() {
-                port_policies::DefaultPolicy::Allow(p) => {
-                    let mut p = (*p).clone();
-                    p.protocol = inbound::port_policies::Protocol::Opaque;
-                    Some(p)
+            match policy_addr? {
+                Some(addr) => {
+                    // If the inbound is proxy is configured to discover policies, then load the set
+                    // of all known inbound ports to be discovered during initialization.
+                    let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
+                        Some(ports) => ports,
+                        None => {
+                            error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
+                            Default::default()
+                        }
+                    };
+                    if !gateway.allow_discovery.is_empty() {
+                        // Add the inbound port to the set of ports to be discovered if the proxy is
+                        // configured as a gateway. If there are no suffixes configured in the
+                        // gateway, it's not worth maintaining the extra policy watch (which will be
+                        // the more common case).
+                        ports.insert(inbound_port);
+                    }
+
+                    // The workload, which is opaque from the proxy's point-of-view, is sent to the
+                    // policy controller to support policy discovery.
+                    let workload = policy_workload?.ok_or_else(|| {
+                        error!(
+                            "{} must be set with {}_ADDR",
+                            ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
+                        );
+                        EnvError::InvalidEnvVar
+                    })?;
+
+                    let control = {
+                        let connect = if addr.addr.is_loopback() {
+                            connect.clone()
+                        } else {
+                            outbound.proxy.connect.clone()
+                        };
+                        ControlConfig {
+                            addr,
+                            connect,
+                            buffer_capacity,
+                        }
+                    };
+
+                    inbound::policy::Config::Discover {
+                        default,
+                        ports,
+                        workload,
+                        control,
+                    }
                 }
-                port_policies::DefaultPolicy::Deny => {
-                    tracing::warn!("inbound opaque ports configuration is ignored when the default policy is 'deny'");
-                    None
-                }
-            };
-            inbound::PortPolicies::new(
-                default,
-                require_identity_for_inbound_ports
-                    .into_iter()
-                    .map(|p| (p, allow_authed.clone()))
-                    .chain(
-                        inbound_opaque_ports
+
+                None => {
+                    let default_allow = match default.clone() {
+                        policy::DefaultPolicy::Allow(a) => a,
+                        policy::DefaultPolicy::Deny => {
+                            warn!("The default policy `deny` may not be used with a static policy configuration");
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                    };
+
+                    // If the inbound is not configured to discover policies, then load basic policies from the environment:
+                    // - ports that require authentication
+                    // - ports that require some form of proxy-terminated TLS, though not
+                    //   necessarily with a client identity.
+                    // - opaque ports
+                    let require_identity_ports = {
+                        let ports =
+                            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|p| {
+                                    let allow = policy::defaults::all_authenticated(
+                                        detect_protocol_timeout,
+                                    );
+                                    (p, allow)
+                                })
+                                .collect::<HashMap<_, _>>();
+                        if id_disabled && !ports.is_empty() {
+                            error!(
+                                "if {} is true, {} must be empty",
+                                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_IDENTITY
+                            );
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                        ports
+                    };
+
+                    let require_tls_ports = {
+                        let mut ports =
+                            parse(strings, ENV_INBOUND_PORTS_REQUIRE_TLS, parse_port_set)?
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|p| {
+                                    let allow = policy::defaults::all_mtls_unauthenticated(
+                                        detect_protocol_timeout,
+                                    );
+                                    (p, allow)
+                                })
+                                .collect::<HashMap<_, _>>();
+                        // `require_identity` is more restrictive than `require_tls`, so prefer it if
+                        // there are duplicates.
+                        for p in require_identity_ports.keys() {
+                            ports.remove(p);
+                        }
+                        if id_disabled && !ports.is_empty() {
+                            error!(
+                                "if {} is true, {} must be empty",
+                                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_TLS
+                            );
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                        ports
+                    };
+
+                    let opaque_ports = {
+                        let ports = inbound_disable_ports?
+                            .unwrap_or_default()
                             .into_iter()
-                            .filter_map(|p| allow_opaque.clone().map(move |a| (p, a))),
-                    ),
-            )
+                            .map(move |p| {
+                                let mut sp = (*default_allow).clone();
+                                sp.protocol = inbound::policy::Protocol::Opaque;
+                                (p, sp)
+                            })
+                            .collect::<HashMap<_, inbound::policy::ServerPolicy>>();
+                        // Ensure that the inbound port does not disable protocol detection, as
+                        if ports.contains_key(&inbound_port) {
+                            error!(
+                                "{} must not contain {} ({})",
+                                ENV_INBOUND_PORTS_DISABLE_PROTOCOL_DETECTION,
+                                ENV_INBOUND_LISTEN_ADDR,
+                                inbound_port
+                            );
+                            return Err(EnvError::InvalidEnvVar);
+                        }
+                        ports
+                    };
+
+                    inbound::policy::Config::Fixed {
+                        default,
+                        ports: require_identity_ports
+                            .into_iter()
+                            .chain(require_tls_ports)
+                            .chain(opaque_ports)
+                            .collect(),
+                    }
+                }
+            }
         };
 
         inbound::Config {
@@ -581,7 +664,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_INBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            port_policies,
+            policy,
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
         }
@@ -666,7 +749,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let identity = identity_config?
         .map(|(addr, certify)| {
             // If the address doesn't have a server identity, then we're on localhost.
-            let connect = if addr.identity.is_none() {
+            let connect = if addr.addr.is_loopback() {
                 inbound.proxy.connect.clone()
             } else {
                 outbound.proxy.connect.clone()
@@ -925,18 +1008,11 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
 fn parse_default_policy(
     s: &str,
     detect_timeout: Duration,
-) -> Result<port_policies::DefaultPolicy, ParseError> {
+) -> Result<policy::DefaultPolicy, ParseError> {
     match s {
-        "deny" => Ok(port_policies::DefaultPolicy::Deny),
-        "all-authenticated" => {
-            Ok(port_policies::all_authenticated_server_policy(detect_timeout).into())
-        }
-        "all-unauthenticated" => {
-            Ok(port_policies::all_unauthenticated_server_policy(detect_timeout).into())
-        }
-        "all-mtls-unauthenticated" => {
-            Ok(port_policies::all_mtls_unauthenticated_server_policy(detect_timeout).into())
-        }
+        "deny" => Ok(policy::DefaultPolicy::Deny),
+        "all-authenticated" => Ok(policy::defaults::all_authenticated(detect_timeout).into()),
+        "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(detect_timeout).into()),
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
 }
@@ -970,45 +1046,35 @@ pub fn parse_backoff<S: Strings>(
 pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
+    id_disabled: bool,
 ) -> Result<Option<ControlAddr>, EnvError> {
-    let a_env = format!("{}_ADDR", base);
-    let a = parse(strings, &a_env, parse_addr);
-    let n_env = format!("{}_NAME", base);
-    let n = parse(strings, &n_env, parse_identity);
-    match (a?, n?) {
+    let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
+    let n = parse(strings, &format!("{}_NAME", base), parse_identity)?;
+    match (a, n) {
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
+            identity: Conditional::None(tls::NoClientTls::Loopback),
+        })),
+        (Some(addr), None) if id_disabled => Ok(Some(ControlAddr {
+            addr,
             identity: Conditional::None(tls::NoClientTls::Loopback),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
             addr,
             identity: Conditional::Some(tls::ServerId(name).into()),
         })),
-        (Some(_), None) => {
-            error!("{} must be specified when {} is set", n_env, a_env);
-            Err(EnvError::InvalidEnvVar)
-        }
-        (None, Some(_)) => {
-            error!("{} must be specified when {} is set", a_env, n_env);
+        _ => {
+            error!("{}_ADDR and {}_NAME must be specified together", base, base);
             Err(EnvError::InvalidEnvVar)
         }
     }
 }
 
-pub fn parse_control_addr_disable_identity<S: Strings>(
-    strings: &S,
-    base: &str,
-) -> Result<Option<ControlAddr>, EnvError> {
-    let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
-    let identity = Conditional::None(tls::NoClientTls::Disabled);
-    Ok(a.map(|addr| ControlAddr { addr, identity }))
-}
-
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
 ) -> Result<Option<(ControlAddr, identity::certify::Config)>, EnvError> {
-    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
+    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE, false);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
