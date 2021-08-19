@@ -98,10 +98,10 @@ impl<N> Inbound<N> {
             let detect_timeout = config.proxy.detect_protocol_timeout;
 
             tcp.instrument(|_: &_| debug_span!("opaque"))
-                // When the transport header is present, it may be used for either local
-                // TCP forwarding, or we may be processing an HTTP gateway connection.
-                // HTTP gateway connections that have a transport header must provide a
-                // target name as a part of the header.
+                // When the transport header is present, it may be used for either local TCP
+                // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
+                // connections that have a transport header must provide a target name as a part of
+                // the header.
                 .push_switch(
                     {
                         let policies = policies.clone();
@@ -112,6 +112,10 @@ impl<N> Inbound<N> {
                                     name: None,
                                     protocol: None,
                                 } => {
+                                    // When the transport header targets an alternate port (but does
+                                    // not identify an alternate target name), we check the new
+                                    // target's policy to determine whether the client can access
+                                    // it.
                                     let allow = policies.check_policy(OrigDstAddr(
                                         (client.local_addr.ip(), port).into(),
                                     ))?;
@@ -131,6 +135,10 @@ impl<N> Inbound<N> {
                                     name: Some(name),
                                     protocol,
                                 } => {
+                                    // When the transport header provides an alternate target, the
+                                    // connection is a gateway connection. We check the _gateway
+                                    // address's_ policy to determine whether the client is
+                                    // authorized to use this gateway.
                                     let allow = policies.check_policy(client.local_addr)?;
                                     let tls = tls::ConditionalServerTls::Some(
                                         tls::ServerTls::Established {
@@ -175,6 +183,10 @@ impl<N> Inbound<N> {
                         if client.header_negotiated() {
                             Ok(svc::Either::A(client))
                         } else {
+                            // When we receive legacy connections with no transport headers, we must
+                            // be receiving a gateway connection from an older client.  We check the
+                            // gateway address's policy to determine whether the client is
+                            // authorized to use this gateway.
                             let allow = policies.check_policy(client.local_addr)?;
                             let tls =
                                 tls::ConditionalServerTls::Some(tls::ServerTls::Established {
@@ -182,7 +194,7 @@ impl<N> Inbound<N> {
                                     negotiated_protocol: client.alpn.clone(),
                                 });
                             let _permit = allow.check_authorized(client.client_addr, tls)?;
-                            // TODO(ver) Use the permit's labels in metrics...)
+                            // TODO(ver) Use the permit's labels in metrics...
                             Ok(svc::Either::B(GatewayConnection::Legacy(client)))
                         }
                     },
