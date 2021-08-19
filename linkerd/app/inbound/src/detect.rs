@@ -47,9 +47,8 @@ struct TlsParams {
 // === impl Inbound ===
 
 impl<N> Inbound<N> {
-    /// Builds a stack that handles TLS protocol detection according to the port's policy. If the
-    /// connection is determined to be TLS, the inner stack is used; otherwise the connection is
-    /// passed to the provided 'forward' stack.
+    /// Builds a stack that terminates mesh TLS and detects whether the traffic is HTTP (as hinted
+    /// by policy).
     pub(crate) fn push_detect<T, I, NSvc, F, FSvc>(
         self,
         forward: F,
