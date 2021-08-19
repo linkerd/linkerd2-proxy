@@ -161,18 +161,16 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
 
-        let inbound = {
-            Inbound::new(
-                inbound,
-                ProxyRuntime {
-                    identity: identity.local(),
-                    metrics: metrics.inbound,
-                    tap: tap.registry(),
-                    span_sink: oc_collector.span_sink(),
-                    drain: drain_rx.clone(),
-                },
-            )
-        };
+        let inbound = Inbound::new(
+            inbound,
+            ProxyRuntime {
+                identity: identity.local(),
+                metrics: metrics.inbound,
+                tap: tap.registry(),
+                span_sink: oc_collector.span_sink(),
+                drain: drain_rx.clone(),
+            },
+        );
 
         let outbound = Outbound::new(
             outbound,
