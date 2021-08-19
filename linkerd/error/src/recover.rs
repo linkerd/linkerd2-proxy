@@ -2,7 +2,7 @@ use super::Error;
 use futures::{stream, Stream};
 
 /// An error recovery strategy.
-pub trait Recover<E = Error> {
+pub trait Recover<E: Into<Error> = Error> {
     type Backoff: Stream<Item = ()>;
 
     /// Given an E-typed error, determine if the error is recoverable.
@@ -23,6 +23,7 @@ pub struct Immediately(());
 
 impl<E, B, F> Recover<E> for F
 where
+    E: Into<Error>,
     B: Stream<Item = ()>,
     F: Fn(E) -> Result<B, E>,
 {
@@ -41,7 +42,7 @@ impl Immediately {
     }
 }
 
-impl<E> Recover<E> for Immediately {
+impl<E: Into<Error>> Recover<E> for Immediately {
     type Backoff = stream::Iter<Immediately>;
 
     fn recover(&self, _: E) -> Result<Self::Backoff, E> {
