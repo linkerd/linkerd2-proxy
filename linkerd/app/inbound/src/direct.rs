@@ -6,7 +6,7 @@ use linkerd_app_core::{
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
-    Conditional, Error, Infallible, NameAddr, Result,
+    Conditional, Error, NameAddr, Result,
 };
 use std::{convert::TryFrom, fmt::Debug};
 use thiserror::Error;
@@ -103,39 +103,56 @@ impl<N> Inbound<N> {
                 // HTTP gateway connections that have a transport header must provide a
                 // target name as a part of the header.
                 .push_switch(
-                    move |(h, client): (TransportHeader, ClientInfo)| -> Result<_> {
-                        match h {
-                            TransportHeader {
-                                port,
-                                name: None,
-                                protocol: None,
-                            } => {
-                                let allow = policies.check_policy(OrigDstAddr(
-                                    (client.local_addr.ip(), port).into(),
-                                ))?;
-                                let tls =
-                                    tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                                        client_id: Some(client.client_id),
-                                        negotiated_protocol: client.alpn,
-                                    });
-                                let _permit = allow.check_authorized(client.client_addr, tls)?;
-                                // TODO(ver) Use the permit's labels in metrics...
-                                Ok(svc::Either::A(port))
+                    {
+                        let policies = policies.clone();
+                        move |(h, client): (TransportHeader, ClientInfo)| -> Result<_> {
+                            match h {
+                                TransportHeader {
+                                    port,
+                                    name: None,
+                                    protocol: None,
+                                } => {
+                                    let allow = policies.check_policy(OrigDstAddr(
+                                        (client.local_addr.ip(), port).into(),
+                                    ))?;
+                                    let tls = tls::ConditionalServerTls::Some(
+                                        tls::ServerTls::Established {
+                                            client_id: Some(client.client_id),
+                                            negotiated_protocol: client.alpn,
+                                        },
+                                    );
+                                    let _permit =
+                                        allow.check_authorized(client.client_addr, tls)?;
+                                    // TODO(ver) Use the permit's labels in metrics...
+                                    Ok(svc::Either::A(port))
+                                }
+                                TransportHeader {
+                                    port,
+                                    name: Some(name),
+                                    protocol,
+                                } => {
+                                    let allow = policies.check_policy(client.local_addr)?;
+                                    let tls = tls::ConditionalServerTls::Some(
+                                        tls::ServerTls::Established {
+                                            client_id: Some(client.client_id.clone()),
+                                            negotiated_protocol: client.alpn.clone(),
+                                        },
+                                    );
+                                    let _permit =
+                                        allow.check_authorized(client.client_addr, tls)?;
+                                    // TODO(ver) Use the permit's labels in metrics...
+                                    Ok(svc::Either::B(GatewayTransportHeader {
+                                        target: NameAddr::from((name, port)),
+                                        protocol,
+                                        client,
+                                    }))
+                                }
+                                TransportHeader {
+                                    name: None,
+                                    protocol: Some(_),
+                                    ..
+                                } => Err(RefusedNoTarget.into()),
                             }
-                            TransportHeader {
-                                port,
-                                name: Some(name),
-                                protocol,
-                            } => Ok(svc::Either::B(GatewayTransportHeader {
-                                target: NameAddr::from((name, port)),
-                                protocol,
-                                client,
-                            })),
-                            TransportHeader {
-                                name: None,
-                                protocol: Some(_),
-                                ..
-                            } => Err(RefusedNoTarget.into()),
                         }
                     },
                     // HTTP detection is not necessary in this case, since the transport
@@ -154,10 +171,18 @@ impl<N> Inbound<N> {
                 // support legacy gateway clients.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
                 .push_switch(
-                    |client: ClientInfo| {
+                    move |client: ClientInfo| -> Result<_> {
                         if client.header_negotiated() {
-                            Ok::<_, Infallible>(svc::Either::A(client))
+                            Ok(svc::Either::A(client))
                         } else {
+                            let allow = policies.check_policy(client.local_addr)?;
+                            let tls =
+                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                                    client_id: Some(client.client_id.clone()),
+                                    negotiated_protocol: client.alpn.clone(),
+                                });
+                            let _permit = allow.check_authorized(client.client_addr, tls)?;
+                            // TODO(ver) Use the permit's labels in metrics...)
                             Ok(svc::Either::B(GatewayConnection::Legacy(client)))
                         }
                     },
