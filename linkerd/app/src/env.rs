@@ -508,13 +508,20 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 Some(addr) => {
                     // If the inbound is proxy is configured to discover policies, then load the set
                     // of all known inbound ports to be discovered during initialization.
-                    let ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
+                    let mut ports = match parse(strings, ENV_INBOUND_PORTS, parse_port_set)? {
                         Some(ports) => ports,
                         None => {
                             error!("No inbound ports specified via {}", ENV_INBOUND_PORTS,);
                             Default::default()
                         }
                     };
+                    if !gateway.allow_discovery.is_empty() {
+                        // Add the inbound port to the set of ports to be discovered if the proxy is
+                        // configured as a gateway. If there are no suffixes configured in the
+                        // gateway, it's not worth maintaining the extra policy watch (which will be
+                        // the more common case).
+                        ports.insert(inbound_port);
+                    }
 
                     // The workload, which is opaque from the proxy's point-of-view, is sent to the
                     // policy controller to support policy discovery.

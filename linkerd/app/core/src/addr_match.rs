@@ -28,12 +28,19 @@ impl AddrMatch {
         }
     }
 
+    #[inline]
     pub fn names(&self) -> &NameMatch {
         &self.names
     }
 
+    #[inline]
     pub fn nets(&self) -> &IpMatch {
         &self.nets
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.nets.is_empty()
     }
 
     #[inline]
@@ -90,6 +97,11 @@ impl FromIterator<Suffix> for NameMatch {
 
 impl NameMatch {
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
     pub fn matches(&self, name: &Name) -> bool {
         self.0.iter().any(|sfx| sfx.contains(name))
     }
@@ -106,6 +118,11 @@ impl fmt::Display for NameMatch {
 impl IpMatch {
     pub fn new(nets: impl IntoIterator<Item = IpNet>) -> Self {
         Self(Arc::new(nets.into_iter().collect()))
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     #[inline]
