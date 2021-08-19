@@ -47,7 +47,7 @@ jobs:
   # needed for release builds. This job builds the proxy in release-mode to ensure the build isn't
   # OOM-killed.
   release-binary:
-    timeout-minutes: 15
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       contents: read
