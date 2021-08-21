@@ -508,11 +508,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     "{} was not set; using `all-unauthenticated`",
                     ENV_INBOUND_DEFAULT_POLICY
                 );
-                policy::defaults::all_unauthenticated(
-                    "default:all-unauthenticated",
-                    detect_protocol_timeout,
-                )
-                .into()
+                policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
             match parse_control_addr(strings, ENV_POLICY_SVC_BASE, id_disabled)? {
@@ -586,7 +582,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                 .into_iter()
                                 .map(|p| {
                                     let allow = policy::defaults::all_authenticated(
-                                        format!("fixed:{}", p),
                                         detect_protocol_timeout,
                                     );
                                     (p, allow)
@@ -609,7 +604,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                 .into_iter()
                                 .map(|p| {
                                     let allow = policy::defaults::all_mtls_unauthenticated(
-                                        format!("fixed:{}", p),
                                         detect_protocol_timeout,
                                     );
                                     (p, allow)
@@ -639,12 +633,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                     .get(&p)
                                     .or_else(|| require_tls_ports.get(&p))
                                     .cloned()
-                                    .unwrap_or_else(|| {
-                                        let mut sp = (*default_allow).clone();
-                                        sp.labels
-                                            .insert("server".to_string(), format!("fixed:{}", p));
-                                        sp
-                                    });
+                                    .unwrap_or_else(|| (*default_allow).clone());
                                 sp.protocol = inbound::policy::Protocol::Opaque;
                                 (p, sp)
                             })
@@ -1034,31 +1023,17 @@ fn parse_default_policy(
 ) -> Result<policy::DefaultPolicy, ParseError> {
     match s {
         "deny" => Ok(policy::DefaultPolicy::Deny),
-        "all-authenticated" => Ok(policy::defaults::all_authenticated(
-            "default:all-authenticated",
-            detect_timeout,
-        )
-        .into()),
-        "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(
-            "default:all-unauthenticated",
-            detect_timeout,
-        )
-        .into()),
+        "all-authenticated" => Ok(policy::defaults::all_authenticated(detect_timeout).into()),
+        "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(detect_timeout).into()),
 
         // If cluster networks are configured, support cluster-scoped default policies.
         name if cluster_nets.is_empty() => Err(ParseError::InvalidPortPolicy(name.to_string())),
-        "cluster-authenticated" => Ok(policy::defaults::authenticated(
-            "default:cluster-authenticated",
-            cluster_nets,
-            detect_timeout,
-        )
-        .into()),
-        "cluster-unauthenticated" => Ok(policy::defaults::unauthenticated(
-            "default:cluster-unauthenticated",
-            cluster_nets,
-            detect_timeout,
-        )
-        .into()),
+        "cluster-authenticated" => {
+            Ok(policy::defaults::cluster_authenticated(cluster_nets, detect_timeout).into())
+        }
+        "cluster-unauthenticated" => {
+            Ok(policy::defaults::cluster_unauthenticated(cluster_nets, detect_timeout).into())
+        }
 
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
