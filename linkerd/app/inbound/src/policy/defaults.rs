@@ -27,14 +27,11 @@ pub fn authenticated(
                 identities: Default::default(),
                 suffixes: vec![Suffix::from(vec![])],
             },
-            labels: Some((
-                "authorization".to_string(),
-                "default:all-authenticated".to_string(),
-            ))
-            .into_iter()
-            .collect(),
+            labels: Some(("name".to_string(), "default:all-authenticated".to_string()))
+                .into_iter()
+                .collect(),
         }],
-        labels: Some(("server".to_string(), name.into()))
+        labels: Some(("name".to_string(), name.into()))
             .into_iter()
             .collect(),
     }
@@ -51,13 +48,13 @@ pub fn unauthenticated(
             networks: nets.into_iter().map(Into::into).collect(),
             authentication: Authentication::Unauthenticated,
             labels: Some((
-                "authorization".to_string(),
+                "name".to_string(),
                 "default:all-unauthenticated".to_string(),
             ))
             .into_iter()
             .collect(),
         }],
-        labels: Some(("server".to_string(), name.into()))
+        labels: Some(("name".to_string(), name.into()))
             .into_iter()
             .collect(),
     }
@@ -70,13 +67,13 @@ pub fn all_mtls_unauthenticated(name: impl Into<String>, timeout: Duration) -> S
             networks: all_nets().map(Into::into).collect(),
             authentication: Authentication::TlsUnauthenticated,
             labels: Some((
-                "authorization".to_string(),
+                "name".to_string(),
                 "default:all-tls-unauthenticated".to_string(),
             ))
             .into_iter()
             .collect(),
         }],
-        labels: Some(("server".to_string(), name.into()))
+        labels: Some(("name".to_string(), name.into()))
             .into_iter()
             .collect(),
     }
