@@ -1,6 +1,8 @@
 use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
-use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use std::{collections::HashMap, time::Duration};
+use linkerd_server_policy::{
+    Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
+};
+use std::time::Duration;
 
 pub fn all_authenticated(timeout: Duration) -> ServerPolicy {
     mk(
@@ -72,7 +74,7 @@ fn mk(
 ) -> ServerPolicy {
     let labels = Some(("name".to_string(), name.to_string()))
         .into_iter()
-        .collect::<HashMap<_, _>>();
+        .collect::<Labels>();
 
     ServerPolicy {
         protocol: Protocol::Detect { timeout },

@@ -162,7 +162,7 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                 Ok(Authorization {
                     networks,
                     authentication: authn,
-                    labels,
+                    labels: labels.into_iter().collect(),
                 })
             },
         )
@@ -171,7 +171,7 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
     Ok(ServerPolicy {
         protocol,
         authorizations,
-        labels: proto.labels,
+        labels: proto.labels.into_iter().collect(),
     })
 }
 
