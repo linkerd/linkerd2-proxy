@@ -17,7 +17,7 @@ pub struct ServerPolicy {
     pub labels: Labels,
 }
 
-/// Stores an ordered, cloneeable set of labels.
+/// Stores an ordered, cloneable set of labels.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Labels(Arc<BTreeMap<String, String>>);
 
