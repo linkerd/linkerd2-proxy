@@ -162,7 +162,7 @@ impl<S> Inbound<S> {
     {
         self.map_stack(|_, rt, connect| {
             connect
-                .push(transport::metrics::Connect::layer(
+                .push(transport::metrics::Client::layer(
                     rt.metrics.transport.clone(),
                 ))
                 .push_make_thunk()

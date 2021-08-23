@@ -68,7 +68,7 @@ impl<C> Outbound<C> {
                 // Limits the time we wait for a connection to be established.
                 .push_timeout(config.proxy.connect.timeout)
                 .push(svc::stack::BoxFuture::layer())
-                .push(transport::metrics::Connect::layer(
+                .push(transport::metrics::Client::layer(
                     rt.metrics.transport.clone(),
                 ))
         })
