@@ -30,8 +30,8 @@ struct RefusedNoTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Local {
-    pub port: u16,
-    pub permit: policy::Permit,
+    port: u16,
+    permit: policy::Permit,
 }
 
 /// Gateway connections come in two variants: those with a transport header, and
