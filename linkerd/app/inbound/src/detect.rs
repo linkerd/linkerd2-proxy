@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, DeniedUnauthorized, Permitted},
+    policy::{AllowPolicy, DeniedUnauthorized, Permit},
     Inbound,
 };
 use linkerd_app_core::{
@@ -20,7 +20,7 @@ use std::{fmt::Debug, time};
 pub(crate) struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
-    permit: Permitted,
+    permit: Permit,
 }
 
 #[derive(Clone, Debug)]
@@ -147,8 +147,6 @@ impl<N> Inbound<N> {
     /// Builds a stack that handles HTTP detection once TLS detection has been performed. If the
     /// connection is determined to be HTTP, the inner stack is used; otherwise the connection is
     /// passed to the provided 'forward' stack.
-    ///
-    /// TODO: use the target's protocol to bypass HTTP detection in more cases.
     fn push_detect_http<I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<Tls, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
@@ -213,7 +211,7 @@ impl<N> Inbound<N> {
 // === impl Tls ===
 
 impl Tls {
-    fn from_params<T>(t: &T, permit: Permitted) -> Self
+    fn from_params<T>(t: &T, permit: Permit) -> Self
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
     {
@@ -233,11 +231,12 @@ impl svc::Param<u16> for Tls {
 
 impl svc::Param<transport::labels::Key> for Tls {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::Accept {
-            direction: transport::labels::Direction::In,
-            tls: self.permit.tls.clone(),
-            target_addr: self.orig_dst_addr.into(),
-        }
+        transport::labels::Key::inbound_server(
+            self.permit.tls.clone(),
+            self.orig_dst_addr.into(),
+            self.permit.server_labels.clone(),
+            self.permit.authz_labels.clone(),
+        )
     }
 }
 
@@ -376,7 +375,7 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
-            permit: Permitted {
+            permit: Permit {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),
                 },
@@ -409,7 +408,7 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
-            permit: Permitted {
+            permit: Permit {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),
                 },
@@ -442,7 +441,7 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
-            permit: Permitted {
+            permit: Permit {
                 protocol: Protocol::Http1,
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
@@ -473,7 +472,7 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
-            permit: Permitted {
+            permit: Permit {
                 protocol: Protocol::Http1,
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
@@ -504,7 +503,7 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
-            permit: Permitted {
+            permit: Permit {
                 protocol: Protocol::Http2,
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),

@@ -157,11 +157,13 @@ impl Config {
 
 impl Param<transport::labels::Key> for Tcp {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::Accept {
-            direction: transport::labels::Direction::In,
-            tls: self.tls.clone(),
-            target_addr: self.addr.into(),
-        }
+        transport::labels::Key::inbound_server(
+            self.tls.clone(),
+            self.addr.into(),
+            // TODO(ver) enforce policies on the proxy's admin port.
+            Default::default(),
+            Default::default(),
+        )
     }
 }
 

@@ -293,7 +293,7 @@ impl Param<u16> for Logical {
 
 impl Param<transport::labels::Key> for Logical {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::InboundConnect
+        transport::labels::Key::InboundClient
     }
 }
 
@@ -379,6 +379,6 @@ impl From<Logical> for Http {
 
 impl Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::InboundConnect
+        transport::labels::Key::InboundClient
     }
 }

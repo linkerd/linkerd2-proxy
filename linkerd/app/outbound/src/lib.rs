@@ -28,7 +28,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Conditional, Error, ProxyRuntime,
+    AddrMatch, Error, ProxyRuntime,
 };
 use std::{collections::HashMap, fmt::Debug, time::Duration};
 use tracing::info;
@@ -163,12 +163,7 @@ impl Outbound<()> {
 
 impl<P> Param<transport::labels::Key> for Accept<P> {
     fn param(&self) -> transport::labels::Key {
-        const NO_TLS: tls::ConditionalServerTls = Conditional::None(tls::NoServerTls::Loopback);
-        transport::labels::Key::accept(
-            transport::labels::Direction::Out,
-            NO_TLS,
-            self.orig_dst.into(),
-        )
+        transport::labels::Key::outbound_server(self.orig_dst.into())
     }
 }
 

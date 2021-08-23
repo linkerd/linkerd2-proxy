@@ -1,4 +1,4 @@
-use crate::{policy::CheckPolicy, Inbound};
+use crate::{policy, Inbound};
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
@@ -28,23 +28,36 @@ pub struct RefusedNoIdentity(());
 #[error("a named target must be provided on gateway connections")]
 struct RefusedNoTarget;
 
-/// Gateway connections come in two variants: those with a transport header, and
-/// legacy connections, without a transport header.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum GatewayConnection {
-    TransportHeader(GatewayTransportHeader),
-    Legacy(ClientInfo),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Local {
+    pub port: u16,
+    pub permit: policy::Permit,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Gateway connections come in two variants: those with a transport header, and
+/// legacy connections, without a transport header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GatewayConnection {
+    TransportHeader(GatewayTransportHeader),
+    Legacy(Legacy),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GatewayTransportHeader {
     pub target: NameAddr,
     pub protocol: Option<SessionProtocol>,
     pub client: ClientInfo,
+    permit: policy::Permit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Legacy {
+    pub client: ClientInfo,
+    permit: policy::Permit,
 }
 
 /// Client connections *must* have an identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientInfo {
     pub client_id: tls::ClientId,
     pub alpn: Option<tls::NegotiatedProtocol>,
@@ -52,7 +65,7 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type FwdIo<I> = io::PrefixedIo<SensorIo<tls::server::Io<I>>>;
+type FwdIo<I> = SensorIo<io::PrefixedIo<tls::server::Io<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 
 #[derive(Clone)]
@@ -72,7 +85,7 @@ impl<N> Inbound<N> {
     ///    gateways may need to accept HTTP requests from older proxy versions
     pub(crate) fn push_direct<T, I, NSvc, G, GSvc>(
         self,
-        policies: impl CheckPolicy + Clone + Send + Sync + 'static,
+        policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
         gateway: G,
     ) -> Inbound<svc::BoxNewTcp<T, I>>
     where
@@ -80,7 +93,7 @@ impl<N> Inbound<N> {
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
-        N: svc::NewService<u16, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
+        N: svc::NewService<Local, Service = NSvc> + Clone + Send + Sync + Unpin + 'static,
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
@@ -94,10 +107,15 @@ impl<N> Inbound<N> {
         GSvc::Error: Into<Error>,
         GSvc::Future: Send,
     {
-        self.map_stack(|config, rt, tcp| {
+        self.map_stack(|config, rt, inner| {
             let detect_timeout = config.proxy.detect_protocol_timeout;
 
-            tcp.instrument(|_: &_| debug_span!("opaque"))
+            inner
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.transport.clone(),
+                ))
+                .instrument(|_: &_| debug_span!("opaque"))
+                .check_new_service::<Local, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
                 // connections that have a transport header must provide a target name as a part of
@@ -125,10 +143,8 @@ impl<N> Inbound<N> {
                                             negotiated_protocol: client.alpn,
                                         },
                                     );
-                                    let _permit =
-                                        allow.check_authorized(client.client_addr, tls)?;
-                                    // TODO(ver) Use the permit's labels in metrics...
-                                    Ok(svc::Either::A(port))
+                                    let permit = allow.check_authorized(client.client_addr, tls)?;
+                                    Ok(svc::Either::A(Local { port, permit }))
                                 }
                                 TransportHeader {
                                     port,
@@ -146,13 +162,12 @@ impl<N> Inbound<N> {
                                             negotiated_protocol: client.alpn.clone(),
                                         },
                                     );
-                                    let _permit =
-                                        allow.check_authorized(client.client_addr, tls)?;
-                                    // TODO(ver) Use the permit's labels in metrics...
+                                    let permit = allow.check_authorized(client.client_addr, tls)?;
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
                                         client,
+                                        permit,
                                     }))
                                 }
                                 TransportHeader {
@@ -168,9 +183,13 @@ impl<N> Inbound<N> {
                     svc::stack(gateway.clone())
                         .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                         .push_map_target(GatewayConnection::TransportHeader)
+                        .push(transport::metrics::NewServer::layer(
+                            rt.metrics.transport.clone(),
+                        ))
                         .instrument(
                             |g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target),
                         )
+                        .check_new_service::<GatewayTransportHeader, io::PrefixedIo<tls::server::Io<I>>>()
                         .into_inner(),
                 )
                 // Use ALPN to determine whether a transport header should be read.
@@ -193,21 +212,23 @@ impl<N> Inbound<N> {
                                     client_id: Some(client.client_id.clone()),
                                     negotiated_protocol: client.alpn.clone(),
                                 });
-                            let _permit = allow.check_authorized(client.client_addr, tls)?;
-                            // TODO(ver) Use the permit's labels in metrics...
-                            Ok(svc::Either::B(GatewayConnection::Legacy(client)))
+                            let permit = allow.check_authorized(client.client_addr, tls)?;
+                            Ok(svc::Either::B(Legacy { client, permit }))
                         }
                     },
                     // TODO: Remove this after we have at least one stable release out
                     // with transport header support.
                     svc::stack(gateway)
+                        .push_map_target(GatewayConnection::Legacy)
                         .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
-                        .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
+                        .push(transport::metrics::NewServer::layer(
+                            rt.metrics.transport.clone(),
+                        ))
+                        .instrument(|_: &Legacy| info_span!("gateway", legacy = true))
+                        .check_new_service::<Legacy, tls::server::Io<I>>()
                         .into_inner(),
                 )
-                .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
-                ))
+                .check_new_service::<ClientInfo, tls::server::Io<I>>()
                 // Build a ClientInfo target for each accepted connection. Refuse the
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
@@ -257,15 +278,47 @@ impl ClientInfo {
     }
 }
 
-impl Param<transport::labels::Key> for ClientInfo {
+// === impl Local ===
+
+impl Param<u16> for Local {
+    fn param(&self) -> u16 {
+        self.port
+    }
+}
+
+impl Param<transport::labels::Key> for Local {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::accept(
-            transport::labels::Direction::In,
-            Conditional::Some(tls::ServerTls::Established {
-                client_id: Some(self.client_id.clone()),
-                negotiated_protocol: self.alpn.clone(),
-            }),
-            self.local_addr.into(),
+        transport::labels::Key::inbound_server(
+            self.permit.tls.clone(),
+            ([127, 0, 0, 1], self.port).into(),
+            self.permit.server_labels.clone(),
+            self.permit.authz_labels.clone(),
+        )
+    }
+}
+
+// === impl GatewayTransportHeader ===
+
+impl Param<transport::labels::Key> for GatewayTransportHeader {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::inbound_server(
+            self.permit.tls.clone(),
+            self.client.local_addr.into(),
+            self.permit.server_labels.clone(),
+            self.permit.authz_labels.clone(),
+        )
+    }
+}
+
+// === impl Legacy ===
+
+impl Param<transport::labels::Key> for Legacy {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::inbound_server(
+            self.permit.tls.clone(),
+            self.client.local_addr.into(),
+            self.permit.server_labels.clone(),
+            self.permit.authz_labels.clone(),
         )
     }
 }

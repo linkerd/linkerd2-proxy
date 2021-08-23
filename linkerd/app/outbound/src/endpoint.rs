@@ -96,7 +96,7 @@ impl<P> svc::Param<Option<http::AuthorityOverride>> for Endpoint<P> {
 
 impl<P> svc::Param<transport::labels::Key> for Endpoint<P> {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::OutboundConnect(self.param())
+        transport::labels::Key::OutboundClient(self.param())
     }
 }
 

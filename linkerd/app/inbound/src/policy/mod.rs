@@ -9,7 +9,7 @@ pub use self::config::Config;
 pub(crate) use self::store::Store;
 use linkerd_app_core::{
     tls,
-    transport::{ClientAddr, OrigDstAddr, Remote},
+    transport::{ClientAddr, DeniedUnknownPort, DeniedUnknownPort, OrigDstAddr, Remote},
     Result,
 };
 pub use linkerd_server_policy::{
@@ -36,25 +36,12 @@ pub(crate) struct AllowPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Permitted {
+pub(crate) struct Permit {
     pub protocol: Protocol,
     pub tls: tls::ConditionalServerTls,
 
     pub server_labels: Labels,
     pub authz_labels: Labels,
-}
-
-#[derive(Clone, Debug, Error)]
-#[error("connection denied on unknown port {0}")]
-pub(crate) struct DeniedUnknownPort(u16);
-
-#[derive(Debug, Error)]
-#[error("unauthorized connection from {client_addr} with identity {tls:?} to {dst_addr}")]
-pub(crate) struct DeniedUnauthorized {
-    client_addr: Remote<ClientAddr>,
-    dst_addr: OrigDstAddr,
-    tls: tls::ConditionalServerTls,
-    labels: Labels,
 }
 
 // === impl DefaultPolicy ===
@@ -86,12 +73,12 @@ impl AllowPolicy {
         &self,
         client_addr: Remote<ClientAddr>,
         tls: tls::ConditionalServerTls,
-    ) -> Result<Permitted, DeniedUnauthorized> {
+    ) -> Result<Permit, DeniedUnauthorized> {
         for authz in self.server.authorizations.iter() {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permitted::new(&self.server, authz, tls));
+                        return Ok(Permit::new(&self.server, authz, tls));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -99,7 +86,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permitted::new(&self.server, authz, tls));
+                            return Ok(Permit::new(&self.server, authz, tls));
                         }
                     }
 
@@ -115,7 +102,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_ref())
                                 || suffixes.iter().any(|s| s.contains(id.as_ref()))
                             {
-                                return Ok(Permitted::new(&self.server, authz, tls));
+                                return Ok(Permit::new(&self.server, authz, tls));
                             }
                         }
                     }
@@ -127,14 +114,13 @@ impl AllowPolicy {
             client_addr,
             dst_addr: self.dst,
             tls,
-            labels: self.server.labels.clone(),
         })
     }
 }
 
-// === impl Permitted ===
+// === impl Permit ===
 
-impl Permitted {
+impl Permit {
     fn new(server: &ServerPolicy, authz: &Authorization, tls: tls::ConditionalServerTls) -> Self {
         Self {
             protocol: server.protocol,
