@@ -101,6 +101,6 @@ impl svc::Param<u16> for TcpEndpoint {
 
 impl svc::Param<transport::labels::Key> for TcpEndpoint {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::InboundConnect
+        transport::labels::Key::InboundClient
     }
 }

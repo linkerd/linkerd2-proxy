@@ -2,10 +2,9 @@ mod network;
 
 pub use self::network::Network;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{btree_map, BTreeMap, HashSet},
     hash::Hash,
     iter::FromIterator,
-    ops::Deref,
     sync::Arc,
     time,
 };
@@ -55,17 +54,21 @@ pub struct Suffix {
 
 // === impl Labels ===
 
-impl FromIterator<(String, String)> for Labels {
-    fn from_iter<T: IntoIterator<Item = (String, String)>>(iter: T) -> Self {
-        Self(Arc::new(iter.into_iter().collect()))
+impl Labels {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
+    pub fn iter(&self) -> btree_map::Iter<'_, String, String> {
+        self.0.iter()
     }
 }
 
-impl Deref for Labels {
-    type Target = BTreeMap<String, String>;
-
-    fn deref(&self) -> &Self::Target {
-        &*self.0
+impl FromIterator<(String, String)> for Labels {
+    fn from_iter<T: IntoIterator<Item = (String, String)>>(iter: T) -> Self {
+        Self(Arc::new(iter.into_iter().collect()))
     }
 }
 

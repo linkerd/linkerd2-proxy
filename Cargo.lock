@@ -690,6 +690,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-reconnect",
  "linkerd-retry",
+ "linkerd-server-policy",
  "linkerd-service-profiles",
  "linkerd-stack",
  "linkerd-stack-metrics",

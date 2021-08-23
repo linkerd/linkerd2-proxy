@@ -1,7 +1,7 @@
 use crate::{
     metrics::{self, Counter, FmtMetrics},
     svc,
-    transport::{labels, OrigDstAddr},
+    transport::{labels, DeniedUnauthorized, DeniedUnknownPort, OrigDstAddr},
 };
 use linkerd_error::Error;
 use linkerd_error_metrics::{FmtLabels, LabelError, RecordError};
@@ -36,6 +36,7 @@ pub struct LabelAcceptErrors(());
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum AcceptErrors {
     TlsDetectTimeout,
+    Unauthorized,
     Io,
     Other,
 }
@@ -94,6 +95,10 @@ impl LabelError<Error> for LabelAcceptErrors {
             } else if err.is::<std::io::Error>() {
                 // We ignore the error code because we want all labels to be consistent.
                 return AcceptErrors::Io;
+            } else if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
+                // If the port is unknown, the default policy is `deny`; so handle it as
+                // unauthorized.
+                return AcceptErrors::Unauthorized;
             }
             curr = err.source();
         }
@@ -110,6 +115,7 @@ impl FmtLabels for AcceptErrors {
             Self::TlsDetectTimeout => fmt::Display::fmt("error=\"tls_detect_timeout\"", f),
             Self::Io => fmt::Display::fmt("error=\"io\"", f),
             Self::Other => fmt::Display::fmt("error=\"other\"", f),
+            Self::Unauthorized => fmt::Display::fmt("error=\"unauthorized\"", f),
         }
     }
 }

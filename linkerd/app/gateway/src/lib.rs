@@ -21,7 +21,7 @@ use linkerd_app_core::{
     Error, Infallible, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{
-    direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
+    direct::{ClientInfo, GatewayConnection, GatewayTransportHeader, Legacy},
     Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
@@ -252,6 +252,7 @@ where
                  target,
                  protocol,
                  client,
+                 ..
              }| match protocol {
                 Some(proto) => Ok(svc::Either::A(HttpTransportHeader {
                     target,
@@ -307,14 +308,17 @@ impl Param<tls::ClientId> for HttpTransportHeader {
 
 // === impl HttpLegacy ===
 
-impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, ClientInfo)> for HttpLegacy {
+impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, Legacy)> for HttpLegacy {
     type Error = Error;
 
     fn try_from(
-        (version, client): (Result<Option<http::Version>, E>, ClientInfo),
+        (version, gateway): (Result<Option<http::Version>, E>, Legacy),
     ) -> Result<Self, Self::Error> {
         match version {
-            Ok(Some(version)) => Ok(Self { version, client }),
+            Ok(Some(version)) => Ok(Self {
+                version,
+                client: gateway.client,
+            }),
             Ok(None) => Err(RefusedNoTarget(()).into()),
             Err(e) => Err(e.into()),
         }

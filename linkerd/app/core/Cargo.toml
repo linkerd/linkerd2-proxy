@@ -50,6 +50,7 @@ linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
 linkerd-retry = { path = "../../retry" }
+linkerd-server-policy = { path = "../../server-policy" }
 linkerd-timeout = { path = "../../timeout" }
 linkerd-tracing = { path = "../../tracing" }
 linkerd-transport-header = { path = "../../transport-header" }
