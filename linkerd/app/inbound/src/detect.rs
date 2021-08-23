@@ -380,11 +380,12 @@ mod tests {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),
                 },
-                labels: None.into_iter().collect(),
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
                     negotiated_protocol: None,
                 }),
+                server_labels: None.into_iter().collect(),
+                authz_labels: None.into_iter().collect(),
             },
         };
 
@@ -412,11 +413,12 @@ mod tests {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),
                 },
-                labels: None.into_iter().collect(),
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
                     negotiated_protocol: None,
                 }),
+                server_labels: None.into_iter().collect(),
+                authz_labels: None.into_iter().collect(),
             },
         };
 
@@ -442,11 +444,12 @@ mod tests {
             orig_dst_addr: orig_dst_addr(),
             permit: Permitted {
                 protocol: Protocol::Http1,
-                labels: None.into_iter().collect(),
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
                     negotiated_protocol: None,
                 }),
+                server_labels: None.into_iter().collect(),
+                authz_labels: None.into_iter().collect(),
             },
         };
 
@@ -472,11 +475,12 @@ mod tests {
             orig_dst_addr: orig_dst_addr(),
             permit: Permitted {
                 protocol: Protocol::Http1,
-                labels: None.into_iter().collect(),
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
                     negotiated_protocol: None,
                 }),
+                server_labels: None.into_iter().collect(),
+                authz_labels: None.into_iter().collect(),
             },
         };
 
@@ -502,11 +506,12 @@ mod tests {
             orig_dst_addr: orig_dst_addr(),
             permit: Permitted {
                 protocol: Protocol::Http2,
-                labels: None.into_iter().collect(),
                 tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
                     client_id: Some(client_id()),
                     negotiated_protocol: None,
                 }),
+                server_labels: None.into_iter().collect(),
+                authz_labels: None.into_iter().collect(),
             },
         };
 

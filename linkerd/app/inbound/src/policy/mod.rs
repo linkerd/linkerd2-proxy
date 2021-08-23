@@ -12,8 +12,10 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
-pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
-use std::{collections::BTreeMap, sync::Arc};
+pub use linkerd_server_policy::{
+    Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
+};
+use std::sync::Arc;
 use thiserror::Error;
 
 pub(crate) trait CheckPolicy {
@@ -38,8 +40,8 @@ pub(crate) struct Permitted {
     pub protocol: Protocol,
     pub tls: tls::ConditionalServerTls,
 
-    // We want predictable ordering of labels, so we use a BTreeMap.
-    pub labels: BTreeMap<String, String>,
+    pub server_labels: Labels,
+    pub authz_labels: Labels,
 }
 
 #[derive(Clone, Debug, Error)]
@@ -52,7 +54,9 @@ pub(crate) struct DeniedUnauthorized {
     client_addr: Remote<ClientAddr>,
     dst_addr: OrigDstAddr,
     tls: tls::ConditionalServerTls,
+    labels: Labels,
 }
+
 // === impl DefaultPolicy ===
 
 impl From<ServerPolicy> for DefaultPolicy {
@@ -123,6 +127,7 @@ impl AllowPolicy {
             client_addr,
             dst_addr: self.dst,
             tls,
+            labels: self.server.labels.clone(),
         })
     }
 }
@@ -131,12 +136,10 @@ impl AllowPolicy {
 
 impl Permitted {
     fn new(server: &ServerPolicy, authz: &Authorization, tls: tls::ConditionalServerTls) -> Self {
-        let mut labels = BTreeMap::new();
-        labels.extend(server.labels.clone());
-        labels.extend(authz.labels.clone());
         Self {
             protocol: server.protocol,
-            labels,
+            server_labels: server.labels.clone(),
+            authz_labels: authz.labels.clone(),
             tls,
         }
     }

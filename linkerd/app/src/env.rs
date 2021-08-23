@@ -18,7 +18,7 @@ use std::{
     time::Duration,
 };
 use thiserror::Error;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 /// The strings used to build a configuration.
 pub trait Strings {
@@ -166,6 +166,7 @@ pub const ENV_INBOUND_DEFAULT_POLICY: &str = "LINKERD2_PROXY_INBOUND_DEFAULT_POL
 pub const ENV_INBOUND_PORTS: &str = "LINKERD2_PROXY_INBOUND_PORTS";
 pub const ENV_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_POLICY_SVC";
 pub const ENV_POLICY_WORKLOAD: &str = "LINKERD2_PROXY_POLICY_WORKLOAD";
+pub const ENV_POLICY_CLUSTER_NETWORKS: &str = "LINKERD2_PROXY_POLICY_CLUSTER_NETWORKS";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
@@ -351,9 +352,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let trace_collector_addr =
         parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE, id_disabled);
 
-    let policy_addr = parse_control_addr(strings, ENV_POLICY_SVC_BASE, id_disabled);
-    let policy_workload = strings.get(ENV_POLICY_WORKLOAD);
-
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
 
     let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE, id_disabled);
@@ -491,10 +489,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let policy = {
             let inbound_port = server.addr.as_ref().port();
 
+            let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
+                .unwrap_or_else(|| {
+                    info!(
+                        "{} not set; cluster-scoped modes are unsupported",
+                        ENV_POLICY_CLUSTER_NETWORKS
+                    );
+                    Default::default()
+                });
+
             // We always configure a default policy. This policy applies when no other policy is
             // configured, especially when the port is not documented in via `ENV_INBOUND_PORTS`.
             let default = parse(strings, ENV_INBOUND_DEFAULT_POLICY, |s| {
-                parse_default_policy(s, detect_protocol_timeout)
+                parse_default_policy(s, cluster_nets, detect_protocol_timeout)
             })?
             .unwrap_or_else(|| {
                 warn!(
@@ -504,7 +511,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            match policy_addr? {
+            match parse_control_addr(strings, ENV_POLICY_SVC_BASE, id_disabled)? {
                 Some(addr) => {
                     // If the inbound is proxy is configured to discover policies, then load the set
                     // of all known inbound ports to be discovered during initialization.
@@ -525,7 +532,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
                     // The workload, which is opaque from the proxy's point-of-view, is sent to the
                     // policy controller to support policy discovery.
-                    let workload = policy_workload?.ok_or_else(|| {
+                    let workload = strings.get(ENV_POLICY_WORKLOAD)?.ok_or_else(|| {
                         error!(
                             "{} must be set with {}_ADDR",
                             ENV_POLICY_WORKLOAD, ENV_POLICY_SVC_BASE
@@ -621,8 +628,12 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         let ports = inbound_disable_ports?
                             .unwrap_or_default()
                             .into_iter()
-                            .map(move |p| {
-                                let mut sp = (*default_allow).clone();
+                            .map(|p| {
+                                let mut sp = require_identity_ports
+                                    .get(&p)
+                                    .or_else(|| require_tls_ports.get(&p))
+                                    .cloned()
+                                    .unwrap_or_else(|| (*default_allow).clone());
                                 sp.protocol = inbound::policy::Protocol::Opaque;
                                 (p, sp)
                             })
@@ -1007,12 +1018,23 @@ fn parse_networks(list: &str) -> Result<HashSet<IpNet>, ParseError> {
 
 fn parse_default_policy(
     s: &str,
+    cluster_nets: HashSet<IpNet>,
     detect_timeout: Duration,
 ) -> Result<policy::DefaultPolicy, ParseError> {
     match s {
         "deny" => Ok(policy::DefaultPolicy::Deny),
         "all-authenticated" => Ok(policy::defaults::all_authenticated(detect_timeout).into()),
         "all-unauthenticated" => Ok(policy::defaults::all_unauthenticated(detect_timeout).into()),
+
+        // If cluster networks are configured, support cluster-scoped default policies.
+        name if cluster_nets.is_empty() => Err(ParseError::InvalidPortPolicy(name.to_string())),
+        "cluster-authenticated" => {
+            Ok(policy::defaults::cluster_authenticated(cluster_nets, detect_timeout).into())
+        }
+        "cluster-unauthenticated" => {
+            Ok(policy::defaults::cluster_unauthenticated(cluster_nets, detect_timeout).into())
+        }
+
         name => Err(ParseError::InvalidPortPolicy(name.to_string())),
     }
 }

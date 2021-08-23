@@ -9,11 +9,11 @@ fn unauthenticated_allowed() {
         authorizations: vec![Authorization {
             authentication: Authentication::Unauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("authz".to_string(), "unauth".to_string())]
+            labels: vec![("name".to_string(), "unauth".to_string())]
                 .into_iter()
                 .collect(),
         }],
-        labels: vec![("server".to_string(), "test".to_string())]
+        labels: vec![("name".to_string(), "test".to_string())]
             .into_iter()
             .collect(),
     };
@@ -33,12 +33,12 @@ fn unauthenticated_allowed() {
         Permitted {
             tls,
             protocol: policy.protocol,
-            labels: vec![
-                ("authz".to_string(), "unauth".to_string()),
-                ("server".to_string(), "test".to_string())
-            ]
-            .into_iter()
-            .collect()
+            server_labels: vec![("name".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+            authz_labels: vec![("name".to_string(), "unauth".to_string()),]
+                .into_iter()
+                .collect()
         }
     );
 }
@@ -53,11 +53,11 @@ fn authenticated_identity() {
                 identities: vec![client_id().to_string()].into_iter().collect(),
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("authz".to_string(), "tls-auth".to_string())]
+            labels: vec![("name".to_string(), "tls-auth".to_string())]
                 .into_iter()
                 .collect(),
         }],
-        labels: vec![("server".to_string(), "test".to_string())]
+        labels: vec![("name".to_string(), "test".to_string())]
             .into_iter()
             .collect(),
     };
@@ -80,12 +80,12 @@ fn authenticated_identity() {
         Permitted {
             tls,
             protocol: policy.protocol,
-            labels: vec![
-                ("authz".to_string(), "tls-auth".to_string()),
-                ("server".to_string(), "test".to_string())
-            ]
-            .into_iter()
-            .collect()
+            server_labels: vec![("name".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+            authz_labels: vec![("name".to_string(), "tls-auth".to_string()),]
+                .into_iter()
+                .collect()
         }
     );
 
@@ -115,11 +115,11 @@ fn authenticated_suffix() {
                 ])],
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("authz".to_string(), "tls-auth".to_string())]
+            labels: vec![("name".to_string(), "tls-auth".to_string())]
                 .into_iter()
                 .collect(),
         }],
-        labels: vec![("server".to_string(), "test".to_string())]
+        labels: vec![("name".to_string(), "test".to_string())]
             .into_iter()
             .collect(),
     };
@@ -141,12 +141,12 @@ fn authenticated_suffix() {
         Permitted {
             tls,
             protocol: policy.protocol,
-            labels: vec![
-                ("authz".to_string(), "tls-auth".to_string()),
-                ("server".to_string(), "test".to_string())
-            ]
-            .into_iter()
-            .collect()
+            server_labels: vec![("name".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+            authz_labels: vec![("name".to_string(), "tls-auth".to_string()),]
+                .into_iter()
+                .collect()
         }
     );
 
@@ -170,11 +170,11 @@ fn tls_unauthenticated() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsUnauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("authz".to_string(), "tls-unauth".to_string())]
+            labels: vec![("name".to_string(), "tls-unauth".to_string())]
                 .into_iter()
                 .collect(),
         }],
-        labels: vec![("server".to_string(), "test".to_string())]
+        labels: vec![("name".to_string(), "test".to_string())]
             .into_iter()
             .collect(),
     };
@@ -196,12 +196,12 @@ fn tls_unauthenticated() {
         Permitted {
             tls,
             protocol: policy.protocol,
-            labels: vec![
-                ("authz".to_string(), "tls-unauth".to_string()),
-                ("server".to_string(), "test".to_string())
-            ]
-            .into_iter()
-            .collect()
+            server_labels: vec![("name".to_string(), "test".to_string())]
+                .into_iter()
+                .collect(),
+            authz_labels: vec![("name".to_string(), "tls-unauth".to_string()),]
+                .into_iter()
+                .collect()
         }
     );
 
