@@ -91,7 +91,7 @@ impl ServerLabels {
         policy: PolicyLabels,
     ) -> Self {
         ServerLabels {
-            direction: Direction::Out,
+            direction: Direction::In,
             tls,
             target_addr,
             policy: Some(policy),
@@ -216,7 +216,7 @@ mod tests {
         );
         assert_eq!(
             labels.to_string(),
-            "direction=\"outbound\",peer=\"src\",target_addr=\"192.0.2.4:40000\",tls=\"true\",\
+            "direction=\"inbound\",peer=\"src\",target_addr=\"192.0.2.4:40000\",tls=\"true\",\
             client_id=\"foo.id.example.com\",srv_name=\"testserver\",saz_name=\"testauthz\""
         );
     }
