@@ -201,7 +201,7 @@ impl<N> Inbound<N> {
                         .push_map_target(detect::allow_timeout)
                         .push(detect::NewDetectService::layer(ConfigureHttpDetect)),
                 )
-                .push(rt.metrics.transport.layer_accept())
+                .push((&*rt.metrics.transport).layer_accept())
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })

@@ -8,7 +8,7 @@ use linkerd_metrics::{
     metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, LastUpdate, Metric, NewMetrics,
     Store,
 };
-use linkerd_stack::{layer, NewService, Param, Service};
+use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use parking_lot::Mutex;
 use pin_project::pin_project;
 use std::{
@@ -51,10 +51,7 @@ pub struct Report<K: Eq + Hash + FmtLabels> {
 #[derive(Clone, Debug)]
 pub struct Registry<K: Eq + Hash + FmtLabels>(Arc<Mutex<Inner<K>>>);
 
-#[derive(Debug)]
-pub struct ConnectLayer<K: Eq + Hash + FmtLabels> {
-    registry: Arc<Mutex<Inner<K>>>,
-}
+type Inner<K> = Store<K, Metrics>;
 
 pub type MakeAccept<N, K, S> = NewMetrics<N, K, Metrics, Accept<S>>;
 
@@ -64,16 +61,16 @@ pub struct Accept<A> {
     metrics: Arc<Metrics>,
 }
 
-#[derive(Debug)]
-pub struct Connect<K: Eq + Hash + FmtLabels, M> {
-    inner: M,
-    registry: Arc<Mutex<Inner<K>>>,
+#[derive(Clone, Debug)]
+pub struct Connect<P, S> {
+    inner: S,
+    params: P,
 }
 
 #[pin_project]
 pub struct Connecting<F> {
     #[pin]
-    underlying: F,
+    inner: F,
     new_sensor: Option<NewSensor>,
 }
 
@@ -121,15 +118,9 @@ pub type SensorIo<T> = io::SensorIo<T, Sensor>;
 #[derive(Clone, Debug)]
 struct NewSensor(Arc<Metrics>);
 
-type Inner<K> = Store<K, Metrics>;
-
 // === impl Registry ===
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
-    pub fn layer_connect(&self) -> ConnectLayer<K> {
-        ConnectLayer::new(self.0.clone())
-    }
-
     pub fn layer_accept<M, T>(
         &self,
     ) -> impl layer::Layer<M, Service = MakeAccept<M, K, M::Service>> + Clone
@@ -138,28 +129,9 @@ impl<K: Eq + Hash + FmtLabels> Registry<K> {
     {
         MakeAccept::layer(self.0.clone())
     }
-}
 
-impl<K: Eq + Hash + FmtLabels> ConnectLayer<K> {
-    fn new(registry: Arc<Mutex<Inner<K>>>) -> Self {
-        Self { registry }
-    }
-}
-
-impl<K: Eq + Hash + FmtLabels> Clone for ConnectLayer<K> {
-    fn clone(&self) -> Self {
-        Self::new(self.registry.clone())
-    }
-}
-
-impl<K: Eq + Hash + FmtLabels, M> layer::Layer<M> for ConnectLayer<K> {
-    type Service = Connect<K, M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        Connect {
-            inner,
-            registry: self.registry.clone(),
-        }
+    pub fn metrics(&self, labels: K) -> Arc<Metrics> {
+        self.0.lock().get_or_default(labels).clone()
     }
 }
 
@@ -191,28 +163,23 @@ impl<A> From<(A, Arc<Metrics>)> for Accept<A> {
 
 // === impl Connect ===
 
-impl<K, M> Clone for Connect<K, M>
-where
-    K: Eq + Hash + FmtLabels,
-    M: Clone,
-{
-    fn clone(&self) -> Self {
-        Connect {
-            inner: self.inner.clone(),
-            registry: self.registry.clone(),
-        }
+impl<P: Clone, S> Connect<P, S> {
+    pub fn layer(params: P) -> impl layer::Layer<S, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
+            inner,
+            params: params.clone(),
+        })
     }
 }
 
-impl<K, T, M> Service<T> for Connect<K, M>
+impl<T, P, S> Service<T> for Connect<P, S>
 where
-    T: Param<K>,
-    K: Eq + Hash + FmtLabels,
-    M: Service<T>,
+    P: ExtractParam<Arc<Metrics>, T>,
+    S: Service<T>,
 {
-    type Response = SensorIo<M::Response>;
-    type Error = M::Error;
-    type Future = Connecting<M::Future>;
+    type Response = SensorIo<S::Response>;
+    type Error = S::Error;
+    type Future = Connecting<S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -220,12 +187,11 @@ where
     }
 
     fn call(&mut self, target: T) -> Self::Future {
-        let labels = target.param();
-        let metrics = self.registry.lock().get_or_default(labels).clone();
-
+        let metrics = self.params.extract_param(&target);
+        let inner = self.inner.call(target);
         Connecting {
             new_sensor: Some(NewSensor(metrics)),
-            underlying: self.inner.call(target),
+            inner,
         }
     }
 }
@@ -237,7 +203,7 @@ impl<F: TryFuture> Future for Connecting<F> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        let io = ready!(this.underlying.try_poll(cx))?;
+        let io = ready!(this.inner.try_poll(cx))?;
         debug!("client connection open");
 
         let sensor = this
