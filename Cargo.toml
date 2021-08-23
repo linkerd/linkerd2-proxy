@@ -17,7 +17,6 @@ members = [
     "linkerd/cache",
     "linkerd/conditional",
     "linkerd/detect",
-    "linkerd/transport-header",
     "linkerd/dns/name",
     "linkerd/dns",
     "linkerd/duplex",
@@ -57,6 +56,8 @@ members = [
     "linkerd/tonic-watch",
     "linkerd/tls",
     "linkerd/tracing",
+    "linkerd/transport-header",
+    "linkerd/transport-metrics",
     "linkerd2-proxy",
     "opencensus-proto",
 ]

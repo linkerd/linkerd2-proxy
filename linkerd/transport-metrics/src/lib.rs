@@ -1,3 +1,6 @@
+#![deny(warnings, rust_2018_idioms)]
+#![forbid(unsafe_code)]
+
 use futures::{ready, TryFuture};
 use linkerd_errno::Errno;
 use linkerd_io as io;
@@ -5,7 +8,7 @@ use linkerd_metrics::{
     metrics, Counter, FmtLabels, FmtMetric, FmtMetrics, Gauge, LastUpdate, Metric, NewMetrics,
     Store,
 };
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, NewService, Param, Service};
 use parking_lot::Mutex;
 use pin_project::pin_project;
 use std::{
@@ -18,7 +21,6 @@ use std::{
     task::{Context, Poll},
     time::{Duration, Instant},
 };
-use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 
 metrics! {
@@ -121,7 +123,7 @@ struct NewSensor(Arc<Metrics>);
 
 type Inner<K> = Store<K, Metrics>;
 
-// ===== impl Registry =====
+// === impl Registry ===
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
     pub fn layer_connect(&self) -> ConnectLayer<K> {
@@ -150,7 +152,7 @@ impl<K: Eq + Hash + FmtLabels> Clone for ConnectLayer<K> {
     }
 }
 
-impl<K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<K> {
+impl<K: Eq + Hash + FmtLabels, M> layer::Layer<M> for ConnectLayer<K> {
     type Service = Connect<K, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
@@ -163,9 +165,9 @@ impl<K: Eq + Hash + FmtLabels, M> tower::layer::Layer<M> for ConnectLayer<K> {
 
 // === impl Accept ===
 
-impl<I, A> tower::Service<I> for Accept<A>
+impl<I, A> Service<I> for Accept<A>
 where
-    A: tower::Service<SensorIo<I>, Response = ()>,
+    A: Service<SensorIo<I>, Response = ()>,
 {
     type Response = ();
     type Error = A::Error;
@@ -202,13 +204,13 @@ where
     }
 }
 
-impl<K, T, M> tower::Service<T> for Connect<K, M>
+impl<K, T, M> Service<T> for Connect<K, M>
 where
     T: Param<K>,
     K: Eq + Hash + FmtLabels,
-    M: tower::make::MakeConnection<T>,
+    M: Service<T>,
 {
-    type Response = SensorIo<M::Connection>;
+    type Response = SensorIo<M::Response>;
     type Error = M::Error;
     type Future = Connecting<M::Future>;
 
@@ -223,18 +225,14 @@ where
 
         Connecting {
             new_sensor: Some(NewSensor(metrics)),
-            underlying: self.inner.make_connection(target),
+            underlying: self.inner.call(target),
         }
     }
 }
 
 // === impl Connecting ===
 
-impl<F> Future for Connecting<F>
-where
-    F: TryFuture,
-    F::Ok: AsyncRead + AsyncWrite,
-{
+impl<F: TryFuture> Future for Connecting<F> {
     type Output = Result<SensorIo<F::Ok>, F::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -252,7 +250,7 @@ where
     }
 }
 
-// ===== impl Report =====
+// === impl Report ===
 
 impl<K: Eq + Hash + FmtLabels + 'static> Report<K> {
     /// Formats a metric across all instances of `EosMetrics` in the registry.
@@ -305,7 +303,7 @@ impl<K: Eq + Hash + FmtLabels + 'static> FmtMetrics for Report<K> {
     }
 }
 
-// ===== impl Sensor =====
+// === impl Sensor ===
 
 impl Sensor {
     fn open(metrics: Arc<Metrics>) -> Self {
@@ -377,7 +375,7 @@ impl Drop for Sensor {
     }
 }
 
-// ===== impl NewSensor =====
+// === impl NewSensor ===
 
 impl NewSensor {
     fn new_sensor(self) -> Sensor {
@@ -385,7 +383,7 @@ impl NewSensor {
     }
 }
 
-// ===== impl Eos =====
+// === impl Eos ===
 
 impl FmtLabels for Eos {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -396,7 +394,7 @@ impl FmtLabels for Eos {
     }
 }
 
-// ===== impl Metrics =====
+// === impl Metrics ===
 
 impl LastUpdate for Metrics {
     fn last_update(&self) -> Instant {
@@ -404,7 +402,7 @@ impl LastUpdate for Metrics {
     }
 }
 
-// ===== impl ByEos =====
+// === impl ByEos ===
 
 impl Default for ByEos {
     fn default() -> Self {

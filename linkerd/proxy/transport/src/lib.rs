@@ -8,7 +8,6 @@
 pub mod addrs;
 mod connect;
 pub mod listen;
-pub mod metrics;
 pub mod orig_dst;
 
 pub use self::{
