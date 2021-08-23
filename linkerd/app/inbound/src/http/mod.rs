@@ -14,6 +14,7 @@ fn trace_labels() -> std::collections::HashMap<String, String> {
 pub mod fuzz {
     use crate::{
         http::router::Http,
+        policy,
         test_util::{
             support::{connect::Connect, http_util, profile, resolver},
             *,
@@ -200,9 +201,14 @@ pub mod fuzz {
         }
     }
 
-    impl svc::Param<tls::ConditionalServerTls> for Target {
-        fn param(&self) -> tls::ConditionalServerTls {
-            tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello)
+    impl svc::Param<policy::Permit> for Target {
+        fn param(&self) -> policy::Permit {
+            policy::Permit {
+                protocol: policy::Protocol::Http1,
+                tls: tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello),
+                server_labels: Default::default(),
+                authz_labels: Default::default(),
+            }
         }
     }
 
