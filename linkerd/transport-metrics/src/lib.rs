@@ -60,7 +60,7 @@ struct ByEos {
     metrics: HashMap<Eos, EosMetrics>,
 }
 
-/// Describes a classtransport end.
+/// Describes a class of transport end.
 ///
 /// An `EosMetrics` type exists for each unique `Key` and `Eos` pair.
 ///
