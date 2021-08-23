@@ -10,11 +10,10 @@ pub use self::{
     client::Client,
     report::Report,
     sensor::{Sensor, SensorIo},
-    server::{NewServer, Server},
+    server::NewServer,
 };
 use linkerd_errno::Errno;
 use linkerd_metrics::{metrics, Counter, FmtLabels, Gauge, LastUpdate, Store};
-use linkerd_stack::{layer, NewService};
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
@@ -78,15 +77,6 @@ struct EosMetrics {
 // === impl Registry ===
 
 impl<K: Eq + Hash + FmtLabels> Registry<K> {
-    pub fn layer_accept<M, T>(
-        &self,
-    ) -> impl layer::Layer<M, Service = NewServer<M, K, M::Service>> + Clone
-    where
-        M: NewService<T>,
-    {
-        NewServer::layer(self.0.clone())
-    }
-
     pub fn metrics(&self, labels: K) -> Arc<Metrics> {
         self.0.lock().get_or_default(labels).clone()
     }

@@ -8,7 +8,7 @@ use linkerd_app_core::{
     },
     svc::{self, stack::Param},
     tls,
-    transport::{OrigDstAddr, Remote, ServerAddr},
+    transport::{self, OrigDstAddr, Remote, ServerAddr},
     AddrMatch, Error, Infallible, NameAddr,
 };
 use thiserror::Error;
@@ -220,7 +220,9 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             .push_map_target(detect::allow_timeout)
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect_http))
-            .push(rt.metrics.transport.layer_accept())
+            .push(transport::metrics::NewServer::layer(
+                rt.metrics.transport.clone(),
+            ))
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
             .push_map_target(|a: T| {
                 let orig_dst = Param::<OrigDstAddr>::param(&a);

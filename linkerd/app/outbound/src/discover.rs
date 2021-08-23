@@ -2,7 +2,7 @@ use crate::{tcp, Outbound};
 use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
-    transport::{metrics::SensorIo, OrigDstAddr},
+    transport::{self, metrics::SensorIo, OrigDstAddr},
     Error,
 };
 use std::convert::TryFrom;
@@ -72,7 +72,9 @@ impl<N> Outbound<N> {
                         ))
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
-                .push((&*rt.metrics.transport).layer_accept())
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.transport.clone(),
+                ))
                 .push_cache(config.proxy.cache_max_idle_age)
                 .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
                 .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))

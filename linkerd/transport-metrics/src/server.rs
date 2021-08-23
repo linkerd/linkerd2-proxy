@@ -1,12 +1,15 @@
 use super::{Metrics, Sensor, SensorIo};
-use linkerd_metrics::NewMetrics;
-use linkerd_stack::Service;
+use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use std::{
     sync::Arc,
     task::{Context, Poll},
 };
 
-pub type NewServer<N, K, S> = NewMetrics<N, K, Metrics, Server<S>>;
+#[derive(Clone, Debug)]
+pub struct NewServer<P, N> {
+    params: P,
+    inner: N,
+}
 
 #[derive(Clone, Debug)]
 pub struct Server<S> {
@@ -14,13 +17,32 @@ pub struct Server<S> {
     metrics: Arc<Metrics>,
 }
 
-// === impl Accept ===
+// === impl NewServer ===
 
-impl<A> From<(A, Arc<Metrics>)> for Server<A> {
-    fn from((inner, metrics): (A, Arc<Metrics>)) -> Self {
-        Self { inner, metrics }
+impl<P: Clone, N> NewServer<P, N> {
+    pub fn layer(params: P) -> impl layer::Layer<N, Service = Self> {
+        layer::mk(move |inner| NewServer {
+            params: params.clone(),
+            inner,
+        })
     }
 }
+
+impl<T, P, N> NewService<T> for NewServer<P, N>
+where
+    P: ExtractParam<Arc<Metrics>, T>,
+    N: NewService<T>,
+{
+    type Service = Server<N::Service>;
+
+    fn new_service(&mut self, target: T) -> Self::Service {
+        let metrics = self.params.extract_param(&target);
+        let inner = self.inner.new_service(target);
+        Server { inner, metrics }
+    }
+}
+
+// === impl Server ===
 
 impl<I, A> Service<I> for Server<A>
 where

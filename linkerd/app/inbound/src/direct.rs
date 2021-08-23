@@ -205,7 +205,9 @@ impl<N> Inbound<N> {
                         .instrument(|_: &GatewayConnection| info_span!("gateway", legacy = true))
                         .into_inner(),
                 )
-                .push(rt.metrics.transport.layer_accept())
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.transport.clone(),
+                ))
                 // Build a ClientInfo target for each accepted connection. Refuse the
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
