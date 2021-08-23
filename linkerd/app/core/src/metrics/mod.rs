@@ -14,6 +14,7 @@ use crate::{
 use linkerd_addr::Addr;
 use linkerd_metrics::FmtLabels;
 pub use linkerd_metrics::*;
+use linkerd_server_policy as policy;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -67,6 +68,13 @@ pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
+    pub policy: PolicyLabels,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct PolicyLabels {
+    pub server: policy::Labels,
+    pub authz: policy::Labels,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -284,6 +292,13 @@ impl FmtLabels for InboundEndpointLabels {
         }
 
         (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)).fmt_labels(f)?;
+
+        for (k, v) in self.policy.server.iter() {
+            write!(f, ",srv_{}=\"{}\"", k, v)?;
+        }
+        for (k, v) in self.policy.authz.iter() {
+            write!(f, ",saz_{}=\"{}\"", k, v)?;
+        }
 
         Ok(())
     }

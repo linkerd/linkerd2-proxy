@@ -1,4 +1,4 @@
-pub use crate::metrics::{Direction, OutboundEndpointLabels};
+pub use crate::metrics::{Direction, OutboundEndpointLabels, PolicyLabels};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_server_policy as policy;
@@ -33,12 +33,6 @@ pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct TargetAddr(pub(crate) SocketAddr);
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct PolicyLabels {
-    server: policy::Labels,
-    authz: policy::Labels,
-}
 
 // === impl Key ===
 

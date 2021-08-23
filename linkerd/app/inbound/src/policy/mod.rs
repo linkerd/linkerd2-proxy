@@ -34,7 +34,7 @@ pub(crate) struct AllowPolicy {
     server: Arc<ServerPolicy>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Permit {
     pub protocol: Protocol,
     pub tls: tls::ConditionalServerTls,

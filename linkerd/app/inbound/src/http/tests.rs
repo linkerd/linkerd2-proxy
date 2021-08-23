@@ -1,4 +1,5 @@
 use crate::{
+    policy,
     test_util::{
         support::{connect::Connect, http_util, profile, resolver},
         *,
@@ -403,9 +404,14 @@ impl svc::Param<http::Version> for Target {
     }
 }
 
-impl svc::Param<tls::ConditionalServerTls> for Target {
-    fn param(&self) -> tls::ConditionalServerTls {
-        tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello)
+impl svc::Param<policy::Permit> for Target {
+    fn param(&self) -> policy::Permit {
+        policy::Permit {
+            protocol: policy::Protocol::Http1,
+            tls: tls::ConditionalServerTls::None(tls::NoServerTls::Disabled),
+            server_labels: Default::default(),
+            authz_labels: Default::default(),
+        }
     }
 }
 

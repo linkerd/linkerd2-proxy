@@ -299,6 +299,12 @@ impl svc::Param<Option<identity::Name>> for Http {
     }
 }
 
+impl svc::Param<Permit> for Http {
+    fn param(&self) -> Permit {
+        self.tls.permit.clone()
+    }
+}
+
 // === TlsParams ===
 
 impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
