@@ -9,14 +9,13 @@ pub use self::config::Config;
 pub(crate) use self::store::Store;
 use linkerd_app_core::{
     tls,
-    transport::{ClientAddr, DeniedUnknownPort, DeniedUnknownPort, OrigDstAddr, Remote},
+    transport::{ClientAddr, DeniedUnauthorized, DeniedUnknownPort, OrigDstAddr, Remote},
     Result,
 };
 pub use linkerd_server_policy::{
     Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
 };
 use std::sync::Arc;
-use thiserror::Error;
 
 pub(crate) trait CheckPolicy {
     /// Checks that the destination address is configured to allow traffic.

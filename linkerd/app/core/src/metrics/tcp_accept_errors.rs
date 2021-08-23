@@ -95,11 +95,9 @@ impl LabelError<Error> for LabelAcceptErrors {
             } else if err.is::<std::io::Error>() {
                 // We ignore the error code because we want all labels to be consistent.
                 return AcceptErrors::Io;
-            } else if err.is::<DeniedUnknownPort>() {
+            } else if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
                 // If the port is unknown, the default policy is `deny`; so handle it as
                 // unauthorized.
-                return AcceptErrors::Unauthorized;
-            } else if err.is::<DeniedUnauthorized>() {
                 return AcceptErrors::Unauthorized;
             }
             curr = err.source();

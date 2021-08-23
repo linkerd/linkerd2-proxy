@@ -18,7 +18,7 @@ pub struct DeniedUnknownPort(pub u16);
 pub struct DeniedUnauthorized {
     pub client_addr: Remote<ClientAddr>,
     pub dst_addr: OrigDstAddr,
-    pub tls: Option<linkerd_tls::ConditionalServerTls>,
+    pub tls: linkerd_tls::ConditionalServerTls,
 }
 
 impl From<metrics::Registry<labels::Key>> for Metrics {

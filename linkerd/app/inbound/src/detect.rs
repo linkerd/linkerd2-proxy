@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, DeniedUnauthorized, Permit},
+    policy::{AllowPolicy, Permit},
     Inbound,
 };
 use linkerd_app_core::{
@@ -9,7 +9,7 @@ use linkerd_app_core::{
     transport::{
         self,
         addrs::{ClientAddr, OrigDstAddr, Remote},
-        ServerAddr,
+        DeniedUnauthorized, ServerAddr,
     },
     Error, Infallible,
 };
