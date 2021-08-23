@@ -19,11 +19,3 @@ impl<T: Param<labels::Key>> ExtractParam<Arc<metrics::Metrics>, T> for Metrics {
         self.0.metrics(t.param())
     }
 }
-
-impl std::ops::Deref for Metrics {
-    type Target = metrics::Registry<labels::Key>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
