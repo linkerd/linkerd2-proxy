@@ -160,8 +160,11 @@ impl<S> Inbound<S> {
         S::Error: Into<Error>,
         S::Future: Send,
     {
-        self.map_stack(|_, rt, conn| {
-            conn.push(rt.metrics.transport.layer_connect())
+        self.map_stack(|_, rt, connect| {
+            connect
+                .push(transport::metrics::Client::layer(
+                    rt.metrics.transport.clone(),
+                ))
                 .push_make_thunk()
                 .push_on_response(
                     svc::layers()

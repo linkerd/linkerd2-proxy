@@ -37,7 +37,6 @@ linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
 linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
-linkerd-transport-header = { path = "../../transport-header" }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
@@ -53,6 +52,8 @@ linkerd-reconnect = { path = "../../reconnect" }
 linkerd-retry = { path = "../../retry" }
 linkerd-timeout = { path = "../../timeout" }
 linkerd-tracing = { path = "../../tracing" }
+linkerd-transport-header = { path = "../../transport-header" }
+linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }

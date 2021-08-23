@@ -81,7 +81,7 @@ impl<C> Inbound<C> {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
                 .push(svc::stack::BoxFuture::layer())
-                .push(rt.metrics.transport.layer_connect())
+                .push(transport::metrics::Client::layer(rt.metrics.transport.clone()))
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,

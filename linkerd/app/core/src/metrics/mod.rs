@@ -173,7 +173,7 @@ impl Metrics {
                 http_route_retry: http_route_retry.clone(),
                 http_errors: http_errors.inbound(),
                 stack: stack.clone(),
-                transport: transport.clone(),
+                transport: transport.clone().into(),
                 tcp_accept_errors: inbound_tcp_accept_errors.clone(),
             },
             outbound: Proxy {
@@ -183,7 +183,7 @@ impl Metrics {
                 http_route_actual,
                 http_errors: http_errors.outbound(),
                 stack: stack.clone(),
-                transport,
+                transport: transport.into(),
                 tcp_accept_errors: outbound_tcp_accept_errors.clone(),
             },
             control,
