@@ -1238,20 +1238,13 @@ dependencies = [
 name = "linkerd-proxy-transport"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "futures",
  "libc",
- "linkerd-errno",
- "linkerd-error",
  "linkerd-io",
- "linkerd-metrics",
  "linkerd-stack",
- "parking_lot",
- "pin-project",
  "socket2 0.4.1",
  "tokio",
  "tokio-stream",
- "tower",
  "tracing",
 ]
 
@@ -1486,7 +1479,6 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "linkerd-errno",
- "linkerd-error",
  "linkerd-io",
  "linkerd-metrics",
  "linkerd-stack",

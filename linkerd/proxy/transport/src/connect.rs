@@ -1,6 +1,6 @@
 use crate::{Keepalive, Remote, ServerAddr};
 use linkerd_io as io;
-use linkerd_stack::Param;
+use linkerd_stack::{Param, Service};
 use std::{
     future::Future,
     pin::Pin,
@@ -20,7 +20,7 @@ impl ConnectTcp {
     }
 }
 
-impl<T: Param<Remote<ServerAddr>>> tower::Service<T> for ConnectTcp {
+impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
     type Response = io::ScopedIo<TcpStream>;
     type Error = io::Error;
     type Future =
