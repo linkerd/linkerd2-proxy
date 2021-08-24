@@ -7,7 +7,12 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     transport_header, Conditional,
 };
-use std::{fmt, net::SocketAddr};
+use std::{
+    collections::HashSet,
+    fmt,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
@@ -19,9 +24,10 @@ pub struct Endpoint<P> {
     pub opaque_protocol: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct FromMetadata {
     pub identity_disabled: bool,
+    pub inbound_ips: Arc<HashSet<IpAddr>>,
 }
 
 // === impl Endpoint ===
@@ -40,13 +46,23 @@ impl Endpoint<()> {
 
     pub fn from_metadata(
         addr: impl Into<SocketAddr>,
-        metadata: Metadata,
+        mut metadata: Metadata,
         reason: tls::NoClientTls,
         opaque_protocol: bool,
+        inbound_ips: &Arc<HashSet<IpAddr>>,
     ) -> Self {
+        let addr: SocketAddr = addr.into();
+        let tls = if inbound_ips.contains(&addr.ip()) {
+            metadata.clear_upgrade();
+            tracing::debug!(%addr, ?metadata, ?addr, ?inbound_ips, "Target is local");
+            tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
+        } else {
+            FromMetadata::client_tls(&metadata, reason)
+        };
+
         Self {
-            addr: Remote(ServerAddr(addr.into())),
-            tls: FromMetadata::client_tls(&metadata, reason),
+            addr: Remote(ServerAddr(addr)),
+            tls,
             metadata,
             logical_addr: None,
             opaque_protocol,
@@ -131,7 +147,6 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
 }
 
 // === EndpointFromMetadata ===
-
 impl FromMetadata {
     fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with
@@ -166,11 +181,18 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
         &self,
         concrete: &Concrete<P>,
         addr: SocketAddr,
-        metadata: Metadata,
+        mut metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
-        let tls = if self.identity_disabled {
-            tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
+        let tls = if self.identity_disabled || self.inbound_ips.contains(&addr.ip()) {
+            let reason = if self.identity_disabled {
+                tls::NoClientTls::Disabled
+            } else {
+                metadata.clear_upgrade();
+                tracing::debug!(%addr, ?metadata, ?addr, ?self.inbound_ips, "Target is local");
+                tls::NoClientTls::Loopback
+            };
+            tls::ConditionalClientTls::None(reason)
         } else {
             Self::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
         };

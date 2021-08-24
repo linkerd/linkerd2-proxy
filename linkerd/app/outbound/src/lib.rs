@@ -30,7 +30,13 @@ use linkerd_app_core::{
     transport::{self, addrs::*},
     AddrMatch, Error, ProxyRuntime,
 };
-use std::{collections::HashMap, fmt::Debug, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    net::IpAddr,
+    sync::Arc,
+    time::Duration,
+};
 use tracing::info;
 
 const EWMA_DEFAULT_RTT: Duration = Duration::from_millis(30);
@@ -45,6 +51,7 @@ pub struct Config {
     // not perform per-target-address discovery. Non-HTTP connections are
     // forwarded without discovery/routing/mTLS.
     pub ingress_mode: bool,
+    pub inbound_ips: Arc<HashSet<IpAddr>>,
 }
 
 #[derive(Clone, Debug)]
