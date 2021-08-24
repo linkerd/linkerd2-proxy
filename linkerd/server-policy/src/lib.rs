@@ -20,7 +20,7 @@ pub struct ServerPolicy {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Labels(Arc<BTreeMap<String, String>>);
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Protocol {
     Detect { timeout: time::Duration },
     Http1,

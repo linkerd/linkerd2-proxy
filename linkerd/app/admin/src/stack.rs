@@ -181,6 +181,7 @@ impl Param<metrics::EndpointLabels> for Http {
             tls: self.tcp.tls.clone(),
             authority: None,
             target_addr: self.tcp.addr.into(),
+            policy: Default::default(),
         }
         .into()
     }
