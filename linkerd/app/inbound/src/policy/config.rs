@@ -32,7 +32,15 @@ impl Config {
         identity: Option<LocalCrtKey>,
     ) -> Result<Store> {
         match self {
-            Self::Fixed { default, ports } => Ok(Store::fixed(default, ports)),
+            Self::Fixed { default, ports } => {
+                let (store, tx) = Store::fixed(default, ports);
+                if let Some(tx) = tx {
+                    tokio::spawn(async move {
+                        tx.closed().await;
+                    });
+                }
+                Ok(store)
+            }
             Self::Discover {
                 control,
                 ports,

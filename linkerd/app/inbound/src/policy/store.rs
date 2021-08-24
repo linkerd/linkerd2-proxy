@@ -12,9 +12,13 @@ use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Store {
-    default: DefaultPolicy,
-    ports: Arc<PortMap<watch::Receiver<Arc<ServerPolicy>>>>,
+    // When None, the default policy is 'deny'.
+    default: Option<Rx>,
+    ports: Arc<PortMap<Rx>>,
 }
+
+type Tx = watch::Sender<Arc<ServerPolicy>>;
+type Rx = watch::Receiver<Arc<ServerPolicy>>;
 
 /// A `HashMap` optimized for lookups by port number.
 type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
@@ -26,13 +30,20 @@ type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
 #[derive(Default)]
 struct PortHasher(u16);
 
-// === impl PortPolicies ===
+// === impl Store ===
 
 impl Store {
+    fn mk_default(default: DefaultPolicy) -> Option<(Tx, Rx)> {
+        match default {
+            DefaultPolicy::Deny => None,
+            DefaultPolicy::Allow(sp) => Some(watch::channel(Arc::new(sp))),
+        }
+    }
+
     pub(crate) fn fixed(
         default: impl Into<DefaultPolicy>,
         ports: impl IntoIterator<Item = (u16, ServerPolicy)>,
-    ) -> Self {
+    ) -> (Self, Option<Tx>) {
         let rxs = ports
             .into_iter()
             .map(|(p, s)| {
@@ -43,10 +54,17 @@ impl Store {
                 (p, rx)
             })
             .collect();
-        Self {
-            default: default.into(),
+
+        let (default_tx, default) = match Self::mk_default(default.into()) {
+            Some((tx, rx)) => (Some(tx), Some(rx)),
+            None => (None, None),
+        };
+
+        let store = Self {
+            default,
             ports: Arc::new(rxs),
-        }
+        };
+        (store, default_tx)
     }
 
     /// Spawns a watch for each of the given ports.
@@ -83,6 +101,16 @@ impl Store {
                 .into_iter()
                 .collect::<Result<PortMap<_>, tonic::Status>>()?;
 
+            let default = match Self::mk_default(default) {
+                Some((tx, rx)) => {
+                    tokio::spawn(async move {
+                        tx.closed().await;
+                    });
+                    Some(rx)
+                }
+                None => None,
+            };
+
             Ok(Self {
                 default,
                 ports: Arc::new(ports),
@@ -102,11 +130,11 @@ impl CheckPolicy for Store {
         let server = self
             .ports
             .get(&dst.port())
-            .map(|s| s.borrow().clone())
+            .cloned()
             .map(Ok)
             .unwrap_or_else(|| match &self.default {
-                DefaultPolicy::Allow(a) => Ok(a.clone()),
-                DefaultPolicy::Deny => Err(DeniedUnknownPort(dst.port())),
+                Some(rx) => Ok(rx.clone()),
+                None => Err(DeniedUnknownPort(dst.port())),
             })?;
 
         Ok(AllowPolicy { dst, server })

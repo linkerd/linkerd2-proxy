@@ -104,16 +104,17 @@ impl<N> Inbound<N> {
                     // detection.
                     |(tls, t): (tls::ConditionalServerTls, T)| -> Result<_, Error> {
                         let policy: AllowPolicy = t.param();
-                        let permit = policy.check_authorized(t.param(), tls)?;
 
                         // If the port is configured to support application TLS, it may have also
                         // been wrapped in mesh identity. In any case, we don't actually validate
                         // whether app TLS was employed, but we use this as a signal that we should
                         // not perform additional protocol detection.
-                        if let Protocol::Tls = permit.protocol {
+                        if policy.protocol() == Protocol::Tls {
+                            let permit = policy.check_authorized(t.param(), tls)?;
                             return Ok(svc::Either::B(Tls::from_params(&t, permit)));
                         }
 
+                        let permit = policy.check_authorized(t.param(), tls)?;
                         Ok(svc::Either::A(Tls::from_params(&t, permit)))
                     },
                     svc::stack(forward.clone())
@@ -129,7 +130,7 @@ impl<N> Inbound<N> {
                     // detection should be skipped, use the TCP stack directly.
                     |t: T| -> Result<_, DeniedUnauthorized> {
                         let policy: AllowPolicy = t.param();
-                        if policy.is_opaque() {
+                        if policy.protocol() == Protocol::Opaque {
                             let permit = policy.check_authorized(t.param(), TLS_PORT_SKIPPED)?;
                             return Ok(svc::Either::B(Tls::from_params(&t, permit)));
                         }
@@ -350,7 +351,7 @@ mod tests {
     async fn detect_tls_opaque() {
         let _trace = trace::test::trace_init();
 
-        let allow = AllowPolicy::for_test(
+        let (allow, _tx) = AllowPolicy::for_test(
             orig_dst_addr(),
             ServerPolicy {
                 protocol: Protocol::Opaque,

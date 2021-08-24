@@ -18,11 +18,11 @@ fn unauthenticated_allowed() {
             .collect(),
     };
 
-    let policies = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(*allowed.server, policy);
+    assert_eq!(**allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
     let permitted = allowed
@@ -62,11 +62,11 @@ fn authenticated_identity() {
             .collect(),
     };
 
-    let policies = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(*allowed.server, policy);
+    assert_eq!(**allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: Some(client_id()),
@@ -124,11 +124,11 @@ fn authenticated_suffix() {
             .collect(),
     };
 
-    let policies = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(*allowed.server, policy);
+    assert_eq!(**allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: Some(client_id()),
@@ -179,11 +179,11 @@ fn tls_unauthenticated() {
             .collect(),
     };
 
-    let policies = Store::fixed(policy.clone(), None);
+    let (policies, _tx) = Store::fixed(policy.clone(), None);
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(*allowed.server, policy);
+    assert_eq!(**allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: None,

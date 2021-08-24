@@ -633,7 +633,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                                     .get(&p)
                                     .or_else(|| require_tls_ports.get(&p))
                                     .cloned()
-                                    .unwrap_or_else(|| (*default_allow).clone());
+                                    .unwrap_or_else(|| default_allow.clone());
                                 sp.protocol = inbound::policy::Protocol::Opaque;
                                 (p, sp)
                             })

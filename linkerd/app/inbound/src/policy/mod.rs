@@ -16,6 +16,7 @@ pub use linkerd_server_policy::{
     Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
 };
 use std::sync::Arc;
+use tokio::sync::watch;
 
 pub(crate) trait CheckPolicy {
     /// Checks that the destination address is configured to allow traffic.
@@ -24,14 +25,14 @@ pub(crate) trait CheckPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultPolicy {
-    Allow(Arc<ServerPolicy>),
+    Allow(ServerPolicy),
     Deny,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct AllowPolicy {
     dst: OrigDstAddr,
-    server: Arc<ServerPolicy>,
+    server: watch::Receiver<Arc<ServerPolicy>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -47,7 +48,7 @@ pub(crate) struct Permit {
 
 impl From<ServerPolicy> for DefaultPolicy {
     fn from(p: ServerPolicy) -> Self {
-        DefaultPolicy::Allow(p.into())
+        DefaultPolicy::Allow(p)
     }
 }
 
@@ -55,15 +56,18 @@ impl From<ServerPolicy> for DefaultPolicy {
 
 impl AllowPolicy {
     #[cfg(test)]
-    pub(crate) fn for_test(dst: OrigDstAddr, server: ServerPolicy) -> Self {
-        Self {
-            dst,
-            server: server.into(),
-        }
+    pub(crate) fn for_test(
+        dst: OrigDstAddr,
+        server: ServerPolicy,
+    ) -> (Self, watch::Sender<Arc<ServerPolicy>>) {
+        let (tx, server) = watch::channel(Arc::new(server));
+        let p = Self { dst, server };
+        (p, tx)
     }
 
-    pub(crate) fn is_opaque(&self) -> bool {
-        self.server.protocol == Protocol::Opaque
+    #[inline]
+    pub(crate) fn protocol(&self) -> Protocol {
+        self.server.borrow().protocol
     }
 
     /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections
@@ -73,11 +77,12 @@ impl AllowPolicy {
         client_addr: Remote<ClientAddr>,
         tls: tls::ConditionalServerTls,
     ) -> Result<Permit, DeniedUnauthorized> {
-        for authz in self.server.authorizations.iter() {
+        let server = self.server.borrow();
+        for authz in server.authorizations.iter() {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permit::new(&self.server, authz, tls));
+                        return Ok(Permit::new(&**self.server.borrow(), authz, tls));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -85,7 +90,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permit::new(&self.server, authz, tls));
+                            return Ok(Permit::new(&**self.server.borrow(), authz, tls));
                         }
                     }
 
@@ -101,7 +106,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_ref())
                                 || suffixes.iter().any(|s| s.contains(id.as_ref()))
                             {
-                                return Ok(Permit::new(&self.server, authz, tls));
+                                return Ok(Permit::new(&**self.server.borrow(), authz, tls));
                             }
                         }
                     }
