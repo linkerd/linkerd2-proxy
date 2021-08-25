@@ -1,3 +1,4 @@
+use crate::transport::DeniedUnauthorized;
 use http::{header::HeaderValue, StatusCode};
 use linkerd_errno::Errno;
 use linkerd_error::Error;
@@ -15,8 +16,6 @@ use std::task::{Context, Poll};
 use thiserror::Error;
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
-
-use crate::transport::DeniedUnauthorized;
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
