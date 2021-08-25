@@ -404,29 +404,32 @@ mod tests {
     const HTTP2: &[u8] = b"PRI * HTTP/2.0\r\n";
     const NOT_HTTP: &[u8] = b"foo\r\nbar\r\nblah\r\n";
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn detect_tls_opaque() {
-        let _trace = trace::test::trace_init();
-
+    fn allow(protocol: Protocol) -> AllowPolicy {
         let (allow, _tx) = AllowPolicy::for_test(
             orig_dst_addr(),
             ServerPolicy {
-                protocol: Protocol::Opaque,
+                protocol,
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![client_addr().ip().into()],
-                    labels: None.into_iter().collect(),
+                    labels: Default::default(),
                 }],
-                labels: None.into_iter().collect(),
+                labels: Default::default(),
             },
         );
+        allow
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn detect_tls_opaque() {
+        let _trace = trace::test::trace_init();
 
         let (io, _) = io::duplex(1);
         inbound()
             .with_stack(new_panic("detect stack must not be used"))
             .push_detect_tls(new_ok())
             .into_inner()
-            .new_service(Target(allow))
+            .new_service(Target(allow(Protocol::Opaque)))
             .oneshot(io)
             .await
             .expect("should succeed");
@@ -436,16 +439,6 @@ mod tests {
     async fn detect_http_non_http() {
         let _trace = trace::test::trace_init();
 
-        let (policy, _tx) = AllowPolicy::for_test(
-            orig_dst_addr(),
-            ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![],
-                labels: None.into_iter().collect(),
-            },
-        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -453,7 +446,9 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            policy,
+            policy: allow(Protocol::Detect {
+                timeout: std::time::Duration::from_secs(10),
+            }),
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -473,16 +468,6 @@ mod tests {
     async fn detect_http() {
         let _trace = trace::test::trace_init();
 
-        let (policy, _tx) = AllowPolicy::for_test(
-            orig_dst_addr(),
-            ServerPolicy {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                authorizations: vec![],
-                labels: None.into_iter().collect(),
-            },
-        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -490,7 +475,9 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            policy,
+            policy: allow(Protocol::Detect {
+                timeout: std::time::Duration::from_secs(10),
+            }),
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -509,15 +496,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn hinted_http1() {
         let _trace = trace::test::trace_init();
-
-        let (policy, _tx) = AllowPolicy::for_test(
-            orig_dst_addr(),
-            ServerPolicy {
-                protocol: Protocol::Http1,
-                authorizations: vec![],
-                labels: None.into_iter().collect(),
-            },
-        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -525,7 +503,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            policy,
+            policy: allow(Protocol::Http1),
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -544,15 +522,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn hinted_http1_supports_http2() {
         let _trace = trace::test::trace_init();
-
-        let (policy, _tx) = AllowPolicy::for_test(
-            orig_dst_addr(),
-            ServerPolicy {
-                protocol: Protocol::Http1,
-                authorizations: vec![],
-                labels: None.into_iter().collect(),
-            },
-        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -560,7 +529,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            policy,
+            policy: allow(Protocol::Http1),
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -579,15 +548,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn hinted_http2() {
         let _trace = trace::test::trace_init();
-
-        let (policy, _tx) = AllowPolicy::for_test(
-            orig_dst_addr(),
-            ServerPolicy {
-                protocol: Protocol::Http2,
-                authorizations: vec![],
-                labels: None.into_iter().collect(),
-            },
-        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -595,7 +555,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            policy,
+            policy: allow(Protocol::Http2),
         };
 
         let (ior, _) = io::duplex(100);

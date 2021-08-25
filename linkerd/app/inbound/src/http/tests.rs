@@ -416,7 +416,11 @@ impl svc::Param<policy::AllowPolicy> for Target {
             self.param(),
             policy::ServerPolicy {
                 protocol: policy::Protocol::Http1,
-                authorizations: vec![],
+                authorizations: vec![policy::Authorization {
+                    authentication: policy::Authentication::Unauthenticated,
+                    networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
+                    labels: None.into_iter().collect(),
+                }],
                 labels: Default::default(),
             },
         );
