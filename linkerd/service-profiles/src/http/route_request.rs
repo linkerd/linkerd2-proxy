@@ -1,11 +1,13 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
-use futures::{future::ErrInto, prelude::*, ready};
+use futures::{prelude::*, ready};
 use linkerd_error::Error;
+use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, NewService, Param, Proxy};
 use std::{
     collections::HashMap,
     marker::PhantomData,
+    pin::Pin,
     task::{Context, Poll},
 };
 use tracing::{debug, trace};
@@ -15,11 +17,9 @@ pub fn layer<M, N: Clone, R>(
 ) -> impl layer::Layer<M, Service = NewRouteRequest<M, N, R>> {
     // This is saved so that the same `Arc`s are used and cloned instead of
     // calling `Route::default()` every time.
-    let default = Route::default();
     layer::mk(move |inner| NewRouteRequest {
         inner,
         new_route: new_route.clone(),
-        default: default.clone(),
         _route: PhantomData,
     })
 }
@@ -27,7 +27,6 @@ pub fn layer<M, N: Clone, R>(
 pub struct NewRouteRequest<M, N, R> {
     inner: M,
     new_route: N,
-    default: Route,
     _route: PhantomData<R>,
 }
 
@@ -38,7 +37,6 @@ pub struct RouteRequest<T, S, N, R> {
     new_route: N,
     http_routes: Vec<(RequestMatch, Route)>,
     proxies: HashMap<Route, R>,
-    default: R,
 }
 
 impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
@@ -46,7 +44,6 @@ impl<M: Clone, N: Clone, R> Clone for NewRouteRequest<M, N, R> {
         Self {
             inner: self.inner.clone(),
             new_route: self.new_route.clone(),
-            default: self.default.clone(),
             _route: self._route,
         }
     }
@@ -63,14 +60,10 @@ where
     fn new_service(&mut self, target: T) -> Self::Service {
         let rx = target.param();
         let inner = self.inner.new_service(target.clone());
-        let default = self
-            .new_route
-            .new_service((self.default.clone(), target.clone()));
         RouteRequest {
             rx: rx.into(),
             target,
             inner,
-            default,
             new_route: self.new_route.clone(),
             http_routes: Vec::new(),
             proxies: HashMap::new(),
@@ -78,18 +71,30 @@ where
     }
 }
 
-impl<B, T, N, S, R> tower::Service<http::Request<B>> for RouteRequest<T, S, N, R>
+impl<T, N, S, R> tower::Service<http::Request<BoxBody>> for RouteRequest<T, S, N, R>
 where
-    B: Send + 'static,
     T: Clone,
     N: NewService<(Route, T), Service = R> + Clone,
-    R: Proxy<http::Request<B>, S>,
-    S: tower::Service<R::Request>,
+    R: Proxy<
+        http::Request<BoxBody>,
+        S,
+        Request = http::Request<BoxBody>,
+        Response = http::Response<BoxBody>,
+    >,
+    R::Future: Send + 'static,
+    S: tower::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>>,
+    S::Future: Send + 'static,
     S::Error: Into<Error>,
 {
-    type Response = R::Response;
+    type Response = http::Response<BoxBody>;
     type Error = Error;
-    type Future = ErrInto<R::Future, Error>;
+    type Future = Pin<
+        Box<
+            dyn std::future::Future<Output = Result<http::Response<BoxBody>, Error>>
+                + Send
+                + 'static,
+        >,
+    >;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
@@ -119,17 +124,19 @@ where
         Poll::Ready(ready!(self.inner.poll_ready(cx)).map_err(Into::into))
     }
 
-    fn call(&mut self, req: http::Request<B>) -> Self::Future {
+    fn call(&mut self, req: http::Request<BoxBody>) -> Self::Future {
         for (ref condition, ref route) in &self.http_routes {
             if condition.is_match(&req) {
                 trace!(?condition, "Using configured route");
-                return self.proxies[route]
-                    .proxy(&mut self.inner, req)
-                    .err_into::<Error>();
+                return Box::pin(
+                    self.proxies[route]
+                        .proxy(&mut self.inner, req)
+                        .err_into::<Error>(),
+                );
             }
         }
 
-        trace!("Using default route");
-        self.default.proxy(&mut self.inner, req).err_into::<Error>()
+        trace!("No routes matched");
+        Box::pin(self.inner.call(req).err_into::<Error>())
     }
 }

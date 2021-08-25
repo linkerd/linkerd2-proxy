@@ -21,10 +21,11 @@ indexmap = "1.7"
 linkerd-addr = { path = "../addr" }
 linkerd-dns-name = { path = "../dns/name" }
 linkerd-error = { path = "../error" }
-linkerd2-proxy-api = { version = "0.2", features = ["destination", "client"] }
+linkerd-http-box = { path = "../http-box" }
 linkerd-proxy-api-resolve = { path = "../proxy/api-resolve" }
 linkerd-stack = { path = "../stack" }
 linkerd-tonic-watch = { path = "../tonic-watch" }
+linkerd2-proxy-api = { version = "0.2", features = ["destination", "client"] }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = "1.5.4"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
