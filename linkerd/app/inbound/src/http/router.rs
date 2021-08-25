@@ -266,7 +266,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
         let permit = match self.policy.check_authorized(self.client, &self.tls) {
             Ok(permit) => permit,
             Err(denied) => {
-                tracing::debug!(%logical, %denied);
+                tracing::debug!(?logical, ?denied);
                 return Err(denied.into());
             }
         };
