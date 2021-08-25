@@ -26,12 +26,11 @@ fn unauthenticated_allowed() {
 
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
     let permitted = allowed
-        .check_authorized(client_addr(), tls.clone())
+        .check_authorized(client_addr(), &tls)
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
         Permit {
-            tls,
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -73,12 +72,11 @@ fn authenticated_identity() {
         negotiated_protocol: None,
     });
     let permitted = allowed
-        .check_authorized(client_addr(), tls.clone())
+        .check_authorized(client_addr(), &tls)
         .expect("unauthenticated connection must be permitted");
     assert_eq!(
         permitted,
         Permit {
-            tls,
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -98,7 +96,7 @@ fn authenticated_identity() {
         negotiated_protocol: None,
     });
     allowed
-        .check_authorized(client_addr(), tls)
+        .check_authorized(client_addr(), &tls)
         .expect_err("policy must require a client identity");
 }
 
@@ -136,10 +134,9 @@ fn authenticated_suffix() {
     });
     assert_eq!(
         allowed
-            .check_authorized(client_addr(), tls.clone())
+            .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         Permit {
-            tls,
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -159,7 +156,7 @@ fn authenticated_suffix() {
         negotiated_protocol: None,
     });
     allowed
-        .check_authorized(client_addr(), tls)
+        .check_authorized(client_addr(), &tls)
         .expect_err("policy must require a client identity");
 }
 
@@ -191,10 +188,9 @@ fn tls_unauthenticated() {
     });
     assert_eq!(
         allowed
-            .check_authorized(client_addr(), tls.clone())
+            .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         Permit {
-            tls,
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -211,7 +207,7 @@ fn tls_unauthenticated() {
             .unwrap(),
     });
     allowed
-        .check_authorized(client_addr(), tls)
+        .check_authorized(client_addr(), &tls)
         .expect_err("policy must require a TLS termination identity");
 }
 

@@ -38,7 +38,6 @@ pub(crate) struct AllowPolicy {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Permit {
     pub protocol: Protocol,
-    pub tls: tls::ConditionalServerTls,
 
     pub server_labels: Labels,
     pub authz_labels: Labels,
@@ -75,14 +74,14 @@ impl AllowPolicy {
     pub(crate) fn check_authorized(
         &self,
         client_addr: Remote<ClientAddr>,
-        tls: tls::ConditionalServerTls,
+        tls: &tls::ConditionalServerTls,
     ) -> Result<Permit, DeniedUnauthorized> {
         let server = self.server.borrow();
         for authz in server.authorizations.iter() {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permit::new(&**self.server.borrow(), authz, tls));
+                        return Ok(Permit::new(&**server, authz));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -90,7 +89,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permit::new(&**self.server.borrow(), authz, tls));
+                            return Ok(Permit::new(&**server, authz));
                         }
                     }
 
@@ -106,7 +105,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_ref())
                                 || suffixes.iter().any(|s| s.contains(id.as_ref()))
                             {
-                                return Ok(Permit::new(&**self.server.borrow(), authz, tls));
+                                return Ok(Permit::new(&**server, authz));
                             }
                         }
                     }
@@ -117,7 +116,7 @@ impl AllowPolicy {
         Err(DeniedUnauthorized {
             client_addr,
             dst_addr: self.dst,
-            tls,
+            tls: tls.clone(),
         })
     }
 }
@@ -125,12 +124,11 @@ impl AllowPolicy {
 // === impl Permit ===
 
 impl Permit {
-    fn new(server: &ServerPolicy, authz: &Authorization, tls: tls::ConditionalServerTls) -> Self {
+    fn new(server: &ServerPolicy, authz: &Authorization) -> Self {
         Self {
             protocol: server.protocol,
             server_labels: server.labels.clone(),
             authz_labels: authz.labels.clone(),
-            tls,
         }
     }
 }

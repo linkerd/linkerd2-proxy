@@ -20,6 +20,7 @@ use std::{fmt::Debug, time};
 pub(crate) struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
+    status: tls::ConditionalServerTls,
     permit: Permit,
 }
 
@@ -110,12 +111,12 @@ impl<N> Inbound<N> {
                         // whether app TLS was employed, but we use this as a signal that we should
                         // not perform additional protocol detection.
                         if policy.protocol() == Protocol::Tls {
-                            let permit = policy.check_authorized(t.param(), tls)?;
-                            return Ok(svc::Either::B(Tls::from_params(&t, permit)));
+                            let permit = policy.check_authorized(t.param(), &tls)?;
+                            return Ok(svc::Either::B(Tls::mk(&t, tls, permit)));
                         }
 
-                        let permit = policy.check_authorized(t.param(), tls)?;
-                        Ok(svc::Either::A(Tls::from_params(&t, permit)))
+                        let permit = policy.check_authorized(t.param(), &tls)?;
+                        Ok(svc::Either::A(Tls::mk(&t, tls, permit)))
                     },
                     svc::stack(forward.clone())
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
@@ -131,8 +132,8 @@ impl<N> Inbound<N> {
                     |t: T| -> Result<_, DeniedUnauthorized> {
                         let policy: AllowPolicy = t.param();
                         if policy.protocol() == Protocol::Opaque {
-                            let permit = policy.check_authorized(t.param(), TLS_PORT_SKIPPED)?;
-                            return Ok(svc::Either::B(Tls::from_params(&t, permit)));
+                            let permit = policy.check_authorized(t.param(), &TLS_PORT_SKIPPED)?;
+                            return Ok(svc::Either::B(Tls::mk(&t, TLS_PORT_SKIPPED, permit)));
                         }
                         Ok(svc::Either::A(t))
                     },
@@ -212,13 +213,14 @@ impl<N> Inbound<N> {
 // === impl Tls ===
 
 impl Tls {
-    fn from_params<T>(t: &T, permit: Permit) -> Self
+    fn mk<T>(t: &T, status: tls::ConditionalServerTls, permit: Permit) -> Self
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
     {
         Self {
             client_addr: t.param(),
             orig_dst_addr: t.param(),
+            status,
             permit,
         }
     }
@@ -233,7 +235,7 @@ impl svc::Param<u16> for Tls {
 impl svc::Param<transport::labels::Key> for Tls {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.permit.tls.clone(),
+            self.status.clone(),
             self.orig_dst_addr.into(),
             self.permit.server_labels.clone(),
             self.permit.authz_labels.clone(),
@@ -271,7 +273,7 @@ impl svc::Param<Remote<ClientAddr>> for Http {
 
 impl svc::Param<tls::ConditionalServerTls> for Http {
     fn param(&self) -> tls::ConditionalServerTls {
-        self.tls.permit.tls.clone()
+        self.tls.status.clone()
     }
 }
 
@@ -287,8 +289,7 @@ impl svc::Param<http::normalize_uri::DefaultAuthority> for Http {
 impl svc::Param<Option<identity::Name>> for Http {
     fn param(&self) -> Option<identity::Name> {
         self.tls
-            .permit
-            .tls
+            .status
             .value()
             .and_then(|server_tls| match server_tls {
                 tls::ServerTls::Established {
@@ -382,14 +383,14 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
+            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(client_id()),
+                negotiated_protocol: None,
+            }),
             permit: Permit {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),
                 },
-                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id()),
-                    negotiated_protocol: None,
-                }),
                 server_labels: None.into_iter().collect(),
                 authz_labels: None.into_iter().collect(),
             },
@@ -415,14 +416,14 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
+            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(client_id()),
+                negotiated_protocol: None,
+            }),
             permit: Permit {
                 protocol: Protocol::Detect {
                     timeout: std::time::Duration::from_secs(10),
                 },
-                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id()),
-                    negotiated_protocol: None,
-                }),
                 server_labels: None.into_iter().collect(),
                 authz_labels: None.into_iter().collect(),
             },
@@ -448,12 +449,12 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
+            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(client_id()),
+                negotiated_protocol: None,
+            }),
             permit: Permit {
                 protocol: Protocol::Http1,
-                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id()),
-                    negotiated_protocol: None,
-                }),
                 server_labels: None.into_iter().collect(),
                 authz_labels: None.into_iter().collect(),
             },
@@ -479,12 +480,12 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
+            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(client_id()),
+                negotiated_protocol: None,
+            }),
             permit: Permit {
                 protocol: Protocol::Http1,
-                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id()),
-                    negotiated_protocol: None,
-                }),
                 server_labels: None.into_iter().collect(),
                 authz_labels: None.into_iter().collect(),
             },
@@ -510,12 +511,12 @@ mod tests {
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
+            status: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(client_id()),
+                negotiated_protocol: None,
+            }),
             permit: Permit {
                 protocol: Protocol::Http2,
-                tls: tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                    client_id: Some(client_id()),
-                    negotiated_protocol: None,
-                }),
                 server_labels: None.into_iter().collect(),
                 authz_labels: None.into_iter().collect(),
             },
