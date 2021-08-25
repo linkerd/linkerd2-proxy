@@ -54,7 +54,7 @@ impl From<ServerPolicy> for DefaultPolicy {
 // === impl AllowPolicy ===
 
 impl AllowPolicy {
-    #[cfg(test)]
+    #[cfg(any(test, fuzzing))]
     pub(crate) fn for_test(
         dst: OrigDstAddr,
         server: ServerPolicy,
