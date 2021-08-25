@@ -193,6 +193,7 @@ fn grpc_class(headers: &http::HeaderMap) -> Option<Class> {
                 | grpc::Code::DeadlineExceeded
                 | grpc::Code::Internal
                 | grpc::Code::Unavailable
+                | grpc::Code::PermissionDenied
                 | grpc::Code::DataLoss => SuccessOrFailure::Failure,
                 _ => SuccessOrFailure::Success,
             };
