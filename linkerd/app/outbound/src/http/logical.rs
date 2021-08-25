@@ -109,9 +109,11 @@ impl<E> Outbound<E> {
                         .push_spawn_buffer(buffer_capacity),
                 )
                 .push_cache(cache_max_idle_age)
+                .push_on_response(http::BoxResponse::layer())
                 // Note: routes can't exert backpressure.
                 .push(profiles::http::route_request::layer(
                     svc::proxies()
+                        .push_on_response(http::BoxRequest::layer())
                         .push(
                             rt.metrics
                                 .http_route_actual
@@ -133,8 +135,10 @@ impl<E> Outbound<E> {
                         // extension.
                         .push(classify::NewClassify::layer())
                         .push_map_target(Logical::mk_route)
+                        .push_on_response(http::BoxResponse::layer())
                         .into_inner(),
                 ))
+                .push_on_response(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
                 // canonical-dst-header. The response body is boxed unify the profile
                 // stack's response type with that of to endpoint stack.
