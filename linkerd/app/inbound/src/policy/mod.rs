@@ -69,6 +69,11 @@ impl AllowPolicy {
         self.server.borrow().protocol
     }
 
+    #[inline]
+    pub(crate) fn server_labels(&self) -> Labels {
+        self.server.borrow().labels.clone()
+    }
+
     /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections
     /// given the provided TLS state.
     pub(crate) fn check_authorized(

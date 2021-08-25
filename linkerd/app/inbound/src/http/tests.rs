@@ -410,13 +410,17 @@ impl svc::Param<tls::ConditionalServerTls> for Target {
     }
 }
 
-impl svc::Param<policy::Permit> for Target {
-    fn param(&self) -> policy::Permit {
-        policy::Permit {
-            protocol: policy::Protocol::Http1,
-            server_labels: Default::default(),
-            authz_labels: Default::default(),
-        }
+impl svc::Param<policy::AllowPolicy> for Target {
+    fn param(&self) -> policy::AllowPolicy {
+        let (policy, _) = policy::AllowPolicy::for_test(
+            self.param(),
+            policy::ServerPolicy {
+                protocol: policy::Protocol::Http1,
+                authorizations: vec![],
+                labels: Default::default(),
+            },
+        );
+        policy
     }
 }
 

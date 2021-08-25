@@ -17,11 +17,25 @@ use linkerd_server_policy::Protocol;
 use std::{fmt::Debug, time};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Tls {
+pub(crate) struct Forward {
+    client_addr: Remote<ClientAddr>,
+    orig_dst_addr: OrigDstAddr,
+    tls: tls::ConditionalServerTls,
+    permit: Permit,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Http {
+    tls: Tls,
+    http: http::Version,
+}
+
+#[derive(Clone, Debug)]
+struct Tls {
     client_addr: Remote<ClientAddr>,
     orig_dst_addr: OrigDstAddr,
     status: tls::ConditionalServerTls,
-    permit: Permit,
+    policy: AllowPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -32,12 +46,6 @@ struct Detect {
 
 #[derive(Copy, Clone, Debug)]
 struct ConfigureHttpDetect;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Http {
-    tls: Tls,
-    http: http::Version,
-}
 
 #[derive(Clone)]
 struct TlsParams {
@@ -65,7 +73,7 @@ impl<N> Inbound<N> {
         NSvc: Send + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
@@ -89,7 +97,7 @@ impl<N> Inbound<N> {
         NSvc: Send + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
@@ -112,11 +120,15 @@ impl<N> Inbound<N> {
                         // not perform additional protocol detection.
                         if policy.protocol() == Protocol::Tls {
                             let permit = policy.check_authorized(t.param(), &tls)?;
-                            return Ok(svc::Either::B(Tls::mk(&t, tls, permit)));
+                            return Ok(svc::Either::B(Forward::mk(&t, tls, permit)));
                         }
 
-                        let permit = policy.check_authorized(t.param(), &tls)?;
-                        Ok(svc::Either::A(Tls::mk(&t, tls, permit)))
+                        Ok(svc::Either::A(Tls {
+                            client_addr: t.param(),
+                            orig_dst_addr: t.param(),
+                            status: tls,
+                            policy,
+                        }))
                     },
                     svc::stack(forward.clone())
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
@@ -133,7 +145,7 @@ impl<N> Inbound<N> {
                         let policy: AllowPolicy = t.param();
                         if policy.protocol() == Protocol::Opaque {
                             let permit = policy.check_authorized(t.param(), &TLS_PORT_SKIPPED)?;
-                            return Ok(svc::Either::B(Tls::mk(&t, TLS_PORT_SKIPPED, permit)));
+                            return Ok(svc::Either::B(Forward::mk(&t, TLS_PORT_SKIPPED, permit)));
                         }
                         Ok(svc::Either::A(t))
                     },
@@ -158,20 +170,66 @@ impl<N> Inbound<N> {
         NSvc: Send + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
-        F: svc::NewService<Tls, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
+        F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
         FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
         FSvc::Error: Into<Error>,
         FSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, http| {
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
-            http.clone()
+
+            let detect = http
+                .clone()
                 .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.transport.clone(),
+                ))
+                .check_new_service::<Http, io::PrefixedIo<I>>()
+                .push_switch(
+                    |(http, Detect { tls, .. })| -> Result<_, Error> {
+                        match http {
+                            Some(http) => Ok(svc::Either::A(Http { http, tls })),
+                            // When HTTP detection fails, forward the connection to the application as
+                            // an opaque TCP stream.
+                            None => {
+                                let Tls {
+                                    client_addr,
+                                    orig_dst_addr,
+                                    status: tls,
+                                    policy,
+                                } = tls;
+                                let permit = policy.check_authorized(client_addr, &tls)?;
+                                Ok(svc::Either::B(Forward {
+                                    client_addr,
+                                    orig_dst_addr,
+                                    tls,
+                                    permit,
+                                }))
+                            }
+                        }
+                    },
+                    svc::stack(forward)
+                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .push(transport::metrics::NewServer::layer(
+                            rt.metrics.transport.clone(),
+                        ))
+                        .into_inner(),
+                )
+                .push(svc::BoxNewService::layer())
+                .push_map_target(detect::allow_timeout)
+                .push(detect::NewDetectService::layer(ConfigureHttpDetect))
+                .check_new_service::<Detect, I>();
+
+            http.push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.transport.clone(),
+                ))
+                .check_new_service::<Http, I>()
                 .push_switch(
                     // If we have a protocol hint, skip detection and just used the hinted HTTP
                     // version.
                     move |tls: Tls| -> Result<_, Infallible> {
-                        let http = match tls.permit.protocol {
+                        let http = match tls.policy.protocol() {
                             Protocol::Detect { timeout } => {
                                 return Ok(svc::Either::B(Detect { timeout, tls }));
                             }
@@ -188,54 +246,41 @@ impl<N> Inbound<N> {
                         };
                         Ok(svc::Either::A(Http { http, tls }))
                     },
-                    http.push_map_target(|(http, Detect { tls, .. })| Http { http, tls })
-                        .push(svc::UnwrapOr::layer(
-                            // When HTTP detection fails, forward the connection to the application as
-                            // an opaque TCP stream.
-                            svc::stack(forward.clone())
-                                .push_map_target(|Detect { tls, .. }| tls)
-                                .into_inner(),
-                        ))
-                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push(svc::BoxNewService::layer())
-                        .push_map_target(detect::allow_timeout)
-                        .push(detect::NewDetectService::layer(ConfigureHttpDetect)),
+                    detect.into_inner(),
                 )
-                .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
-                ))
                 .push_on_response(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
+                .check_new_service::<Tls, I>()
         })
     }
 }
 
-// === impl Tls ===
+// === impl Forward ===
 
-impl Tls {
-    fn mk<T>(t: &T, status: tls::ConditionalServerTls, permit: Permit) -> Self
+impl Forward {
+    fn mk<T>(t: &T, tls: tls::ConditionalServerTls, permit: Permit) -> Self
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
     {
         Self {
             client_addr: t.param(),
             orig_dst_addr: t.param(),
-            status,
+            tls,
             permit,
         }
     }
 }
 
-impl svc::Param<u16> for Tls {
+impl svc::Param<u16> for Forward {
     fn param(&self) -> u16 {
         self.orig_dst_addr.as_ref().port()
     }
 }
 
-impl svc::Param<transport::labels::Key> for Tls {
+impl svc::Param<transport::labels::Key> for Forward {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.status.clone(),
+            self.tls.clone(),
             self.orig_dst_addr.into(),
             self.permit.server_labels.clone(),
             self.permit.authz_labels.clone(),
@@ -301,9 +346,20 @@ impl svc::Param<Option<identity::Name>> for Http {
     }
 }
 
-impl svc::Param<Permit> for Http {
-    fn param(&self) -> Permit {
-        self.tls.permit.clone()
+impl svc::Param<AllowPolicy> for Http {
+    fn param(&self) -> AllowPolicy {
+        self.tls.policy.clone()
+    }
+}
+
+impl svc::Param<transport::labels::Key> for Http {
+    fn param(&self) -> transport::labels::Key {
+        transport::labels::Key::inbound_server(
+            self.tls.status.clone(),
+            self.tls.orig_dst_addr.into(),
+            self.tls.policy.server_labels(),
+            Default::default(),
+        )
     }
 }
 
@@ -380,6 +436,16 @@ mod tests {
     async fn detect_http_non_http() {
         let _trace = trace::test::trace_init();
 
+        let (policy, _tx) = AllowPolicy::for_test(
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![],
+                labels: None.into_iter().collect(),
+            },
+        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -387,13 +453,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            permit: Permit {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                server_labels: None.into_iter().collect(),
-                authz_labels: None.into_iter().collect(),
-            },
+            policy,
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -413,6 +473,16 @@ mod tests {
     async fn detect_http() {
         let _trace = trace::test::trace_init();
 
+        let (policy, _tx) = AllowPolicy::for_test(
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Detect {
+                    timeout: std::time::Duration::from_secs(10),
+                },
+                authorizations: vec![],
+                labels: None.into_iter().collect(),
+            },
+        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -420,13 +490,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            permit: Permit {
-                protocol: Protocol::Detect {
-                    timeout: std::time::Duration::from_secs(10),
-                },
-                server_labels: None.into_iter().collect(),
-                authz_labels: None.into_iter().collect(),
-            },
+            policy,
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -446,6 +510,14 @@ mod tests {
     async fn hinted_http1() {
         let _trace = trace::test::trace_init();
 
+        let (policy, _tx) = AllowPolicy::for_test(
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Http1,
+                authorizations: vec![],
+                labels: None.into_iter().collect(),
+            },
+        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -453,11 +525,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            permit: Permit {
-                protocol: Protocol::Http1,
-                server_labels: None.into_iter().collect(),
-                authz_labels: None.into_iter().collect(),
-            },
+            policy,
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -477,6 +545,14 @@ mod tests {
     async fn hinted_http1_supports_http2() {
         let _trace = trace::test::trace_init();
 
+        let (policy, _tx) = AllowPolicy::for_test(
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Http1,
+                authorizations: vec![],
+                labels: None.into_iter().collect(),
+            },
+        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -484,11 +560,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            permit: Permit {
-                protocol: Protocol::Http1,
-                server_labels: None.into_iter().collect(),
-                authz_labels: None.into_iter().collect(),
-            },
+            policy,
         };
 
         let (ior, mut iow) = io::duplex(100);
@@ -508,6 +580,14 @@ mod tests {
     async fn hinted_http2() {
         let _trace = trace::test::trace_init();
 
+        let (policy, _tx) = AllowPolicy::for_test(
+            orig_dst_addr(),
+            ServerPolicy {
+                protocol: Protocol::Http2,
+                authorizations: vec![],
+                labels: None.into_iter().collect(),
+            },
+        );
         let target = Tls {
             client_addr: client_addr(),
             orig_dst_addr: orig_dst_addr(),
@@ -515,11 +595,7 @@ mod tests {
                 client_id: Some(client_id()),
                 negotiated_protocol: None,
             }),
-            permit: Permit {
-                protocol: Protocol::Http2,
-                server_labels: None.into_iter().collect(),
-                authz_labels: None.into_iter().collect(),
-            },
+            policy,
         };
 
         let (ior, _) = io::duplex(100);

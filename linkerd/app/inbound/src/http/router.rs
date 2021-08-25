@@ -22,9 +22,10 @@ pub struct Http {
 /// Builds `Logical` targets for each HTTP request.
 #[derive(Clone, Debug)]
 struct LogicalPerRequest {
-    addr: Remote<ServerAddr>,
+    client: Remote<ClientAddr>,
+    server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
-    permit: policy::Permit,
+    policy: policy::AllowPolicy,
 }
 
 /// Describes a logical request target.
@@ -68,7 +69,7 @@ impl<C> Inbound<C> {
             + Param<Remote<ServerAddr>>
             + Param<Remote<ClientAddr>>
             + Param<tls::ConditionalServerTls>
-            + Param<policy::Permit>,
+            + Param<policy::AllowPolicy>,
         T: Clone + Send + 'static,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
@@ -221,9 +222,10 @@ impl<C> Inbound<C> {
                 // minimize it's type footprint with a Box.
                 .push(svc::BoxNewService::layer())
                 .push(svc::NewRouter::layer(|t: T| LogicalPerRequest {
-                    addr: t.param(),
+                    client: t.param(),
+                    server: t.param(),
                     tls: t.param(),
-                    permit: t.param(),
+                    policy: t.param(),
                 }))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
@@ -260,11 +262,20 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
             .or_else(|| http_request_authority_addr(req).ok()?.into_name_addr())
             .or_else(|| http_request_host_addr(req).ok()?.into_name_addr());
 
+        // Use the per-port inbound policy to determine whether the request is permitted.
+        let permit = match self.policy.check_authorized(self.client, &self.tls) {
+            Ok(permit) => permit,
+            Err(denied) => {
+                tracing::debug!(%logical, %denied);
+                return Err(denied.into());
+            }
+        };
+
         Ok(Logical {
             logical,
-            addr: self.addr,
+            addr: self.server,
             tls: self.tls.clone(),
-            permit: self.permit.clone(),
+            permit,
             // Use the request's HTTP version (i.e. as modified by orig-proto downgrading).
             http: req
                 .version()

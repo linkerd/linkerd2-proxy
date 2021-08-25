@@ -73,7 +73,10 @@ where
             Ok(rsp.map(|updates| {
                 updates
                     .map(|up| match to_policy(up?) {
-                        Ok(p) => Ok(p.into()),
+                        Ok(policy) => {
+                            tracing::debug!(?policy);
+                            Ok(policy.into())
+                        }
                         Err(e) => Err(tonic::Status::invalid_argument(&*format!(
                             "received invalid policy: {}",
                             e
