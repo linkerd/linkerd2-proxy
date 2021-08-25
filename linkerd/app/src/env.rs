@@ -938,7 +938,7 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
 }
 
 fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
-    s.split(",")
+    s.split(',')
         .map(|s| s.parse::<IpAddr>().map_err(Into::into))
         .collect()
 }
