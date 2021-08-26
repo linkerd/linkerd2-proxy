@@ -1,3 +1,4 @@
+use crate::transport::DeniedUnauthorized;
 use http::{header::HeaderValue, StatusCode};
 use linkerd_errno::Errno;
 use linkerd_error::Error;
@@ -62,6 +63,7 @@ pub enum Reason {
     FailFast,
     GatewayLoop,
     NotFound,
+    Unauthorized,
     Unexpected,
 }
 
@@ -307,7 +309,7 @@ fn set_http_status(
         builder.status(StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<tower::timeout::error::Elapsed>() {
         builder.status(StatusCode::SERVICE_UNAVAILABLE)
-    } else if error.is::<IdentityRequired>() {
+    } else if error.is::<IdentityRequired>() || error.is::<DeniedUnauthorized>() {
         builder.status(StatusCode::FORBIDDEN)
     } else if let Some(source) = error.source() {
         set_http_status(builder, source)
@@ -350,6 +352,13 @@ fn set_grpc_status(
             GRPC_MESSAGE,
             HeaderValue::from_static("proxy dispatch timed out"),
         );
+        code
+    } else if error.is::<DeniedUnauthorized>() {
+        let code = Code::PermissionDenied;
+        headers.insert(GRPC_STATUS, code_header(code));
+        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
+            headers.insert(GRPC_MESSAGE, msg);
+        }
         code
     } else if error.is::<IdentityRequired>() {
         let code = Code::FailedPrecondition;
@@ -433,6 +442,8 @@ impl LabelError {
             Reason::FailFast
         } else if err.is::<tower::timeout::error::Elapsed>() {
             Reason::DispatchTimeout
+        } else if err.is::<DeniedUnauthorized>() {
+            Reason::Unauthorized
         } else if err.is::<IdentityRequired>() {
             Reason::IdentityRequired
         } else if let Some(e) = err.downcast_ref::<std::io::Error>() {
@@ -466,6 +477,7 @@ impl FmtLabels for Reason {
                 Reason::GatewayLoop => "gateway loop",
                 Reason::NotFound => "not found",
                 Reason::Io(_) => "i/o",
+                Reason::Unauthorized => "unauthorized",
                 Reason::Unexpected => "unexpected",
             }
         )?;

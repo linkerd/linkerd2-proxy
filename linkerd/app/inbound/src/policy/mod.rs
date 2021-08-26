@@ -15,7 +15,7 @@ use linkerd_app_core::{
 pub use linkerd_server_policy::{
     Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
 };
-use std::sync::Arc;
+use tokio::sync::watch;
 
 pub(crate) trait CheckPolicy {
     /// Checks that the destination address is configured to allow traffic.
@@ -24,20 +24,19 @@ pub(crate) trait CheckPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DefaultPolicy {
-    Allow(Arc<ServerPolicy>),
+    Allow(ServerPolicy),
     Deny,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct AllowPolicy {
     dst: OrigDstAddr,
-    server: Arc<ServerPolicy>,
+    server: watch::Receiver<ServerPolicy>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Permit {
     pub protocol: Protocol,
-    pub tls: tls::ConditionalServerTls,
 
     pub server_labels: Labels,
     pub authz_labels: Labels,
@@ -47,23 +46,31 @@ pub(crate) struct Permit {
 
 impl From<ServerPolicy> for DefaultPolicy {
     fn from(p: ServerPolicy) -> Self {
-        DefaultPolicy::Allow(p.into())
+        DefaultPolicy::Allow(p)
     }
 }
 
 // === impl AllowPolicy ===
 
 impl AllowPolicy {
-    #[cfg(test)]
-    pub(crate) fn for_test(dst: OrigDstAddr, server: ServerPolicy) -> Self {
-        Self {
-            dst,
-            server: server.into(),
-        }
+    #[cfg(any(test, fuzzing))]
+    pub(crate) fn for_test(
+        dst: OrigDstAddr,
+        server: ServerPolicy,
+    ) -> (Self, watch::Sender<ServerPolicy>) {
+        let (tx, server) = watch::channel(server);
+        let p = Self { dst, server };
+        (p, tx)
     }
 
-    pub(crate) fn is_opaque(&self) -> bool {
-        self.server.protocol == Protocol::Opaque
+    #[inline]
+    pub(crate) fn protocol(&self) -> Protocol {
+        self.server.borrow().protocol
+    }
+
+    #[inline]
+    pub(crate) fn server_labels(&self) -> Labels {
+        self.server.borrow().labels.clone()
     }
 
     /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections
@@ -71,13 +78,14 @@ impl AllowPolicy {
     pub(crate) fn check_authorized(
         &self,
         client_addr: Remote<ClientAddr>,
-        tls: tls::ConditionalServerTls,
+        tls: &tls::ConditionalServerTls,
     ) -> Result<Permit, DeniedUnauthorized> {
-        for authz in self.server.authorizations.iter() {
+        let server = self.server.borrow();
+        for authz in server.authorizations.iter() {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permit::new(&self.server, authz, tls));
+                        return Ok(Permit::new(&*server, authz));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -85,7 +93,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permit::new(&self.server, authz, tls));
+                            return Ok(Permit::new(&*server, authz));
                         }
                     }
 
@@ -101,7 +109,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_ref())
                                 || suffixes.iter().any(|s| s.contains(id.as_ref()))
                             {
-                                return Ok(Permit::new(&self.server, authz, tls));
+                                return Ok(Permit::new(&*server, authz));
                             }
                         }
                     }
@@ -112,7 +120,7 @@ impl AllowPolicy {
         Err(DeniedUnauthorized {
             client_addr,
             dst_addr: self.dst,
-            tls,
+            tls: tls.clone(),
         })
     }
 }
@@ -120,12 +128,11 @@ impl AllowPolicy {
 // === impl Permit ===
 
 impl Permit {
-    fn new(server: &ServerPolicy, authz: &Authorization, tls: tls::ConditionalServerTls) -> Self {
+    fn new(server: &ServerPolicy, authz: &Authorization) -> Self {
         Self {
             protocol: server.protocol,
             server_labels: server.labels.clone(),
             authz_labels: authz.labels.clone(),
-            tls,
         }
     }
 }

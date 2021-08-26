@@ -404,14 +404,27 @@ impl svc::Param<http::Version> for Target {
     }
 }
 
-impl svc::Param<policy::Permit> for Target {
-    fn param(&self) -> policy::Permit {
-        policy::Permit {
-            protocol: policy::Protocol::Http1,
-            tls: tls::ConditionalServerTls::None(tls::NoServerTls::Disabled),
-            server_labels: Default::default(),
-            authz_labels: Default::default(),
-        }
+impl svc::Param<tls::ConditionalServerTls> for Target {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::None(tls::NoServerTls::Disabled)
+    }
+}
+
+impl svc::Param<policy::AllowPolicy> for Target {
+    fn param(&self) -> policy::AllowPolicy {
+        let (policy, _) = policy::AllowPolicy::for_test(
+            self.param(),
+            policy::ServerPolicy {
+                protocol: policy::Protocol::Http1,
+                authorizations: vec![policy::Authorization {
+                    authentication: policy::Authentication::Unauthenticated,
+                    networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
+                    labels: None.into_iter().collect(),
+                }],
+                labels: Default::default(),
+            },
+        );
+        policy
     }
 }
 

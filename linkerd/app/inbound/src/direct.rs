@@ -31,6 +31,7 @@ struct RefusedNoTarget;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Local {
     port: u16,
+    client_id: tls::ClientId,
     permit: policy::Permit,
 }
 
@@ -139,12 +140,12 @@ impl<N> Inbound<N> {
                                     ))?;
                                     let tls = tls::ConditionalServerTls::Some(
                                         tls::ServerTls::Established {
-                                            client_id: Some(client.client_id),
+                                            client_id: Some(client.client_id.clone()),
                                             negotiated_protocol: client.alpn,
                                         },
                                     );
-                                    let permit = allow.check_authorized(client.client_addr, tls)?;
-                                    Ok(svc::Either::A(Local { port, permit }))
+                                    let permit = allow.check_authorized(client.client_addr, &tls)?;
+                                    Ok(svc::Either::A(Local { port, permit, client_id: client.client_id, }))
                                 }
                                 TransportHeader {
                                     port,
@@ -162,7 +163,7 @@ impl<N> Inbound<N> {
                                             negotiated_protocol: client.alpn.clone(),
                                         },
                                     );
-                                    let permit = allow.check_authorized(client.client_addr, tls)?;
+                                    let permit = allow.check_authorized(client.client_addr, &tls)?;
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
@@ -212,7 +213,7 @@ impl<N> Inbound<N> {
                                     client_id: Some(client.client_id.clone()),
                                     negotiated_protocol: client.alpn.clone(),
                                 });
-                            let permit = allow.check_authorized(client.client_addr, tls)?;
+                            let permit = allow.check_authorized(client.client_addr, &tls)?;
                             Ok(svc::Either::B(Legacy { client, permit }))
                         }
                     },
@@ -289,7 +290,10 @@ impl Param<u16> for Local {
 impl Param<transport::labels::Key> for Local {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.permit.tls.clone(),
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(self.client_id.clone()),
+                negotiated_protocol: None,
+            }),
             ([127, 0, 0, 1], self.port).into(),
             self.permit.server_labels.clone(),
             self.permit.authz_labels.clone(),
@@ -302,7 +306,10 @@ impl Param<transport::labels::Key> for Local {
 impl Param<transport::labels::Key> for GatewayTransportHeader {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.permit.tls.clone(),
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(self.client.client_id.clone()),
+                negotiated_protocol: self.client.alpn.clone(),
+            }),
             self.client.local_addr.into(),
             self.permit.server_labels.clone(),
             self.permit.authz_labels.clone(),
@@ -315,7 +322,10 @@ impl Param<transport::labels::Key> for GatewayTransportHeader {
 impl Param<transport::labels::Key> for Legacy {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            self.permit.tls.clone(),
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some(self.client.client_id.clone()),
+                negotiated_protocol: self.client.alpn.clone(),
+            }),
             self.client.local_addr.into(),
             self.permit.server_labels.clone(),
             self.permit.authz_labels.clone(),
