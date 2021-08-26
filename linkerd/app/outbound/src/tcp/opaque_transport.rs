@@ -151,7 +151,7 @@ mod test {
         transport_header::TransportHeader,
     };
     use pin_project::pin_project;
-    use std::{collections::HashSet, net::IpAddr, sync::Arc, task::Context};
+    use std::task::Context;
     use tower::util::{service_fn, ServiceExt};
 
     fn ep(metadata: Metadata) -> Endpoint<()> {
@@ -160,7 +160,7 @@ mod test {
             metadata,
             tls::NoClientTls::NotProvidedByServiceDiscovery,
             false,
-            &Arc::new(HashSet::<IpAddr>::new()),
+            &Default::default(),
         )
     }
 
