@@ -1,13 +1,12 @@
 use super::{RequestMatch, Route};
 use crate::{Profile, Receiver, ReceiverStream};
-use futures::{prelude::*, ready};
+use futures::{future, prelude::*, ready};
 use linkerd_error::Error;
 use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, NewService, Param, Proxy};
 use std::{
     collections::HashMap,
     marker::PhantomData,
-    pin::Pin,
     task::{Context, Poll},
 };
 use tracing::{debug, trace};
@@ -81,20 +80,13 @@ where
         Request = http::Request<BoxBody>,
         Response = http::Response<BoxBody>,
     >,
-    R::Future: Send + 'static,
     S: tower::Service<http::Request<BoxBody>, Response = http::Response<BoxBody>>,
-    S::Future: Send + 'static,
     S::Error: Into<Error>,
 {
     type Response = http::Response<BoxBody>;
     type Error = Error;
-    type Future = Pin<
-        Box<
-            dyn std::future::Future<Output = Result<http::Response<BoxBody>, Error>>
-                + Send
-                + 'static,
-        >,
-    >;
+    type Future =
+        future::Either<future::ErrInto<R::Future, Error>, future::ErrInto<S::Future, Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let mut update = None;
@@ -128,7 +120,7 @@ where
         for (ref condition, ref route) in &self.http_routes {
             if condition.is_match(&req) {
                 trace!(?condition, "Using configured route");
-                return Box::pin(
+                return future::Either::Left(
                     self.proxies[route]
                         .proxy(&mut self.inner, req)
                         .err_into::<Error>(),
@@ -137,6 +129,6 @@ where
         }
 
         trace!("No routes matched");
-        Box::pin(self.inner.call(req).err_into::<Error>())
+        future::Either::Right(self.inner.call(req).err_into::<Error>())
     }
 }
