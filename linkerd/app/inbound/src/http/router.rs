@@ -154,7 +154,7 @@ impl<C> Inbound<C> {
                                     addr,
                                     logical,
                                     profiles: rx,
-                            }));
+                                }));
                             }
                         }
                         Ok(svc::Either::B(logical))
