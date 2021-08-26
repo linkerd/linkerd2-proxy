@@ -954,7 +954,6 @@ dependencies = [
  "linkerd-error",
  "linkerd-stack",
  "pin-project",
- "tower",
 ]
 
 [[package]]
@@ -1297,6 +1296,7 @@ dependencies = [
  "linkerd-addr",
  "linkerd-dns-name",
  "linkerd-error",
+ "linkerd-http-box",
  "linkerd-proxy-api-resolve",
  "linkerd-stack",
  "linkerd-tonic-watch",

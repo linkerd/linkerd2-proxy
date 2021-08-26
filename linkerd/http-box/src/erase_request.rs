@@ -2,14 +2,14 @@
 
 use crate::BoxBody;
 use linkerd_error::Error;
-use linkerd_stack::{layer, Proxy};
+use linkerd_stack::{layer, Proxy, Service};
 use std::task::{Context, Poll};
 
 /// Boxes request bodies, erasing the original type.
 ///
 /// This is *very* similar to the [`BoxRequest`](crate::request::BoxRequest)
 /// middleware. However, that middleware is generic over a specific body type
-/// that is erased. A given instance of `EraseRequest` can only erase the type
+/// that is erased. A given instance of `BoxRequest` can only erase the type
 /// of one particular `Body` type, while this middleware will erase bodies of
 /// *any* type.
 ///
@@ -43,12 +43,12 @@ impl<S: Clone> Clone for EraseRequest<S> {
     }
 }
 
-impl<S, B> tower::Service<http::Request<B>> for EraseRequest<S>
+impl<S, B> Service<http::Request<B>> for EraseRequest<S>
 where
     B: http_body::Body + Send + 'static,
     B::Data: Send + 'static,
     B::Error: Into<Error>,
-    S: tower::Service<http::Request<BoxBody>>,
+    S: Service<http::Request<BoxBody>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -70,7 +70,7 @@ where
     B: http_body::Body + Send + 'static,
     B::Data: Send + 'static,
     B::Error: Into<Error>,
-    S: tower::Service<P::Request>,
+    S: Service<P::Request>,
     P: Proxy<http::Request<BoxBody>, S>,
 {
     type Request = P::Request;

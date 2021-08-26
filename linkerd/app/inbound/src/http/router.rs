@@ -115,14 +115,12 @@ impl<C> Inbound<C> {
             // request has not been received for `cache_max_idle_age`.
             http.clone()
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                .push_on_response(http::BoxRequest::layer())
                 // The HTTP stack doesn't use the profile resolution, so drop it.
                 .push_map_target(Logical::from)
+                .push_on_response(http::BoxResponse::layer())
                 .push(profiles::http::route_request::layer(
                     svc::proxies()
-                        // Sets the route as a request extension so that it can be used
-                        // by tap.
-                        .push_http_insert_target::<dst::Route>()
+                        .push_on_response(http::BoxRequest::layer())
                         // Records per-route metrics.
                         .push(
                             rt.metrics
@@ -132,7 +130,9 @@ impl<C> Inbound<C> {
                         // Sets the per-route response classifier as a request
                         // extension.
                         .push(classify::NewClassify::layer())
-                        .check_new_clone::<dst::Route>()
+                        // Sets the route as a request extension so that it can be used
+                        // by tap.
+                        .push_http_insert_target::<dst::Route>()
                         .push_map_target(|(route, logical): (profiles::http::Route, Profile)| {
                             dst::Route {
                                 route,
@@ -140,9 +140,9 @@ impl<C> Inbound<C> {
                                 direction: metrics::Direction::In,
                             }
                         })
+                        .push_on_response(http::BoxResponse::layer())
                         .into_inner(),
                 ))
-                .push_on_response(http::BoxResponse::layer())
                 .push_switch(
                     // If the profile was resolved to a logical (service) address, build a profile
                     // stack to include route-level metrics, etc. Otherwise, skip this stack and use
