@@ -10,11 +10,8 @@ use linkerd_app_core::{
 };
 use linkerd_app_outbound as outbound;
 use std::{
-    collections::HashSet,
     future::Future,
-    net::IpAddr,
     pin::Pin,
-    sync::Arc,
     task::{Context, Poll},
 };
 use tracing::{debug, warn};
@@ -74,7 +71,6 @@ where
             debug!("Creating outbound endpoint");
             // Create empty list of inbound ips, TLS shouldn't be skipped in
             // this case.
-            let inbound_ips: Arc<HashSet<IpAddr>> = Default::default();
             let svc = self
                 .outbound
                 .new_service(svc::Either::B(outbound::http::Endpoint::from((
@@ -84,7 +80,9 @@ where
                         metadata,
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
-                        &inbound_ips,
+                        // Address would not be a local IP so always treat
+                        // target as remote in this case.
+                        &Default::default(),
                     ),
                 ))));
             return Gateway::new(svc, http.target, local_id);

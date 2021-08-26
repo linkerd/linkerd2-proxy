@@ -49,7 +49,7 @@ impl Endpoint<()> {
         mut metadata: Metadata,
         reason: tls::NoClientTls,
         opaque_protocol: bool,
-        inbound_ips: &Arc<HashSet<IpAddr>>,
+        inbound_ips: &HashSet<IpAddr>,
     ) -> Self {
         let addr: SocketAddr = addr.into();
         let tls = if inbound_ips.contains(&addr.ip()) {

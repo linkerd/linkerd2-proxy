@@ -398,7 +398,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
 
-    let allowed_ips = {
+    let inbound_ips = {
         let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
         if ips.is_empty() {
             info!(
@@ -462,7 +462,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            inbound_ips: allowed_ips,
+            inbound_ips,
         }
     };
 

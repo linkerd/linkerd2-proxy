@@ -40,7 +40,7 @@ impl<S> Outbound<S> {
                                     metadata,
                                     no_tls_reason,
                                     rx.is_opaque_protocol(),
-                                    &inbound_ips.clone(),
+                                    &*inbound_ips,
                                 )));
                             }
 
