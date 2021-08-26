@@ -12,13 +12,13 @@ use inbound::policy;
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
     str::FromStr,
     time::Duration,
 };
 use thiserror::Error;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// The strings used to build a configuration.
 pub trait Strings {
@@ -68,6 +68,12 @@ pub enum ParseError {
     NotANetwork,
     #[error("host is not an IP address")]
     HostIsNotAnIpAddress,
+    #[error("not a valid IP address: {0}")]
+    NotAnIp(
+        #[from]
+        #[source]
+        std::net::AddrParseError,
+    ),
     #[error(transparent)]
     AddrError(addr::Error),
     #[error("not a valid identity name")]
@@ -167,6 +173,8 @@ pub const ENV_INBOUND_PORTS: &str = "LINKERD2_PROXY_INBOUND_PORTS";
 pub const ENV_POLICY_SVC_BASE: &str = "LINKERD2_PROXY_POLICY_SVC";
 pub const ENV_POLICY_WORKLOAD: &str = "LINKERD2_PROXY_POLICY_WORKLOAD";
 pub const ENV_POLICY_CLUSTER_NETWORKS: &str = "LINKERD2_PROXY_POLICY_CLUSTER_NETWORKS";
+
+pub const ENV_INBOUND_IPS: &str = "LINKERD2_PROXY_INBOUND_IPS";
 
 pub const ENV_IDENTITY_DISABLED: &str = "LINKERD2_PROXY_IDENTITY_DISABLED";
 pub const ENV_IDENTITY_DIR: &str = "LINKERD2_PROXY_IDENTITY_DIR";
@@ -390,6 +398,19 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         .unwrap_or_else(|| parse_dns_suffixes(DEFAULT_DESTINATION_PROFILE_SUFFIXES).unwrap());
     let dst_profile_networks = dst_profile_networks?.unwrap_or_default();
 
+    let inbound_ips = {
+        let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
+        if ips.is_empty() {
+            info!(
+                "`{}` allowlist not configured, allowing all target addresses",
+                ENV_INBOUND_IPS
+            );
+        } else {
+            debug!(allowed = ?ips, "Only allowing connections targeting `{}`", ENV_INBOUND_IPS);
+        }
+        ips.into()
+    };
+
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
@@ -441,6 +462,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
+            inbound_ips,
         }
     };
 
@@ -913,6 +935,12 @@ fn parse_socket_addr(s: &str) -> Result<SocketAddr, ParseError> {
             Err(ParseError::HostIsNotAnIpAddress)
         }
     }
+}
+
+fn parse_ip_set(s: &str) -> Result<HashSet<IpAddr>, ParseError> {
+    s.split(',')
+        .map(|s| s.parse::<IpAddr>().map_err(Into::into))
+        .collect()
 }
 
 fn parse_addr(s: &str) -> Result<Addr, ParseError> {

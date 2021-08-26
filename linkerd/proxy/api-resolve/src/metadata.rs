@@ -84,4 +84,10 @@ impl Metadata {
     pub fn authority_override(&self) -> Option<&Authority> {
         self.authority_override.as_ref()
     }
+
+    pub fn clear_upgrade(&mut self) {
+        self.protocol_hint = ProtocolHint::Unknown;
+        self.opaque_transport_port = None;
+        self.authority_override = None;
+    }
 }

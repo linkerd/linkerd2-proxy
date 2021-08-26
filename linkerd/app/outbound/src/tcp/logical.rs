@@ -53,7 +53,13 @@ where
                 .check_service::<ConcreteAddr>()
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
-                    map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
+                    map_endpoint::Resolve::new(
+                        endpoint::FromMetadata {
+                            identity_disabled,
+                            inbound_ips: config.inbound_ips.clone(),
+                        },
+                        inner,
+                    )
                 }))
                 .check_service::<Concrete>()
                 .into_inner();

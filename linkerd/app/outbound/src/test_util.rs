@@ -43,6 +43,7 @@ pub fn default_config() -> Config {
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(3),
         },
+        inbound_ips: Default::default(),
     }
 }
 

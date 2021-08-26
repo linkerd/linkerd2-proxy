@@ -69,6 +69,8 @@ where
         // Create an outbound target using the endpoint from the profile.
         if let Some((addr, metadata)) = profile.endpoint() {
             debug!("Creating outbound endpoint");
+            // Create empty list of inbound ips, TLS shouldn't be skipped in
+            // this case.
             let svc = self
                 .outbound
                 .new_service(svc::Either::B(outbound::http::Endpoint::from((
@@ -78,6 +80,9 @@ where
                         metadata,
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
+                        // Address would not be a local IP so always treat
+                        // target as remote in this case.
+                        &Default::default(),
                     ),
                 ))));
             return Gateway::new(svc, http.target, local_id);

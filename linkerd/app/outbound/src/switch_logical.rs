@@ -26,7 +26,8 @@ impl<S> Outbound<S> {
         SSvc::Future: Send,
     {
         let no_tls_reason = self.no_tls_reason();
-        self.map_stack(|_, _, endpoint| {
+        self.map_stack(|config, _, endpoint| {
+            let inbound_ips = config.inbound_ips.clone();
             endpoint
                 .push_switch(
                     move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
@@ -39,6 +40,7 @@ impl<S> Outbound<S> {
                                     metadata,
                                     no_tls_reason,
                                     rx.is_opaque_protocol(),
+                                    &*inbound_ips,
                                 )));
                             }
 

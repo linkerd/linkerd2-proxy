@@ -117,6 +117,7 @@ where
         .push_tcp_endpoint()
         .push_tcp_forward()
         .into_stack();
+    let inbound_ips = outbound.config().inbound_ips.clone();
     let tcp = endpoint
         .push_switch(
             move |(profile, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
@@ -130,6 +131,7 @@ where
                         metadata,
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
+                        &inbound_ips,
                     )));
                 }
 
