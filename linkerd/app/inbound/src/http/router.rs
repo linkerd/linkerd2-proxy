@@ -22,8 +22,10 @@ pub struct Http {
 /// Builds `Logical` targets for each HTTP request.
 #[derive(Clone, Debug)]
 struct LogicalPerRequest {
-    addr: Remote<ServerAddr>,
-    permit: policy::Permit,
+    client: Remote<ClientAddr>,
+    server: Remote<ServerAddr>,
+    tls: tls::ConditionalServerTls,
+    policy: policy::AllowPolicy,
 }
 
 /// Describes a logical request target.
@@ -33,6 +35,7 @@ struct Logical {
     logical: Option<NameAddr>,
     addr: Remote<ServerAddr>,
     http: http::Version,
+    tls: tls::ConditionalServerTls,
     permit: policy::Permit,
 }
 
@@ -65,7 +68,8 @@ impl<C> Inbound<C> {
         T: Param<http::Version>
             + Param<Remote<ServerAddr>>
             + Param<Remote<ClientAddr>>
-            + Param<policy::Permit>,
+            + Param<tls::ConditionalServerTls>
+            + Param<policy::AllowPolicy>,
         T: Clone + Send + 'static,
         P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + 'static,
         P::Future: Send,
@@ -218,11 +222,13 @@ impl<C> Inbound<C> {
                 // minimize it's type footprint with a Box.
                 .push(svc::BoxNewService::layer())
                 .push(svc::NewRouter::layer(|t: T| LogicalPerRequest {
-                    addr: t.param(),
-                    permit: t.param(),
+                    client: t.param(),
+                    server: t.param(),
+                    tls: t.param(),
+                    policy: t.param(),
                 }))
                 // Used by tap.
-                .push_http_insert_target::<policy::Permit>()
+                .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
                 .push(svc::BoxNewService::layer())
         })
@@ -256,10 +262,20 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
             .or_else(|| http_request_authority_addr(req).ok()?.into_name_addr())
             .or_else(|| http_request_host_addr(req).ok()?.into_name_addr());
 
+        // Use the per-port inbound policy to determine whether the request is permitted.
+        let permit = match self.policy.check_authorized(self.client, &self.tls) {
+            Ok(permit) => permit,
+            Err(denied) => {
+                tracing::debug!(?logical, ?denied);
+                return Err(denied.into());
+            }
+        };
+
         Ok(Logical {
             logical,
-            addr: self.addr,
-            permit: self.permit.clone(),
+            addr: self.server,
+            tls: self.tls.clone(),
+            permit,
             // Use the request's HTTP version (i.e. as modified by orig-proto downgrading).
             http: req
                 .version()
@@ -300,7 +316,7 @@ impl Param<transport::labels::Key> for Logical {
 impl Param<metrics::EndpointLabels> for Logical {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
-            tls: self.permit.tls.clone(),
+            tls: self.tls.clone(),
             authority: self.logical.as_ref().map(|d| d.as_http_authority()),
             target_addr: self.addr.into(),
             policy: metrics::PolicyLabels {
@@ -329,8 +345,8 @@ impl tap::Inspect for Logical {
 
     fn src_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalServerTls {
         req.extensions()
-            .get::<policy::Permit>()
-            .map(|p| p.tls.clone())
+            .get::<tls::ConditionalServerTls>()
+            .cloned()
             .unwrap_or_else(|| tls::ConditionalServerTls::None(tls::NoServerTls::Disabled))
     }
 
