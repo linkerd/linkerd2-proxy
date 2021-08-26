@@ -17,8 +17,8 @@ pub(crate) struct Store {
     ports: Arc<PortMap<Rx>>,
 }
 
-type Tx = watch::Sender<Arc<ServerPolicy>>;
-type Rx = watch::Receiver<Arc<ServerPolicy>>;
+type Tx = watch::Sender<ServerPolicy>;
+type Rx = watch::Receiver<ServerPolicy>;
 
 /// A `HashMap` optimized for lookups by port number.
 type PortMap<T> = HashMap<u16, T, BuildHasherDefault<PortHasher>>;
@@ -36,7 +36,7 @@ impl Store {
     fn mk_default(default: DefaultPolicy) -> Option<(Tx, Rx)> {
         match default {
             DefaultPolicy::Deny => None,
-            DefaultPolicy::Allow(sp) => Some(watch::channel(Arc::new(sp))),
+            DefaultPolicy::Allow(sp) => Some(watch::channel(sp)),
         }
     }
 
@@ -50,7 +50,7 @@ impl Store {
                 // When using a fixed policy, we don't need to watch for changes. It's
                 // safe to discard the sender, as the receiver will continue to let us
                 // borrow/clone each fixed policy.
-                let (_, rx) = watch::channel(Arc::new(s));
+                let (_, rx) = watch::channel(s);
                 (p, rx)
             })
             .collect();

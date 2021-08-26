@@ -15,7 +15,6 @@ use linkerd_app_core::{
 pub use linkerd_server_policy::{
     Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
 };
-use std::sync::Arc;
 use tokio::sync::watch;
 
 pub(crate) trait CheckPolicy {
@@ -32,7 +31,7 @@ pub enum DefaultPolicy {
 #[derive(Clone, Debug)]
 pub(crate) struct AllowPolicy {
     dst: OrigDstAddr,
-    server: watch::Receiver<Arc<ServerPolicy>>,
+    server: watch::Receiver<ServerPolicy>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -58,8 +57,8 @@ impl AllowPolicy {
     pub(crate) fn for_test(
         dst: OrigDstAddr,
         server: ServerPolicy,
-    ) -> (Self, watch::Sender<Arc<ServerPolicy>>) {
-        let (tx, server) = watch::channel(Arc::new(server));
+    ) -> (Self, watch::Sender<ServerPolicy>) {
+        let (tx, server) = watch::channel(server);
         let p = Self { dst, server };
         (p, tx)
     }
@@ -86,7 +85,7 @@ impl AllowPolicy {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permit::new(&**server, authz));
+                        return Ok(Permit::new(&*server, authz));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -94,7 +93,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permit::new(&**server, authz));
+                            return Ok(Permit::new(&*server, authz));
                         }
                     }
 
@@ -110,7 +109,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_ref())
                                 || suffixes.iter().any(|s| s.contains(id.as_ref()))
                             {
-                                return Ok(Permit::new(&**server, authz));
+                                return Ok(Permit::new(&*server, authz));
                             }
                         }
                     }

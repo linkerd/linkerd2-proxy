@@ -12,7 +12,7 @@ use linkerd_server_policy::{
     Authentication, Authorization, Network, Protocol, ServerPolicy, Suffix,
 };
 use linkerd_tonic_watch::StreamWatch;
-use std::{convert::TryInto, sync::Arc};
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 pub(super) struct Discover<S> {
@@ -49,9 +49,8 @@ where
     S::Future: Send + 'static,
     S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
 {
-    type Response = tonic::Response<
-        futures::stream::BoxStream<'static, Result<Arc<ServerPolicy>, tonic::Status>>,
-    >;
+    type Response =
+        tonic::Response<futures::stream::BoxStream<'static, Result<ServerPolicy, tonic::Status>>>;
     type Error = tonic::Status;
     type Future = futures::future::BoxFuture<'static, Result<Self::Response, tonic::Status>>;
 
@@ -75,7 +74,7 @@ where
                     .map(|up| match to_policy(up?) {
                         Ok(policy) => {
                             tracing::debug!(?policy);
-                            Ok(policy.into())
+                            Ok(policy)
                         }
                         Err(e) => Err(tonic::Status::invalid_argument(&*format!(
                             "received invalid policy: {}",

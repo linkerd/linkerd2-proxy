@@ -22,7 +22,7 @@ fn unauthenticated_allowed() {
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(**allowed.server.borrow(), policy);
+    assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::None(tls::NoServerTls::NoClientHello);
     let permitted = allowed
@@ -65,7 +65,7 @@ fn authenticated_identity() {
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(**allowed.server.borrow(), policy);
+    assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: Some(client_id()),
@@ -126,7 +126,7 @@ fn authenticated_suffix() {
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(**allowed.server.borrow(), policy);
+    assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: Some(client_id()),
@@ -180,7 +180,7 @@ fn tls_unauthenticated() {
     let allowed = policies
         .check_policy(orig_dst_addr())
         .expect("port must be known");
-    assert_eq!(**allowed.server.borrow(), policy);
+    assert_eq!(*allowed.server.borrow(), policy);
 
     let tls = tls::ConditionalServerTls::Some(tls::ServerTls::Established {
         client_id: None,
