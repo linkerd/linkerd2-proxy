@@ -9,9 +9,8 @@ use linkerd_signal as signal;
 use tokio::sync::mpsc;
 pub use tracing::{debug, error, info, warn};
 
-#[cfg(feature = "mimalloc")]
 #[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 mod rt;
 
