@@ -1,6 +1,6 @@
 use crate::{
     classify::{Class, SuccessOrFailure},
-    control, dst, errors, http_metrics, http_metrics as metrics, opencensus, profiles,
+    control, dst, http_metrics, http_metrics as metrics, opencensus, profiles,
     stack_metrics,
     svc::Param,
     telemetry, tls,
@@ -10,7 +10,6 @@ use crate::{
     },
 };
 use linkerd_addr::Addr;
-use linkerd_metrics::FmtLabels;
 pub use linkerd_metrics::*;
 use linkerd_server_policy as policy;
 use std::{
@@ -31,29 +30,18 @@ pub type Stack = stack_metrics::Registry<StackLabels>;
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
-    pub inbound: Inbound,
-    pub outbound: Outbound,
+    pub proxy: Proxy,
     pub control: ControlHttp,
     pub opencensus: opencensus::metrics::Registry,
 }
 
 #[derive(Clone, Debug)]
-pub struct Inbound {
-    pub http_route: HttpRoute,
-    pub http_endpoint: HttpEndpoint,
-    pub transport: transport::Metrics,
-    pub errors: errors::metrics::Inbound,
-    pub stack: Stack,
-}
-
-#[derive(Clone, Debug)]
-pub struct Outbound {
+pub struct Proxy {
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
     pub http_route_retry: HttpRouteRetry,
     pub http_endpoint: HttpEndpoint,
     pub transport: transport::Metrics,
-    pub errors: errors::metrics::Outbound,
     pub stack: Stack,
 }
 
@@ -168,39 +156,28 @@ impl Metrics {
             (m, r.without_latencies())
         };
 
-        let inbound_errors = errors::metrics::Inbound::default();
-        let outbound_errors = errors::metrics::Outbound::default();
-
         let stack = stack_metrics::Registry::default();
 
-        let (transport, transport_report) = transport::metrics::new(retain_idle);
+        let (transport, transport_report) = transport::Metrics::new(retain_idle);
+
+        let proxy = Proxy {
+            http_endpoint,
+            http_route,
+            http_route_retry,
+            http_route_actual,
+            stack: stack.clone(),
+            transport,
+        };
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();
 
         let metrics = Metrics {
-            inbound: Inbound {
-                http_endpoint: http_endpoint.clone(),
-                http_route: http_route.clone(),
-                transport: transport.clone().into(),
-                errors: inbound_errors.clone(),
-                stack: stack.clone(),
-            },
-            outbound: Outbound {
-                http_endpoint,
-                http_route,
-                http_route_retry,
-                http_route_actual,
-                transport: transport.into(),
-                errors: outbound_errors.clone(),
-                stack: stack.clone(),
-            },
+            proxy,
             control,
             opencensus,
         };
 
-        let report = inbound_errors
-            .and_then(outbound_errors)
-            .and_then(endpoint_report)
+        let report = endpoint_report
             .and_then(route_report)
             .and_then(retry_report)
             .and_then(actual_report)

@@ -32,7 +32,7 @@ pub(crate) struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
 pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct TargetAddr(pub(crate) SocketAddr);
+pub struct TargetAddr(pub SocketAddr);
 
 // === impl Key ===
 

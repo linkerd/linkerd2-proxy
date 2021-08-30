@@ -184,7 +184,7 @@ impl<N> Inbound<N> {
                 .clone()
                 .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .check_new_service::<Http, io::PrefixedIo<I>>()
                 .push_switch(
@@ -213,7 +213,7 @@ impl<N> Inbound<N> {
                     svc::stack(forward)
                         .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .push(transport::metrics::NewServer::layer(
-                            rt.metrics.transport.clone(),
+                            rt.metrics.proxy.transport.clone(),
                         ))
                         .into_inner(),
                 )
@@ -224,7 +224,7 @@ impl<N> Inbound<N> {
 
             http.push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .check_new_service::<Http, I>()
                 .push_switch(

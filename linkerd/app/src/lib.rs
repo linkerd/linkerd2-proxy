@@ -17,6 +17,7 @@ use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
+    metrics::FmtMetrics,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, InboundRuntime, OutboundRuntime,
@@ -96,8 +97,6 @@ impl Config {
         BAdmin: Bind<ServerConfig> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {
-        use metrics::FmtMetrics;
-
         let Config {
             admin,
             dns,
@@ -161,27 +160,16 @@ impl Config {
 
         let dst_addr = dst.addr.clone();
 
-        let inbound = Inbound::new(
-            inbound,
-            InboundRuntime {
-                identity: identity.local(),
-                metrics: metrics.inbound,
-                tap: tap.registry(),
-                span_sink: oc_collector.span_sink(),
-                drain: drain_rx.clone(),
-            },
-        );
+        let runtime = Runtime {
+            identity: identity.local(),
+            tap: tap.registry(),
+            span_sink: oc_collector.span_sink(),
+            drain: drain_rx,
+        };
 
-        let outbound = Outbound::new(
-            outbound,
-            OutboundRuntime {
-                identity: identity.local(),
-                metrics: metrics.outbound,
-                tap: tap.registry(),
-                span_sink: oc_collector.span_sink(),
-                drain: drain_rx,
-            },
-        );
+        let inbound = Inbound::new(inbound, metrics.inbound, runtime.clone());
+
+        let outbound = Outbound::new(outbound, metrics.outbound, runtime);
 
         let gateway_stack = gateway::stack(
             gateway,

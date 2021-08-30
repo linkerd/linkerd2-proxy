@@ -1,5 +1,5 @@
 use super::{
-    BadGatewayDomain, ConnectTimeout, DeniedUnauthorized, GatewayIdentityRequired, GatewayLoop,
+    ConnectTimeout, DeniedUnauthorized, GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
     OutboundIdentityRequired,
 };
 use http::{header::HeaderValue, StatusCode};
@@ -219,7 +219,7 @@ fn set_l5d_proxy_error_header(
             L5D_PROXY_ERROR,
             HeaderValue::from_static("gateway loop detected"),
         )
-    } else if error.is::<BadGatewayDomain>() {
+    } else if error.is::<GatewayDomainInvalid>() {
         builder.header(
             L5D_PROXY_ERROR,
             HeaderValue::from_static("bad gateway domain"),
@@ -265,7 +265,7 @@ fn set_http_status(
         builder.status(StatusCode::FORBIDDEN)
     } else if error.is::<GatewayLoop>() {
         builder.status(StatusCode::LOOP_DETECTED)
-    } else if error.is::<BadGatewayDomain>() {
+    } else if error.is::<GatewayDomainInvalid>() {
         builder.status(StatusCode::BAD_REQUEST)
     } else if error.is::<ResponseTimeout>() || error.is::<ConnectTimeout>() {
         builder.status(StatusCode::GATEWAY_TIMEOUT)
@@ -301,7 +301,7 @@ fn set_grpc_status(
             HeaderValue::from_static("gateway loop detected"),
         );
         Code::Aborted
-    } else if error.is::<BadGatewayDomain>() {
+    } else if error.is::<GatewayDomainInvalid>() {
         headers.insert(GRPC_STATUS, code_header(Code::NotFound));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("bad gateway domain"));
         Code::NotFound

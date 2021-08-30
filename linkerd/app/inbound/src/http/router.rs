@@ -85,7 +85,7 @@ impl<C> Inbound<C> {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
                 .push(svc::stack::BoxFuture::layer())
-                .push(transport::metrics::Client::layer(rt.metrics.transport.clone()))
+                .push(transport::metrics::Client::layer(rt.metrics.proxy.transport.clone()))
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
@@ -100,6 +100,7 @@ impl<C> Inbound<C> {
                 // Records metrics for each `Logical`.
                 .push(
                     rt.metrics
+                    .proxy
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
@@ -125,7 +126,7 @@ impl<C> Inbound<C> {
                         .push_http_insert_target::<dst::Route>()
                         // Records per-route metrics.
                         .push(
-                            rt.metrics
+                            rt.metrics.proxy
                                 .http_route
                                 .to_layer::<classify::Response, _, dst::Route>(),
                         )
@@ -197,7 +198,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_response(
                     svc::layers()
-                        .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
+                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                         .push(svc::FailFast::layer(
                             "HTTP Logical",
                             config.proxy.dispatch_timeout,

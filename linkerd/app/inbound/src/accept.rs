@@ -66,7 +66,9 @@ impl<N> Inbound<N> {
                     },
                     direct,
                 )
-                .push(svc::stack::NewMonitor::layer(rt.metrics.errors.tcp()))
+                .check_new_service::<T, I>()
+                .push(rt.metrics.tcp_errors.to_layer())
+                .check_new_service::<T, I>()
                 .instrument(|t: &T| {
                     let OrigDstAddr(addr) = t.param();
                     info_span!("server", port = addr.port())

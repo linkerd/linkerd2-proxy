@@ -32,7 +32,7 @@ pub use self::{
     filter::{Filter, FilterLayer, Predicate},
     make_thunk::MakeThunk,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
-    monitor::{Monitor, MonitorNewService, MonitorResponse, MonitorService, NewMonitor},
+    monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
     on_response::{OnResponse, OnResponseLayer},
     proxy::{Proxy, ProxyService},

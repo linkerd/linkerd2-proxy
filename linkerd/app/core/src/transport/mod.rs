@@ -8,9 +8,10 @@ pub mod labels;
 #[derive(Clone, Debug)]
 pub struct Metrics(metrics::Registry<labels::Key>);
 
-impl From<metrics::Registry<labels::Key>> for Metrics {
-    fn from(reg: metrics::Registry<labels::Key>) -> Self {
-        Self(reg)
+impl Metrics {
+    pub fn new(retain_idle: std::time::Duration) -> (Self, metrics::Report<labels::Key>) {
+        let (reg, report) = metrics::new(retain_idle);
+        (Self(reg), report)
     }
 }
 

@@ -2,7 +2,7 @@ use super::HttpTarget;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     dns,
-    errors::{BadGatewayDomain, GatewayIdentityRequired, GatewayLoop},
+    errors::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop},
     profiles,
     proxy::http,
     svc::{self, layer},
@@ -200,7 +200,7 @@ where
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
             Self::NoIdentity => Box::pin(future::err(GatewayIdentityRequired.into())),
-            Self::BadDomain(..) => Box::pin(future::err(BadGatewayDomain.into())),
+            Self::BadDomain(..) => Box::pin(future::err(GatewayDomainInvalid.into())),
         }
     }
 }

@@ -1,7 +1,7 @@
 use super::*;
 use linkerd_app_core::{
     dns,
-    errors::{BadGatewayDomain, GatewayIdentityRequired, GatewayLoop},
+    errors::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop},
     identity as id, profiles,
     proxy::http,
     svc::NewService,
@@ -55,7 +55,7 @@ async fn bad_domain() {
         .run()
         .await
         .unwrap_err()
-        .is::<BadGatewayDomain>());
+        .is::<GatewayDomainInvalid>());
 }
 
 #[tokio::test]

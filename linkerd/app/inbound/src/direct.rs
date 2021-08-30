@@ -113,7 +113,7 @@ impl<N> Inbound<N> {
 
             inner
                 .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .instrument(|_: &_| debug_span!("opaque"))
                 .check_new_service::<Local, _>()
@@ -185,7 +185,7 @@ impl<N> Inbound<N> {
                         .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
                         .push_map_target(GatewayConnection::TransportHeader)
                         .push(transport::metrics::NewServer::layer(
-                            rt.metrics.transport.clone(),
+                            rt.metrics.proxy.transport.clone(),
                         ))
                         .instrument(
                             |g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target),
@@ -223,7 +223,7 @@ impl<N> Inbound<N> {
                         .push_map_target(GatewayConnection::Legacy)
                         .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .push(transport::metrics::NewServer::layer(
-                            rt.metrics.transport.clone(),
+                            rt.metrics.proxy.transport.clone(),
                         ))
                         .instrument(|_: &Legacy| info_span!("gateway", legacy = true))
                         .check_new_service::<Legacy, tls::server::Io<I>>()

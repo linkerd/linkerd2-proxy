@@ -28,7 +28,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, OutboundRuntime,
+    AddrMatch, Error, Runtime as AppRuntime,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -57,8 +57,12 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct Outbound<S> {
     config: Config,
-    runtime: OutboundRuntime,
+    runtime: Runtime,
     stack: svc::Stack<S>,
+}
+
+#[derive(Clone, Debug)]
+struct Runtime<S> {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

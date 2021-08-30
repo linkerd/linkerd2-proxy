@@ -1,6 +1,6 @@
 use super::{
-    BadGatewayDomain, DeniedUnauthorized, DeniedUnknownPort, GatewayIdentityRequired, GatewayLoop,
-    OutboundIdentityRequired,
+    DeniedUnauthorized, DeniedUnknownPort, GatewayDomainInvalid, GatewayIdentityRequired,
+    GatewayLoop, OutboundIdentityRequired,
 };
 use crate::transport::{labels::TargetAddr, OrigDstAddr};
 use linkerd_errno::Errno;
@@ -56,6 +56,7 @@ pub struct MonitorTcp {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum Reason {
+    // Common errors
     FailFast,
     Io(Option<Errno>),
     Unexpected,
@@ -70,7 +71,7 @@ enum Reason {
 
     // Gateway-only errors (handled from the inbound server)
     GatewayLoop,
-    BadGatewayDomain,
+    GatewayDomainInvalid,
     GatewayIdentityRequired,
 }
 
@@ -146,8 +147,8 @@ impl FmtMetrics for Outbound {
 
         let tcp = self.tcp.0.read();
         if !tcp.is_empty() {
-            inbound_tcp_errors_total.fmt_help(f)?;
-            inbound_tcp_errors_total.fmt_scopes(f, tcp.iter(), |c| c)?;
+            outbound_tcp_errors_total.fmt_help(f)?;
+            outbound_tcp_errors_total.fmt_scopes(f, tcp.iter(), |c| c)?;
         }
 
         Ok(())
@@ -165,14 +166,8 @@ impl<T> stack::MonitorNewService<T> for Http {
     }
 }
 
-impl<Req> stack::MonitorService<Req, Error> for Http {
+impl<Req> stack::MonitorService<Req> for Http {
     type MonitorResponse = Self;
-
-    #[inline]
-    fn monitor_error(&mut self, e: &Error) {
-        let reason = Reason::mk(&**e);
-        self.0.write().entry(reason).or_default().incr();
-    }
 
     #[inline]
     fn monitor_request(&mut self, _: &Req) -> Self {
@@ -180,7 +175,7 @@ impl<Req> stack::MonitorService<Req, Error> for Http {
     }
 }
 
-impl stack::MonitorResponse<Error> for Http {
+impl stack::MonitorError<Error> for Http {
     #[inline]
     fn monitor_error(&mut self, e: &Error) {
         let reason = Reason::mk(&**e);
@@ -203,19 +198,8 @@ impl<T: stack::Param<OrigDstAddr>> stack::MonitorNewService<T> for Tcp {
     }
 }
 
-impl<Req> stack::MonitorService<Req, Error> for MonitorTcp {
+impl<Req> stack::MonitorService<Req> for MonitorTcp {
     type MonitorResponse = Self;
-
-    #[inline]
-    fn monitor_error(&mut self, e: &Error) {
-        let reason = Reason::mk(&**e);
-        self.errors
-            .0
-            .write()
-            .entry((self.addr, reason))
-            .or_default()
-            .incr();
-    }
 
     #[inline]
     fn monitor_request(&mut self, _: &Req) -> Self {
@@ -223,7 +207,7 @@ impl<Req> stack::MonitorService<Req, Error> for MonitorTcp {
     }
 }
 
-impl stack::MonitorResponse<Error> for MonitorTcp {
+impl stack::MonitorError<Error> for MonitorTcp {
     #[inline]
     fn monitor_error(&mut self, e: &Error) {
         let reason = Reason::mk(&**e);
@@ -242,8 +226,8 @@ impl Reason {
     fn mk(err: &(dyn std::error::Error + 'static)) -> Self {
         if err.is::<ServerTlsTimeoutError>() {
             Reason::InboundTlsDetectTimeout
-        } else if err.is::<BadGatewayDomain>() {
-            Reason::BadGatewayDomain
+        } else if err.is::<GatewayDomainInvalid>() {
+            Reason::GatewayDomainInvalid
         } else if err.is::<GatewayLoop>() {
             Reason::GatewayLoop
         } else if err.is::<GatewayIdentityRequired>() {
@@ -278,7 +262,7 @@ impl FmtLabels for Reason {
                 Reason::OutboundIdentityRequired => "outbound identity required",
                 Reason::GatewayIdentityRequired => "gateway identity required",
                 Reason::GatewayLoop => "gateway loop",
-                Reason::BadGatewayDomain => "bad gateway domain",
+                Reason::GatewayDomainInvalid => "bad gateway domain",
                 Reason::Io(_) => "i/o",
                 Reason::Unauthorized => "unauthorized",
                 Reason::Unexpected => "unexpected",

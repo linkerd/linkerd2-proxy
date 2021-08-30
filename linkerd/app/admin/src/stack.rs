@@ -10,6 +10,7 @@ use linkerd_app_core::{
     transport::{self, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
 };
+use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -64,7 +65,7 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
-        metrics: metrics::Inbound,
+        metrics: inbound::Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -79,10 +80,10 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
             .push_on_response(
                 svc::layers()
-                    .push(svc::stack::Monitor::layer(metrics.errors.http()))
+                    .push(metrics.http_errors.to_layer())
                     .push(errors::respond::layer())
                     .push(http::BoxResponse::layer()),
             )

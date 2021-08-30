@@ -2,6 +2,7 @@ pub mod metrics;
 pub mod respond;
 
 use linkerd_proxy_transport::addrs::*;
+pub use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
 use thiserror::Error;
 
@@ -22,7 +23,7 @@ pub struct GatewayIdentityRequired;
 
 #[derive(Debug, Error)]
 #[error("bad gateway domain")]
-pub struct BadGatewayDomain;
+pub struct GatewayDomainInvalid;
 
 #[derive(Debug, Error)]
 #[error("gateway loop detected")]

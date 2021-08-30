@@ -56,7 +56,7 @@ impl<H> Inbound<H> {
                         // for SpawnReady
                         .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                         .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                        .push(svc::stack::Monitor::layer(rt.metrics.errors.http()))
+                        .push(rt.metrics.http_errors.to_layer())
                         // Synthesizes responses for proxy errors.
                         .push(errors::respond::layer())
                         .push(http_tracing::server(

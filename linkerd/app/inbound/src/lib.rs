@@ -10,19 +10,23 @@ mod accept;
 mod detect;
 pub mod direct;
 mod http;
+mod metrics;
 pub mod policy;
 mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::policy::DefaultPolicy;
+pub use self::{policy::DefaultPolicy, metrics::Metrics};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
-    drain, io, metrics,
+    drain,
+    http_tracing::OpenCensusSink,
+    io,
     proxy::tcp,
+    proxy::{identity::LocalCrtKey, tap},
     svc,
     transport::{self, Remote, ServerAddr},
-    Error, InboundRuntime, NameMatch,
+    Error, NameMatch, Runtime as AppRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use tracing::debug_span;
@@ -41,8 +45,17 @@ pub struct Config {
 #[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
-    runtime: InboundRuntime,
+    runtime: Runtime,
     stack: svc::Stack<S>,
+}
+
+#[derive(Clone)]
+struct Runtime {
+    metrics: Metrics,
+    identity: Option<LocalCrtKey>,
+    tap: tap::Registry,
+    span_sink: OpenCensusSink,
+    drain: drain::Watch,
 }
 
 // === impl Inbound ===
@@ -50,10 +63,6 @@ pub struct Inbound<S> {
 impl<S> Inbound<S> {
     pub fn config(&self) -> &Config {
         &self.config
-    }
-
-    pub fn runtime(&self) -> &InboundRuntime {
-        &self.runtime
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
@@ -67,7 +76,7 @@ impl<S> Inbound<S> {
     /// Creates a new `Inbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
-        f: impl FnOnce(&Config, &InboundRuntime, svc::Stack<S>) -> svc::Stack<T>,
+        f: impl FnOnce(&Config, &Runtime, svc::Stack<S>) -> svc::Stack<T>,
     ) -> Inbound<T> {
         let stack = f(&self.config, &self.runtime, self.stack);
         Inbound {
@@ -79,7 +88,14 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, runtime: InboundRuntime) -> Self {
+    pub fn new(config: Config, metrics: Metrics, runtime: AppRuntime) -> Self {
+        let runtime = Runtime {
+            metrics,
+            identity: runtime.identity,
+            tap: runtime.tap,
+            span_sink: runtime.span_sink,
+            drain: runtime.drain,
+        };
         Self {
             config,
             runtime,
@@ -163,7 +179,7 @@ impl<S> Inbound<S> {
         self.map_stack(|_, rt, connect| {
             connect
                 .push(transport::metrics::Client::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .push_make_thunk()
                 .push_on_response(

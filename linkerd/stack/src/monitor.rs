@@ -15,18 +15,15 @@ pub trait MonitorNewService<T> {
 }
 
 /// A strategy for monitoring a Service.
-pub trait MonitorService<Req, E> {
+pub trait MonitorService<Req> {
     type MonitorResponse;
-
-    /// Records a polling error.
-    fn monitor_error(&mut self, err: &E);
 
     /// Monitors a response.
     fn monitor_request(&mut self, req: &Req) -> Self::MonitorResponse;
 }
 
-/// A strategy for monitoring a Service's response.
-pub trait MonitorResponse<E> {
+/// A strategy for monitoring a Service's errors
+pub trait MonitorError<E> {
     fn monitor_error(&mut self, err: &E);
 }
 
@@ -90,8 +87,9 @@ impl<M: Clone, S> Monitor<M, S> {
 impl<Req, M, S> Service<Req> for Monitor<M, S>
 where
     S: Service<Req>,
-    M: MonitorService<Req, S::Error>,
-    M::MonitorResponse: MonitorResponse<S::Error>,
+    M: MonitorError<S::Error>,
+    M: MonitorService<Req>,
+    M::MonitorResponse: MonitorError<S::Error>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -120,7 +118,7 @@ where
 
 impl<M, F> Future for MonitorFuture<M, F>
 where
-    M: MonitorResponse<F::Error>,
+    M: MonitorError<F::Error>,
     F: TryFuture,
 {
     type Output = Result<F::Ok, F::Error>;
