@@ -2,7 +2,7 @@ use super::HttpTarget;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     dns,
-    errors::HttpError,
+    errors::{BadGatewayDomain, GatewayIdentityRequired, GatewayLoop},
     profiles,
     proxy::http,
     svc::{self, layer},
@@ -135,6 +135,7 @@ where
     type Error = Error;
     type Future = ResponseFuture<O::Response>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             Self::Outbound { outbound, .. } => outbound.poll_ready(cx).map_err(Into::into),
@@ -160,7 +161,7 @@ where
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
                         if by == local_id.as_ref() {
-                            return Box::pin(future::err(HttpError::gateway_loop().into()));
+                            return Box::pin(future::err(GatewayLoop.into()));
                         }
                     }
                 }
@@ -178,9 +179,7 @@ where
                     }
                     None => {
                         warn!("Request missing ClientId extension");
-                        return Box::pin(future::err(
-                            HttpError::identity_required("no identity").into(),
-                        ));
+                        return Box::pin(future::err(GatewayIdentityRequired.into()));
                     }
                 };
                 request.headers_mut().append(http::header::FORWARDED, fwd);
@@ -200,10 +199,8 @@ where
                 tracing::debug!("Passing request to outbound");
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
-            Self::NoIdentity => Box::pin(future::err(
-                HttpError::identity_required("no identity").into(),
-            )),
-            Self::BadDomain(..) => Box::pin(future::err(HttpError::not_found("bad domain").into())),
+            Self::NoIdentity => Box::pin(future::err(GatewayIdentityRequired.into())),
+            Self::BadDomain(..) => Box::pin(future::err(BadGatewayDomain.into())),
         }
     }
 }

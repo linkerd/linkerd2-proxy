@@ -7,7 +7,7 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    IpMatch, IpNet, ProxyRuntime,
+    IpMatch, IpNet, OutboundRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
@@ -47,11 +47,11 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn runtime() -> (ProxyRuntime, drain::Signal) {
+pub fn runtime() -> (OutboundRuntime, drain::Signal) {
     let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let runtime = ProxyRuntime {
+    let runtime = OutboundRuntime {
         identity: None,
         metrics: metrics.outbound,
         tap,

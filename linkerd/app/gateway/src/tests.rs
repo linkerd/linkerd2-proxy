@@ -1,6 +1,7 @@
 use super::*;
 use linkerd_app_core::{
-    dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
+    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
+    errors::{GatewayLoop, GatewayIdentityRequired, BadGatewayDomain},
     NameAddr, NameMatch,
 };
 use linkerd_app_test as support;
@@ -46,15 +47,12 @@ async fn bad_domain() {
         suffix: "bad.example.com",
         ..Default::default()
     };
-    let status = test
+    assert!(test
         .with_default_profile()
         .run()
         .await
         .unwrap_err()
-        .downcast_ref::<HttpError>()
-        .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::NOT_FOUND);
+        .is::<BadGatewayDomain>());
 }
 
 #[tokio::test]
@@ -63,15 +61,12 @@ async fn no_identity() {
         client_id: None,
         ..Default::default()
     };
-    let status = test
+    assert!(test
         .with_default_profile()
         .run()
         .await
         .unwrap_err()
-        .downcast_ref::<HttpError>()
-        .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::FORBIDDEN);
+        .is::<GatewayIdentityRequired>());
 }
 
 #[tokio::test]
@@ -82,15 +77,12 @@ async fn forward_loop() {
         ),
         ..Default::default()
     };
-    let status = test
+    assert!(test
         .with_default_profile()
         .run()
         .await
         .unwrap_err()
-        .downcast_ref::<HttpError>()
-        .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::LOOP_DETECTED);
+        .is::<GatewayLoop>());
 }
 
 struct Test {

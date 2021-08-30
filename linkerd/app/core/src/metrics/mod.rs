@@ -1,5 +1,3 @@
-mod tcp_accept_errors;
-
 use crate::{
     classify::{Class, SuccessOrFailure},
     control, dst, errors, http_metrics, http_metrics as metrics, opencensus, profiles,
@@ -32,23 +30,31 @@ pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
 #[derive(Clone, Debug)]
-pub struct Proxy {
+pub struct Metrics {
+    pub inbound: Inbound,
+    pub outbound: Outbound,
+    pub control: ControlHttp,
+    pub opencensus: opencensus::metrics::Registry,
+}
+
+#[derive(Clone, Debug)]
+pub struct Inbound {
+    pub http_route: HttpRoute,
+    pub http_endpoint: HttpEndpoint,
+    pub transport: transport::Metrics,
+    pub errors: errors::metrics::Inbound,
+    pub stack: Stack,
+}
+
+#[derive(Clone, Debug)]
+pub struct Outbound {
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
     pub http_route_retry: HttpRouteRetry,
     pub http_endpoint: HttpEndpoint,
-    pub http_errors: errors::MetricsLayer,
-    pub stack: Stack,
     pub transport: transport::Metrics,
-    pub tcp_accept_errors: tcp_accept_errors::Registry,
-}
-
-#[derive(Clone, Debug)]
-pub struct Metrics {
-    pub inbound: Proxy,
-    pub outbound: Proxy,
-    pub control: ControlHttp,
-    pub opencensus: opencensus::metrics::Registry,
+    pub errors: errors::metrics::Outbound,
+    pub stack: Stack,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -162,51 +168,44 @@ impl Metrics {
             (m, r.without_latencies())
         };
 
-        let http_errors = errors::Metrics::default();
+        let inbound_errors = errors::metrics::Inbound::default();
+        let outbound_errors = errors::metrics::Outbound::default();
 
         let stack = stack_metrics::Registry::default();
 
         let (transport, transport_report) = transport::metrics::new(retain_idle);
 
-        let inbound_tcp_accept_errors = tcp_accept_errors::Registry::inbound();
-        let outbound_tcp_accept_errors = tcp_accept_errors::Registry::outbound();
-
         let (opencensus, opencensus_report) = opencensus::metrics::new();
 
         let metrics = Metrics {
-            inbound: Proxy {
+            inbound: Inbound {
                 http_endpoint: http_endpoint.clone(),
                 http_route: http_route.clone(),
-                http_route_actual: http_route_actual.clone(),
-                http_route_retry: http_route_retry.clone(),
-                http_errors: http_errors.inbound(),
-                stack: stack.clone(),
                 transport: transport.clone().into(),
-                tcp_accept_errors: inbound_tcp_accept_errors.clone(),
+                errors: inbound_errors.clone(),
+                stack: stack.clone(),
             },
-            outbound: Proxy {
+            outbound: Outbound {
                 http_endpoint,
                 http_route,
                 http_route_retry,
                 http_route_actual,
-                http_errors: http_errors.outbound(),
-                stack: stack.clone(),
                 transport: transport.into(),
-                tcp_accept_errors: outbound_tcp_accept_errors.clone(),
+                errors: outbound_errors.clone(),
+                stack: stack.clone(),
             },
             control,
             opencensus,
         };
 
-        let report = (http_errors.report())
+        let report = inbound_errors
+            .and_then(outbound_errors)
             .and_then(endpoint_report)
             .and_then(route_report)
             .and_then(retry_report)
             .and_then(actual_report)
             .and_then(control_report)
             .and_then(transport_report)
-            .and_then(inbound_tcp_accept_errors)
-            .and_then(outbound_tcp_accept_errors)
             .and_then(opencensus_report)
             .and_then(stack)
             .and_then(process)

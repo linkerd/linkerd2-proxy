@@ -13,6 +13,7 @@ mod filter;
 pub mod layer;
 mod make_thunk;
 mod map_target;
+pub mod monitor;
 pub mod new_service;
 mod on_response;
 mod proxy;
@@ -31,6 +32,7 @@ pub use self::{
     filter::{Filter, FilterLayer, Predicate},
     make_thunk::MakeThunk,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
+    monitor::{Monitor, MonitorNewService, MonitorResponse, MonitorService, NewMonitor},
     new_service::NewService,
     on_response::{OnResponse, OnResponseLayer},
     proxy::{Proxy, ProxyService},

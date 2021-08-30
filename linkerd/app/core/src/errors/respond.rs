@@ -1,70 +1,25 @@
+use super::{
+    BadGatewayDomain, ConnectTimeout, GatewayIdentityRequired, GatewayLoop,
+    OutboundIdentityRequired,
+};
 use crate::transport::DeniedUnauthorized;
 use http::{header::HeaderValue, StatusCode};
-use linkerd_errno::Errno;
 use linkerd_error::Error;
-use linkerd_error_metrics::{self as error_metrics, RecordErrorLayer, Registry};
 use linkerd_error_respond as respond;
-pub use linkerd_error_respond::RespondLayer;
-use linkerd_metrics::{metrics, Counter, FmtLabels, FmtMetrics};
 use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use linkerd_timeout::{FailFastError, ResponseTimeout};
-use linkerd_tls as tls;
 use pin_project::pin_project;
-use std::fmt;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use thiserror::Error;
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
 use tonic::{self as grpc, Code};
 use tracing::{debug, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
-metrics! {
-    inbound_http_errors_total: Counter {
-        "The total number of inbound HTTP requests that could not be processed due to a proxy error."
-    },
-
-    outbound_http_errors_total: Counter {
-        "The total number of outbound HTTP requests that could not be processed due to a proxy error."
-    }
-}
-
 pub fn layer() -> respond::RespondLayer<NewRespond> {
     respond::RespondLayer::new(NewRespond(()))
-}
-
-#[derive(Clone)]
-pub struct Metrics {
-    inbound: Registry<Reason>,
-    outbound: Registry<Reason>,
-}
-
-pub type MetricsLayer = RecordErrorLayer<LabelError, Reason>;
-
-/// Error metric labels.
-#[derive(Copy, Clone, Debug)]
-pub struct LabelError(());
-
-#[derive(Copy, Clone, Debug, Error)]
-#[error("{}", self.message)]
-pub struct HttpError {
-    http: StatusCode,
-    grpc: Code,
-    message: &'static str,
-    reason: Reason,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Reason {
-    DispatchTimeout,
-    ResponseTimeout,
-    IdentityRequired,
-    Io(Option<Errno>),
-    FailFast,
-    GatewayLoop,
-    NotFound,
-    Unauthorized,
-    Unexpected,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -252,11 +207,24 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
 }
 
 fn set_l5d_proxy_error_header(
-    mut builder: http::response::Builder,
+    builder: http::response::Builder,
     error: &(dyn std::error::Error + 'static),
 ) -> http::response::Builder {
-    if let Some(HttpError { message, .. }) = error.downcast_ref::<HttpError>() {
-        builder.header(L5D_PROXY_ERROR, HeaderValue::from_static(message))
+    if error.is::<GatewayIdentityRequired>() {
+        builder.header(
+            L5D_PROXY_ERROR,
+            HeaderValue::from_static("gateway requires identity"),
+        )
+    } else if error.is::<GatewayLoop>() {
+        builder.header(
+            L5D_PROXY_ERROR,
+            HeaderValue::from_static("gateway loop detected"),
+        )
+    } else if error.is::<BadGatewayDomain>() {
+        builder.header(
+            L5D_PROXY_ERROR,
+            HeaderValue::from_static("bad gateway domain"),
+        )
     } else if error.is::<ResponseTimeout>() {
         builder.header(
             L5D_PROXY_ERROR,
@@ -280,11 +248,11 @@ fn set_l5d_proxy_error_header(
             L5D_PROXY_ERROR,
             HeaderValue::from_static("proxy dispatch timed out"),
         )
-    } else if error.is::<IdentityRequired>() {
-        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            builder = builder.header(L5D_PROXY_ERROR, msg)
-        }
-        builder
+    } else if error.is::<OutboundIdentityRequired>() {
+        builder.header(
+            L5D_PROXY_ERROR,
+            HeaderValue::from_static("outbound identity required"),
+        )
     } else if let Some(source) = error.source() {
         set_l5d_proxy_error_header(builder, source)
     } else {
@@ -299,17 +267,17 @@ fn set_http_status(
     builder: http::response::Builder,
     error: &(dyn std::error::Error + 'static),
 ) -> http::response::Builder {
-    if let Some(HttpError { http, .. }) = error.downcast_ref::<HttpError>() {
-        builder.status(*http)
-    } else if error.is::<ResponseTimeout>() {
+    if error.is::<GatewayIdentityRequired>() {
+        builder.status(StatusCode::FORBIDDEN)
+    } else if error.is::<GatewayLoop>() {
+        builder.status(StatusCode::LOOP_DETECTED)
+    } else if error.is::<BadGatewayDomain>() {
+        builder.status(StatusCode::BAD_REQUEST)
+    } else if error.is::<ResponseTimeout>() || error.is::<ConnectTimeout>() {
         builder.status(StatusCode::GATEWAY_TIMEOUT)
-    } else if error.is::<ConnectTimeout>() {
-        builder.status(StatusCode::GATEWAY_TIMEOUT)
-    } else if error.is::<FailFastError>() {
+    } else if error.is::<FailFastError>() || error.is::<tower::timeout::error::Elapsed>() {
         builder.status(StatusCode::SERVICE_UNAVAILABLE)
-    } else if error.is::<tower::timeout::error::Elapsed>() {
-        builder.status(StatusCode::SERVICE_UNAVAILABLE)
-    } else if error.is::<IdentityRequired>() || error.is::<DeniedUnauthorized>() {
+    } else if error.is::<OutboundIdentityRequired>() || error.is::<DeniedUnauthorized>() {
         builder.status(StatusCode::FORBIDDEN)
     } else if let Some(source) = error.source() {
         set_http_status(builder, source)
@@ -325,10 +293,24 @@ fn set_grpc_status(
     const GRPC_STATUS: &str = "grpc-status";
     const GRPC_MESSAGE: &str = "grpc-message";
 
-    if let Some(HttpError { grpc, message, .. }) = error.downcast_ref::<HttpError>() {
-        headers.insert(GRPC_STATUS, code_header(*grpc));
-        headers.insert(GRPC_MESSAGE, HeaderValue::from_static(message));
-        *grpc
+    if error.is::<GatewayIdentityRequired>() {
+        headers.insert(GRPC_STATUS, code_header(Code::Unauthenticated));
+        headers.insert(
+            GRPC_MESSAGE,
+            HeaderValue::from_static("gateway identity required"),
+        );
+        Code::Unauthenticated
+    } else if error.is::<GatewayLoop>() {
+        headers.insert(GRPC_STATUS, code_header(Code::Aborted));
+        headers.insert(
+            GRPC_MESSAGE,
+            HeaderValue::from_static("gateway loop detected"),
+        );
+        Code::Aborted
+    } else if error.is::<BadGatewayDomain>() {
+        headers.insert(GRPC_STATUS, code_header(Code::NotFound));
+        headers.insert(GRPC_MESSAGE, HeaderValue::from_static("bad gateway domain"));
+        Code::NotFound
     } else if error.is::<ResponseTimeout>() {
         let code = Code::DeadlineExceeded;
         headers.insert(GRPC_STATUS, code_header(code));
@@ -360,7 +342,7 @@ fn set_grpc_status(
             headers.insert(GRPC_MESSAGE, msg);
         }
         code
-    } else if error.is::<IdentityRequired>() {
+    } else if error.is::<OutboundIdentityRequired>() {
         let code = Code::FailedPrecondition;
         headers.insert(GRPC_STATUS, code_header(code));
         if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
@@ -406,153 +388,3 @@ fn code_header(code: grpc::Code) -> HeaderValue {
         Code::Unauthenticated => HeaderValue::from_static("16"),
     }
 }
-
-#[derive(Debug)]
-pub struct IdentityRequired {
-    pub required: tls::client::ServerId,
-    pub found: Option<tls::client::ServerId>,
-}
-
-impl fmt::Display for IdentityRequired {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.found {
-            Some(ref found) => write!(
-                f,
-                "request required the identity '{}' but '{}' found",
-                self.required, found
-            ),
-            None => write!(
-                f,
-                "request required the identity '{}' but no identity found",
-                self.required
-            ),
-        }
-    }
-}
-
-impl std::error::Error for IdentityRequired {}
-
-impl LabelError {
-    fn reason(err: &(dyn std::error::Error + 'static)) -> Reason {
-        if let Some(HttpError { reason, .. }) = err.downcast_ref::<HttpError>() {
-            *reason
-        } else if err.is::<ResponseTimeout>() {
-            Reason::ResponseTimeout
-        } else if err.is::<FailFastError>() {
-            Reason::FailFast
-        } else if err.is::<tower::timeout::error::Elapsed>() {
-            Reason::DispatchTimeout
-        } else if err.is::<DeniedUnauthorized>() {
-            Reason::Unauthorized
-        } else if err.is::<IdentityRequired>() {
-            Reason::IdentityRequired
-        } else if let Some(e) = err.downcast_ref::<std::io::Error>() {
-            Reason::Io(e.raw_os_error().map(Errno::from))
-        } else if let Some(e) = err.source() {
-            Self::reason(e)
-        } else {
-            Reason::Unexpected
-        }
-    }
-}
-
-impl error_metrics::LabelError<Error> for LabelError {
-    type Labels = Reason;
-
-    fn label_error(&self, err: &Error) -> Self::Labels {
-        Self::reason(err.as_ref())
-    }
-}
-
-impl FmtLabels for Reason {
-    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "message=\"{}\"",
-            match self {
-                Reason::FailFast => "failfast",
-                Reason::DispatchTimeout => "dispatch timeout",
-                Reason::ResponseTimeout => "response timeout",
-                Reason::IdentityRequired => "identity required",
-                Reason::GatewayLoop => "gateway loop",
-                Reason::NotFound => "not found",
-                Reason::Io(_) => "i/o",
-                Reason::Unauthorized => "unauthorized",
-                Reason::Unexpected => "unexpected",
-            }
-        )?;
-
-        if let Reason::Io(Some(errno)) = self {
-            write!(f, ",errno=\"{}\"", errno)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl Default for Metrics {
-    fn default() -> Metrics {
-        Self {
-            inbound: Registry::new(inbound_http_errors_total),
-            outbound: Registry::new(outbound_http_errors_total),
-        }
-    }
-}
-
-impl Metrics {
-    pub fn inbound(&self) -> MetricsLayer {
-        self.inbound.layer(LabelError(()))
-    }
-
-    pub fn outbound(&self) -> MetricsLayer {
-        self.outbound.layer(LabelError(()))
-    }
-
-    pub fn report(&self) -> impl FmtMetrics + Clone + Send {
-        self.inbound.clone().and_then(self.outbound.clone())
-    }
-}
-
-impl HttpError {
-    pub fn identity_required(message: &'static str) -> Self {
-        Self {
-            message,
-            http: StatusCode::FORBIDDEN,
-            grpc: Code::Unauthenticated,
-            reason: Reason::IdentityRequired,
-        }
-    }
-
-    pub fn not_found(message: &'static str) -> Self {
-        Self {
-            message,
-            http: StatusCode::NOT_FOUND,
-            grpc: Code::NotFound,
-            reason: Reason::NotFound,
-        }
-    }
-
-    pub fn gateway_loop() -> Self {
-        Self {
-            message: "gateway loop detected",
-            http: StatusCode::LOOP_DETECTED,
-            grpc: Code::Aborted,
-            reason: Reason::GatewayLoop,
-        }
-    }
-
-    pub fn status(&self) -> StatusCode {
-        self.http
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct ConnectTimeout(pub std::time::Duration);
-
-impl fmt::Display for ConnectTimeout {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "connect timed out after {:?}", self.0)
-    }
-}
-
-impl std::error::Error for ConnectTimeout {}

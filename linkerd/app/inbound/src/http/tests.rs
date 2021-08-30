@@ -8,13 +8,13 @@ use crate::{
 };
 use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
-    errors::L5D_PROXY_ERROR,
+    errors::respond::L5D_PROXY_ERROR,
     identity, io,
     proxy::http,
     svc::{self, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
-    NameAddr, ProxyRuntime,
+    NameAddr, InboundRuntime,
 };
 use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
@@ -23,7 +23,7 @@ use tracing::Instrument;
 
 fn build_server<I>(
     cfg: Config,
-    rt: ProxyRuntime,
+    rt: InboundRuntime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
 ) -> svc::BoxNewTcp<Target, I>

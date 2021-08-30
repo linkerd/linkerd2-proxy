@@ -1,5 +1,5 @@
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{errors::IdentityRequired, identity, svc, tls, Conditional, Error};
+use linkerd_app_core::{errors::OutboundIdentityRequired, identity, svc, tls, Conditional, Error};
 use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
@@ -84,7 +84,7 @@ where
                             found = %server_id,
                             "Identity required by header not satisfied"
                         );
-                        let e = IdentityRequired {
+                        let e = OutboundIdentityRequired {
                             required: require_id.into(),
                             found: Some(server_id.clone()),
                         };
@@ -95,7 +95,7 @@ where
                 }
                 Conditional::None(_) => {
                     debug!(required = %require_id, "Identity required by header not satisfied");
-                    let e = IdentityRequired {
+                    let e = OutboundIdentityRequired {
                         required: require_id.into(),
                         found: None,
                     };

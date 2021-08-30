@@ -19,7 +19,7 @@ use linkerd_app_core::{
     dns, drain,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, ProxyRuntime,
+    Error, InboundRuntime, OutboundRuntime,
 };
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
@@ -163,7 +163,7 @@ impl Config {
 
         let inbound = Inbound::new(
             inbound,
-            ProxyRuntime {
+            InboundRuntime {
                 identity: identity.local(),
                 metrics: metrics.inbound,
                 tap: tap.registry(),
@@ -174,7 +174,7 @@ impl Config {
 
         let outbound = Outbound::new(
             outbound,
-            ProxyRuntime {
+            OutboundRuntime {
                 identity: identity.local(),
                 metrics: metrics.outbound,
                 tap: tap.registry(),

@@ -668,7 +668,6 @@ dependencies = [
  "linkerd-duplex",
  "linkerd-errno",
  "linkerd-error",
- "linkerd-error-metrics",
  "linkerd-error-respond",
  "linkerd-exp-backoff",
  "linkerd-http-classify",
@@ -908,17 +907,6 @@ name = "linkerd-error"
 version = "0.1.0"
 dependencies = [
  "futures",
-]
-
-[[package]]
-name = "linkerd-error-metrics"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-metrics",
- "parking_lot",
- "pin-project",
- "tower",
 ]
 
 [[package]]

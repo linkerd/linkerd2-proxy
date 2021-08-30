@@ -1,5 +1,5 @@
 use futures::prelude::*;
-use linkerd_app_core::{errors::L5D_PROXY_ERROR, proxy::http::ClientHandle, svc};
+use linkerd_app_core::{errors::respond::L5D_PROXY_ERROR, proxy::http::ClientHandle, svc};
 use std::{
     future::Future,
     pin::Pin,

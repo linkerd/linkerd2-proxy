@@ -28,7 +28,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, ProxyRuntime,
+    AddrMatch, Error, OutboundRuntime,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -57,7 +57,7 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct Outbound<S> {
     config: Config,
-    runtime: ProxyRuntime,
+    runtime: OutboundRuntime,
     stack: svc::Stack<S>,
 }
 
@@ -70,7 +70,7 @@ pub struct Accept<P> {
 // === impl Outbound ===
 
 impl Outbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+    pub fn new(config: Config, runtime: OutboundRuntime) -> Self {
         Self {
             config,
             runtime,
@@ -88,7 +88,7 @@ impl<S> Outbound<S> {
         &self.config
     }
 
-    pub fn runtime(&self) -> &ProxyRuntime {
+    pub fn runtime(&self) -> &OutboundRuntime {
         &self.runtime
     }
 
@@ -115,7 +115,7 @@ impl<S> Outbound<S> {
     /// Creates a new `Outbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
-        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+        f: impl FnOnce(&Config, &OutboundRuntime, svc::Stack<S>) -> svc::Stack<T>,
     ) -> Outbound<T> {
         let stack = f(&self.config, &self.runtime, self.stack);
         Outbound {

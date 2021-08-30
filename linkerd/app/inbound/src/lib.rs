@@ -22,7 +22,7 @@ use linkerd_app_core::{
     proxy::tcp,
     svc,
     transport::{self, Remote, ServerAddr},
-    Error, NameMatch, ProxyRuntime,
+    Error, InboundRuntime, NameMatch,
 };
 use std::{fmt::Debug, time::Duration};
 use tracing::debug_span;
@@ -41,7 +41,7 @@ pub struct Config {
 #[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
-    runtime: ProxyRuntime,
+    runtime: InboundRuntime,
     stack: svc::Stack<S>,
 }
 
@@ -52,7 +52,7 @@ impl<S> Inbound<S> {
         &self.config
     }
 
-    pub fn runtime(&self) -> &ProxyRuntime {
+    pub fn runtime(&self) -> &InboundRuntime {
         &self.runtime
     }
 
@@ -67,7 +67,7 @@ impl<S> Inbound<S> {
     /// Creates a new `Inbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
-        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+        f: impl FnOnce(&Config, &InboundRuntime, svc::Stack<S>) -> svc::Stack<T>,
     ) -> Inbound<T> {
         let stack = f(&self.config, &self.runtime, self.stack);
         Inbound {
@@ -79,7 +79,7 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+    pub fn new(config: Config, runtime: InboundRuntime) -> Self {
         Self {
             config,
             runtime,

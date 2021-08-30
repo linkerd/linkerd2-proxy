@@ -64,7 +64,7 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
-        metrics: metrics::Proxy,
+        metrics: metrics::Inbound,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -82,8 +82,8 @@ impl Config {
             .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
             .push_on_response(
                 svc::layers()
-                    .push(metrics.http_errors.clone())
-                    .push(errors::layer())
+                    .push(svc::stack::Monitor::layer(metrics.errors.http()))
+                    .push(errors::respond::layer())
                     .push(http::BoxResponse::layer()),
             )
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
