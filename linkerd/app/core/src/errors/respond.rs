@@ -242,11 +242,6 @@ fn set_l5d_proxy_error_header(
                 HeaderValue::from_static("service in fail-fast")
             }),
         )
-    } else if error.is::<tower::timeout::error::Elapsed>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("proxy dispatch timed out"),
-        )
     } else if error.is::<OutboundIdentityRequired>() {
         builder.header(
             L5D_PROXY_ERROR,
@@ -274,7 +269,7 @@ fn set_http_status(
         builder.status(StatusCode::BAD_REQUEST)
     } else if error.is::<ResponseTimeout>() || error.is::<ConnectTimeout>() {
         builder.status(StatusCode::GATEWAY_TIMEOUT)
-    } else if error.is::<FailFastError>() || error.is::<tower::timeout::error::Elapsed>() {
+    } else if error.is::<FailFastError>() {
         builder.status(StatusCode::SERVICE_UNAVAILABLE)
     } else if error.is::<OutboundIdentityRequired>() || error.is::<DeniedUnauthorized>() {
         builder.status(StatusCode::FORBIDDEN)
@@ -324,14 +319,6 @@ fn set_grpc_status(
                 warn!(%error, "Failed to encode fail-fast error message");
                 HeaderValue::from_static("Service in fail-fast")
             }),
-        );
-        code
-    } else if error.is::<tower::timeout::error::Elapsed>() {
-        let code = Code::Unavailable;
-        headers.insert(GRPC_STATUS, code_header(code));
-        headers.insert(
-            GRPC_MESSAGE,
-            HeaderValue::from_static("proxy dispatch timed out"),
         );
         code
     } else if error.is::<DeniedUnauthorized>() {

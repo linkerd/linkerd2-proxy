@@ -56,17 +56,22 @@ pub struct MonitorTcp {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum Reason {
-    DispatchTimeout,
+    FailFast,
+    Io(Option<Errno>),
+    Unexpected,
+
+    // Outbound-only errors
     ResponseTimeout,
     OutboundIdentityRequired,
-    Io(Option<Errno>),
-    FailFast,
+
+    // Inbound-only errors
+    InboundTlsDetectTimeout,
+    Unauthorized,
+
+    // Gateway-only errors (handled from the inbound server)
     GatewayLoop,
     BadGatewayDomain,
     GatewayIdentityRequired,
-    InboundTlsDetectTimeout,
-    Unauthorized,
-    Unexpected,
 }
 
 // === impl Inbound ===
@@ -247,8 +252,6 @@ impl Reason {
             Reason::ResponseTimeout
         } else if err.is::<FailFastError>() {
             Reason::FailFast
-        } else if err.is::<tower::timeout::error::Elapsed>() {
-            Reason::DispatchTimeout
         } else if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
             Reason::Unauthorized
         } else if err.is::<OutboundIdentityRequired>() {
@@ -270,7 +273,6 @@ impl FmtLabels for Reason {
             "error=\"{}\"",
             match self {
                 Reason::FailFast => "failfast",
-                Reason::DispatchTimeout => "dispatch timeout",
                 Reason::ResponseTimeout => "response timeout",
                 Reason::InboundTlsDetectTimeout => "tls detection timeout",
                 Reason::OutboundIdentityRequired => "outbound identity required",
