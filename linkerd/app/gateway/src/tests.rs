@@ -1,8 +1,11 @@
 use super::*;
 use linkerd_app_core::{
-    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
-    errors::{GatewayLoop, GatewayIdentityRequired, BadGatewayDomain},
-    NameAddr, NameMatch,
+    dns,
+    errors::{BadGatewayDomain, GatewayIdentityRequired, GatewayLoop},
+    identity as id, profiles,
+    proxy::http,
+    svc::NewService,
+    tls, Error, NameAddr, NameMatch,
 };
 use linkerd_app_test as support;
 use std::str::FromStr;

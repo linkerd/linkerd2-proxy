@@ -1,8 +1,7 @@
 use super::{
-    BadGatewayDomain, ConnectTimeout, GatewayIdentityRequired, GatewayLoop,
+    BadGatewayDomain, ConnectTimeout, DeniedUnauthorized, GatewayIdentityRequired, GatewayLoop,
     OutboundIdentityRequired,
 };
-use crate::transport::DeniedUnauthorized;
 use http::{header::HeaderValue, StatusCode};
 use linkerd_error::Error;
 use linkerd_error_respond as respond;

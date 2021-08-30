@@ -3,13 +3,15 @@ use crate::{
     Inbound,
 };
 use linkerd_app_core::{
-    detect, identity, io,
+    detect,
+    errors::DeniedUnauthorized,
+    identity, io,
     proxy::{http, identity::LocalCrtKey},
     svc, tls,
     transport::{
         self,
         addrs::{ClientAddr, OrigDstAddr, Remote},
-        DeniedUnauthorized, ServerAddr,
+        ServerAddr,
     },
     Error, Infallible,
 };

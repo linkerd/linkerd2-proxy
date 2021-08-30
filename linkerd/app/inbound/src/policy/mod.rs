@@ -7,9 +7,11 @@ mod tests;
 
 pub use self::config::Config;
 pub(crate) use self::store::Store;
+
 use linkerd_app_core::{
+    errors::{DeniedUnauthorized, DeniedUnknownPort},
     tls,
-    transport::{ClientAddr, DeniedUnauthorized, DeniedUnknownPort, OrigDstAddr, Remote},
+    transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
 pub use linkerd_server_policy::{

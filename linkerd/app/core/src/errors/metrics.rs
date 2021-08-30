@@ -1,5 +1,8 @@
-use super::{BadGatewayDomain, GatewayIdentityRequired, GatewayLoop, OutboundIdentityRequired};
-use crate::transport::{labels::TargetAddr, DeniedUnauthorized, DeniedUnknownPort, OrigDstAddr};
+use super::{
+    BadGatewayDomain, DeniedUnauthorized, DeniedUnknownPort, GatewayIdentityRequired, GatewayLoop,
+    OutboundIdentityRequired,
+};
+use crate::transport::{labels::TargetAddr, OrigDstAddr};
 use linkerd_errno::Errno;
 use linkerd_error::Error;
 use linkerd_metrics::{metrics, Counter, FmtLabels, FmtMetrics};

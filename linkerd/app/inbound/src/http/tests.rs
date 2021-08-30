@@ -14,7 +14,7 @@ use linkerd_app_core::{
     svc::{self, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
-    NameAddr, InboundRuntime,
+    InboundRuntime, NameAddr,
 };
 use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
