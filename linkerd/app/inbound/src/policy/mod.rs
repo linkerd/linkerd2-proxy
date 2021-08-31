@@ -9,7 +9,6 @@ pub use self::config::Config;
 pub(crate) use self::store::Store;
 
 use linkerd_app_core::{
-    errors::{DeniedUnauthorized, DeniedUnknownPort},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
@@ -17,7 +16,20 @@ use linkerd_app_core::{
 pub use linkerd_server_policy::{
     Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
 };
+use thiserror::Error;
 use tokio::sync::watch;
+
+#[derive(Clone, Debug, Error)]
+#[error("connection denied on unknown port {0}")]
+pub(crate) struct DeniedUnknownPort(pub u16);
+
+#[derive(Debug, Error)]
+#[error("unauthorized connection from {client_addr} with identity {tls:?} to {dst_addr}")]
+pub(crate) struct DeniedUnauthorized {
+    pub client_addr: Remote<ClientAddr>,
+    pub dst_addr: OrigDstAddr,
+    pub tls: tls::ConditionalServerTls,
+}
 
 pub(crate) trait CheckPolicy {
     /// Checks that the destination address is configured to allow traffic.

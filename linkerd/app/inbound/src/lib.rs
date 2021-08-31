@@ -29,6 +29,7 @@ use linkerd_app_core::{
     Error, NameMatch, Runtime as AppRuntime,
 };
 use std::{fmt::Debug, time::Duration};
+use thiserror::Error;
 use tracing::debug_span;
 
 #[cfg(fuzzing)]
@@ -57,6 +58,18 @@ struct Runtime {
     span_sink: OpenCensusSink,
     drain: drain::Watch,
 }
+
+#[derive(Debug, Error)]
+#[error("no identity provided")]
+pub struct GatewayIdentityRequired;
+
+#[derive(Debug, Error)]
+#[error("bad gateway domain")]
+pub struct GatewayDomainInvalid;
+
+#[derive(Debug, Error)]
+#[error("gateway loop detected")]
+pub struct GatewayLoop;
 
 // === impl Inbound ===
 

@@ -2,14 +2,11 @@ mod http;
 mod tcp;
 
 pub(crate) use self::{http::Http, tcp::Tcp};
-use linkerd_app_core::{
-    errors::{
-        DeniedUnauthorized, DeniedUnknownPort, FailFastError, GatewayDomainInvalid,
-        GatewayIdentityRequired, GatewayLoop,
-    },
-    metrics::FmtLabels,
-    tls,
+use crate::{
+    policy::{DeniedUnauthorized, DeniedUnknownPort},
+    GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
 };
+use linkerd_app_core::{errors::FailFastError, metrics::FmtLabels, tls};
 use std::fmt;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

@@ -1,11 +1,9 @@
 use crate::{
-    policy::{AllowPolicy, Permit},
+    policy::{AllowPolicy, DeniedUnauthorized, Permit},
     Inbound,
 };
 use linkerd_app_core::{
-    detect,
-    errors::DeniedUnauthorized,
-    identity, io,
+    detect, identity, io,
     proxy::{http, identity::LocalCrtKey},
     svc, tls,
     transport::{

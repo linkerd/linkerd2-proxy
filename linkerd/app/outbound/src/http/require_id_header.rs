@@ -1,6 +1,10 @@
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{errors::{HttpError, OutboundIdentityRequired}, identity, svc, tls, Conditional, Error};
+use linkerd_app_core::{
+    errors::{HttpError},
+    identity, svc, tls, Conditional, Error,
+};
 use std::task::{Context, Poll};
+use thiserror::Error;
 use tracing::{debug, trace};
 
 const HEADER_NAME: &str = "l5d-require-id";
@@ -14,6 +18,13 @@ pub(super) struct NewRequireIdentity<N> {
 pub(super) struct RequireIdentity<N> {
     tls: tls::ConditionalClientTls,
     inner: N,
+}
+
+#[derive(Debug, Error)]
+#[error("required id {required:?}; found {found:?}")]
+pub(crate) struct IdentityRequired {
+    pub required: tls::client::ServerId,
+    pub found: Option<tls::client::ServerId>,
 }
 
 // === impl NewRequireIdentity ===
@@ -84,7 +95,7 @@ where
                             found = %server_id,
                             "Identity required by header not satisfied"
                         );
-                        let e = HttpError::forbidden(OutboundIdentityRequired {
+                        let e = HttpError::forbidden(IdentityRequired {
                             required: require_id.into(),
                             found: Some(server_id.clone()),
                         });
@@ -95,7 +106,7 @@ where
                 }
                 Conditional::None(_) => {
                     debug!(required = %require_id, "Identity required by header not satisfied");
-                    let e = HttpError::forbidden(OutboundIdentityRequired {
+                    let e = HttpError::forbidden(IdentityRequired {
                         required: require_id.into(),
                         found: None,
                     });

@@ -2,13 +2,14 @@ use super::HttpTarget;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     dns,
-    errors::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop, HttpError},
+    errors::HttpError,
     profiles,
     proxy::http,
     svc::{self, layer},
     tls, Error, NameAddr,
 };
 use linkerd_app_outbound as outbound;
+use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use std::{
     future::Future,
     pin::Pin,

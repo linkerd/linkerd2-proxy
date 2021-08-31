@@ -1,7 +1,8 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, dst, http_tracing, io, metrics,
+    classify, dst,
     errors::HttpError,
+    http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, Param},
