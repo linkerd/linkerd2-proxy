@@ -131,7 +131,7 @@ impl<N> Inbound<N> {
                         }))
                     },
                     svc::stack(forward.clone())
-                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
                 .push(tls::NewDetectTls::layer(TlsParams {
@@ -150,10 +150,10 @@ impl<N> Inbound<N> {
                         Ok(svc::Either::A(t))
                     },
                     svc::stack(forward)
-                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
     }
@@ -180,7 +180,7 @@ impl<N> Inbound<N> {
 
             let detect = http
                 .clone()
-                .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
                     rt.metrics.transport.clone(),
                 ))
@@ -209,7 +209,7 @@ impl<N> Inbound<N> {
                         }
                     },
                     svc::stack(forward)
-                        .push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.transport.clone(),
                         ))
@@ -220,7 +220,7 @@ impl<N> Inbound<N> {
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect))
                 .check_new_service::<Detect, I>();
 
-            http.push_on_response(svc::MapTargetLayer::new(io::BoxedIo::new))
+            http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
                     rt.metrics.transport.clone(),
                 ))
@@ -248,7 +248,7 @@ impl<N> Inbound<N> {
                     },
                     detect.into_inner(),
                 )
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
                 .check_new_service::<Tls, I>()
         })

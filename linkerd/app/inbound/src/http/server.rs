@@ -44,7 +44,7 @@ impl<H> Inbound<H> {
                 // the request may have been downgraded from a HTTP/2 orig-proto request.
                 .push(http::NewNormalizeUri::layer())
                 .push(NewSetIdentityHeader::layer())
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         // Downgrades the protocol if upgraded by an outbound proxy.
                         .push(http::orig_proto::Downgrade::layer())
@@ -71,7 +71,7 @@ impl<H> Inbound<H> {
                 .check_new_service::<T, http::Request<_>>()
                 .instrument(|t: &T| debug_span!("http", v = %Param::<Version>::param(t)))
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
     }

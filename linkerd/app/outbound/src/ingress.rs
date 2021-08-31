@@ -128,7 +128,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             // fail-fast is instrumented in case it becomes unavailable. When this service is in
             // fail-fast, ensure that we drive the inner service to readiness even if new requests
             // aren't received.
-            .push_on_response(
+            .push_on_service(
                 svc::layers()
                     .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
                     .push(svc::layer::mk(svc::SpawnReady::new))
@@ -136,7 +136,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     .push_spawn_buffer(buffer_capacity),
             )
             .push_cache(cache_max_idle_age)
-            .push_on_response(
+            .push_on_service(
                 svc::layers()
                     .push(http::strip_header::request::layer(DST_OVERRIDE_HEADER))
                     .push(http::Retain::layer())
@@ -163,7 +163,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     })),
                 },
                 http_endpoint
-                    .push_on_response(
+                    .push_on_service(
                         svc::layers()
                             .push(svc::layer::mk(svc::SpawnReady::new))
                             .push(svc::FailFast::layer("Ingress server", dispatch_timeout)),
@@ -196,7 +196,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                 },
             ))
             .push(http::NewNormalizeUri::layer())
-            .push_on_response(
+            .push_on_service(
                 svc::layers()
                     .push(http::MarkAbsoluteForm::layer())
                     // The concurrency-limit can force the service into fail-fast, but it need not
@@ -229,7 +229,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                 tcp::Accept::from(orig_dst)
             })
             .push(rt.metrics.tcp_accept_errors.layer())
-            .push_on_response(svc::BoxService::layer())
+            .push_on_service(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>()
             .into_inner()

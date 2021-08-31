@@ -80,7 +80,7 @@ impl Config {
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
-            .push_on_response(
+            .push_on_service(
                 svc::layers()
                     .push(metrics.http_errors.clone())
                     .push(errors::layer())
