@@ -1,7 +1,4 @@
-use super::{
-    ConnectTimeout, DeniedUnauthorized, GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
-    OutboundIdentityRequired,
-};
+use super::{ConnectTimeout, HttpError};
 use http::{header::HeaderValue, StatusCode};
 use linkerd_error::Error;
 use linkerd_error_respond as respond;
@@ -209,22 +206,7 @@ fn set_l5d_proxy_error_header(
     builder: http::response::Builder,
     error: &(dyn std::error::Error + 'static),
 ) -> http::response::Builder {
-    if error.is::<GatewayIdentityRequired>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("gateway requires identity"),
-        )
-    } else if error.is::<GatewayLoop>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("gateway loop detected"),
-        )
-    } else if error.is::<GatewayDomainInvalid>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("bad gateway domain"),
-        )
-    } else if error.is::<ResponseTimeout>() {
+    if error.is::<ResponseTimeout>() {
         builder.header(
             L5D_PROXY_ERROR,
             HeaderValue::from_static("request timed out"),
@@ -242,10 +224,11 @@ fn set_l5d_proxy_error_header(
                 HeaderValue::from_static("service in fail-fast")
             }),
         )
-    } else if error.is::<OutboundIdentityRequired>() {
+    } else if let Some(HttpError { source, .. }) = error.downcast_ref() {
         builder.header(
             L5D_PROXY_ERROR,
-            HeaderValue::from_static("outbound identity required"),
+            HeaderValue::from_str(&source.to_string())
+                .unwrap_or_else(|_| HeaderValue::from_static("an error occurred")),
         )
     } else if let Some(source) = error.source() {
         set_l5d_proxy_error_header(builder, source)
@@ -261,18 +244,12 @@ fn set_http_status(
     builder: http::response::Builder,
     error: &(dyn std::error::Error + 'static),
 ) -> http::response::Builder {
-    if error.is::<GatewayIdentityRequired>() {
-        builder.status(StatusCode::FORBIDDEN)
-    } else if error.is::<GatewayLoop>() {
-        builder.status(StatusCode::LOOP_DETECTED)
-    } else if error.is::<GatewayDomainInvalid>() {
-        builder.status(StatusCode::BAD_REQUEST)
-    } else if error.is::<ResponseTimeout>() || error.is::<ConnectTimeout>() {
+    if error.is::<ResponseTimeout>() || error.is::<ConnectTimeout>() {
         builder.status(StatusCode::GATEWAY_TIMEOUT)
     } else if error.is::<FailFastError>() {
         builder.status(StatusCode::SERVICE_UNAVAILABLE)
-    } else if error.is::<OutboundIdentityRequired>() || error.is::<DeniedUnauthorized>() {
-        builder.status(StatusCode::FORBIDDEN)
+    } else if let Some(HttpError { http_status, .. }) = error.downcast_ref() {
+        builder.status(http_status)
     } else if let Some(source) = error.source() {
         set_http_status(builder, source)
     } else {
@@ -287,25 +264,7 @@ fn set_grpc_status(
     const GRPC_STATUS: &str = "grpc-status";
     const GRPC_MESSAGE: &str = "grpc-message";
 
-    if error.is::<GatewayIdentityRequired>() {
-        headers.insert(GRPC_STATUS, code_header(Code::Unauthenticated));
-        headers.insert(
-            GRPC_MESSAGE,
-            HeaderValue::from_static("gateway identity required"),
-        );
-        Code::Unauthenticated
-    } else if error.is::<GatewayLoop>() {
-        headers.insert(GRPC_STATUS, code_header(Code::Aborted));
-        headers.insert(
-            GRPC_MESSAGE,
-            HeaderValue::from_static("gateway loop detected"),
-        );
-        Code::Aborted
-    } else if error.is::<GatewayDomainInvalid>() {
-        headers.insert(GRPC_STATUS, code_header(Code::NotFound));
-        headers.insert(GRPC_MESSAGE, HeaderValue::from_static("bad gateway domain"));
-        Code::NotFound
-    } else if error.is::<ResponseTimeout>() {
+    if error.is::<ResponseTimeout>() {
         let code = Code::DeadlineExceeded;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
@@ -321,25 +280,22 @@ fn set_grpc_status(
             }),
         );
         code
-    } else if error.is::<DeniedUnauthorized>() {
-        let code = Code::PermissionDenied;
-        headers.insert(GRPC_STATUS, code_header(code));
-        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            headers.insert(GRPC_MESSAGE, msg);
-        }
-        code
-    } else if error.is::<OutboundIdentityRequired>() {
-        let code = Code::FailedPrecondition;
-        headers.insert(GRPC_STATUS, code_header(code));
-        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            headers.insert(GRPC_MESSAGE, msg);
-        }
-        code
     } else if error.is::<std::io::Error>() {
         let code = Code::Unavailable;
         headers.insert(GRPC_STATUS, code_header(code));
         headers.insert(GRPC_MESSAGE, HeaderValue::from_static("connection closed"));
         code
+    } else if let Some(HttpError {
+        source,
+        grpc_status,
+        ..
+    }) = error.downcast_ref()
+    {
+        headers.insert(GRPC_STATUS, code_header(*grpc_status));
+        if let Ok(v) = HeaderValue::from_str(&*source.to_string()) {
+            headers.insert(GRPC_MESSAGE, v);
+        }
+        *grpc_status
     } else if let Some(source) = error.source() {
         set_grpc_status(source, headers)
     } else {

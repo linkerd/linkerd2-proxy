@@ -1,5 +1,6 @@
 pub mod respond;
 
+use linkerd_error::Error;
 use linkerd_proxy_transport::addrs::*;
 pub use linkerd_timeout::{FailFastError, ResponseTimeout};
 use linkerd_tls as tls;
@@ -8,6 +9,41 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[error("connect timed out after {0:?}")]
 pub(crate) struct ConnectTimeout(pub std::time::Duration);
+
+#[derive(Debug, Error)]
+#[error("{source}")]
+pub struct HttpError {
+    #[source]
+    pub source: Error,
+    pub http_status: http::StatusCode,
+    pub grpc_status: tonic::Code,
+}
+
+impl HttpError {
+    pub fn bad_request(source: impl Into<Error>) -> Self {
+        Self {
+            source: source.into(),
+            http_status: http::StatusCode::BAD_REQUEST,
+            grpc_status: tonic::Code::InvalidArgument,
+        }
+    }
+
+    pub fn forbidden(source: impl Into<Error>) -> Self {
+        Self {
+            source: source.into(),
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::PermissionDenied,
+        }
+    }
+
+    pub fn loop_detected(source: impl Into<Error>) -> Self {
+        Self {
+            source: source.into(),
+            http_status: http::StatusCode::LOOP_DETECTED,
+            grpc_status: tonic::Code::Aborted,
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 #[error("required id {required:?}; found {found:?}")]

@@ -2,7 +2,7 @@ use super::HttpTarget;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     dns,
-    errors::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop},
+    errors::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop, HttpError},
     profiles,
     proxy::http,
     svc::{self, layer},
@@ -161,7 +161,9 @@ where
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
                         if by == local_id.as_ref() {
-                            return Box::pin(future::err(GatewayLoop.into()));
+                            return Box::pin(future::err(
+                                HttpError::loop_detected(GatewayLoop).into(),
+                            ));
                         }
                     }
                 }
@@ -179,7 +181,9 @@ where
                     }
                     None => {
                         warn!("Request missing ClientId extension");
-                        return Box::pin(future::err(GatewayIdentityRequired.into()));
+                        return Box::pin(future::err(
+                            HttpError::forbidden(GatewayIdentityRequired).into(),
+                        ));
                     }
                 };
                 request.headers_mut().append(http::header::FORWARDED, fwd);
@@ -199,8 +203,12 @@ where
                 tracing::debug!("Passing request to outbound");
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
-            Self::NoIdentity => Box::pin(future::err(GatewayIdentityRequired.into())),
-            Self::BadDomain(..) => Box::pin(future::err(GatewayDomainInvalid.into())),
+            Self::NoIdentity => Box::pin(future::err(
+                HttpError::forbidden(GatewayIdentityRequired).into(),
+            )),
+            Self::BadDomain(..) => Box::pin(future::err(
+                HttpError::bad_request(GatewayDomainInvalid).into(),
+            )),
         }
     }
 }

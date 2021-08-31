@@ -1,6 +1,7 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
     classify, dst, http_tracing, io, metrics,
+    errors::HttpError,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, Param},
@@ -268,7 +269,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
             Ok(permit) => permit,
             Err(denied) => {
                 tracing::debug!(?logical, ?denied);
-                return Err(denied.into());
+                return Err(HttpError::forbidden(denied).into());
             }
         };
 
