@@ -1,10 +1,6 @@
 use super::*;
 use linkerd_app_core::{
-    dns,
-    identity as id, profiles,
-    proxy::http,
-    svc::NewService,
-    tls, Error, NameAddr, NameMatch,
+    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_test as support;

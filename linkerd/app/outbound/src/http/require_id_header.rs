@@ -1,8 +1,5 @@
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{
-    errors::{HttpError},
-    identity, svc, tls, Conditional, Error,
-};
+use linkerd_app_core::{errors::HttpError, identity, svc, tls, Conditional, Error};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::{debug, trace};

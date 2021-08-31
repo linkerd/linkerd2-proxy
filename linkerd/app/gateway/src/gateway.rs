@@ -8,8 +8,8 @@ use linkerd_app_core::{
     svc::{self, layer},
     tls, Error, NameAddr,
 };
-use linkerd_app_outbound as outbound;
 use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
+use linkerd_app_outbound as outbound;
 use std::{
     future::Future,
     pin::Pin,

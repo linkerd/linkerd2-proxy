@@ -12,7 +12,7 @@ metrics! {
     }
 }
 
- #[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Http(Arc<RwLock<HashMap<ErrorKind, Counter>>>);
 
 // === impl Http ===

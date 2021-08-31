@@ -5,9 +5,9 @@ mod peer_proxy_errors;
 mod require_id_header;
 mod server;
 
+pub(crate) use self::require_id_header::IdentityRequired;
 use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
-pub(crate) use self::require_id_header::IdentityRequired;
 use linkerd_app_core::{
     dst,
     profiles::{self, LogicalAddr},
