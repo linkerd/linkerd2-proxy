@@ -15,7 +15,7 @@ metrics! {
 #[derive(Clone, Debug, Default)]
 pub struct Http(Arc<RwLock<HashMap<ErrorKind, Counter>>>);
 
-// == impl Http ==
+// === impl Http ===
 
 impl Http {
     pub fn to_layer<S>(

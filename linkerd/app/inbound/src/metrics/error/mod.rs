@@ -9,6 +9,7 @@ use crate::{
 use linkerd_app_core::{errors::FailFastError, metrics::FmtLabels, tls};
 use std::fmt;
 
+/// Inbound proxy error types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum ErrorKind {
     FailFast,

@@ -59,6 +59,9 @@ struct Runtime {
     drain: drain::Watch,
 }
 
+// The inbound HTTP server handles gateway traffic; so gateway error types are defined here (so that
+// error metrics can be recorded properly).
+
 #[derive(Debug, Error)]
 #[error("no identity provided")]
 pub struct GatewayIdentityRequired;

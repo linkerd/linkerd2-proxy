@@ -23,7 +23,7 @@ pub struct MonitorTcp {
     registry: Tcp,
 }
 
-// == impl Tcp ==
+// === impl Tcp ===
 
 impl Tcp {
     pub fn to_layer<N>(
@@ -33,7 +33,10 @@ impl Tcp {
     }
 }
 
-impl<T: svc::Param<OrigDstAddr>> svc::stack::MonitorNewService<T> for Tcp {
+impl<T> svc::stack::MonitorNewService<T> for Tcp
+where
+    T: svc::Param<OrigDstAddr>,
+{
     type MonitorService = MonitorTcp;
 
     fn monitor(&mut self, target: &T) -> Self::MonitorService {
@@ -45,7 +48,18 @@ impl<T: svc::Param<OrigDstAddr>> svc::stack::MonitorNewService<T> for Tcp {
     }
 }
 
-// == impl MonitorTcp ==
+impl FmtMetrics for Tcp {
+    fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let metrics = self.0.read();
+        if metrics.is_empty() {
+            return Ok(());
+        }
+        inbound_tcp_errors_total.fmt_help(f)?;
+        inbound_tcp_errors_total.fmt_scopes(f, metrics.iter(), |c| c)
+    }
+}
+
+// === impl MonitorTcp ===
 
 impl<Req> svc::stack::MonitorService<Req> for MonitorTcp {
     type MonitorResponse = Self;
@@ -66,16 +80,5 @@ impl svc::stack::MonitorError<Error> for MonitorTcp {
             .entry((self.target_addr, kind))
             .or_default()
             .incr();
-    }
-}
-
-impl FmtMetrics for Tcp {
-    fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let metrics = self.0.read();
-        if metrics.is_empty() {
-            return Ok(());
-        }
-        inbound_tcp_errors_total.fmt_help(f)?;
-        inbound_tcp_errors_total.fmt_scopes(f, metrics.iter(), |c| c)
     }
 }

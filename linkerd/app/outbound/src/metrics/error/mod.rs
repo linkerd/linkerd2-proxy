@@ -9,6 +9,7 @@ use linkerd_app_core::{
 };
 use std::fmt;
 
+/// Outbound proxy error types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum ErrorKind {
     FailFast,
