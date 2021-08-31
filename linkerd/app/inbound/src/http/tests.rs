@@ -10,6 +10,7 @@ use hyper::{client::conn::Builder as ClientBuilder, Body, Request, Response};
 use linkerd_app_core::{
     errors::respond::L5D_PROXY_ERROR,
     identity, io,
+    metrics::PolicyLabels,
     proxy::http,
     svc::{self, NewService, Param},
     tls,
@@ -407,6 +408,12 @@ impl svc::Param<http::Version> for Target {
 impl svc::Param<tls::ConditionalServerTls> for Target {
     fn param(&self) -> tls::ConditionalServerTls {
         tls::ConditionalServerTls::None(tls::NoServerTls::Disabled)
+    }
+}
+
+impl svc::Param<PolicyLabels> for Target {
+    fn param(&self) -> PolicyLabels {
+        Default::default()
     }
 }
 

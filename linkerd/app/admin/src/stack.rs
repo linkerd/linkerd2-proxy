@@ -194,6 +194,17 @@ impl Param<metrics::EndpointLabels> for Http {
     }
 }
 
+impl Param<metrics::PolicyLabels> for Http {
+    fn param(&self) -> metrics::PolicyLabels {
+        metrics::PolicyLabels {
+            server: vec![("name".to_string(), "default:admin".to_string())]
+                .into_iter()
+                .collect(),
+            authz: Default::default(),
+        }
+    }
+}
+
 // === TlsParams ===
 
 impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
