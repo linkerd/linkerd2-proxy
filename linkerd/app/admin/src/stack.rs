@@ -7,7 +7,7 @@ use linkerd_app_core::{
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
-    transport::{self, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
+    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error,
 };
 use linkerd_app_inbound as inbound;
@@ -81,9 +81,9 @@ impl Config {
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.http_errors.to_layer())
             .push_on_response(
                 svc::layers()
-                    .push(metrics.http_errors.to_layer())
                     .push(errors::respond::layer())
                     .push(http::BoxResponse::layer()),
             )
@@ -173,6 +173,12 @@ impl Param<transport::labels::Key> for Tcp {
 impl Param<http::Version> for Http {
     fn param(&self) -> http::Version {
         self.version
+    }
+}
+
+impl Param<OrigDstAddr> for Http {
+    fn param(&self) -> OrigDstAddr {
+        OrigDstAddr(self.tcp.addr.into())
     }
 }
 

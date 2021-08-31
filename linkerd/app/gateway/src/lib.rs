@@ -17,6 +17,7 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
+    transport::OrigDstAddr,
     transport_header::SessionProtocol,
     Error, Infallible, NameAddr, NameMatch,
 };
@@ -306,6 +307,12 @@ impl Param<tls::ClientId> for HttpTransportHeader {
     }
 }
 
+impl Param<OrigDstAddr> for HttpTransportHeader {
+    fn param(&self) -> OrigDstAddr {
+        self.client.local_addr
+    }
+}
+
 // === impl HttpLegacy ===
 
 impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, Legacy)> for HttpLegacy {
@@ -352,6 +359,12 @@ impl Param<http::Version> for HttpLegacy {
 impl Param<tls::ClientId> for HttpLegacy {
     fn param(&self) -> tls::ClientId {
         self.client.client_id.clone()
+    }
+}
+
+impl Param<OrigDstAddr> for HttpLegacy {
+    fn param(&self) -> OrigDstAddr {
+        self.client.local_addr
     }
 }
 

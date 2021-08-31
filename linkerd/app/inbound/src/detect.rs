@@ -304,6 +304,12 @@ impl svc::Param<http::Version> for Http {
     }
 }
 
+impl svc::Param<OrigDstAddr> for Http {
+    fn param(&self) -> OrigDstAddr {
+        self.tls.orig_dst_addr
+    }
+}
+
 impl svc::Param<Remote<ServerAddr>> for Http {
     fn param(&self) -> Remote<ServerAddr> {
         Remote(ServerAddr(self.tls.orig_dst_addr.into()))
