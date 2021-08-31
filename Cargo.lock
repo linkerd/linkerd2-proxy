@@ -2023,9 +2023,9 @@ checksum = "92d5161132722baa40d802cc70b15262b98258453e85e5d1d365c757c73869ae"
 
 [[package]]
 name = "serde_json"
-version = "1.0.66"
+version = "1.0.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "336b10da19a12ad094b59d870ebde26a45402e5b470add4b5fd03c5048a32127"
+checksum = "a7f9e390c27c3c0ce8bc5d725f6e4d30a29d26659494aa4b17535f7522c5c950"
 dependencies = [
  "itoa",
  "ryu",
@@ -2439,8 +2439,8 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-proto"
-version = "0.21.0-alpha.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#3d0667a1b6b149cd5e42015c2538e3ab32bbd5f4"
+version = "0.21.0-alpha.2"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#e28c3410b3c18cfb93079dd07f5734c71f440dd3"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -2463,8 +2463,8 @@ dependencies = [
 
 [[package]]
 name = "trust-dns-resolver"
-version = "0.21.0-alpha.1"
-source = "git+https://github.com/bluejekyll/trust-dns?branch=main#3d0667a1b6b149cd5e42015c2538e3ab32bbd5f4"
+version = "0.21.0-alpha.2"
+source = "git+https://github.com/bluejekyll/trust-dns?branch=main#e28c3410b3c18cfb93079dd07f5734c71f440dd3"
 dependencies = [
  "cfg-if",
  "futures-util",
