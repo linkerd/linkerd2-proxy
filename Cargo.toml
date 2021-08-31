@@ -65,8 +65,12 @@ members = [
 # disable them.
 [profile.dev]
 debug = false
+
 [profile.test]
 debug = false
+
+[profile.release]
+lto = true
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }
