@@ -130,7 +130,12 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             // aren't received.
             .push_on_response(
                 svc::layers()
-                    .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
+                    .push(
+                        rt.metrics
+                            .proxy
+                            .stack
+                            .layer(stack_labels("http", "logical")),
+                    )
                     .push(svc::layer::mk(svc::SpawnReady::new))
                     .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                     .push_spawn_buffer(buffer_capacity),
@@ -204,7 +209,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     // Otherwise, the inner service is always ready (because it's a router).
                     .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("Ingress server", dispatch_timeout))
-                    .push(svc::stack::Monitor::layer(rt.metrics.errors.http()))
+                    .push(rt.metrics.http_errors.to_layer())
                     .push(errors::respond::layer())
                     .push(http_tracing::server(rt.span_sink, trace_labels()))
                     .push(http::BoxResponse::layer())
@@ -221,14 +226,14 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect_http))
             .push(transport::metrics::NewServer::layer(
-                rt.metrics.transport.clone(),
+                rt.metrics.proxy.transport.clone(),
             ))
             .instrument(|a: &tcp::Accept| info_span!("ingress", orig_dst = %a.orig_dst))
             .push_map_target(|a: T| {
                 let orig_dst = Param::<OrigDstAddr>::param(&a);
                 tcp::Accept::from(orig_dst)
             })
-            .push(svc::stack::NewMonitor::layer(rt.metrics.errors.tcp()))
+            .push(rt.metrics.tcp_errors.to_layer())
             .push_on_response(svc::BoxService::layer())
             .push(svc::BoxNewService::layer())
             .check_new_service::<T, I>()

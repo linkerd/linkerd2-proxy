@@ -14,7 +14,7 @@ use linkerd_app_core::{
     svc::{self, NewService, Param},
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
-    InboundRuntime, NameAddr,
+    NameAddr, Runtime,
 };
 use linkerd_app_test::connect::ConnectFuture;
 use linkerd_tracing::test::trace_init;
@@ -23,14 +23,14 @@ use tracing::Instrument;
 
 fn build_server<I>(
     cfg: Config,
-    rt: InboundRuntime,
+    rt: Runtime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
 ) -> svc::BoxNewTcp<Target, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
-    Inbound::new(cfg, rt)
+    Inbound::new(cfg, metrics(), rt)
         .with_stack(connect)
         .map_stack(|cfg, _, s| {
             s.push_map_target(|p| Remote(ServerAddr(([127, 0, 0, 1], p).into())))

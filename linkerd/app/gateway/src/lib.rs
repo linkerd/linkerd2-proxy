@@ -96,7 +96,7 @@ where
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
-    let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
+    let local_id = inbound.identity().map(|l| l.id().clone());
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
@@ -163,8 +163,7 @@ where
             svc::layers()
                 .push(
                     inbound
-                        .runtime()
-                        .metrics
+                        .proxy_metrics()
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
@@ -199,8 +198,7 @@ where
             svc::layers()
                 .push(
                     inbound
-                        .runtime()
-                        .metrics
+                        .proxy_metrics()
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )

@@ -801,6 +801,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-tracing",
+ "parking_lot",
  "pin-project",
  "thiserror",
  "tokio",

@@ -20,7 +20,7 @@ use linkerd_app_core::{
     metrics::FmtMetrics,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, InboundRuntime, OutboundRuntime,
+    Error, Runtime,
 };
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
@@ -141,10 +141,17 @@ impl Config {
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
+        let inbound_metrics = inbound::Metrics::new(metrics.proxy.clone());
+        let outbound_metrics = outbound::Metrics::new(metrics.proxy.clone());
+
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
-            let metrics = metrics.inbound.clone();
+            let report = inbound_metrics
+                .clone()
+                .and_then(outbound_metrics.clone())
+                .and_then(report);
+            let metrics = inbound_metrics.clone();
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
@@ -167,9 +174,8 @@ impl Config {
             drain: drain_rx,
         };
 
-        let inbound = Inbound::new(inbound, metrics.inbound, runtime.clone());
-
-        let outbound = Outbound::new(outbound, metrics.outbound, runtime);
+        let inbound = Inbound::new(inbound, inbound_metrics, runtime.clone());
+        let outbound = Outbound::new(outbound, outbound_metrics, runtime);
 
         let gateway_stack = gateway::stack(
             gateway,

@@ -45,7 +45,7 @@ impl<N> Outbound<N> {
                         .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                         .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity)
-                        .push(svc::stack::Monitor::layer(rt.metrics.errors.http()))
+                        .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
                         .push(PeerProxyErrors::layer())
                         // Synthesizes responses for proxy errors.

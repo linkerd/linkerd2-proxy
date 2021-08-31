@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::{Config, Metrics};
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config, drain, exp_backoff, metrics,
@@ -7,12 +7,12 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    IpMatch, IpNet, OutboundRuntime,
+    IpMatch, IpNet, Runtime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
-pub fn default_config() -> Config {
+pub(crate) fn default_config() -> Config {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
@@ -47,13 +47,16 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn runtime() -> (OutboundRuntime, drain::Signal) {
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+pub(crate) fn metrics() -> Metrics {
+    let (m, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    Metrics::new(m.proxy)
+}
+
+pub(crate) fn runtime() -> (Runtime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let runtime = OutboundRuntime {
+    let runtime = Runtime {
         identity: None,
-        metrics: metrics.outbound,
         tap,
         span_sink: None,
         drain,

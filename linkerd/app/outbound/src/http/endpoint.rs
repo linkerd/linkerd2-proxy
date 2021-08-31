@@ -43,6 +43,7 @@ impl<C> Outbound<C> {
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
+                        .proxy
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
@@ -91,7 +92,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let mut stack = Outbound::new(default_config(), metrics(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -127,7 +128,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let mut stack = Outbound::new(default_config(), metrics(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -165,7 +166,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let mut stack = Outbound::new(default_config(), metrics(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -213,7 +214,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let mut stack = Outbound::new(default_config(), metrics(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();

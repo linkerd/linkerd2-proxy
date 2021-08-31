@@ -15,35 +15,33 @@ use std::fmt;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum ErrorKind {
     FailFast,
-    Io,
-    Unexpected,
-
-    TlsDetectTimeout,
-    Unauthorized,
-
     GatewayDomainInvalid,
     GatewayIdentityRequired,
     GatewayLoop,
+    Io,
+    TlsDetectTimeout,
+    Unauthorized,
+    Unexpected,
 }
 
 // === impl ErrorKind ===
 
 impl ErrorKind {
     fn mk(err: &(dyn std::error::Error + 'static)) -> Self {
-        if err.is::<std::io::Error>() {
+        if err.is::<FailFastError>() {
+            ErrorKind::FailFast
+        } else if err.is::<std::io::Error>() {
             ErrorKind::Io
         } else if err.is::<tls::server::ServerTlsTimeoutError>() {
             ErrorKind::TlsDetectTimeout
-        } else if err.is::<FailFastError>() {
-            ErrorKind::FailFast
+        } else if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
+            ErrorKind::Unauthorized
         } else if err.is::<GatewayDomainInvalid>() {
             ErrorKind::GatewayDomainInvalid
         } else if err.is::<GatewayIdentityRequired>() {
             ErrorKind::GatewayIdentityRequired
         } else if err.is::<GatewayLoop>() {
             ErrorKind::GatewayLoop
-        } else if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
-            ErrorKind::Unauthorized
         } else if let Some(e) = err.source() {
             Self::mk(e)
         } else {

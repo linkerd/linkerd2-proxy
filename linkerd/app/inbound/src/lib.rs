@@ -16,7 +16,7 @@ mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::{policy::DefaultPolicy, metrics::Metrics};
+pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
     drain,
@@ -63,6 +63,14 @@ struct Runtime {
 impl<S> Inbound<S> {
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    pub fn identity(&self) -> Option<&LocalCrtKey> {
+        self.runtime.identity.as_ref()
+    }
+
+    pub fn proxy_metrics(&self) -> &metrics::Proxy {
+        &self.runtime.metrics.proxy
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {

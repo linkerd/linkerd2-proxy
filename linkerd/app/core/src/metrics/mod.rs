@@ -1,7 +1,6 @@
 use crate::{
     classify::{Class, SuccessOrFailure},
-    control, dst, http_metrics, http_metrics as metrics, opencensus, profiles,
-    stack_metrics,
+    control, dst, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
     svc::Param,
     telemetry, tls,
     transport::{

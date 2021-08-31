@@ -4,9 +4,9 @@ pub use linkerd_app_core::metrics::*;
 
 #[derive(Clone, Debug)]
 pub struct Metrics {
-    pub http_errors: error::Http,
-    pub tcp_errors: error::Tcp,
-    pub proxy: Proxy,
+    pub(crate) http_errors: error::Http,
+    pub(crate) tcp_errors: error::Tcp,
+    pub(crate) proxy: Proxy,
 }
 
 impl Metrics {

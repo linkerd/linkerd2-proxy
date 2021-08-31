@@ -1,4 +1,4 @@
-use crate::{policy, Config};
+use crate::{policy, Config, Metrics};
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
@@ -9,7 +9,7 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    InboundRuntime,
+    Runtime,
 };
 pub use linkerd_app_test as support;
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
@@ -67,13 +67,16 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn runtime() -> (InboundRuntime, drain::Signal) {
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+pub fn metrics() -> Metrics {
+    let (m, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    Metrics::new(m.proxy)
+}
+
+pub fn runtime() -> (Runtime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let runtime = InboundRuntime {
+    let runtime = Runtime {
         identity: None,
-        metrics: metrics.inbound,
         tap,
         span_sink: None,
         drain,

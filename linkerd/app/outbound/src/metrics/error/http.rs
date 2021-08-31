@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use std::{collections::HashMap, sync::Arc};
 
 metrics! {
-    inbound_http_errors_total: Counter {
+    outbound_http_errors_total: Counter {
         "The total number of inbound HTTP requests that could not be processed due to a proxy error."
     }
 }
@@ -18,7 +18,7 @@ pub struct Http(Arc<RwLock<HashMap<ErrorKind, Counter>>>);
 // == impl Http ==
 
 impl Http {
-    pub fn to_layer<S>(
+    pub(crate) fn to_layer<S>(
         &self,
     ) -> impl svc::layer::Layer<S, Service = svc::stack::Monitor<Self, S>> + Clone {
         svc::stack::Monitor::layer(self.clone())
@@ -48,7 +48,7 @@ impl FmtMetrics for Http {
         if metrics.is_empty() {
             return Ok(());
         }
-        inbound_http_errors_total.fmt_help(f)?;
-        inbound_http_errors_total.fmt_scopes(f, metrics.iter(), |c| c)
+        outbound_http_errors_total.fmt_help(f)?;
+        outbound_http_errors_total.fmt_scopes(f, metrics.iter(), |c| c)
     }
 }

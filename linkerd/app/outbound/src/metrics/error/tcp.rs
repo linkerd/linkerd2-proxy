@@ -9,16 +9,16 @@ use parking_lot::RwLock;
 use std::{collections::HashMap, sync::Arc};
 
 metrics! {
-    inbound_tcp_errors_total: Counter {
-        "The total number of inbound TCP connections that could not be processed due to a proxy error."
+    outbound_tcp_errors_total: Counter {
+        "The total number of outbound TCP connections that could not be processed due to a proxy error."
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Tcp(Arc<RwLock<HashMap<(TargetAddr, ErrorKind), Counter>>>);
+pub(crate) struct Tcp(Arc<RwLock<HashMap<(TargetAddr, ErrorKind), Counter>>>);
 
 #[derive(Clone, Debug)]
-pub struct MonitorTcp {
+pub(crate) struct MonitorTcp {
     target_addr: TargetAddr,
     registry: Tcp,
 }
@@ -26,7 +26,7 @@ pub struct MonitorTcp {
 // == impl Tcp ==
 
 impl Tcp {
-    pub fn to_layer<N>(
+    pub(crate) fn to_layer<N>(
         &self,
     ) -> impl svc::layer::Layer<N, Service = svc::stack::NewMonitor<Self, N>> + Clone {
         svc::stack::NewMonitor::layer(self.clone())
@@ -75,7 +75,7 @@ impl FmtMetrics for Tcp {
         if metrics.is_empty() {
             return Ok(());
         }
-        inbound_tcp_errors_total.fmt_help(f)?;
-        inbound_tcp_errors_total.fmt_scopes(f, metrics.iter(), |c| c)
+        outbound_tcp_errors_total.fmt_help(f)?;
+        outbound_tcp_errors_total.fmt_scopes(f, metrics.iter(), |c| c)
     }
 }

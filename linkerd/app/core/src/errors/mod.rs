@@ -1,4 +1,3 @@
-pub mod metrics;
 pub mod respond;
 
 use linkerd_proxy_transport::addrs::*;
