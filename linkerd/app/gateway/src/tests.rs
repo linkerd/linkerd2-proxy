@@ -1,10 +1,11 @@
 use super::*;
 use linkerd_app_core::{
-    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error, NameAddr, NameMatch,
+    dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
+    NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_test as support;
-use std::str::FromStr;
+use std::{error::Error as _, str::FromStr};
 use tower::util::ServiceExt;
 use tower_test::mock;
 
@@ -46,11 +47,12 @@ async fn bad_domain() {
         suffix: "bad.example.com",
         ..Default::default()
     };
-    assert!(test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e
+        .downcast::<HttpError>()
+        .unwrap()
+        .source()
+        .unwrap()
         .is::<GatewayDomainInvalid>());
 }
 
@@ -60,11 +62,12 @@ async fn no_identity() {
         client_id: None,
         ..Default::default()
     };
-    assert!(test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e
+        .downcast::<HttpError>()
+        .unwrap()
+        .source()
+        .unwrap()
         .is::<GatewayIdentityRequired>());
 }
 
@@ -76,11 +79,12 @@ async fn forward_loop() {
         ),
         ..Default::default()
     };
-    assert!(test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e
+        .downcast::<HttpError>()
+        .unwrap()
+        .source()
+        .unwrap()
         .is::<GatewayLoop>());
 }
 

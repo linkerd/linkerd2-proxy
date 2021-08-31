@@ -15,7 +15,7 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Http(Arc<RwLock<HashMap<ErrorKind, Counter>>>);
+pub struct Http(Arc<RwLock<HashMap<(TargetAddr, ErrorKind), Counter>>>);
 
 #[derive(Clone, Debug)]
 pub struct MonitorHttp {
@@ -72,6 +72,11 @@ impl svc::stack::MonitorError<Error> for MonitorHttp {
     #[inline]
     fn monitor_error(&mut self, e: &Error) {
         let kind = ErrorKind::mk(&**e);
-        self.registry.0.write().entry(kind).or_default().incr();
+        self.registry
+            .0
+            .write()
+            .entry((self.target_addr, kind))
+            .or_default()
+            .incr();
     }
 }
