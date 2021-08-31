@@ -33,11 +33,11 @@ impl<N> Outbound<N> {
 
             let skipped = tcp
                 .clone()
-                .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
+                .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                 .into_inner();
 
             svc::stack(http)
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
                         .push(svc::MapErrLayer::new(Into::into)),
@@ -47,10 +47,10 @@ impl<N> Outbound<N> {
                 .push_map_target(U::from)
                 .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
                 .push(svc::UnwrapOr::layer(
-                    tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
+                    tcp.push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .into_inner(),
                 ))
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
                 .push(svc::BoxNewService::layer())
@@ -67,7 +67,7 @@ impl<N> Outbound<N> {
                     skipped,
                 )
                 .check_new_service::<T, _>()
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
     }

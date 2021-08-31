@@ -92,7 +92,7 @@ impl<C> Outbound<C> {
     {
         self.map_stack(|_, _, conn| {
             conn.push_make_thunk()
-                .push_on_response(super::Forward::layer())
+                .push_on_service(super::Forward::layer())
                 .instrument(|_: &_| debug_span!("tcp.forward"))
                 .push(svc::BoxNewService::layer())
                 .check_new_service::<T, I>()

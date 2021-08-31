@@ -58,7 +58,7 @@ impl<N> Outbound<N> {
                     },
                 ))
                 .instrument(|_: &_| debug_span!("profile"))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         // If the traffic split is empty/unavailable, eagerly fail
                         // requests. When the split is in failfast, spawn the

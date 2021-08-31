@@ -166,7 +166,7 @@ impl<S> Inbound<S> {
                     rt.metrics.transport.clone(),
                 ))
                 .push_make_thunk()
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(tcp::Forward::layer())
                         .push(drain::Retain::layer(rt.drain.clone())),

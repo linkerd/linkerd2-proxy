@@ -11,25 +11,25 @@ use std::{
 /// Layers over services such that an `L`-typed Layer is applied to the result
 /// of the inner Service or NewService.
 #[derive(Clone, Debug)]
-pub struct OnResponseLayer<L>(L);
+pub struct OnServiceLayer<L>(L);
 
 /// Applies `L`-typed layers to the responses of an `S`-typed service.
 #[pin_project]
 #[derive(Clone, Debug)]
-pub struct OnResponse<L, S> {
+pub struct OnService<L, S> {
     #[pin]
     inner: S,
     layer: L,
 }
 
-impl<L> OnResponseLayer<L> {
-    pub fn new(layer: L) -> OnResponseLayer<L> {
-        OnResponseLayer(layer)
+impl<L> OnServiceLayer<L> {
+    pub fn new(layer: L) -> OnServiceLayer<L> {
+        OnServiceLayer(layer)
     }
 }
 
-impl<M, L: Clone> tower::layer::Layer<M> for OnResponseLayer<L> {
-    type Service = OnResponse<L, M>;
+impl<M, L: Clone> tower::layer::Layer<M> for OnServiceLayer<L> {
+    type Service = OnService<L, M>;
 
     fn layer(&self, inner: M) -> Self::Service {
         Self::Service {
@@ -39,7 +39,7 @@ impl<M, L: Clone> tower::layer::Layer<M> for OnResponseLayer<L> {
     }
 }
 
-impl<T, L, M> super::NewService<T> for OnResponse<L, M>
+impl<T, L, M> super::NewService<T> for OnService<L, M>
 where
     L: tower::layer::Layer<M::Service>,
     M: super::NewService<T>,
@@ -51,14 +51,14 @@ where
     }
 }
 
-impl<T, L, M> tower::Service<T> for OnResponse<L, M>
+impl<T, L, M> tower::Service<T> for OnService<L, M>
 where
     L: tower::layer::Layer<M::Response> + Clone,
     M: tower::Service<T>,
 {
     type Response = L::Service;
     type Error = M::Error;
-    type Future = OnResponse<L, M::Future>;
+    type Future = OnService<L, M::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -73,7 +73,7 @@ where
     }
 }
 
-impl<L, F> Future for OnResponse<L, F>
+impl<L, F> Future for OnService<L, F>
 where
     L: tower::layer::Layer<F::Ok>,
     F: TryFuture,

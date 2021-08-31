@@ -92,8 +92,8 @@ impl<L> Layers<L> {
             .push(BufferLayer::new(capacity))
     }
 
-    pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
-        self.push(stack::OnResponseLayer::new(layer))
+    pub fn push_on_service<U>(self, layer: U) -> Layers<Pair<L, stack::OnServiceLayer<U>>> {
+        self.push(stack::OnServiceLayer::new(layer))
     }
 
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
@@ -171,8 +171,8 @@ impl<S> Stack<S> {
 
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given
     /// `L`-typed layer on each service produced by `S`.
-    pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
-        self.push(stack::OnResponseLayer::new(layer))
+    pub fn push_on_service<L: Clone>(self, layer: L) -> Stack<stack::OnService<L, S>> {
+        self.push(stack::OnServiceLayer::new(layer))
     }
 
     pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
