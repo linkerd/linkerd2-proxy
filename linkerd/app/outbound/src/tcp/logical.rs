@@ -75,7 +75,7 @@ where
                     }
                 })
                 .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(tcp::balance::layer(
                             crate::EWMA_DEFAULT_RTT,
@@ -95,7 +95,7 @@ where
                 .push(svc::BoxNewService::layer())
                 .check_new_service::<(ConcreteAddr, Logical), I>()
                 .push(profiles::split::layer())
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(
                             rt.metrics

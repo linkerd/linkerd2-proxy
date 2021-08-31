@@ -82,7 +82,7 @@ impl Config {
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
             .push(metrics.http_errors.to_layer())
-            .push_on_response(
+            .push_on_service(
                 svc::layers()
                     .push(errors::respond::layer())
                     .push(http::BoxResponse::layer()),

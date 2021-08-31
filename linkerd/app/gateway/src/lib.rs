@@ -160,7 +160,7 @@ where
                 }
             }
         }))
-        .push_on_response(
+        .push_on_service(
             svc::layers()
                 .push(
                     inbound
@@ -195,7 +195,7 @@ where
             }
         }))
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
-        .push_on_response(
+        .push_on_service(
             svc::layers()
                 .push(
                     inbound
@@ -208,7 +208,7 @@ where
                 .push_spawn_buffer(buffer_capacity),
         )
         .push_cache(cache_max_idle_age)
-        .push_on_response(
+        .push_on_service(
             svc::layers()
                 .push(http::Retain::layer())
                 .push(http::BoxResponse::layer()),
@@ -246,7 +246,7 @@ where
         )
         .push_http_server()
         .into_stack()
-        .push_on_response(svc::BoxService::layer())
+        .push_on_service(svc::BoxService::layer())
         .push(svc::BoxNewService::layer())
         .push_switch(
             |GatewayTransportHeader {
@@ -265,7 +265,7 @@ where
                 })),
                 None => Ok::<_, Infallible>(svc::Either::B(target)),
             },
-            tcp.push_on_response(svc::BoxService::layer())
+            tcp.push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
                 .into_inner(),
         )
@@ -276,7 +276,7 @@ where
             },
             legacy_http.into_inner(),
         )
-        .push_on_response(svc::BoxService::layer())
+        .push_on_service(svc::BoxService::layer())
         .push(svc::BoxNewService::layer())
         .into_inner()
 }

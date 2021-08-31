@@ -33,7 +33,7 @@ impl<N> Outbound<N> {
             } = config.proxy;
 
             http.check_new_service::<T, _>()
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
                         // Limit the number of in-flight requests. When the proxy is
@@ -58,7 +58,7 @@ impl<N> Outbound<N> {
                 // `Client`.
                 .push(http::NewNormalizeUri::layer())
                 // Record when a HTTP/1 URI originated in absolute form
-                .push_on_response(http::normalize_uri::MarkAbsoluteForm::layer())
+                .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .check_new_service::<T, http::Request<http::BoxBody>>()
                 .push(svc::BoxNewService::layer())
         })

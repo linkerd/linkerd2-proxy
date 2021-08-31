@@ -59,7 +59,7 @@ impl<E> Outbound<E> {
             endpoint
                 .clone()
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
                         .push(
@@ -79,7 +79,7 @@ impl<E> Outbound<E> {
                 // When the balancer is in failfast, spawn the service in a background
                 // task so it becomes ready without new requests.
                 .push(resolve::layer(resolve, watchdog))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::balance::layer(
                             crate::EWMA_DEFAULT_RTT,
@@ -113,7 +113,7 @@ impl<E> Outbound<E> {
                 // task so it becomes ready without new requests.
                 .check_new_service::<(ConcreteAddr, Logical), _>()
                 .push(profiles::split::layer())
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(
@@ -126,11 +126,11 @@ impl<E> Outbound<E> {
                         .push_spawn_buffer(buffer_capacity),
                 )
                 .push_cache(cache_max_idle_age)
-                .push_on_response(http::BoxResponse::layer())
+                .push_on_service(http::BoxResponse::layer())
                 // Note: routes can't exert backpressure.
                 .push(profiles::http::route_request::layer(
                     svc::proxies()
-                        .push_on_response(http::BoxRequest::layer())
+                        .push_on_service(http::BoxRequest::layer())
                         .push(
                             rt.metrics
                                 .proxy
@@ -142,7 +142,7 @@ impl<E> Outbound<E> {
                         // any `Body` type into `BoxBody` so that the rest of the
                         // stack doesn't have to implement `Service` for requests
                         // with both body types.
-                        .push_on_response(http::BoxRequest::erased())
+                        .push_on_service(http::BoxRequest::erased())
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
                         // Sets an optional request timeout.
@@ -158,17 +158,17 @@ impl<E> Outbound<E> {
                         // extension.
                         .push(classify::NewClassify::layer())
                         .push_map_target(Logical::mk_route)
-                        .push_on_response(http::BoxResponse::layer())
+                        .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
                 ))
-                .push_on_response(http::BoxRequest::layer())
+                .push_on_service(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
                 // canonical-dst-header. The response body is boxed unify the profile
                 // stack's response type with that of to endpoint stack.
                 .push(http::NewHeaderFromTarget::<CanonicalDstHeader, _>::layer())
-                .push_on_response(svc::layers().push(http::BoxResponse::layer()))
+                .push_on_service(http::BoxResponse::layer())
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
     }

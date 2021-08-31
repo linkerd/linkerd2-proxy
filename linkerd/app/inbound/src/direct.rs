@@ -182,7 +182,7 @@ impl<N> Inbound<N> {
                     // HTTP detection is not necessary in this case, since the transport
                     // header indicates the connection's HTTP version.
                     svc::stack(gateway.clone())
-                        .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
+                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                         .push_map_target(GatewayConnection::TransportHeader)
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.proxy.transport.clone(),
@@ -221,7 +221,7 @@ impl<N> Inbound<N> {
                     // with transport header support.
                     svc::stack(gateway)
                         .push_map_target(GatewayConnection::Legacy)
-                        .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
+                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.proxy.transport.clone(),
                         ))
@@ -239,7 +239,7 @@ impl<N> Inbound<N> {
                     identity: rt.identity.clone().map(WithTransportHeaderAlpn),
                 }))
                 .check_new_service::<T, I>()
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
     }

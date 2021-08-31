@@ -15,7 +15,7 @@ mod make_thunk;
 mod map_target;
 pub mod monitor;
 pub mod new_service;
-mod on_response;
+mod on_service;
 mod proxy;
 mod result;
 mod router;
@@ -34,7 +34,7 @@ pub use self::{
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
-    on_response::{OnResponse, OnResponseLayer},
+    on_service::{OnService, OnServiceLayer},
     proxy::{Proxy, ProxyService},
     result::ResultService,
     router::{NewRouter, RecognizeRoute},

@@ -36,7 +36,7 @@ impl<C> Outbound<C> {
             // HTTP/1.x fallback is supported as needed.
             connect
                 .push(http::client::layer(h1_settings, h2_settings))
-                .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
+                .push_on_service(svc::MapErrLayer::new(Into::<Error>::into))
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
@@ -47,7 +47,7 @@ impl<C> Outbound<C> {
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_response(http_tracing::client(
+                .push_on_service(http_tracing::client(
                     rt.span_sink.clone(),
                     crate::trace_labels(),
                 ))
@@ -56,7 +56,7 @@ impl<C> Outbound<C> {
                     "host",
                     CANONICAL_DST_HEADER,
                 ]))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxResponse::layer())
                         .push(svc::BoxService::layer()),

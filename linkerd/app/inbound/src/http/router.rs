@@ -92,7 +92,7 @@ impl<C> Inbound<C> {
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
                 ))
-                .push_on_response(svc::MapErrLayer::new(Into::into))
+                .push_on_service(svc::MapErrLayer::new(Into::into))
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
                 .check_new_service::<Http, http::Request<_>>()
@@ -106,11 +106,11 @@ impl<C> Inbound<C> {
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_response(http_tracing::client(
+                .push_on_service(http_tracing::client(
                     rt.span_sink.clone(),
                     super::trace_labels(),
                 ))
-                .push_on_response(http::BoxResponse::layer())
+                .push_on_service(http::BoxResponse::layer())
                 .check_new_service::<Logical, http::Request<_>>();
 
             // Attempts to discover a service profile for each logical target (as
@@ -120,10 +120,10 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 // The HTTP stack doesn't use the profile resolution, so drop it.
                 .push_map_target(Logical::from)
-                .push_on_response(http::BoxResponse::layer())
+                .push_on_service(http::BoxResponse::layer())
                 .push(profiles::http::route_request::layer(
                     svc::proxies()
-                        .push_on_response(http::BoxRequest::layer())
+                        .push_on_service(http::BoxRequest::layer())
                         // Records per-route metrics.
                         .push(
                             rt.metrics.proxy
@@ -143,7 +143,7 @@ impl<C> Inbound<C> {
                                 direction: metrics::Direction::In,
                             }
                         })
-                        .push_on_response(http::BoxResponse::layer())
+                        .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
                 ))
                 .push_switch(
@@ -163,7 +163,7 @@ impl<C> Inbound<C> {
                         Ok(svc::Either::B(logical))
                     },
                     http.clone()
-                        .push_on_response(http::BoxResponse::layer())
+                        .push_on_service(http::BoxResponse::layer())
                         .check_new_service::<Logical, http::Request<_>>()
                         .into_inner(),
                 )
@@ -185,7 +185,7 @@ impl<C> Inbound<C> {
                     Ok(profiles::LookupAddr(addr.into()))
                 }))
                 .instrument(|_: &Logical| debug_span!("profile"))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxResponse::layer())
                         .push(svc::layer::mk(svc::SpawnReady::new)),
@@ -194,11 +194,11 @@ impl<C> Inbound<C> {
                 .push_when_unready(
                     config.profile_idle_timeout,
                     http.clone()
-                        .push_on_response(svc::layer::mk(svc::SpawnReady::new))
+                        .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                         .into_inner(),
                 )
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                         .push(svc::FailFast::layer(
@@ -208,7 +208,7 @@ impl<C> Inbound<C> {
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
                 .push_cache(config.proxy.cache_max_idle_age)
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::Retain::layer())
                         .push(http::BoxResponse::layer()),
