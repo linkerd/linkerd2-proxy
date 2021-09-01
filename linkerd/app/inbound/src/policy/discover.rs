@@ -109,7 +109,7 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
         _ => return Err("proxy protocol missing".into()),
     };
 
-    let authorizations = proto
+    let mut authorizations = proto
         .authorizations
         .into_iter()
         .map(
@@ -169,6 +169,10 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
             },
         )
         .collect::<Result<Vec<_>>>()?;
+
+    // Always append a rule to permit unauthenticated traffic that originates from loopback.
+    // TODO(ver) should this be provided by the controller?
+    authorizations.push(super::defaults::loopback_unauthenticated());
 
     Ok(ServerPolicy {
         protocol,
