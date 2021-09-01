@@ -144,19 +144,29 @@ impl Config {
         let inbound_metrics = inbound::Metrics::new(metrics.proxy.clone());
         let outbound_metrics = outbound::Metrics::new(metrics.proxy.clone());
 
+        let runtime = Runtime {
+            identity: identity.local(),
+            tap: tap.registry(),
+            span_sink: oc_collector.span_sink(),
+            drain: drain_rx.clone(),
+        };
+        let inbound = Inbound::new(inbound, inbound_metrics.clone(), runtime.clone());
+        let outbound = Outbound::new(outbound, outbound_metrics.clone(), runtime);
+
+        let inbound_policies = inbound.build_policies(dns.resolver, metrics.control).await;
+
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
-            let report = inbound_metrics
-                .clone()
-                .and_then(outbound_metrics.clone())
-                .and_then(report);
             let metrics = inbound_metrics.clone();
+            let report = inbound_metrics.and_then(outbound_metrics).and_then(report);
+            let policies = inbound_policies.clone();
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
                     identity,
                     report,
+                    policies,
                     metrics,
                     log_level,
                     drain,
@@ -166,17 +176,6 @@ impl Config {
         };
 
         let dst_addr = dst.addr.clone();
-
-        let runtime = Runtime {
-            identity: identity.local(),
-            tap: tap.registry(),
-            span_sink: oc_collector.span_sink(),
-            drain: drain_rx,
-        };
-
-        let inbound = Inbound::new(inbound, inbound_metrics, runtime.clone());
-        let outbound = Outbound::new(outbound, outbound_metrics, runtime);
-
         let gateway_stack = gateway::stack(
             gateway,
             inbound.clone(),
@@ -201,8 +200,6 @@ impl Config {
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
-            let dns = dns.resolver;
-            let control_metrics = metrics.control;
 
             Box::pin(async move {
                 Self::await_identity(identity)
@@ -220,8 +217,7 @@ impl Config {
                         .serve(
                             inbound_addr,
                             inbound_listen,
-                            dns,
-                            control_metrics,
+                            inbound_policies,
                             profiles,
                             gateway_stack,
                         )

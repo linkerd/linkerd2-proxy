@@ -89,6 +89,18 @@ impl<S> Inbound<S> {
         &self.runtime.metrics.proxy
     }
 
+    pub fn authorize_http<N>(
+        &self,
+    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeHttp<N>> + Clone {
+        policy::NewAuthorizeHttp::layer()
+    }
+
+    pub fn authorize_tcp<N>(
+        &self,
+    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeTcp<N>> + Clone {
+        policy::NewAuthorizeTcp::layer()
+    }
+
     pub fn into_stack(self) -> svc::Stack<S> {
         self.stack
     }

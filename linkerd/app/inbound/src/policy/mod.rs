@@ -23,17 +23,17 @@ use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
 #[error("connection denied on unknown port {0}")]
-pub(crate) struct DeniedUnknownPort(pub u16);
+pub struct DeniedUnknownPort(pub u16);
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 #[error("unauthorized connection from {client_addr} with identity {tls:?} to {dst_addr}")]
-pub(crate) struct DeniedUnauthorized {
+pub struct DeniedUnauthorized {
     pub client_addr: Remote<ClientAddr>,
     pub dst_addr: OrigDstAddr,
     pub tls: tls::ConditionalServerTls,
 }
 
-pub(crate) trait CheckPolicy {
+pub trait CheckPolicy {
     /// Checks that the destination address is configured to allow traffic.
     fn check_policy(&self, dst: OrigDstAddr) -> Result<AllowPolicy, DeniedUnknownPort>;
 }
@@ -85,8 +85,14 @@ impl AllowPolicy {
     }
 
     #[inline]
-    pub(crate) fn server_labels(&self) -> Labels {
+    pub fn server_labels(&self) -> Labels {
         self.server.borrow().labels.clone()
+    }
+
+    async fn changed(&mut self) {
+        if self.server.changed().await.is_err() {
+            futures::future::pending::<()>().await;
+        }
     }
 
     /// Checks whether the destination port's `AllowPolicy` is authorized to accept connections

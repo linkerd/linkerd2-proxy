@@ -1,5 +1,5 @@
 use super::set_identity_header::NewSetIdentityHeader;
-use crate::Inbound;
+use crate::{policy::AllowPolicy, Inbound};
 pub use linkerd_app_core::proxy::http::{
     normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
     Version,
@@ -7,7 +7,6 @@ pub use linkerd_app_core::proxy::http::{
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     errors, http_tracing, identity, io,
-    metrics::PolicyLabels,
     proxy::http,
     svc::{self, Param},
     transport::OrigDstAddr,
@@ -21,7 +20,7 @@ impl<H> Inbound<H> {
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
             + Param<Option<identity::Name>>
-            + Param<PolicyLabels>
+            + Param<AllowPolicy>
             + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,

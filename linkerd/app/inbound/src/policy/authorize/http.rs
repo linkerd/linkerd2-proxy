@@ -1,4 +1,4 @@
-use crate::policy::{AllowPolicy, Permit};
+use super::super::{AllowPolicy, Permit};
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
     errors::HttpError,
@@ -9,6 +9,13 @@ use linkerd_app_core::{
 };
 use std::task;
 
+/// A middleware that enforces policy on each HTTP request.
+///
+/// This enforcement is done lazily on each request so that policy updates are honored as the
+/// connection progresses.
+///
+/// The inner service is created for each request, so it's expected that this is combined with
+/// caching.
 #[derive(Clone, Debug)]
 pub struct NewAuthorizeHttp<N> {
     inner: N,

@@ -37,24 +37,24 @@ pub(crate) struct Local {
 
 /// Gateway connections come in two variants: those with a transport header, and
 /// legacy connections, without a transport header.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum GatewayConnection {
     TransportHeader(GatewayTransportHeader),
     Legacy(Legacy),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct GatewayTransportHeader {
     pub target: NameAddr,
     pub protocol: Option<SessionProtocol>,
     pub client: ClientInfo,
-    permit: policy::Permit,
+    pub policy: policy::AllowPolicy,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Legacy {
     pub client: ClientInfo,
-    permit: policy::Permit,
+    pub policy: policy::AllowPolicy,
 }
 
 /// Client connections *must* have an identity.
@@ -156,19 +156,19 @@ impl<N> Inbound<N> {
                                     // connection is a gateway connection. We check the _gateway
                                     // address's_ policy to determine whether the client is
                                     // authorized to use this gateway.
-                                    let allow = policies.check_policy(client.local_addr)?;
-                                    let tls = tls::ConditionalServerTls::Some(
-                                        tls::ServerTls::Established {
-                                            client_id: Some(client.client_id.clone()),
-                                            negotiated_protocol: client.alpn.clone(),
-                                        },
-                                    );
-                                    let permit = allow.check_authorized(client.client_addr, &tls)?;
+                                    let policy = policies.check_policy(client.local_addr)?;
+                                    // let tls = tls::ConditionalServerTls::Some(
+                                    //     tls::ServerTls::Established {
+                                    //         client_id: Some(client.client_id.clone()),
+                                    //         negotiated_protocol: client.alpn.clone(),
+                                    //     },
+                                    // );
+                                    // let permit = allow.check_authorized(client.client_addr, &tls)?;
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
                                         client,
-                                        permit,
+                                        policy,
                                     }))
                                 }
                                 TransportHeader {
@@ -207,18 +207,12 @@ impl<N> Inbound<N> {
                             // be receiving a gateway connection from an older client.  We check the
                             // gateway address's policy to determine whether the client is
                             // authorized to use this gateway.
-                            let allow = policies.check_policy(client.local_addr)?;
-                            let tls =
-                                tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                                    client_id: Some(client.client_id.clone()),
-                                    negotiated_protocol: client.alpn.clone(),
-                                });
-                            let permit = allow.check_authorized(client.client_addr, &tls)?;
-                            Ok(svc::Either::B(Legacy { client, permit }))
+                            let policy = policies.check_policy(client.local_addr)?;
+                            Ok(svc::Either::B(Legacy { client, policy }))
                         }
                     },
-                    // TODO: Remove this after we have at least one stable release out
-                    // with transport header support.
+                    // TODO(ver): Remove this after we have another stable release out with
+                    // transport header support.
                     svc::stack(gateway)
                         .push_map_target(GatewayConnection::Legacy)
                         .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
@@ -306,14 +300,38 @@ impl Param<transport::labels::Key> for Local {
 impl Param<transport::labels::Key> for GatewayTransportHeader {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
-            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(self.client.client_id.clone()),
-                negotiated_protocol: self.client.alpn.clone(),
-            }),
+            self.param(),
             self.client.local_addr.into(),
-            self.permit.server_labels.clone(),
-            self.permit.authz_labels.clone(),
+            self.policy.server_labels(),
+            Default::default(),
         )
+    }
+}
+
+impl Param<policy::AllowPolicy> for GatewayTransportHeader {
+    fn param(&self) -> policy::AllowPolicy {
+        self.policy.clone()
+    }
+}
+
+impl Param<OrigDstAddr> for GatewayTransportHeader {
+    fn param(&self) -> OrigDstAddr {
+        self.client.local_addr
+    }
+}
+
+impl Param<Remote<ClientAddr>> for GatewayTransportHeader {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client.client_addr
+    }
+}
+
+impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(self.client.client_id.clone()),
+            negotiated_protocol: self.client.alpn.clone(),
+        })
     }
 }
 
@@ -327,8 +345,8 @@ impl Param<transport::labels::Key> for Legacy {
                 negotiated_protocol: self.client.alpn.clone(),
             }),
             self.client.local_addr.into(),
-            self.permit.server_labels.clone(),
-            self.permit.authz_labels.clone(),
+            self.policy.server_labels(),
+            Default::default(),
         )
     }
 }

@@ -8,7 +8,7 @@ use linkerd_app_core::{
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error,
+    Error, Result,
 };
 use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
@@ -41,6 +41,7 @@ struct Tcp {
     addr: Local<ServerAddr>,
     client: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
+    policy: inbound::policy::AllowPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +66,7 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
+        policies: impl inbound::policy::CheckPolicy + Clone + Send + Sync + 'static,
         metrics: inbound::Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
@@ -132,12 +134,15 @@ impl Config {
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
-            .push_map_target(|(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
-                Tcp {
+            .push_request_filter(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| -> Result<_> {
+                let Local(ServerAddr(dst)) = addrs.param();
+                let policy = policies.check_policy(OrigDstAddr(dst))?;
+                Ok(Tcp {
                     tls,
                     client: addrs.param(),
                     addr: addrs.param(),
-                }
+                    policy
+                })
             })
             .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(TlsParams {
