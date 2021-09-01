@@ -40,70 +40,7 @@ pub enum ResponseBody<B> {
 
 const GRPC_CONTENT_TYPE: &str = "application/grpc";
 
-impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
-where
-    B::Error: Into<Error>,
-{
-    type Data = B::Data;
-    type Error = B::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        match self.project() {
-            ResponseBodyProj::NonGrpc(inner) => inner.poll_data(cx),
-            ResponseBodyProj::Grpc { inner, trailers } => {
-                // should not be calling poll_data if we have set trailers derived from an error
-                assert!(trailers.is_none());
-                match inner.poll_data(cx) {
-                    Poll::Ready(Some(Err(error))) => {
-                        let error = error.into();
-                        let mut error_trailers = http::HeaderMap::new();
-                        let code = set_grpc_status(&*error, &mut error_trailers);
-                        debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
-                        *trailers = Some(error_trailers);
-                        Poll::Ready(None)
-                    }
-                    data => data,
-                }
-            }
-        }
-    }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        match self.project() {
-            ResponseBodyProj::NonGrpc(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::Grpc { inner, trailers } => match trailers.take() {
-                Some(t) => Poll::Ready(Ok(Some(t))),
-                None => inner.poll_trailers(cx),
-            },
-        }
-    }
-
-    fn is_end_stream(&self) -> bool {
-        match self {
-            Self::NonGrpc(inner) => inner.is_end_stream(),
-            Self::Grpc { inner, trailers } => trailers.is_none() && inner.is_end_stream(),
-        }
-    }
-
-    fn size_hint(&self) -> http_body::SizeHint {
-        match self {
-            Self::NonGrpc(inner) => inner.size_hint(),
-            Self::Grpc { inner, .. } => inner.size_hint(),
-        }
-    }
-}
-
-impl<B: Default + hyper::body::HttpBody> Default for ResponseBody<B> {
-    fn default() -> ResponseBody<B> {
-        ResponseBody::NonGrpc(B::default())
-    }
-}
+// === impl NewRespond ===
 
 impl<ReqB, RspB: Default + hyper::body::HttpBody>
     respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond
@@ -136,6 +73,8 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
         }
     }
 }
+
+// === impl Respond ===
 
 impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB>> for Respond {
     type Response = http::Response<ResponseBody<RspB>>;
@@ -201,6 +140,75 @@ impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB
         }
     }
 }
+
+// === impl ResponseBody ===
+
+impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
+where
+    B::Error: Into<Error>,
+{
+    type Data = B::Data;
+    type Error = B::Error;
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        match self.project() {
+            ResponseBodyProj::NonGrpc(inner) => inner.poll_data(cx),
+            ResponseBodyProj::Grpc { inner, trailers } => {
+                // should not be calling poll_data if we have set trailers derived from an error
+                assert!(trailers.is_none());
+                match inner.poll_data(cx) {
+                    Poll::Ready(Some(Err(error))) => {
+                        let error = error.into();
+                        let mut error_trailers = http::HeaderMap::new();
+                        let code = set_grpc_status(&*error, &mut error_trailers);
+                        debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
+                        *trailers = Some(error_trailers);
+                        Poll::Ready(None)
+                    }
+                    data => data,
+                }
+            }
+        }
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        match self.project() {
+            ResponseBodyProj::NonGrpc(inner) => inner.poll_trailers(cx),
+            ResponseBodyProj::Grpc { inner, trailers } => match trailers.take() {
+                Some(t) => Poll::Ready(Ok(Some(t))),
+                None => inner.poll_trailers(cx),
+            },
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        match self {
+            Self::NonGrpc(inner) => inner.is_end_stream(),
+            Self::Grpc { inner, trailers } => trailers.is_none() && inner.is_end_stream(),
+        }
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        match self {
+            Self::NonGrpc(inner) => inner.size_hint(),
+            Self::Grpc { inner, .. } => inner.size_hint(),
+        }
+    }
+}
+
+impl<B: Default + hyper::body::HttpBody> Default for ResponseBody<B> {
+    fn default() -> ResponseBody<B> {
+        ResponseBody::NonGrpc(B::default())
+    }
+}
+
+// === helpers ===
 
 fn set_l5d_proxy_error_header(
     builder: http::response::Builder,

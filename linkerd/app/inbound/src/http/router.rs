@@ -1,8 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, dst,
-    errors::HttpError,
-    http_tracing, io, metrics,
+    classify, dst, http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, Param},
@@ -27,7 +25,7 @@ struct LogicalPerRequest {
     client: Remote<ClientAddr>,
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
-    policy: policy::AllowPolicy,
+    permit: policy::Permit,
 }
 
 /// Describes a logical request target.
@@ -224,12 +222,13 @@ impl<C> Inbound<C> {
                 // dispatches the request. NewRouter moves the NewService into the service type, so
                 // minimize it's type footprint with a Box.
                 .push(svc::BoxNewService::layer())
-                .push(svc::NewRouter::layer(|t: T| LogicalPerRequest {
+                .push(svc::NewRouter::layer(|(permit, t): (_, T)| LogicalPerRequest {
                     client: t.param(),
                     server: t.param(),
                     tls: t.param(),
-                    policy: t.param(),
+                    permit,
                 }))
+                .push(policy::NewAuthorizeHttp::layer())
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
@@ -265,20 +264,11 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
             .or_else(|| http_request_authority_addr(req).ok()?.into_name_addr())
             .or_else(|| http_request_host_addr(req).ok()?.into_name_addr());
 
-        // Use the per-port inbound policy to determine whether the request is permitted.
-        let permit = match self.policy.check_authorized(self.client, &self.tls) {
-            Ok(permit) => permit,
-            Err(denied) => {
-                tracing::debug!(?logical, ?denied);
-                return Err(HttpError::forbidden(denied).into());
-            }
-        };
-
         Ok(Logical {
             logical,
             addr: self.server,
             tls: self.tls.clone(),
-            permit,
+            permit: self.permit.clone(),
             // Use the request's HTTP version (i.e. as modified by orig-proto downgrading).
             http: req
                 .version()
@@ -358,6 +348,7 @@ impl tap::Inspect for Logical {
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&tap::Labels> {
+        // TODO include policy labels here.
         None
     }
 

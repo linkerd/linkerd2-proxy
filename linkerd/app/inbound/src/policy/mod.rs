@@ -1,3 +1,4 @@
+mod authorize;
 mod config;
 pub mod defaults;
 mod discover;
@@ -5,6 +6,7 @@ mod store;
 #[cfg(test)]
 mod tests;
 
+pub use self::authorize::NewAuthorizeHttp;
 pub use self::config::Config;
 pub(crate) use self::store::Store;
 
@@ -43,13 +45,13 @@ pub enum DefaultPolicy {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct AllowPolicy {
+pub struct AllowPolicy {
     dst: OrigDstAddr,
     server: watch::Receiver<ServerPolicy>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct Permit {
+pub struct Permit {
     pub protocol: Protocol,
 
     pub server_labels: Labels,
