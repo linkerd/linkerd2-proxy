@@ -41,7 +41,6 @@ struct Tcp {
     addr: Local<ServerAddr>,
     client: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
-    policy: inbound::policy::AllowPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -66,7 +65,6 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
-        policies: impl inbound::policy::CheckPolicy + Clone + Send + Sync + 'static,
         metrics: inbound::Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
@@ -83,7 +81,6 @@ impl Config {
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
-            .push(metrics.http_errors.to_layer())
             .push_on_service(
                 svc::layers()
                     .push(errors::respond::layer())
@@ -134,15 +131,14 @@ impl Config {
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
-            .push_request_filter(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| -> Result<_> {
-                let Local(ServerAddr(dst)) = addrs.param();
-                let policy = policies.check_policy(OrigDstAddr(dst))?;
-                Ok(Tcp {
+            .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
+                // TODO(ver): We should enforce policy here; but we need to permit liveness probes
+                // for destination pods to startup...
+                Tcp {
                     tls,
                     client: addrs.param(),
                     addr: addrs.param(),
-                    policy
-                })
+                }
             })
             .push(svc::BoxNewService::layer())
             .push(tls::NewDetectTls::layer(TlsParams {
@@ -205,7 +201,9 @@ impl Param<metrics::PolicyLabels> for Http {
             server: vec![("name".to_string(), "default:admin".to_string())]
                 .into_iter()
                 .collect(),
-            authz: Default::default(),
+            authz: vec![("name".to_string(), "default:admin".to_string())]
+                .into_iter()
+                .collect(),
         }
     }
 }

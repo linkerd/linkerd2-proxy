@@ -511,7 +511,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // identity is disabled).
         let policy = {
             let inbound_port = listen_addr.port();
-            let admin_port = admin_listen_addr.port();
+            // TODO(ver) let admin_port = admin_listen_addr.port();
 
             let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
                 .unwrap_or_else(|| {
@@ -554,8 +554,8 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         ports.insert(inbound_port);
                     }
 
-                    // Supports discovery of admin port policies.
-                    ports.insert(admin_port);
+                    // TODO(ver) support admin server policies
+                    //ports.insert(admin_port);
 
                     // TODO(ver) support tap server policies.
 

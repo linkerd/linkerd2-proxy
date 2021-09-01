@@ -153,20 +153,16 @@ impl Config {
         let inbound = Inbound::new(inbound, inbound_metrics.clone(), runtime.clone());
         let outbound = Outbound::new(outbound, outbound_metrics.clone(), runtime);
 
-        let inbound_policies = inbound.build_policies(dns.resolver, metrics.control).await;
-
         let admin = {
             let identity = identity.local();
             let drain = drain_rx.clone();
             let metrics = inbound_metrics.clone();
             let report = inbound_metrics.and_then(outbound_metrics).and_then(report);
-            let policies = inbound_policies.clone();
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
                     identity,
                     report,
-                    policies,
                     metrics,
                     log_level,
                     drain,
@@ -199,7 +195,9 @@ impl Config {
             let identity = identity.local();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
+            let dns = dns.resolver;
             let resolve = dst.resolve;
+            let control_metrics = metrics.control;
 
             Box::pin(async move {
                 Self::await_identity(identity)
@@ -212,6 +210,7 @@ impl Config {
                         .instrument(info_span!("outbound")),
                 );
 
+                let inbound_policies = inbound.build_policies(dns, control_metrics).await;
                 tokio::spawn(
                     inbound
                         .serve(
