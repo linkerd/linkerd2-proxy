@@ -6,7 +6,7 @@ mod store;
 #[cfg(test)]
 mod tests;
 
-pub use self::authorize::NewAuthorizeHttp;
+pub use self::authorize::{NewAuthorizeHttp, NewAuthorizeTcp};
 pub use self::config::Config;
 pub(crate) use self::store::Store;
 
