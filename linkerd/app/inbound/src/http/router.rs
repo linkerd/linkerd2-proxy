@@ -100,7 +100,7 @@ impl<C> Inbound<C> {
                 // Records metrics for each `Logical`.
                 .push(
                     rt.metrics
-                    .proxy
+                        .proxy
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
