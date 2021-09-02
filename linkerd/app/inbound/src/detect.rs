@@ -277,7 +277,7 @@ impl svc::Param<transport::labels::Key> for Forward {
         transport::labels::Key::inbound_server(
             self.tls.clone(),
             self.orig_dst_addr.into(),
-            self.permit.server_labels.clone(),
+            self.permit.server_name.clone(),
         )
     }
 }
@@ -383,7 +383,7 @@ impl svc::Param<transport::labels::Key> for Http {
         transport::labels::Key::inbound_server(
             self.tls.status.clone(),
             self.tls.orig_dst_addr.into(),
-            self.tls.policy.server_labels(),
+            self.tls.policy.server_name(),
         )
     }
 }
@@ -437,9 +437,9 @@ mod tests {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![client_addr().ip().into()],
-                    labels: Default::default(),
+                    name: "testsaz".to_string(),
                 }],
-                labels: Default::default(),
+                name: "testsrv".to_string(),
             },
         );
         allow

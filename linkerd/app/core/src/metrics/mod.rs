@@ -10,7 +10,6 @@ use crate::{
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
-use linkerd_server_policy as policy;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
@@ -65,12 +64,12 @@ pub struct InboundEndpointLabels {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-pub struct ServerLabels(pub policy::Labels);
+pub struct ServerLabel(pub String);
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct AuthzLabels {
-    pub server: policy::Labels,
-    pub authz: policy::Labels,
+    pub server: ServerLabel,
+    pub authz: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -269,16 +268,26 @@ impl FmtLabels for InboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)).fmt_labels(f)?;
-
-        for (k, v) in self.policy.server.iter() {
-            write!(f, ",srv_{}=\"{}\"", k, v)?;
-        }
-        for (k, v) in self.policy.authz.iter() {
-            write!(f, ",saz_{}=\"{}\"", k, v)?;
-        }
+        (
+            (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)),
+            &self.policy,
+        )
+            .fmt_labels(f)?;
 
         Ok(())
+    }
+}
+
+impl FmtLabels for ServerLabel {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "srv_name=\"{}\"", self.0)
+    }
+}
+
+impl FmtLabels for AuthzLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.server.fmt_labels(f)?;
+        write!(f, ",saz_name=\"{}\"", self.authz)
     }
 }
 

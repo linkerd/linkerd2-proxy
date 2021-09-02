@@ -128,9 +128,9 @@ mod tests {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
-                    labels: Default::default(),
+                    name: "testsaz".to_string(),
                 }],
-                labels: Default::default(),
+                name: "testsrv".to_string(),
             },
             None,
         );

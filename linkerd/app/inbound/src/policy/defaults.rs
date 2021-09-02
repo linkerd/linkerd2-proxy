@@ -1,7 +1,5 @@
 use linkerd_app_core::{IpNet, Ipv4Net, Ipv6Net};
-use linkerd_server_policy::{
-    Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
-};
+use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::time::Duration;
 
 pub fn all_authenticated(timeout: Duration) -> ServerPolicy {
@@ -72,21 +70,17 @@ fn mk(
     authentication: Authentication,
     timeout: Duration,
 ) -> ServerPolicy {
-    let labels = Some(("name".to_string(), name.to_string()))
-        .into_iter()
-        .collect::<Labels>();
-
     ServerPolicy {
         protocol: Protocol::Detect { timeout },
         authorizations: vec![
             Authorization {
                 networks: nets.into_iter().map(Into::into).collect(),
                 authentication,
-                labels: labels.clone(),
+                name: name.to_string(),
             },
             loopback_unauthenticated(),
         ],
-        labels,
+        name: name.to_string(),
     }
 }
 
@@ -100,8 +94,6 @@ pub(super) fn loopback_unauthenticated() -> Authorization {
     Authorization {
         networks: vec![v4, v6].into_iter().map(Into::into).collect(),
         authentication: Authentication::Unauthenticated,
-        labels: vec![("name".to_string(), "default:loopback".to_string())]
-            .into_iter()
-            .collect(),
+        name: "default:loopback".to_string(),
     }
 }

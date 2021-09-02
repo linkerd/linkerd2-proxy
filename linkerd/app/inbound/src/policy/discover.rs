@@ -161,10 +161,15 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                     authn => return Err(format!("no authentication provided: {:?}", authn).into()),
                 };
 
+                let name = labels
+                    .get("name")
+                    .ok_or("authorization missing 'name' label")?
+                    .clone();
+
                 Ok(Authorization {
                     networks,
                     authentication: authn,
-                    labels: labels.into_iter().collect(),
+                    name,
                 })
             },
         )
@@ -174,10 +179,16 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
     // TODO(ver) should this be provided by the controller?
     authorizations.push(super::defaults::loopback_unauthenticated());
 
+    let name = proto
+        .labels
+        .get("name")
+        .ok_or("server missing 'name' label")?
+        .clone();
+
     Ok(ServerPolicy {
         protocol,
         authorizations,
-        labels: proto.labels.into_iter().collect(),
+        name,
     })
 }
 

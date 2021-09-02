@@ -163,9 +163,7 @@ impl Param<transport::labels::Key> for Tcp {
             self.tls.clone(),
             self.addr.into(),
             // TODO(ver) enforce policies on the proxy's admin port.
-            vec![("name".to_string(), "default:admin".to_string())]
-                .into_iter()
-                .collect(),
+            "default:admin".to_string(),
         )
     }
 }

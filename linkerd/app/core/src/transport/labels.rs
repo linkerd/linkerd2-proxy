@@ -1,7 +1,6 @@
-pub use crate::metrics::{Direction, OutboundEndpointLabels, ServerLabels as PolicyLabels};
+pub use crate::metrics::{Direction, OutboundEndpointLabels, ServerLabel as PolicyServerLabel};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
-use linkerd_server_policy as policy;
 use linkerd_tls as tls;
 use std::{fmt, net::SocketAddr};
 
@@ -22,7 +21,7 @@ pub struct ServerLabels {
     direction: Direction,
     tls: tls::ConditionalServerTls,
     target_addr: SocketAddr,
-    policy: Option<PolicyLabels>,
+    policy: Option<PolicyServerLabel>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -40,12 +39,12 @@ impl Key {
     pub fn inbound_server(
         tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
-        server: policy::Labels,
+        server: String,
     ) -> Self {
         Self::Server(ServerLabels::inbound(
             tls,
             target_addr,
-            PolicyLabels(server),
+            PolicyServerLabel(server),
         ))
     }
 
@@ -81,7 +80,7 @@ impl ServerLabels {
     fn inbound(
         tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
-        policy: PolicyLabels,
+        policy: PolicyServerLabel,
     ) -> Self {
         ServerLabels {
             direction: Direction::In,
@@ -105,13 +104,11 @@ impl FmtLabels for ServerLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
         f.write_str(",peer=\"src\",")?;
-        (TargetAddr(self.target_addr), TlsAccept(&self.tls)).fmt_labels(f)?;
-
-        if let Some(PolicyLabels(server)) = self.policy.as_ref() {
-            for (k, v) in server.iter() {
-                write!(f, ",srv_{}=\"{}\"", k, v)?;
-            }
-        }
+        (
+            (TargetAddr(self.target_addr), TlsAccept(&self.tls)),
+            self.policy.as_ref(),
+        )
+            .fmt_labels(f)?;
 
         Ok(())
     }
@@ -195,11 +192,7 @@ mod tests {
                 negotiated_protocol: None,
             }),
             ([192, 0, 2, 4], 40000).into(),
-            PolicyLabels(
-                vec![("name".to_string(), "testserver".to_string())]
-                    .into_iter()
-                    .collect(),
-            ),
+            PolicyServerLabel("testserver".to_string()),
         );
         assert_eq!(
             labels.to_string(),

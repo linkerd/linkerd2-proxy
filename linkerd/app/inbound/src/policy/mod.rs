@@ -15,9 +15,7 @@ use linkerd_app_core::{
     transport::{ClientAddr, OrigDstAddr, Remote},
     Result,
 };
-pub use linkerd_server_policy::{
-    Authentication, Authorization, Labels, Protocol, ServerPolicy, Suffix,
-};
+pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use thiserror::Error;
 use tokio::sync::watch;
 
@@ -55,8 +53,8 @@ pub struct Permit {
     pub dst: OrigDstAddr,
     pub protocol: Protocol,
 
-    pub server_labels: Labels,
-    pub authz_labels: Labels,
+    pub server_name: String,
+    pub authz_name: String,
 }
 
 // === impl DefaultPolicy ===
@@ -91,8 +89,8 @@ impl AllowPolicy {
     }
 
     #[inline]
-    pub fn server_labels(&self) -> Labels {
-        self.server.borrow().labels.clone()
+    pub fn server_name(&self) -> String {
+        self.server.borrow().name.clone()
     }
 
     async fn changed(&mut self) {
@@ -160,8 +158,8 @@ impl Permit {
         Self {
             dst,
             protocol: server.protocol,
-            server_labels: server.labels.clone(),
-            authz_labels: authz.labels.clone(),
+            server_name: server.name.clone(),
+            authz_name: authz.name.clone(),
         }
     }
 }
