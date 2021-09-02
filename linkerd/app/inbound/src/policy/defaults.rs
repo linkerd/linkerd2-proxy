@@ -72,28 +72,11 @@ fn mk(
 ) -> ServerPolicy {
     ServerPolicy {
         protocol: Protocol::Detect { timeout },
-        authorizations: vec![
-            Authorization {
-                networks: nets.into_iter().map(Into::into).collect(),
-                authentication,
-                name: name.to_string(),
-            },
-            loopback_unauthenticated(),
-        ],
+        authorizations: vec![Authorization {
+            networks: nets.into_iter().map(Into::into).collect(),
+            authentication,
+            name: name.to_string(),
+        }],
         name: name.to_string(),
-    }
-}
-
-pub(super) fn loopback_unauthenticated() -> Authorization {
-    let v4 = "127.0.0.0/8"
-        .parse::<IpNet>()
-        .expect("loopback addresses must parse");
-    let v6 = "::1/128"
-        .parse::<IpNet>()
-        .expect("loopback addresses must parse");
-    Authorization {
-        networks: vec![v4, v6].into_iter().map(Into::into).collect(),
-        authentication: Authentication::Unauthenticated,
-        name: "default:loopback".to_string(),
     }
 }
