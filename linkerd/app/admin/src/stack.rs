@@ -10,7 +10,6 @@ use linkerd_app_core::{
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, Result,
 };
-use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -65,7 +64,7 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
-        metrics: inbound::Metrics,
+        metrics: metrics::Proxy,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -80,7 +79,7 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
             .push_on_service(
                 svc::layers()
                     .push(errors::respond::layer())
@@ -130,7 +129,7 @@ impl Config {
             )
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
-            .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
+            .push(transport::metrics::NewServer::layer(metrics.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
                 // TODO(ver): We should enforce policy here; but we need to permit liveness probes
                 // for destination pods to startup...

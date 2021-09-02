@@ -148,11 +148,11 @@ impl Config {
             drain: drain_rx.clone(),
         };
         let inbound = Inbound::new(inbound, metrics.proxy.clone(), runtime.clone());
-        let outbound = Outbound::new(outbound, metrics.proxy, runtime);
+        let outbound = Outbound::new(outbound, metrics.proxy.clone(), runtime);
 
         let admin = {
             let identity = identity.local();
-            let metrics = inbound.metrics();
+            let metrics = metrics.proxy;
             let report = inbound
                 .metrics()
                 .and_then(outbound.metrics())
