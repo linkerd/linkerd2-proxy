@@ -1,7 +1,7 @@
 mod http;
 mod tcp;
 
-pub(crate) use self::{http::Http, tcp::Tcp};
+pub(crate) use self::{http::HttpErrorMetrics, tcp::TcpErrorMetrics};
 use crate::{
     policy::{DeniedUnauthorized, DeniedUnknownPort},
     GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
@@ -18,32 +18,31 @@ enum ErrorKind {
     GatewayLoop,
     Io,
     TlsDetectTimeout,
-    Unauthorized,
     Unexpected,
 }
 
 // === impl ErrorKind ===
 
 impl ErrorKind {
-    fn mk(err: &(dyn std::error::Error + 'static)) -> Self {
-        if err.is::<FailFastError>() {
-            ErrorKind::FailFast
+    fn mk(err: &(dyn std::error::Error + 'static)) -> Option<Self> {
+        if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
+            None
+        } else if err.is::<FailFastError>() {
+            Some(ErrorKind::FailFast)
         } else if err.is::<std::io::Error>() {
-            ErrorKind::Io
+            Some(ErrorKind::Io)
         } else if err.is::<tls::server::ServerTlsTimeoutError>() {
-            ErrorKind::TlsDetectTimeout
-        } else if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
-            ErrorKind::Unauthorized
+            Some(ErrorKind::TlsDetectTimeout)
         } else if err.is::<GatewayDomainInvalid>() {
-            ErrorKind::GatewayDomainInvalid
+            Some(ErrorKind::GatewayDomainInvalid)
         } else if err.is::<GatewayIdentityRequired>() {
-            ErrorKind::GatewayIdentityRequired
+            Some(ErrorKind::GatewayIdentityRequired)
         } else if err.is::<GatewayLoop>() {
-            ErrorKind::GatewayLoop
+            Some(ErrorKind::GatewayLoop)
         } else if let Some(e) = err.source() {
             Self::mk(e)
         } else {
-            ErrorKind::Unexpected
+            Some(ErrorKind::Unexpected)
         }
     }
 }
@@ -60,7 +59,6 @@ impl FmtLabels for ErrorKind {
                 ErrorKind::GatewayLoop => "gateway loop",
                 ErrorKind::GatewayDomainInvalid => "gateway domain invalid",
                 ErrorKind::Io => "i/o",
-                ErrorKind::Unauthorized => "unauthorized",
                 ErrorKind::Unexpected => "unexpected",
             }
         )

@@ -130,7 +130,7 @@ impl<N> Inbound<N> {
                     svc::stack(forward.clone())
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .push_map_target(Forward::from)
-                        .push(policy::NewAuthorizeTcp::layer())
+                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .check_new_service::<Tls, _>()
                         .into_inner(),
                 )
@@ -160,7 +160,7 @@ impl<N> Inbound<N> {
                     svc::stack(forward)
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .push_map_target(Forward::from)
-                        .push(policy::NewAuthorizeTcp::layer())
+                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .check_new_service::<Tls, I>()
                         .into_inner(),
                 )
@@ -211,7 +211,7 @@ impl<N> Inbound<N> {
                             rt.metrics.proxy.transport.clone(),
                         ))
                         .push_map_target(Forward::from)
-                        .push(policy::NewAuthorizeTcp::layer())
+                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .into_inner(),
                 )
                 .push(svc::BoxNewService::layer())

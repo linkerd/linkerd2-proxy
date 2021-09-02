@@ -52,6 +52,7 @@ pub struct AllowPolicy {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Permit {
+    pub dst: OrigDstAddr,
     pub protocol: Protocol,
 
     pub server_labels: Labels,
@@ -85,6 +86,11 @@ impl AllowPolicy {
     }
 
     #[inline]
+    pub fn dst_addr(&self) -> OrigDstAddr {
+        self.dst
+    }
+
+    #[inline]
     pub fn server_labels(&self) -> Labels {
         self.server.borrow().labels.clone()
     }
@@ -107,7 +113,7 @@ impl AllowPolicy {
             if authz.networks.iter().any(|n| n.contains(&client_addr.ip())) {
                 match authz.authentication {
                     Authentication::Unauthenticated => {
-                        return Ok(Permit::new(&*server, authz));
+                        return Ok(Permit::new(self.dst, &*server, authz));
                     }
 
                     Authentication::TlsUnauthenticated => {
@@ -115,7 +121,7 @@ impl AllowPolicy {
                             ..
                         }) = tls
                         {
-                            return Ok(Permit::new(&*server, authz));
+                            return Ok(Permit::new(self.dst, &*server, authz));
                         }
                     }
 
@@ -131,7 +137,7 @@ impl AllowPolicy {
                             if identities.contains(id.as_ref())
                                 || suffixes.iter().any(|s| s.contains(id.as_ref()))
                             {
-                                return Ok(Permit::new(&*server, authz));
+                                return Ok(Permit::new(self.dst, &*server, authz));
                             }
                         }
                     }
@@ -150,8 +156,9 @@ impl AllowPolicy {
 // === impl Permit ===
 
 impl Permit {
-    fn new(server: &ServerPolicy, authz: &Authorization) -> Self {
+    fn new(dst: OrigDstAddr, server: &ServerPolicy, authz: &Authorization) -> Self {
         Self {
+            dst,
             protocol: server.protocol,
             server_labels: server.labels.clone(),
             authz_labels: authz.labels.clone(),

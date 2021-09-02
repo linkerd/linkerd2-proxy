@@ -1,7 +1,7 @@
 use super::ErrorKind;
 use linkerd_app_core::{
-    metrics::{metrics, Counter, FmtLabels, FmtMetrics},
-    svc,
+    metrics::{metrics, Counter, FmtMetrics},
+    svc::{self, stack::NewMonitor},
     transport::{labels::TargetAddr, OrigDstAddr},
     Error,
 };
@@ -15,47 +15,39 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Http(Arc<RwLock<HashMap<Labels, Counter>>>);
+pub struct HttpErrorMetrics(Arc<RwLock<HashMap<(ErrorKind, TargetAddr), Counter>>>);
 
 #[derive(Clone, Debug)]
-pub struct MonitorHttp {
+pub struct MonitorHttpErrorMetrics {
     target: TargetAddr,
-    registry: Http,
+    registry: HttpErrorMetrics,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct Labels {
-    error: ErrorKind,
-    target: TargetAddr,
-}
+// === impl HttpErrorMetrics ===
 
-// === impl Http ===
-
-impl Http {
-    pub fn to_layer<S>(
-        &self,
-    ) -> impl svc::layer::Layer<S, Service = svc::stack::NewMonitor<Self, S>> + Clone {
-        svc::stack::NewMonitor::layer(self.clone())
+impl HttpErrorMetrics {
+    pub fn to_layer<S>(&self) -> impl svc::layer::Layer<S, Service = NewMonitor<Self, S>> + Clone {
+        NewMonitor::layer(self.clone())
     }
 }
 
-impl<T> svc::stack::MonitorNewService<T> for Http
+impl<T> svc::stack::MonitorNewService<T> for HttpErrorMetrics
 where
     T: svc::Param<OrigDstAddr>,
 {
-    type MonitorService = MonitorHttp;
+    type MonitorService = MonitorHttpErrorMetrics;
 
     #[inline]
     fn monitor(&mut self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
-        MonitorHttp {
+        MonitorHttpErrorMetrics {
             target: TargetAddr(addr),
             registry: self.clone(),
         }
     }
 }
 
-impl FmtMetrics for Http {
+impl FmtMetrics for HttpErrorMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let metrics = self.0.read();
         if metrics.is_empty() {
@@ -66,9 +58,9 @@ impl FmtMetrics for Http {
     }
 }
 
-// === impl MonitorHttp ===
+// === impl MonitorHttpErrorMetrics ===
 
-impl<Req> svc::stack::MonitorService<Req> for MonitorHttp {
+impl<Req> svc::stack::MonitorService<Req> for MonitorHttpErrorMetrics {
     type MonitorResponse = Self;
 
     #[inline]
@@ -77,22 +69,16 @@ impl<Req> svc::stack::MonitorService<Req> for MonitorHttp {
     }
 }
 
-impl svc::stack::MonitorError<Error> for MonitorHttp {
+impl svc::stack::MonitorError<Error> for MonitorHttpErrorMetrics {
     #[inline]
     fn monitor_error(&mut self, e: &Error) {
-        let labels = Labels {
-            error: ErrorKind::mk(&**e),
-            target: self.target,
-        };
-        self.registry.0.write().entry(labels).or_default().incr();
-    }
-}
-
-// === impl Labels ===
-
-impl FmtLabels for Labels {
-    fn fmt_labels(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        (self.error, self.target).fmt_labels(f)?;
-        Ok(())
+        if let Some(error) = ErrorKind::mk(&**e) {
+            self.registry
+                .0
+                .write()
+                .entry((error, self.target))
+                .or_default()
+                .incr();
+        }
     }
 }

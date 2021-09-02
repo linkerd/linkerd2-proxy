@@ -8,6 +8,7 @@
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate our metrics registries.
 
+pub(crate) mod authz;
 pub(crate) mod error;
 
 pub use linkerd_app_core::metrics::*;
@@ -15,8 +16,11 @@ pub use linkerd_app_core::metrics::*;
 /// Holds outbound proxy metrics.
 #[derive(Clone, Debug)]
 pub struct Metrics {
-    pub http_errors: error::Http,
-    pub tcp_errors: error::Tcp,
+    pub(crate) http_authz: authz::HttpAuthzMetrics,
+    pub http_errors: error::HttpErrorMetrics,
+
+    pub(crate) tcp_authz: authz::TcpAuthzMetrics,
+    pub tcp_errors: error::TcpErrorMetrics,
 
     /// Holds metrics that are common to both inbound and outbound proxies. These metrics are
     /// reported separately
@@ -26,8 +30,10 @@ pub struct Metrics {
 impl Metrics {
     pub fn new(proxy: Proxy) -> Self {
         Self {
-            http_errors: error::Http::default(),
-            tcp_errors: error::Tcp::default(),
+            http_authz: authz::HttpAuthzMetrics::default(),
+            http_errors: error::HttpErrorMetrics::default(),
+            tcp_authz: authz::TcpAuthzMetrics::default(),
+            tcp_errors: error::TcpErrorMetrics::default(),
             proxy,
         }
     }

@@ -1,3 +1,5 @@
+use crate::metrics::authz::HttpAuthzMetrics;
+
 use super::super::{AllowPolicy, Permit};
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
@@ -18,6 +20,7 @@ use std::task;
 /// caching.
 #[derive(Clone, Debug)]
 pub struct NewAuthorizeHttp<N> {
+    metrics: HttpAuthzMetrics,
     inner: N,
 }
 
@@ -27,15 +30,20 @@ pub struct AuthorizeHttp<T, N> {
     client_addr: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
     policy: AllowPolicy,
+    metrics: HttpAuthzMetrics,
     inner: N,
 }
 
 // === impl NewAuthorizeHttp ===
 
 impl<N> NewAuthorizeHttp<N> {
-    // FIXME metrics
-    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
-        svc::layer::mk(|inner| Self { inner })
+    pub(crate) fn layer(
+        metrics: HttpAuthzMetrics,
+    ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+        svc::layer::mk(move |inner| Self {
+            metrics: metrics.clone(),
+            inner,
+        })
     }
 }
 
@@ -57,6 +65,7 @@ where
             client_addr,
             tls,
             policy,
+            metrics: self.metrics.clone(),
             inner: self.inner.clone(),
         }
     }
@@ -86,10 +95,14 @@ where
     fn call(&mut self, req: Req) -> Self::Future {
         match self.policy.check_authorized(self.client_addr, &self.tls) {
             Ok(permit) => {
+                self.metrics.allow(&permit);
                 let svc = self.inner.new_service((permit, self.target.clone()));
                 future::Either::Left(svc.oneshot(req).err_into::<Error>())
             }
-            Err(e) => future::Either::Right(future::err(HttpError::forbidden(e).into())),
+            Err(e) => {
+                self.metrics.deny(&self.policy);
+                future::Either::Right(future::err(HttpError::forbidden(e).into()))
+            }
         }
     }
 }

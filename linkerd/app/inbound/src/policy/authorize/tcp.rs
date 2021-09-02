@@ -1,4 +1,5 @@
 use super::super::{AllowPolicy, DeniedUnauthorized, Permit};
+use crate::metrics::authz::TcpAuthzMetrics;
 use futures::future;
 use linkerd_app_core::{
     svc, tls,
@@ -13,25 +14,39 @@ use std::{future::Future, pin::Pin, task};
 #[derive(Clone, Debug)]
 pub struct NewAuthorizeTcp<N> {
     inner: N,
+    metrics: TcpAuthzMetrics,
 }
 
 #[derive(Clone, Debug)]
 pub enum AuthorizeTcp<S> {
-    Unauthorized(DeniedUnauthorized),
-    Authorized {
-        inner: S,
-        policy: AllowPolicy,
-        client: Remote<ClientAddr>,
-        tls: tls::ConditionalServerTls,
-    },
+    Authorized(Authorized<S>),
+    Unauthorized(Unauthorized),
+}
+
+#[derive(Clone, Debug)]
+pub struct Authorized<S> {
+    inner: S,
+    policy: AllowPolicy,
+    client: Remote<ClientAddr>,
+    tls: tls::ConditionalServerTls,
+    metrics: TcpAuthzMetrics,
+}
+
+#[derive(Clone, Debug)]
+pub struct Unauthorized {
+    deny: DeniedUnauthorized,
 }
 
 // === impl NewAuthorizeTcp ===
 
 impl<N> NewAuthorizeTcp<N> {
-    // FIXME metrics
-    pub fn layer() -> impl svc::layer::Layer<N, Service = Self> + Clone {
-        svc::layer::mk(|inner| Self { inner })
+    pub(crate) fn layer(
+        metrics: TcpAuthzMetrics,
+    ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+        svc::layer::mk(move |inner| Self {
+            inner,
+            metrics: metrics.clone(),
+        })
     }
 }
 
@@ -51,17 +66,20 @@ where
         match policy.check_authorized(client, &tls) {
             Ok(permit) => {
                 tracing::debug!(?permit, "Connection authorized");
+                self.metrics.allow(&permit);
                 let inner = self.inner.new_service((permit, target));
-                AuthorizeTcp::Authorized {
+                AuthorizeTcp::Authorized(Authorized {
                     inner,
                     policy,
                     client,
                     tls,
-                }
+                    metrics: self.metrics.clone(),
+                })
             }
-            Err(denied) => {
-                tracing::info!(?denied, "Connection denied");
-                AuthorizeTcp::Unauthorized(denied)
+            Err(deny) => {
+                tracing::info!(?deny, "Connection denied");
+                self.metrics.deny(&policy);
+                AuthorizeTcp::Unauthorized(Unauthorized { deny })
             }
         }
     }
@@ -85,10 +103,14 @@ where
     #[inline]
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> task::Poll<Result<()>> {
         match self {
-            Self::Authorized { ref mut inner, .. } => inner.poll_ready(cx).map_err(Into::into),
+            Self::Authorized(Authorized { ref mut inner, .. }) => {
+                inner.poll_ready(cx).map_err(Into::into)
+            }
 
             // If connections are not authorized, fail it immediately.
-            Self::Unauthorized(deny) => task::Poll::Ready(Err(deny.clone().into())),
+            Self::Unauthorized(Unauthorized { deny }) => {
+                task::Poll::Ready(Err(deny.clone().into()))
+            }
         }
     }
 
@@ -96,15 +118,17 @@ where
         match self {
             // If the connection is authorized, pass it to the inner service and stop processing the
             // connection if the authorization's state changes to no longer permit the request.
-            Self::Authorized {
+            Self::Authorized(Authorized {
                 inner,
                 client,
                 tls,
                 policy,
-            } => {
+                metrics,
+            }) => {
                 let client = *client;
                 let tls = tls.clone();
                 let mut policy = policy.clone();
+                let metrics = metrics.clone();
 
                 // FIXME increment counter.
 
@@ -116,7 +140,7 @@ where
                             res = &mut call => return res.map_err(Into::into),
                             _ = policy.changed() => {
                                 if let Err(denied) = policy.check_authorized(client, &tls) {
-                                    // FIXME increment counter.
+                                    metrics.terminate(&policy);
                                     tracing::info!(%denied, "Connection terminated");
                                     return Err(denied.into());
                                 }

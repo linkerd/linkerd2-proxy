@@ -228,7 +228,7 @@ impl<C> Inbound<C> {
                     tls: t.param(),
                     permit,
                 }))
-                .push(policy::NewAuthorizeHttp::layer())
+                .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()

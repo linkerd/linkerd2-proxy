@@ -31,6 +31,7 @@ fn unauthenticated_allowed() {
     assert_eq!(
         permitted,
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -77,6 +78,7 @@ fn authenticated_identity() {
     assert_eq!(
         permitted,
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -137,6 +139,7 @@ fn authenticated_suffix() {
             .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()
@@ -191,6 +194,7 @@ fn tls_unauthenticated() {
             .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
             server_labels: vec![("name".to_string(), "test".to_string())]
                 .into_iter()

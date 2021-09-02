@@ -1,7 +1,7 @@
 use super::ErrorKind;
 use linkerd_app_core::{
     metrics::{metrics, Counter, FmtMetrics},
-    svc,
+    svc::{self, stack::NewMonitor},
     transport::{labels::TargetAddr, OrigDstAddr},
     Error,
 };
@@ -15,40 +15,38 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Tcp(Arc<RwLock<HashMap<(TargetAddr, ErrorKind), Counter>>>);
+pub struct TcpErrorMetrics(Arc<RwLock<HashMap<(ErrorKind, TargetAddr), Counter>>>);
 
 #[derive(Clone, Debug)]
-pub struct MonitorTcp {
+pub struct MonitorTcpErrorMetrics {
     target_addr: TargetAddr,
-    registry: Tcp,
+    registry: TcpErrorMetrics,
 }
 
-// === impl Tcp ===
+// === impl TcpErrorMetrics ===
 
-impl Tcp {
-    pub fn to_layer<N>(
-        &self,
-    ) -> impl svc::layer::Layer<N, Service = svc::stack::NewMonitor<Self, N>> + Clone {
-        svc::stack::NewMonitor::layer(self.clone())
+impl TcpErrorMetrics {
+    pub fn to_layer<N>(&self) -> impl svc::layer::Layer<N, Service = NewMonitor<Self, N>> + Clone {
+        NewMonitor::layer(self.clone())
     }
 }
 
-impl<T> svc::stack::MonitorNewService<T> for Tcp
+impl<T> svc::stack::MonitorNewService<T> for TcpErrorMetrics
 where
     T: svc::Param<OrigDstAddr>,
 {
-    type MonitorService = MonitorTcp;
+    type MonitorService = MonitorTcpErrorMetrics;
 
     fn monitor(&mut self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
-        MonitorTcp {
+        MonitorTcpErrorMetrics {
             target_addr: TargetAddr(addr),
             registry: self.clone(),
         }
     }
 }
 
-impl FmtMetrics for Tcp {
+impl FmtMetrics for TcpErrorMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let metrics = self.0.read();
         if metrics.is_empty() {
@@ -59,9 +57,9 @@ impl FmtMetrics for Tcp {
     }
 }
 
-// === impl MonitorTcp ===
+// === impl MonitorTcpErrorMetrics ===
 
-impl<Req> svc::stack::MonitorService<Req> for MonitorTcp {
+impl<Req> svc::stack::MonitorService<Req> for MonitorTcpErrorMetrics {
     type MonitorResponse = Self;
 
     #[inline]
@@ -70,15 +68,16 @@ impl<Req> svc::stack::MonitorService<Req> for MonitorTcp {
     }
 }
 
-impl svc::stack::MonitorError<Error> for MonitorTcp {
+impl svc::stack::MonitorError<Error> for MonitorTcpErrorMetrics {
     #[inline]
     fn monitor_error(&mut self, e: &Error) {
-        let kind = ErrorKind::mk(&**e);
-        self.registry
-            .0
-            .write()
-            .entry((self.target_addr, kind))
-            .or_default()
-            .incr();
+        if let Some(error) = ErrorKind::mk(&**e) {
+            self.registry
+                .0
+                .write()
+                .entry((error, self.target_addr))
+                .or_default()
+                .incr();
+        }
     }
 }
