@@ -3,7 +3,7 @@ use linkerd_tls::client::ServerId;
 use std::collections::BTreeMap;
 
 /// Endpoint labels are lexographically ordered by key.
-pub type Labels = BTreeMap<String, String>;
+pub type Labels = std::sync::Arc<BTreeMap<String, String>>;
 
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,7 +56,7 @@ impl Metadata {
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
-            labels: labels.into_iter().collect(),
+            labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
             protocol_hint,
             opaque_transport_port,
             identity,
@@ -65,8 +65,8 @@ impl Metadata {
     }
 
     /// Returns the endpoint's labels from the destination service, if it has them.
-    pub fn labels(&self) -> &Labels {
-        &self.labels
+    pub fn labels(&self) -> Labels {
+        self.labels.clone()
     }
 
     pub fn protocol_hint(&self) -> ProtocolHint {

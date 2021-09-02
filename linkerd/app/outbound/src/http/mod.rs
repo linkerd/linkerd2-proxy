@@ -17,7 +17,7 @@ use linkerd_app_core::{
     transport_header::SessionProtocol,
     Addr, Conditional, CANONICAL_DST_HEADER,
 };
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::SocketAddr, str::FromStr};
 
 pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
@@ -174,7 +174,7 @@ impl tap::Inspect for Endpoint {
         Some(self.addr.into())
     }
 
-    fn dst_labels<B>(&self, _: &Request<B>) -> Option<&tap::Labels> {
+    fn dst_labels<B>(&self, _: &Request<B>) -> Option<tap::Labels> {
         Some(self.metadata.labels())
     }
 
@@ -182,7 +182,7 @@ impl tap::Inspect for Endpoint {
         self.tls.clone()
     }
 
-    fn route_labels<B>(&self, req: &Request<B>) -> Option<Arc<tap::Labels>> {
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
         req.extensions()
             .get::<dst::Route>()
             .map(|r| r.route.labels().clone())
