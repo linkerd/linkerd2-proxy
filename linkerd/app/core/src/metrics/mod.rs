@@ -61,11 +61,14 @@ pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
-    pub policy: PolicyLabels,
+    pub policy: AuthzLabels,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
-pub struct PolicyLabels {
+pub struct ServerLabels(pub policy::Labels);
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct AuthzLabels {
     pub server: policy::Labels,
     pub authz: policy::Labels,
 }

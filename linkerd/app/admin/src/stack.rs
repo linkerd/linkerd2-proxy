@@ -163,8 +163,9 @@ impl Param<transport::labels::Key> for Tcp {
             self.tls.clone(),
             self.addr.into(),
             // TODO(ver) enforce policies on the proxy's admin port.
-            Default::default(),
-            Default::default(),
+            vec![("name".to_string(), "default:admin".to_string())]
+                .into_iter()
+                .collect(),
         )
     }
 }
@@ -192,19 +193,6 @@ impl Param<metrics::EndpointLabels> for Http {
             policy: Default::default(),
         }
         .into()
-    }
-}
-
-impl Param<metrics::PolicyLabels> for Http {
-    fn param(&self) -> metrics::PolicyLabels {
-        metrics::PolicyLabels {
-            server: vec![("name".to_string(), "default:admin".to_string())]
-                .into_iter()
-                .collect(),
-            authz: vec![("name".to_string(), "default:admin".to_string())]
-                .into_iter()
-                .collect(),
-        }
     }
 }
 

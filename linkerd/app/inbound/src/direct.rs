@@ -290,7 +290,6 @@ impl Param<transport::labels::Key> for Local {
             }),
             ([127, 0, 0, 1], self.port).into(),
             self.permit.server_labels.clone(),
-            self.permit.authz_labels.clone(),
         )
     }
 }
@@ -303,7 +302,6 @@ impl Param<transport::labels::Key> for GatewayTransportHeader {
             self.param(),
             self.client.local_addr.into(),
             self.policy.server_labels(),
-            Default::default(),
         )
     }
 }
@@ -346,7 +344,6 @@ impl Param<transport::labels::Key> for Legacy {
             }),
             self.client.local_addr.into(),
             self.policy.server_labels(),
-            Default::default(),
         )
     }
 }

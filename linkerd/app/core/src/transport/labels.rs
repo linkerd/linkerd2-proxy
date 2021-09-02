@@ -1,4 +1,4 @@
-pub use crate::metrics::{Direction, OutboundEndpointLabels, PolicyLabels};
+pub use crate::metrics::{Direction, OutboundEndpointLabels, ServerLabels as PolicyLabels};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_server_policy as policy;
@@ -41,12 +41,11 @@ impl Key {
         tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
         server: policy::Labels,
-        authz: policy::Labels,
     ) -> Self {
         Self::Server(ServerLabels::inbound(
             tls,
             target_addr,
-            PolicyLabels { server, authz },
+            PolicyLabels(server),
         ))
     }
 
@@ -108,12 +107,9 @@ impl FmtLabels for ServerLabels {
         f.write_str(",peer=\"src\",")?;
         (TargetAddr(self.target_addr), TlsAccept(&self.tls)).fmt_labels(f)?;
 
-        if let Some(policy) = self.policy.as_ref() {
-            for (k, v) in policy.server.iter() {
+        if let Some(PolicyLabels(server)) = self.policy.as_ref() {
+            for (k, v) in server.iter() {
                 write!(f, ",srv_{}=\"{}\"", k, v)?;
-            }
-            for (k, v) in policy.authz.iter() {
-                write!(f, ",saz_{}=\"{}\"", k, v)?;
             }
         }
 
@@ -199,19 +195,16 @@ mod tests {
                 negotiated_protocol: None,
             }),
             ([192, 0, 2, 4], 40000).into(),
-            PolicyLabels {
-                server: vec![("name".to_string(), "testserver".to_string())]
+            PolicyLabels(
+                vec![("name".to_string(), "testserver".to_string())]
                     .into_iter()
                     .collect(),
-                authz: vec![("name".to_string(), "testauthz".to_string())]
-                    .into_iter()
-                    .collect(),
-            },
+            ),
         );
         assert_eq!(
             labels.to_string(),
             "direction=\"inbound\",peer=\"src\",target_addr=\"192.0.2.4:40000\",tls=\"true\",\
-            client_id=\"foo.id.example.com\",srv_name=\"testserver\",saz_name=\"testauthz\""
+            client_id=\"foo.id.example.com\",srv_name=\"testserver\""
         );
     }
 }

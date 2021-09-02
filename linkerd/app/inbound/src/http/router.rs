@@ -312,7 +312,7 @@ impl Param<metrics::EndpointLabels> for Logical {
             tls: self.tls.clone(),
             authority: self.logical.as_ref().map(|d| d.as_http_authority()),
             target_addr: self.addr.into(),
-            policy: metrics::PolicyLabels {
+            policy: metrics::AuthzLabels {
                 server: self.permit.server_labels.clone(),
                 authz: self.permit.authz_labels.clone(),
             },

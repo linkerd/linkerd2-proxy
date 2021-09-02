@@ -4,7 +4,6 @@ use crate::{
 };
 use linkerd_app_core::{
     detect, identity, io,
-    metrics::PolicyLabels,
     proxy::{http, identity::LocalCrtKey},
     svc, tls,
     transport::{
@@ -279,7 +278,6 @@ impl svc::Param<transport::labels::Key> for Forward {
             self.tls.clone(),
             self.orig_dst_addr.into(),
             self.permit.server_labels.clone(),
-            self.permit.authz_labels.clone(),
         )
     }
 }
@@ -380,22 +378,12 @@ impl svc::Param<AllowPolicy> for Http {
     }
 }
 
-impl svc::Param<PolicyLabels> for Http {
-    fn param(&self) -> PolicyLabels {
-        PolicyLabels {
-            server: self.tls.policy.server_labels(),
-            authz: Default::default(),
-        }
-    }
-}
-
 impl svc::Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
             self.tls.status.clone(),
             self.tls.orig_dst_addr.into(),
             self.tls.policy.server_labels(),
-            Default::default(),
         )
     }
 }
