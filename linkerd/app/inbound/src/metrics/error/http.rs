@@ -1,5 +1,3 @@
-use crate::policy::AllowPolicy;
-
 use super::ErrorKind;
 use linkerd_app_core::{
     metrics::{metrics, Counter, FmtMetrics, ServerLabel},
@@ -35,16 +33,15 @@ impl HttpErrorMetrics {
 
 impl<T> svc::stack::MonitorNewService<T> for HttpErrorMetrics
 where
-    T: svc::Param<OrigDstAddr> + svc::Param<AllowPolicy>,
+    T: svc::Param<OrigDstAddr> + svc::Param<ServerLabel>,
 {
     type MonitorService = MonitorHttpErrorMetrics;
 
     #[inline]
     fn monitor(&mut self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
-        let policy: AllowPolicy = target.param();
         MonitorHttpErrorMetrics {
-            labels: (TargetAddr(addr), ServerLabel(policy.server_name())),
+            labels: (TargetAddr(addr), target.param()),
             registry: self.clone(),
         }
     }

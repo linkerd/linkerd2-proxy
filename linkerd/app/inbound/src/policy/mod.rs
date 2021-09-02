@@ -10,6 +10,7 @@ pub use self::authorize::{NewAuthorizeHttp, NewAuthorizeTcp};
 pub use self::config::Config;
 pub(crate) use self::store::Store;
 
+pub use linkerd_app_core::metrics::{AuthzLabels, ServerLabel};
 use linkerd_app_core::{
     tls,
     transport::{ClientAddr, OrigDstAddr, Remote},
@@ -53,8 +54,7 @@ pub struct Permit {
     pub dst: OrigDstAddr,
     pub protocol: Protocol,
 
-    pub server_name: String,
-    pub authz_name: String,
+    pub labels: AuthzLabels,
 }
 
 // === impl DefaultPolicy ===
@@ -89,8 +89,8 @@ impl AllowPolicy {
     }
 
     #[inline]
-    pub fn server_name(&self) -> String {
-        self.server.borrow().name.clone()
+    pub fn server_label(&self) -> ServerLabel {
+        ServerLabel(self.server.borrow().name.clone())
     }
 
     async fn changed(&mut self) {
@@ -158,8 +158,10 @@ impl Permit {
         Self {
             dst,
             protocol: server.protocol,
-            server_name: server.name.clone(),
-            authz_name: authz.name.clone(),
+            labels: AuthzLabels {
+                server: ServerLabel(server.name.clone()),
+                authz: authz.name.clone(),
+            },
         }
     }
 }

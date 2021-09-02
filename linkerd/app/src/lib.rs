@@ -153,7 +153,7 @@ impl Config {
 
         let admin = {
             let identity = identity.local();
-            let metrics = metrics.proxy;
+            let metrics = inbound.metrics();
             let report = inbound
                 .metrics()
                 .and_then(outbound.metrics())

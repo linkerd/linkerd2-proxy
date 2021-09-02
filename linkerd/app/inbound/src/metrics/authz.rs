@@ -45,20 +45,11 @@ struct TcpInner {
 }
 
 fn server_labels(policy: &AllowPolicy) -> (TargetAddr, ServerLabel) {
-    (
-        TargetAddr(policy.dst_addr().into()),
-        ServerLabel(policy.server_name()),
-    )
+    (TargetAddr(policy.dst_addr().into()), policy.server_label())
 }
 
 fn authz_labels(permit: &Permit) -> (TargetAddr, AuthzLabels) {
-    (
-        TargetAddr(permit.dst.into()),
-        AuthzLabels {
-            server: ServerLabel(permit.server_name.clone()),
-            authz: permit.authz_name.clone(),
-        },
-    )
+    (TargetAddr(permit.dst.into()), permit.labels.clone())
 }
 
 // === impl HttpAuthzMetrics ===

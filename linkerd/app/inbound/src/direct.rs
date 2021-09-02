@@ -289,7 +289,7 @@ impl Param<transport::labels::Key> for Local {
                 negotiated_protocol: None,
             }),
             ([127, 0, 0, 1], self.port).into(),
-            self.permit.server_name.clone(),
+            self.permit.labels.server.clone(),
         )
     }
 }
@@ -301,7 +301,7 @@ impl Param<transport::labels::Key> for GatewayTransportHeader {
         transport::labels::Key::inbound_server(
             self.param(),
             self.client.local_addr.into(),
-            self.policy.server_name(),
+            self.policy.server_label(),
         )
     }
 }
@@ -343,7 +343,7 @@ impl Param<transport::labels::Key> for Legacy {
                 negotiated_protocol: self.client.alpn.clone(),
             }),
             self.client.local_addr.into(),
-            self.policy.server_name(),
+            self.policy.server_label(),
         )
     }
 }

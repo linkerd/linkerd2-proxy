@@ -1,5 +1,5 @@
 use crate::{
-    policy::{self, AllowPolicy, Permit, Protocol},
+    policy::{self, AllowPolicy, Permit, Protocol, ServerLabel},
     Inbound,
 };
 use linkerd_app_core::{
@@ -277,7 +277,7 @@ impl svc::Param<transport::labels::Key> for Forward {
         transport::labels::Key::inbound_server(
             self.tls.clone(),
             self.orig_dst_addr.into(),
-            self.permit.server_name.clone(),
+            self.permit.labels.server.clone(),
         )
     }
 }
@@ -378,12 +378,18 @@ impl svc::Param<AllowPolicy> for Http {
     }
 }
 
+impl svc::Param<ServerLabel> for Http {
+    fn param(&self) -> ServerLabel {
+        self.tls.policy.server_label()
+    }
+}
+
 impl svc::Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
             self.tls.status.clone(),
             self.tls.orig_dst_addr.into(),
-            self.tls.policy.server_name(),
+            self.tls.policy.server_label(),
         )
     }
 }

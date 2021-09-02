@@ -39,13 +39,9 @@ impl Key {
     pub fn inbound_server(
         tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
-        server: String,
+        server: PolicyServerLabel,
     ) -> Self {
-        Self::Server(ServerLabels::inbound(
-            tls,
-            target_addr,
-            PolicyServerLabel(server),
-        ))
+        Self::Server(ServerLabels::inbound(tls, target_addr, server))
     }
 
     pub fn outbound_server(target_addr: SocketAddr) -> Self {

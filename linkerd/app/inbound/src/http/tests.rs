@@ -428,6 +428,12 @@ impl svc::Param<policy::AllowPolicy> for Target {
     }
 }
 
+impl svc::Param<policy::ServerLabel> for Target {
+    fn param(&self) -> policy::ServerLabel {
+        policy::ServerLabel("testsrv".to_string())
+    }
+}
+
 impl svc::Param<http::normalize_uri::DefaultAuthority> for Target {
     fn param(&self) -> http::normalize_uri::DefaultAuthority {
         http::normalize_uri::DefaultAuthority(None)

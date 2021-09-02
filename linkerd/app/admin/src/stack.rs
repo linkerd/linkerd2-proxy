@@ -10,6 +10,7 @@ use linkerd_app_core::{
     transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, Result,
 };
+use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -64,7 +65,7 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
-        metrics: metrics::Proxy,
+        metrics: inbound::Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -79,7 +80,8 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.http_errors.to_layer())
             .push_on_service(
                 svc::layers()
                     .push(errors::respond::layer())
@@ -129,7 +131,7 @@ impl Config {
             )
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
-            .push(transport::metrics::NewServer::layer(metrics.transport))
+            .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
                 // TODO(ver): We should enforce policy here; but we need to permit liveness probes
                 // for destination pods to startup...
@@ -162,7 +164,7 @@ impl Param<transport::labels::Key> for Tcp {
             self.tls.clone(),
             self.addr.into(),
             // TODO(ver) enforce policies on the proxy's admin port.
-            "default:admin".to_string(),
+            metrics::ServerLabel("default:admin".to_string()),
         )
     }
 }
@@ -181,6 +183,12 @@ impl Param<OrigDstAddr> for Http {
     }
 }
 
+impl Param<metrics::ServerLabel> for Http {
+    fn param(&self) -> metrics::ServerLabel {
+        metrics::ServerLabel("default:admin".to_string())
+    }
+}
+
 impl Param<metrics::EndpointLabels> for Http {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
@@ -188,7 +196,7 @@ impl Param<metrics::EndpointLabels> for Http {
             authority: None,
             target_addr: self.tcp.addr.into(),
             policy: metrics::AuthzLabels {
-                server: metrics::ServerLabel("default:admin".to_string()),
+                server: self.param(),
                 authz: "default:all-unauthenticated".to_string(),
             },
         }

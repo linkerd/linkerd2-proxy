@@ -29,8 +29,10 @@ fn unauthenticated_allowed() {
         Permit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_name: "test".to_string(),
-            authz_name: "unauth".to_string(),
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "unauth".to_string(),
+            }
         }
     );
 }
@@ -68,8 +70,10 @@ fn authenticated_identity() {
         Permit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_name: "test".to_string(),
-            authz_name: "tls-auth".to_string(),
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "tls-auth".to_string(),
+            }
         }
     );
 
@@ -121,8 +125,10 @@ fn authenticated_suffix() {
         Permit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_name: "test".to_string(),
-            authz_name: "tls-auth".to_string(),
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "tls-auth".to_string(),
+            }
         }
     );
 
@@ -168,8 +174,10 @@ fn tls_unauthenticated() {
         Permit {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_name: "test".to_string(),
-            authz_name: "tls-unauth".to_string()
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "tls-unauth".to_string(),
+            }
         }
     );
 

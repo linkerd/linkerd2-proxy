@@ -338,6 +338,12 @@ impl Param<policy::AllowPolicy> for HttpTransportHeader {
     }
 }
 
+impl Param<policy::ServerLabel> for HttpTransportHeader {
+    fn param(&self) -> policy::ServerLabel {
+        self.policy.server_label()
+    }
+}
+
 // === impl HttpLegacy ===
 
 impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, Legacy)> for HttpLegacy {
@@ -406,6 +412,12 @@ impl Param<tls::ConditionalServerTls> for HttpLegacy {
 impl Param<policy::AllowPolicy> for HttpLegacy {
     fn param(&self) -> policy::AllowPolicy {
         self.policy.clone()
+    }
+}
+
+impl Param<policy::ServerLabel> for HttpLegacy {
+    fn param(&self) -> policy::ServerLabel {
+        self.policy.server_label()
     }
 }
 
