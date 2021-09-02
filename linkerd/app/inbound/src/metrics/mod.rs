@@ -6,7 +6,7 @@
 //!
 //! TODO(ver) We use a `RwLock` to store our error metrics because we don't expect these registries
 //! to be updated frequently or in a performance-critical area. We should probably look to use
-//! `DashMap` as we migrate our metrics registries.
+//! `DashMap` as we migrate other metrics registries.
 
 pub(crate) mod authz;
 pub(crate) mod error;
@@ -28,7 +28,7 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new(proxy: Proxy) -> Self {
+    pub(crate) fn new(proxy: Proxy) -> Self {
         Self {
             http_authz: authz::HttpAuthzMetrics::default(),
             http_errors: error::HttpErrorMetrics::default(),

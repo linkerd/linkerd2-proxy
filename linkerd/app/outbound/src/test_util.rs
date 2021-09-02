@@ -1,4 +1,4 @@
-use crate::{Config, Metrics};
+use crate::Config;
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config, drain, exp_backoff, metrics,
@@ -47,9 +47,9 @@ pub(crate) fn default_config() -> Config {
     }
 }
 
-pub(crate) fn metrics() -> Metrics {
+pub(crate) fn metrics() -> metrics::Proxy {
     let (m, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
-    Metrics::new(m.proxy)
+    m.proxy
 }
 
 pub(crate) fn runtime() -> (Runtime, drain::Signal) {

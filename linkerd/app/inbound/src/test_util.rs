@@ -1,4 +1,4 @@
-use crate::{policy, Config, Metrics};
+use crate::{policy, Config};
 pub use futures::prelude::*;
 use linkerd_app_core::{
     config,
@@ -67,9 +67,9 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn metrics() -> Metrics {
+pub fn metrics() -> metrics::Proxy {
     let (m, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
-    Metrics::new(m.proxy)
+    m.proxy
 }
 
 pub fn runtime() -> (Runtime, drain::Signal) {

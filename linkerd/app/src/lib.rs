@@ -141,22 +141,22 @@ impl Config {
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
-        let inbound_metrics = inbound::Metrics::new(metrics.proxy.clone());
-        let outbound_metrics = outbound::Metrics::new(metrics.proxy.clone());
-
         let runtime = Runtime {
             identity: identity.local(),
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
         };
-        let inbound = Inbound::new(inbound, inbound_metrics.clone(), runtime.clone());
-        let outbound = Outbound::new(outbound, outbound_metrics.clone(), runtime);
+        let inbound = Inbound::new(inbound, metrics.proxy.clone(), runtime.clone());
+        let outbound = Outbound::new(outbound, metrics.proxy, runtime);
 
         let admin = {
             let identity = identity.local();
-            let metrics = inbound_metrics.clone();
-            let report = inbound_metrics.and_then(outbound_metrics).and_then(report);
+            let metrics = inbound.metrics();
+            let report = inbound
+                .metrics()
+                .and_then(outbound.metrics())
+                .and_then(report);
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,

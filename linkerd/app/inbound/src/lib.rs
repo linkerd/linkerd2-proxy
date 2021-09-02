@@ -124,9 +124,9 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, metrics: Metrics, runtime: AppRuntime) -> Self {
+    pub fn new(config: Config, metrics: metrics::Proxy, runtime: AppRuntime) -> Self {
         let runtime = Runtime {
-            metrics,
+            metrics: Metrics::new(metrics),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -137,6 +137,10 @@ impl Inbound<()> {
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.runtime.metrics.clone()
     }
 
     pub fn with_stack<S>(self, stack: S) -> Inbound<S> {

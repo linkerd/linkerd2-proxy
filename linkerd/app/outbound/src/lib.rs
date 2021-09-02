@@ -85,9 +85,9 @@ pub struct Accept<P> {
 // === impl Outbound ===
 
 impl Outbound<()> {
-    pub fn new(config: Config, metrics: Metrics, runtime: AppRuntime) -> Self {
+    pub fn new(config: Config, metrics: metrics::Proxy, runtime: AppRuntime) -> Self {
         let runtime = Runtime {
-            metrics,
+            metrics: Metrics::new(metrics),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,
@@ -98,6 +98,10 @@ impl Outbound<()> {
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.runtime.metrics.clone()
     }
 
     pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
