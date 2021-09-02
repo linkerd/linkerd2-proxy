@@ -9,7 +9,7 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    Runtime,
+    ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy};
@@ -67,16 +67,13 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn metrics() -> metrics::Proxy {
-    let (m, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
-    m.proxy
-}
-
-pub fn runtime() -> (Runtime, drain::Signal) {
+pub fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let runtime = Runtime {
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    let runtime = ProxyRuntime {
         identity: None,
+        metrics: metrics.proxy,
         tap,
         span_sink: None,
         drain,

@@ -94,7 +94,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -117,7 +117,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -153,7 +153,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(svc::Fail::<_, WrongStack>::default())
             .push_switch_logical(logical)
             .into_inner();

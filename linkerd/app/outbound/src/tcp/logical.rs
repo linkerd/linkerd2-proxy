@@ -156,7 +156,7 @@ mod tests {
 
         // Build the TCP logical stack with a mocked connector.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| {
                 assert_eq!(*ep.addr.as_ref(), ep_addr);
                 let mut io = support::io();
@@ -221,7 +221,7 @@ mod tests {
         // Build the TCP logical stack with a mocked endpoint stack that alters its response stream
         // based on the address.
         let (rt, _shutdown) = runtime();
-        let svc = Outbound::new(default_config(), metrics(), rt)
+        let svc = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| match ep.addr {
                 Remote(ServerAddr(addr)) if addr == ep0_addr => {
                     tracing::debug!(%addr, "writing ep0");

@@ -610,11 +610,7 @@ mod tests {
     }
 
     fn inbound() -> Inbound<()> {
-        Inbound::new(
-            test_util::default_config(),
-            test_util::metrics(),
-            test_util::runtime().0,
-        )
+        Inbound::new(test_util::default_config(), test_util::runtime().0)
     }
 
     fn new_panic<T, I: 'static>(msg: &'static str) -> svc::BoxNewTcp<T, I> {

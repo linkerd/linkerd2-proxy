@@ -26,7 +26,7 @@ use linkerd_app_core::{
     proxy::{identity::LocalCrtKey, tap},
     svc,
     transport::{self, Remote, ServerAddr},
-    Error, NameMatch, Runtime as AppRuntime,
+    Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
 use thiserror::Error;
@@ -124,9 +124,9 @@ impl<S> Inbound<S> {
 }
 
 impl Inbound<()> {
-    pub fn new(config: Config, metrics: metrics::Proxy, runtime: AppRuntime) -> Self {
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         let runtime = Runtime {
-            metrics: Metrics::new(metrics),
+            metrics: Metrics::new(runtime.metrics),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,

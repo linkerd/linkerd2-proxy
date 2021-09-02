@@ -92,7 +92,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -128,7 +128,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -166,7 +166,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -214,7 +214,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), metrics(), rt)
+        let mut stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();

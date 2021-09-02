@@ -7,7 +7,7 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    IpMatch, IpNet, Runtime,
+    IpMatch, IpNet, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
@@ -47,16 +47,13 @@ pub(crate) fn default_config() -> Config {
     }
 }
 
-pub(crate) fn metrics() -> metrics::Proxy {
-    let (m, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
-    m.proxy
-}
-
-pub(crate) fn runtime() -> (Runtime, drain::Signal) {
+pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
-    let runtime = Runtime {
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+    let runtime = ProxyRuntime {
         identity: None,
+        metrics: metrics.proxy,
         tap,
         span_sink: None,
         drain,

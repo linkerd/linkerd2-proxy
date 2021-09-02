@@ -20,7 +20,7 @@ use linkerd_app_core::{
     metrics::FmtMetrics,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
-    Error, Runtime,
+    Error, ProxyRuntime,
 };
 use linkerd_app_gateway as gateway;
 use linkerd_app_inbound::{self as inbound, Inbound};
@@ -141,14 +141,15 @@ impl Config {
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
-        let runtime = Runtime {
+        let runtime = ProxyRuntime {
             identity: identity.local(),
+            metrics: metrics.proxy.clone(),
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
             drain: drain_rx.clone(),
         };
-        let inbound = Inbound::new(inbound, metrics.proxy.clone(), runtime.clone());
-        let outbound = Outbound::new(outbound, metrics.proxy.clone(), runtime);
+        let inbound = Inbound::new(inbound, runtime.clone());
+        let outbound = Outbound::new(outbound, runtime);
 
         let admin = {
             let identity = identity.local();

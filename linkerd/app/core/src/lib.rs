@@ -55,8 +55,9 @@ pub const CANONICAL_DST_HEADER: &str = "l5d-dst-canonical";
 const DEFAULT_PORT: u16 = 80;
 
 #[derive(Clone, Debug)]
-pub struct Runtime {
+pub struct ProxyRuntime {
     pub identity: Option<proxy::identity::LocalCrtKey>,
+    pub metrics: metrics::Proxy,
     pub tap: proxy::tap::Registry,
     pub span_sink: http_tracing::OpenCensusSink,
     pub drain: drain::Watch,

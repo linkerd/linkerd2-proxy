@@ -256,7 +256,7 @@ pub mod tests {
 
         let (mut client, task) = {
             let addr = SocketAddr::new([10, 0, 0, 41].into(), 5550);
-            let stack = Outbound::new(default_config(), metrics(), rt)
+            let stack = Outbound::new(default_config(), rt)
                 // Fails connection attempts
                 .with_stack(support::connect().endpoint_fn(addr, |_| {
                     Err(io::Error::new(

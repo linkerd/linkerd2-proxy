@@ -34,7 +34,7 @@ use linkerd_app_core::{
     svc::{self, stack::Param},
     tls,
     transport::{self, addrs::*},
-    AddrMatch, Error, Runtime as AppRuntime,
+    AddrMatch, Error, ProxyRuntime,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -85,9 +85,9 @@ pub struct Accept<P> {
 // === impl Outbound ===
 
 impl Outbound<()> {
-    pub fn new(config: Config, metrics: metrics::Proxy, runtime: AppRuntime) -> Self {
+    pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
         let runtime = Runtime {
-            metrics: Metrics::new(metrics),
+            metrics: Metrics::new(runtime.metrics),
             identity: runtime.identity,
             tap: runtime.tap,
             span_sink: runtime.span_sink,
