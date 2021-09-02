@@ -402,7 +402,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         let ips = parse(strings, ENV_INBOUND_IPS, parse_ip_set)?.unwrap_or_default();
         if ips.is_empty() {
             info!(
-                "`{}` allow-list not configured, allowing all target addresses",
+                "`{}` allowlist not configured, allowing all target addresses",
                 ENV_INBOUND_IPS
             );
         } else {
@@ -470,15 +470,14 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         allow_discovery: gateway_suffixes?.into_iter().flatten().collect(),
     };
 
-    let admin_listen_addr = admin_listener_addr?
-        .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap());
-
     let inbound = {
-        let listen_addr = inbound_listener_addr?
-            .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap());
+        let addr = ListenAddr(
+            inbound_listener_addr?
+                .unwrap_or_else(|| parse_socket_addr(DEFAULT_INBOUND_LISTEN_ADDR).unwrap()),
+        );
         let keepalive = Keepalive(inbound_accept_keepalive?);
         let server = ServerConfig {
-            addr: ListenAddr(listen_addr),
+            addr,
             keepalive,
             h2_settings,
         };
@@ -510,8 +509,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         // Ensure that connections that directly target the inbound port are secured (unless
         // identity is disabled).
         let policy = {
-            let inbound_port = listen_addr.port();
-            // TODO(ver) let admin_port = admin_listen_addr.port();
+            let inbound_port = server.addr.as_ref().port();
 
             let cluster_nets = parse(strings, ENV_POLICY_CLUSTER_NETWORKS, parse_networks)?
                 .unwrap_or_else(|| {
@@ -553,11 +551,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         // the more common case).
                         ports.insert(inbound_port);
                     }
-
-                    // TODO(ver) support admin server policies
-                    //ports.insert(admin_port);
-
-                    // TODO(ver) support tap server policies.
 
                     // The workload, which is opaque from the proxy's point-of-view, is sent to the
                     // policy controller to support policy discovery.
@@ -730,7 +723,10 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
-            addr: ListenAddr(admin_listen_addr),
+            addr: ListenAddr(
+                admin_listener_addr?
+                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
+            ),
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
