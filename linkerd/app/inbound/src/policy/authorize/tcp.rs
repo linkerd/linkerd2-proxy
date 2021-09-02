@@ -8,9 +8,11 @@ use linkerd_app_core::{
 };
 use std::{future::Future, pin::Pin, task};
 
-/// A middleware that enforces policy on each HTTP request.
+/// A middleware that enforces policy on each TCP connection. When connection is authorized, we
+/// continue to monitor the policy for changes and, if the connection is no longer authorized, it is
+/// dropped/closed.
 ///
-/// The inner service is created for each request, so it's expected that this is combined with
+/// Metrics are reported to the `TcpAuthzMetrics` struct.
 #[derive(Clone, Debug)]
 pub struct NewAuthorizeTcp<N> {
     inner: N,

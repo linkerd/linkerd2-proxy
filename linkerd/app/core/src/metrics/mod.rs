@@ -63,9 +63,11 @@ pub struct InboundEndpointLabels {
     pub policy: AuthzLabels,
 }
 
+/// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerLabel(pub String);
 
+/// Labels referencing an inbound `ServerAuthorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AuthzLabels {
     pub server: ServerLabel,
