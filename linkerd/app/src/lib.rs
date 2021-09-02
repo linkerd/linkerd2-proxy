@@ -155,7 +155,6 @@ impl Config {
 
         let admin = {
             let identity = identity.local();
-            let drain = drain_rx.clone();
             let metrics = inbound_metrics.clone();
             let report = inbound_metrics.and_then(outbound_metrics).and_then(report);
             info_span!("admin").in_scope(move || {
@@ -165,7 +164,7 @@ impl Config {
                     report,
                     metrics,
                     log_level,
-                    drain,
+                    drain_rx,
                     shutdown_tx,
                 )
             })?
