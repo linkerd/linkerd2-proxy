@@ -63,10 +63,10 @@ pub struct InboundEndpointLabels {
     pub policy: AuthzLabels,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ServerLabel(pub String);
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AuthzLabels {
     pub server: ServerLabel,
     pub authz: String,
