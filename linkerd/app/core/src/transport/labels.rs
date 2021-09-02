@@ -166,7 +166,13 @@ impl<'t> FmtLabels for TlsConnect<'t> {
 
 impl FmtLabels for TargetAddr {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "target_addr=\"{}\"", self.0)
+        write!(
+            f,
+            "target_addr=\"{}\",target_ip=\"{}\",target_port=\"{}\"",
+            self.0,
+            self.0.ip(),
+            self.0.port()
+        )
     }
 }
 
@@ -192,8 +198,10 @@ mod tests {
         );
         assert_eq!(
             labels.to_string(),
-            "direction=\"inbound\",peer=\"src\",target_addr=\"192.0.2.4:40000\",tls=\"true\",\
-            client_id=\"foo.id.example.com\",srv_name=\"testserver\""
+            "direction=\"inbound\",peer=\"src\",\
+            target_addr=\"192.0.2.4:40000\",target_ip=\"192.0.2.4\",target_port=\"40000\",\
+            tls=\"true\",client_id=\"foo.id.example.com\",\
+            srv_name=\"testserver\""
         );
     }
 }
