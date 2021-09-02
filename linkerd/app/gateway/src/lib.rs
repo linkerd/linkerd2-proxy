@@ -54,9 +54,7 @@ struct HttpTransportHeader {
 }
 
 #[derive(Clone, Debug)]
-struct RouteHttp<T> {
-    target: T,
-}
+struct RouteHttp<T>(T);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct HttpTarget {
@@ -228,7 +226,7 @@ where
         .clone()
         .with_stack(
             http.clone()
-                .push(svc::NewRouter::layer(|(_, target)| RouteHttp { target }))
+                .push(svc::NewRouter::layer(|(_, target)| RouteHttp(target)))
                 .push(inbound.authorize_http())
                 .push_http_insert_target::<tls::ClientId>(),
         )
@@ -247,7 +245,7 @@ where
         .with_stack(
             // A router is needed so that we use each request's HTTP version
             // (i.e. after server-side orig-proto downgrading).
-            http.push(svc::NewRouter::layer(|(_, target)| RouteHttp { target }))
+            http.push(svc::NewRouter::layer(|(_, target)| RouteHttp(target)))
                 .push(inbound.authorize_http())
                 .push_http_insert_target::<tls::ClientId>(),
         )
@@ -417,7 +415,7 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpTransport
     type Key = HttpTarget;
 
     fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
-        let target = self.target.target.clone();
+        let target = self.0.target.clone();
         let version = req.version().try_into()?;
         Ok(HttpTarget { target, version })
     }
