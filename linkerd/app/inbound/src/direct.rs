@@ -157,13 +157,6 @@ impl<N> Inbound<N> {
                                     // address's_ policy to determine whether the client is
                                     // authorized to use this gateway.
                                     let policy = policies.check_policy(client.local_addr)?;
-                                    // let tls = tls::ConditionalServerTls::Some(
-                                    //     tls::ServerTls::Established {
-                                    //         client_id: Some(client.client_id.clone()),
-                                    //         negotiated_protocol: client.alpn.clone(),
-                                    //     },
-                                    // );
-                                    // let permit = allow.check_authorized(client.client_addr, &tls)?;
                                     Ok(svc::Either::B(GatewayTransportHeader {
                                         target: NameAddr::from((name, port)),
                                         protocol,
