@@ -41,7 +41,10 @@ impl Metrics {
 
 impl FmtMetrics for Metrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.http_authz.fmt_metrics(f)?;
         self.http_errors.fmt_metrics(f)?;
+
+        self.tcp_authz.fmt_metrics(f)?;
         self.tcp_errors.fmt_metrics(f)?;
 
         // XXX: Proxy metrics are reported elsewhere.
