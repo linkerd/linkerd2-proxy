@@ -1,6 +1,8 @@
+use crate::policy::AllowPolicy;
+
 use super::ErrorKind;
 use linkerd_app_core::{
-    metrics::{metrics, Counter, FmtMetrics},
+    metrics::{metrics, Counter, FmtMetrics, ServerLabel},
     svc::{self, stack::NewMonitor},
     transport::{labels::TargetAddr, OrigDstAddr},
     Error,
@@ -15,11 +17,11 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct HttpErrorMetrics(Arc<RwLock<HashMap<(ErrorKind, TargetAddr), Counter>>>);
+pub struct HttpErrorMetrics(Arc<RwLock<HashMap<(ErrorKind, (TargetAddr, ServerLabel)), Counter>>>);
 
 #[derive(Clone, Debug)]
 pub struct MonitorHttpErrorMetrics {
-    target: TargetAddr,
+    labels: (TargetAddr, ServerLabel),
     registry: HttpErrorMetrics,
 }
 
@@ -33,15 +35,16 @@ impl HttpErrorMetrics {
 
 impl<T> svc::stack::MonitorNewService<T> for HttpErrorMetrics
 where
-    T: svc::Param<OrigDstAddr>,
+    T: svc::Param<OrigDstAddr> + svc::Param<AllowPolicy>,
 {
     type MonitorService = MonitorHttpErrorMetrics;
 
     #[inline]
     fn monitor(&mut self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
+        let policy: AllowPolicy = target.param();
         MonitorHttpErrorMetrics {
-            target: TargetAddr(addr),
+            labels: (TargetAddr(addr), ServerLabel(policy.server_name())),
             registry: self.clone(),
         }
     }
@@ -76,7 +79,7 @@ impl svc::stack::MonitorError<Error> for MonitorHttpErrorMetrics {
             self.registry
                 .0
                 .write()
-                .entry((error, self.target))
+                .entry((error, self.labels.clone()))
                 .or_default()
                 .incr();
         }

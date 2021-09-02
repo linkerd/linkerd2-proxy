@@ -12,6 +12,7 @@ use std::fmt;
 /// Inbound proxy error types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum ErrorKind {
+    DeniedUnknown,
     FailFast,
     GatewayDomainInvalid,
     GatewayIdentityRequired,
@@ -25,8 +26,11 @@ enum ErrorKind {
 
 impl ErrorKind {
     fn mk(err: &(dyn std::error::Error + 'static)) -> Option<Self> {
-        if err.is::<DeniedUnknownPort>() || err.is::<DeniedUnauthorized>() {
+        if err.is::<DeniedUnauthorized>() {
+            // Unauthorized metrics are tracked separately.and are not considered to be errors.
             None
+        } else if err.is::<DeniedUnknownPort>() {
+            Some(ErrorKind::DeniedUnknown)
         } else if err.is::<FailFastError>() {
             Some(ErrorKind::FailFast)
         } else if err.is::<std::io::Error>() {
@@ -53,6 +57,7 @@ impl FmtLabels for ErrorKind {
             f,
             "error=\"{}\"",
             match self {
+                ErrorKind::DeniedUnknown => "unknown port denied",
                 ErrorKind::FailFast => "failfast",
                 ErrorKind::TlsDetectTimeout => "tls detection timeout",
                 ErrorKind::GatewayIdentityRequired => "gateway identity required",

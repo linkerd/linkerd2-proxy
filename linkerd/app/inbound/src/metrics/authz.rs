@@ -1,6 +1,6 @@
 use crate::policy::{AllowPolicy, Permit};
 use linkerd_app_core::{
-    metrics::{metrics, Counter, FmtMetrics},
+    metrics::{metrics, AuthzLabels, Counter, FmtMetrics, ServerLabel},
     transport::labels::TargetAddr,
 };
 use parking_lot::RwLock;
@@ -33,15 +33,32 @@ pub(crate) struct TcpAuthzMetrics(Arc<TcpInner>);
 
 #[derive(Debug, Default)]
 struct HttpInner {
-    allow: RwLock<HashMap<TargetAddr, Counter>>,
-    deny: RwLock<HashMap<TargetAddr, Counter>>,
+    allow: RwLock<HashMap<(TargetAddr, AuthzLabels), Counter>>,
+    deny: RwLock<HashMap<(TargetAddr, ServerLabel), Counter>>,
 }
 
 #[derive(Debug, Default)]
 struct TcpInner {
-    allow: RwLock<HashMap<TargetAddr, Counter>>,
-    deny: RwLock<HashMap<TargetAddr, Counter>>,
-    terminate: RwLock<HashMap<TargetAddr, Counter>>,
+    allow: RwLock<HashMap<(TargetAddr, AuthzLabels), Counter>>,
+    deny: RwLock<HashMap<(TargetAddr, ServerLabel), Counter>>,
+    terminate: RwLock<HashMap<(TargetAddr, ServerLabel), Counter>>,
+}
+
+fn server_labels(policy: &AllowPolicy) -> (TargetAddr, ServerLabel) {
+    (
+        TargetAddr(policy.dst_addr().into()),
+        ServerLabel(policy.server_name()),
+    )
+}
+
+fn authz_labels(permit: &Permit) -> (TargetAddr, AuthzLabels) {
+    (
+        TargetAddr(permit.dst.into()),
+        AuthzLabels {
+            server: ServerLabel(permit.server_name.clone()),
+            authz: permit.authz_name.clone(),
+        },
+    )
 }
 
 // === impl HttpAuthzMetrics ===
@@ -51,7 +68,7 @@ impl HttpAuthzMetrics {
         self.0
             .allow
             .write()
-            .entry(TargetAddr(permit.dst.into()))
+            .entry(authz_labels(permit))
             .or_default()
             .incr();
     }
@@ -60,7 +77,7 @@ impl HttpAuthzMetrics {
         self.0
             .deny
             .write()
-            .entry(TargetAddr(policy.dst_addr().into()))
+            .entry(server_labels(policy))
             .or_default()
             .incr();
     }
@@ -93,7 +110,7 @@ impl TcpAuthzMetrics {
         self.0
             .allow
             .write()
-            .entry(TargetAddr(permit.dst.into()))
+            .entry(authz_labels(permit))
             .or_default()
             .incr();
     }
@@ -102,7 +119,7 @@ impl TcpAuthzMetrics {
         self.0
             .deny
             .write()
-            .entry(TargetAddr(policy.dst_addr().into()))
+            .entry(server_labels(policy))
             .or_default()
             .incr();
     }
@@ -111,7 +128,7 @@ impl TcpAuthzMetrics {
         self.0
             .terminate
             .write()
-            .entry(TargetAddr(policy.dst_addr().into()))
+            .entry(server_labels(policy))
             .or_default()
             .incr();
     }
