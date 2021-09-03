@@ -100,6 +100,10 @@ impl<N> Inbound<N> {
         FSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, detect| {
+            let forward = svc::stack(forward)
+                .push_map_target(Forward::from)
+                .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()));
+
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
                 .check_new_service::<Tls, _>()
@@ -126,11 +130,9 @@ impl<N> Inbound<N> {
 
                         Ok(svc::Either::A(tls))
                     },
-                    svc::stack(forward.clone())
+                    forward
+                        .clone()
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push_map_target(Forward::from)
-                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
-                        .check_new_service::<Tls, _>()
                         .into_inner(),
                 )
                 .check_new_service::<(tls::ConditionalServerTls, T), _>()
@@ -156,11 +158,8 @@ impl<N> Inbound<N> {
                         }
                         Ok(svc::Either::A(t))
                     },
-                    svc::stack(forward)
+                    forward
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
-                        .push_map_target(Forward::from)
-                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
-                        .check_new_service::<Tls, I>()
                         .into_inner(),
                 )
                 .check_new_service::<T, I>()
