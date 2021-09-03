@@ -668,7 +668,6 @@ dependencies = [
  "linkerd-duplex",
  "linkerd-errno",
  "linkerd-error",
- "linkerd-error-metrics",
  "linkerd-error-respond",
  "linkerd-exp-backoff",
  "linkerd-http-classify",
@@ -750,6 +749,7 @@ dependencies = [
  "linkerd-tonic-watch",
  "linkerd-tracing",
  "linkerd2-proxy-api",
+ "parking_lot",
  "thiserror",
  "tokio",
  "tokio-test",
@@ -801,6 +801,7 @@ dependencies = [
  "linkerd-identity",
  "linkerd-io",
  "linkerd-tracing",
+ "parking_lot",
  "pin-project",
  "thiserror",
  "tokio",
@@ -908,17 +909,6 @@ name = "linkerd-error"
 version = "0.1.0"
 dependencies = [
  "futures",
-]
-
-[[package]]
-name = "linkerd-error-metrics"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-metrics",
- "parking_lot",
- "pin-project",
- "tower",
 ]
 
 [[package]]

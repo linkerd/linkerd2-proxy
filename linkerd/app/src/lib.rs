@@ -17,6 +17,7 @@ use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
+    metrics::FmtMetrics,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
@@ -96,8 +97,6 @@ impl Config {
         BAdmin: Bind<ServerConfig> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {
-        use metrics::FmtMetrics;
-
         let Config {
             admin,
             dns,
@@ -142,10 +141,23 @@ impl Config {
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
+        let runtime = ProxyRuntime {
+            identity: identity.local(),
+            metrics: metrics.proxy.clone(),
+            tap: tap.registry(),
+            span_sink: oc_collector.span_sink(),
+            drain: drain_rx.clone(),
+        };
+        let inbound = Inbound::new(inbound, runtime.clone());
+        let outbound = Outbound::new(outbound, runtime);
+
         let admin = {
             let identity = identity.local();
-            let drain = drain_rx.clone();
-            let metrics = metrics.inbound.clone();
+            let metrics = inbound.metrics();
+            let report = inbound
+                .metrics()
+                .and_then(outbound.metrics())
+                .and_then(report);
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
@@ -153,36 +165,13 @@ impl Config {
                     report,
                     metrics,
                     log_level,
-                    drain,
+                    drain_rx,
                     shutdown_tx,
                 )
             })?
         };
 
         let dst_addr = dst.addr.clone();
-
-        let inbound = Inbound::new(
-            inbound,
-            ProxyRuntime {
-                identity: identity.local(),
-                metrics: metrics.inbound,
-                tap: tap.registry(),
-                span_sink: oc_collector.span_sink(),
-                drain: drain_rx.clone(),
-            },
-        );
-
-        let outbound = Outbound::new(
-            outbound,
-            ProxyRuntime {
-                identity: identity.local(),
-                metrics: metrics.outbound,
-                tap: tap.registry(),
-                span_sink: oc_collector.span_sink(),
-                drain: drain_rx,
-            },
-        );
-
         let gateway_stack = gateway::stack(
             gateway,
             inbound.clone(),
@@ -206,8 +195,8 @@ impl Config {
             let identity = identity.local();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
-            let resolve = dst.resolve;
             let dns = dns.resolver;
+            let resolve = dst.resolve;
             let control_metrics = metrics.control;
 
             Box::pin(async move {
@@ -221,13 +210,13 @@ impl Config {
                         .instrument(info_span!("outbound")),
                 );
 
+                let inbound_policies = inbound.build_policies(dns, control_metrics).await;
                 tokio::spawn(
                     inbound
                         .serve(
                             inbound_addr,
                             inbound_listen,
-                            dns,
-                            control_metrics,
+                            inbound_policies,
                             profiles,
                             gateway_stack,
                         )

@@ -10,19 +10,25 @@ pub mod endpoint;
 pub mod http;
 mod ingress;
 pub mod logical;
+mod metrics;
 mod resolve;
 mod switch_logical;
 pub mod tcp;
 #[cfg(test)]
 pub(crate) mod test_util;
 
+pub use self::metrics::Metrics;
 use futures::Stream;
 use linkerd_app_core::{
     config::ProxyConfig,
-    io, metrics, profiles,
+    drain,
+    http_tracing::OpenCensusSink,
+    io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
+        identity::LocalCrtKey,
+        tap,
     },
     serve,
     svc::{self, stack::Param},
@@ -57,8 +63,17 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub struct Outbound<S> {
     config: Config,
-    runtime: ProxyRuntime,
+    runtime: Runtime,
     stack: svc::Stack<S>,
+}
+
+#[derive(Clone, Debug)]
+struct Runtime {
+    metrics: Metrics,
+    identity: Option<LocalCrtKey>,
+    tap: tap::Registry,
+    span_sink: OpenCensusSink,
+    drain: drain::Watch,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -71,11 +86,22 @@ pub struct Accept<P> {
 
 impl Outbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+        let runtime = Runtime {
+            metrics: Metrics::new(runtime.metrics),
+            identity: runtime.identity,
+            tap: runtime.tap,
+            span_sink: runtime.span_sink,
+            drain: runtime.drain,
+        };
         Self {
             config,
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.runtime.metrics.clone()
     }
 
     pub fn with_stack<S>(self, stack: S) -> Outbound<S> {
@@ -86,10 +112,6 @@ impl Outbound<()> {
 impl<S> Outbound<S> {
     pub fn config(&self) -> &Config {
         &self.config
-    }
-
-    pub fn runtime(&self) -> &ProxyRuntime {
-        &self.runtime
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
@@ -115,7 +137,7 @@ impl<S> Outbound<S> {
     /// Creates a new `Outbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
-        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+        f: impl FnOnce(&Config, &Runtime, svc::Stack<S>) -> svc::Stack<T>,
     ) -> Outbound<T> {
         let stack = f(&self.config, &self.runtime, self.stack);
         Outbound {

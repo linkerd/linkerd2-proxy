@@ -1,4 +1,4 @@
-use crate::{direct, Inbound};
+use crate::{direct, policy, Inbound};
 use futures::Stream;
 use linkerd_app_core::{
     dns, io, metrics, profiles, serve, svc,
@@ -16,12 +16,24 @@ struct TcpEndpoint {
 // === impl Inbound ===
 
 impl Inbound<()> {
+    pub async fn build_policies(
+        &self,
+        dns: dns::Resolver,
+        control_metrics: metrics::ControlHttp,
+    ) -> policy::Store {
+        self.config
+            .policy
+            .clone()
+            .build(dns, control_metrics, self.runtime.identity.clone())
+            .await
+            .expect("Failed to fetch port policy")
+    }
+
     pub async fn serve<A, I, G, GSvc, P>(
         self,
         addr: Local<ServerAddr>,
         listen: impl Stream<Item = io::Result<(A, I)>> + Send + Sync + 'static,
-        dns: dns::Resolver,
-        control_metrics: metrics::ControlHttp,
+        policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
         profiles: P,
         gateway: G,
     ) where
@@ -48,14 +60,6 @@ impl Inbound<()> {
             .push_map_target(TcpEndpoint::from_param)
             .instrument(|_: &_| debug_span!("tcp"))
             .into_inner();
-
-        let policies = self
-            .config
-            .policy
-            .clone()
-            .build(dns, control_metrics, self.runtime.identity.clone())
-            .await
-            .expect("Failed to fetch port policy");
 
         // Handles connections that target the inbound proxy port.
         let direct = self

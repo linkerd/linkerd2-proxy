@@ -9,13 +9,9 @@ fn unauthenticated_allowed() {
         authorizations: vec![Authorization {
             authentication: Authentication::Unauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("name".to_string(), "unauth".to_string())]
-                .into_iter()
-                .collect(),
+            name: "unauth".to_string(),
         }],
-        labels: vec![("name".to_string(), "test".to_string())]
-            .into_iter()
-            .collect(),
+        name: "test".to_string(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -31,13 +27,12 @@ fn unauthenticated_allowed() {
     assert_eq!(
         permitted,
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_labels: vec![("name".to_string(), "test".to_string())]
-                .into_iter()
-                .collect(),
-            authz_labels: vec![("name".to_string(), "unauth".to_string()),]
-                .into_iter()
-                .collect()
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "unauth".to_string(),
+            }
         }
     );
 }
@@ -52,13 +47,9 @@ fn authenticated_identity() {
                 identities: vec![client_id().to_string()].into_iter().collect(),
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("name".to_string(), "tls-auth".to_string())]
-                .into_iter()
-                .collect(),
+            name: "tls-auth".to_string(),
         }],
-        labels: vec![("name".to_string(), "test".to_string())]
-            .into_iter()
-            .collect(),
+        name: "test".to_string(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -77,13 +68,12 @@ fn authenticated_identity() {
     assert_eq!(
         permitted,
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_labels: vec![("name".to_string(), "test".to_string())]
-                .into_iter()
-                .collect(),
-            authz_labels: vec![("name".to_string(), "tls-auth".to_string()),]
-                .into_iter()
-                .collect()
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "tls-auth".to_string(),
+            }
         }
     );
 
@@ -113,13 +103,9 @@ fn authenticated_suffix() {
                 ])],
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("name".to_string(), "tls-auth".to_string())]
-                .into_iter()
-                .collect(),
+            name: "tls-auth".to_string(),
         }],
-        labels: vec![("name".to_string(), "test".to_string())]
-            .into_iter()
-            .collect(),
+        name: "test".to_string(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -137,13 +123,12 @@ fn authenticated_suffix() {
             .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_labels: vec![("name".to_string(), "test".to_string())]
-                .into_iter()
-                .collect(),
-            authz_labels: vec![("name".to_string(), "tls-auth".to_string()),]
-                .into_iter()
-                .collect()
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "tls-auth".to_string(),
+            }
         }
     );
 
@@ -167,13 +152,9 @@ fn tls_unauthenticated() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsUnauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            labels: vec![("name".to_string(), "tls-unauth".to_string())]
-                .into_iter()
-                .collect(),
+            name: "tls-unauth".to_string(),
         }],
-        labels: vec![("name".to_string(), "test".to_string())]
-            .into_iter()
-            .collect(),
+        name: "test".to_string(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -191,13 +172,12 @@ fn tls_unauthenticated() {
             .check_authorized(client_addr(), &tls)
             .expect("unauthenticated connection must be permitted"),
         Permit {
+            dst: orig_dst_addr(),
             protocol: policy.protocol,
-            server_labels: vec![("name".to_string(), "test".to_string())]
-                .into_iter()
-                .collect(),
-            authz_labels: vec![("name".to_string(), "tls-unauth".to_string()),]
-                .into_iter()
-                .collect()
+            labels: AuthzLabels {
+                server: ServerLabel("test".to_string()),
+                authz: "tls-unauth".to_string(),
+            }
         }
     );
 

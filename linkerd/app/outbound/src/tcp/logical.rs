@@ -83,6 +83,7 @@ where
                         ))
                         .push(
                             rt.metrics
+                                .proxy
                                 .stack
                                 .layer(crate::stack_labels("tcp", "balancer")),
                         )
@@ -98,6 +99,7 @@ where
                     svc::layers()
                         .push(
                             rt.metrics
+                                .proxy
                                 .stack
                                 .layer(crate::stack_labels("tcp", "logical")),
                         )

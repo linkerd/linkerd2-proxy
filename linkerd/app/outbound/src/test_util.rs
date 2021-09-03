@@ -12,7 +12,7 @@ use linkerd_app_core::{
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
-pub fn default_config() -> Config {
+pub(crate) fn default_config() -> Config {
     Config {
         ingress_mode: false,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
@@ -47,13 +47,13 @@ pub fn default_config() -> Config {
     }
 }
 
-pub fn runtime() -> (ProxyRuntime, drain::Signal) {
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
         identity: None,
-        metrics: metrics.outbound,
+        metrics: metrics.proxy,
         tap,
         span_sink: None,
         drain,

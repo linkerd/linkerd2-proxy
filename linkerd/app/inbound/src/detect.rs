@@ -1,5 +1,5 @@
 use crate::{
-    policy::{AllowPolicy, Permit},
+    policy::{self, AllowPolicy, Permit, Protocol, ServerLabel},
     Inbound,
 };
 use linkerd_app_core::{
@@ -9,11 +9,10 @@ use linkerd_app_core::{
     transport::{
         self,
         addrs::{ClientAddr, OrigDstAddr, Remote},
-        DeniedUnauthorized, ServerAddr,
+        ServerAddr,
     },
     Error, Infallible,
 };
-use linkerd_server_policy::Protocol;
 use std::{fmt::Debug, time};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,8 +73,7 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
-        FSvc::Error: Into<Error>,
+        FSvc: svc::Service<io::BoxedIo, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
     {
         self.push_detect_http(forward.clone())
@@ -98,61 +96,73 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
-        FSvc::Error: Into<Error>,
+        FSvc: svc::Service<io::BoxedIo, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
     {
-        const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
-            tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
-
         self.map_stack(|cfg, rt, detect| {
+            let forward = svc::stack(forward)
+                .push_map_target(Forward::from)
+                .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()));
+
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
+                .check_new_service::<Tls, _>()
                 .push_switch(
                     // Ensure that the connection is authorized before proceeding with protocol
                     // detection.
-                    |(tls, t): (tls::ConditionalServerTls, T)| -> Result<_, Error> {
+                    |(status, t): (tls::ConditionalServerTls, T)| -> Result<_, Infallible> {
                         let policy: AllowPolicy = t.param();
+                        let protocol = policy.protocol();
+                        let tls = Tls {
+                            client_addr: t.param(),
+                            orig_dst_addr: t.param(),
+                            status,
+                            policy,
+                        };
 
                         // If the port is configured to support application TLS, it may have also
                         // been wrapped in mesh identity. In any case, we don't actually validate
                         // whether app TLS was employed, but we use this as a signal that we should
                         // not perform additional protocol detection.
-                        if policy.protocol() == Protocol::Tls {
-                            let permit = policy.check_authorized(t.param(), &tls)?;
-                            return Ok(svc::Either::B(Forward::mk(&t, tls, permit)));
+                        if protocol == Protocol::Tls {
+                            return Ok(svc::Either::B(tls));
                         }
 
-                        Ok(svc::Either::A(Tls {
-                            client_addr: t.param(),
-                            orig_dst_addr: t.param(),
-                            status: tls,
-                            policy,
-                        }))
+                        Ok(svc::Either::A(tls))
                     },
-                    svc::stack(forward.clone())
+                    forward
+                        .clone()
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
+                .check_new_service::<(tls::ConditionalServerTls, T), _>()
                 .push(tls::NewDetectTls::layer(TlsParams {
                     timeout: tls::server::Timeout(detect_timeout),
                     identity: rt.identity.clone(),
                 }))
+                .check_new_service::<T, I>()
                 .push_switch(
                     // If this port's policy indicates that authentication is not required and
                     // detection should be skipped, use the TCP stack directly.
-                    |t: T| -> Result<_, DeniedUnauthorized> {
+                    |t: T| -> Result<_, Infallible> {
                         let policy: AllowPolicy = t.param();
                         if policy.protocol() == Protocol::Opaque {
-                            let permit = policy.check_authorized(t.param(), &TLS_PORT_SKIPPED)?;
-                            return Ok(svc::Either::B(Forward::mk(&t, TLS_PORT_SKIPPED, permit)));
+                            const TLS_PORT_SKIPPED: tls::ConditionalServerTls =
+                                tls::ConditionalServerTls::None(tls::NoServerTls::PortSkipped);
+                            return Ok(svc::Either::B(Tls {
+                                client_addr: t.param(),
+                                orig_dst_addr: t.param(),
+                                status: TLS_PORT_SKIPPED,
+                                policy,
+                            }));
                         }
                         Ok(svc::Either::A(t))
                     },
-                    svc::stack(forward)
+                    forward
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
+                .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
@@ -171,8 +181,7 @@ impl<N> Inbound<N> {
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
         F: svc::NewService<Forward, Service = FSvc> + Clone + Send + Sync + Unpin + 'static,
-        FSvc: svc::Service<io::BoxedIo, Response = ()> + Send + 'static,
-        FSvc::Error: Into<Error>,
+        FSvc: svc::Service<io::BoxedIo, Response = (), Error = Error> + Send + 'static,
         FSvc::Future: Send,
     {
         self.map_stack(|cfg, rt, http| {
@@ -182,37 +191,25 @@ impl<N> Inbound<N> {
                 .clone()
                 .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .check_new_service::<Http, io::PrefixedIo<I>>()
                 .push_switch(
-                    |(http, Detect { tls, .. })| -> Result<_, Error> {
+                    |(http, Detect { tls, .. })| -> Result<_, Infallible> {
                         match http {
                             Some(http) => Ok(svc::Either::A(Http { http, tls })),
                             // When HTTP detection fails, forward the connection to the application as
                             // an opaque TCP stream.
-                            None => {
-                                let Tls {
-                                    client_addr,
-                                    orig_dst_addr,
-                                    status: tls,
-                                    policy,
-                                } = tls;
-                                let permit = policy.check_authorized(client_addr, &tls)?;
-                                Ok(svc::Either::B(Forward {
-                                    client_addr,
-                                    orig_dst_addr,
-                                    tls,
-                                    permit,
-                                }))
-                            }
+                            None => Ok(svc::Either::B(tls)),
                         }
                     },
                     svc::stack(forward)
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .push(transport::metrics::NewServer::layer(
-                            rt.metrics.transport.clone(),
+                            rt.metrics.proxy.transport.clone(),
                         ))
+                        .push_map_target(Forward::from)
+                        .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .into_inner(),
                 )
                 .push(svc::BoxNewService::layer())
@@ -222,7 +219,7 @@ impl<N> Inbound<N> {
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .check_new_service::<Http, I>()
                 .push_switch(
@@ -257,15 +254,12 @@ impl<N> Inbound<N> {
 
 // === impl Forward ===
 
-impl Forward {
-    fn mk<T>(t: &T, tls: tls::ConditionalServerTls, permit: Permit) -> Self
-    where
-        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
-    {
+impl From<(Permit, Tls)> for Forward {
+    fn from((permit, tls): (Permit, Tls)) -> Self {
         Self {
-            client_addr: t.param(),
-            orig_dst_addr: t.param(),
-            tls,
+            client_addr: tls.client_addr,
+            orig_dst_addr: tls.orig_dst_addr,
+            tls: tls.status,
             permit,
         }
     }
@@ -282,9 +276,34 @@ impl svc::Param<transport::labels::Key> for Forward {
         transport::labels::Key::inbound_server(
             self.tls.clone(),
             self.orig_dst_addr.into(),
-            self.permit.server_labels.clone(),
-            self.permit.authz_labels.clone(),
+            self.permit.labels.server.clone(),
         )
+    }
+}
+
+// === impl Tls ===
+
+impl svc::Param<AllowPolicy> for Tls {
+    fn param(&self) -> AllowPolicy {
+        self.policy.clone()
+    }
+}
+
+impl svc::Param<OrigDstAddr> for Tls {
+    fn param(&self) -> OrigDstAddr {
+        self.orig_dst_addr
+    }
+}
+
+impl svc::Param<Remote<ClientAddr>> for Tls {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client_addr
+    }
+}
+
+impl svc::Param<tls::ConditionalServerTls> for Tls {
+    fn param(&self) -> tls::ConditionalServerTls {
+        self.status.clone()
     }
 }
 
@@ -301,6 +320,12 @@ impl svc::ExtractParam<detect::Config<http::DetectHttp>, Detect> for ConfigureHt
 impl svc::Param<http::Version> for Http {
     fn param(&self) -> http::Version {
         self.http
+    }
+}
+
+impl svc::Param<OrigDstAddr> for Http {
+    fn param(&self) -> OrigDstAddr {
+        self.tls.orig_dst_addr
     }
 }
 
@@ -352,13 +377,18 @@ impl svc::Param<AllowPolicy> for Http {
     }
 }
 
+impl svc::Param<ServerLabel> for Http {
+    fn param(&self) -> ServerLabel {
+        self.tls.policy.server_label()
+    }
+}
+
 impl svc::Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::inbound_server(
             self.tls.status.clone(),
             self.tls.orig_dst_addr.into(),
-            self.tls.policy.server_labels(),
-            Default::default(),
+            self.tls.policy.server_label(),
         )
     }
 }
@@ -412,9 +442,9 @@ mod tests {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![client_addr().ip().into()],
-                    labels: Default::default(),
+                    name: "testsaz".to_string(),
                 }],
-                labels: Default::default(),
+                name: "testsrv".to_string(),
             },
         );
         allow

@@ -1,24 +1,14 @@
 mod network;
 
 pub use self::network::Network;
-use std::{
-    collections::{btree_map, BTreeMap, HashSet},
-    hash::Hash,
-    iter::FromIterator,
-    sync::Arc,
-    time,
-};
+use std::{collections::HashSet, hash::Hash, time};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
     pub protocol: Protocol,
     pub authorizations: Vec<Authorization>,
-    pub labels: Labels,
+    pub name: String,
 }
-
-/// Stores an ordered, cloneable set of labels.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Labels(Arc<BTreeMap<String, String>>);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Protocol {
@@ -34,7 +24,7 @@ pub enum Protocol {
 pub struct Authorization {
     pub networks: Vec<Network>,
     pub authentication: Authentication,
-    pub labels: Labels,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,26 +40,6 @@ pub enum Authentication {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Suffix {
     ends_with: String,
-}
-
-// === impl Labels ===
-
-impl Labels {
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    #[inline]
-    pub fn iter(&self) -> btree_map::Iter<'_, String, String> {
-        self.0.iter()
-    }
-}
-
-impl FromIterator<(String, String)> for Labels {
-    fn from_iter<T: IntoIterator<Item = (String, String)>>(iter: T) -> Self {
-        Self(Arc::new(iter.into_iter().collect()))
-    }
 }
 
 // === impl Suffix ===

@@ -43,6 +43,7 @@ impl<C> Outbound<C> {
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
+                        .proxy
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )

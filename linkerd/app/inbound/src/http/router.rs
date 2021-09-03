@@ -25,7 +25,7 @@ struct LogicalPerRequest {
     client: Remote<ClientAddr>,
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
-    policy: policy::AllowPolicy,
+    permit: policy::Permit,
 }
 
 /// Describes a logical request target.
@@ -85,7 +85,7 @@ impl<C> Inbound<C> {
             // Creates HTTP clients for each inbound port & HTTP settings.
             let http = connect
                 .push(svc::stack::BoxFuture::layer())
-                .push(transport::metrics::Client::layer(rt.metrics.transport.clone()))
+                .push(transport::metrics::Client::layer(rt.metrics.proxy.transport.clone()))
                 .push(http::client::layer(
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
@@ -100,6 +100,7 @@ impl<C> Inbound<C> {
                 // Records metrics for each `Logical`.
                 .push(
                     rt.metrics
+                        .proxy
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
@@ -123,7 +124,7 @@ impl<C> Inbound<C> {
                         .push_on_service(http::BoxRequest::layer())
                         // Records per-route metrics.
                         .push(
-                            rt.metrics
+                            rt.metrics.proxy
                                 .http_route
                                 .to_layer::<classify::Response, _, dst::Route>(),
                         )
@@ -197,7 +198,7 @@ impl<C> Inbound<C> {
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
                 .push_on_service(
                     svc::layers()
-                        .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
+                        .push(rt.metrics.proxy.stack.layer(stack_labels("http", "logical")))
                         .push(svc::FailFast::layer(
                             "HTTP Logical",
                             config.proxy.dispatch_timeout,
@@ -221,12 +222,13 @@ impl<C> Inbound<C> {
                 // dispatches the request. NewRouter moves the NewService into the service type, so
                 // minimize it's type footprint with a Box.
                 .push(svc::BoxNewService::layer())
-                .push(svc::NewRouter::layer(|t: T| LogicalPerRequest {
+                .push(svc::NewRouter::layer(|(permit, t): (_, T)| LogicalPerRequest {
                     client: t.param(),
                     server: t.param(),
                     tls: t.param(),
-                    policy: t.param(),
+                    permit,
                 }))
+                .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
@@ -262,20 +264,11 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
             .or_else(|| http_request_authority_addr(req).ok()?.into_name_addr())
             .or_else(|| http_request_host_addr(req).ok()?.into_name_addr());
 
-        // Use the per-port inbound policy to determine whether the request is permitted.
-        let permit = match self.policy.check_authorized(self.client, &self.tls) {
-            Ok(permit) => permit,
-            Err(denied) => {
-                tracing::debug!(?logical, ?denied);
-                return Err(denied.into());
-            }
-        };
-
         Ok(Logical {
             logical,
             addr: self.server,
             tls: self.tls.clone(),
-            permit,
+            permit: self.permit.clone(),
             // Use the request's HTTP version (i.e. as modified by orig-proto downgrading).
             http: req
                 .version()
@@ -319,10 +312,7 @@ impl Param<metrics::EndpointLabels> for Logical {
             tls: self.tls.clone(),
             authority: self.logical.as_ref().map(|d| d.as_http_authority()),
             target_addr: self.addr.into(),
-            policy: metrics::PolicyLabels {
-                server: self.permit.server_labels.clone(),
-                authz: self.permit.authz_labels.clone(),
-            },
+            policy: self.permit.labels.clone(),
         }
         .into()
     }
@@ -355,6 +345,7 @@ impl tap::Inspect for Logical {
     }
 
     fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&tap::Labels> {
+        // TODO include policy labels here.
         None
     }
 

@@ -216,12 +216,18 @@ pub mod fuzz {
                     authorizations: vec![policy::Authorization {
                         authentication: policy::Authentication::Unauthenticated,
                         networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
-                        labels: None.into_iter().collect(),
+                        name: "testsaz".to_string(),
                     }],
-                    labels: Default::default(),
+                    name: "testsrv".to_string(),
                 },
             );
             policy
+        }
+    }
+
+    impl svc::Param<policy::ServerLabel> for Target {
+        fn param(&self) -> policy::ServerLabel {
+            policy::ServerLabel("testsrv".to_string())
         }
     }
 

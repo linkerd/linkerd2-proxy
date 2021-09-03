@@ -22,7 +22,6 @@ members = [
     "linkerd/duplex",
     "linkerd/error",
     "linkerd/errno",
-    "linkerd/error-metrics",
     "linkerd/error-respond",
     "linkerd/exp-backoff",
     "linkerd/http-box",

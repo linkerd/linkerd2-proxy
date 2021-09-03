@@ -3,7 +3,7 @@
 // particular appears to do nothing... T_T
 #![allow(unused_imports)]
 
-mod tcp_accept_errors;
+mod tcp_errors;
 
 use crate::*;
 use std::io::Read;
@@ -144,8 +144,7 @@ impl TcpFixture {
             .label("peer", "src")
             .label("tls", "disabled")
             .label("target_addr", orig_dst)
-            .label("srv_name", "default:all-unauthenticated")
-            .label("saz_name", "default:all-unauthenticated");
+            .label("srv_name", "default:all-unauthenticated");
 
         let dst_labels = metrics::labels()
             .label("direction", "inbound")

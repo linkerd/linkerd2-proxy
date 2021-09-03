@@ -65,7 +65,12 @@ impl<N> Outbound<N> {
                         // service in a background task so it becomes ready without
                         // new requests.
                         .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(rt.metrics.stack.layer(crate::stack_labels("tcp", "server")))
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(crate::stack_labels("tcp", "server")),
+                        )
                         .push(svc::FailFast::layer(
                             "TCP Server",
                             config.proxy.dispatch_timeout,
@@ -73,12 +78,12 @@ impl<N> Outbound<N> {
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
                 .push(transport::metrics::NewServer::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .push_cache(config.proxy.cache_max_idle_age)
                 .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
                 .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-                .push(rt.metrics.tcp_accept_errors.layer())
+                .push(rt.metrics.tcp_errors.to_layer())
                 .push(svc::BoxNewService::layer())
                 .check_new_service::<T, I>()
         })

@@ -3,8 +3,9 @@ use linkerd_app_core::{
     dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
     NameAddr, NameMatch,
 };
+use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_test as support;
-use std::str::FromStr;
+use std::{error::Error as _, str::FromStr};
 use tower::util::ServiceExt;
 use tower_test::mock;
 
@@ -46,15 +47,13 @@ async fn bad_domain() {
         suffix: "bad.example.com",
         ..Default::default()
     };
-    let status = test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
-        .downcast_ref::<HttpError>()
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e
+        .downcast::<HttpError>()
         .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::NOT_FOUND);
+        .source()
+        .unwrap()
+        .is::<GatewayDomainInvalid>());
 }
 
 #[tokio::test]
@@ -63,15 +62,13 @@ async fn no_identity() {
         client_id: None,
         ..Default::default()
     };
-    let status = test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
-        .downcast_ref::<HttpError>()
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e
+        .downcast::<HttpError>()
         .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::FORBIDDEN);
+        .source()
+        .unwrap()
+        .is::<GatewayIdentityRequired>());
 }
 
 #[tokio::test]
@@ -82,15 +79,13 @@ async fn forward_loop() {
         ),
         ..Default::default()
     };
-    let status = test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
-        .downcast_ref::<HttpError>()
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e
+        .downcast::<HttpError>()
         .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::LOOP_DETECTED);
+        .source()
+        .unwrap()
+        .is::<GatewayLoop>());
 }
 
 struct Test {

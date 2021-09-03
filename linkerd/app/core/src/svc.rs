@@ -175,10 +175,6 @@ impl<S> Stack<S> {
         self.push(stack::OnServiceLayer::new(layer))
     }
 
-    pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
-        self.push(tower::timeout::TimeoutLayer::new(timeout))
-    }
-
     /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
     /// `ConnectTimeout` error.
     ///
@@ -187,7 +183,7 @@ impl<S> Stack<S> {
         self,
         timeout: Duration,
     ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
-        self.push_timeout(timeout)
+        self.push(tower::timeout::TimeoutLayer::new(timeout))
             .push(MapErrLayer::new(move |err: Error| {
                 if err.is::<tower::timeout::error::Elapsed>() {
                     crate::errors::ConnectTimeout(timeout).into()

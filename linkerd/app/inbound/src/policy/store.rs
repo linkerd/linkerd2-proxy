@@ -11,7 +11,7 @@ use std::{
 use tokio::sync::watch;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Store {
+pub struct Store {
     // When None, the default policy is 'deny'.
     default: Option<Rx>,
     ports: Arc<PortMap<Rx>>,

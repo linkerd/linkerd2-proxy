@@ -64,6 +64,7 @@ impl<E> Outbound<E> {
                         .push(http::BoxRequest::layer())
                         .push(
                             rt.metrics
+                                .proxy
                                 .stack
                                 .layer(stack_labels("http", "balance.endpoint")),
                         )
@@ -84,7 +85,12 @@ impl<E> Outbound<E> {
                             crate::EWMA_DEFAULT_RTT,
                             crate::EWMA_DECAY,
                         ))
-                        .push(rt.metrics.stack.layer(stack_labels("http", "balancer")))
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "balancer")),
+                        )
                         .push(svc::layer::mk(svc::SpawnReady::new))
                         .push(svc::FailFast::layer("HTTP Balancer", dispatch_timeout))
                         .push(http::BoxResponse::layer()),
@@ -110,7 +116,12 @@ impl<E> Outbound<E> {
                 .push_on_service(
                     svc::layers()
                         .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(rt.metrics.stack.layer(stack_labels("http", "logical")))
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(stack_labels("http", "logical")),
+                        )
                         .push(svc::FailFast::layer("HTTP Logical", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity),
                 )
@@ -122,6 +133,7 @@ impl<E> Outbound<E> {
                         .push_on_service(http::BoxRequest::layer())
                         .push(
                             rt.metrics
+                                .proxy
                                 .http_route_actual
                                 .to_layer::<classify::Response, _, dst::Route>(),
                         )
@@ -132,11 +144,16 @@ impl<E> Outbound<E> {
                         // with both body types.
                         .push_on_service(http::BoxRequest::erased())
                         // Sets an optional retry policy.
-                        .push(retry::layer(rt.metrics.http_route_retry.clone()))
+                        .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
                         // Sets an optional request timeout.
                         .push(http::MakeTimeoutLayer::default())
                         // Records per-route metrics.
-                        .push(rt.metrics.http_route.to_layer::<classify::Response, _, _>())
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .http_route
+                                .to_layer::<classify::Response, _, _>(),
+                        )
                         // Sets the per-route response classifier as a request
                         // extension.
                         .push(classify::NewClassify::layer())

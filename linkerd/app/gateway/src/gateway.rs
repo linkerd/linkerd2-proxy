@@ -8,6 +8,7 @@ use linkerd_app_core::{
     svc::{self, layer},
     tls, Error, NameAddr,
 };
+use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_outbound as outbound;
 use std::{
     future::Future,
@@ -135,6 +136,7 @@ where
     type Error = Error;
     type Future = ResponseFuture<O::Response>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             Self::Outbound { outbound, .. } => outbound.poll_ready(cx).map_err(Into::into),
@@ -160,7 +162,9 @@ where
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
                         if by == local_id.as_ref() {
-                            return Box::pin(future::err(HttpError::gateway_loop().into()));
+                            return Box::pin(future::err(
+                                HttpError::loop_detected(GatewayLoop).into(),
+                            ));
                         }
                     }
                 }
@@ -179,7 +183,7 @@ where
                     None => {
                         warn!("Request missing ClientId extension");
                         return Box::pin(future::err(
-                            HttpError::identity_required("no identity").into(),
+                            HttpError::forbidden(GatewayIdentityRequired).into(),
                         ));
                     }
                 };
@@ -201,9 +205,11 @@ where
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
             Self::NoIdentity => Box::pin(future::err(
-                HttpError::identity_required("no identity").into(),
+                HttpError::forbidden(GatewayIdentityRequired).into(),
             )),
-            Self::BadDomain(..) => Box::pin(future::err(HttpError::not_found("bad domain").into())),
+            Self::BadDomain(..) => Box::pin(future::err(
+                HttpError::bad_request(GatewayDomainInvalid).into(),
+            )),
         }
     }
 }

@@ -28,7 +28,6 @@ linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }
-linkerd-error-metrics = { path = "../../error-metrics" }
 linkerd-error-respond = { path = "../../error-respond" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }

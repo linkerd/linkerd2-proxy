@@ -7,9 +7,10 @@ use linkerd_app_core::{
     serve,
     svc::{self, ExtractParam, InsertParam, Param},
     tls, trace,
-    transport::{self, listen::Bind, ClientAddr, Local, Remote, ServerAddr},
-    Error,
+    transport::{self, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
+    Error, Result,
 };
+use linkerd_app_inbound as inbound;
 use std::{pin::Pin, time::Duration};
 use thiserror::Error;
 use tokio::sync::mpsc;
@@ -64,7 +65,7 @@ impl Config {
         bind: B,
         identity: Option<LocalCrtKey>,
         report: R,
-        metrics: metrics::Proxy,
+        metrics: inbound::Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
@@ -79,11 +80,11 @@ impl Config {
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.http_errors.to_layer())
             .push_on_service(
                 svc::layers()
-                    .push(metrics.http_errors.clone())
-                    .push(errors::layer())
+                    .push(errors::respond::layer())
                     .push(http::BoxResponse::layer()),
             )
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
@@ -130,8 +131,10 @@ impl Config {
             )
             .push(svc::BoxNewService::layer())
             .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
-            .push(transport::metrics::NewServer::layer(metrics.transport))
-            .push_map_target(|(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
+            .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
+            .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
+                // TODO(ver): We should enforce policy here; but we need to permit liveness probes
+                // for destination pods to startup...
                 Tcp {
                     tls,
                     client: addrs.param(),
@@ -161,8 +164,7 @@ impl Param<transport::labels::Key> for Tcp {
             self.tls.clone(),
             self.addr.into(),
             // TODO(ver) enforce policies on the proxy's admin port.
-            Default::default(),
-            Default::default(),
+            metrics::ServerLabel("default:admin".to_string()),
         )
     }
 }
@@ -175,13 +177,28 @@ impl Param<http::Version> for Http {
     }
 }
 
+impl Param<OrigDstAddr> for Http {
+    fn param(&self) -> OrigDstAddr {
+        OrigDstAddr(self.tcp.addr.into())
+    }
+}
+
+impl Param<metrics::ServerLabel> for Http {
+    fn param(&self) -> metrics::ServerLabel {
+        metrics::ServerLabel("default:admin".to_string())
+    }
+}
+
 impl Param<metrics::EndpointLabels> for Http {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
             tls: self.tcp.tls.clone(),
             authority: None,
             target_addr: self.tcp.addr.into(),
-            policy: Default::default(),
+            policy: metrics::AuthzLabels {
+                server: self.param(),
+                authz: "default:all-unauthenticated".to_string(),
+            },
         }
         .into()
     }

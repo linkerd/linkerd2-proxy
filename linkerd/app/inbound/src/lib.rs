@@ -10,21 +10,26 @@ mod accept;
 mod detect;
 pub mod direct;
 mod http;
+mod metrics;
 pub mod policy;
 mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::policy::DefaultPolicy;
+pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
     config::{ConnectConfig, ProxyConfig},
-    drain, io, metrics,
+    drain,
+    http_tracing::OpenCensusSink,
+    io,
     proxy::tcp,
+    proxy::{identity::LocalCrtKey, tap},
     svc,
     transport::{self, Remote, ServerAddr},
     Error, NameMatch, ProxyRuntime,
 };
 use std::{fmt::Debug, time::Duration};
+use thiserror::Error;
 use tracing::debug_span;
 
 #[cfg(fuzzing)]
@@ -41,9 +46,33 @@ pub struct Config {
 #[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
-    runtime: ProxyRuntime,
+    runtime: Runtime,
     stack: svc::Stack<S>,
 }
+
+#[derive(Clone)]
+struct Runtime {
+    metrics: Metrics,
+    identity: Option<LocalCrtKey>,
+    tap: tap::Registry,
+    span_sink: OpenCensusSink,
+    drain: drain::Watch,
+}
+
+// The inbound HTTP server handles gateway traffic; so gateway error types are defined here (so that
+// error metrics can be recorded properly).
+
+#[derive(Debug, Error)]
+#[error("no identity provided")]
+pub struct GatewayIdentityRequired;
+
+#[derive(Debug, Error)]
+#[error("bad gateway domain")]
+pub struct GatewayDomainInvalid;
+
+#[derive(Debug, Error)]
+#[error("gateway loop detected")]
+pub struct GatewayLoop;
 
 // === impl Inbound ===
 
@@ -52,8 +81,26 @@ impl<S> Inbound<S> {
         &self.config
     }
 
-    pub fn runtime(&self) -> &ProxyRuntime {
-        &self.runtime
+    pub fn identity(&self) -> Option<&LocalCrtKey> {
+        self.runtime.identity.as_ref()
+    }
+
+    pub fn proxy_metrics(&self) -> &metrics::Proxy {
+        &self.runtime.metrics.proxy
+    }
+
+    /// A helper for gateways to instrument policy checks.
+    pub fn authorize_http<N>(
+        &self,
+    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeHttp<N>> + Clone {
+        policy::NewAuthorizeHttp::layer(self.runtime.metrics.http_authz.clone())
+    }
+
+    /// A helper for gateways to instrument policy checks.
+    pub fn authorize_tcp<N>(
+        &self,
+    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeTcp<N>> + Clone {
+        policy::NewAuthorizeTcp::layer(self.runtime.metrics.tcp_authz.clone())
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
@@ -67,7 +114,7 @@ impl<S> Inbound<S> {
     /// Creates a new `Inbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
-        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+        f: impl FnOnce(&Config, &Runtime, svc::Stack<S>) -> svc::Stack<T>,
     ) -> Inbound<T> {
         let stack = f(&self.config, &self.runtime, self.stack);
         Inbound {
@@ -80,11 +127,22 @@ impl<S> Inbound<S> {
 
 impl Inbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+        let runtime = Runtime {
+            metrics: Metrics::new(runtime.metrics),
+            identity: runtime.identity,
+            tap: runtime.tap,
+            span_sink: runtime.span_sink,
+            drain: runtime.drain,
+        };
         Self {
             config,
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.runtime.metrics.clone()
     }
 
     pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
@@ -163,7 +221,7 @@ impl<S> Inbound<S> {
         self.map_stack(|_, rt, connect| {
             connect
                 .push(transport::metrics::Client::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
                 .push_make_thunk()
                 .push_on_service(

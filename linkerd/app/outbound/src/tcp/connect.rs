@@ -66,10 +66,10 @@ impl<C> Outbound<C> {
                 // ALPN negotiation indicates support.
                 .push(OpaqueTransport::layer())
                 // Limits the time we wait for a connection to be established.
-                .push_timeout(config.proxy.connect.timeout)
+                .push_connect_timeout(config.proxy.connect.timeout)
                 .push(svc::stack::BoxFuture::layer())
                 .push(transport::metrics::Client::layer(
-                    rt.metrics.transport.clone(),
+                    rt.metrics.proxy.transport.clone(),
                 ))
         })
     }

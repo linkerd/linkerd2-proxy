@@ -45,11 +45,11 @@ impl<N> Outbound<N> {
                         .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                         .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
                         .push_spawn_buffer(buffer_capacity)
-                        .push(rt.metrics.http_errors.clone())
+                        .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
                         .push(PeerProxyErrors::layer())
                         // Synthesizes responses for proxy errors.
-                        .push(errors::layer())
+                        .push(errors::respond::layer())
                         // Initiates OpenCensus tracing.
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),

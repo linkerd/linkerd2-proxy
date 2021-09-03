@@ -56,9 +56,9 @@ pub fn default_config() -> Config {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
-                    labels: Default::default(),
+                    name: "testsaz".to_string(),
                 }],
-                labels: Default::default(),
+                name: "testsrv".to_string(),
             }
             .into(),
             ports: Default::default(),
@@ -68,12 +68,12 @@ pub fn default_config() -> Config {
 }
 
 pub fn runtime() -> (ProxyRuntime, drain::Signal) {
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
         identity: None,
-        metrics: metrics.outbound,
+        metrics: metrics.proxy,
         tap,
         span_sink: None,
         drain,

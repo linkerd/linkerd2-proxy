@@ -7,8 +7,10 @@ pub use linkerd_app_core::proxy::http::{
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
     errors, http_tracing, identity, io,
+    metrics::ServerLabel,
     proxy::http,
     svc::{self, Param},
+    transport::OrigDstAddr,
     Error,
 };
 use tracing::debug_span;
@@ -18,7 +20,9 @@ impl<H> Inbound<H> {
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
-            + Param<Option<identity::Name>>,
+            + Param<Option<identity::Name>>
+            + Param<ServerLabel>
+            + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
@@ -55,10 +59,13 @@ impl<H> Inbound<H> {
                         // driven outside of the request path, so there's no need
                         // for SpawnReady
                         .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
-                        .push(svc::FailFast::layer("HTTP Server", dispatch_timeout))
-                        .push(rt.metrics.http_errors.clone())
+                        .push(svc::FailFast::layer("HTTP Server", dispatch_timeout)),
+                )
+                .push(rt.metrics.http_errors.to_layer())
+                .push_on_service(
+                    svc::layers()
                         // Synthesizes responses for proxy errors.
-                        .push(errors::layer())
+                        .push(errors::respond::layer())
                         .push(http_tracing::server(
                             rt.span_sink.clone(),
                             super::trace_labels(),

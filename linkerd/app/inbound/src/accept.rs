@@ -66,7 +66,9 @@ impl<N> Inbound<N> {
                     },
                     direct,
                 )
-                .push(rt.metrics.tcp_accept_errors.layer())
+                .check_new_service::<T, I>()
+                .push(rt.metrics.tcp_errors.to_layer())
+                .check_new_service::<T, I>()
                 .instrument(|t: &T| {
                     let OrigDstAddr(addr) = t.param();
                     info_span!("server", port = addr.port())
@@ -126,9 +128,9 @@ mod tests {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
-                    labels: Default::default(),
+                    name: "testsaz".to_string(),
                 }],
-                labels: Default::default(),
+                name: "testsrv".to_string(),
             },
             None,
         );
