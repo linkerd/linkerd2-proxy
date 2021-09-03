@@ -1,9 +1,10 @@
-use crate::{Inspect, Labels};
+use crate::Inspect;
 use ipnet::{Ipv4Net, Ipv6Net};
 use linkerd2_proxy_api::net::ip_address;
 use linkerd2_proxy_api::tap::observe_request;
 use std::{
     boxed::Box,
+    collections::BTreeMap,
     convert::{TryFrom, TryInto},
     net,
     str::FromStr,
@@ -90,7 +91,7 @@ impl Match {
                 .unwrap_or(false),
             Match::DestinationLabel(ref lbl) => inspect
                 .dst_labels(req)
-                .map(|l| lbl.matches(l))
+                .map(|l| lbl.matches(&*l))
                 .unwrap_or(false),
             Match::RouteLabel(ref lbl) => inspect
                 .route_labels(req)
@@ -138,7 +139,7 @@ impl TryFrom<observe_request::r#match::Match> for Match {
 // ===== impl LabelMatch ======
 
 impl LabelMatch {
-    fn matches(&self, labels: &Labels) -> bool {
+    fn matches(&self, labels: &BTreeMap<String, String>) -> bool {
         labels.get(&self.key) == Some(&self.value)
     }
 }

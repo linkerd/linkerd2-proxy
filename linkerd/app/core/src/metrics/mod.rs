@@ -280,6 +280,12 @@ impl FmtLabels for InboundEndpointLabels {
     }
 }
 
+impl fmt::Display for ServerLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl FmtLabels for ServerLabel {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "srv_name=\"{}\"", self.0)

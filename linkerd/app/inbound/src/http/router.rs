@@ -26,6 +26,7 @@ struct LogicalPerRequest {
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
     permit: policy::Permit,
+    labels: tap::Labels,
 }
 
 /// Describes a logical request target.
@@ -37,6 +38,7 @@ struct Logical {
     http: http::Version,
     tls: tls::ConditionalServerTls,
     permit: policy::Permit,
+    labels: tap::Labels,
 }
 
 /// Describes a resolved profile for a logical service.
@@ -222,12 +224,7 @@ impl<C> Inbound<C> {
                 // dispatches the request. NewRouter moves the NewService into the service type, so
                 // minimize it's type footprint with a Box.
                 .push(svc::BoxNewService::layer())
-                .push(svc::NewRouter::layer(|(permit, t): (_, T)| LogicalPerRequest {
-                    client: t.param(),
-                    server: t.param(),
-                    tls: t.param(),
-                    permit,
-                }))
+                .push(svc::NewRouter::layer(LogicalPerRequest::from))
                 .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
@@ -238,6 +235,31 @@ impl<C> Inbound<C> {
 }
 
 // === impl LogicalPerRequest ===
+
+impl<T> From<(policy::Permit, T)> for LogicalPerRequest
+where
+    T: Param<Remote<ServerAddr>>,
+    T: Param<Remote<ClientAddr>>,
+    T: Param<tls::ConditionalServerTls>,
+{
+    fn from((permit, t): (policy::Permit, T)) -> Self {
+        let labels = vec![
+            ("srv_name".to_string(), permit.labels.server.to_string()),
+            ("saz_name".to_string(), permit.labels.authz.to_string()),
+        ];
+
+        Self {
+            client: t.param(),
+            server: t.param(),
+            tls: t.param(),
+            permit,
+            labels: labels
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>()
+                .into(),
+        }
+    }
+}
 
 impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
     type Key = Logical;
@@ -274,6 +296,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
                 .version()
                 .try_into()
                 .expect("HTTP version must be valid"),
+            labels: self.labels.clone(),
         })
     }
 }
@@ -344,16 +367,15 @@ impl tap::Inspect for Logical {
         Some(self.addr.into())
     }
 
-    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<&tap::Labels> {
-        // TODO include policy labels here.
-        None
+    fn dst_labels<B>(&self, _: &http::Request<B>) -> Option<tap::Labels> {
+        Some(self.labels.clone())
     }
 
     fn dst_tls<B>(&self, _: &http::Request<B>) -> tls::ConditionalClientTls {
         tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
     }
 
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<std::sync::Arc<tap::Labels>> {
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<tap::Labels> {
         req.extensions()
             .get::<dst::Route>()
             .map(|r| r.route.labels().clone())
