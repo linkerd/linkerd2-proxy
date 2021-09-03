@@ -6,7 +6,7 @@ use linkerd_error::Recover;
 use linkerd_stack::{Service, ServiceExt};
 use std::task::{Context, Poll};
 use tokio::sync::watch;
-use tracing::{debug, trace};
+use tracing::{debug, trace, Instrument};
 
 /// A service that streams updates from an inner service into a `tokio::sync::watch::Receiver` on a
 /// background task.
@@ -55,7 +55,7 @@ where
             // Spawn a background task to keep the profile watch up-to-date until all copies of `rx`
             // have dropped.
             let (tx, rx) = watch::channel(init);
-            tokio::spawn(self.publish_updates(target, tx, inner));
+            tokio::spawn(self.publish_updates(target, tx, inner).in_current_span());
             rx
         }))
     }

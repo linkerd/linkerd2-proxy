@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::watch;
+use tracing::{info_span, Instrument};
 
 #[derive(Clone, Debug)]
 pub struct Store {
@@ -93,6 +94,7 @@ impl Store {
                 discover
                     .clone()
                     .spawn_watch(port)
+                    .instrument(info_span!("watch", %port))
                     .map_ok(move |rsp| (port, rsp.into_inner()))
             });
 
