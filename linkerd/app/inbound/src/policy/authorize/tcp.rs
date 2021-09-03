@@ -68,7 +68,12 @@ where
         match policy.check_authorized(client, &tls) {
             Ok(permit) => {
                 tracing::debug!(?permit, "Connection authorized");
+
+                // This new services requires a ClientAddr, so it must necessarily be built for each
+                // connection. So we can just increment the counter here since the service can only
+                // be used at most once.
                 self.metrics.allow(&permit);
+
                 let inner = self.inner.new_service((permit, target));
                 AuthorizeTcp::Authorized(Authorized {
                     inner,
