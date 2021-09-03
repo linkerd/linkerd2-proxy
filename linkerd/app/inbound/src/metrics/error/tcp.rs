@@ -5,7 +5,7 @@ use linkerd_app_core::{
     transport::{labels::TargetAddr, OrigDstAddr},
     Error,
 };
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 metrics! {
@@ -15,7 +15,7 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct TcpErrorMetrics(Arc<RwLock<HashMap<(ErrorKind, TargetAddr), Counter>>>);
+pub struct TcpErrorMetrics(Arc<Mutex<HashMap<(ErrorKind, TargetAddr), Counter>>>);
 
 #[derive(Clone, Debug)]
 pub struct MonitorTcpErrorMetrics {
@@ -48,7 +48,7 @@ where
 
 impl FmtMetrics for TcpErrorMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let metrics = self.0.read();
+        let metrics = self.0.lock();
         if metrics.is_empty() {
             return Ok(());
         }
@@ -74,7 +74,7 @@ impl svc::stack::MonitorError<Error> for MonitorTcpErrorMetrics {
         if let Some(error) = ErrorKind::mk(&**e) {
             self.registry
                 .0
-                .write()
+                .lock()
                 .entry((error, self.target_addr))
                 .or_default()
                 .incr();

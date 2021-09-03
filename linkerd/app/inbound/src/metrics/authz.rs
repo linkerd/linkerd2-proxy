@@ -3,7 +3,7 @@ use linkerd_app_core::{
     metrics::{metrics, AuthzLabels, Counter, FmtMetrics, ServerLabel},
     transport::labels::TargetAddr,
 };
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use std::{collections::HashMap, sync::Arc};
 
 metrics! {
@@ -33,15 +33,15 @@ pub(crate) struct TcpAuthzMetrics(Arc<TcpInner>);
 
 #[derive(Debug, Default)]
 struct HttpInner {
-    allow: RwLock<HashMap<(TargetAddr, AuthzLabels), Counter>>,
-    deny: RwLock<HashMap<(TargetAddr, ServerLabel), Counter>>,
+    allow: Mutex<HashMap<(TargetAddr, AuthzLabels), Counter>>,
+    deny: Mutex<HashMap<(TargetAddr, ServerLabel), Counter>>,
 }
 
 #[derive(Debug, Default)]
 struct TcpInner {
-    allow: RwLock<HashMap<(TargetAddr, AuthzLabels), Counter>>,
-    deny: RwLock<HashMap<(TargetAddr, ServerLabel), Counter>>,
-    terminate: RwLock<HashMap<(TargetAddr, ServerLabel), Counter>>,
+    allow: Mutex<HashMap<(TargetAddr, AuthzLabels), Counter>>,
+    deny: Mutex<HashMap<(TargetAddr, ServerLabel), Counter>>,
+    terminate: Mutex<HashMap<(TargetAddr, ServerLabel), Counter>>,
 }
 
 fn server_labels(policy: &AllowPolicy) -> (TargetAddr, ServerLabel) {
@@ -58,7 +58,7 @@ impl HttpAuthzMetrics {
     pub fn allow(&self, permit: &Permit) {
         self.0
             .allow
-            .write()
+            .lock()
             .entry(authz_labels(permit))
             .or_default()
             .incr();
@@ -67,7 +67,7 @@ impl HttpAuthzMetrics {
     pub fn deny(&self, policy: &AllowPolicy) {
         self.0
             .deny
-            .write()
+            .lock()
             .entry(server_labels(policy))
             .or_default()
             .incr();
@@ -76,14 +76,14 @@ impl HttpAuthzMetrics {
 
 impl FmtMetrics for HttpAuthzMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let allow = self.0.allow.read();
+        let allow = self.0.allow.lock();
         if !allow.is_empty() {
             inbound_http_authz_allow_total.fmt_help(f)?;
             inbound_http_authz_allow_total.fmt_scopes(f, allow.iter(), |c| c)?;
         }
         drop(allow);
 
-        let deny = self.0.deny.read();
+        let deny = self.0.deny.lock();
         if !deny.is_empty() {
             inbound_http_authz_deny_total.fmt_help(f)?;
             inbound_http_authz_deny_total.fmt_scopes(f, deny.iter(), |c| c)?;
@@ -100,7 +100,7 @@ impl TcpAuthzMetrics {
     pub fn allow(&self, permit: &Permit) {
         self.0
             .allow
-            .write()
+            .lock()
             .entry(authz_labels(permit))
             .or_default()
             .incr();
@@ -109,7 +109,7 @@ impl TcpAuthzMetrics {
     pub fn deny(&self, policy: &AllowPolicy) {
         self.0
             .deny
-            .write()
+            .lock()
             .entry(server_labels(policy))
             .or_default()
             .incr();
@@ -118,7 +118,7 @@ impl TcpAuthzMetrics {
     pub fn terminate(&self, policy: &AllowPolicy) {
         self.0
             .terminate
-            .write()
+            .lock()
             .entry(server_labels(policy))
             .or_default()
             .incr();
@@ -127,21 +127,21 @@ impl TcpAuthzMetrics {
 
 impl FmtMetrics for TcpAuthzMetrics {
     fn fmt_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let allow = self.0.allow.read();
+        let allow = self.0.allow.lock();
         if !allow.is_empty() {
             inbound_tcp_authz_allow_total.fmt_help(f)?;
             inbound_tcp_authz_allow_total.fmt_scopes(f, allow.iter(), |c| c)?;
         }
         drop(allow);
 
-        let deny = self.0.deny.read();
+        let deny = self.0.deny.lock();
         if !deny.is_empty() {
             inbound_tcp_authz_deny_total.fmt_help(f)?;
             inbound_tcp_authz_deny_total.fmt_scopes(f, deny.iter(), |c| c)?;
         }
         drop(deny);
 
-        let terminate = self.0.terminate.read();
+        let terminate = self.0.terminate.lock();
         if !terminate.is_empty() {
             inbound_tcp_authz_terminate_total.fmt_help(f)?;
             inbound_tcp_authz_terminate_total.fmt_scopes(f, terminate.iter(), |c| c)?;

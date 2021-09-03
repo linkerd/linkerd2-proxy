@@ -4,7 +4,7 @@
 //! metrics and derives its labels from inbound-specific types. Eventually, we won't rely on the
 //! legacy `proxy` metrics and all inbound metrics will be defined in this module.
 //!
-//! TODO(ver) We use a `RwLock` to store our error metrics because we don't expect these registries
+//! TODO(ver) We use a `Mutex` to store our error metrics because we don't expect these registries
 //! to be updated frequently or in a performance-critical area. We should probably look to use
 //! `DashMap` as we migrate other metrics registries.
 
