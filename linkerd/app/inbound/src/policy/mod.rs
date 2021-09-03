@@ -95,6 +95,7 @@ impl AllowPolicy {
 
     async fn changed(&mut self) {
         if self.server.changed().await.is_err() {
+            // If the sender was dropped, then there can be no further changes.
             futures::future::pending::<()>().await;
         }
     }
