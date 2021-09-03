@@ -15,13 +15,13 @@ metrics! {
     },
 
     inbound_tcp_authz_allow_total: Counter {
-        "The total number of inbound HTTP requests that were authorized"
+        "The total number of inbound TCP connections that were authorized"
     },
     inbound_tcp_authz_deny_total: Counter {
-        "The total number of inbound HTTP requests that were denied"
+        "The total number of inbound TCP connections that were denied"
     },
     inbound_tcp_authz_terminate_total: Counter {
-        "The total number of inbound HTTP requests that were terminated due to an authorization change"
+        "The total number of inbound TCP connections that were terminated due to an authorization change"
     }
 }
 

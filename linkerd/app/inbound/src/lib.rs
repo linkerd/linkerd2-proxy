@@ -89,7 +89,7 @@ impl<S> Inbound<S> {
         &self.runtime.metrics.proxy
     }
 
-    /// A helper fro gateways to instrument policy checks.
+    /// A helper for gateways to instrument policy checks.
     pub fn authorize_http<N>(
         &self,
     ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeHttp<N>> + Clone {
