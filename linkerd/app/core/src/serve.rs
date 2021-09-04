@@ -8,8 +8,7 @@ use linkerd_error::Error;
 use tower::util::ServiceExt;
 use tracing::{debug, debug_span, info, instrument::Instrument, warn};
 
-/// Spawns a task that binds an `L`-typed listener with an `A`-typed
-/// connection-accepting service.
+/// Spawns a task that binds an `L`-typed listener with an `A`-typed connection-accepting service.
 ///
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, S, I, A>(
@@ -43,7 +42,8 @@ pub async fn serve<M, S, I, A>(
                     debug_span!("accept", client.addr = %addrs.param()).in_scope(|| {
                         let accept = new_accept.new_service(addrs);
 
-                        // Dispatch all of the work for a given connection onto a connection-specific task.
+                        // Dispatch all of the work for a given connection onto a
+                        // connection-specific task.
                         tokio::spawn(
                             async move {
                                 match accept.ready_oneshot().err_into::<Error>().await {
@@ -59,9 +59,9 @@ pub async fn serve<M, S, I, A>(
                                             }
                                             Err(error) => info!(%error, "Connection closed"),
                                         }
-                                        // Hold the service until the connection is
-                                        // complete. This helps tie any inner cache
-                                        // lifetimes to the services they return.
+                                        // Hold the service until the connection is complete. This
+                                        // helps tie any inner cache lifetimes to the services they
+                                        // return.
                                         drop(accept);
                                     }
                                     Err(error) => {
@@ -69,7 +69,8 @@ pub async fn serve<M, S, I, A>(
                                     }
                                 }
                             }
-                            .in_current_span()
+                            .in_current_span(),
+                        );
                     });
                 }
             }
