@@ -41,7 +41,7 @@ pub async fn serve<M, S, I, A>(
 
                     // The local addr should be instrumented from the listener's context.
                     debug_span!("accept", client.addr = %addrs.param()).in_scope(|| {
-                        let accept = new_accept.new_service(addrs)
+                        let accept = new_accept.new_service(addrs);
 
                         // Dispatch all of the work for a given connection onto a connection-specific task.
                         tokio::spawn(
