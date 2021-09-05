@@ -1,10 +1,11 @@
 use crate::trace;
 use futures::prelude::*;
+pub use h2::{Error, Reason};
 use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
 };
-use linkerd_error::Error;
+use linkerd_error::Error as BoxError;
 use std::time::Duration;
 use std::{
     future::Future,
@@ -58,22 +59,23 @@ impl<C: Clone, B> Clone for Connect<C, B> {
 }
 
 type ConnectFuture<B> =
-    Pin<Box<dyn Future<Output = Result<Connection<B>, Error>> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Result<Connection<B>, BoxError>> + Send + 'static>>;
 
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
     C: tower::make::MakeConnection<T>,
     C::Future: Send + 'static,
     C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    C::Error: Into<Error>,
+    C::Error: Into<BoxError>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: Into<Error> + Send + Sync,
+    B::Error: Into<BoxError> + Send + Sync,
 {
     type Response = Connection<B>;
-    type Error = Error;
+    type Error = BoxError;
     type Future = ConnectFuture<B>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }
@@ -92,7 +94,7 @@ where
 
         Box::pin(
             async move {
-                let io = connect.err_into::<Error>().await?;
+                let io = connect.err_into::<BoxError>().await?;
                 let mut builder = conn::Builder::new();
                 builder
                     .http2_only(true)
@@ -135,12 +137,13 @@ impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: Into<Error> + Send + Sync,
+    B::Error: Into<BoxError> + Send + Sync,
 {
     type Response = http::Response<hyper::Body>;
     type Error = hyper::Error;
     type Future = conn::ResponseFuture;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.tx.poll_ready(cx).map_err(From::from)
     }

@@ -2,12 +2,15 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
+
 use futures::{ready, TryFuture};
 use linkerd_error::Error;
 use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// Creates an error responder for a request.
 pub trait NewRespond<Req> {

@@ -8,7 +8,7 @@ use std::{
     task::{Context, Poll},
 };
 use tonic::{self as grpc, Code};
-use tracing::{debug, warn};
+use tracing::{debug, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
@@ -16,19 +16,21 @@ pub fn layer() -> respond::RespondLayer<NewRespond<super::DefaultRescue>> {
     respond::RespondLayer::new(NewRespond(super::DefaultRescue))
 }
 
-pub trait Rescue {
-    fn rescue(
-        &self,
-        version: http::Version,
-        error: Error,
-        client: Option<&ClientHandle>,
-    ) -> Result<Rescued>;
+pub trait NewRescue<Req> {
+    type Rescue;
+
+    fn new_rescue(&self, req: &Req) -> Self::Rescue;
+}
+
+pub trait Rescue<E> {
+    fn rescue(&self, version: http::Version, error: E) -> Result<Option<Rescued>, E>;
 }
 
 #[derive(Clone, Debug)]
 pub struct Rescued {
     pub grpc_status: grpc::Code,
     pub http_status: http::StatusCode,
+    pub close_connection: bool,
     pub message: String,
 }
 
@@ -58,17 +60,32 @@ const GRPC_CONTENT_TYPE: &str = "application/grpc";
 const GRPC_STATUS: &str = "grpc-status";
 const GRPC_MESSAGE: &str = "grpc-message";
 
+// === impl Rescued ===
+
+impl Default for Rescued {
+    fn default() -> Self {
+        Self {
+            http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
+            grpc_status: Code::Internal,
+            message: "unexpected error".to_string(),
+            close_connection: true,
+        }
+    }
+}
+
 // === impl NewRespond ===
 
 impl<B, R> respond::NewRespond<http::Request<B>> for NewRespond<R>
 where
-    R: Clone + Rescue,
+    R: NewRescue<http::Request<B>>,
 {
-    type Respond = Respond<R>;
+    type Respond = Respond<R::Rescue>;
 
     fn new_respond(&self, req: &http::Request<B>) -> Self::Respond {
         let client = req.extensions().get::<ClientHandle>().cloned();
         debug_assert!(client.is_some(), "Missing client handle");
+
+        let rescue = self.0.new_rescue(req);
 
         match req.version() {
             http::Version::HTTP_2 => {
@@ -78,17 +95,17 @@ where
                     .and_then(|v| v.to_str().ok().map(|s| s.starts_with(GRPC_CONTENT_TYPE)))
                     .unwrap_or(false);
                 Respond {
-                    is_grpc,
                     client,
+                    rescue,
+                    is_grpc,
                     version: http::Version::HTTP_2,
-                    rescue: self.0.clone(),
                 }
             }
             version => Respond {
-                version,
                 client,
+                rescue,
+                version,
                 is_grpc: false,
-                rescue: self.0.clone(),
             },
         }
     }
@@ -99,7 +116,7 @@ where
 impl<B, R> respond::Respond<http::Response<B>, Error> for Respond<R>
 where
     B: Default + hyper::body::HttpBody,
-    R: Rescue + Clone,
+    R: Rescue<Error> + Clone,
 {
     type Response = http::Response<ResponseBody<R, B>>;
 
@@ -113,22 +130,46 @@ where
                         rescue: self.rescue.clone(),
                     },
                     _ => ResponseBody::NonGrpc(b),
-                }))
+                }));
             }
             Err(error) => error,
         };
 
+        let span = info_span!(
+            "rescue",
+            client.addr = %self.client
+                .as_ref()
+                .map(|ClientHandle { addr, .. }| *addr)
+                .unwrap_or_else(|| {
+                    tracing::debug!("Missing client address");
+                    ([0, 0, 0, 0], 0).into()
+                })
+        );
+
         let Rescued {
             grpc_status,
             http_status,
+            close_connection,
             message,
-        } = self
-            .rescue
-            .rescue(self.version, error, self.client.as_ref())?;
+        } = span
+            .in_scope(|| {
+                tracing::info!(%error, "Request failed");
+                self.rescue.rescue(error)
+            })?
+            .unwrap_or_default();
+
+        if close_connection {
+            if let Some(ClientHandle { close, .. }) = self.client.as_ref() {
+                close.close();
+            } else {
+                tracing::debug!("Missing client handle");
+            }
+        }
+
         let rsp = if self.is_grpc {
             Self::grpc_response(grpc_status, &*message)
         } else {
-            Self::http_response(self.version, http_status, &*message)
+            Self::http_response(self.version, http_status, &*message, close_connection)
         };
 
         Ok(rsp)
@@ -140,9 +181,10 @@ impl<R> Respond<R> {
         version: http::Version,
         status: http::StatusCode,
         message: &str,
+        close_connection: bool,
     ) -> http::Response<B> {
         debug!(%status, ?version, "http");
-        http::Response::builder()
+        let mut rsp = http::Response::builder()
             .status(status)
             .version(version)
             .header(http::header::CONTENT_LENGTH, "0")
@@ -152,8 +194,13 @@ impl<R> Respond<R> {
                     warn!(%error, "Failed to encode error header");
                     HeaderValue::from_static("Unexpected error")
                 }),
-            )
-            .body(B::default())
+            );
+
+        if close_connection {
+            rsp = rsp.header(http::header::CONNECTION, "close");
+        }
+
+        rsp.body(B::default())
             .expect("error response must be valid")
     }
 
@@ -195,12 +242,11 @@ impl<R, B: Default + hyper::body::HttpBody> Default for ResponseBody<R, B> {
 impl<R, B> hyper::body::HttpBody for ResponseBody<R, B>
 where
     B: hyper::body::HttpBody<Error = Error>,
-    R: Rescue,
+    R: Rescue<B::Error>,
 {
     type Data = B::Data;
     type Error = B::Error;
 
-    #[inline]
     fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -218,9 +264,11 @@ where
                     Poll::Ready(Some(Err(error))) => {
                         let Rescued {
                             grpc_status,
-                            http_status: _,
                             message,
-                        } = rescue.rescue(http::Version::HTTP_2, error, None)?;
+                            ..
+                        } = rescue
+                            .rescue(http::Version::HTTP_2, error)?
+                            .unwrap_or_default();
                         *trailers = Some(Self::grpc_trailers(grpc_status, &*message));
                         Poll::Ready(None)
                     }
