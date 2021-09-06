@@ -19,7 +19,7 @@ pub fn layer() -> respond::RespondLayer<NewRespond<super::DefaultRescue>> {
 pub trait NewRescue<Req> {
     type Rescue;
 
-    fn new_rescue(&self, req: &Req) -> Self::Rescue;
+    fn new_rescue(&self, req: &Req) -> Option<Self::Rescue>;
 }
 
 pub trait Rescue<E> {
