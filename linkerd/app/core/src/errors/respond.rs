@@ -23,7 +23,7 @@ pub trait NewRescue<Req> {
 }
 
 pub trait Rescue<E> {
-    fn rescue(&self, version: http::Version, error: E) -> Result<Option<Rescued>, E>;
+    fn rescue(&self, version: http::Version, error: E) -> Result<Rescued, E>;
 }
 
 #[derive(Clone, Debug)]
@@ -39,7 +39,7 @@ pub struct NewRespond<R>(R);
 
 #[derive(Clone, Debug)]
 pub struct Respond<R> {
-    rescue: R,
+    rescue: Option<R>,
     version: http::Version,
     is_grpc: bool,
     client: Option<ClientHandle>,
@@ -47,8 +47,8 @@ pub struct Respond<R> {
 
 #[pin_project(project = ResponseBodyProj)]
 pub enum ResponseBody<R, B> {
-    NonGrpc(#[pin] B),
-    Grpc {
+    Passthru(#[pin] B),
+    RescueGrpc {
         #[pin]
         inner: B,
         trailers: Option<http::HeaderMap>,
@@ -124,12 +124,16 @@ where
         let error = match res {
             Ok(rsp) => {
                 return Ok(rsp.map(|b| match *self {
-                    Respond { is_grpc: true, .. } => ResponseBody::Grpc {
+                    Respond {
+                        is_grpc: true,
+                        rescue: Some(ref r),
+                        ..
+                    } => ResponseBody::RescueGrpc {
                         inner: b,
                         trailers: None,
-                        rescue: self.rescue.clone(),
+                        rescue: r.clone(),
                     },
-                    _ => ResponseBody::NonGrpc(b),
+                    _ => ResponseBody::Passthru(b),
                 }));
             }
             Err(error) => error,
@@ -146,17 +150,20 @@ where
                 })
         );
 
+        let rescue = match self.rescue.as_ref() {
+            Some(r) => r,
+            None => return Err(error),
+        };
+
         let Rescued {
             grpc_status,
             http_status,
             close_connection,
             message,
-        } = span
-            .in_scope(|| {
-                tracing::info!(%error, "Request failed");
-                self.rescue.rescue(error)
-            })?
-            .unwrap_or_default();
+        } = span.in_scope(|| {
+            tracing::info!(%error, "Request failed");
+            rescue.rescue(self.version, error)
+        })?;
 
         if close_connection {
             if let Some(ClientHandle { close, .. }) = self.client.as_ref() {
@@ -235,7 +242,7 @@ impl<R> Respond<R> {
 
 impl<R, B: Default + hyper::body::HttpBody> Default for ResponseBody<R, B> {
     fn default() -> Self {
-        ResponseBody::NonGrpc(B::default())
+        ResponseBody::Passthru(B::default())
     }
 }
 
@@ -252,8 +259,8 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         match self.project() {
-            ResponseBodyProj::NonGrpc(inner) => inner.poll_data(cx),
-            ResponseBodyProj::Grpc {
+            ResponseBodyProj::Passthru(inner) => inner.poll_data(cx),
+            ResponseBodyProj::RescueGrpc {
                 inner,
                 trailers,
                 rescue,
@@ -266,9 +273,7 @@ where
                             grpc_status,
                             message,
                             ..
-                        } = rescue
-                            .rescue(http::Version::HTTP_2, error)?
-                            .unwrap_or_default();
+                        } = rescue.rescue(http::Version::HTTP_2, error)?;
                         *trailers = Some(Self::grpc_trailers(grpc_status, &*message));
                         Poll::Ready(None)
                     }
@@ -284,8 +289,8 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         match self.project() {
-            ResponseBodyProj::NonGrpc(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::Grpc {
+            ResponseBodyProj::Passthru(inner) => inner.poll_trailers(cx),
+            ResponseBodyProj::RescueGrpc {
                 inner, trailers, ..
             } => match trailers.take() {
                 Some(t) => Poll::Ready(Ok(Some(t))),
@@ -297,8 +302,8 @@ where
     #[inline]
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::NonGrpc(inner) => inner.is_end_stream(),
-            Self::Grpc {
+            Self::Passthru(inner) => inner.is_end_stream(),
+            Self::RescueGrpc {
                 inner, trailers, ..
             } => trailers.is_none() && inner.is_end_stream(),
         }
@@ -307,8 +312,8 @@ where
     #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
-            Self::NonGrpc(inner) => inner.size_hint(),
-            Self::Grpc { inner, .. } => inner.size_hint(),
+            Self::Passthru(inner) => inner.size_hint(),
+            Self::RescueGrpc { inner, .. } => inner.size_hint(),
         }
     }
 }

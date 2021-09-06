@@ -50,6 +50,7 @@ impl<H> Inbound<H> {
                 .push(NewSetIdentityHeader::layer())
                 .push_on_service(
                     svc::layers()
+                        .push(http::BoxRequest::layer())
                         // Downgrades the protocol if upgraded by an outbound proxy.
                         .push(http::orig_proto::Downgrade::layer())
                         // Limit the number of in-flight requests. When the proxy is
@@ -72,7 +73,6 @@ impl<H> Inbound<H> {
                         ))
                         // Record when an HTTP/1 URI was in absolute form
                         .push(http::normalize_uri::MarkAbsoluteForm::layer())
-                        .push(http::BoxRequest::layer())
                         .push(http::BoxResponse::layer()),
                 )
                 .check_new_service::<T, http::Request<_>>()
