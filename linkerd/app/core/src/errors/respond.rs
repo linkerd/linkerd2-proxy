@@ -21,6 +21,8 @@ pub trait Rescue<E> {
     fn has_cause<C: std::error::Error + 'static>(
         error: &(dyn std::error::Error + 'static),
     ) -> bool {
+        // It's impractical for an error type to be so deeply nested that this recursion could
+        // overflow.
         error.is::<C>() || error.source().map(Self::has_cause::<C>).unwrap_or(false)
     }
 }
