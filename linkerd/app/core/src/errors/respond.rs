@@ -7,7 +7,6 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-use tonic::{self as grpc, Code};
 use tracing::{debug, info, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
@@ -29,7 +28,7 @@ pub trait Rescue<E> {
 
 #[derive(Clone, Debug)]
 pub struct SyntheticResponse {
-    pub grpc_status: grpc::Code,
+    pub grpc_status: tonic::Code,
     pub http_status: http::StatusCode,
     pub close_connection: bool,
     pub message: String,
@@ -69,7 +68,7 @@ impl Default for SyntheticResponse {
     fn default() -> Self {
         Self {
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
-            grpc_status: Code::Internal,
+            grpc_status: tonic::Code::Internal,
             message: "unexpected error".to_string(),
             close_connection: true,
         }
@@ -215,7 +214,7 @@ impl<R> Respond<R> {
             .expect("error response must be valid")
     }
 
-    fn grpc_response<B: Default>(code: grpc::Code, message: &str) -> http::Response<B> {
+    fn grpc_response<B: Default>(code: tonic::Code, message: &str) -> http::Response<B> {
         info!(%code, %message, "Handling error on gRPC connection");
 
         http::Response::builder()
@@ -323,7 +322,7 @@ where
 }
 
 impl<R, B> ResponseBody<R, B> {
-    fn grpc_trailers(code: grpc::Code, message: &str) -> http::HeaderMap {
+    fn grpc_trailers(code: tonic::Code, message: &str) -> http::HeaderMap {
         debug!(grpc.status = ?code, "Synthesizing gRPC trailers");
         let mut t = http::HeaderMap::new();
         t.insert(GRPC_STATUS, code_header(code));
@@ -339,7 +338,8 @@ impl<R, B> ResponseBody<R, B> {
 }
 
 // Copied from tonic, where it's private.
-fn code_header(code: grpc::Code) -> HeaderValue {
+fn code_header(code: tonic::Code) -> HeaderValue {
+    use tonic::Code;
     match code {
         Code::Ok => HeaderValue::from_static("0"),
         Code::Cancelled => HeaderValue::from_static("1"),
