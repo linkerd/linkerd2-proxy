@@ -137,7 +137,7 @@ macro_rules! generate_tests {
                 "original destination should not have been used!",
             );
             // We should have gotten an HTTP response, not an error.
-            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
 
             // Ensure panics are propagated.
             proxy.join_servers().await;
@@ -257,7 +257,7 @@ macro_rules! generate_tests {
                 .request(initially_exists.request_builder("/"))
                 .await
                 .unwrap();
-            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
 
             // Ensure panics are propagated.
             proxy.join_servers().await;
@@ -286,7 +286,7 @@ macro_rules! generate_tests {
             let req = client.request_builder("/");
             let rsp = client.request(req.method("GET")).await.unwrap();
             // the request should time out
-            assert_eq!(rsp.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(rsp.status(), http::StatusCode::GATEWAY_TIMEOUT);
 
             // Ensure panics are propagated.
             proxy.join_servers().await;
