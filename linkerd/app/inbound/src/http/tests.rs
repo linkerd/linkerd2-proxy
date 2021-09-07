@@ -263,7 +263,7 @@ async fn h2_response_error_header() {
         .body(Body::default())
         .unwrap();
     let response = http_util::http_request(&mut client, req).await.unwrap();
-    assert_eq!(response.status(), http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), http::StatusCode::GATEWAY_TIMEOUT);
     let message = response
         .headers()
         .get(L5D_PROXY_ERROR)
