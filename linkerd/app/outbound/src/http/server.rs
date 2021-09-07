@@ -49,7 +49,7 @@ impl<N> Outbound<N> {
                         // Tear down server connections when a peer proxy generates an error.
                         .push(PeerProxyErrors::layer())
                         // Synthesizes responses for proxy errors.
-                        .push(errors::respond::layer())
+                        .push(errors::DefaultRescue::layer())
                         // Initiates OpenCensus tracing.
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),

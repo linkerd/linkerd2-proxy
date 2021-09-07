@@ -66,7 +66,7 @@ impl<H> Inbound<H> {
                 .push_on_service(
                     svc::layers()
                         // Synthesizes responses for proxy errors.
-                        .push(errors::respond::layer())
+                        .push(errors::DefaultRescue::layer())
                         .push(http_tracing::server(
                             rt.span_sink.clone(),
                             super::trace_labels(),

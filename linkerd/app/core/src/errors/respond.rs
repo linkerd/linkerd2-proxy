@@ -12,10 +12,6 @@ use tracing::{debug, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
-pub fn layer() -> respond::RespondLayer<NewRespond<super::DefaultRescue>> {
-    respond::RespondLayer::new(NewRespond(super::DefaultRescue))
-}
-
 pub trait Rescue<E> {
     fn rescue(&self, error: E) -> Result<Rescued, E>;
 }
@@ -27,6 +23,8 @@ pub struct Rescued {
     pub close_connection: bool,
     pub message: String,
 }
+
+pub type Layer<R> = respond::RespondLayer<NewRespond<R>>;
 
 #[derive(Copy, Clone, Debug)]
 pub struct NewRespond<R>(R);
@@ -68,6 +66,12 @@ impl Default for Rescued {
 }
 
 // === impl NewRespond ===
+
+impl<R> NewRespond<R> {
+    pub fn layer(rescue: R) -> Layer<R> {
+        respond::RespondLayer::new(NewRespond(rescue))
+    }
+}
 
 impl<B, R> respond::NewRespond<http::Request<B>> for NewRespond<R>
 where
