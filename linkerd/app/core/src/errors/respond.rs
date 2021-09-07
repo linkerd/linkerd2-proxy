@@ -16,14 +16,8 @@ pub fn layer() -> respond::RespondLayer<NewRespond<super::DefaultRescue>> {
     respond::RespondLayer::new(NewRespond(super::DefaultRescue))
 }
 
-pub trait NewRescue<Req> {
-    type Rescue;
-
-    fn new_rescue(&self, req: &Req) -> Option<Self::Rescue>;
-}
-
 pub trait Rescue<E> {
-    fn rescue(&self, version: http::Version, error: E) -> Result<Rescued, E>;
+    fn rescue(&self, error: E) -> Result<Rescued, E>;
 }
 
 #[derive(Clone, Debug)]
@@ -39,7 +33,7 @@ pub struct NewRespond<R>(R);
 
 #[derive(Clone, Debug)]
 pub struct Respond<R> {
-    rescue: Option<R>,
+    rescue: R,
     version: http::Version,
     is_grpc: bool,
     client: Option<ClientHandle>,
@@ -77,15 +71,15 @@ impl Default for Rescued {
 
 impl<B, R> respond::NewRespond<http::Request<B>> for NewRespond<R>
 where
-    R: NewRescue<http::Request<B>>,
+    R: Clone,
 {
-    type Respond = Respond<R::Rescue>;
+    type Respond = Respond<R>;
 
     fn new_respond(&self, req: &http::Request<B>) -> Self::Respond {
         let client = req.extensions().get::<ClientHandle>().cloned();
         debug_assert!(client.is_some(), "Missing client handle");
 
-        let rescue = self.0.new_rescue(req);
+        let rescue = self.0.clone();
 
         match req.version() {
             http::Version::HTTP_2 => {
@@ -123,15 +117,15 @@ where
     fn respond(&self, res: Result<http::Response<B>>) -> Result<Self::Response> {
         let error = match res {
             Ok(rsp) => {
-                return Ok(rsp.map(|b| match *self {
+                return Ok(rsp.map(|b| match self {
                     Respond {
                         is_grpc: true,
-                        rescue: Some(ref r),
+                        rescue,
                         ..
                     } => ResponseBody::RescueGrpc {
                         inner: b,
                         trailers: None,
-                        rescue: r.clone(),
+                        rescue: rescue.clone(),
                     },
                     _ => ResponseBody::Passthru(b),
                 }));
@@ -150,11 +144,6 @@ where
                 })
         );
 
-        let rescue = match self.rescue.as_ref() {
-            Some(r) => r,
-            None => return Err(error),
-        };
-
         let Rescued {
             grpc_status,
             http_status,
@@ -162,7 +151,7 @@ where
             message,
         } = span.in_scope(|| {
             tracing::info!(%error, "Request failed");
-            rescue.rescue(self.version, error)
+            self.rescue.rescue(error)
         })?;
 
         if close_connection {
@@ -273,7 +262,7 @@ where
                             grpc_status,
                             message,
                             ..
-                        } = rescue.rescue(http::Version::HTTP_2, error)?;
+                        } = rescue.rescue(error)?;
                         *trailers = Some(Self::grpc_trailers(grpc_status, &*message));
                         Poll::Ready(None)
                     }

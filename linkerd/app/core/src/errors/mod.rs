@@ -1,7 +1,7 @@
 pub mod respond;
 
-use linkerd_error::Result;
-use linkerd_proxy_http::HasH2Reason;
+use linkerd_error::{Error, Result};
+use linkerd_proxy_http::h2;
 pub use linkerd_timeout::{FailFastError, ResponseTimeout};
 use thiserror::Error;
 
@@ -14,20 +14,22 @@ pub struct DefaultRescue;
 
 // === impl DefaultRescue ===
 
-impl<E: std::error::Error + HasH2Reason + 'static> respond::Rescue<E> for DefaultRescue {
-    fn rescue(&self, version: http::Version, error: E) -> Result<respond::Rescued, E> {
-        if version == http::Version::HTTP_2 {
-            if let Some(reset) = error.h2_reason() {
-                tracing::debug!(%reset, "Propagating HTTP2 reset");
-                return Err(error);
-            }
+impl respond::Rescue<Error> for DefaultRescue {
+    fn rescue(&self, error: Error) -> Result<respond::Rescued> {
+        if Self::is_h2_error(&*error) {
+            tracing::debug!(%error, "Propagating HTTP2 reset");
+            return Err(error);
         }
 
-        Ok(Self::mk(&error))
+        Ok(Self::mk(&*error))
     }
 }
 
 impl DefaultRescue {
+    fn is_h2_error(error: &(dyn std::error::Error + 'static)) -> bool {
+        error.is::<h2::H2Error>() || error.source().map(Self::is_h2_error).unwrap_or(false)
+    }
+
     fn mk(error: &(dyn std::error::Error + 'static)) -> respond::Rescued {
         if error.is::<ConnectTimeout>() || error.is::<ResponseTimeout>() {
             return respond::Rescued {
