@@ -10,21 +10,21 @@ use crate::{
 use linkerd_app_core::{errors, Error, Result};
 
 #[derive(Copy, Clone)]
-pub(crate) struct Rescue;
+pub(crate) struct HttpRescue;
 
-// === impl Rescue ===
+// === impl HttpRescue ===
 
-impl Rescue {
+impl HttpRescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
     pub fn layer() -> errors::respond::Layer<Self> {
         errors::respond::NewRespond::layer(Self)
     }
 }
 
-impl errors::Rescue<Error> for Rescue {
-    fn rescue(&self, error: Error) -> Result<errors::SyntheticResponse> {
+impl errors::HttpRescue<Error> for HttpRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         if Self::has_cause::<DeniedUnauthorized>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::FORBIDDEN,
                 grpc_status: tonic::Code::PermissionDenied,
                 close_connection: true,
@@ -33,7 +33,7 @@ impl errors::Rescue<Error> for Rescue {
         }
 
         if Self::has_cause::<GatewayDomainInvalid>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::BAD_REQUEST,
                 grpc_status: tonic::Code::InvalidArgument,
                 close_connection: true,
@@ -42,7 +42,7 @@ impl errors::Rescue<Error> for Rescue {
         }
 
         if Self::has_cause::<GatewayIdentityRequired>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::FORBIDDEN,
                 grpc_status: tonic::Code::Unauthenticated,
                 close_connection: true,
@@ -51,7 +51,7 @@ impl errors::Rescue<Error> for Rescue {
         }
 
         if Self::has_cause::<GatewayLoop>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::LOOP_DETECTED,
                 grpc_status: tonic::Code::Aborted,
                 close_connection: true,
@@ -59,7 +59,7 @@ impl errors::Rescue<Error> for Rescue {
             });
         }
 
-        errors::DefaultRescue.rescue(error)
+        errors::DefaultHttpRescue.rescue(error)
     }
 }
 

@@ -28,7 +28,7 @@ pub type Endpoint = crate::endpoint::Endpoint<Version>;
 pub struct CanonicalDstHeader(pub Addr);
 
 #[derive(Copy, Clone)]
-pub(crate) struct Rescue;
+pub(crate) struct HttpRescue;
 
 // === impl CanonicalDstHeader ===
 
@@ -196,19 +196,19 @@ impl tap::Inspect for Endpoint {
     }
 }
 
-// === impl Rescue ===
+// === impl HttpRescue ===
 
-impl Rescue {
+impl HttpRescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
     pub fn layer() -> errors::respond::Layer<Self> {
         errors::respond::NewRespond::layer(Self)
     }
 }
 
-impl errors::Rescue<Error> for Rescue {
-    fn rescue(&self, error: Error) -> Result<errors::SyntheticResponse> {
+impl errors::HttpRescue<Error> for HttpRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         if Self::has_cause::<orig_proto::DowngradedH2Error>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::BAD_GATEWAY,
                 grpc_status: errors::Grpc::Unavailable,
                 close_connection: true,
@@ -217,7 +217,7 @@ impl errors::Rescue<Error> for Rescue {
         }
 
         if Self::has_cause::<errors::ResponseTimeout>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::GATEWAY_TIMEOUT,
                 grpc_status: errors::Grpc::DeadlineExceeded,
                 close_connection: false,
@@ -226,7 +226,7 @@ impl errors::Rescue<Error> for Rescue {
         }
 
         if Self::has_cause::<IdentityRequired>(&*error) {
-            return Ok(errors::SyntheticResponse {
+            return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::BAD_GATEWAY,
                 grpc_status: errors::Grpc::Unavailable,
                 close_connection: true,
@@ -234,6 +234,6 @@ impl errors::Rescue<Error> for Rescue {
             });
         }
 
-        errors::DefaultRescue.rescue(error)
+        errors::DefaultHttpRescue.rescue(error)
     }
 }

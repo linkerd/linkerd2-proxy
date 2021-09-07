@@ -1,6 +1,6 @@
 pub mod respond;
 
-pub use self::respond::{Rescue, SyntheticResponse};
+pub use self::respond::{HttpRescue, SyntheticHttpResponse};
 use linkerd_error::{Error, Result};
 use linkerd_proxy_http::h2;
 pub use linkerd_timeout::{FailFastError, ResponseTimeout};
@@ -12,25 +12,25 @@ pub use tonic::Code as Grpc;
 pub(crate) struct ConnectTimeout(pub std::time::Duration);
 
 #[derive(Clone, Debug)]
-pub struct DefaultRescue;
+pub struct DefaultHttpRescue;
 
-// === impl DefaultRescue ===
+// === impl DefaultHttpRescue ===
 
-impl DefaultRescue {
+impl DefaultHttpRescue {
     pub fn layer() -> respond::Layer<Self> {
         respond::NewRespond::layer(Self)
     }
 }
 
-impl Rescue<Error> for DefaultRescue {
-    fn rescue(&self, error: Error) -> Result<SyntheticResponse> {
+impl HttpRescue<Error> for DefaultHttpRescue {
+    fn rescue(&self, error: Error) -> Result<SyntheticHttpResponse> {
         if Self::has_cause::<h2::H2Error>(&*error) {
             tracing::debug!(%error, "Propagating HTTP2 reset");
             return Err(error);
         }
 
         if Self::has_cause::<std::io::Error>(&*error) {
-            return Ok(SyntheticResponse {
+            return Ok(SyntheticHttpResponse {
                 http_status: http::StatusCode::BAD_GATEWAY,
                 grpc_status: tonic::Code::Unavailable,
                 close_connection: true,
@@ -39,7 +39,7 @@ impl Rescue<Error> for DefaultRescue {
         }
 
         if Self::has_cause::<ConnectTimeout>(&*error) {
-            return Ok(SyntheticResponse {
+            return Ok(SyntheticHttpResponse {
                 http_status: http::StatusCode::GATEWAY_TIMEOUT,
                 grpc_status: tonic::Code::DeadlineExceeded,
                 close_connection: true,
@@ -48,7 +48,7 @@ impl Rescue<Error> for DefaultRescue {
         }
 
         if Self::has_cause::<FailFastError>(&*error) {
-            return Ok(SyntheticResponse {
+            return Ok(SyntheticHttpResponse {
                 http_status: http::StatusCode::GATEWAY_TIMEOUT,
                 grpc_status: tonic::Code::Unavailable,
                 close_connection: true,
@@ -57,6 +57,6 @@ impl Rescue<Error> for DefaultRescue {
         }
 
         tracing::warn!(%error, "Unexpected error");
-        Ok(SyntheticResponse::default())
+        Ok(SyntheticHttpResponse::default())
     }
 }

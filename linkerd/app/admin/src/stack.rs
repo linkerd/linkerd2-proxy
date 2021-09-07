@@ -84,7 +84,7 @@ impl Config {
             .push(metrics.http_errors.to_layer())
             .push_on_service(
                 svc::layers()
-                    .push(errors::DefaultRescue::layer())
+                    .push(errors::DefaultHttpRescue::layer())
                     .push(http::BoxResponse::layer()),
             )
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))

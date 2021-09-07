@@ -12,9 +12,9 @@ use tracing::{debug, info, info_span, warn};
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
 /// A strategy for responding to errors.
-pub trait Rescue<E> {
+pub trait HttpRescue<E> {
     /// Attempts to synthesize a response from the given error.
-    fn rescue(&self, error: E) -> Result<SyntheticResponse, E>;
+    fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E>;
 
     /// A helper for inspecting potentially nested errors.
     fn has_cause<C: std::error::Error + 'static>(
@@ -27,7 +27,7 @@ pub trait Rescue<E> {
 }
 
 #[derive(Clone, Debug)]
-pub struct SyntheticResponse {
+pub struct SyntheticHttpResponse {
     pub grpc_status: tonic::Code,
     pub http_status: http::StatusCode,
     pub close_connection: bool,
@@ -50,7 +50,7 @@ pub struct Respond<R> {
 #[pin_project(project = ResponseBodyProj)]
 pub enum ResponseBody<R, B> {
     Passthru(#[pin] B),
-    RescueGrpc {
+    HttpRescueGrpc {
         #[pin]
         inner: B,
         trailers: Option<http::HeaderMap>,
@@ -62,9 +62,9 @@ const GRPC_CONTENT_TYPE: &str = "application/grpc";
 const GRPC_STATUS: &str = "grpc-status";
 const GRPC_MESSAGE: &str = "grpc-message";
 
-// === impl SyntheticResponse ===
+// === impl SyntheticHttpResponse ===
 
-impl Default for SyntheticResponse {
+impl Default for SyntheticHttpResponse {
     fn default() -> Self {
         Self {
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -124,7 +124,7 @@ where
 impl<B, R> respond::Respond<http::Response<B>, Error> for Respond<R>
 where
     B: Default + hyper::body::HttpBody,
-    R: Rescue<Error> + Clone,
+    R: HttpRescue<Error> + Clone,
 {
     type Response = http::Response<ResponseBody<R, B>>;
 
@@ -136,7 +136,7 @@ where
                         is_grpc: true,
                         rescue,
                         ..
-                    } => ResponseBody::RescueGrpc {
+                    } => ResponseBody::HttpRescueGrpc {
                         inner: b,
                         trailers: None,
                         rescue: rescue.clone(),
@@ -158,7 +158,7 @@ where
                 })
         );
 
-        let SyntheticResponse {
+        let SyntheticHttpResponse {
             grpc_status,
             http_status,
             close_connection,
@@ -252,7 +252,7 @@ impl<R, B: Default + hyper::body::HttpBody> Default for ResponseBody<R, B> {
 impl<R, B> hyper::body::HttpBody for ResponseBody<R, B>
 where
     B: hyper::body::HttpBody<Error = Error>,
-    R: Rescue<B::Error>,
+    R: HttpRescue<B::Error>,
 {
     type Data = B::Data;
     type Error = B::Error;
@@ -263,7 +263,7 @@ where
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         match self.project() {
             ResponseBodyProj::Passthru(inner) => inner.poll_data(cx),
-            ResponseBodyProj::RescueGrpc {
+            ResponseBodyProj::HttpRescueGrpc {
                 inner,
                 trailers,
                 rescue,
@@ -272,7 +272,7 @@ where
                 assert!(trailers.is_none());
                 match inner.poll_data(cx) {
                     Poll::Ready(Some(Err(error))) => {
-                        let SyntheticResponse {
+                        let SyntheticHttpResponse {
                             grpc_status,
                             message,
                             ..
@@ -293,7 +293,7 @@ where
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         match self.project() {
             ResponseBodyProj::Passthru(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::RescueGrpc {
+            ResponseBodyProj::HttpRescueGrpc {
                 inner, trailers, ..
             } => match trailers.take() {
                 Some(t) => Poll::Ready(Ok(Some(t))),
@@ -306,7 +306,7 @@ where
     fn is_end_stream(&self) -> bool {
         match self {
             Self::Passthru(inner) => inner.is_end_stream(),
-            Self::RescueGrpc {
+            Self::HttpRescueGrpc {
                 inner, trailers, ..
             } => trailers.is_none() && inner.is_end_stream(),
         }
@@ -316,7 +316,7 @@ where
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
             Self::Passthru(inner) => inner.size_hint(),
-            Self::RescueGrpc { inner, .. } => inner.size_hint(),
+            Self::HttpRescueGrpc { inner, .. } => inner.size_hint(),
         }
     }
 }
