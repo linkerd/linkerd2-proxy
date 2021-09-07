@@ -8,7 +8,7 @@ use std::{
     task::{Context, Poll},
 };
 use tonic::{self as grpc, Code};
-use tracing::{debug, info_span, warn};
+use tracing::{debug, info, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
@@ -183,7 +183,7 @@ impl<R> Respond<R> {
         message: &str,
         close_connection: bool,
     ) -> http::Response<B> {
-        debug!(%status, ?version, "http");
+        info!(%status, ?version, %message, close_connection, "Handling error on HTTP connection");
         let mut rsp = http::Response::builder()
             .status(status)
             .version(version)
@@ -196,7 +196,7 @@ impl<R> Respond<R> {
                 }),
             );
 
-        if close_connection {
+        if close_connection && version == http::Version::HTTP_11 {
             rsp = rsp.header(http::header::CONNECTION, "close");
         }
 
@@ -205,7 +205,7 @@ impl<R> Respond<R> {
     }
 
     fn grpc_response<B: Default>(code: grpc::Code, message: &str) -> http::Response<B> {
-        debug!(%code, "grpc");
+        info!(%code, %message, "Handling error on gRPC connection");
 
         http::Response::builder()
             .version(http::Version::HTTP_2)
