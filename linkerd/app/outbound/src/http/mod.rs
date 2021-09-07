@@ -28,7 +28,7 @@ pub type Endpoint = crate::endpoint::Endpoint<Version>;
 pub struct CanonicalDstHeader(pub Addr);
 
 #[derive(Copy, Clone)]
-pub(crate) struct HttpRescue;
+pub(crate) struct Rescue;
 
 // === impl CanonicalDstHeader ===
 
@@ -198,14 +198,14 @@ impl tap::Inspect for Endpoint {
 
 // === impl HttpRescue ===
 
-impl HttpRescue {
+impl Rescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
     pub fn layer() -> errors::respond::Layer<Self> {
         errors::respond::NewRespond::layer(Self)
     }
 }
 
-impl errors::HttpRescue<Error> for HttpRescue {
+impl errors::HttpRescue<Error> for Rescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         if Self::has_cause::<orig_proto::DowngradedH2Error>(&*error) {
             return Ok(errors::SyntheticHttpResponse {

@@ -1,4 +1,4 @@
-use super::{set_identity_header::NewSetIdentityHeader, HttpRescue};
+use super::{set_identity_header::NewSetIdentityHeader, Rescue};
 use crate::Inbound;
 pub use linkerd_app_core::proxy::http::{
     normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
@@ -65,7 +65,7 @@ impl<H> Inbound<H> {
                 .push(rt.metrics.http_errors.to_layer())
                 .push_on_service(
                     svc::layers()
-                        .push(HttpRescue::layer())
+                        .push(Rescue::layer())
                         .push(http_tracing::server(
                             rt.span_sink.clone(),
                             super::trace_labels(),
