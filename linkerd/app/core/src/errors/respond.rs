@@ -12,12 +12,21 @@ use tracing::{debug, info, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
+/// A strategy for responding to errors.
 pub trait Rescue<E> {
-    fn rescue(&self, error: E) -> Result<Rescued, E>;
+    /// Attempts to synthesize a response from the given error.
+    fn rescue(&self, error: E) -> Result<SyntheticResponse, E>;
+
+    /// A helper for inspecting potentially nested errors.
+    fn has_cause<C: std::error::Error + 'static>(
+        error: &(dyn std::error::Error + 'static),
+    ) -> bool {
+        error.is::<C>() || error.source().map(Self::has_cause::<C>).unwrap_or(false)
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct Rescued {
+pub struct SyntheticResponse {
     pub grpc_status: grpc::Code,
     pub http_status: http::StatusCode,
     pub close_connection: bool,
@@ -52,9 +61,9 @@ const GRPC_CONTENT_TYPE: &str = "application/grpc";
 const GRPC_STATUS: &str = "grpc-status";
 const GRPC_MESSAGE: &str = "grpc-message";
 
-// === impl Rescued ===
+// === impl SyntheticResponse ===
 
-impl Default for Rescued {
+impl Default for SyntheticResponse {
     fn default() -> Self {
         Self {
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -148,7 +157,7 @@ where
                 })
         );
 
-        let Rescued {
+        let SyntheticResponse {
             grpc_status,
             http_status,
             close_connection,
@@ -262,7 +271,7 @@ where
                 assert!(trailers.is_none());
                 match inner.poll_data(cx) {
                     Poll::Ready(Some(Err(error))) => {
-                        let Rescued {
+                        let SyntheticResponse {
                             grpc_status,
                             message,
                             ..
