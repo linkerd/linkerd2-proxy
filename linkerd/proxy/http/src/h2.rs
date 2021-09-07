@@ -1,10 +1,11 @@
 use crate::trace;
 use futures::prelude::*;
+pub use h2::{Error as H2Error, Reason};
 use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
 };
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
 use std::time::Duration;
 use std::{
     future::Future,
@@ -57,8 +58,7 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     }
 }
 
-type ConnectFuture<B> =
-    Pin<Box<dyn Future<Output = Result<Connection<B>, Error>> + Send + 'static>>;
+type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Send + 'static>>;
 
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
@@ -74,6 +74,7 @@ where
     type Error = Error;
     type Future = ConnectFuture<B>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.connect.poll_ready(cx).map_err(Into::into)
     }
