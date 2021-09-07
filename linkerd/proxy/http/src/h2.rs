@@ -1,11 +1,11 @@
 use crate::trace;
 use futures::prelude::*;
-pub use h2::{Error, Reason};
+pub use h2::{Error as H2Error, Reason};
 use hyper::{
     body::HttpBody,
     client::conn::{self, SendRequest},
 };
-use linkerd_error::Error as BoxError;
+use linkerd_error::{Error, Result};
 use std::time::Duration;
 use std::{
     future::Future,
@@ -58,21 +58,20 @@ impl<C: Clone, B> Clone for Connect<C, B> {
     }
 }
 
-type ConnectFuture<B> =
-    Pin<Box<dyn Future<Output = Result<Connection<B>, BoxError>> + Send + 'static>>;
+type ConnectFuture<B> = Pin<Box<dyn Future<Output = Result<Connection<B>>> + Send + 'static>>;
 
 impl<C, B, T> tower::Service<T> for Connect<C, B>
 where
     C: tower::make::MakeConnection<T>,
     C::Future: Send + 'static,
     C::Connection: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    C::Error: Into<BoxError>,
+    C::Error: Into<Error>,
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: Into<BoxError> + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = Connection<B>;
-    type Error = BoxError;
+    type Error = Error;
     type Future = ConnectFuture<B>;
 
     #[inline]
@@ -94,7 +93,7 @@ where
 
         Box::pin(
             async move {
-                let io = connect.err_into::<BoxError>().await?;
+                let io = connect.err_into::<Error>().await?;
                 let mut builder = conn::Builder::new();
                 builder
                     .http2_only(true)
@@ -137,7 +136,7 @@ impl<B> tower::Service<http::Request<B>> for Connection<B>
 where
     B: HttpBody + Send + 'static,
     B::Data: Send,
-    B::Error: Into<BoxError> + Send + Sync,
+    B::Error: Into<Error> + Send + Sync,
 {
     type Response = http::Response<hyper::Body>;
     type Error = hyper::Error;
