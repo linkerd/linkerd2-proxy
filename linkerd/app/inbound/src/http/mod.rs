@@ -12,7 +12,7 @@ use linkerd_app_core::{errors, Error, Result};
 #[derive(Copy, Clone)]
 pub(crate) struct Rescue;
 
-// === impl HttpRescue ===
+// === impl Rescue ===
 
 impl Rescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.

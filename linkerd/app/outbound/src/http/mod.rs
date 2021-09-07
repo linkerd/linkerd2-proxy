@@ -196,7 +196,7 @@ impl tap::Inspect for Endpoint {
     }
 }
 
-// === impl HttpRescue ===
+// === impl Rescue ===
 
 impl Rescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
