@@ -50,7 +50,7 @@ pub struct Respond<R> {
 #[pin_project(project = ResponseBodyProj)]
 pub enum ResponseBody<R, B> {
     Passthru(#[pin] B),
-    HttpRescueGrpc {
+    GrpcRescue {
         #[pin]
         inner: B,
         trailers: Option<http::HeaderMap>,
@@ -136,7 +136,7 @@ where
                         is_grpc: true,
                         rescue,
                         ..
-                    } => ResponseBody::HttpRescueGrpc {
+                    } => ResponseBody::GrpcRescue {
                         inner: b,
                         trailers: None,
                         rescue: rescue.clone(),
@@ -263,7 +263,7 @@ where
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         match self.project() {
             ResponseBodyProj::Passthru(inner) => inner.poll_data(cx),
-            ResponseBodyProj::HttpRescueGrpc {
+            ResponseBodyProj::GrpcRescue {
                 inner,
                 trailers,
                 rescue,
@@ -293,7 +293,7 @@ where
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         match self.project() {
             ResponseBodyProj::Passthru(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::HttpRescueGrpc {
+            ResponseBodyProj::GrpcRescue {
                 inner, trailers, ..
             } => match trailers.take() {
                 Some(t) => Poll::Ready(Ok(Some(t))),
@@ -306,7 +306,7 @@ where
     fn is_end_stream(&self) -> bool {
         match self {
             Self::Passthru(inner) => inner.is_end_stream(),
-            Self::HttpRescueGrpc {
+            Self::GrpcRescue {
                 inner, trailers, ..
             } => trailers.is_none() && inner.is_end_stream(),
         }
@@ -316,7 +316,7 @@ where
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
             Self::Passthru(inner) => inner.size_hint(),
-            Self::HttpRescueGrpc { inner, .. } => inner.size_hint(),
+            Self::GrpcRescue { inner, .. } => inner.size_hint(),
         }
     }
 }
