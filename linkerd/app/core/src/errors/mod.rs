@@ -32,7 +32,7 @@ impl Rescue<Error> for DefaultRescue {
         if Self::has_cause::<std::io::Error>(&*error) {
             return Ok(SyntheticResponse {
                 http_status: http::StatusCode::BAD_GATEWAY,
-                grpc_status: tonic::Code::Internal,
+                grpc_status: tonic::Code::Unavailable,
                 close_connection: true,
                 message: error.to_string(),
             });
@@ -49,13 +49,14 @@ impl Rescue<Error> for DefaultRescue {
 
         if Self::has_cause::<FailFastError>(&*error) {
             return Ok(SyntheticResponse {
-                http_status: http::StatusCode::SERVICE_UNAVAILABLE,
+                http_status: http::StatusCode::GATEWAY_TIMEOUT,
                 grpc_status: tonic::Code::Unavailable,
                 close_connection: true,
                 message: error.to_string(),
             });
         }
 
+        tracing::warn!(%error, "Unexpected error");
         Ok(SyntheticResponse::default())
     }
 }
