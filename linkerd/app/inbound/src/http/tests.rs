@@ -186,7 +186,7 @@ async fn http1_bad_gateway_response_error_header() {
         .headers()
         .get(L5D_PROXY_ERROR)
         .expect("response did not contain L5D_PROXY_ERROR header");
-    assert_eq!(message, "proxy received invalid response");
+    assert_eq!(message, "error trying to connect: server is not listening");
 
     drop(client);
     bg.await.expect("background task failed");
@@ -227,7 +227,10 @@ async fn http1_connect_timeout_response_error_header() {
         .headers()
         .get(L5D_PROXY_ERROR)
         .expect("response did not contain L5D_PROXY_ERROR header");
-    assert_eq!(message, "failed to connect");
+    assert_eq!(
+        message,
+        "error trying to connect: connect timed out after 1s"
+    );
 
     drop(client);
     bg.await.expect("background task failed");

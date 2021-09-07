@@ -1,6 +1,6 @@
 use super::peer_proxy_errors::PeerProxyErrors;
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{config, errors, http_tracing, svc, Error};
+use linkerd_app_core::{config, http_tracing, svc, Error};
 
 impl<N> Outbound<N> {
     pub fn push_http_server<T, NSvc>(
@@ -49,7 +49,7 @@ impl<N> Outbound<N> {
                         // Tear down server connections when a peer proxy generates an error.
                         .push(PeerProxyErrors::layer())
                         // Synthesizes responses for proxy errors.
-                        .push(errors::DefaultRescue::layer())
+                        .push(http::Rescue::layer())
                         // Initiates OpenCensus tracing.
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),

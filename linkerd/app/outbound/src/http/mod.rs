@@ -9,13 +9,13 @@ pub(crate) use self::require_id_header::IdentityRequired;
 use crate::tcp;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
-    dst,
+    dst, errors,
     profiles::{self, LogicalAddr},
     proxy::{api_resolve::ProtocolHint, tap},
     svc::Param,
     tls,
     transport_header::SessionProtocol,
-    Addr, Conditional, CANONICAL_DST_HEADER,
+    Addr, Conditional, Error, Result, CANONICAL_DST_HEADER,
 };
 use std::{net::SocketAddr, str::FromStr};
 
@@ -26,6 +26,9 @@ pub type Endpoint = crate::endpoint::Endpoint<Version>;
 
 #[derive(Clone, Debug)]
 pub struct CanonicalDstHeader(pub Addr);
+
+#[derive(Copy, Clone)]
+pub(crate) struct Rescue;
 
 // === impl CanonicalDstHeader ===
 
@@ -190,5 +193,47 @@ impl tap::Inspect for Endpoint {
 
     fn is_outbound<B>(&self, _: &Request<B>) -> bool {
         true
+    }
+}
+
+// === impl Rescue ===
+
+impl Rescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::Rescue<Error> for Rescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticResponse> {
+        if Self::has_cause::<orig_proto::DowngradedH2Error>(&*error) {
+            return Ok(errors::SyntheticResponse {
+                http_status: http::StatusCode::BAD_GATEWAY,
+                grpc_status: errors::Grpc::Unavailable,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<errors::ResponseTimeout>(&*error) {
+            return Ok(errors::SyntheticResponse {
+                http_status: http::StatusCode::GATEWAY_TIMEOUT,
+                grpc_status: errors::Grpc::DeadlineExceeded,
+                close_connection: false,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<IdentityRequired>(&*error) {
+            return Ok(errors::SyntheticResponse {
+                http_status: http::StatusCode::BAD_GATEWAY,
+                grpc_status: errors::Grpc::Unavailable,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        errors::DefaultRescue.rescue(error)
     }
 }
