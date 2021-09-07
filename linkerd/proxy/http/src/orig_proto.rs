@@ -144,6 +144,7 @@ fn downgrade_h2_error(error: hyper::Error) -> Error {
 
     error.into()
 }
+
 // === impl UpgradeResponseBody ===
 
 impl Default for UpgradeResponseBody {
