@@ -1,13 +1,12 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, dst, http_tracing, io,
-    metrics::{self, ServerLabel},
+    classify, dst, errors, http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, Param},
     tls,
-    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
-    Error, Infallible, NameAddr,
+    transport::{self, ClientAddr, Remote, ServerAddr},
+    Error, Infallible, NameAddr, Result,
 };
 use std::{borrow::Borrow, net::SocketAddr};
 use tracing::{debug, debug_span};
@@ -49,6 +48,9 @@ struct Profile {
     logical: Logical,
     profiles: profiles::Receiver,
 }
+
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue;
 
 // === impl Inbound ===
 
@@ -102,7 +104,7 @@ impl<C> Inbound<C> {
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
-                .push_on_service(super::Rescue::layer())
+                .push_on_service(ClientRescue::layer())
                 // Registers the stack to be tapped.
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 // Records metrics for each `Logical`.
@@ -270,7 +272,7 @@ where
 impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
     type Key = Logical;
 
-    fn recognize(&self, req: &http::Request<A>) -> Result<Self::Key, Error> {
+    fn recognize(&self, req: &http::Request<A>) -> Result<Self::Key> {
         use linkerd_app_core::{
             http_request_authority_addr, http_request_host_addr, CANONICAL_DST_HEADER,
         };
@@ -419,5 +421,37 @@ impl From<Logical> for Http {
 impl Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::InboundClient
+    }
+}
+
+// === impl ClientRescue ===
+
+impl ClientRescue {
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::HttpRescue<Error> for ClientRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        if Self::has_cause::<std::io::Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::BAD_GATEWAY,
+                grpc_status: errors::Grpc::Unavailable,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<errors::ConnectTimeout>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::GATEWAY_TIMEOUT,
+                grpc_status: errors::Grpc::DeadlineExceeded,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        Err(error)
     }
 }

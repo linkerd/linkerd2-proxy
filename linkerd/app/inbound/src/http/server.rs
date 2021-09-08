@@ -1,4 +1,4 @@
-use super::{set_identity_header::NewSetIdentityHeader, Rescue};
+use super::set_identity_header::NewSetIdentityHeader;
 use crate::Inbound;
 pub use linkerd_app_core::proxy::http::{
     normalize_uri, strip_header, uri, BoxBody, BoxResponse, DetectHttp, Request, Response, Retain,
@@ -6,14 +6,17 @@ pub use linkerd_app_core::proxy::http::{
 };
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    http_tracing, identity, io,
+    errors, http_tracing, identity, io,
     metrics::ServerLabel,
     proxy::http,
     svc::{self, Param},
     transport::OrigDstAddr,
-    Error,
+    Error, Result,
 };
 use tracing::debug_span;
+
+#[derive(Copy, Clone, Debug)]
+struct ServerRescue;
 
 impl<H> Inbound<H> {
     pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::BoxNewTcp<T, I>>
@@ -65,7 +68,7 @@ impl<H> Inbound<H> {
                 .push(rt.metrics.http_errors.to_layer())
                 .push_on_service(
                     svc::layers()
-                        .push(Rescue::layer())
+                        .push(ServerRescue::layer())
                         .push(http_tracing::server(
                             rt.span_sink.clone(),
                             super::trace_labels(),
@@ -80,5 +83,56 @@ impl<H> Inbound<H> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
+    }
+}
+
+// === impl ServerRescue ===
+
+impl ServerRescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::HttpRescue<Error> for ServerRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        if Self::has_cause::<crate::policy::DeniedUnauthorized>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::FORBIDDEN,
+                grpc_status: errors::Grpc::PermissionDenied,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<crate::GatewayDomainInvalid>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::BAD_REQUEST,
+                grpc_status: errors::Grpc::InvalidArgument,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<crate::GatewayIdentityRequired>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::FORBIDDEN,
+                grpc_status: errors::Grpc::Unauthenticated,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<crate::GatewayLoop>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::LOOP_DETECTED,
+                grpc_status: errors::Grpc::Aborted,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        errors::DefaultHttpRescue.rescue(error)
     }
 }

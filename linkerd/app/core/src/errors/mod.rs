@@ -9,7 +9,7 @@ pub use tonic::Code as Grpc;
 
 #[derive(Debug, Error)]
 #[error("connect timed out after {0:?}")]
-pub(crate) struct ConnectTimeout(pub std::time::Duration);
+pub struct ConnectTimeout(pub(crate) std::time::Duration);
 
 #[derive(Clone, Debug)]
 pub struct DefaultHttpRescue;
@@ -27,24 +27,6 @@ impl HttpRescue<Error> for DefaultHttpRescue {
         if Self::has_cause::<h2::H2Error>(&*error) {
             tracing::debug!(%error, "Propagating HTTP2 reset");
             return Err(error);
-        }
-
-        if Self::has_cause::<std::io::Error>(&*error) {
-            return Ok(SyntheticHttpResponse {
-                http_status: http::StatusCode::BAD_GATEWAY,
-                grpc_status: tonic::Code::Unavailable,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        if Self::has_cause::<ConnectTimeout>(&*error) {
-            return Ok(SyntheticHttpResponse {
-                http_status: http::StatusCode::GATEWAY_TIMEOUT,
-                grpc_status: tonic::Code::DeadlineExceeded,
-                close_connection: true,
-                message: error.to_string(),
-            });
         }
 
         if Self::has_cause::<FailFastError>(&*error) {

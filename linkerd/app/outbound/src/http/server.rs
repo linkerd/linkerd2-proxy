@@ -1,6 +1,9 @@
-use super::peer_proxy_errors::PeerProxyErrors;
+use super::{peer_proxy_errors::PeerProxyErrors, IdentityRequired};
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{config, http_tracing, svc, Error};
+use linkerd_app_core::{config, errors, http_tracing, svc, Error, Result};
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct ServerRescue;
 
 impl<N> Outbound<N> {
     pub fn push_http_server<T, NSvc>(
@@ -49,7 +52,7 @@ impl<N> Outbound<N> {
                         // Tear down server connections when a peer proxy generates an error.
                         .push(PeerProxyErrors::layer())
                         // Synthesizes responses for proxy errors.
-                        .push(http::Rescue::layer())
+                        .push(ServerRescue::layer())
                         // Initiates OpenCensus tracing.
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),
@@ -62,5 +65,37 @@ impl<N> Outbound<N> {
                 .check_new_service::<T, http::Request<http::BoxBody>>()
                 .push(svc::BoxNewService::layer())
         })
+    }
+}
+
+// === impl ServerRescue ===
+
+impl ServerRescue {
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::HttpRescue<Error> for ServerRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        if Self::has_cause::<errors::ResponseTimeout>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::GATEWAY_TIMEOUT,
+                grpc_status: errors::Grpc::DeadlineExceeded,
+                close_connection: false,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<IdentityRequired>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::BAD_GATEWAY,
+                grpc_status: errors::Grpc::Unavailable,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        errors::DefaultHttpRescue.rescue(error)
     }
 }

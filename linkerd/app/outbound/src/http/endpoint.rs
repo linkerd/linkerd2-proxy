@@ -1,11 +1,14 @@
 use super::require_id_header;
 use crate::Outbound;
 use linkerd_app_core::{
-    classify, config, http_tracing, metrics,
+    classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
-    svc, tls, Error, CANONICAL_DST_HEADER,
+    svc, tls, Error, Result, CANONICAL_DST_HEADER,
 };
 use tokio::io;
+
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue;
 
 impl<C> Outbound<C> {
     pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::BoxNewHttp<T, B>>
@@ -44,7 +47,7 @@ impl<C> Outbound<C> {
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
-                .push_on_service(super::Rescue::layer())
+                .push_on_service(ClientRescue::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
@@ -68,6 +71,48 @@ impl<C> Outbound<C> {
                 )
                 .push(svc::BoxNewService::layer())
         })
+    }
+}
+
+// === impl ClientRescue ===
+
+impl ClientRescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::HttpRescue<Error> for ClientRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        if Self::has_cause::<http::orig_proto::DowngradedH2Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::BAD_GATEWAY,
+                grpc_status: errors::Grpc::Unavailable,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<std::io::Error>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::BAD_GATEWAY,
+                grpc_status: errors::Grpc::Unavailable,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        if Self::has_cause::<errors::ConnectTimeout>(&*error) {
+            return Ok(errors::SyntheticHttpResponse {
+                http_status: http::StatusCode::GATEWAY_TIMEOUT,
+                grpc_status: errors::Grpc::DeadlineExceeded,
+                close_connection: true,
+                message: error.to_string(),
+            });
+        }
+
+        Err(error)
     }
 }
 

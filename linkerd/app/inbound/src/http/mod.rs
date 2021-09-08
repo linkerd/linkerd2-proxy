@@ -4,67 +4,6 @@ mod set_identity_header;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    policy::DeniedUnauthorized, GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
-};
-use linkerd_app_core::{errors, Error, Result};
-
-#[derive(Copy, Clone)]
-pub(crate) struct Rescue;
-
-// === impl Rescue ===
-
-impl Rescue {
-    /// Synthesizes responses for HTTP requests that encounter proxy errors.
-    pub fn layer() -> errors::respond::Layer<Self> {
-        errors::respond::NewRespond::layer(Self)
-    }
-}
-
-impl errors::HttpRescue<Error> for Rescue {
-    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if Self::has_cause::<DeniedUnauthorized>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::FORBIDDEN,
-                grpc_status: tonic::Code::PermissionDenied,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        if Self::has_cause::<GatewayDomainInvalid>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::BAD_REQUEST,
-                grpc_status: tonic::Code::InvalidArgument,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        if Self::has_cause::<GatewayIdentityRequired>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::FORBIDDEN,
-                grpc_status: tonic::Code::Unauthenticated,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        if Self::has_cause::<GatewayLoop>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::LOOP_DETECTED,
-                grpc_status: tonic::Code::Aborted,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        errors::DefaultHttpRescue.rescue(error)
-    }
-}
-
-// === impl trace_labels ===
-
 fn trace_labels() -> std::collections::HashMap<String, String> {
     let mut l = std::collections::HashMap::new();
     l.insert("direction".to_string(), "inbound".to_string());
