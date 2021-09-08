@@ -107,20 +107,16 @@ where
         match self.project() {
             TimeoutFutureProj::Passthru(f) => f.poll(cx).map_err(Into::into),
             TimeoutFutureProj::Timeout(f, duration) => {
-                // If the `timeout` future failed, the error is always "elapsed";
-                // errors from the underlying future will be in the success arm.
+                // The timeout future's outer result time tracks the timeout and the inner result
+                // type tracks the inner future's result.
                 let ready = futures::ready!(f.poll(cx)).map_err(|_| TimeoutError(*duration).into());
-                // If the inner future failed but the timeout was not elapsed,
-                // then `ready` will be an `Ok(Err(e))`, so we need to convert
-                // the inner error as well.
-                let ready = ready.and_then(|x| x.map_err(Into::into));
-                Poll::Ready(ready)
+                Poll::Ready(ready.and_then(|x| x.map_err(Into::into)))
             }
         }
     }
 }
 
-// === impl ResponseTimeout ===
+// === impl TimeoutError ===
 
 impl TimeoutError {
     /// Get the amount of time waited until this error was triggered.
