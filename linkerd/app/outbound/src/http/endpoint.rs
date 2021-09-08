@@ -1,4 +1,4 @@
-use super::require_id_header;
+use super::{peer_proxy_errors::PeerProxyErrors, require_id_header};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
@@ -43,6 +43,8 @@ impl<C> Outbound<C> {
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
+                // Tear down server connections when a peer proxy generates an error.
+                .push(PeerProxyErrors::layer())
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
