@@ -224,7 +224,7 @@ impl<R> Respond<R> {
             .header(GRPC_STATUS, code_header(code))
             .header(
                 GRPC_MESSAGE,
-                HeaderValue::from_str("request timed out").unwrap_or_else(|error| {
+                HeaderValue::from_str(message).unwrap_or_else(|error| {
                     warn!(%error, "Failed to encode error header");
                     HeaderValue::from_static("Unexpected error")
                 }),
