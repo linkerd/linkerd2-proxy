@@ -40,6 +40,11 @@ impl<C> Outbound<C> {
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
+                // Handle connection-level errors eagerly so that we can report 5XX failures in tap
+                // and metrics. HTTP error metrics are not incremented here so that errors are not
+                // double-counted--i.e., endpoint metrics track these responses and error metrics
+                // track proxy errors that occur higher in the stack.
+                .push_on_service(super::Rescue::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
@@ -109,6 +114,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -145,6 +151,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -189,6 +196,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -237,6 +245,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();

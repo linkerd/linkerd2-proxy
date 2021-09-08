@@ -1,11 +1,12 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, dst, http_tracing, io, metrics,
+    classify, dst, http_tracing, io,
+    metrics::{self, ServerLabel},
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, Param},
     tls,
-    transport::{self, ClientAddr, Remote, ServerAddr},
+    transport::{self, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr,
 };
 use std::{borrow::Borrow, net::SocketAddr};
@@ -97,6 +98,11 @@ impl<C> Inbound<C> {
                 .push_new_reconnect(config.proxy.connect.backoff)
                 .check_new_service::<Http, http::Request<_>>()
                 .push_map_target(Http::from)
+                // Handle connection-level errors eagerly so that we can report 5XX failures in tap
+                // and metrics. HTTP error metrics are not incremented here so that errors are not
+                // double-counted--i.e., endpoint metrics track these responses and error metrics
+                // track proxy errors that occur higher in the stack.
+                .push_on_service(super::Rescue::layer())
                 // Registers the stack to be tapped.
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 // Records metrics for each `Logical`.
