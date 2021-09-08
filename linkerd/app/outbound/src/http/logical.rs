@@ -143,6 +143,7 @@ impl<E> Outbound<E> {
                         // stack doesn't have to implement `Service` for requests
                         // with both body types.
                         .push_on_service(http::BoxRequest::erased())
+                        .push_http_insert_target::<dst::Route>()
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
                         // Sets an optional request timeout.
