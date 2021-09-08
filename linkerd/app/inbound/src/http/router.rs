@@ -95,7 +95,7 @@ impl<C> Inbound<C> {
                     config.proxy.connect.h1_settings,
                     config.proxy.connect.h2_settings,
                 ))
-                .push_on_service(svc::MapErrLayer::new(Into::into))
+                .push_on_service(svc::MapErr::layer(Into::into))
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
                 .check_new_service::<Http, http::Request<_>>()

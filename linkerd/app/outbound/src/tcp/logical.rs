@@ -122,9 +122,10 @@ mod tests {
     use crate::test_util::*;
     use io::AsyncWriteExt;
     use linkerd_app_core::{
+        errors::FailFastError,
         io::{self, AsyncReadExt},
         profiles::{LogicalAddr, Profile},
-        svc::{self, timeout::FailFastError, NewService, ServiceExt},
+        svc::{self, NewService, ServiceExt},
         transport::addrs::*,
     };
     use std::net::SocketAddr;

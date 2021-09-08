@@ -96,7 +96,7 @@ impl<E> Outbound<E> {
                         .push(http::BoxResponse::layer()),
                 )
                 .check_make_service::<Concrete, http::Request<_>>()
-                .push(svc::MapErrLayer::new(Into::into))
+                .push(svc::MapErr::layer(Into::into))
                 // Drives the initial resolution via the service's readiness.
                 .into_new_service()
                 // The concrete address is only set when the profile could be
@@ -146,7 +146,7 @@ impl<E> Outbound<E> {
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
                         // Sets an optional request timeout.
-                        .push(http::MakeTimeoutLayer::default())
+                        .push(http::NewTimeout::layer())
                         // Records per-route metrics.
                         .push(
                             rt.metrics
@@ -161,6 +161,7 @@ impl<E> Outbound<E> {
                         .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
                 ))
+                .check_new_service::<Logical, http::Request<_>>()
                 .push_on_service(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
                 // canonical-dst-header. The response body is boxed unify the profile

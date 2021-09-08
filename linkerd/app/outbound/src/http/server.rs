@@ -78,7 +78,7 @@ impl ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if Self::has_cause::<errors::ResponseTimeout>(&*error) {
+        if Self::has_cause::<http::ResponseTimeoutError>(&*error) {
             return Ok(errors::SyntheticHttpResponse {
                 http_status: http::StatusCode::GATEWAY_TIMEOUT,
                 grpc_status: errors::Grpc::DeadlineExceeded,

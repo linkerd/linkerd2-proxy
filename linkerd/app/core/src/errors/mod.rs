@@ -3,7 +3,7 @@ pub mod respond;
 pub use self::respond::{HttpRescue, SyntheticHttpResponse};
 use linkerd_error::{Error, Result};
 use linkerd_proxy_http::h2;
-pub use linkerd_timeout::{FailFastError, ResponseTimeout};
+pub use linkerd_stack::{FailFastError, TimeoutError};
 use thiserror::Error;
 pub use tonic::Code as Grpc;
 

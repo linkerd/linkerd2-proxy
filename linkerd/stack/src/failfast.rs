@@ -1,9 +1,9 @@
 //! A middleware that limits the amount of time the service may be not ready
 //! before requests are failed.
 
+use crate::layer;
 use futures::TryFuture;
 use linkerd_error::Error;
-use linkerd_stack::layer;
 use pin_project::pin_project;
 use std::{
     future::Future,
