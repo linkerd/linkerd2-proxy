@@ -3,7 +3,6 @@ use crate::metrics::authz::HttpAuthzMetrics;
 use super::super::{AllowPolicy, Permit};
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
-    errors::HttpError,
     svc::{self, ServiceExt},
     tls,
     transport::{ClientAddr, Remote},
@@ -101,7 +100,7 @@ where
             }
             Err(e) => {
                 self.metrics.deny(&self.policy);
-                future::Either::Right(future::err(HttpError::forbidden(e).into()))
+                future::Either::Right(future::err(e.into()))
             }
         }
     }

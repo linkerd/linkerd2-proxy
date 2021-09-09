@@ -1,44 +1,20 @@
 pub mod respond;
 
-use linkerd_error::Error;
+pub use self::respond::{HttpRescue, NewRespond, SyntheticHttpResponse};
+pub use linkerd_proxy_http::h2::H2Error;
 pub use linkerd_timeout::{FailFastError, ResponseTimeout};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("connect timed out after {0:?}")]
-pub(crate) struct ConnectTimeout(pub std::time::Duration);
+pub struct ConnectTimeout(pub(crate) std::time::Duration);
 
-#[derive(Debug, Error)]
-#[error("{source}")]
-pub struct HttpError {
-    #[source]
-    source: Error,
-    http_status: http::StatusCode,
-    grpc_status: tonic::Code,
-}
-
-impl HttpError {
-    pub fn bad_request(source: impl Into<Error>) -> Self {
-        Self {
-            source: source.into(),
-            http_status: http::StatusCode::BAD_REQUEST,
-            grpc_status: tonic::Code::InvalidArgument,
-        }
+/// Obtain the source error at the end of a chain of `Error`s.
+pub fn root_cause<'e>(
+    mut error: &'e (dyn std::error::Error + 'static),
+) -> &'e (dyn std::error::Error + 'static) {
+    while let Some(e) = error.source() {
+        error = e;
     }
-
-    pub fn forbidden(source: impl Into<Error>) -> Self {
-        Self {
-            source: source.into(),
-            http_status: http::StatusCode::FORBIDDEN,
-            grpc_status: tonic::Code::PermissionDenied,
-        }
-    }
-
-    pub fn loop_detected(source: impl Into<Error>) -> Self {
-        Self {
-            source: source.into(),
-            http_status: http::StatusCode::LOOP_DETECTED,
-            grpc_status: tonic::Code::Aborted,
-        }
-    }
+    error
 }

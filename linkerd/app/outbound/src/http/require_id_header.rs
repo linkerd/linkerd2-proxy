@@ -1,5 +1,5 @@
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{errors::HttpError, identity, svc, tls, Conditional, Error};
+use linkerd_app_core::{identity, svc, tls, Conditional, Error};
 use std::task::{Context, Poll};
 use thiserror::Error;
 use tracing::{debug, trace};
@@ -92,10 +92,10 @@ where
                             found = %server_id,
                             "Identity required by header not satisfied"
                         );
-                        let e = HttpError::forbidden(IdentityRequired {
+                        let e = IdentityRequired {
                             required: require_id.into(),
                             found: Some(server_id.clone()),
-                        });
+                        };
                         return future::Either::Left(future::err(e.into()));
                     } else {
                         trace!(required = %require_id, "Identity required by header");
@@ -103,10 +103,10 @@ where
                 }
                 Conditional::None(_) => {
                     debug!(required = %require_id, "Identity required by header not satisfied");
-                    let e = HttpError::forbidden(IdentityRequired {
+                    let e = IdentityRequired {
                         required: require_id.into(),
                         found: None,
-                    });
+                    };
                     return future::Either::Left(future::err(e.into()));
                 }
             }

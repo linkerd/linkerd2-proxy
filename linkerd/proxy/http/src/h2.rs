@@ -142,6 +142,7 @@ where
     type Error = hyper::Error;
     type Future = conn::ResponseFuture;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.tx.poll_ready(cx).map_err(From::from)
     }

@@ -21,15 +21,13 @@ use thiserror::Error;
 use tokio::sync::watch;
 
 #[derive(Clone, Debug, Error)]
-#[error("connection denied on unknown port {0}")]
+#[error("unauthorized connection on unknown port {0}")]
 pub struct DeniedUnknownPort(pub u16);
 
 #[derive(Clone, Debug, Error)]
-#[error("unauthorized connection from {client_addr} with identity {tls:?} to {dst_addr}")]
+#[error("unauthorized connection on server {server}")]
 pub struct DeniedUnauthorized {
-    pub client_addr: Remote<ClientAddr>,
-    pub dst_addr: OrigDstAddr,
-    pub tls: tls::ConditionalServerTls,
+    server: String,
 }
 
 pub trait CheckPolicy {
@@ -145,9 +143,7 @@ impl AllowPolicy {
         }
 
         Err(DeniedUnauthorized {
-            client_addr,
-            dst_addr: self.dst,
-            tls: tls.clone(),
+            server: server.name.clone(),
         })
     }
 }

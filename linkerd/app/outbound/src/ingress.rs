@@ -1,7 +1,7 @@
 use crate::{http, stack_labels, tcp, trace_labels, Config, Outbound};
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    detect, errors, http_tracing, io, profiles,
+    detect, http_tracing, io, profiles,
     proxy::{
         api_resolve::{ConcreteAddr, Metadata},
         core::Resolve,
@@ -210,7 +210,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("Ingress server", dispatch_timeout))
                     .push(rt.metrics.http_errors.to_layer())
-                    .push(errors::respond::layer())
+                    .push(http::ServerRescue::layer())
                     .push(http_tracing::server(rt.span_sink, trace_labels()))
                     .push(http::BoxResponse::layer())
                     .push(http::BoxRequest::layer()),

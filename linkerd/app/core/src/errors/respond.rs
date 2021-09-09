@@ -1,56 +1,198 @@
-use super::{ConnectTimeout, HttpError};
-use http::{header::HeaderValue, StatusCode};
-use linkerd_error::Error;
+use http::header::HeaderValue;
+use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
-use linkerd_proxy_http::{ClientHandle, HasH2Reason};
-use linkerd_timeout::{FailFastError, ResponseTimeout};
+pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use pin_project::pin_project;
 use std::{
+    borrow::Cow,
     pin::Pin,
     task::{Context, Poll},
 };
-use tonic::{self as grpc, Code};
-use tracing::{debug, warn};
+use tracing::{debug, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
-pub fn layer() -> respond::RespondLayer<NewRespond> {
-    respond::RespondLayer::new(NewRespond(()))
+/// A strategy for responding to errors.
+pub trait HttpRescue<E> {
+    /// Attempts to synthesize a response from the given error.
+    fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E>;
 }
 
+#[derive(Clone, Debug)]
+pub struct SyntheticHttpResponse {
+    pub grpc_status: tonic::Code,
+    pub http_status: http::StatusCode,
+    pub close_connection: bool,
+    pub message: Cow<'static, str>,
+}
+
+pub type Layer<R> = respond::RespondLayer<NewRespond<R>>;
+
 #[derive(Copy, Clone, Debug)]
-pub struct NewRespond(());
+pub struct NewRespond<R>(R);
 
 #[derive(Clone, Debug)]
-pub struct Respond {
+pub struct Respond<R> {
+    rescue: R,
     version: http::Version,
     is_grpc: bool,
     client: Option<ClientHandle>,
 }
 
 #[pin_project(project = ResponseBodyProj)]
-pub enum ResponseBody<B> {
-    NonGrpc(#[pin] B),
-    Grpc {
+pub enum ResponseBody<R, B> {
+    Passthru(#[pin] B),
+    GrpcRescue {
         #[pin]
         inner: B,
         trailers: Option<http::HeaderMap>,
+        rescue: R,
     },
 }
 
 const GRPC_CONTENT_TYPE: &str = "application/grpc";
+const GRPC_STATUS: &str = "grpc-status";
+const GRPC_MESSAGE: &str = "grpc-message";
+
+// === impl HttpRescue ===
+
+impl<E, F> HttpRescue<E> for F
+where
+    F: Fn(E) -> Result<SyntheticHttpResponse, E>,
+{
+    fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E> {
+        (self)(error)
+    }
+}
+
+// === impl SyntheticHttpResponse ===
+
+impl SyntheticHttpResponse {
+    pub fn unexpected_error() -> Self {
+        Self {
+            close_connection: true,
+            http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
+            grpc_status: tonic::Code::Internal,
+            message: Cow::Borrowed("unexpected error"),
+        }
+    }
+
+    pub fn bad_gateway(msg: impl ToString) -> Self {
+        Self {
+            close_connection: true,
+            http_status: http::StatusCode::BAD_GATEWAY,
+            grpc_status: tonic::Code::Unavailable,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn gateway_timeout(msg: impl ToString) -> Self {
+        Self {
+            close_connection: true,
+            http_status: http::StatusCode::GATEWAY_TIMEOUT,
+            grpc_status: tonic::Code::Unavailable,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn unauthenticated(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::Unauthenticated,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn permission_denied(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::PermissionDenied,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn loop_detected(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::LOOP_DETECTED,
+            grpc_status: tonic::Code::Aborted,
+            close_connection: true,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn not_found(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::NOT_FOUND,
+            grpc_status: tonic::Code::NotFound,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    #[inline]
+    fn message(&self) -> HeaderValue {
+        match self.message {
+            Cow::Borrowed(msg) => HeaderValue::from_static(msg),
+            Cow::Owned(ref msg) => HeaderValue::from_str(&*msg).unwrap_or_else(|error| {
+                warn!(%error, "Failed to encode error header");
+                HeaderValue::from_static("unexpected error")
+            }),
+        }
+    }
+
+    #[inline]
+    fn grpc_response<B: Default>(&self) -> http::Response<B> {
+        debug!(code = %self.grpc_status, "Handling error on gRPC connection");
+        http::Response::builder()
+            .version(http::Version::HTTP_2)
+            .header(http::header::CONTENT_LENGTH, "0")
+            .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
+            .header(GRPC_STATUS, code_header(self.grpc_status))
+            .header(GRPC_MESSAGE, self.message())
+            .header(L5D_PROXY_ERROR, self.message())
+            .body(B::default())
+            .expect("error response must be valid")
+    }
+
+    #[inline]
+    fn http_response<B: Default>(&self, version: http::Version) -> http::Response<B> {
+        debug!(status = %self.http_status, ?version, close = %self.close_connection, "Handling error on HTTP connection");
+        let mut rsp = http::Response::builder()
+            .status(self.http_status)
+            .version(version)
+            .header(http::header::CONTENT_LENGTH, "0")
+            .header(L5D_PROXY_ERROR, self.message());
+
+        if self.close_connection && version == http::Version::HTTP_11 {
+            rsp = rsp.header(http::header::CONNECTION, "close");
+        }
+
+        rsp.body(B::default())
+            .expect("error response must be valid")
+    }
+}
 
 // === impl NewRespond ===
 
-impl<ReqB, RspB: Default + hyper::body::HttpBody>
-    respond::NewRespond<http::Request<ReqB>, http::Response<RspB>> for NewRespond
-{
-    type Response = http::Response<ResponseBody<RspB>>;
-    type Respond = Respond;
+impl<R> NewRespond<R> {
+    pub fn layer(rescue: R) -> Layer<R> {
+        respond::RespondLayer::new(NewRespond(rescue))
+    }
+}
 
-    fn new_respond(&self, req: &http::Request<ReqB>) -> Self::Respond {
+impl<B, R> respond::NewRespond<http::Request<B>> for NewRespond<R>
+where
+    R: Clone,
+{
+    type Respond = Respond<R>;
+
+    fn new_respond(&self, req: &http::Request<B>) -> Self::Respond {
         let client = req.extensions().get::<ClientHandle>().cloned();
         debug_assert!(client.is_some(), "Missing client handle");
+
+        let rescue = self.0.clone();
 
         match req.version() {
             http::Version::HTTP_2 => {
@@ -60,14 +202,16 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
                     .and_then(|v| v.to_str().ok().map(|s| s.starts_with(GRPC_CONTENT_TYPE)))
                     .unwrap_or(false);
                 Respond {
-                    is_grpc,
                     client,
+                    rescue,
+                    is_grpc,
                     version: http::Version::HTTP_2,
                 }
             }
             version => Respond {
-                version,
                 client,
+                rescue,
+                version,
                 is_grpc: false,
             },
         }
@@ -76,76 +220,79 @@ impl<ReqB, RspB: Default + hyper::body::HttpBody>
 
 // === impl Respond ===
 
-impl<RspB: Default + hyper::body::HttpBody> respond::Respond<http::Response<RspB>> for Respond {
-    type Response = http::Response<ResponseBody<RspB>>;
+impl<R> Respond<R> {
+    fn client_addr(&self) -> std::net::SocketAddr {
+        self.client
+            .as_ref()
+            .map(|ClientHandle { addr, .. }| *addr)
+            .unwrap_or_else(|| {
+                tracing::debug!("Missing client address");
+                ([0, 0, 0, 0], 0).into()
+            })
+    }
+}
 
-    fn respond(&self, res: Result<http::Response<RspB>, Error>) -> Result<Self::Response, Error> {
-        match res {
-            Ok(response) => Ok(response.map(|b| match *self {
-                Respond { is_grpc: true, .. } => ResponseBody::Grpc {
-                    inner: b,
-                    trailers: None,
-                },
-                _ => ResponseBody::NonGrpc(b),
-            })),
-            Err(error) => {
-                let addr = self
-                    .client
-                    .as_ref()
-                    .map(|ClientHandle { ref addr, .. }| *addr)
-                    .unwrap_or_else(|| {
-                        debug!("Missing client address");
-                        ([0, 0, 0, 0], 0).into()
-                    });
-                warn!(client.addr = %addr, "Failed to proxy request: {}", error);
+impl<B, R> respond::Respond<http::Response<B>, Error> for Respond<R>
+where
+    B: Default + hyper::body::HttpBody,
+    R: HttpRescue<Error> + Clone,
+{
+    type Response = http::Response<ResponseBody<R, B>>;
 
-                if self.version == http::Version::HTTP_2 {
-                    if let Some(reset) = error.h2_reason() {
-                        debug!(%reset, "Propagating HTTP2 reset");
-                        return Err(error);
-                    }
-                }
+    fn respond(&self, res: Result<http::Response<B>>) -> Result<Self::Response> {
+        let error = match res {
+            Ok(rsp) => {
+                return Ok(rsp.map(|b| match self {
+                    Respond {
+                        is_grpc: true,
+                        rescue,
+                        ..
+                    } => ResponseBody::GrpcRescue {
+                        inner: b,
+                        trailers: None,
+                        rescue: rescue.clone(),
+                    },
+                    _ => ResponseBody::Passthru(b),
+                }));
+            }
+            Err(error) => error,
+        };
 
-                // Gracefully teardown the server-side connection.
-                if let Some(ClientHandle { ref close, .. }) = self.client.as_ref() {
-                    debug!("Closing server-side connection");
-                    close.close();
-                }
+        let rsp = info_span!("rescue", client.addr = %self.client_addr()).in_scope(|| {
+            tracing::info!(%error, "Request failed");
+            self.rescue.rescue(error)
+        })?;
 
-                // Set the l5d error header on all responses.
-                let mut builder = http::Response::builder();
-                builder = set_l5d_proxy_error_header(builder, &*error);
-
-                if self.is_grpc {
-                    let mut rsp = builder
-                        .version(http::Version::HTTP_2)
-                        .header(http::header::CONTENT_LENGTH, "0")
-                        .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
-                        .body(ResponseBody::default())
-                        .expect("app::errors response is valid");
-                    let code = set_grpc_status(&*error, rsp.headers_mut());
-                    debug!(?code, "Handling error with gRPC status");
-                    return Ok(rsp);
-                }
-
-                let rsp = set_http_status(builder, &*error)
-                    .version(self.version)
-                    .header(http::header::CONTENT_LENGTH, "0")
-                    .body(ResponseBody::default())
-                    .expect("error response must be valid");
-                let status = rsp.status();
-                debug!(%status, version = ?self.version, "Handling error with HTTP response");
-                Ok(rsp)
+        if rsp.close_connection {
+            if let Some(ClientHandle { close, .. }) = self.client.as_ref() {
+                close.close();
+            } else {
+                tracing::debug!("Missing client handle");
             }
         }
+
+        let rsp = if self.is_grpc {
+            rsp.grpc_response()
+        } else {
+            rsp.http_response(self.version)
+        };
+
+        Ok(rsp)
     }
 }
 
 // === impl ResponseBody ===
 
-impl<B: hyper::body::HttpBody> hyper::body::HttpBody for ResponseBody<B>
+impl<R, B: Default + hyper::body::HttpBody> Default for ResponseBody<R, B> {
+    fn default() -> Self {
+        ResponseBody::Passthru(B::default())
+    }
+}
+
+impl<R, B> hyper::body::HttpBody for ResponseBody<R, B>
 where
-    B::Error: Into<Error>,
+    B: hyper::body::HttpBody<Error = Error>,
+    R: HttpRescue<B::Error>,
 {
     type Data = B::Data;
     type Error = B::Error;
@@ -155,17 +302,22 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         match self.project() {
-            ResponseBodyProj::NonGrpc(inner) => inner.poll_data(cx),
-            ResponseBodyProj::Grpc { inner, trailers } => {
+            ResponseBodyProj::Passthru(inner) => inner.poll_data(cx),
+            ResponseBodyProj::GrpcRescue {
+                inner,
+                trailers,
+                rescue,
+            } => {
                 // should not be calling poll_data if we have set trailers derived from an error
                 assert!(trailers.is_none());
                 match inner.poll_data(cx) {
                     Poll::Ready(Some(Err(error))) => {
-                        let error = error.into();
-                        let mut error_trailers = http::HeaderMap::new();
-                        let code = set_grpc_status(&*error, &mut error_trailers);
-                        debug!(%error, grpc.status = ?code, "Handling gRPC stream failure");
-                        *trailers = Some(error_trailers);
+                        let SyntheticHttpResponse {
+                            grpc_status,
+                            message,
+                            ..
+                        } = rescue.rescue(error)?;
+                        *trailers = Some(Self::grpc_trailers(grpc_status, &*message));
                         Poll::Ready(None)
                     }
                     data => data,
@@ -174,150 +326,60 @@ where
         }
     }
 
+    #[inline]
     fn poll_trailers(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
         match self.project() {
-            ResponseBodyProj::NonGrpc(inner) => inner.poll_trailers(cx),
-            ResponseBodyProj::Grpc { inner, trailers } => match trailers.take() {
+            ResponseBodyProj::Passthru(inner) => inner.poll_trailers(cx),
+            ResponseBodyProj::GrpcRescue {
+                inner, trailers, ..
+            } => match trailers.take() {
                 Some(t) => Poll::Ready(Ok(Some(t))),
                 None => inner.poll_trailers(cx),
             },
         }
     }
 
+    #[inline]
     fn is_end_stream(&self) -> bool {
         match self {
-            Self::NonGrpc(inner) => inner.is_end_stream(),
-            Self::Grpc { inner, trailers } => trailers.is_none() && inner.is_end_stream(),
+            Self::Passthru(inner) => inner.is_end_stream(),
+            Self::GrpcRescue {
+                inner, trailers, ..
+            } => trailers.is_none() && inner.is_end_stream(),
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> http_body::SizeHint {
         match self {
-            Self::NonGrpc(inner) => inner.size_hint(),
-            Self::Grpc { inner, .. } => inner.size_hint(),
+            Self::Passthru(inner) => inner.size_hint(),
+            Self::GrpcRescue { inner, .. } => inner.size_hint(),
         }
     }
 }
 
-impl<B: Default + hyper::body::HttpBody> Default for ResponseBody<B> {
-    fn default() -> ResponseBody<B> {
-        ResponseBody::NonGrpc(B::default())
-    }
-}
-
-// === helpers ===
-
-fn set_l5d_proxy_error_header(
-    builder: http::response::Builder,
-    error: &(dyn std::error::Error + 'static),
-) -> http::response::Builder {
-    if error.is::<ResponseTimeout>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("request timed out"),
-        )
-    } else if error.is::<ConnectTimeout>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("failed to connect"),
-        )
-    } else if let Some(e) = error.downcast_ref::<FailFastError>() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
-                warn!(%error, "Failed to encode fail-fast error message");
-                HeaderValue::from_static("service in fail-fast")
-            }),
-        )
-    } else if let Some(HttpError { source, .. }) = error.downcast_ref() {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_str(&source.to_string())
-                .unwrap_or_else(|_| HeaderValue::from_static("an error occurred")),
-        )
-    } else if let Some(source) = error.source() {
-        set_l5d_proxy_error_header(builder, source)
-    } else {
-        builder.header(
-            L5D_PROXY_ERROR,
-            HeaderValue::from_static("proxy received invalid response"),
-        )
-    }
-}
-
-fn set_http_status(
-    builder: http::response::Builder,
-    error: &(dyn std::error::Error + 'static),
-) -> http::response::Builder {
-    if error.is::<ResponseTimeout>() || error.is::<ConnectTimeout>() {
-        builder.status(StatusCode::GATEWAY_TIMEOUT)
-    } else if error.is::<FailFastError>() {
-        builder.status(StatusCode::SERVICE_UNAVAILABLE)
-    } else if let Some(HttpError { http_status, .. }) = error.downcast_ref() {
-        builder.status(http_status)
-    } else if let Some(source) = error.source() {
-        set_http_status(builder, source)
-    } else {
-        builder.status(StatusCode::BAD_GATEWAY)
-    }
-}
-
-fn set_grpc_status(
-    error: &(dyn std::error::Error + 'static),
-    headers: &mut http::HeaderMap,
-) -> grpc::Code {
-    const GRPC_STATUS: &str = "grpc-status";
-    const GRPC_MESSAGE: &str = "grpc-message";
-
-    if error.is::<ResponseTimeout>() {
-        let code = Code::DeadlineExceeded;
-        headers.insert(GRPC_STATUS, code_header(code));
-        headers.insert(GRPC_MESSAGE, HeaderValue::from_static("request timed out"));
-        code
-    } else if let Some(e) = error.downcast_ref::<FailFastError>() {
-        let code = Code::Unavailable;
-        headers.insert(GRPC_STATUS, code_header(code));
-        headers.insert(
+impl<R, B> ResponseBody<R, B> {
+    fn grpc_trailers(code: tonic::Code, message: &str) -> http::HeaderMap {
+        debug!(grpc.status = ?code, "Synthesizing gRPC trailers");
+        let mut t = http::HeaderMap::new();
+        t.insert(GRPC_STATUS, code_header(code));
+        t.insert(
             GRPC_MESSAGE,
-            HeaderValue::from_str(&e.to_string()).unwrap_or_else(|error| {
-                warn!(%error, "Failed to encode fail-fast error message");
-                HeaderValue::from_static("Service in fail-fast")
+            HeaderValue::from_str(message).unwrap_or_else(|error| {
+                warn!(%error, "Failed to encode error header");
+                HeaderValue::from_static("Unexpected error")
             }),
         );
-        code
-    } else if error.is::<std::io::Error>() {
-        let code = Code::Unavailable;
-        headers.insert(GRPC_STATUS, code_header(code));
-        headers.insert(GRPC_MESSAGE, HeaderValue::from_static("connection closed"));
-        code
-    } else if let Some(HttpError {
-        source,
-        grpc_status,
-        ..
-    }) = error.downcast_ref()
-    {
-        headers.insert(GRPC_STATUS, code_header(*grpc_status));
-        if let Ok(v) = HeaderValue::from_str(&*source.to_string()) {
-            headers.insert(GRPC_MESSAGE, v);
-        }
-        *grpc_status
-    } else if let Some(source) = error.source() {
-        set_grpc_status(source, headers)
-    } else {
-        let code = Code::Internal;
-        headers.insert(GRPC_STATUS, code_header(code));
-        if let Ok(msg) = HeaderValue::from_str(&error.to_string()) {
-            headers.insert(GRPC_MESSAGE, msg);
-        }
-        code
+        t
     }
 }
 
 // Copied from tonic, where it's private.
-fn code_header(code: grpc::Code) -> HeaderValue {
+fn code_header(code: tonic::Code) -> HeaderValue {
+    use tonic::Code;
     match code {
         Code::Ok => HeaderValue::from_static("0"),
         Code::Cancelled => HeaderValue::from_static("1"),

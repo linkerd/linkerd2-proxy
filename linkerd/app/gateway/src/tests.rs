@@ -1,11 +1,10 @@
 use super::*;
 use linkerd_app_core::{
-    dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
-    NameAddr, NameMatch,
+    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_test as support;
-use std::{error::Error as _, str::FromStr};
+use std::str::FromStr;
 use tower::util::ServiceExt;
 use tower_test::mock;
 
@@ -48,12 +47,7 @@ async fn bad_domain() {
         ..Default::default()
     };
     let e = test.with_default_profile().run().await.unwrap_err();
-    assert!(e
-        .downcast::<HttpError>()
-        .unwrap()
-        .source()
-        .unwrap()
-        .is::<GatewayDomainInvalid>());
+    assert!(e.is::<GatewayDomainInvalid>());
 }
 
 #[tokio::test]
@@ -63,12 +57,7 @@ async fn no_identity() {
         ..Default::default()
     };
     let e = test.with_default_profile().run().await.unwrap_err();
-    assert!(e
-        .downcast::<HttpError>()
-        .unwrap()
-        .source()
-        .unwrap()
-        .is::<GatewayIdentityRequired>());
+    assert!(e.is::<GatewayIdentityRequired>());
 }
 
 #[tokio::test]
@@ -80,12 +69,7 @@ async fn forward_loop() {
         ..Default::default()
     };
     let e = test.with_default_profile().run().await.unwrap_err();
-    assert!(e
-        .downcast::<HttpError>()
-        .unwrap()
-        .source()
-        .unwrap()
-        .is::<GatewayLoop>());
+    assert!(e.is::<GatewayLoop>());
 }
 
 struct Test {

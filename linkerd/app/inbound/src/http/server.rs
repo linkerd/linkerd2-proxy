@@ -11,9 +11,12 @@ use linkerd_app_core::{
     proxy::http,
     svc::{self, Param},
     transport::OrigDstAddr,
-    Error,
+    Error, Result,
 };
 use tracing::debug_span;
+
+#[derive(Copy, Clone, Debug)]
+struct ServerRescue;
 
 impl<H> Inbound<H> {
     pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::BoxNewTcp<T, I>>
@@ -50,6 +53,7 @@ impl<H> Inbound<H> {
                 .push(NewSetIdentityHeader::layer())
                 .push_on_service(
                     svc::layers()
+                        .push(http::BoxRequest::layer())
                         // Downgrades the protocol if upgraded by an outbound proxy.
                         .push(http::orig_proto::Downgrade::layer())
                         // Limit the number of in-flight requests. When the proxy is
@@ -64,15 +68,13 @@ impl<H> Inbound<H> {
                 .push(rt.metrics.http_errors.to_layer())
                 .push_on_service(
                     svc::layers()
-                        // Synthesizes responses for proxy errors.
-                        .push(errors::respond::layer())
+                        .push(ServerRescue::layer())
                         .push(http_tracing::server(
                             rt.span_sink.clone(),
                             super::trace_labels(),
                         ))
                         // Record when an HTTP/1 URI was in absolute form
                         .push(http::normalize_uri::MarkAbsoluteForm::layer())
-                        .push(http::BoxRequest::layer())
                         .push(http::BoxResponse::layer()),
                 )
                 .check_new_service::<T, http::Request<_>>()
@@ -81,5 +83,42 @@ impl<H> Inbound<H> {
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::BoxNewService::layer())
         })
+    }
+}
+
+// === impl ServerRescue ===
+
+impl ServerRescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::HttpRescue<Error> for ServerRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        let cause = errors::root_cause(&*error);
+        if cause.is::<crate::policy::DeniedUnauthorized>() {
+            return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
+        }
+        if cause.is::<crate::GatewayDomainInvalid>() {
+            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        }
+        if cause.is::<crate::GatewayIdentityRequired>() {
+            return Ok(errors::SyntheticHttpResponse::unauthenticated(cause));
+        }
+        if cause.is::<crate::GatewayLoop>() {
+            return Ok(errors::SyntheticHttpResponse::loop_detected(cause));
+        }
+        if cause.is::<errors::FailFastError>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
+
+        if cause.is::<errors::H2Error>() {
+            return Err(error);
+        }
+
+        tracing::warn!(%error, "Unexpected error");
+        Ok(errors::SyntheticHttpResponse::unexpected_error())
     }
 }
