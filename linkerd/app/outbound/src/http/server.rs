@@ -78,24 +78,22 @@ impl ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if Self::has_cause::<http::ResponseTimeoutError>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::GATEWAY_TIMEOUT,
-                grpc_status: errors::Grpc::DeadlineExceeded,
-                close_connection: false,
-                message: error.to_string(),
-            });
+        let cause = errors::root_cause(&*error);
+        if cause.is::<http::ResponseTimeoutError>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
+        if cause.is::<IdentityRequired>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<errors::FailFastError>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
 
-        if Self::has_cause::<IdentityRequired>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::BAD_GATEWAY,
-                grpc_status: errors::Grpc::Unavailable,
-                close_connection: true,
-                message: error.to_string(),
-            });
+        if cause.is::<errors::H2Error>() {
+            return Err(error);
         }
 
-        errors::DefaultHttpRescue.rescue(error)
+        tracing::warn!(%error, "Unexpected error");
+        Ok(errors::SyntheticHttpResponse::unexpected_error())
     }
 }

@@ -4,10 +4,11 @@ use linkerd_error_respond as respond;
 pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
 use pin_project::pin_project;
 use std::{
+    borrow::Cow,
     pin::Pin,
     task::{Context, Poll},
 };
-use tracing::{debug, info, info_span, warn};
+use tracing::{debug, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
@@ -15,15 +16,6 @@ pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 pub trait HttpRescue<E> {
     /// Attempts to synthesize a response from the given error.
     fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E>;
-
-    /// A helper for inspecting potentially nested errors.
-    fn has_cause<C: std::error::Error + 'static>(
-        error: &(dyn std::error::Error + 'static),
-    ) -> bool {
-        // It's impractical for an error type to be so deeply nested that this recursion could
-        // overflow.
-        error.is::<C>() || error.source().map(Self::has_cause::<C>).unwrap_or(false)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -31,7 +23,7 @@ pub struct SyntheticHttpResponse {
     pub grpc_status: tonic::Code,
     pub http_status: http::StatusCode,
     pub close_connection: bool,
-    pub message: String,
+    pub message: Cow<'static, str>,
 }
 
 pub type Layer<R> = respond::RespondLayer<NewRespond<R>>;
@@ -62,16 +54,123 @@ const GRPC_CONTENT_TYPE: &str = "application/grpc";
 const GRPC_STATUS: &str = "grpc-status";
 const GRPC_MESSAGE: &str = "grpc-message";
 
+// === impl HttpRescue ===
+
+impl<E, F> HttpRescue<E> for F
+where
+    F: Fn(E) -> Result<SyntheticHttpResponse, E>,
+{
+    fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E> {
+        (self)(error)
+    }
+}
+
 // === impl SyntheticHttpResponse ===
 
-impl Default for SyntheticHttpResponse {
-    fn default() -> Self {
+impl SyntheticHttpResponse {
+    pub fn unexpected_error() -> Self {
         Self {
+            close_connection: true,
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
             grpc_status: tonic::Code::Internal,
-            message: "unexpected error".to_string(),
-            close_connection: true,
+            message: Cow::Borrowed("unexpected error"),
         }
+    }
+
+    pub fn bad_gateway(msg: impl ToString) -> Self {
+        Self {
+            close_connection: true,
+            http_status: http::StatusCode::BAD_GATEWAY,
+            grpc_status: tonic::Code::Unavailable,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn gateway_timeout(msg: impl ToString) -> Self {
+        Self {
+            close_connection: true,
+            http_status: http::StatusCode::GATEWAY_TIMEOUT,
+            grpc_status: tonic::Code::Unavailable,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn unauthenticated(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::Unauthenticated,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn permission_denied(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::PermissionDenied,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn loop_detected(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::LOOP_DETECTED,
+            grpc_status: tonic::Code::Aborted,
+            close_connection: true,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    pub fn not_found(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::NOT_FOUND,
+            grpc_status: tonic::Code::NotFound,
+            close_connection: false,
+            message: Cow::Owned(msg.to_string()),
+        }
+    }
+
+    #[inline]
+    fn message(&self) -> HeaderValue {
+        match self.message {
+            Cow::Borrowed(msg) => HeaderValue::from_static(msg),
+            Cow::Owned(ref msg) => HeaderValue::from_str(&*msg).unwrap_or_else(|error| {
+                warn!(%error, "Failed to encode error header");
+                HeaderValue::from_static("unexpected error")
+            }),
+        }
+    }
+
+    #[inline]
+    fn grpc_response<B: Default>(&self) -> http::Response<B> {
+        debug!(code = %self.grpc_status, "Handling error on gRPC connection");
+        http::Response::builder()
+            .version(http::Version::HTTP_2)
+            .header(http::header::CONTENT_LENGTH, "0")
+            .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
+            .header(GRPC_STATUS, code_header(self.grpc_status))
+            .header(GRPC_MESSAGE, self.message())
+            .header(L5D_PROXY_ERROR, self.message())
+            .body(B::default())
+            .expect("error response must be valid")
+    }
+
+    #[inline]
+    fn http_response<B: Default>(&self, version: http::Version) -> http::Response<B> {
+        debug!(status = %self.http_status, ?version, close = %self.close_connection, "Handling error on HTTP connection");
+        let mut rsp = http::Response::builder()
+            .status(self.http_status)
+            .version(version)
+            .header(http::header::CONTENT_LENGTH, "0")
+            .header(L5D_PROXY_ERROR, self.message());
+
+        if self.close_connection && version == http::Version::HTTP_11 {
+            rsp = rsp.header(http::header::CONNECTION, "close");
+        }
+
+        rsp.body(B::default())
+            .expect("error response must be valid")
     }
 }
 
@@ -121,6 +220,18 @@ where
 
 // === impl Respond ===
 
+impl<R> Respond<R> {
+    fn client_addr(&self) -> std::net::SocketAddr {
+        self.client
+            .as_ref()
+            .map(|ClientHandle { addr, .. }| *addr)
+            .unwrap_or_else(|| {
+                tracing::debug!("Missing client address");
+                ([0, 0, 0, 0], 0).into()
+            })
+    }
+}
+
 impl<B, R> respond::Respond<http::Response<B>, Error> for Respond<R>
 where
     B: Default + hyper::body::HttpBody,
@@ -147,28 +258,12 @@ where
             Err(error) => error,
         };
 
-        let span = info_span!(
-            "rescue",
-            client.addr = %self.client
-                .as_ref()
-                .map(|ClientHandle { addr, .. }| *addr)
-                .unwrap_or_else(|| {
-                    tracing::debug!("Missing client address");
-                    ([0, 0, 0, 0], 0).into()
-                })
-        );
-
-        let SyntheticHttpResponse {
-            grpc_status,
-            http_status,
-            close_connection,
-            message,
-        } = span.in_scope(|| {
+        let rsp = info_span!("rescue", client.addr = %self.client_addr()).in_scope(|| {
             tracing::info!(%error, "Request failed");
             self.rescue.rescue(error)
         })?;
 
-        if close_connection {
+        if rsp.close_connection {
             if let Some(ClientHandle { close, .. }) = self.client.as_ref() {
                 close.close();
             } else {
@@ -177,67 +272,12 @@ where
         }
 
         let rsp = if self.is_grpc {
-            Self::grpc_response(grpc_status, &*message)
+            rsp.grpc_response()
         } else {
-            Self::http_response(self.version, http_status, &*message, close_connection)
+            rsp.http_response(self.version)
         };
 
         Ok(rsp)
-    }
-}
-
-impl<R> Respond<R> {
-    fn http_response<B: Default>(
-        version: http::Version,
-        status: http::StatusCode,
-        message: &str,
-        close_connection: bool,
-    ) -> http::Response<B> {
-        info!(%status, ?version, %message, close_connection, "Handling error on HTTP connection");
-        let mut rsp = http::Response::builder()
-            .status(status)
-            .version(version)
-            .header(http::header::CONTENT_LENGTH, "0")
-            .header(
-                L5D_PROXY_ERROR,
-                HeaderValue::from_str(message).unwrap_or_else(|error| {
-                    warn!(%error, "Failed to encode error header");
-                    HeaderValue::from_static("Unexpected error")
-                }),
-            );
-
-        if close_connection && version == http::Version::HTTP_11 {
-            rsp = rsp.header(http::header::CONNECTION, "close");
-        }
-
-        rsp.body(B::default())
-            .expect("error response must be valid")
-    }
-
-    fn grpc_response<B: Default>(code: tonic::Code, message: &str) -> http::Response<B> {
-        info!(%code, %message, "Handling error on gRPC connection");
-
-        http::Response::builder()
-            .version(http::Version::HTTP_2)
-            .header(http::header::CONTENT_LENGTH, "0")
-            .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
-            .header(GRPC_STATUS, code_header(code))
-            .header(
-                GRPC_MESSAGE,
-                HeaderValue::from_str("request timed out").unwrap_or_else(|error| {
-                    warn!(%error, "Failed to encode error header");
-                    HeaderValue::from_static("Unexpected error")
-                }),
-            )
-            .header(
-                L5D_PROXY_ERROR,
-                HeaderValue::from_str(message).unwrap_or_else(|error| {
-                    warn!(%error, "Failed to encode error header");
-                    HeaderValue::from_static("Unexpected error")
-                }),
-            )
-            .body(B::default())
-            .expect("error response must be valid")
     }
 }
 
