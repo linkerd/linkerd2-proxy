@@ -81,10 +81,12 @@ impl Config {
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
-            .push(metrics.http_errors.to_layer())
             .push_on_service(
                 svc::layers()
-                    .push(errors::DefaultHttpRescue::layer())
+                    .push(errors::NewRespond::layer(|error: Error| -> Result<_> {
+                        tracing::warn!(%error, "Unexpected error");
+                        Ok(errors::SyntheticHttpResponse::unexpected_error())
+                    }))
                     .push(http::BoxResponse::layer()),
             )
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))

@@ -97,42 +97,28 @@ impl ServerRescue {
 
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if Self::has_cause::<crate::policy::DeniedUnauthorized>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::FORBIDDEN,
-                grpc_status: errors::Grpc::PermissionDenied,
-                close_connection: true,
-                message: error.to_string(),
-            });
+        let cause = errors::root_cause(&*error);
+        if cause.is::<crate::policy::DeniedUnauthorized>() {
+            return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
+        }
+        if cause.is::<crate::GatewayDomainInvalid>() {
+            return Ok(errors::SyntheticHttpResponse::not_found(cause));
+        }
+        if cause.is::<crate::GatewayIdentityRequired>() {
+            return Ok(errors::SyntheticHttpResponse::unauthenticated(cause));
+        }
+        if cause.is::<crate::GatewayLoop>() {
+            return Ok(errors::SyntheticHttpResponse::loop_detected(cause));
+        }
+        if cause.is::<errors::FailFastError>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
 
-        if Self::has_cause::<crate::GatewayDomainInvalid>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::BAD_REQUEST,
-                grpc_status: errors::Grpc::InvalidArgument,
-                close_connection: true,
-                message: error.to_string(),
-            });
+        if cause.is::<errors::H2Error>() {
+            return Err(error);
         }
 
-        if Self::has_cause::<crate::GatewayIdentityRequired>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::FORBIDDEN,
-                grpc_status: errors::Grpc::Unauthenticated,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        if Self::has_cause::<crate::GatewayLoop>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::LOOP_DETECTED,
-                grpc_status: errors::Grpc::Aborted,
-                close_connection: true,
-                message: error.to_string(),
-            });
-        }
-
-        errors::DefaultHttpRescue.rescue(error)
+        tracing::warn!(%error, "Unexpected error");
+        Ok(errors::SyntheticHttpResponse::unexpected_error())
     }
 }

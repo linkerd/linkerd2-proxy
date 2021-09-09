@@ -15,15 +15,6 @@ pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 pub trait HttpRescue<E> {
     /// Attempts to synthesize a response from the given error.
     fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E>;
-
-    /// A helper for inspecting potentially nested errors.
-    fn has_cause<C: std::error::Error + 'static>(
-        error: &(dyn std::error::Error + 'static),
-    ) -> bool {
-        // It's impractical for an error type to be so deeply nested that this recursion could
-        // overflow.
-        error.is::<C>() || error.source().map(Self::has_cause::<C>).unwrap_or(false)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -62,15 +53,80 @@ const GRPC_CONTENT_TYPE: &str = "application/grpc";
 const GRPC_STATUS: &str = "grpc-status";
 const GRPC_MESSAGE: &str = "grpc-message";
 
+// === impl HttpRescue ===
+
+impl<E, F> HttpRescue<E> for F
+where
+    F: Fn(E) -> Result<SyntheticHttpResponse, E>,
+{
+    fn rescue(&self, error: E) -> Result<SyntheticHttpResponse, E> {
+        (self)(error)
+    }
+}
+
 // === impl SyntheticHttpResponse ===
 
-impl Default for SyntheticHttpResponse {
-    fn default() -> Self {
+impl SyntheticHttpResponse {
+    pub fn unexpected_error() -> Self {
         Self {
             http_status: http::StatusCode::INTERNAL_SERVER_ERROR,
             grpc_status: tonic::Code::Internal,
             message: "unexpected error".to_string(),
             close_connection: true,
+        }
+    }
+
+    pub fn bad_gateway(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::BAD_GATEWAY,
+            grpc_status: tonic::Code::Unavailable,
+            close_connection: true,
+            message: msg.to_string(),
+        }
+    }
+
+    pub fn gateway_timeout(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::GATEWAY_TIMEOUT,
+            grpc_status: tonic::Code::Unavailable,
+            close_connection: true,
+            message: msg.to_string(),
+        }
+    }
+
+    pub fn unauthenticated(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::Unauthenticated,
+            close_connection: false,
+            message: msg.to_string(),
+        }
+    }
+
+    pub fn permission_denied(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::FORBIDDEN,
+            grpc_status: tonic::Code::PermissionDenied,
+            close_connection: false,
+            message: msg.to_string(),
+        }
+    }
+
+    pub fn loop_detected(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::LOOP_DETECTED,
+            grpc_status: tonic::Code::Aborted,
+            close_connection: true,
+            message: msg.to_string(),
+        }
+    }
+
+    pub fn not_found(msg: impl ToString) -> Self {
+        Self {
+            http_status: http::StatusCode::NOT_FOUND,
+            grpc_status: tonic::Code::NotFound,
+            close_connection: false,
+            message: msg.to_string(),
         }
     }
 }

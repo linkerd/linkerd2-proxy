@@ -87,31 +87,15 @@ impl ClientRescue {
 
 impl errors::HttpRescue<Error> for ClientRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        if Self::has_cause::<http::orig_proto::DowngradedH2Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::BAD_GATEWAY,
-                grpc_status: errors::Grpc::Unavailable,
-                close_connection: true,
-                message: error.to_string(),
-            });
+        let cause = errors::root_cause(&*error);
+        if cause.is::<http::orig_proto::DowngradedH2Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
         }
-
-        if Self::has_cause::<std::io::Error>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::BAD_GATEWAY,
-                grpc_status: errors::Grpc::Unavailable,
-                close_connection: true,
-                message: error.to_string(),
-            });
+        if cause.is::<std::io::Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
         }
-
-        if Self::has_cause::<errors::ConnectTimeout>(&*error) {
-            return Ok(errors::SyntheticHttpResponse {
-                http_status: http::StatusCode::GATEWAY_TIMEOUT,
-                grpc_status: errors::Grpc::DeadlineExceeded,
-                close_connection: true,
-                message: error.to_string(),
-            });
+        if cause.is::<errors::ConnectTimeout>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
 
         Err(error)
