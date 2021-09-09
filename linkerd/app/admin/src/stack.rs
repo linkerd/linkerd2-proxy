@@ -38,6 +38,7 @@ struct UnexpectedSni(tls::ServerId, Remote<ClientAddr>);
 
 #[derive(Clone, Debug)]
 struct Tcp {
+    policy: inbound::policy::AllowPolicy,
     addr: Local<ServerAddr>,
     client: Remote<ClientAddr>,
     tls: tls::ConditionalServerTls,
@@ -47,6 +48,12 @@ struct Tcp {
 struct Http {
     tcp: Tcp,
     version: http::Version,
+}
+
+#[derive(Clone, Debug)]
+struct Permitted {
+    permit: inbound::policy::Permit,
+    http: Http,
 }
 
 #[derive(Clone)]
@@ -63,13 +70,14 @@ impl Config {
     pub fn build<B, R>(
         self,
         bind: B,
+        policy: impl inbound::policy::CheckPolicy,
         identity: Option<LocalCrtKey>,
         report: R,
         metrics: inbound::Metrics,
         trace: trace::Handle,
         drain: drain::Watch,
         shutdown: mpsc::UnboundedSender<()>,
-    ) -> Result<Task, Error>
+    ) -> Result<Task>
     where
         R: FmtMetrics + Clone + Send + Sync + Unpin + 'static,
         B: Bind<ServerConfig>,
@@ -77,13 +85,21 @@ impl Config {
     {
         let (listen_addr, listen) = bind.bind(&self.server)?;
 
+        // Get the policy for the admin server.
+        let policy = policy.check_policy(OrigDstAddr(listen_addr.into()))?;
+
         let (ready, latch) = crate::server::Readiness::new();
         let admin = crate::server::Admin::new(report, ready, shutdown, trace);
         let admin = svc::stack(move |_| admin.clone())
-            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Http>())
+            .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
+            .push_map_target(|(permit, http)| Permitted { permit, http })
+            .push(inbound::policy::NewAuthorizeHttp::layer(metrics.http_authz.clone()))
             .push_on_service(
                 svc::layers()
                     .push(errors::NewRespond::layer(|error: Error| -> Result<_> {
+                        if error.is::<inbound::policy::DeniedUnauthorized> () {
+                            return Ok(errors::SyntheticHttpResponse::permission_denied(error));
+                        }
                         tracing::warn!(%error, "Unexpected error");
                         Ok(errors::SyntheticHttpResponse::unexpected_error())
                     }))
@@ -135,12 +151,11 @@ impl Config {
             .push(detect::NewDetectService::layer(detect::Config::<http::DetectHttp>::from_timeout(DETECT_TIMEOUT)))
             .push(transport::metrics::NewServer::layer(metrics.proxy.transport))
             .push_map_target(move |(tls, addrs): (tls::ConditionalServerTls, B::Addrs)| {
-                // TODO(ver): We should enforce policy here; but we need to permit liveness probes
-                // for destination pods to startup...
                 Tcp {
                     tls,
                     client: addrs.param(),
                     addr: addrs.param(),
+                    policy: policy.clone(),
                 }
             })
             .push(svc::BoxNewService::layer())
@@ -165,8 +180,7 @@ impl Param<transport::labels::Key> for Tcp {
         transport::labels::Key::inbound_server(
             self.tls.clone(),
             self.addr.into(),
-            // TODO(ver) enforce policies on the proxy's admin port.
-            metrics::ServerLabel("default:admin".to_string()),
+            self.policy.server_label(),
         )
     }
 }
@@ -185,22 +199,39 @@ impl Param<OrigDstAddr> for Http {
     }
 }
 
-impl Param<metrics::ServerLabel> for Http {
-    fn param(&self) -> metrics::ServerLabel {
-        metrics::ServerLabel("default:admin".to_string())
+impl Param<Remote<ClientAddr>> for Http {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.tcp.client
     }
 }
 
-impl Param<metrics::EndpointLabels> for Http {
+impl Param<tls::ConditionalServerTls> for Http {
+    fn param(&self) -> tls::ConditionalServerTls {
+        self.tcp.tls.clone()
+    }
+}
+
+impl Param<inbound::policy::AllowPolicy> for Http {
+    fn param(&self) -> inbound::policy::AllowPolicy {
+        self.tcp.policy.clone()
+    }
+}
+
+impl Param<metrics::ServerLabel> for Http {
+    fn param(&self) -> metrics::ServerLabel {
+        self.tcp.policy.server_label()
+    }
+}
+
+// === impl Permitted ===
+
+impl Param<metrics::EndpointLabels> for Permitted {
     fn param(&self) -> metrics::EndpointLabels {
         metrics::InboundEndpointLabels {
-            tls: self.tcp.tls.clone(),
+            tls: self.http.tcp.tls.clone(),
             authority: None,
-            target_addr: self.tcp.addr.into(),
-            policy: metrics::AuthzLabels {
-                server: self.param(),
-                authz: "default:all-unauthenticated".to_string(),
-            },
+            target_addr: self.http.tcp.addr.into(),
+            policy: self.permit.labels.clone(),
         }
         .into()
     }

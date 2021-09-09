@@ -470,6 +470,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         allow_discovery: gateway_suffixes?.into_iter().flatten().collect(),
     };
 
+    let admin_listener_addr = admin_listener_addr?
+        .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap());
+
     let inbound = {
         let addr = ListenAddr(
             inbound_listener_addr?
@@ -551,6 +554,9 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         // the more common case).
                         ports.insert(inbound_port);
                     }
+
+                    // Ensure that the admin server port is included in policy discovery.
+                    ports.insert(admin_listener_addr.port());
 
                     // The workload, which is opaque from the proxy's point-of-view, is sent to the
                     // policy controller to support policy discovery.
@@ -723,10 +729,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let admin = super::admin::Config {
         metrics_retain_idle: metrics_retain_idle?.unwrap_or(DEFAULT_METRICS_RETAIN_IDLE),
         server: ServerConfig {
-            addr: ListenAddr(
-                admin_listener_addr?
-                    .unwrap_or_else(|| parse_socket_addr(DEFAULT_ADMIN_LISTEN_ADDR).unwrap()),
-            ),
+            addr: ListenAddr(admin_listener_addr),
             keepalive: inbound.proxy.server.keepalive,
             h2_settings,
         },
