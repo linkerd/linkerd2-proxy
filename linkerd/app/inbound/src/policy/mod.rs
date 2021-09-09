@@ -63,6 +63,19 @@ impl From<ServerPolicy> for DefaultPolicy {
     }
 }
 
+impl From<DefaultPolicy> for ServerPolicy {
+    fn from(d: DefaultPolicy) -> Self {
+        match d {
+            DefaultPolicy::Allow(p) => p,
+            DefaultPolicy::Deny => ServerPolicy {
+                protocol: Protocol::Opaque,
+                authorizations: vec![],
+                name: "default:deny".to_string(),
+            },
+        }
+    }
+}
+
 // === impl AllowPolicy ===
 
 impl AllowPolicy {

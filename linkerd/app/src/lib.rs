@@ -210,10 +210,8 @@ impl Config {
                         .instrument(info_span!("outbound")),
                 );
 
-                let inbound_policies = inbound
-                    .build_policies(dns, control_metrics)
-                    .instrument(info_span!("policy"))
-                    .await;
+                let inbound_policies =
+                    info_span!("policy").in_scope(|| inbound.build_policies(dns, control_metrics));
 
                 tokio::spawn(
                     inbound

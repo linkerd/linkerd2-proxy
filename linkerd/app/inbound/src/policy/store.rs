@@ -1,15 +1,13 @@
 use super::{discover, AllowPolicy, CheckPolicy, DefaultPolicy, DeniedUnknownPort};
-use futures::prelude::*;
 use linkerd_app_core::{proxy::http, transport::OrigDstAddr, Error, Result};
 pub use linkerd_server_policy::{Authentication, Authorization, Protocol, ServerPolicy, Suffix};
 use std::{
     collections::{HashMap, HashSet},
-    future::Future,
     hash::{BuildHasherDefault, Hasher},
     sync::Arc,
 };
 use tokio::sync::watch;
-use tracing::{info_span, Instrument};
+use tracing::info_span;
 
 #[derive(Clone, Debug)]
 pub struct Store {
@@ -74,49 +72,41 @@ impl Store {
     /// provided ports. The store maintains these watches so that each time a policy is checked, it
     /// may obtain the latest policy provided by the watch. An error is returned if any of the
     /// watches cannot be established.
-    //
-    // XXX(ver): rustc can't seem to figure out that this Future is `Send` unless we annotate it
-    // explicitly, hence the manual_async_fn.
-    #[allow(clippy::manual_async_fn)]
     pub(super) fn spawn_discover<S>(
         default: DefaultPolicy,
         ports: HashSet<u16>,
         discover: discover::Watch<S>,
-    ) -> impl Future<Output = Result<Self>> + Send
+    ) -> Self
     where
         S: tonic::client::GrpcService<tonic::body::BoxBody, Error = Error>,
         S: Clone + Send + Sync + 'static,
         S::Future: Send,
         S::ResponseBody: http::HttpBody<Error = Error> + Send + Sync + 'static,
     {
-        async move {
-            let rxs = ports.into_iter().map(|port| {
-                discover
-                    .clone()
-                    .spawn_watch(port)
-                    .instrument(info_span!("watch", %port))
-                    .map_ok(move |rsp| (port, rsp.into_inner()))
-            });
-
-            let ports = futures::future::join_all(rxs)
-                .await
-                .into_iter()
-                .collect::<Result<PortMap<_>, tonic::Status>>()?;
-
-            let default = match Self::mk_default(default) {
-                Some((tx, rx)) => {
-                    tokio::spawn(async move {
-                        tx.closed().await;
-                    });
-                    Some(rx)
-                }
-                None => None,
-            };
-
-            Ok(Self {
-                default,
-                ports: Arc::new(ports),
+        let rxs = ports
+            .into_iter()
+            .map(|port| {
+                let discover = discover.clone();
+                let default = default.clone();
+                let rx = info_span!("watch", %port)
+                    .in_scope(|| discover.spawn_with_init(port, default.into()));
+                (port, rx)
             })
+            .collect::<PortMap<_>>();
+
+        let default = match Self::mk_default(default) {
+            Some((tx, rx)) => {
+                tokio::spawn(async move {
+                    tx.closed().await;
+                });
+                Some(rx)
+            }
+            None => None,
+        };
+
+        Self {
+            default,
+            ports: Arc::new(rxs),
         }
     }
 }

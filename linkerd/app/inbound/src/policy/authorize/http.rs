@@ -36,9 +36,7 @@ pub struct AuthorizeHttp<T, N> {
 // === impl NewAuthorizeHttp ===
 
 impl<N> NewAuthorizeHttp<N> {
-    pub(crate) fn layer(
-        metrics: HttpAuthzMetrics,
-    ) -> impl svc::layer::Layer<N, Service = Self> + Clone {
+    pub fn layer(metrics: HttpAuthzMetrics) -> impl svc::layer::Layer<N, Service = Self> + Clone {
         svc::layer::mk(move |inner| Self {
             metrics: metrics.clone(),
             inner,
