@@ -1,7 +1,5 @@
 use super::{discover::Discover, DefaultPolicy, ServerPolicy, Store};
-use linkerd_app_core::{
-    control, dns, metrics, proxy::identity::LocalCrtKey, svc::NewService, Result,
-};
+use linkerd_app_core::{control, dns, metrics, proxy::identity::LocalCrtKey, svc::NewService};
 use std::collections::{HashMap, HashSet};
 
 /// Configures inbound policies.
@@ -25,12 +23,12 @@ pub enum Config {
 // === impl Config ===
 
 impl Config {
-    pub(crate) async fn build(
+    pub(crate) fn build(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<LocalCrtKey>,
-    ) -> Result<Store> {
+    ) -> Store {
         match self {
             Self::Fixed { default, ports } => {
                 let (store, tx) = Store::fixed(default, ports);
@@ -39,7 +37,7 @@ impl Config {
                         tx.closed().await;
                     });
                 }
-                Ok(store)
+                store
             }
             Self::Discover {
                 control,
@@ -52,7 +50,7 @@ impl Config {
                     let c = control.build(dns, metrics, identity).new_service(());
                     Discover::new(workload, c).into_watch(backoff)
                 };
-                Store::spawn_discover(default, ports, watch).await
+                Store::spawn_discover(default, ports, watch)
             }
         }
     }

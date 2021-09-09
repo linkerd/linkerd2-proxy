@@ -16,7 +16,7 @@ struct TcpEndpoint {
 // === impl Inbound ===
 
 impl Inbound<()> {
-    pub async fn build_policies(
+    pub fn build_policies(
         &self,
         dns: dns::Resolver,
         control_metrics: metrics::ControlHttp,
@@ -25,8 +25,6 @@ impl Inbound<()> {
             .policy
             .clone()
             .build(dns, control_metrics, self.runtime.identity.clone())
-            .await
-            .expect("Failed to fetch port policy")
     }
 
     pub async fn serve<A, I, G, GSvc, P>(

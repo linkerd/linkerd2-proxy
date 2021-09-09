@@ -26,7 +26,7 @@ metrics! {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct HttpAuthzMetrics(Arc<HttpInner>);
+pub struct HttpAuthzMetrics(Arc<HttpInner>);
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct TcpAuthzMetrics(Arc<TcpInner>);
