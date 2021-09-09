@@ -16,7 +16,7 @@ pub use linkerd_app_core::metrics::*;
 /// Holds outbound proxy metrics.
 #[derive(Clone, Debug)]
 pub struct Metrics {
-    pub(crate) http_authz: authz::HttpAuthzMetrics,
+    pub http_authz: authz::HttpAuthzMetrics,
     pub http_errors: error::HttpErrorMetrics,
 
     pub(crate) tcp_authz: authz::TcpAuthzMetrics,
