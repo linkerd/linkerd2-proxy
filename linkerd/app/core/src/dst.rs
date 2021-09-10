@@ -1,8 +1,8 @@
 use super::classify;
 use crate::profiles;
 use linkerd_http_classify::CanClassify;
-use linkerd_proxy_http::timeout;
-use std::time::Duration;
+use linkerd_proxy_http as http;
+use linkerd_stack::Param;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
@@ -21,8 +21,8 @@ impl CanClassify for Route {
     }
 }
 
-impl timeout::HasTimeout for Route {
-    fn timeout(&self) -> Option<Duration> {
-        self.route.timeout()
+impl Param<http::ResponseTimeout> for Route {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.route.timeout())
     }
 }

@@ -79,7 +79,7 @@ impl ServerRescue {
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         let cause = errors::root_cause(&*error);
-        if cause.is::<errors::ResponseTimeout>() {
+        if cause.is::<http::ResponseTimeoutError>() {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
         if cause.is::<IdentityRequired>() {

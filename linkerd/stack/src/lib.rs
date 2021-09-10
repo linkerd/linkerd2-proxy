@@ -9,9 +9,11 @@ mod box_service;
 mod either;
 mod fail;
 mod fail_on_error;
+mod failfast;
 mod filter;
 pub mod layer;
 mod make_thunk;
+mod map_err;
 mod map_target;
 pub mod monitor;
 pub mod new_service;
@@ -20,6 +22,7 @@ mod proxy;
 mod result;
 mod router;
 mod switch_ready;
+mod timeout;
 mod unwrap_or;
 
 pub use self::{
@@ -29,8 +32,10 @@ pub use self::{
     either::{Either, NewEither},
     fail::Fail,
     fail_on_error::FailOnError,
+    failfast::{FailFast, FailFastError},
     filter::{Filter, FilterLayer, Predicate},
     make_thunk::MakeThunk,
+    map_err::MapErr,
     map_target::{MapTarget, MapTargetLayer, MapTargetService},
     monitor::{Monitor, MonitorError, MonitorNewService, MonitorService, NewMonitor},
     new_service::NewService,
@@ -39,10 +44,11 @@ pub use self::{
     result::ResultService,
     router::{NewRouter, RecognizeRoute},
     switch_ready::{NewSwitchReady, SwitchReady},
+    timeout::{Timeout, TimeoutError},
     unwrap_or::UnwrapOr,
 };
 pub use tower::{
-    util::{future_service, FutureService, MapErr, MapErrLayer, Oneshot, ServiceExt},
+    util::{future_service, FutureService, Oneshot, ServiceExt},
     Service,
 };
 

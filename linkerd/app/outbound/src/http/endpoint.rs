@@ -39,7 +39,7 @@ impl<C> Outbound<C> {
             // HTTP/1.x fallback is supported as needed.
             connect
                 .push(http::client::layer(h1_settings, h2_settings))
-                .push_on_service(svc::MapErrLayer::new(Into::<Error>::into))
+                .push_on_service(svc::MapErr::layer(Into::<Error>::into))
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
