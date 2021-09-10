@@ -137,8 +137,6 @@ where
                 let mut policy = policy.clone();
                 let metrics = metrics.clone();
 
-                // FIXME increment counter.
-
                 let call = inner.call(io);
                 future::Either::Left(Box::pin(async move {
                     tokio::pin!(call);
