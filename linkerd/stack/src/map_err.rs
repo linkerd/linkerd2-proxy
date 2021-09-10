@@ -2,6 +2,7 @@ use futures::TryFutureExt;
 use linkerd_error::Error;
 use std::task::{Context, Poll};
 
+/// Like `tower::util::MapErr`, but with an implementation of `Proxy`.
 #[derive(Clone, Debug)]
 pub struct MapErr<S, F> {
     inner: S,
