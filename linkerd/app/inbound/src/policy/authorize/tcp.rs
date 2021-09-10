@@ -67,7 +67,7 @@ where
         let policy: AllowPolicy = target.param();
         match policy.check_authorized(client, &tls) {
             Ok(permit) => {
-                tracing::debug!(?permit, "Connection authorized");
+                tracing::debug!(?permit, ?tls, %client, "Connection authorized");
 
                 // This new services requires a ClientAddr, so it must necessarily be built for each
                 // connection. So we can just increment the counter here since the service can only
@@ -84,7 +84,7 @@ where
                 })
             }
             Err(deny) => {
-                tracing::info!(?deny, "Connection denied");
+                tracing::info!(server = %policy.server_label(), ?tls, %client, "Connection denied");
                 self.metrics.deny(&policy);
                 AuthorizeTcp::Unauthorized(Unauthorized { deny })
             }
