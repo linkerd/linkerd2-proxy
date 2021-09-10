@@ -122,40 +122,39 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        match self {
-            // If the connection is authorized, pass it to the inner service and stop processing the
-            // connection if the authorization's state changes to no longer permit the request.
-            Self::Authorized(Authorized {
-                inner,
-                client,
-                tls,
-                policy,
-                metrics,
-            }) => {
-                let client = *client;
-                let tls = tls.clone();
-                let mut policy = policy.clone();
-                let metrics = metrics.clone();
-
-                let call = inner.call(io);
-                future::Either::Left(Box::pin(async move {
-                    tokio::pin!(call);
-                    loop {
-                        tokio::select! {
-                            res = &mut call => return res.map_err(Into::into),
-                            _ = policy.changed() => {
-                                if let Err(denied) = policy.check_authorized(client, &tls) {
-                                    tracing::info!(server = %policy.server_label(), ?tls, %client, "Connection terminated");
-                                    metrics.terminate(&policy);
-                                    return Err(denied.into());
-                                }
-                            }
-                        };
-                    }
-                }))
-            }
-
+        let Authorized {
+            inner,
+            client,
+            tls,
+            policy,
+            metrics,
+        } = match self {
+            Self::Authorized(a) => a,
             Self::Unauthorized(_deny) => unreachable!("poll_ready must be called"),
-        }
+        };
+
+        // If the connection is authorized, pass it to the inner service and stop processing the
+        // connection if the authorization's state changes to no longer permit the request.
+        let client = *client;
+        let tls = tls.clone();
+        let mut policy = policy.clone();
+        let metrics = metrics.clone();
+
+        let call = inner.call(io);
+        future::Either::Left(Box::pin(async move {
+            tokio::pin!(call);
+            loop {
+                tokio::select! {
+                    res = &mut call => return res.map_err(Into::into),
+                    _ = policy.changed() => {
+                        if let Err(denied) = policy.check_authorized(client, &tls) {
+                            tracing::info!(server = %policy.server_label(), ?tls, %client, "Connection terminated");
+                            metrics.terminate(&policy);
+                            return Err(denied.into());
+                        }
+                    }
+                };
+            }
+        }))
     }
 }
