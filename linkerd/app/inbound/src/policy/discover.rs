@@ -164,7 +164,8 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                 let name = labels
                     .get("name")
                     .ok_or("authorization missing 'name' label")?
-                    .clone();
+                    .clone()
+                    .into();
 
                 Ok(Authorization {
                     networks,
@@ -179,7 +180,8 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
         .labels
         .get("name")
         .ok_or("server missing 'name' label")?
-        .clone();
+        .clone()
+        .into();
 
     Ok(ServerPolicy {
         protocol,
