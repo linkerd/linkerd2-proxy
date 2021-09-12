@@ -9,7 +9,7 @@ impl<N> Outbound<N> {
     pub fn push_http_server<T, NSvc>(
         self,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
@@ -63,7 +63,7 @@ impl<N> Outbound<N> {
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .check_new_service::<T, http::Request<http::BoxBody>>()
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

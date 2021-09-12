@@ -71,7 +71,7 @@ impl<C> Outbound<C> {
                         .push(http::BoxResponse::layer())
                         .push(svc::BoxService::layer()),
                 )
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

@@ -59,7 +59,7 @@ impl<C> Inbound<C> {
         self,
         profiles: P,
     ) -> Inbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
@@ -231,13 +231,13 @@ impl<C> Inbound<C> {
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request. NewRouter moves the NewService into the service type, so
                 // minimize it's type footprint with a Box.
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .push(svc::NewRouter::layer(LogicalPerRequest::from))
                 .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

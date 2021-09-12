@@ -3,8 +3,8 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+mod arc_new_service;
 mod box_future;
-mod box_new_service;
 mod box_service;
 mod either;
 mod fail;
@@ -23,8 +23,8 @@ mod switch_ready;
 mod unwrap_or;
 
 pub use self::{
+    arc_new_service::ArcNewService,
     box_future::BoxFuture,
-    box_new_service::BoxNewService,
     box_service::{BoxService, BoxServiceLayer},
     either::{Either, NewEither},
     fail::Fail,

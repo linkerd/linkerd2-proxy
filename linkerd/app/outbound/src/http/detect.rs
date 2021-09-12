@@ -53,7 +53,7 @@ impl<N> Outbound<N> {
                 .push_on_service(svc::BoxService::layer())
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .push(detect::NewDetectService::layer(config.proxy.detect_http()))
                 .push_switch(
                     // When the target is marked as as opaque, we skip HTTP
@@ -68,7 +68,7 @@ impl<N> Outbound<N> {
                 )
                 .check_new_service::<T, _>()
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

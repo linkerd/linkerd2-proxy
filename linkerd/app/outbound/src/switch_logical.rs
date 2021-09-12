@@ -61,7 +61,7 @@ impl<S> Outbound<S> {
                     logical,
                 )
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

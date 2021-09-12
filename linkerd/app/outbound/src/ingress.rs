@@ -176,7 +176,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
                     .instrument(|_: &_| info_span!("forward"))
                     .into_inner(),
             )
-            .push(svc::BoxNewService::layer())
+            .push(svc::ArcNewService::layer())
             // Obtain a new inner service for each request. Override stacks are cached, as they
             // depend on discovery that should not be performed many times. Forwarding stacks are
             // not cached explicitly, as there are no real resources we need to share across
@@ -223,7 +223,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             })
             .push_cache(cache_max_idle_age)
             .push_map_target(detect::allow_timeout)
-            .push(svc::BoxNewService::layer())
+            .push(svc::ArcNewService::layer())
             .push(detect::NewDetectService::layer(detect_http))
             .push(transport::metrics::NewServer::layer(
                 rt.metrics.proxy.transport.clone(),
@@ -235,7 +235,7 @@ impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
             })
             .push(rt.metrics.tcp_errors.to_layer())
             .push_on_service(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer())
+            .push(svc::ArcNewService::layer())
             .check_new_service::<T, I>()
             .into_inner()
     }

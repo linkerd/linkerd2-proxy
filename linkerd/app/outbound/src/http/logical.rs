@@ -104,7 +104,7 @@ impl<E> Outbound<E> {
                 // concrete address.
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
                 .push_map_target(Concrete::from)
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 // Distribute requests over a distribution of balancers via a
                 // traffic split.
                 //
@@ -170,7 +170,7 @@ impl<E> Outbound<E> {
                 .push_on_service(http::BoxResponse::layer())
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

@@ -78,7 +78,7 @@ impl Config {
                             })
                         }
                     }))
-                    .push(svc::BoxNewService::layer())
+                    .push(svc::ArcNewService::layer())
                     .push(tls::NewDetectTls::layer(TlsParams { identity }))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();

@@ -164,7 +164,7 @@ impl<N> Inbound<N> {
                 )
                 .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 
@@ -212,7 +212,7 @@ impl<N> Inbound<N> {
                         .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .into_inner(),
                 )
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .push_map_target(detect::allow_timeout)
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect))
                 .check_new_service::<Detect, I>();
@@ -246,7 +246,7 @@ impl<N> Inbound<N> {
                     detect.into_inner(),
                 )
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<Tls, I>()
         })
     }
@@ -619,11 +619,11 @@ mod tests {
     }
 
     fn new_panic<T, I: 'static>(msg: &'static str) -> svc::BoxNewTcp<T, I> {
-        svc::BoxNewService::new(move |_| -> svc::BoxTcp<I> { panic!("{}", msg) })
+        svc::ArcNewService::new(move |_| -> svc::BoxTcp<I> { panic!("{}", msg) })
     }
 
     fn new_ok<T>() -> svc::BoxNewTcp<T, io::BoxedIo> {
-        svc::BoxNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
+        svc::ArcNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
     }
 
     #[derive(Clone, Debug)]

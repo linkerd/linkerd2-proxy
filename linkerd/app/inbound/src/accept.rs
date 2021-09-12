@@ -74,7 +74,7 @@ impl<N> Inbound<N> {
                     info_span!("server", port = addr.port())
                 })
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -177,11 +177,11 @@ mod tests {
     }
 
     fn new_panic<T>(msg: &'static str) -> svc::BoxNewTcp<T, io::DuplexStream> {
-        svc::BoxNewService::new(move |_| panic!("{}", msg))
+        svc::ArcNewService::new(move |_| panic!("{}", msg))
     }
 
     fn new_ok<T>() -> svc::BoxNewTcp<T, io::DuplexStream> {
-        svc::BoxNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
+        svc::ArcNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
     }
 
     #[derive(Clone, Debug)]

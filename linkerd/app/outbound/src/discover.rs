@@ -16,7 +16,7 @@ impl<N> Outbound<N> {
         self,
         profiles: P,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
@@ -84,7 +84,7 @@ impl<N> Outbound<N> {
                 .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
                 .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
                 .push(rt.metrics.tcp_errors.to_layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
     }

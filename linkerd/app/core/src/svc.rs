@@ -6,7 +6,7 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    self as stack, layer, ArcNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
     Filter, InsertParam, MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate,
     UnwrapOr,
 };
@@ -34,11 +34,11 @@ pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
 
-pub type BoxNewHttp<T, B = http::BoxBody> = BoxNewService<T, BoxHttp<B>>;
+pub type BoxNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
 
 pub type BoxTcp<I> = BoxService<I, (), Error>;
 
-pub type BoxNewTcp<T, I> = BoxNewService<T, BoxTcp<I>>;
+pub type BoxNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
