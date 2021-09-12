@@ -250,6 +250,9 @@ impl<N> Inbound<N> {
                             }
                             // Meshed HTTP/1 services may actually be transported over HTTP/2 connections
                             // between proxies, so we have to do detection.
+                            //
+                            // TODO(ver) outbound clients should hint this with ALPN so we don't
+                            // have to detect this situation.
                             Protocol::Http1 if tls.status.is_some() => {
                                 return Ok(svc::Either::B(Detect {
                                     timeout: detect_timeout,
