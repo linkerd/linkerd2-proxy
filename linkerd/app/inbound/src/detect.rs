@@ -212,7 +212,6 @@ impl<N> Inbound<N> {
                         .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .into_inner(),
                 )
-                .push(svc::BoxNewService::layer())
                 .push_map_target(detect::allow_timeout)
                 .push(detect::NewDetectService::layer(ConfigureHttpDetect))
                 .check_new_service::<Detect, I>();
