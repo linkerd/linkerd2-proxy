@@ -176,7 +176,7 @@ mod tests {
 
         let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |a: SocketAddr| {
                 assert_eq!(a, addr);
                 let mut io = support::io();

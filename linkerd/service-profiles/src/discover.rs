@@ -31,17 +31,18 @@ type MakeFuture<S, E> = Pin<Box<dyn Future<Output = Result<S, E>> + Send + 'stat
 impl<T, G, M> NewService<T> for Discover<G, M>
 where
     T: Clone + Send + 'static,
-    G: GetProfile<T>,
+    G: GetProfile<T> + Clone,
     G::Future: Send + 'static,
     G::Error: Send,
     M: NewService<(Option<Receiver>, T)> + Clone + Send + 'static,
 {
     type Service = FutureService<MakeFuture<M::Service, G::Error>, M::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
-        let mut inner = self.inner.clone();
+    fn new_service(&self, target: T) -> Self::Service {
+        let inner = self.inner.clone();
         FutureService::new(Box::pin(
             self.get_profile
+                .clone()
                 .get_profile(target.clone())
                 .map_ok(move |rx| inner.new_service((rx, target))),
         ))

@@ -49,7 +49,7 @@ where
 {
     type Service = Timeout<M::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         match target.timeout() {
             Some(t) => Timeout::new(self.inner.new_service(target), t),
             None => Timeout::passthru(self.inner.new_service(target)),

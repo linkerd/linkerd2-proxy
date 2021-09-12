@@ -7,7 +7,7 @@ pub struct BoxNewService<T, S> {
 }
 
 trait CloneNewService<T, S>: DynClone {
-    fn inner_new_service(&mut self, t: T) -> S;
+    fn inner_new_service(&self, t: T) -> S;
 }
 
 impl<T, N> CloneNewService<T, N::Service> for N
@@ -15,7 +15,7 @@ where
     N: NewService<T> + Clone + Send + Sync + 'static,
     N::Service: Send + 'static,
 {
-    fn inner_new_service(&mut self, t: T) -> N::Service {
+    fn inner_new_service(&self, t: T) -> N::Service {
         self.new_service(t)
     }
 }
@@ -51,7 +51,7 @@ impl<T, S> Clone for BoxNewService<T, S> {
 impl<T, S> NewService<T> for BoxNewService<T, S> {
     type Service = S;
 
-    fn new_service(&mut self, t: T) -> S {
+    fn new_service(&self, t: T) -> S {
         self.inner.inner_new_service(t)
     }
 }

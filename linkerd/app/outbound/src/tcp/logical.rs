@@ -156,7 +156,7 @@ mod tests {
 
         // Build the TCP logical stack with a mocked connector.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| {
                 assert_eq!(*ep.addr.as_ref(), ep_addr);
                 let mut io = support::io();

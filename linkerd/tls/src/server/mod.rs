@@ -126,7 +126,7 @@ where
 {
     type Service = DetectTls<T, P, L, N>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let timeout = self.params.extract_param(&target);
         let local_identity = self.params.extract_param(&target);
         DetectTls {
@@ -162,7 +162,7 @@ where
     fn call(&mut self, io: I) -> Self::Future {
         let target = self.target.clone();
         let params = self.params.clone();
-        let mut new_accept = self.inner.clone();
+        let new_accept = self.inner.clone();
 
         match self.local_identity.as_ref() {
             Some(local) => {
@@ -196,11 +196,8 @@ where
                         ),
                     };
 
-                    new_accept
-                        .new_service(params.insert_param(peer, target))
-                        .oneshot(io)
-                        .err_into::<Error>()
-                        .await
+                    let svc = new_accept.new_service(params.insert_param(peer, target));
+                    svc.oneshot(io).err_into::<Error>().await
                 })
             }
 

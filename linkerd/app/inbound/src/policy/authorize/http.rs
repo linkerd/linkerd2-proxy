@@ -53,7 +53,7 @@ where
 {
     type Service = AuthorizeHttp<T, N>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let client_addr = target.param();
         let tls = target.param();
         let policy = target.param();

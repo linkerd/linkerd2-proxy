@@ -31,7 +31,7 @@ where
     type Service = SetIdentityHeader<N::Service>;
 
     #[inline]
-    fn new_service(&mut self, t: T) -> Self::Service {
+    fn new_service(&self, t: T) -> Self::Service {
         let value = t.param().map(|name| {
             http::HeaderValue::from_str(name.as_ref())
                 .expect("identity must be a valid header value")

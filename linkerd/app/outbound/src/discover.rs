@@ -134,7 +134,7 @@ mod tests {
 
         // Create a profile stack that uses the tracked inner stack.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(stack)
             .push_discover(profiles)
             .into_inner();
@@ -207,7 +207,7 @@ mod tests {
             cfg
         };
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(cfg, rt)
+        let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
             .into_inner();
@@ -327,7 +327,7 @@ mod tests {
             cfg
         };
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(cfg, rt)
+        let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
             .into_inner();

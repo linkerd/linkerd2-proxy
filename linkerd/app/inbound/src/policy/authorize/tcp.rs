@@ -61,7 +61,7 @@ where
 {
     type Service = AuthorizeTcp<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let client = target.param();
         let tls = target.param();
         let policy: AllowPolicy = target.param();

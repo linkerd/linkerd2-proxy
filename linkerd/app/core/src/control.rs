@@ -125,7 +125,7 @@ mod add_origin {
     impl<N: NewService<ControlAddr>> NewService<ControlAddr> for NewAddOrigin<N> {
         type Service = AddOrigin<N::Service>;
 
-        fn new_service(&mut self, target: ControlAddr) -> Self::Service {
+        fn new_service(&self, target: ControlAddr) -> Self::Service {
             AddOrigin {
                 authority: target.addr.to_http_authority(),
                 inner: self.inner.new_service(target),

@@ -55,7 +55,7 @@ where
 {
     type Service = Gateway<O::Service>;
 
-    fn new_service(&mut self, (profile, http): Target) -> Self::Service {
+    fn new_service(&self, (profile, http): Target) -> Self::Service {
         let local_id = match self.local_id.clone() {
             Some(id) => id,
             None => return Gateway::NoIdentity,
