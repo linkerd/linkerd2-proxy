@@ -12,7 +12,7 @@ use linkerd_server_policy::{
     Authentication, Authorization, Network, Protocol, ServerPolicy, Suffix,
 };
 use linkerd_tonic_watch::StreamWatch;
-use std::convert::TryInto;
+use std::{convert::TryInto, net::IpAddr};
 
 #[derive(Clone, Debug)]
 pub(super) struct Discover<S> {
@@ -109,6 +109,21 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
         _ => return Err("proxy protocol missing".into()),
     };
 
+    let loopback = Authorization {
+        name: "default:localhost".into(),
+        authentication: Authentication::Unauthenticated,
+        networks: vec![
+            Network {
+                net: "127.0.0.1".parse::<IpAddr>().unwrap().into(),
+                except: vec![],
+            },
+            Network {
+                net: "::1".parse::<IpAddr>().unwrap().into(),
+                except: vec![],
+            },
+        ],
+    };
+
     let authorizations = proto
         .authorizations
         .into_iter()
@@ -173,6 +188,7 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
                 })
             },
         )
+        .chain(Some(Ok(loopback)))
         .collect::<Result<Vec<_>>>()?;
 
     let name = proto
