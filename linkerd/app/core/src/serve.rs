@@ -13,7 +13,7 @@ use tracing::{debug, debug_span, info, instrument::Instrument, warn};
 /// The task is driven until shutdown is signaled.
 pub async fn serve<M, S, I, A>(
     listen: impl Stream<Item = std::io::Result<(A, I)>>,
-    mut new_accept: M,
+    new_accept: M,
     shutdown: impl Future,
 ) where
     I: Send + 'static,

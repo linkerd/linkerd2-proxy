@@ -212,7 +212,7 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
 // === Outbound ===
 
 impl<S> Outbound<S> {
-    pub fn push_endpoint<I>(self) -> Outbound<svc::BoxNewTcp<tcp::Endpoint, I>>
+    pub fn push_endpoint<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
     where
         Self: Clone + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,

@@ -46,7 +46,7 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<L>,
-    ) -> svc::BoxNewService<(), Client>
+    ) -> svc::ArcNewService<(), Client>
     where
         L: Clone + svc::Param<tls::client::Config> + Send + Sync + 'static,
     {
@@ -94,7 +94,7 @@ impl Config {
             .push(self::add_origin::layer())
             .push_on_service(svc::layers().push_spawn_buffer(self.buffer_capacity))
             .push_map_target(move |()| addr.clone())
-            .push(svc::BoxNewService::layer())
+            .push(svc::ArcNewService::layer())
             .into_inner()
     }
 }
@@ -125,7 +125,7 @@ mod add_origin {
     impl<N: NewService<ControlAddr>> NewService<ControlAddr> for NewAddOrigin<N> {
         type Service = AddOrigin<N::Service>;
 
-        fn new_service(&mut self, target: ControlAddr) -> Self::Service {
+        fn new_service(&self, target: ControlAddr) -> Self::Service {
             AddOrigin {
                 authority: target.addr.to_http_authority(),
                 inner: self.inner.new_service(target),

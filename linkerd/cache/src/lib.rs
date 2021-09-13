@@ -131,7 +131,7 @@ where
 {
     type Service = Cached<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Cached<N::Service> {
+    fn new_service(&self, target: T) -> Cached<N::Service> {
         // We expect the item to be available in most cases, so initially obtain
         // only a read lock.
         if let Some((svc, weak)) = self.services.read().get(&target) {

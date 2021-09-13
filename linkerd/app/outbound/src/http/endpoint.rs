@@ -11,7 +11,7 @@ use tokio::io;
 struct ClientRescue;
 
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::BoxNewHttp<T, B>>
+    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>
@@ -71,7 +71,7 @@ impl<C> Outbound<C> {
                         .push(http::BoxResponse::layer())
                         .push(svc::BoxService::layer()),
                 )
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -128,7 +128,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -165,7 +165,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -204,7 +204,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -253,7 +253,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();

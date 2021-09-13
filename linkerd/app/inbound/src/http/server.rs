@@ -19,7 +19,7 @@ use tracing::debug_span;
 struct ServerRescue;
 
 impl<H> Inbound<H> {
-    pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::BoxNewTcp<T, I>>
+    pub fn push_http_server<T, I, HSvc>(self) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
@@ -81,7 +81,7 @@ impl<H> Inbound<H> {
                 .instrument(|t: &T| debug_span!("http", v = %Param::<Version>::param(t)))
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

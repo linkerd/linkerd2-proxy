@@ -15,7 +15,7 @@ impl<T, U, E> NewService<T> for Fail<U, E> {
     type Service = Self;
 
     #[inline]
-    fn new_service(&mut self, _: T) -> Self::Service {
+    fn new_service(&self, _: T) -> Self::Service {
         *self
     }
 }

@@ -64,10 +64,7 @@ pub struct TapResponse {
 }
 
 #[derive(Debug)]
-pub struct TapRequestPayload {
-    base_event: api::TapEvent,
-    tap: TapTx,
-}
+pub struct TapRequestPayload {}
 
 #[derive(Debug)]
 pub struct TapResponsePayload {
@@ -334,10 +331,7 @@ impl iface::Tap for Tap {
 
         let tap = TapTx { id, tx: events_tx };
 
-        let req = TapRequestPayload {
-            tap: tap.clone(),
-            base_event: base_event.clone(),
-        };
+        let req = TapRequestPayload {};
         let rsp = TapResponse {
             tap,
             base_event,

@@ -22,7 +22,6 @@ pub struct Http {
 /// Builds `Logical` targets for each HTTP request.
 #[derive(Clone, Debug)]
 struct LogicalPerRequest {
-    client: Remote<ClientAddr>,
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
     permit: policy::Permit,
@@ -59,7 +58,7 @@ impl<C> Inbound<C> {
         self,
         profiles: P,
     ) -> Inbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
@@ -231,13 +230,13 @@ impl<C> Inbound<C> {
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request. NewRouter moves the NewService into the service type, so
                 // minimize it's type footprint with a Box.
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .push(svc::NewRouter::layer(LogicalPerRequest::from))
                 .push(policy::NewAuthorizeHttp::layer(rt.metrics.http_authz.clone()))
                 // Used by tap.
                 .push_http_insert_target::<tls::ConditionalServerTls>()
                 .push_http_insert_target::<Remote<ClientAddr>>()
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -247,7 +246,6 @@ impl<C> Inbound<C> {
 impl<T> From<(policy::Permit, T)> for LogicalPerRequest
 where
     T: Param<Remote<ServerAddr>>,
-    T: Param<Remote<ClientAddr>>,
     T: Param<tls::ConditionalServerTls>,
 {
     fn from((permit, t): (policy::Permit, T)) -> Self {
@@ -257,7 +255,6 @@ where
         ];
 
         Self {
-            client: t.param(),
             server: t.param(),
             tls: t.param(),
             permit,

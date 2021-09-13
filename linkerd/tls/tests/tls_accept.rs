@@ -159,7 +159,7 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let mut detect = tls::NewDetectTls::new(
+        let detect = tls::NewDetectTls::new(
             ServerParams {
                 identity: server_tls,
             },

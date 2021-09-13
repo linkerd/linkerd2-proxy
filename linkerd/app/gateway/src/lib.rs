@@ -77,7 +77,7 @@ pub fn stack<I, O, P, R>(
     outbound: Outbound<O>,
     profiles: P,
     resolve: R,
-) -> svc::BoxNewTcp<GatewayConnection, I>
+) -> svc::ArcNewTcp<GatewayConnection, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
@@ -215,7 +215,7 @@ where
                 .push(http::Retain::layer())
                 .push(http::BoxResponse::layer()),
         )
-        .push(svc::BoxNewService::layer());
+        .push(svc::ArcNewService::layer());
 
     // When handling gateway connections from older clients that do not
     // support the transport header, do protocol detection and route requests
@@ -233,7 +233,7 @@ where
         .push_http_server()
         .into_stack()
         .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
-        .push(svc::BoxNewService::layer())
+        .push(svc::ArcNewService::layer())
         .push(detect::NewDetectService::layer(
             inbound.config().proxy.detect_http(),
         ));
@@ -252,7 +252,7 @@ where
         .push_http_server()
         .into_stack()
         .push_on_service(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
+        .push(svc::ArcNewService::layer())
         .push_switch(
             |gth: GatewayTransportHeader| match gth.protocol {
                 Some(proto) => Ok(svc::Either::A(HttpTransportHeader {
@@ -270,7 +270,7 @@ where
                 .push(inbound.authorize_tcp())
                 .check_new_service::<GatewayTransportHeader, I>()
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .into_inner(),
         )
         .push_switch(
@@ -281,7 +281,7 @@ where
             legacy_http.into_inner(),
         )
         .push_on_service(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
+        .push(svc::ArcNewService::layer())
         .into_inner()
 }
 

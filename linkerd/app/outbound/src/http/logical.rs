@@ -13,7 +13,7 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 impl<E> Outbound<E> {
-    pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::BoxNewHttp<Logical, B>>
+    pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical, B>>
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Unpin + Send + 'static,
         B::Data: Send + 'static,
@@ -104,7 +104,7 @@ impl<E> Outbound<E> {
                 // concrete address.
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
                 .push_map_target(Concrete::from)
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 // Distribute requests over a distribution of balancers via a
                 // traffic split.
                 //
@@ -171,7 +171,7 @@ impl<E> Outbound<E> {
                 .push_on_service(http::BoxResponse::layer())
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

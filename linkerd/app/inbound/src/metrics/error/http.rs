@@ -38,7 +38,7 @@ where
     type MonitorService = MonitorHttpErrorMetrics;
 
     #[inline]
-    fn monitor(&mut self, target: &T) -> Self::MonitorService {
+    fn monitor(&self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
         MonitorHttpErrorMetrics {
             labels: (TargetAddr(addr), target.param()),

@@ -26,7 +26,7 @@ fn build_server<I>(
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
-) -> svc::BoxNewTcp<Target, I>
+) -> svc::ArcNewTcp<Target, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {
@@ -419,9 +419,9 @@ impl svc::Param<policy::AllowPolicy> for Target {
                 authorizations: vec![policy::Authorization {
                     authentication: policy::Authentication::Unauthenticated,
                     networks: vec![std::net::IpAddr::from([192, 0, 2, 3]).into()],
-                    name: "testsaz".to_string(),
+                    name: "testsaz".into(),
                 }],
-                name: "testsrv".to_string(),
+                name: "testsrv".into(),
             },
         );
         policy
@@ -430,7 +430,7 @@ impl svc::Param<policy::AllowPolicy> for Target {
 
 impl svc::Param<policy::ServerLabel> for Target {
     fn param(&self) -> policy::ServerLabel {
-        policy::ServerLabel("testsrv".to_string())
+        policy::ServerLabel("testsrv".into())
     }
 }
 

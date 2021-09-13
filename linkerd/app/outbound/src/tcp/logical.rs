@@ -24,7 +24,7 @@ where
         self,
         resolve: R,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             Logical,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
@@ -92,7 +92,7 @@ where
                 )
                 .into_new_service()
                 .push_map_target(Concrete::from)
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<(ConcreteAddr, Logical), I>()
                 .push(profiles::split::layer())
                 .push_on_service(
@@ -111,7 +111,7 @@ where
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -157,7 +157,7 @@ mod tests {
 
         // Build the TCP logical stack with a mocked connector.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| {
                 assert_eq!(*ep.addr.as_ref(), ep_addr);
                 let mut io = support::io();
