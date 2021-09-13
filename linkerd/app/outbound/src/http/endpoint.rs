@@ -11,7 +11,7 @@ use tokio::io;
 struct ClientRescue;
 
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::BoxNewHttp<T, B>>
+    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>

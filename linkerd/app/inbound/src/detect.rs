@@ -60,7 +60,7 @@ impl<N> Inbound<N> {
     pub(crate) fn push_detect<T, I, NSvc, F, FSvc>(
         self,
         forward: F,
-    ) -> Inbound<svc::BoxNewTcp<T, I>>
+    ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
         T: Clone + Send + 'static,
@@ -83,7 +83,7 @@ impl<N> Inbound<N> {
     /// Builds a stack that handles TLS protocol detection according to the port's policy. If the
     /// connection is determined to be TLS, the inner stack is used; otherwise the connection is
     /// passed to the provided 'forward' stack.
-    fn push_detect_tls<T, I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<T, I>>
+    fn push_detect_tls<T, I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: svc::Param<OrigDstAddr> + svc::Param<Remote<ClientAddr>> + svc::Param<AllowPolicy>,
         T: Clone + Send + 'static,
@@ -171,7 +171,7 @@ impl<N> Inbound<N> {
     /// Builds a stack that handles HTTP detection once TLS detection has been performed. If the
     /// connection is determined to be HTTP, the inner stack is used; otherwise the connection is
     /// passed to the provided 'forward' stack.
-    fn push_detect_http<I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::BoxNewTcp<Tls, I>>
+    fn push_detect_http<I, NSvc, F, FSvc>(self, forward: F) -> Inbound<svc::ArcNewTcp<Tls, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: Debug + Send + Sync + Unpin + 'static,
@@ -618,11 +618,11 @@ mod tests {
         Inbound::new(test_util::default_config(), test_util::runtime().0)
     }
 
-    fn new_panic<T, I: 'static>(msg: &'static str) -> svc::BoxNewTcp<T, I> {
+    fn new_panic<T, I: 'static>(msg: &'static str) -> svc::ArcNewTcp<T, I> {
         svc::ArcNewService::new(move |_| -> svc::BoxTcp<I> { panic!("{}", msg) })
     }
 
-    fn new_ok<T>() -> svc::BoxNewTcp<T, io::BoxedIo> {
+    fn new_ok<T>() -> svc::ArcNewTcp<T, io::BoxedIo> {
         svc::ArcNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
     }
 

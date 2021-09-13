@@ -45,12 +45,12 @@ const DST_OVERRIDE_HEADER: &str = "l5d-dst-override";
 
 // === impl Outbound ===
 
-impl Outbound<svc::BoxNewHttp<http::Endpoint>> {
+impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
     /// Routes HTTP requests according to the l5d-dst-override header.
     ///
     /// This is only intended for Ingress configurations, where we assume all
     /// outbound traffic is HTTP.
-    pub fn into_ingress<T, I, P, R>(self, profiles: P, resolve: R) -> svc::BoxNewTcp<T, I>
+    pub fn into_ingress<T, I, P, R>(self, profiles: P, resolve: R) -> svc::ArcNewTcp<T, I>
     where
         T: Param<OrigDstAddr> + Clone + Send + Sync + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + std::fmt::Debug + Send + Unpin + 'static,

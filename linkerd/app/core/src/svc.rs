@@ -33,11 +33,11 @@ pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
 
-pub type BoxNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
+pub type ArcNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
 
 pub type BoxTcp<I> = BoxService<I, (), Error>;
 
-pub type BoxNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
+pub type ArcNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);

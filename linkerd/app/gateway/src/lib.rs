@@ -77,7 +77,7 @@ pub fn stack<I, O, P, R>(
     outbound: Outbound<O>,
     profiles: P,
     resolve: R,
-) -> svc::BoxNewTcp<GatewayConnection, I>
+) -> svc::ArcNewTcp<GatewayConnection, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,

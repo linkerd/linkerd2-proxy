@@ -26,7 +26,7 @@ fn build_server<I>(
     rt: ProxyRuntime,
     profiles: resolver::Profiles,
     connect: Connect<Remote<ServerAddr>>,
-) -> svc::BoxNewTcp<Target, I>
+) -> svc::ArcNewTcp<Target, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
 {

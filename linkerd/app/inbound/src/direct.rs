@@ -88,7 +88,7 @@ impl<N> Inbound<N> {
         self,
         policies: impl policy::CheckPolicy + Clone + Send + Sync + 'static,
         gateway: G,
-    ) -> Inbound<svc::BoxNewTcp<T, I>>
+    ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: Param<Remote<ClientAddr>> + Param<OrigDstAddr>,
         T: Clone + Send + 'static,

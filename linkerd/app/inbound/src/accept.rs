@@ -28,7 +28,7 @@ impl<N> Inbound<N> {
         proxy_port: u16,
         policies: impl CheckPolicy + Clone + Send + Sync + 'static,
         direct: D,
-    ) -> Inbound<svc::BoxNewTcp<T, I>>
+    ) -> Inbound<svc::ArcNewTcp<T, I>>
     where
         T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
         T: Clone + Send + 'static,
@@ -176,11 +176,11 @@ mod tests {
         Inbound::new(test_util::default_config(), test_util::runtime().0)
     }
 
-    fn new_panic<T>(msg: &'static str) -> svc::BoxNewTcp<T, io::DuplexStream> {
+    fn new_panic<T>(msg: &'static str) -> svc::ArcNewTcp<T, io::DuplexStream> {
         svc::ArcNewService::new(move |_| panic!("{}", msg))
     }
 
-    fn new_ok<T>() -> svc::BoxNewTcp<T, io::DuplexStream> {
+    fn new_ok<T>() -> svc::ArcNewTcp<T, io::DuplexStream> {
         svc::ArcNewService::new(|_| svc::BoxService::new(svc::mk(|_| future::ok::<(), Error>(()))))
     }
 
