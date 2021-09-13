@@ -11,4 +11,4 @@ linkerd-error = { path = "../error" }
 linkerd-stack = { path = "../stack" }
 pin-project = "1"
 tower = { version = "0.4.8", default-features = false, features = ["retry"] }
-tracing = "0.1.26"
+tracing = "0.1.27"
