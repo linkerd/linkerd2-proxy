@@ -114,11 +114,11 @@ fn to_policy(proto: api::Server) -> Result<ServerPolicy> {
         authentication: Authentication::Unauthenticated,
         networks: vec![
             Network {
-                net: "127.0.0.1".parse::<IpAddr>().unwrap().into(),
+                net: IpAddr::from([127, 0, 0, 1]).into(),
                 except: vec![],
             },
             Network {
-                net: "::1".parse::<IpAddr>().unwrap().into(),
+                net: IpAddr::from([0, 0, 0, 0, 0, 0, 0, 1]).into(),
                 except: vec![],
             },
         ],
