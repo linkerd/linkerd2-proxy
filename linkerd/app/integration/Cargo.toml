@@ -41,5 +41,5 @@ webpki = "0.21"
 tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt"] }
 
 [dev-dependencies]
-flate2 = { version = "1.0.21", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1.0.22", default-features = false, features = ["rust_backend"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
