@@ -90,13 +90,26 @@ where
     }
 
     fn call(&mut self, req: Req) -> Self::Future {
+        tracing::trace!(policy = ?self.policy, "Authorizing request");
         match self.policy.check_authorized(self.client_addr, &self.tls) {
             Ok(permit) => {
+                tracing::debug!(
+                    ?permit,
+                    tls = ?self.tls,
+                    client = %self.client_addr,
+                    "Request authorized",
+                );
                 self.metrics.allow(&permit);
                 let svc = self.inner.new_service((permit, self.target.clone()));
                 future::Either::Left(svc.oneshot(req).err_into::<Error>())
             }
             Err(e) => {
+                tracing::info!(
+                    server = %self.policy.server_label(),
+                    tls = ?self.tls,
+                    client = %self.client_addr,
+                    "Request denied",
+                );
                 self.metrics.deny(&self.policy);
                 future::Either::Right(future::err(e.into()))
             }

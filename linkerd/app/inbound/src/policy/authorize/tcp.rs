@@ -65,9 +65,10 @@ where
         let client = target.param();
         let tls = target.param();
         let policy: AllowPolicy = target.param();
+        tracing::trace!(?policy, "Authorizing connection");
         match policy.check_authorized(client, &tls) {
             Ok(permit) => {
-                tracing::debug!(?permit, "Connection authorized");
+                tracing::debug!(?permit, ?tls, %client, "Connection authorized");
 
                 // This new services requires a ClientAddr, so it must necessarily be built for each
                 // connection. So we can just increment the counter here since the service can only
@@ -84,7 +85,7 @@ where
                 })
             }
             Err(deny) => {
-                tracing::info!(?deny, "Connection denied");
+                tracing::info!(server = %policy.server_label(), ?tls, %client, "Connection denied");
                 self.metrics.deny(&policy);
                 AuthorizeTcp::Unauthorized(Unauthorized { deny })
             }
@@ -122,42 +123,44 @@ where
     }
 
     fn call(&mut self, io: I) -> Self::Future {
-        match self {
-            // If the connection is authorized, pass it to the inner service and stop processing the
-            // connection if the authorization's state changes to no longer permit the request.
-            Self::Authorized(Authorized {
-                inner,
-                client,
-                tls,
-                policy,
-                metrics,
-            }) => {
-                let client = *client;
-                let tls = tls.clone();
-                let mut policy = policy.clone();
-                let metrics = metrics.clone();
-
-                // FIXME increment counter.
-
-                let call = inner.call(io);
-                future::Either::Left(Box::pin(async move {
-                    tokio::pin!(call);
-                    loop {
-                        tokio::select! {
-                            res = &mut call => return res.map_err(Into::into),
-                            _ = policy.changed() => {
-                                if let Err(denied) = policy.check_authorized(client, &tls) {
-                                    metrics.terminate(&policy);
-                                    tracing::info!(%denied, "Connection terminated");
-                                    return Err(denied.into());
-                                }
-                            }
-                        };
-                    }
-                }))
-            }
-
+        let Authorized {
+            inner,
+            client,
+            tls,
+            policy,
+            metrics,
+        } = match self {
+            Self::Authorized(a) => a,
             Self::Unauthorized(_deny) => unreachable!("poll_ready must be called"),
-        }
+        };
+
+        // If the connection is authorized, pass it to the inner service and stop processing the
+        // connection if the authorization's state changes to no longer permit the request.
+        let client = *client;
+        let tls = tls.clone();
+        let mut policy = policy.clone();
+        let metrics = metrics.clone();
+
+        let call = inner.call(io);
+        future::Either::Left(Box::pin(async move {
+            tokio::pin!(call);
+            loop {
+                tokio::select! {
+                    res = &mut call => return res.map_err(Into::into),
+                    _ = policy.changed() => {
+                        if let Err(denied) = policy.check_authorized(client, &tls) {
+                            tracing::info!(
+                                server = %policy.server_label(),
+                                ?tls,
+                                %client,
+                                "Connection terminated due to policy change",
+                            );
+                            metrics.terminate(&policy);
+                            return Err(denied.into());
+                        }
+                    }
+                };
+            }
+        }))
     }
 }
