@@ -65,6 +65,7 @@ where
         let client = target.param();
         let tls = target.param();
         let policy: AllowPolicy = target.param();
+        tracing::trace!(?policy, "Authorizing connection");
         match policy.check_authorized(client, &tls) {
             Ok(permit) => {
                 tracing::debug!(?permit, ?tls, %client, "Connection authorized");
