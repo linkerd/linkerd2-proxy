@@ -22,7 +22,6 @@ pub struct Http {
 /// Builds `Logical` targets for each HTTP request.
 #[derive(Clone, Debug)]
 struct LogicalPerRequest {
-    client: Remote<ClientAddr>,
     server: Remote<ServerAddr>,
     tls: tls::ConditionalServerTls,
     permit: policy::Permit,
@@ -247,7 +246,6 @@ impl<C> Inbound<C> {
 impl<T> From<(policy::Permit, T)> for LogicalPerRequest
 where
     T: Param<Remote<ServerAddr>>,
-    T: Param<Remote<ClientAddr>>,
     T: Param<tls::ConditionalServerTls>,
 {
     fn from((permit, t): (policy::Permit, T)) -> Self {
@@ -257,7 +255,6 @@ where
         ];
 
         Self {
-            client: t.param(),
             server: t.param(),
             tls: t.param(),
             permit,
