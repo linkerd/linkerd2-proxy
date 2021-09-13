@@ -14,6 +14,7 @@ use linkerd_app_core::{
     Error, Infallible,
 };
 use std::{fmt::Debug, time};
+use tracing::info;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Forward {
@@ -106,7 +107,6 @@ impl<N> Inbound<N> {
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
-                .check_new_service::<Tls, _>()
                 .push_switch(
                     // Ensure that the connection is authorized before proceeding with protocol
                     // detection.
@@ -135,12 +135,10 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .check_new_service::<(tls::ConditionalServerTls, T), _>()
                 .push(tls::NewDetectTls::layer(TlsParams {
                     timeout: tls::server::Timeout(detect_timeout),
                     identity: rt.identity.clone(),
                 }))
-                .check_new_service::<T, I>()
                 .push_switch(
                     // If this port's policy indicates that authentication is not required and
                     // detection should be skipped, use the TCP stack directly.
@@ -162,7 +160,6 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
@@ -193,14 +190,39 @@ impl<N> Inbound<N> {
                 .push(transport::metrics::NewServer::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
-                .check_new_service::<Http, io::PrefixedIo<I>>()
                 .push_switch(
-                    |(http, Detect { tls, .. })| -> Result<_, Infallible> {
-                        match http {
-                            Some(http) => Ok(svc::Either::A(Http { http, tls })),
+                    |(detected, Detect { tls, .. })| -> Result<_, Infallible> {
+                        match detected {
+                            Ok(Some(http)) => Ok(svc::Either::A(Http { http, tls })),
+                            Ok(None) => Ok(svc::Either::B(tls)),
                             // When HTTP detection fails, forward the connection to the application as
                             // an opaque TCP stream.
-                            None => Ok(svc::Either::B(tls)),
+                            Err(timeout) => match tls.policy.protocol() {
+                                Protocol::Http1 => {
+                                    // If the protocol was hinted to be HTTP/1.1 but detection
+                                    // failed, we'll usually be handling HTTP/1, but we may actually
+                                    // be handling HTTP/2 via protocol upgrade. Our options are:
+                                    // handle the connection as HTTP/1, assuming it will be rare for
+                                    // a proxy to initiate TLS, etc and not send the 16B of
+                                    // connection header; or we can handle it as opaque--but there's
+                                    // no chance the server will be able to handle the H2 protocol
+                                    // upgrade. So, it seems best to assume it's HTTP/1 and let the
+                                    // proxy handle the protocol error if we're in an edge case.
+                                    info!(%timeout, "Handling connection as HTTP/1 due to policy");
+                                    Ok(svc::Either::A(Http {
+                                        http: http::Version::Http1,
+                                        tls,
+                                    }))
+                                }
+                                // Otherwise, the protocol hint must have been `Detect` or the
+                                // protocol was updated after detection was initiated, otherwise we
+                                // would have avoided detection below. Continue handling the
+                                // connection as if it were opaque.
+                                _ => {
+                                    info!(%timeout, "Handling connection as opaque");
+                                    Ok(svc::Either::B(tls))
+                                }
+                            },
                         }
                     },
                     svc::stack(forward)
@@ -212,16 +234,12 @@ impl<N> Inbound<N> {
                         .push(policy::NewAuthorizeTcp::layer(rt.metrics.tcp_authz.clone()))
                         .into_inner(),
                 )
-                .push(svc::ArcNewService::layer())
-                .push_map_target(detect::allow_timeout)
-                .push(detect::NewDetectService::layer(ConfigureHttpDetect))
-                .check_new_service::<Detect, I>();
+                .push(detect::NewDetectService::layer(ConfigureHttpDetect));
 
             http.push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                 .push(transport::metrics::NewServer::layer(
                     rt.metrics.proxy.transport.clone(),
                 ))
-                .check_new_service::<Http, I>()
                 .push_switch(
                     // If we have a protocol hint, skip detection and just used the hinted HTTP
                     // version.
@@ -230,14 +248,20 @@ impl<N> Inbound<N> {
                             Protocol::Detect { timeout } => {
                                 return Ok(svc::Either::B(Detect { timeout, tls }));
                             }
-                            Protocol::Http1 => {
-                                // HTTP/1 services may actually be transported over HTTP/2
-                                // connections between proxies, so we have to do detection.
+                            // Meshed HTTP/1 services may actually be transported over HTTP/2 connections
+                            // between proxies, so we have to do detection.
+                            //
+                            // TODO(ver) outbound clients should hint this with ALPN so we don't
+                            // have to detect this situation.
+                            Protocol::Http1 if tls.status.is_some() => {
                                 return Ok(svc::Either::B(Detect {
                                     timeout: detect_timeout,
                                     tls,
                                 }));
                             }
+                            // Unmeshed services don't use protocol upgrading, so we can use the
+                            // hint without further detection.
+                            Protocol::Http1 => http::Version::Http1,
                             Protocol::Http2 | Protocol::Grpc => http::Version::H2,
                             _ => unreachable!("opaque protocols must not hit the HTTP stack"),
                         };
@@ -247,7 +271,6 @@ impl<N> Inbound<N> {
                 )
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
-                .check_new_service::<Tls, I>()
         })
     }
 }
