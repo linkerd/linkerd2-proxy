@@ -81,7 +81,7 @@ impl Config {
             .push(tls::Client::layer(identity))
             .push_connect_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push_on_service(svc::MapErrLayer::new(Into::into))
+            .push_on_service(svc::MapErr::layer(Into::into))
             .into_new_service()
             .push_new_reconnect(self.connect.backoff)
             // Ensure individual endpoints are driven to readiness so that the balancer need not

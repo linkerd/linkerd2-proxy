@@ -40,7 +40,7 @@ impl<N> Outbound<N> {
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
-                        .push(svc::MapErrLayer::new(Into::into)),
+                        .push(svc::MapErr::layer(Into::into)),
                 )
                 .check_new_service::<U, _>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))

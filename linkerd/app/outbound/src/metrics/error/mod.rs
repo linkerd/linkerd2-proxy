@@ -4,8 +4,7 @@ mod tcp;
 pub(crate) use self::{http::Http, tcp::Tcp};
 use crate::http::IdentityRequired;
 use linkerd_app_core::{
-    errors::{FailFastError, ResponseTimeout},
-    metrics::FmtLabels,
+    errors::FailFastError, metrics::FmtLabels, proxy::http::ResponseTimeoutError,
 };
 use std::fmt;
 
@@ -29,7 +28,7 @@ impl ErrorKind {
             ErrorKind::IdentityRequired
         } else if err.is::<FailFastError>() {
             ErrorKind::FailFast
-        } else if err.is::<ResponseTimeout>() {
+        } else if err.is::<ResponseTimeoutError>() {
             ErrorKind::ResponseTimeout
         } else if let Some(e) = err.source() {
             Self::mk(e)

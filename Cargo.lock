@@ -689,7 +689,6 @@ dependencies = [
  "linkerd-stack-metrics",
  "linkerd-stack-tracing",
  "linkerd-system",
- "linkerd-timeout",
  "linkerd-tls",
  "linkerd-trace-context",
  "linkerd-tracing",
@@ -1131,7 +1130,6 @@ dependencies = [
  "linkerd-io",
  "linkerd-proxy-transport",
  "linkerd-stack",
- "linkerd-timeout",
  "linkerd-tracing",
  "pin-project",
  "rand",
@@ -1314,6 +1312,7 @@ dependencies = [
  "linkerd-error",
  "linkerd-tracing",
  "pin-project",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -1349,22 +1348,6 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "procinfo",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-timeout"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-error",
- "linkerd-stack",
- "pin-project",
- "thiserror",
- "tokio",
- "tokio-test",
- "tower",
- "tower-test",
  "tracing",
 ]
 
