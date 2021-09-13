@@ -1,13 +1,13 @@
 mod network;
 
 pub use self::network::Network;
-use std::{collections::HashSet, hash::Hash, time};
+use std::{collections::HashSet, hash::Hash, sync::Arc, time};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerPolicy {
     pub protocol: Protocol,
     pub authorizations: Vec<Authorization>,
-    pub name: String,
+    pub name: Arc<str>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -24,7 +24,7 @@ pub enum Protocol {
 pub struct Authorization {
     pub networks: Vec<Network>,
     pub authentication: Authentication,
-    pub name: String,
+    pub name: Arc<str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
