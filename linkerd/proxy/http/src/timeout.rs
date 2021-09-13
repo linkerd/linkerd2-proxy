@@ -35,7 +35,7 @@ where
 {
     type Service = MapErr<Timeout<M::Service>, fn(Error) -> Error>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let svc = match target.param() {
             ResponseTimeout(Some(t)) => Timeout::new(self.inner.new_service(target), t),
             ResponseTimeout(None) => Timeout::passthru(self.inner.new_service(target)),

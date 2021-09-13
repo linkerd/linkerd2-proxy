@@ -60,7 +60,7 @@ where
 {
     type Service = Reconnect<T, R, N>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         Reconnect::new(target, self.inner.clone(), self.recover.clone())
     }
 }

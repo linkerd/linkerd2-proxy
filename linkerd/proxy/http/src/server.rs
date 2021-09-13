@@ -75,7 +75,7 @@ where
 {
     type Service = ServeHttp<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let version = target.param();
         debug!(?version, "Creating HTTP service");
         let inner = self.inner.new_service(target);

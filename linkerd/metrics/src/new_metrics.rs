@@ -36,7 +36,7 @@ where
 {
     type Service = S;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let key = target.param();
         let inner = self.inner.new_service(target);
         let metric = self.store.lock().get_or_default(key).clone();

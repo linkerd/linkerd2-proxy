@@ -13,7 +13,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::BoxNewTcp<(Option<profiles::Receiver>, T), I>>
+    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -61,7 +61,7 @@ impl<S> Outbound<S> {
                     logical,
                 )
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -94,7 +94,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -117,7 +117,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -153,7 +153,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::Fail::<_, WrongStack>::default())
             .push_switch_logical(logical)
             .into_inner();
