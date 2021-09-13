@@ -36,7 +36,7 @@ impl Tcp {
 impl<T: svc::Param<OrigDstAddr>> svc::stack::MonitorNewService<T> for Tcp {
     type MonitorService = MonitorTcp;
 
-    fn monitor(&mut self, target: &T) -> Self::MonitorService {
+    fn monitor(&self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
         MonitorTcp {
             target_addr: TargetAddr(addr),

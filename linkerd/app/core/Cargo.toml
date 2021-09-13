@@ -50,14 +50,13 @@ linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
 linkerd-retry = { path = "../../retry" }
 linkerd-server-policy = { path = "../../server-policy" }
-linkerd-timeout = { path = "../../timeout" }
-linkerd-tracing = { path = "../../tracing" }
-linkerd-transport-header = { path = "../../transport-header" }
-linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }
 linkerd-stack-tracing = { path = "../../stack/tracing" }
+linkerd-tracing = { path = "../../tracing" }
+linkerd-transport-header = { path = "../../transport-header" }
+linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.5.4"

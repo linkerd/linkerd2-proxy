@@ -35,7 +35,7 @@ where
 {
     type Service = Server<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let metrics = self.params.extract_param(&target);
         let inner = self.inner.new_service(target);
         Server { inner, metrics }

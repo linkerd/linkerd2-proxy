@@ -77,7 +77,7 @@ impl<C> Outbound<C> {
     pub fn push_tcp_forward<T, I>(
         self,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
@@ -94,7 +94,7 @@ impl<C> Outbound<C> {
             conn.push_make_thunk()
                 .push_on_service(super::Forward::layer())
                 .instrument(|_: &_| debug_span!("tcp.forward"))
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
     }
@@ -176,7 +176,7 @@ mod tests {
 
         let addr = SocketAddr::new([192, 0, 2, 2].into(), 2222);
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |a: SocketAddr| {
                 assert_eq!(a, addr);
                 let mut io = support::io();

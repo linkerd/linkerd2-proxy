@@ -13,7 +13,7 @@ use linkerd_app_core::{
 use tracing::debug_span;
 
 impl<E> Outbound<E> {
-    pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::BoxNewHttp<Logical, B>>
+    pub fn push_http_logical<B, ESvc, R>(self, resolve: R) -> Outbound<svc::ArcNewHttp<Logical, B>>
     where
         B: http::HttpBody<Error = Error> + std::fmt::Debug + Default + Unpin + Send + 'static,
         B::Data: Send + 'static,
@@ -96,7 +96,7 @@ impl<E> Outbound<E> {
                         .push(http::BoxResponse::layer()),
                 )
                 .check_make_service::<Concrete, http::Request<_>>()
-                .push(svc::MapErrLayer::new(Into::into))
+                .push(svc::MapErr::layer(Into::into))
                 // Drives the initial resolution via the service's readiness.
                 .into_new_service()
                 // The concrete address is only set when the profile could be
@@ -104,7 +104,7 @@ impl<E> Outbound<E> {
                 // concrete address.
                 .instrument(|c: &Concrete| debug_span!("concrete", addr = %c.resolve))
                 .push_map_target(Concrete::from)
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 // Distribute requests over a distribution of balancers via a
                 // traffic split.
                 //
@@ -147,7 +147,7 @@ impl<E> Outbound<E> {
                         // Sets an optional retry policy.
                         .push(retry::layer(rt.metrics.proxy.http_route_retry.clone()))
                         // Sets an optional request timeout.
-                        .push(http::MakeTimeoutLayer::default())
+                        .push(http::NewTimeout::layer())
                         // Records per-route metrics.
                         .push(
                             rt.metrics
@@ -162,6 +162,7 @@ impl<E> Outbound<E> {
                         .push_on_service(http::BoxResponse::layer())
                         .into_inner(),
                 ))
+                .check_new_service::<Logical, http::Request<_>>()
                 .push_on_service(http::BoxRequest::layer())
                 // Strips headers that may be set by this proxy and add an outbound
                 // canonical-dst-header. The response body is boxed unify the profile
@@ -170,7 +171,7 @@ impl<E> Outbound<E> {
                 .push_on_service(http::BoxResponse::layer())
                 .instrument(|l: &Logical| debug_span!("logical", dst = %l.logical_addr))
                 .push_on_service(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

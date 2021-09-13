@@ -194,7 +194,7 @@ mod tests {
                 negotiated_protocol: None,
             }),
             ([192, 0, 2, 4], 40000).into(),
-            PolicyServerLabel("testserver".to_string()),
+            PolicyServerLabel("testserver".into()),
         );
         assert_eq!(
             labels.to_string(),

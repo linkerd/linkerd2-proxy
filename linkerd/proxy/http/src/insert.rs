@@ -168,7 +168,7 @@ where
 {
     type Service = Insert<N::Service, ValLazy<P>, P>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let param = target.param();
         let inner = self.inner.new_service(target);
         Insert::new(inner, ValLazy(param))

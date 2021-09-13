@@ -11,7 +11,7 @@ use std::{
 pub trait MonitorNewService<T> {
     type MonitorService;
 
-    fn monitor(&mut self, target: &T) -> Self::MonitorService;
+    fn monitor(&self, target: &T) -> Self::MonitorService;
 }
 
 /// A strategy for monitoring a Service.
@@ -66,7 +66,7 @@ where
     type Service = Monitor<M::MonitorService, N::Service>;
 
     #[inline]
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let monitor = self.monitor.monitor(&target);
         let inner = self.inner.new_service(target);
         Monitor { monitor, inner }

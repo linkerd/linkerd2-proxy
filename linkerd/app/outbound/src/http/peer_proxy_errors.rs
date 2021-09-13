@@ -31,7 +31,7 @@ where
 {
     type Service = PeerProxyErrors<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let inner = self.inner.new_service(target);
         PeerProxyErrors { inner }
     }

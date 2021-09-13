@@ -204,7 +204,7 @@ impl<S> Inbound<S> {
     pub fn push_tcp_forward<T, I>(
         self,
     ) -> Inbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
@@ -230,7 +230,7 @@ impl<S> Inbound<S> {
                         .push(drain::Retain::layer(rt.drain.clone())),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new::<T>()
         })
     }

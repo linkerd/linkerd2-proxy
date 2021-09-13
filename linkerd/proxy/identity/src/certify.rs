@@ -82,7 +82,7 @@ impl Config {
 // === impl Daemon ===
 
 impl Daemon {
-    pub async fn run<N, S>(self, mut new_client: N)
+    pub async fn run<N, S>(self, new_client: N)
     where
         N: NewService<(), Service = S>,
         S: GrpcService<BoxBody>,

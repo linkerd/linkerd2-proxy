@@ -50,7 +50,7 @@ where
 {
     type Service = Router<K::Service, N>;
 
-    fn new_service(&mut self, t: T) -> Self::Service {
+    fn new_service(&self, t: T) -> Self::Service {
         Router {
             recognize: self.new_recognize.new_service(t),
             inner: self.inner.clone(),

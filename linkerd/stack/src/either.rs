@@ -28,7 +28,7 @@ where
 {
     type Service = Either<L::Service, R::Service>;
 
-    fn new_service(&mut self, target: Either<T, U>) -> Self::Service {
+    fn new_service(&self, target: Either<T, U>) -> Self::Service {
         match target {
             Either::A(t) => Either::A(self.left.new_service(t)),
             Either::B(t) => Either::B(self.right.new_service(t)),
@@ -45,7 +45,7 @@ where
 {
     type Service = Either<L::Service, R::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         match self {
             Either::A(n) => Either::A(n.new_service(target)),
             Either::B(n) => Either::B(n.new_service(target)),

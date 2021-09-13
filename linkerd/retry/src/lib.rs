@@ -83,7 +83,7 @@ where
 {
     type Service = Retry<P::Policy, N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
         let policy = self.new_policy.new_policy(&target);
 

@@ -7,7 +7,6 @@ use std::{sync::Arc, task::Poll, time::Instant};
 #[derive(Debug)]
 pub struct Sensor {
     metrics: Option<Arc<Metrics>>,
-    opened_at: Instant,
 }
 
 pub type SensorIo<T> = io::SensorIo<T, Sensor>;
@@ -21,7 +20,6 @@ impl Sensor {
         metrics.by_eos.lock().last_update = Instant::now();
         Self {
             metrics: Some(metrics),
-            opened_at: Instant::now(),
         }
     }
 }

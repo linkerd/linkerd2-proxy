@@ -27,7 +27,7 @@ pub struct Upgrade<C, T, B> {
 pub struct DowngradedH2Error(h2::Reason);
 
 #[pin_project::pin_project]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UpgradeResponseBody {
     inner: hyper::Body,
 }
@@ -146,14 +146,6 @@ fn downgrade_h2_error(error: hyper::Error) -> Error {
 }
 
 // === impl UpgradeResponseBody ===
-
-impl Default for UpgradeResponseBody {
-    fn default() -> Self {
-        UpgradeResponseBody {
-            inner: Default::default(),
-        }
-    }
-}
 
 impl HttpBody for UpgradeResponseBody {
     type Data = bytes::Bytes;

@@ -5,7 +5,10 @@ use linkerd2_proxy_api::destination::{self as api, destination_client::Destinati
 use linkerd_error::{Infallible, Recover};
 use linkerd_stack::{Param, Service};
 use linkerd_tonic_watch::StreamWatch;
-use std::task::{Context, Poll};
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tonic::{body::BoxBody, client::GrpcService};
 use tracing::debug;
 
@@ -19,7 +22,7 @@ pub struct Client<R, S> {
 #[derive(Clone, Debug)]
 struct Inner<S> {
     client: DestinationClient<S>,
-    context_token: String,
+    context_token: Arc<str>,
 }
 
 // === impl Client ===
@@ -35,9 +38,9 @@ where
     R: Recover<tonic::Status> + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
-    pub fn new(recover: R, inner: S, context_token: String) -> Self {
+    pub fn new(recover: R, inner: S, context_token: impl Into<Arc<str>>) -> Self {
         Self {
-            watch: StreamWatch::new(recover, Inner::new(context_token, inner)),
+            watch: StreamWatch::new(recover, Inner::new(context_token.into(), inner)),
         }
     }
 }
@@ -99,7 +102,7 @@ where
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
-    fn new(context_token: String, inner: S) -> Self {
+    fn new(context_token: Arc<str>, inner: S) -> Self {
         Self {
             context_token,
             client: DestinationClient::new(inner),
@@ -129,7 +132,7 @@ where
     fn call(&mut self, LookupAddr(addr): LookupAddr) -> Self::Future {
         let req = api::GetDestination {
             path: addr.to_string(),
-            context_token: self.context_token.clone(),
+            context_token: self.context_token.to_string(),
             ..Default::default()
         };
 

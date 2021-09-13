@@ -114,7 +114,7 @@ impl<P> svc::Param<ConcreteAddr> for Concrete<P> {
 // === impl Outbound ===
 
 impl<C> Outbound<C> {
-    pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::BoxNewTcp<tcp::Logical, I>>
+    pub fn push_logical<R, I>(self, resolve: R) -> Outbound<svc::ArcNewTcp<tcp::Logical, I>>
     where
         Self: Clone + 'static,
         C: Clone + Send + Sync + Unpin + 'static,

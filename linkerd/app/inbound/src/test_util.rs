@@ -56,9 +56,9 @@ pub fn default_config() -> Config {
                 authorizations: vec![Authorization {
                     authentication: Authentication::Unauthenticated,
                     networks: vec![Default::default()],
-                    name: "testsaz".to_string(),
+                    name: "testsaz".into(),
                 }],
-                name: "testsrv".to_string(),
+                name: "testsrv".into(),
             }
             .into(),
             ports: Default::default(),

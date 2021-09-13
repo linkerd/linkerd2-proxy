@@ -37,7 +37,7 @@ where
 {
     type MonitorService = MonitorTcpErrorMetrics;
 
-    fn monitor(&mut self, target: &T) -> Self::MonitorService {
+    fn monitor(&self, target: &T) -> Self::MonitorService {
         let OrigDstAddr(addr) = target.param();
         MonitorTcpErrorMetrics {
             target_addr: TargetAddr(addr),
