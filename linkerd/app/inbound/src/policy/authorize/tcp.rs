@@ -149,7 +149,12 @@ where
                     res = &mut call => return res.map_err(Into::into),
                     _ = policy.changed() => {
                         if let Err(denied) = policy.check_authorized(client, &tls) {
-                            tracing::info!(server = %policy.server_label(), ?tls, %client, "Connection terminated");
+                            tracing::info!(
+                                server = %policy.server_label(),
+                                ?tls,
+                                %client,
+                                "Connection terminated due to policy change",
+                            );
                             metrics.terminate(&policy);
                             return Err(denied.into());
                         }
