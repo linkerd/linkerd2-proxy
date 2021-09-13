@@ -19,7 +19,7 @@ hyper = { version = "0.14.12", features = ["http1", "http2"] }
 linkerd-stack = { path = "../stack", optional = true }
 parking_lot = "0.11"
 tokio = { version = "1", features = ["time"], optional = true }
-tracing = "0.1.26"
+tracing = "0.1.27"
 
 [dev-dependencies]
 quickcheck = { version = "1", default-features = false }
