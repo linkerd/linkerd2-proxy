@@ -9,7 +9,7 @@ impl<N> Outbound<N> {
     pub fn push_http_server<T, NSvc>(
         self,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<
                     http::Request<http::BoxBody>,
@@ -63,7 +63,7 @@ impl<N> Outbound<N> {
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
                 .check_new_service::<T, http::Request<http::BoxBody>>()
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -79,7 +79,7 @@ impl ServerRescue {
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         let cause = errors::root_cause(&*error);
-        if cause.is::<errors::ResponseTimeout>() {
+        if cause.is::<http::ResponseTimeoutError>() {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
         if cause.is::<IdentityRequired>() {

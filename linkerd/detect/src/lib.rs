@@ -100,7 +100,7 @@ where
 {
     type Service = DetectService<T, D, N>;
 
-    fn new_service(&mut self, target: T) -> DetectService<T, D, N> {
+    fn new_service(&self, target: T) -> DetectService<T, D, N> {
         let config = self.params.extract_param(&target);
         DetectService {
             target,
@@ -139,7 +139,7 @@ where
             timeout,
         } = self.config.clone();
         let target = self.target.clone();
-        let mut inner = self.inner.clone();
+        let inner = self.inner.clone();
         Box::pin(async move {
             trace!(%capacity, ?timeout, "Starting protocol detection");
             let t0 = time::Instant::now();
@@ -154,22 +154,17 @@ where
                 Ok(Err(e)) => return Err(e),
             };
 
-            let mut accept = inner
-                .new_service((detected, target))
-                .ready_oneshot()
-                .await
-                .map_err(Into::into)?;
-
             trace!("Dispatching connection");
-            accept
-                .call(io::PrefixedIo::new(buf.freeze(), io))
+            let svc = inner.new_service((detected, target));
+            let mut svc = svc.ready_oneshot().await.map_err(Into::into)?;
+            svc.call(io::PrefixedIo::new(buf.freeze(), io))
                 .await
                 .map_err(Into::into)?;
 
             trace!("Connection completed");
             // Hold the service until it's done being used so that cache
             // idleness is reset.
-            drop(accept);
+            drop(svc);
 
             Ok(())
         })

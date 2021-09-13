@@ -9,9 +9,9 @@ fn unauthenticated_allowed() {
         authorizations: vec![Authorization {
             authentication: Authentication::Unauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            name: "unauth".to_string(),
+            name: "unauth".into(),
         }],
-        name: "test".to_string(),
+        name: "test".into(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -30,8 +30,8 @@ fn unauthenticated_allowed() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".to_string()),
-                authz: "unauth".to_string(),
+                server: ServerLabel("test".into()),
+                authz: "unauth".into(),
             }
         }
     );
@@ -47,9 +47,9 @@ fn authenticated_identity() {
                 identities: vec![client_id().to_string()].into_iter().collect(),
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            name: "tls-auth".to_string(),
+            name: "tls-auth".into(),
         }],
-        name: "test".to_string(),
+        name: "test".into(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -71,8 +71,8 @@ fn authenticated_identity() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".to_string()),
-                authz: "tls-auth".to_string(),
+                server: ServerLabel("test".into()),
+                authz: "tls-auth".into(),
             }
         }
     );
@@ -97,15 +97,12 @@ fn authenticated_suffix() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsAuthenticated {
                 identities: HashSet::default(),
-                suffixes: vec![Suffix::from(vec![
-                    "cluster".to_string(),
-                    "local".to_string(),
-                ])],
+                suffixes: vec![Suffix::from(vec!["cluster".into(), "local".into()])],
             },
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            name: "tls-auth".to_string(),
+            name: "tls-auth".into(),
         }],
-        name: "test".to_string(),
+        name: "test".into(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -126,8 +123,8 @@ fn authenticated_suffix() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".to_string()),
-                authz: "tls-auth".to_string(),
+                server: ServerLabel("test".into()),
+                authz: "tls-auth".into(),
             }
         }
     );
@@ -152,9 +149,9 @@ fn tls_unauthenticated() {
         authorizations: vec![Authorization {
             authentication: Authentication::TlsUnauthenticated,
             networks: vec!["192.0.2.0/24".parse().unwrap()],
-            name: "tls-unauth".to_string(),
+            name: "tls-unauth".into(),
         }],
-        name: "test".to_string(),
+        name: "test".into(),
     };
 
     let (policies, _tx) = Store::fixed(policy.clone(), None);
@@ -175,8 +172,8 @@ fn tls_unauthenticated() {
             dst: orig_dst_addr(),
             protocol: policy.protocol,
             labels: AuthzLabels {
-                server: ServerLabel("test".to_string()),
-                authz: "tls-unauth".to_string(),
+                server: ServerLabel("test".into()),
+                authz: "tls-unauth".into(),
             }
         }
     );

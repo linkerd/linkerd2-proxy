@@ -175,12 +175,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dyn-clone"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee2626afccd7561a06cf1367e2950c4718ea04565e20fb5029b6c7d8ad09abcf"
-
-[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -695,7 +689,6 @@ dependencies = [
  "linkerd-stack-metrics",
  "linkerd-stack-tracing",
  "linkerd-system",
- "linkerd-timeout",
  "linkerd-tls",
  "linkerd-trace-context",
  "linkerd-tracing",
@@ -1137,7 +1130,6 @@ dependencies = [
  "linkerd-io",
  "linkerd-proxy-transport",
  "linkerd-stack",
- "linkerd-timeout",
  "linkerd-tracing",
  "pin-project",
  "rand",
@@ -1316,11 +1308,11 @@ dependencies = [
 name = "linkerd-stack"
 version = "0.1.0"
 dependencies = [
- "dyn-clone",
  "futures",
  "linkerd-error",
  "linkerd-tracing",
  "pin-project",
+ "thiserror",
  "tokio",
  "tokio-test",
  "tower",
@@ -1356,22 +1348,6 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "procinfo",
- "tracing",
-]
-
-[[package]]
-name = "linkerd-timeout"
-version = "0.1.0"
-dependencies = [
- "futures",
- "linkerd-error",
- "linkerd-stack",
- "pin-project",
- "thiserror",
- "tokio",
- "tokio-test",
- "tower",
- "tower-test",
  "tracing",
 ]
 

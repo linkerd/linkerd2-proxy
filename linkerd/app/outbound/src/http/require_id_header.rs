@@ -43,7 +43,7 @@ where
 {
     type Service = RequireIdentity<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let tls = target.param();
         let inner = self.inner.new_service(target);
         RequireIdentity { tls, inner }

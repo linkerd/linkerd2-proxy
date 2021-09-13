@@ -27,7 +27,7 @@ pub struct DeniedUnknownPort(pub u16);
 #[derive(Clone, Debug, Error)]
 #[error("unauthorized connection on server {server}")]
 pub struct DeniedUnauthorized {
-    server: String,
+    server: std::sync::Arc<str>,
 }
 
 pub trait CheckPolicy {
@@ -70,7 +70,7 @@ impl From<DefaultPolicy> for ServerPolicy {
             DefaultPolicy::Deny => ServerPolicy {
                 protocol: Protocol::Opaque,
                 authorizations: vec![],
-                name: "default:deny".to_string(),
+                name: "default:deny".into(),
             },
         }
     }

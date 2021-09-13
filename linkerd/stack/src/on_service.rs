@@ -46,7 +46,7 @@ where
 {
     type Service = L::Service;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         self.layer.layer(self.inner.new_service(target))
     }
 }

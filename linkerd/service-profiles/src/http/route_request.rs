@@ -56,7 +56,7 @@ where
 {
     type Service = RouteRequest<T, M::Service, N, N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let rx = target.param();
         let inner = self.inner.new_service(target.clone());
         RouteRequest {

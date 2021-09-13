@@ -13,6 +13,7 @@ pub use linkerd_metrics::*;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -65,13 +66,13 @@ pub struct InboundEndpointLabels {
 
 /// A label referencing an inbound `Server` (i.e. for policy).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ServerLabel(pub String);
+pub struct ServerLabel(pub Arc<str>);
 
 /// Labels referencing an inbound `ServerAuthorization.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AuthzLabels {
     pub server: ServerLabel,
-    pub authz: String,
+    pub authz: Arc<str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

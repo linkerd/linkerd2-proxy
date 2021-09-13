@@ -6,12 +6,11 @@ use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
-    Filter, InsertParam, MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate,
+    self as stack, layer, ArcNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    FailFast, Filter, InsertParam, MapErr, MapTargetLayer, NewRouter, NewService, Param, Predicate,
     UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
-pub use linkerd_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,
@@ -34,11 +33,11 @@ pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
 
-pub type BoxNewHttp<T, B = http::BoxBody> = BoxNewService<T, BoxHttp<B>>;
+pub type ArcNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
 
 pub type BoxTcp<I> = BoxService<I, (), Error>;
 
-pub type BoxNewTcp<T, I> = BoxNewService<T, BoxTcp<I>>;
+pub type ArcNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -65,7 +64,7 @@ pub struct IdentityProxy(());
 
 impl<T> NewService<T> for IdentityProxy {
     type Service = ();
-    fn new_service(&mut self, _: T) -> Self::Service {}
+    fn new_service(&self, _: T) -> Self::Service {}
 }
 
 // === impl Layers ===
@@ -182,10 +181,10 @@ impl<S> Stack<S> {
     pub fn push_connect_timeout(
         self,
         timeout: Duration,
-    ) -> Stack<stack::MapErr<tower::timeout::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
-        self.push(tower::timeout::TimeoutLayer::new(timeout))
-            .push(MapErrLayer::new(move |err: Error| {
-                if err.is::<tower::timeout::error::Elapsed>() {
+    ) -> Stack<MapErr<stack::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
+        self.push(stack::Timeout::layer(timeout))
+            .push(MapErr::layer(move |err: Error| {
+                if err.is::<stack::TimeoutError>() {
                     crate::errors::ConnectTimeout(timeout).into()
                 } else {
                     err
@@ -337,7 +336,7 @@ where
 {
     type Service = N::Service;
 
-    fn new_service(&mut self, t: T) -> Self::Service {
+    fn new_service(&self, t: T) -> Self::Service {
         self.0.new_service(t)
     }
 }
