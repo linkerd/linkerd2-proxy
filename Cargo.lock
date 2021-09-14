@@ -636,7 +636,6 @@ dependencies = [
  "hyper",
  "linkerd-app-core",
  "linkerd-app-inbound",
- "serde_json",
  "thiserror",
  "tokio",
  "tower",
@@ -1414,7 +1413,6 @@ version = "0.1.0"
 dependencies = [
  "linkerd-error",
  "tokio",
- "tokio-trace",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -2141,7 +2139,6 @@ dependencies = [
  "pin-project-lite",
  "signal-hook-registry",
  "tokio-macros",
- "tracing",
  "winapi",
 ]
 
@@ -2200,18 +2197,6 @@ dependencies = [
  "futures-core",
  "tokio",
  "tokio-stream",
-]
-
-[[package]]
-name = "tokio-trace"
-version = "0.1.0"
-source = "git+https://github.com/hawkw/tokio-trace?rev=7d5998e7cb3beb06ada5983675319dc4853576c5#7d5998e7cb3beb06ada5983675319dc4853576c5"
-dependencies = [
- "num_cpus",
- "serde",
- "tokio",
- "tracing-core",
- "tracing-subscriber",
 ]
 
 [[package]]
