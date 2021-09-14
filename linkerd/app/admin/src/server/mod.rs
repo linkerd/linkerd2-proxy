@@ -31,7 +31,6 @@ use tokio::sync::mpsc;
 
 mod level;
 mod readiness;
-mod tasks;
 
 pub use self::readiness::{Latch, Readiness};
 
@@ -204,20 +203,6 @@ where
                     }
                 } else {
                     Box::pin(future::ok(Self::method_not_allowed()))
-                }
-            }
-            path if path.starts_with("/tasks") => {
-                if Self::client_is_localhost(&req) {
-                    let rsp = match self.tracing.tasks() {
-                        Some(tasks) => tasks::serve(tasks, req).unwrap_or_else(|error| {
-                            tracing::error!(%error, "Failed to fetch tasks");
-                            Self::internal_error_rsp(error)
-                        }),
-                        None => Self::not_found(),
-                    };
-                    Box::pin(future::ok(rsp))
-                } else {
-                    Box::pin(future::ok(Self::forbidden_not_localhost()))
                 }
             }
             _ => Box::pin(future::ok(Self::not_found())),
