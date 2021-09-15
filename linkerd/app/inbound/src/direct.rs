@@ -4,7 +4,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
-    transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote},
+    transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
     transport_header::{self, NewTransportHeaderServer, SessionProtocol, TransportHeader},
     Conditional, Error, NameAddr, Result,
 };
@@ -30,7 +30,7 @@ struct RefusedNoTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Local {
-    port: u16,
+    addr: Remote<ServerAddr>,
     client_id: tls::ClientId,
     permit: policy::Permit,
 }
@@ -135,9 +135,8 @@ impl<N> Inbound<N> {
                                     // not identify an alternate target name), we check the new
                                     // target's policy to determine whether the client can access
                                     // it.
-                                    let allow = policies.check_policy(OrigDstAddr(
-                                        (client.local_addr.ip(), port).into(),
-                                    ))?;
+                                    let addr = (client.local_addr.ip(), port).into();
+                                    let allow = policies.check_policy(OrigDstAddr(addr))?;
                                     let tls = tls::ConditionalServerTls::Some(
                                         tls::ServerTls::Established {
                                             client_id: Some(client.client_id.clone()),
@@ -145,7 +144,7 @@ impl<N> Inbound<N> {
                                         },
                                     );
                                     let permit = allow.check_authorized(client.client_addr, &tls)?;
-                                    Ok(svc::Either::A(Local { port, permit, client_id: client.client_id, }))
+                                    Ok(svc::Either::A(Local { addr: Remote(ServerAddr(addr)), permit, client_id: client.client_id, }))
                                 }
                                 TransportHeader {
                                     port,
@@ -268,9 +267,9 @@ impl ClientInfo {
 
 // === impl Local ===
 
-impl Param<u16> for Local {
-    fn param(&self) -> u16 {
-        self.port
+impl Param<Remote<ServerAddr>> for Local {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.addr
     }
 }
 
@@ -281,7 +280,7 @@ impl Param<transport::labels::Key> for Local {
                 client_id: Some(self.client_id.clone()),
                 negotiated_protocol: None,
             }),
-            ([127, 0, 0, 1], self.port).into(),
+            self.addr.into(),
             self.permit.labels.server.clone(),
         )
     }

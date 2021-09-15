@@ -14,7 +14,7 @@ use tracing::{debug, debug_span};
 /// Describes an HTTP client target.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Http {
-    port: u16,
+    addr: Remote<ServerAddr>,
     settings: http::client::Settings,
     permit: policy::Permit,
 }
@@ -393,9 +393,9 @@ impl tap::Inspect for Logical {
 
 // === impl Http ===
 
-impl Param<u16> for Http {
-    fn param(&self) -> u16 {
-        self.port
+impl Param<Remote<ServerAddr>> for Http {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.addr
     }
 }
 
@@ -408,7 +408,7 @@ impl Param<http::client::Settings> for Http {
 impl From<Logical> for Http {
     fn from(l: Logical) -> Self {
         Self {
-            port: l.addr.as_ref().port(),
+            addr: l.addr,
             settings: l.http.into(),
             permit: l.permit,
         }

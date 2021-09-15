@@ -10,7 +10,7 @@ use tracing::debug_span;
 
 #[derive(Copy, Clone, Debug)]
 struct TcpEndpoint {
-    port: u16,
+    addr: Remote<ServerAddr>,
 }
 
 // === impl Inbound ===
@@ -90,14 +90,14 @@ impl Inbound<()> {
 // === impl TcpEndpoint ===
 
 impl TcpEndpoint {
-    pub fn from_param<T: svc::Param<u16>>(t: T) -> Self {
-        Self { port: t.param() }
+    pub fn from_param<T: svc::Param<Remote<ServerAddr>>>(t: T) -> Self {
+        Self { addr: t.param() }
     }
 }
 
-impl svc::Param<u16> for TcpEndpoint {
-    fn param(&self) -> u16 {
-        self.port
+impl svc::Param<Remote<ServerAddr>> for TcpEndpoint {
+    fn param(&self) -> Remote<ServerAddr> {
+        self.addr
     }
 }
 

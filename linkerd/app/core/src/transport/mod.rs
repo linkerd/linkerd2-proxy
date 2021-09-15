@@ -3,7 +3,9 @@ use linkerd_stack::{ExtractParam, Param};
 pub use linkerd_transport_metrics as metrics;
 use std::sync::Arc;
 
+pub mod allow_ips;
 pub mod labels;
+pub use self::allow_ips::AllowIps;
 
 #[derive(Clone, Debug)]
 pub struct Metrics(metrics::Registry<labels::Key>);

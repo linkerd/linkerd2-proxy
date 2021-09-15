@@ -408,7 +408,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         } else {
             debug!(allowed = ?ips, "Only allowing connections targeting `{}`", ENV_INBOUND_IPS);
         }
-        ips.into()
+        std::sync::Arc::new(ips)
     };
 
     let outbound = {
@@ -462,7 +462,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     .unwrap_or(DEFAULT_OUTBOUND_MAX_IN_FLIGHT),
                 detect_protocol_timeout,
             },
-            inbound_ips,
+            inbound_ips: inbound_ips.clone(),
         }
     };
 
@@ -706,6 +706,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
             policy,
             profile_idle_timeout: dst_profile_idle_timeout?
                 .unwrap_or(DEFAULT_DESTINATION_PROFILE_IDLE_TIMEOUT),
+            allowed_ips: inbound_ips.into(),
         }
     };
 
@@ -1414,5 +1415,30 @@ mod tests {
             Ok(vec!["multi.case.name".to_owned()]),
             "names are coerced to lowercase"
         );
+    }
+
+    #[test]
+    fn ip_sets() {
+        let ips = &[
+            IpAddr::from([127, 0, 0, 1]),
+            IpAddr::from([10, 0, 2, 42]),
+            IpAddr::from([192, 168, 0, 69]),
+        ];
+        assert_eq!(
+            parse_ip_set("127.0.0.1"),
+            Ok(ips[..1].iter().cloned().collect())
+        );
+        assert_eq!(
+            parse_ip_set("127.0.0.1,10.0.2.42"),
+            Ok(ips[..2].iter().cloned().collect())
+        );
+        assert_eq!(
+            parse_ip_set("127.0.0.1,10.0.2.42,192.168.0.69"),
+            Ok(ips[..3].iter().cloned().collect())
+        );
+        assert!(parse_ip_set("blaah").is_err());
+        assert!(parse_ip_set("10.4.0.555").is_err());
+        assert!(parse_ip_set("10.4.0.3,foobar,192.168.0.69").is_err());
+        assert!(parse_ip_set("10.0.1.1/24").is_err());
     }
 }

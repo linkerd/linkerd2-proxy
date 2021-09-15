@@ -64,6 +64,7 @@ pub fn default_config() -> Config {
             ports: Default::default(),
         },
         profile_idle_timeout: Duration::from_millis(500),
+        allowed_ips: Default::default(),
     }
 }
 
