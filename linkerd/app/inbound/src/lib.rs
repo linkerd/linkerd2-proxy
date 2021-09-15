@@ -164,7 +164,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        T: svc::Param<u16> + 'static,
+        T: svc::Param<Remote<ServerAddr>> + 'static,
     {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
@@ -184,11 +184,12 @@ impl Inbound<()> {
                 .push_connect_timeout(*timeout)
                 // Prevent connections that would target the inbound proxy port from looping.
                 .push_request_filter(move |t: T| {
-                    let port = t.param();
+                    let addr = t.param();
+                    let port = addr.port();
                     if port == proxy_port {
                         return Err(Loop(port));
                     }
-                    Ok(Remote(ServerAddr(([127, 0, 0, 1], port).into())))
+                    Ok(addr)
                 })
         })
     }

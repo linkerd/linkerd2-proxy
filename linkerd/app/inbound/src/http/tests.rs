@@ -33,8 +33,7 @@ where
     Inbound::new(cfg, rt)
         .with_stack(connect)
         .map_stack(|cfg, _, s| {
-            s.push_map_target(|p| Remote(ServerAddr(([127, 0, 0, 1], p).into())))
-                .push_map_target(|t| Param::<u16>::param(&t))
+            s.push_map_target(|t| Param::<Remote<ServerAddr>>::param(&t))
                 .push_connect_timeout(cfg.proxy.connect.timeout)
         })
         .push_http_router(profiles)

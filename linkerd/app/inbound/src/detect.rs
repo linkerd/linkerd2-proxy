@@ -288,9 +288,9 @@ impl From<(Permit, Tls)> for Forward {
     }
 }
 
-impl svc::Param<u16> for Forward {
-    fn param(&self) -> u16 {
-        self.orig_dst_addr.as_ref().port()
+impl svc::Param<Remote<ServerAddr>> for Forward {
+    fn param(&self) -> Remote<ServerAddr> {
+        Remote(ServerAddr(self.orig_dst_addr.0))
     }
 }
 
