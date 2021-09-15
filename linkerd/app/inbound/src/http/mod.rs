@@ -26,7 +26,7 @@ pub mod fuzz {
     use linkerd_app_core::{
         identity, io,
         proxy::http,
-        svc::{self, NewService, Param},
+        svc::{self, NewService},
         tls,
         transport::{ClientAddr, OrigDstAddr, Remote, ServerAddr},
         NameAddr, ProxyRuntime,
