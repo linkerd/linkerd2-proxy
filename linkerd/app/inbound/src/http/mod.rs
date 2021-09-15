@@ -125,7 +125,7 @@ pub mod fuzz {
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
     {
         let connect = svc::stack(connect)
-            .push_map_target(|t: Http| Remote(ServerAddr(([127, 0, 0, 1], t.param()).into())))
+            .push_map_target(|t: Http| svc::Param::<Remote<ServerAddr>>::param(&t))
             .into_inner();
         Inbound::new(cfg, rt)
             .with_stack(connect)
