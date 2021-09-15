@@ -31,7 +31,7 @@ where
             return Ok(target);
         }
 
-        tracing::warn!(%addr, allowed = ?self.ips, "Target IP address not permitted");
+        tracing::debug!(%addr, allowed = ?self.ips, "Target IP address not permitted");
         Err(InvalidIp { ip }.into())
     }
 }
