@@ -9,7 +9,7 @@ pub struct AllowIps {
 
 #[derive(Clone, Debug, Error)]
 #[error("inbound connections are not allowed on this IP address ({ip})")]
-pub(crate) struct InvalidIp {
+pub struct InvalidIp {
     ip: IpAddr,
 }
 
@@ -36,14 +36,8 @@ where
     }
 }
 
-impl AllowIps {
-    pub fn new(ips: HashSet<IpAddr>) -> Self {
-        Self { ips: Arc::new(ips) }
-    }
-}
-
-impl From<HashSet<IpAddr>> for AllowIps {
-    fn from(ips: HashSet<IpAddr>) -> Self {
-        Self::new(ips)
+impl From<Arc<HashSet<IpAddr>>> for AllowIps {
+    fn from(ips: Arc<HashSet<IpAddr>>) -> Self {
+        Self { ips }
     }
 }

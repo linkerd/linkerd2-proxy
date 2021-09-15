@@ -44,7 +44,7 @@ impl<N> Inbound<N> {
         DSvc::Error: Into<Error>,
         DSvc::Future: Send,
     {
-        self.map_stack(|_, rt, accept| {
+        self.map_stack(|cfg, rt, accept| {
             accept
                 .push_switch(
                     // Switch to the `direct` stack when a connection's original destination is the
@@ -67,6 +67,7 @@ impl<N> Inbound<N> {
                     direct,
                 )
                 .check_new_service::<T, I>()
+                .push_request_filter(cfg.allowed_ips.clone())
                 .push(rt.metrics.tcp_errors.to_layer())
                 .check_new_service::<T, I>()
                 .instrument(|t: &T| {

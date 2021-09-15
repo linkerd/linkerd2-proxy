@@ -6,7 +6,7 @@ use crate::{
     policy::{DeniedUnauthorized, DeniedUnknownPort},
     GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop,
 };
-use linkerd_app_core::{errors::FailFastError, metrics::FmtLabels, tls};
+use linkerd_app_core::{errors::FailFastError, metrics::FmtLabels, tls, transport::allow_ips};
 use std::fmt;
 
 /// Inbound proxy error types.
@@ -20,6 +20,7 @@ enum ErrorKind {
     Io,
     TlsDetectTimeout,
     Unexpected,
+    InvalidIp,
 }
 
 // === impl ErrorKind ===
@@ -43,6 +44,8 @@ impl ErrorKind {
             Some(ErrorKind::GatewayIdentityRequired)
         } else if err.is::<GatewayLoop>() {
             Some(ErrorKind::GatewayLoop)
+        } else if err.is::<allow_ips::InvalidIp>() {
+            Some(ErrorKind::InvalidIp)
         } else if let Some(e) = err.source() {
             Self::mk(e)
         } else {
@@ -65,6 +68,7 @@ impl FmtLabels for ErrorKind {
                 ErrorKind::GatewayDomainInvalid => "gateway domain invalid",
                 ErrorKind::Io => "i/o",
                 ErrorKind::Unexpected => "unexpected",
+                ErrorKind::InvalidIp => "invalid ip address",
             }
         )
     }
