@@ -290,7 +290,7 @@ impl From<(Permit, Tls)> for Forward {
 
 impl svc::Param<Remote<ServerAddr>> for Forward {
     fn param(&self) -> Remote<ServerAddr> {
-        Remote(ServerAddr(self.orig_dst_addr.0))
+        Remote(ServerAddr(self.orig_dst_addr.into()))
     }
 }
 
