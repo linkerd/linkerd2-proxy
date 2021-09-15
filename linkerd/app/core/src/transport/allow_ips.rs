@@ -9,7 +9,7 @@ pub struct AllowIps {
 
 #[derive(Clone, Debug, Error)]
 #[error("inbound connections are not allowed on this IP address ({ip})")]
-pub struct InvalidIp {
+struct InvalidIp {
     ip: IpAddr,
 }
 

@@ -293,7 +293,7 @@ async fn inbound_invalid_ip() {
 
     let client = client::tcp(proxy.inbound);
     let metric = metric(&proxy)
-        .label("error", "invalid ip address")
+        .label("error", "unexpected")
         .label("target_addr", fake_ip);
 
     let tcp_client = client.connect().await;
