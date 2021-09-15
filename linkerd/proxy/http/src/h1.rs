@@ -1,5 +1,5 @@
 use crate::{
-    glue::{HyperConnect, UpgradeBody},
+    glue::HyperConnect,
     upgrade::{Http11Upgrade, HttpConnect},
 };
 use futures::prelude::*;
@@ -7,7 +7,8 @@ use http::{
     header::{CONNECTION, HOST, UPGRADE},
     uri::{Authority, Parts, Scheme, Uri},
 };
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use std::{future::Future, mem, pin::Pin, time::Duration};
 use tracing::{debug, trace};
 
@@ -59,9 +60,7 @@ impl<C: Clone, T: Clone, B> Clone for Client<C, T, B> {
     }
 }
 
-type RspFuture = Pin<
-    Box<dyn Future<Output = Result<http::Response<UpgradeBody>, hyper::Error>> + Send + 'static>,
->;
+type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + Send + 'static>>;
 
 impl<C, T, B> Client<C, T, B>
 where
@@ -134,7 +133,7 @@ where
             client.as_ref().unwrap().request(req)
         };
 
-        Box::pin(rsp_fut.map_ok(move |mut rsp| {
+        Box::pin(rsp_fut.err_into().map_ok(move |mut rsp| {
             if is_http_connect {
                 debug_assert!(
                     upgrade.is_some(),
@@ -152,7 +151,7 @@ where
                 strip_connection_headers(rsp.headers_mut());
             }
 
-            rsp.map(UpgradeBody::from)
+            rsp.map(BoxBody::new)
         }))
     }
 }

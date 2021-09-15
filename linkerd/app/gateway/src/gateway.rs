@@ -1,13 +1,12 @@
 use super::HttpTarget;
 use futures::{future, TryFutureExt};
 use linkerd_app_core::{
-    dns,
-    errors::HttpError,
-    profiles,
+    dns, profiles,
     proxy::http,
     svc::{self, layer},
     tls, Error, NameAddr,
 };
+use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_outbound as outbound;
 use std::{
     future::Future,
@@ -56,7 +55,7 @@ where
 {
     type Service = Gateway<O::Service>;
 
-    fn new_service(&mut self, (profile, http): Target) -> Self::Service {
+    fn new_service(&self, (profile, http): Target) -> Self::Service {
         let local_id = match self.local_id.clone() {
             Some(id) => id,
             None => return Gateway::NoIdentity,
@@ -69,6 +68,8 @@ where
         // Create an outbound target using the endpoint from the profile.
         if let Some((addr, metadata)) = profile.endpoint() {
             debug!("Creating outbound endpoint");
+            // Create empty list of inbound ips, TLS shouldn't be skipped in
+            // this case.
             let svc = self
                 .outbound
                 .new_service(svc::Either::B(outbound::http::Endpoint::from((
@@ -78,6 +79,9 @@ where
                         metadata,
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
+                        // Address would not be a local IP so always treat
+                        // target as remote in this case.
+                        &Default::default(),
                     ),
                 ))));
             return Gateway::new(svc, http.target, local_id);
@@ -130,6 +134,7 @@ where
     type Error = Error;
     type Future = ResponseFuture<O::Response>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self {
             Self::Outbound { outbound, .. } => outbound.poll_ready(cx).map_err(Into::into),
@@ -155,7 +160,7 @@ where
                     if let Some(by) = fwd_by(forwarded) {
                         tracing::info!(%forwarded);
                         if by == local_id.as_ref() {
-                            return Box::pin(future::err(HttpError::gateway_loop().into()));
+                            return Box::pin(future::err(GatewayLoop.into()));
                         }
                     }
                 }
@@ -173,9 +178,7 @@ where
                     }
                     None => {
                         warn!("Request missing ClientId extension");
-                        return Box::pin(future::err(
-                            HttpError::identity_required("no identity").into(),
-                        ));
+                        return Box::pin(future::err(GatewayIdentityRequired.into()));
                     }
                 };
                 request.headers_mut().append(http::header::FORWARDED, fwd);
@@ -195,10 +198,8 @@ where
                 tracing::debug!("Passing request to outbound");
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
-            Self::NoIdentity => Box::pin(future::err(
-                HttpError::identity_required("no identity").into(),
-            )),
-            Self::BadDomain(..) => Box::pin(future::err(HttpError::not_found("bad domain").into())),
+            Self::NoIdentity => Box::pin(future::err(GatewayIdentityRequired.into())),
+            Self::BadDomain(..) => Box::pin(future::err(GatewayDomainInvalid.into())),
         }
     }
 }

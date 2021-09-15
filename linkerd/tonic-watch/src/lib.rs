@@ -6,7 +6,7 @@ use linkerd_error::Recover;
 use linkerd_stack::{Service, ServiceExt};
 use std::task::{Context, Poll};
 use tokio::sync::watch;
-use tracing::{debug, trace};
+use tracing::{debug, trace, Instrument};
 
 /// A service that streams updates from an inner service into a `tokio::sync::watch::Receiver` on a
 /// background task.
@@ -48,16 +48,44 @@ where
         S: Service<T, Response = InnerRsp<U>, Error = tonic::Status>,
         S::Future: Send,
     {
-        // Get an update and stream or return None.
+        // Get an update and stream.
         let (init, rsp) = self.init(&target, None).await?;
 
         Ok(rsp.map(move |inner| {
             // Spawn a background task to keep the profile watch up-to-date until all copies of `rx`
             // have dropped.
             let (tx, rx) = watch::channel(init);
-            tokio::spawn(self.publish_updates(target, tx, inner));
+            tokio::spawn(self.publish_updates(target, tx, inner).in_current_span());
             rx
         }))
+    }
+
+    /// Returns a watch using the provided initial value.
+    ///
+    /// The watch is spawned on a background task that completes when the watch service errors in an
+    /// unrecoverable way or all receivers are dropped.
+    pub fn spawn_with_init<T, U>(mut self, target: T, init: U) -> watch::Receiver<U>
+    where
+        T: Clone + Send + Sync + 'static,
+        U: Send + Sync + 'static,
+        S: Service<T, Response = InnerRsp<U>, Error = tonic::Status>,
+        S::Future: Send,
+    {
+        let (tx, rx) = watch::channel(init);
+
+        // Spawn a background task to watch the inner service.
+        tokio::spawn(
+            async move {
+                let (up, rsp) = self.init(&target, None).await?;
+                if tx.send(up).is_ok() {
+                    self.publish_updates(target, tx, rsp.into_inner()).await;
+                }
+                Ok::<_, tonic::Status>(())
+            }
+            .in_current_span(),
+        );
+
+        rx
     }
 
     /// Initiates a lookup stream and obtains the first profile from it.

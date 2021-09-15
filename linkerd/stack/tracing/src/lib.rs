@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_stack::{layer, NewService, Proxy};
 use pin_project::pin_project;
@@ -86,7 +85,7 @@ where
 {
     type Service = Instrument<T, G, N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let _span = self.get_span.get_span(&target).entered();
         trace!("new");
         let inner = self.inner.new_service(target.clone());

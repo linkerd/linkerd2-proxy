@@ -8,7 +8,7 @@ use linkerd_dns_name as dns;
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
-use linkerd_stack::{layer, NewService, Param};
+use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param};
 use std::{
     fmt,
     pin::Pin,
@@ -67,30 +67,31 @@ pub enum NoServerTls {
 /// Indicates whether TLS was established on an accepted connection.
 pub type ConditionalServerTls = Conditional<ServerTls, NoServerTls>;
 
-pub type Meta<T> = (ConditionalServerTls, T);
-
 type DetectIo<T> = EitherIo<T, PrefixedIo<T>>;
+
 pub type Io<T> = EitherIo<TlsStream<DetectIo<T>>, DetectIo<T>>;
 
-pub type Connection<T, I> = (Meta<T>, Io<I>);
-
 #[derive(Clone, Debug)]
-pub struct NewDetectTls<L, A> {
-    local_identity: Option<L>,
-    inner: A,
-    timeout: Duration,
+pub struct NewDetectTls<P, L, N> {
+    inner: N,
+    params: P,
+    _local_identity: std::marker::PhantomData<fn() -> L>,
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct Timeout(pub Duration);
 
 #[derive(Clone, Debug, Error)]
 #[error("TLS detection timed out")]
-pub struct DetectTimeout(());
+pub struct ServerTlsTimeoutError(());
 
 #[derive(Clone, Debug)]
-pub struct DetectTls<T, L, N> {
+pub struct DetectTls<T, P, L, N> {
     target: T,
     local_identity: Option<L>,
+    timeout: Timeout,
+    params: P,
     inner: N,
-    timeout: Duration,
 }
 
 // The initial peek buffer is statically allocated on the stack and is fairly small; but it is
@@ -101,52 +102,54 @@ const PEEK_CAPACITY: usize = 512;
 // insufficient. This is the same value used in HTTP detection.
 const BUFFER_CAPACITY: usize = 8192;
 
-impl<I, N> NewDetectTls<I, N> {
-    pub fn new(local_identity: Option<I>, inner: N, timeout: Duration) -> Self {
+impl<P, L, N> NewDetectTls<P, L, N> {
+    pub fn new(params: P, inner: N) -> Self {
         Self {
-            local_identity,
             inner,
-            timeout,
+            params,
+            _local_identity: std::marker::PhantomData,
         }
     }
 
-    pub fn layer(
-        local_identity: Option<I>,
-        timeout: Duration,
-    ) -> impl layer::Layer<N, Service = Self> + Clone
+    pub fn layer(params: P) -> impl layer::Layer<N, Service = Self> + Clone
     where
-        I: Clone,
+        P: Clone,
     {
-        layer::mk(move |inner| Self::new(local_identity.clone(), inner, timeout))
+        layer::mk(move |inner| Self::new(params.clone(), inner))
     }
 }
 
-impl<T, L, N> NewService<T> for NewDetectTls<L, N>
+impl<T, P, L, N> NewService<T> for NewDetectTls<P, L, N>
 where
-    L: Clone + Param<LocalId> + Param<Config>,
-    N: NewService<Meta<T>> + Clone,
+    P: ExtractParam<Timeout, T> + ExtractParam<Option<L>, T> + Clone,
+    N: Clone,
 {
-    type Service = DetectTls<T, L, N>;
+    type Service = DetectTls<T, P, L, N>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
+        let timeout = self.params.extract_param(&target);
+        let local_identity = self.params.extract_param(&target);
         DetectTls {
             target,
-            local_identity: self.local_identity.clone(),
+            local_identity,
+            timeout,
+            params: self.params.clone(),
             inner: self.inner.clone(),
-            timeout: self.timeout,
         }
     }
 }
 
-impl<I, L, N, NSvc, T> tower::Service<I> for DetectTls<T, L, N>
+impl<I, T, P, L, N, NSvc> tower::Service<I> for DetectTls<T, P, L, N>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
+    T: Clone + Send + 'static,
+    P: InsertParam<ConditionalServerTls, T> + Clone + Send + Sync + 'static,
+    P::Target: Send + 'static,
     L: Param<LocalId> + Param<Config>,
-    N: NewService<Meta<T>, Service = NSvc> + Clone + Send + 'static,
+    N: NewService<P::Target, Service = NSvc> + Clone + Send + 'static,
     NSvc: tower::Service<Io<I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
-    T: Clone + Send + 'static,
 {
     type Response = ();
     type Error = Error;
@@ -158,7 +161,8 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         let target = self.target.clone();
-        let mut new_accept = self.inner.clone();
+        let params = self.params.clone();
+        let new_accept = self.inner.clone();
 
         match self.local_identity.as_ref() {
             Some(local) => {
@@ -166,9 +170,10 @@ where
                 let LocalId(local_id) = local.param();
 
                 // Detect the SNI from a ClientHello (or timeout).
-                let detect = time::timeout(self.timeout, detect_sni(io));
+                let Timeout(timeout) = self.timeout;
+                let detect = time::timeout(timeout, detect_sni(io));
                 Box::pin(async move {
-                    let (sni, io) = detect.await.map_err(|_| DetectTimeout(()))??;
+                    let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError(()))??;
 
                     let (peer, io) = match sni {
                         // If we detected an SNI matching this proxy, terminate TLS.
@@ -191,17 +196,14 @@ where
                         ),
                     };
 
-                    new_accept
-                        .new_service((peer, target))
-                        .oneshot(io)
-                        .err_into::<Error>()
-                        .await
+                    let svc = new_accept.new_service(params.insert_param(peer, target));
+                    svc.oneshot(io).err_into::<Error>().await
                 })
             }
 
             None => {
                 let peer = Conditional::None(NoServerTls::Disabled);
-                let svc = new_accept.new_service((peer, target));
+                let svc = new_accept.new_service(params.insert_param(peer, target));
                 Box::pin(
                     svc.oneshot(EitherIo::Right(EitherIo::Left(io)))
                         .err_into::<Error>(),

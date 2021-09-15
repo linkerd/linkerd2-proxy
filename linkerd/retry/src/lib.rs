@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_error::Error;
 use linkerd_stack::{layer, Either, NewService, Oneshot, Proxy, ProxyService, ServiceExt};
@@ -84,7 +83,7 @@ where
 {
     type Service = Retry<P::Policy, N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         // Determine if there is a retry policy for the given target.
         let policy = self.new_policy.new_policy(&target);
 

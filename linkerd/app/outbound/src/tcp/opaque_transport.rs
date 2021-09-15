@@ -160,6 +160,7 @@ mod test {
             metadata,
             tls::NoClientTls::NotProvidedByServiceDiscovery,
             false,
+            &Default::default(),
         )
     }
 

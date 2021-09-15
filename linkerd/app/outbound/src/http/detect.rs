@@ -1,9 +1,9 @@
 use crate::{http, Outbound};
 use linkerd_app_core::{
-    config::{ProxyConfig, ServerConfig},
+    config::ServerConfig,
     detect, io,
     svc::{self, Param},
-    Error,
+    Error, Infallible,
 };
 use tracing::debug_span;
 
@@ -11,10 +11,7 @@ use tracing::debug_span;
 pub struct Skip;
 
 impl<N> Outbound<N> {
-    pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(
-        self,
-        http: H,
-    ) -> Outbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
+    pub fn push_detect_http<T, U, NSvc, H, HSvc, I>(self, http: H) -> Outbound<svc::ArcNewTcp<T, I>>
     where
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr,
         I: std::fmt::Debug + Send + Sync + Unpin + 'static,
@@ -32,54 +29,46 @@ impl<N> Outbound<N> {
         U: From<(http::Version, T)> + svc::Param<http::Version> + 'static,
     {
         self.map_stack(|config, rt, tcp| {
-            let ProxyConfig {
-                server: ServerConfig { h2_settings, .. },
-                detect_protocol_timeout,
-                ..
-            } = config.proxy;
+            let ServerConfig { h2_settings, .. } = config.proxy.server;
 
             let skipped = tcp
                 .clone()
-                .push_on_response(svc::MapTargetLayer::new(io::EitherIo::Left))
+                .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
                 .into_inner();
 
             svc::stack(http)
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
-                        .push(svc::MapErrLayer::new(Into::into)),
+                        .push(svc::MapErr::layer(Into::into)),
                 )
                 .check_new_service::<U, _>()
                 .push(http::NewServeHttp::layer(h2_settings, rt.drain.clone()))
                 .push_map_target(U::from)
                 .instrument(|(v, _): &(http::Version, _)| debug_span!("http", %v))
                 .push(svc::UnwrapOr::layer(
-                    tcp.push_on_response(svc::MapTargetLayer::new(io::EitherIo::Right))
+                    tcp.push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
                         .into_inner(),
                 ))
-                .push_on_response(svc::BoxService::layer())
+                .push_on_service(svc::BoxService::layer())
                 .check_new_service::<(Option<http::Version>, T), _>()
                 .push_map_target(detect::allow_timeout)
-                .push(svc::BoxNewService::layer())
-                .push(detect::NewDetectService::layer(
-                    detect_protocol_timeout,
-                    http::DetectHttp::default(),
-                ))
+                .push(svc::ArcNewService::layer())
+                .push(detect::NewDetectService::layer(config.proxy.detect_http()))
                 .push_switch(
                     // When the target is marked as as opaque, we skip HTTP
                     // detection and just use the TCP stack directly.
-                    |target: T| -> Result<_, Error> {
+                    |target: T| -> Result<_, Infallible> {
                         if let Some(Skip) = target.param() {
-                            Ok(svc::Either::B(target))
-                        } else {
-                            Ok(svc::Either::A(target))
+                            return Ok(svc::Either::B(target));
                         }
+                        Ok(svc::Either::A(target))
                     },
                     skipped,
                 )
                 .check_new_service::<T, _>()
-                .push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }

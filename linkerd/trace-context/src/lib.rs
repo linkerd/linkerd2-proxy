@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 mod propagation;
 mod service;
@@ -74,7 +73,7 @@ impl From<Id> for Vec<u8> {
 
 impl AsRef<[u8]> for Id {
     fn as_ref(&self) -> &[u8] {
-        &self.0.as_ref()
+        self.0.as_ref()
     }
 }
 

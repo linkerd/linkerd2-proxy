@@ -15,9 +15,9 @@ use linkerd_proxy_transport::{
     listen::{Addrs, Bind, BindTcp},
     ConnectTcp, Keepalive, ListenAddr,
 };
-use linkerd_stack::{NewService, Param};
+use linkerd_stack::{ExtractParam, InsertParam, NewService, Param};
 use linkerd_tls as tls;
-use std::future::Future;
+use std::{future::Future, time::Duration};
 use std::{net::SocketAddr, sync::mpsc};
 use tokio::net::TcpStream;
 use tower::{
@@ -25,6 +25,8 @@ use tower::{
     util::{service_fn, ServiceExt},
 };
 use tracing::instrument::Instrument;
+
+type ServerConn<T, I> = ((tls::ConditionalServerTls, T), tls::server::Io<I>);
 
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
@@ -118,6 +120,11 @@ struct Transported<I, R> {
     result: Result<R, io::Error>,
 }
 
+#[derive(Clone)]
+struct ServerParams {
+    identity: Option<id::CrtKey>,
+}
+
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
@@ -136,7 +143,7 @@ where
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
-    S: Fn(tls::server::Connection<Addrs, TcpStream>) -> SF + Clone + Send + 'static,
+    S: Fn(ServerConn<Addrs, TcpStream>) -> SF + Clone + Send + 'static,
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
@@ -152,9 +159,11 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let mut detect = tls::NewDetectTls::new(
-            server_tls.map(Tls),
-            move |meta: tls::server::Meta<Addrs>| {
+        let detect = tls::NewDetectTls::new(
+            ServerParams {
+                identity: server_tls,
+            },
+            move |meta: (tls::ConditionalServerTls, Addrs)| {
                 let server = server.clone();
                 let sender = sender.clone();
                 let tls = Some(meta.0.clone().map(Into::into));
@@ -175,7 +184,6 @@ where
                     )
                 })
             },
-            std::time::Duration::from_secs(10),
         );
 
         let (listen_addr, listen) = BindTcp::default().bind(&Server).expect("must bind");
@@ -351,5 +359,28 @@ impl Param<ListenAddr> for Server {
 impl Param<Keepalive> for Server {
     fn param(&self) -> Keepalive {
         Keepalive(None)
+    }
+}
+
+/// === impl ServerParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        tls::server::Timeout(Duration::from_secs(10))
+    }
+}
+
+impl<T> ExtractParam<Option<Tls>, T> for ServerParams {
+    fn extract_param(&self, _: &T) -> Option<Tls> {
+        self.identity.clone().map(Tls)
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for ServerParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
     }
 }

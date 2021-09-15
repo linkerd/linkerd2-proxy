@@ -1,16 +1,14 @@
-use futures::{ready, TryFuture};
-use linkerd_stack::NewService;
-use linkerd_timeout::Timeout;
-use pin_project::pin_project;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use linkerd_error::Error;
+use linkerd_stack::{layer, MapErr, NewService, Param, Timeout, TimeoutError};
 use std::time::Duration;
+use thiserror::Error;
 
-/// Implement on targets to determine if a service has a timeout.
-pub trait HasTimeout {
-    fn timeout(&self) -> Option<Duration>;
-}
+#[derive(Clone, Debug)]
+pub struct ResponseTimeout(pub Option<Duration>);
+
+#[derive(Clone, Debug, Error)]
+#[error("HTTP response timeout after {0:?}")]
+pub struct ResponseTimeoutError(Duration);
 
 /// An HTTP-specific optional timeout layer.
 ///
@@ -19,77 +17,35 @@ pub trait HasTimeout {
 ///
 /// Timeout errors are translated into `http::Response`s with appropiate
 /// status codes.
-#[derive(Clone, Debug, Default)]
-pub struct MakeTimeoutLayer(());
-
 #[derive(Clone, Debug)]
-pub struct MakeTimeout<M> {
+pub struct NewTimeout<M> {
     inner: M,
 }
 
-#[pin_project]
-pub struct MakeFuture<F> {
-    #[pin]
-    inner: F,
-    timeout: Option<Duration>,
-}
-
-impl<M> tower::layer::Layer<M> for MakeTimeoutLayer {
-    type Service = MakeTimeout<M>;
-
-    fn layer(&self, inner: M) -> Self::Service {
-        MakeTimeout { inner }
+impl<N> NewTimeout<N> {
+    pub fn layer() -> impl tower::layer::Layer<N, Service = Self> + Clone {
+        layer::mk(|inner| Self { inner })
     }
 }
 
-impl<T, M> NewService<T> for MakeTimeout<M>
+impl<T, M> NewService<T> for NewTimeout<M>
 where
+    T: Param<ResponseTimeout>,
     M: NewService<T>,
-    T: HasTimeout,
 {
-    type Service = Timeout<M::Service>;
+    type Service = MapErr<Timeout<M::Service>, fn(Error) -> Error>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
-        match target.timeout() {
-            Some(t) => Timeout::new(self.inner.new_service(target), t),
-            None => Timeout::passthru(self.inner.new_service(target)),
-        }
-    }
-}
-
-impl<T, M> tower::Service<T> for MakeTimeout<M>
-where
-    M: tower::Service<T>,
-    T: HasTimeout,
-{
-    type Response = Timeout<M::Response>;
-    type Error = M::Error;
-    type Future = MakeFuture<M::Future>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, target: T) -> Self::Future {
-        let timeout = target.timeout();
-        let inner = self.inner.call(target);
-
-        MakeFuture { inner, timeout }
-    }
-}
-
-impl<F: TryFuture> Future for MakeFuture<F> {
-    type Output = Result<Timeout<F::Ok>, F::Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.project();
-        let inner = ready!(this.inner.try_poll(cx))?;
-
-        let svc = match this.timeout {
-            Some(t) => Timeout::new(inner, *t),
-            None => Timeout::passthru(inner),
+    fn new_service(&self, target: T) -> Self::Service {
+        let svc = match target.param() {
+            ResponseTimeout(Some(t)) => Timeout::new(self.inner.new_service(target), t),
+            ResponseTimeout(None) => Timeout::passthru(self.inner.new_service(target)),
         };
-
-        Poll::Ready(Ok(svc))
+        MapErr::new(svc, |error| {
+            if let Some(t) = error.downcast_ref::<TimeoutError>() {
+                ResponseTimeoutError(t.duration()).into()
+            } else {
+                error
+            }
+        })
     }
 }

@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 mod gateway;
 #[cfg(test)]
@@ -18,12 +17,13 @@ use linkerd_app_core::{
     },
     svc::{self, Param},
     tls,
+    transport::{ClientAddr, OrigDstAddr, Remote},
     transport_header::SessionProtocol,
     Error, Infallible, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{
-    direct::{ClientInfo, GatewayConnection, GatewayTransportHeader},
-    Inbound,
+    direct::{ClientInfo, GatewayConnection, GatewayTransportHeader, Legacy},
+    policy, Inbound,
 };
 use linkerd_app_outbound::{self as outbound, Outbound};
 use std::{
@@ -42,6 +42,7 @@ pub struct Config {
 struct HttpLegacy {
     client: ClientInfo,
     version: http::Version,
+    policy: policy::AllowPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +50,7 @@ struct HttpTransportHeader {
     target: NameAddr,
     client: ClientInfo,
     version: http::Version,
+    policy: policy::AllowPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -75,7 +77,7 @@ pub fn stack<I, O, P, R>(
     outbound: Outbound<O>,
     profiles: P,
     resolve: R,
-) -> svc::BoxNewService<GatewayConnection, svc::BoxService<I, (), Error>>
+) -> svc::ArcNewTcp<GatewayConnection, I>
 where
     I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + fmt::Debug + Send + Sync + Unpin + 'static,
     O: Clone + Send + Sync + Unpin + 'static,
@@ -94,11 +96,10 @@ where
     let ProxyConfig {
         buffer_capacity,
         cache_max_idle_age,
-        detect_protocol_timeout,
         dispatch_timeout,
         ..
     } = inbound.config().proxy.clone();
-    let local_id = inbound.runtime().identity.as_ref().map(|l| l.id().clone());
+    let local_id = inbound.identity().map(|l| l.id().clone());
 
     // For each gatewayed connection that is *not* HTTP, use the target from the
     // transport header to lookup a service profile. If the profile includes a
@@ -119,6 +120,7 @@ where
         .push_tcp_endpoint()
         .push_tcp_forward()
         .into_stack();
+    let inbound_ips = outbound.config().inbound_ips.clone();
     let tcp = endpoint
         .push_switch(
             move |(profile, _): (Option<profiles::Receiver>, _)| -> Result<_, Error> {
@@ -132,6 +134,7 @@ where
                         metadata,
                         tls::NoClientTls::NotProvidedByServiceDiscovery,
                         profile.is_opaque_protocol(),
+                        &inbound_ips,
                     )));
                 }
 
@@ -159,12 +162,11 @@ where
                 }
             }
         }))
-        .push_on_response(
+        .push_on_service(
             svc::layers()
                 .push(
                     inbound
-                        .runtime()
-                        .metrics
+                        .proxy_metrics()
                         .stack
                         .layer(metrics::StackLabels::inbound("tcp", "gateway")),
                 )
@@ -195,12 +197,11 @@ where
             }
         }))
         .instrument(|h: &HttpTarget| debug_span!("gateway", target = %h.target, v = %h.version))
-        .push_on_response(
+        .push_on_service(
             svc::layers()
                 .push(
                     inbound
-                        .runtime()
-                        .metrics
+                        .proxy_metrics()
                         .stack
                         .layer(metrics::StackLabels::inbound("http", "gateway")),
                 )
@@ -209,12 +210,12 @@ where
                 .push_spawn_buffer(buffer_capacity),
         )
         .push_cache(cache_max_idle_age)
-        .push_on_response(
+        .push_on_service(
             svc::layers()
                 .push(http::Retain::layer())
                 .push(http::BoxResponse::layer()),
         )
-        .push(svc::BoxNewService::layer());
+        .push(svc::ArcNewService::layer());
 
     // When handling gateway connections from older clients that do not
     // support the transport header, do protocol detection and route requests
@@ -225,49 +226,51 @@ where
         .clone()
         .with_stack(
             http.clone()
-                .push(svc::NewRouter::layer(RouteHttp))
+                .push(svc::NewRouter::layer(|(_, target)| RouteHttp(target)))
+                .push(inbound.authorize_http())
                 .push_http_insert_target::<tls::ClientId>(),
         )
         .push_http_server()
         .into_stack()
         .push(svc::Filter::<ClientInfo, _>::layer(HttpLegacy::try_from))
-        .push(svc::BoxNewService::layer())
+        .push(svc::ArcNewService::layer())
         .push(detect::NewDetectService::layer(
-            detect_protocol_timeout,
-            http::DetectHttp::default(),
+            inbound.config().proxy.detect_http(),
         ));
 
     // When a transported connection is received, use the header's target to
     // drive routing.
     inbound
+        .clone()
         .with_stack(
             // A router is needed so that we use each request's HTTP version
-            // (i.e. after serverside orig-proto downgrading).
-            http.push(svc::NewRouter::layer(RouteHttp))
+            // (i.e. after server-side orig-proto downgrading).
+            http.push(svc::NewRouter::layer(|(_, target)| RouteHttp(target)))
+                .push(inbound.authorize_http())
                 .push_http_insert_target::<tls::ClientId>(),
         )
         .push_http_server()
         .into_stack()
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
+        .push_on_service(svc::BoxService::layer())
+        .push(svc::ArcNewService::layer())
         .push_switch(
-            |GatewayTransportHeader {
-                 target,
-                 protocol,
-                 client,
-             }| match protocol {
+            |gth: GatewayTransportHeader| match gth.protocol {
                 Some(proto) => Ok(svc::Either::A(HttpTransportHeader {
-                    target,
-                    client,
+                    target: gth.target,
+                    client: gth.client,
+                    policy: gth.policy,
                     version: match proto {
                         SessionProtocol::Http1 => http::Version::Http1,
                         SessionProtocol::Http2 => http::Version::H2,
                     },
                 })),
-                None => Ok::<_, Infallible>(svc::Either::B(target)),
+                None => Ok::<_, Infallible>(svc::Either::B(gth)),
             },
-            tcp.push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+            tcp.push_map_target(|(_permit, gth): (_, GatewayTransportHeader)| gth.target)
+                .push(inbound.authorize_tcp())
+                .check_new_service::<GatewayTransportHeader, I>()
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
                 .into_inner(),
         )
         .push_switch(
@@ -277,8 +280,8 @@ where
             },
             legacy_http.into_inner(),
         )
-        .push_on_response(svc::BoxService::layer())
-        .push(svc::BoxNewService::layer())
+        .push_on_service(svc::BoxService::layer())
+        .push(svc::ArcNewService::layer())
         .into_inner()
 }
 
@@ -308,25 +311,56 @@ impl Param<tls::ClientId> for HttpTransportHeader {
     }
 }
 
-// === impl HttpLegacy ===
-
-impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, ClientInfo)> for HttpLegacy {
-    type Error = Error;
-
-    fn try_from(
-        (version, client): (Result<Option<http::Version>, E>, ClientInfo),
-    ) -> Result<Self, Self::Error> {
-        match version {
-            Ok(Some(version)) => Ok(Self { version, client }),
-            Ok(None) => Err(RefusedNoTarget(()).into()),
-            Err(e) => Err(e.into()),
-        }
+impl Param<OrigDstAddr> for HttpTransportHeader {
+    fn param(&self) -> OrigDstAddr {
+        self.client.local_addr
     }
 }
 
-impl From<(http::Version, ClientInfo)> for HttpLegacy {
-    fn from((version, client): (http::Version, ClientInfo)) -> Self {
-        Self { version, client }
+impl Param<Remote<ClientAddr>> for HttpTransportHeader {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client.client_addr
+    }
+}
+
+impl Param<tls::ConditionalServerTls> for HttpTransportHeader {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(self.client.client_id.clone()),
+            negotiated_protocol: self.client.alpn.clone(),
+        })
+    }
+}
+
+impl Param<policy::AllowPolicy> for HttpTransportHeader {
+    fn param(&self) -> policy::AllowPolicy {
+        self.policy.clone()
+    }
+}
+
+impl Param<policy::ServerLabel> for HttpTransportHeader {
+    fn param(&self) -> policy::ServerLabel {
+        self.policy.server_label()
+    }
+}
+
+// === impl HttpLegacy ===
+
+impl<E: Into<Error>> TryFrom<(Result<Option<http::Version>, E>, Legacy)> for HttpLegacy {
+    type Error = Error;
+
+    fn try_from(
+        (version, gateway): (Result<Option<http::Version>, E>, Legacy),
+    ) -> Result<Self, Self::Error> {
+        match version {
+            Ok(Some(version)) => Ok(Self {
+                version,
+                client: gateway.client,
+                policy: gateway.policy,
+            }),
+            Ok(None) => Err(RefusedNoTarget(()).into()),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -348,9 +382,42 @@ impl Param<http::Version> for HttpLegacy {
     }
 }
 
+impl Param<OrigDstAddr> for HttpLegacy {
+    fn param(&self) -> OrigDstAddr {
+        self.client.local_addr
+    }
+}
+
+impl Param<Remote<ClientAddr>> for HttpLegacy {
+    fn param(&self) -> Remote<ClientAddr> {
+        self.client.client_addr
+    }
+}
+
 impl Param<tls::ClientId> for HttpLegacy {
     fn param(&self) -> tls::ClientId {
         self.client.client_id.clone()
+    }
+}
+
+impl Param<tls::ConditionalServerTls> for HttpLegacy {
+    fn param(&self) -> tls::ConditionalServerTls {
+        tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+            client_id: Some(self.client.client_id.clone()),
+            negotiated_protocol: self.client.alpn.clone(),
+        })
+    }
+}
+
+impl Param<policy::AllowPolicy> for HttpLegacy {
+    fn param(&self) -> policy::AllowPolicy {
+        self.policy.clone()
+    }
+}
+
+impl Param<policy::ServerLabel> for HttpLegacy {
+    fn param(&self) -> policy::ServerLabel {
+        self.policy.server_label()
     }
 }
 
@@ -371,12 +438,8 @@ impl<B> svc::stack::RecognizeRoute<http::Request<B>> for RouteHttp<HttpLegacy> {
 
     fn recognize(&self, req: &http::Request<B>) -> Result<Self::Key, Error> {
         let version = req.version().try_into()?;
-
-        if let Some(a) = req.uri().authority() {
-            let target = NameAddr::from_authority_with_default_port(a, 80)?;
-            return Ok(HttpTarget { target, version });
-        }
-
-        Err(RefusedNoTarget(()).into())
+        let authority = req.uri().authority().ok_or(RefusedNoTarget(()))?;
+        let target = NameAddr::from_authority_with_default_port(authority, 80)?;
+        Ok(HttpTarget { target, version })
     }
 }

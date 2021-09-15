@@ -1,8 +1,8 @@
 use super::*;
 use linkerd_app_core::{
-    dns, errors::HttpError, identity as id, profiles, proxy::http, svc::NewService, tls, Error,
-    NameAddr, NameMatch,
+    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error, NameAddr, NameMatch,
 };
+use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_test as support;
 use std::str::FromStr;
 use tower::util::ServiceExt;
@@ -46,15 +46,8 @@ async fn bad_domain() {
         suffix: "bad.example.com",
         ..Default::default()
     };
-    let status = test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
-        .downcast_ref::<HttpError>()
-        .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::NOT_FOUND);
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e.is::<GatewayDomainInvalid>());
 }
 
 #[tokio::test]
@@ -63,15 +56,8 @@ async fn no_identity() {
         client_id: None,
         ..Default::default()
     };
-    let status = test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
-        .downcast_ref::<HttpError>()
-        .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::FORBIDDEN);
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e.is::<GatewayIdentityRequired>());
 }
 
 #[tokio::test]
@@ -82,15 +68,8 @@ async fn forward_loop() {
         ),
         ..Default::default()
     };
-    let status = test
-        .with_default_profile()
-        .run()
-        .await
-        .unwrap_err()
-        .downcast_ref::<HttpError>()
-        .unwrap()
-        .status();
-    assert_eq!(status, http::StatusCode::LOOP_DETECTED);
+    let e = test.with_default_profile().run().await.unwrap_err();
+    assert!(e.is::<GatewayLoop>());
 }
 
 struct Test {
@@ -171,7 +150,9 @@ impl Test {
     }
 
     fn with_profile(mut self, profile: profiles::Receiver) -> Self {
-        let allow = NameMatch::new(Some(dns::Suffix::from_str(self.suffix).unwrap()));
+        let allow = Some(dns::Suffix::from_str(self.suffix).unwrap())
+            .into_iter()
+            .collect::<NameMatch>();
         if allow.matches(self.target.name()) {
             self.profile = Some(profile);
         }

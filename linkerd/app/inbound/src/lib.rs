@@ -5,52 +5,75 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
-mod allow_discovery;
+mod accept;
+mod detect;
 pub mod direct;
-pub mod http;
-mod prevent_loop;
-mod require_identity;
-pub mod target;
+mod http;
+mod metrics;
+pub mod policy;
+mod server;
 #[cfg(any(test, fuzzing))]
 pub(crate) mod test_util;
 
-pub use self::target::{HttpEndpoint, Logical, RequestTarget, Target, TcpEndpoint};
-use self::{
-    prevent_loop::PreventLoop,
-    require_identity::RequireIdentityForPorts,
-    target::{HttpAccept, TcpAccept},
-};
+pub use self::{metrics::Metrics, policy::DefaultPolicy};
 use linkerd_app_core::{
-    config::{ConnectConfig, PortSet, ProxyConfig, ServerConfig},
-    detect, drain, io, metrics, profiles,
+    config::{ConnectConfig, ProxyConfig},
+    drain,
+    http_tracing::OpenCensusSink,
+    io,
     proxy::tcp,
-    serve, svc, tls,
-    transport::{
-        self, allow_ips::AllowIps, listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr,
-    },
-    Error, Infallible, NameMatch, ProxyRuntime,
+    proxy::{identity::LocalCrtKey, tap},
+    svc,
+    transport::{self, Remote, ServerAddr},
+    Error, NameMatch, ProxyRuntime,
 };
-use std::{convert::TryFrom, fmt::Debug, future::Future, time::Duration};
-use tracing::{debug_span, info_span};
+use std::{fmt::Debug, time::Duration};
+use thiserror::Error;
+use tracing::debug_span;
+
+#[cfg(fuzzing)]
+pub use self::http::fuzz as http_fuzz;
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub allow_discovery: NameMatch,
     pub proxy: ProxyConfig,
-    pub require_identity_for_inbound_ports: RequireIdentityForPorts,
-    pub disable_protocol_detection_for_ports: PortSet,
+    pub policy: policy::Config,
     pub profile_idle_timeout: Duration,
-    pub allowed_ips: AllowIps,
+    pub allowed_ips: transport::AllowIps,
 }
 
 #[derive(Clone)]
 pub struct Inbound<S> {
     config: Config,
-    runtime: ProxyRuntime,
+    runtime: Runtime,
     stack: svc::Stack<S>,
 }
+
+#[derive(Clone)]
+struct Runtime {
+    metrics: Metrics,
+    identity: Option<LocalCrtKey>,
+    tap: tap::Registry,
+    span_sink: OpenCensusSink,
+    drain: drain::Watch,
+}
+
+// The inbound HTTP server handles gateway traffic; so gateway error types are defined here (so that
+// error metrics can be recorded properly).
+
+#[derive(Debug, Error)]
+#[error("no identity provided")]
+pub struct GatewayIdentityRequired;
+
+#[derive(Debug, Error)]
+#[error("bad gateway domain")]
+pub struct GatewayDomainInvalid;
+
+#[derive(Debug, Error)]
+#[error("gateway loop detected")]
+pub struct GatewayLoop;
 
 // === impl Inbound ===
 
@@ -59,8 +82,26 @@ impl<S> Inbound<S> {
         &self.config
     }
 
-    pub fn runtime(&self) -> &ProxyRuntime {
-        &self.runtime
+    pub fn identity(&self) -> Option<&LocalCrtKey> {
+        self.runtime.identity.as_ref()
+    }
+
+    pub fn proxy_metrics(&self) -> &metrics::Proxy {
+        &self.runtime.metrics.proxy
+    }
+
+    /// A helper for gateways to instrument policy checks.
+    pub fn authorize_http<N>(
+        &self,
+    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeHttp<N>> + Clone {
+        policy::NewAuthorizeHttp::layer(self.runtime.metrics.http_authz.clone())
+    }
+
+    /// A helper for gateways to instrument policy checks.
+    pub fn authorize_tcp<N>(
+        &self,
+    ) -> impl svc::layer::Layer<N, Service = policy::NewAuthorizeTcp<N>> + Clone {
+        policy::NewAuthorizeTcp::layer(self.runtime.metrics.tcp_authz.clone())
     }
 
     pub fn into_stack(self) -> svc::Stack<S> {
@@ -74,7 +115,7 @@ impl<S> Inbound<S> {
     /// Creates a new `Inbound` by replacing the inner stack, as modified by `f`.
     fn map_stack<T>(
         self,
-        f: impl FnOnce(&Config, &ProxyRuntime, svc::Stack<S>) -> svc::Stack<T>,
+        f: impl FnOnce(&Config, &Runtime, svc::Stack<S>) -> svc::Stack<T>,
     ) -> Inbound<T> {
         let stack = f(&self.config, &self.runtime, self.stack);
         Inbound {
@@ -87,11 +128,22 @@ impl<S> Inbound<S> {
 
 impl Inbound<()> {
     pub fn new(config: Config, runtime: ProxyRuntime) -> Self {
+        let runtime = Runtime {
+            metrics: Metrics::new(runtime.metrics),
+            identity: runtime.identity,
+            tap: runtime.tap,
+            span_sink: runtime.span_sink,
+            drain: runtime.drain,
+        };
         Self {
             config,
             runtime,
             stack: svc::stack(()),
         }
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.runtime.metrics.clone()
     }
 
     pub fn with_stack<S>(self, stack: S) -> Inbound<S> {
@@ -102,6 +154,7 @@ impl Inbound<()> {
     // forwarding and HTTP proxying).
     pub fn into_tcp_connect<T>(
         self,
+        proxy_port: u16,
     ) -> Inbound<
         impl svc::Service<
                 T,
@@ -111,7 +164,7 @@ impl Inbound<()> {
             > + Clone,
     >
     where
-        T: svc::Param<Remote<ServerAddr>> + 'static,
+        T: svc::Param<u16> + 'static,
     {
         self.map_stack(|config, _, _| {
             // Establishes connections to remote peers (for both TCP
@@ -122,200 +175,65 @@ impl Inbound<()> {
                 ..
             } = config.proxy.connect;
 
+            #[derive(Debug, thiserror::Error)]
+            #[error("inbound connection must not target port {0}")]
+            struct Loop(u16);
+
             svc::stack(transport::ConnectTcp::new(*keepalive))
-                .push_map_target(|t: T| t.param())
                 // Limits the time we wait for a connection to be established.
                 .push_connect_timeout(*timeout)
-                .push(svc::stack::BoxFuture::layer())
+                // Prevent connections that would target the inbound proxy port from looping.
+                .push_request_filter(move |t: T| {
+                    let port = t.param();
+                    if port == proxy_port {
+                        return Err(Loop(port));
+                    }
+                    Ok(Remote(ServerAddr(([127, 0, 0, 1], port).into())))
+                })
         })
-    }
-
-    pub fn serve<B, G, GSvc, P>(
-        self,
-        bind: B,
-        profiles: P,
-        gateway: G,
-    ) -> (Local<ServerAddr>, impl Future<Output = ()> + Send)
-    where
-        B: Bind<ServerConfig>,
-        B::Addrs: svc::Param<Remote<ClientAddr>>
-            + svc::Param<Local<ServerAddr>>
-            + svc::Param<OrigDstAddr>,
-        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
-        G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<io::ScopedIo<B::Io>>, Response = ()> + Send + 'static,
-        GSvc::Error: Into<Error>,
-        GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Error: Send,
-        P::Future: Send,
-    {
-        let (Local(ServerAddr(la)), listen) = bind
-            .bind(&self.config.proxy.server)
-            .expect("Failed to bind inbound listener");
-
-        let serve = async move {
-            let shutdown = self.runtime.drain.clone().signaled();
-            let stack = self
-                .into_tcp_connect()
-                .push_server(la.port(), profiles, gateway)
-                .into_inner();
-            serve::serve(listen, stack, shutdown).await
-        };
-
-        (Local(ServerAddr(la)), serve)
     }
 }
 
-impl<C> Inbound<C>
-where
-    C: svc::Service<TcpEndpoint> + Clone + Send + Sync + Unpin + 'static,
-    C::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
-    C::Error: Into<Error>,
-    C::Future: Send,
-{
-    pub fn push_tcp_forward<I>(
+impl<S> Inbound<S> {
+    pub fn push<L: svc::layer::Layer<S>>(self, layer: L) -> Inbound<L::Service> {
+        self.map_stack(|_, _, stack| stack.push(layer))
+    }
+
+    // Forwards TCP streams that cannot be decoded as HTTP.
+    //
+    // Looping is always prevented.
+    pub fn push_tcp_forward<T, I>(
         self,
-        server_port: u16,
     ) -> Inbound<
-        svc::BoxNewService<
-            TcpEndpoint,
+        svc::ArcNewService<
+            T,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
     >
     where
+        T: svc::Param<transport::labels::Key> + Clone + Send + 'static,
         I: io::AsyncRead + io::AsyncWrite,
-        I: Debug + Send + Sync + Unpin + 'static,
+        I: Debug + Send + Unpin + 'static,
+        S: svc::Service<T> + Clone + Send + Sync + Unpin + 'static,
+        S::Response: io::AsyncRead + io::AsyncWrite + Send + Unpin + 'static,
+        S::Error: Into<Error>,
+        S::Future: Send,
     {
         self.map_stack(|_, rt, connect| {
-            let prevent_loop = PreventLoop::from(server_port);
-
-            // Forwards TCP streams that cannot be decoded as HTTP.
-            //
-            // Looping is always prevented.
             connect
-                .push_request_filter(prevent_loop)
-                .push(rt.metrics.transport.layer_connect())
+                .push(transport::metrics::Client::layer(
+                    rt.metrics.proxy.transport.clone(),
+                ))
                 .push_make_thunk()
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(tcp::Forward::layer())
                         .push(drain::Retain::layer(rt.drain.clone())),
                 )
                 .instrument(|_: &_| debug_span!("tcp"))
-                .push(svc::BoxNewService::layer())
-                .check_new::<TcpEndpoint>()
+                .push(svc::ArcNewService::layer())
+                .check_new::<T>()
         })
-    }
-
-    pub fn push_server<T, I, G, GSvc, P>(
-        self,
-        server_port: u16,
-        profiles: P,
-        gateway: G,
-    ) -> Inbound<svc::BoxNewService<T, svc::BoxService<I, (), Error>>>
-    where
-        T: svc::Param<Remote<ClientAddr>> + svc::Param<OrigDstAddr>,
-        T: Clone + Send + 'static,
-        I: io::AsyncRead + io::AsyncWrite + io::Peek + io::PeerAddr,
-        I: Debug + Send + Sync + Unpin + 'static,
-        G: svc::NewService<direct::GatewayConnection, Service = GSvc>,
-        G: Clone + Send + Sync + Unpin + 'static,
-        GSvc: svc::Service<direct::GatewayIo<I>, Response = ()> + Send + 'static,
-        GSvc::Error: Into<Error>,
-        GSvc::Future: Send,
-        P: profiles::GetProfile<profiles::LookupAddr> + Clone + Send + Sync + Unpin + 'static,
-        P::Error: Send,
-        P::Future: Send,
-    {
-        // Handles inbound connections that target an opaque port.
-        let opaque = self
-            .clone()
-            .push_tcp_forward(server_port)
-            .map_stack(|_, rt, tcp| {
-                tcp.push_map_target(TcpEndpoint::from)
-                    .push(rt.metrics.transport.layer_accept())
-                    .check_new_service::<TcpAccept, _>()
-            })
-            .into_stack();
-
-        // Handles inbound connections that could not be detected as HTTP.
-        let tcp = self.clone().push_tcp_forward(server_port);
-
-        // Handles connections targeting the inbound proxy port--either by acting as a gateway to
-        // the outbound stack or by forwarding connections locally (for opauque transport).
-        let direct = tcp
-            .clone()
-            .push_direct(gateway)
-            .into_stack()
-            .instrument(|_: &_| debug_span!("direct"));
-
-        self.push_http_router(profiles)
-            .push_http_server()
-            .map_stack(|cfg, rt, http| {
-                let detect_timeout = cfg.proxy.detect_protocol_timeout;
-                let require_id = cfg.require_identity_for_inbound_ports.clone();
-
-                http.push_map_target(HttpAccept::from)
-                    .push(svc::UnwrapOr::layer(
-                        // When HTTP detection fails, forward the connection to the application as
-                        // an opaque TCP stream.
-                        tcp.into_stack()
-                            .push_map_target(TcpEndpoint::from)
-                            .push_on_response(svc::BoxService::layer())
-                            .into_inner(),
-                    ))
-                    .push_map_target(detect::allow_timeout)
-                    .push(svc::BoxNewService::layer())
-                    .push(detect::NewDetectService::layer(
-                        detect_timeout,
-                        http::DetectHttp::default(),
-                    ))
-                    .push_request_filter(require_id)
-                    .push(rt.metrics.transport.layer_accept())
-                    .push_request_filter(TcpAccept::try_from)
-                    .push(svc::BoxNewService::layer())
-                    .push(tls::NewDetectTls::layer(
-                        rt.identity.clone(),
-                        detect_timeout,
-                    ))
-            })
-            .map_stack(|cfg, _, detect| {
-                let disable_detect = cfg.disable_protocol_detection_for_ports.clone();
-                detect
-                    .instrument(|_: &_| debug_span!("proxy"))
-                    .push_switch(
-                        move |t: T| -> Result<_, Infallible> {
-                            let OrigDstAddr(addr) = t.param();
-                            if !disable_detect.contains(&addr.port()) {
-                                Ok(svc::Either::A(t))
-                            } else {
-                                Ok(svc::Either::B(TcpAccept::port_skipped(t)))
-                            }
-                        },
-                        opaque
-                            .instrument(|_: &TcpAccept| debug_span!("forward"))
-                            .into_inner(),
-                    )
-                    .check_new_service::<T, I>()
-                    .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
-            })
-            .map_stack(|cfg, rt, accept| {
-                accept
-                    .push_switch(
-                        PreventLoop::from(server_port).to_switch(),
-                        direct.into_inner(),
-                    )
-                    .instrument(|a: &T| {
-                        let OrigDstAddr(target_addr) = a.param();
-                        info_span!("server", port = target_addr.port())
-                    })
-                    .push_request_filter(cfg.allowed_ips.clone())
-                    .push(rt.metrics.tcp_accept_errors.layer())
-                    .push_on_response(svc::BoxService::layer())
-                    .push(svc::BoxNewService::layer())
-            })
     }
 }
 

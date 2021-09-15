@@ -14,7 +14,7 @@ linkerd-dns-name = { path = "../dns/name" }
 ring = "0.16.19"
 thiserror = "1.0"
 tokio-rustls = "0.22"
-tracing = "0.1.26"
+tracing = "0.1.27"
 untrusted = "0.7"
 webpki = "=0.21.4"
 

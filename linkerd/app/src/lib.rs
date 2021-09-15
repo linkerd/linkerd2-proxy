@@ -2,7 +2,6 @@
 
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub mod dst;
 pub mod env;
@@ -18,6 +17,7 @@ use linkerd_app_core::{
     config::ServerConfig,
     control::ControlAddr,
     dns, drain,
+    metrics::FmtMetrics,
     svc::Param,
     transport::{listen::Bind, ClientAddr, Local, OrigDstAddr, Remote, ServerAddr},
     Error, ProxyRuntime,
@@ -30,8 +30,7 @@ use tokio::{
     sync::mpsc,
     time::{self, Duration},
 };
-use tracing::instrument::Instrument;
-use tracing::{debug, info, info_span};
+use tracing::{debug, info, info_span, Instrument};
 
 /// Spawns a sidecar proxy.
 ///
@@ -98,8 +97,6 @@ impl Config {
         BAdmin: Bind<ServerConfig> + Clone + 'static,
         BAdmin::Addrs: Param<Remote<ClientAddr>> + Param<Local<ServerAddr>>,
     {
-        use metrics::FmtMetrics;
-
         let Config {
             admin,
             dns,
@@ -116,8 +113,10 @@ impl Config {
 
         let dns = dns.build();
 
+        // Ensure that we've obtained a valid identity before binding any servers.
         let identity = info_span!("identity")
             .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+
         let report = identity.metrics().and_then(report);
 
         let (drain_tx, drain_rx) = drain::channel();
@@ -135,54 +134,52 @@ impl Config {
 
         let oc_collector = {
             let identity = identity.local();
-            let dns = dns.resolver;
-            let client_metrics = metrics.control;
+            let dns = dns.resolver.clone();
+            let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
             info_span!("opencensus")
                 .in_scope(|| oc_collector.build(identity, dns, metrics, client_metrics))
         }?;
 
+        let runtime = ProxyRuntime {
+            identity: identity.local(),
+            metrics: metrics.proxy.clone(),
+            tap: tap.registry(),
+            span_sink: oc_collector.span_sink(),
+            drain: drain_rx.clone(),
+        };
+        let inbound = Inbound::new(inbound, runtime.clone());
+        let outbound = Outbound::new(outbound, runtime);
+
+        let inbound_policies = {
+            let dns = dns.resolver;
+            let metrics = metrics.control;
+            info_span!("policy").in_scope(|| inbound.build_policies(dns, metrics))
+        };
+
         let admin = {
             let identity = identity.local();
-            let drain = drain_rx.clone();
-            let metrics = metrics.inbound.clone();
+            let metrics = inbound.metrics();
+            let policy = inbound_policies.clone();
+            let report = inbound
+                .metrics()
+                .and_then(outbound.metrics())
+                .and_then(report);
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
+                    policy,
                     identity,
                     report,
                     metrics,
                     log_level,
-                    drain,
+                    drain_rx,
                     shutdown_tx,
                 )
             })?
         };
 
         let dst_addr = dst.addr.clone();
-
-        let inbound = Inbound::new(
-            inbound,
-            ProxyRuntime {
-                identity: identity.local(),
-                metrics: metrics.inbound,
-                tap: tap.registry(),
-                span_sink: oc_collector.span_sink(),
-                drain: drain_rx.clone(),
-            },
-        );
-
-        let outbound = Outbound::new(
-            outbound,
-            ProxyRuntime {
-                identity: identity.local(),
-                metrics: metrics.outbound,
-                tap: tap.registry(),
-                span_sink: oc_collector.span_sink(),
-                drain: drain_rx,
-            },
-        );
-
         let gateway_stack = gateway::stack(
             gateway,
             inbound.clone(),
@@ -191,14 +188,47 @@ impl Config {
             dst.resolve.clone(),
         );
 
-        let (inbound_addr, inbound_serve) =
-            inbound.serve(bind_in, dst.profiles.clone(), gateway_stack);
-        let (outbound_addr, outbound_serve) = outbound.serve(bind_out, dst.profiles, dst.resolve);
+        // Bind the proxy sockets eagerly (so they're reserved and known) but defer building the
+        // stacks until the proxy starts running.
+        let (inbound_addr, inbound_listen) = bind_in
+            .bind(&inbound.config().proxy.server)
+            .expect("Failed to bind inbound listener");
 
-        let start_proxy = Box::pin(async move {
-            tokio::spawn(outbound_serve.instrument(info_span!("outbound")));
-            tokio::spawn(inbound_serve.instrument(info_span!("inbound")));
-        });
+        let (outbound_addr, outbound_listen) = bind_out
+            .bind(&outbound.config().proxy.server)
+            .expect("Failed to bind outbound listener");
+
+        // Build a task that initializes and runs the proxy stacks.
+        let start_proxy = {
+            let identity = identity.local();
+            let inbound_addr = inbound_addr;
+            let profiles = dst.profiles;
+            let resolve = dst.resolve;
+
+            Box::pin(async move {
+                Self::await_identity(identity)
+                    .await
+                    .expect("failed to initialize identity");
+
+                tokio::spawn(
+                    outbound
+                        .serve(outbound_listen, profiles.clone(), resolve)
+                        .instrument(info_span!("outbound")),
+                );
+
+                tokio::spawn(
+                    inbound
+                        .serve(
+                            inbound_addr,
+                            inbound_listen,
+                            inbound_policies,
+                            profiles,
+                            gateway_stack,
+                        )
+                        .instrument(info_span!("inbound")),
+                );
+            })
+        };
 
         Ok(App {
             admin,
@@ -211,6 +241,30 @@ impl Config {
             start_proxy,
             tap,
         })
+    }
+
+    /// Waits for the proxy's identity to be certified.
+    ///
+    /// If this does not complete in a timely fashion, warnings are logged every 15s
+    async fn await_identity(id: Option<identity::LocalCrtKey>) -> Result<(), Error> {
+        let id = match id {
+            Some(id) => id,
+            None => return Ok(()),
+        };
+
+        tokio::pin! {
+            let fut = id.await_crt();
+        }
+
+        const TIMEOUT: time::Duration = time::Duration::from_secs(15);
+        loop {
+            tokio::select! {
+                res = (&mut fut) => return res.map(|_| ()).map_err(Into::into),
+                _ = time::sleep(TIMEOUT) => {
+                    tracing::warn!("Waiting for identity to be initialized...");
+                }
+            }
+        }
     }
 }
 

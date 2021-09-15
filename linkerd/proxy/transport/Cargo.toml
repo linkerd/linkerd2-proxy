@@ -10,20 +10,13 @@ Transport-level implementations that rely on core proxy infrastructure
 """
 
 [dependencies]
-bytes = "1"
 futures = { version = "0.3", default-features = false }
-linkerd-errno = { path = "../../errno" }
-linkerd-error = { path = "../../error" }
 linkerd-io = { path = "../../io" }
-linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-stack = { path = "../../stack" }
-parking_lot = "0.11"
-pin-project = "1"
 socket2 = "0.4"
 tokio = { version = "1", features = ["macros", "net"] }
 tokio-stream = { version = "0.1", features = ["net"] }
-tower = { version = "0.4", features = ["make"] }
-tracing = "0.1.26"
+tracing = "0.1.27"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

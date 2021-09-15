@@ -17,13 +17,11 @@ members = [
     "linkerd/cache",
     "linkerd/conditional",
     "linkerd/detect",
-    "linkerd/transport-header",
     "linkerd/dns/name",
     "linkerd/dns",
     "linkerd/duplex",
     "linkerd/error",
     "linkerd/errno",
-    "linkerd/error-metrics",
     "linkerd/error-respond",
     "linkerd/exp-backoff",
     "linkerd/http-box",
@@ -46,16 +44,18 @@ members = [
     "linkerd/proxy/transport",
     "linkerd/reconnect",
     "linkerd/retry",
+    "linkerd/server-policy",
     "linkerd/service-profiles",
     "linkerd/signal",
     "linkerd/stack",
     "linkerd/stack/metrics",
     "linkerd/stack/tracing",
     "linkerd/system",
-    "linkerd/timeout",
     "linkerd/tonic-watch",
     "linkerd/tls",
     "linkerd/tracing",
+    "linkerd/transport-header",
+    "linkerd/transport-metrics",
     "linkerd2-proxy",
     "opencensus-proto",
 ]
@@ -64,8 +64,12 @@ members = [
 # disable them.
 [profile.dev]
 debug = false
+
 [profile.test]
 debug = false
+
+[profile.release]
+lto = true
 
 [patch.crates-io]
 webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0.21" }

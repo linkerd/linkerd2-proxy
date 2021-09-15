@@ -47,7 +47,7 @@ where
     type Service = OverrideAuthority<M::Service, H>;
 
     #[inline]
-    fn new_service(&mut self, t: T) -> Self::Service {
+    fn new_service(&self, t: T) -> Self::Service {
         OverrideAuthority {
             authority: t.param().map(|AuthorityOverride(a)| a),
             headers_to_strip: self.headers_to_strip.clone(),

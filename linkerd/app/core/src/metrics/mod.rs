@@ -1,8 +1,6 @@
-mod tcp_accept_errors;
-
 use crate::{
     classify::{Class, SuccessOrFailure},
-    control, dst, errors, http_metrics, http_metrics as metrics, opencensus, stack_metrics,
+    control, dst, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
     svc::Param,
     telemetry, tls,
     transport::{
@@ -11,11 +9,11 @@ use crate::{
     },
 };
 use linkerd_addr::Addr;
-use linkerd_metrics::FmtLabels;
 pub use linkerd_metrics::*;
 use std::{
     fmt::{self, Write},
     net::SocketAddr,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -30,23 +28,20 @@ pub type HttpRouteRetry = http_metrics::Retries<RouteLabels>;
 pub type Stack = stack_metrics::Registry<StackLabels>;
 
 #[derive(Clone, Debug)]
+pub struct Metrics {
+    pub proxy: Proxy,
+    pub control: ControlHttp,
+    pub opencensus: opencensus::metrics::Registry,
+}
+
+#[derive(Clone, Debug)]
 pub struct Proxy {
     pub http_route: HttpRoute,
     pub http_route_actual: HttpRoute,
     pub http_route_retry: HttpRouteRetry,
     pub http_endpoint: HttpEndpoint,
-    pub http_errors: errors::MetricsLayer,
-    pub stack: Stack,
     pub transport: transport::Metrics,
-    pub tcp_accept_errors: tcp_accept_errors::Registry,
-}
-
-#[derive(Clone, Debug)]
-pub struct Metrics {
-    pub inbound: Proxy,
-    pub outbound: Proxy,
-    pub control: ControlHttp,
-    pub opencensus: opencensus::metrics::Registry,
+    pub stack: Stack,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +61,18 @@ pub struct InboundEndpointLabels {
     pub tls: tls::ConditionalServerTls,
     pub authority: Option<http::uri::Authority>,
     pub target_addr: SocketAddr,
+    pub policy: AuthzLabels,
+}
+
+/// A label referencing an inbound `Server` (i.e. for policy).
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ServerLabel(pub Arc<str>);
+
+/// Labels referencing an inbound `ServerAuthorization.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AuthzLabels {
+    pub server: ServerLabel,
+    pub authz: Arc<str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -86,7 +93,7 @@ pub struct StackLabels {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RouteLabels {
     direction: Direction,
-    target: Addr,
+    addr: profiles::LogicalAddr,
     labels: Option<String>,
 }
 
@@ -153,51 +160,33 @@ impl Metrics {
             (m, r.without_latencies())
         };
 
-        let http_errors = errors::Metrics::default();
-
         let stack = stack_metrics::Registry::default();
 
-        let (transport, transport_report) = transport::metrics::new(retain_idle);
+        let (transport, transport_report) = transport::Metrics::new(retain_idle);
 
-        let inbound_tcp_accept_errors = tcp_accept_errors::Registry::inbound();
-        let outbound_tcp_accept_errors = tcp_accept_errors::Registry::outbound();
+        let proxy = Proxy {
+            http_endpoint,
+            http_route,
+            http_route_retry,
+            http_route_actual,
+            stack: stack.clone(),
+            transport,
+        };
 
         let (opencensus, opencensus_report) = opencensus::metrics::new();
 
         let metrics = Metrics {
-            inbound: Proxy {
-                http_endpoint: http_endpoint.clone(),
-                http_route: http_route.clone(),
-                http_route_actual: http_route_actual.clone(),
-                http_route_retry: http_route_retry.clone(),
-                http_errors: http_errors.inbound(),
-                stack: stack.clone(),
-                transport: transport.clone(),
-                tcp_accept_errors: inbound_tcp_accept_errors.clone(),
-            },
-            outbound: Proxy {
-                http_endpoint,
-                http_route,
-                http_route_retry,
-                http_route_actual,
-                http_errors: http_errors.outbound(),
-                stack: stack.clone(),
-                transport,
-                tcp_accept_errors: outbound_tcp_accept_errors.clone(),
-            },
+            proxy,
             control,
             opencensus,
         };
 
-        let report = (http_errors.report())
-            .and_then(endpoint_report)
+        let report = endpoint_report
             .and_then(route_report)
             .and_then(retry_report)
             .and_then(actual_report)
             .and_then(control_report)
             .and_then(transport_report)
-            .and_then(inbound_tcp_accept_errors)
-            .and_then(outbound_tcp_accept_errors)
             .and_then(opencensus_report)
             .and_then(stack)
             .and_then(process)
@@ -232,7 +221,7 @@ impl FmtLabels for ControlLabels {
 impl Param<RouteLabels> for dst::Route {
     fn param(&self) -> RouteLabels {
         RouteLabels {
-            target: self.target.clone(),
+            addr: self.addr.clone(),
             direction: self.direction,
             labels: prefix_labels("rt", self.route.labels().iter()),
         }
@@ -242,7 +231,7 @@ impl Param<RouteLabels> for dst::Route {
 impl FmtLabels for RouteLabels {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.direction.fmt_labels(f)?;
-        write!(f, ",dst=\"{}\"", self.target)?;
+        write!(f, ",dst=\"{}\"", self.addr)?;
 
         if let Some(labels) = self.labels.as_ref() {
             write!(f, ",{}", labels)?;
@@ -282,9 +271,32 @@ impl FmtLabels for InboundEndpointLabels {
             write!(f, ",")?;
         }
 
-        (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)).fmt_labels(f)?;
+        (
+            (TargetAddr(self.target_addr), TlsAccept::from(&self.tls)),
+            &self.policy,
+        )
+            .fmt_labels(f)?;
 
         Ok(())
+    }
+}
+
+impl fmt::Display for ServerLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl FmtLabels for ServerLabel {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "srv_name=\"{}\"", self.0)
+    }
+}
+
+impl FmtLabels for AuthzLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.server.fmt_labels(f)?;
+        write!(f, ",saz_name=\"{}\"", self.authz)
     }
 }
 

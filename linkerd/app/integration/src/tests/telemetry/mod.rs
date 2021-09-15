@@ -3,7 +3,7 @@
 // particular appears to do nothing... T_T
 #![allow(unused_imports)]
 
-mod tcp_accept_errors;
+mod tcp_errors;
 
 use crate::*;
 use std::io::Read;
@@ -143,7 +143,8 @@ impl TcpFixture {
             .label("direction", "inbound")
             .label("peer", "src")
             .label("tls", "disabled")
-            .label("target_addr", orig_dst);
+            .label("target_addr", orig_dst)
+            .label("srv_name", "default:all-unauthenticated");
 
         let dst_labels = metrics::labels()
             .label("direction", "inbound")
@@ -1414,6 +1415,6 @@ async fn metrics_compression() {
     assert_eq!(client.get("/").await, "hello");
 
     for &encoding in encodings {
-        assert_eventually_contains!(do_scrape(encoding).await, &metric.set_value(2u64));
+        assert_eventually_contains!(do_scrape(encoding).await, metric.set_value(2u64));
     }
 }

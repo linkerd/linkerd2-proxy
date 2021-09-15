@@ -1,14 +1,17 @@
-use super::require_id_header;
+use super::{peer_proxy_errors::PeerProxyErrors, require_id_header};
 use crate::Outbound;
 use linkerd_app_core::{
-    classify, config, http_tracing, metrics,
+    classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
-    svc, tls, Error, CANONICAL_DST_HEADER,
+    svc, tls, Error, Result, CANONICAL_DST_HEADER,
 };
 use tokio::io;
 
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue;
+
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::BoxNewHttp<T, B>>
+    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>
@@ -36,17 +39,25 @@ impl<C> Outbound<C> {
             // HTTP/1.x fallback is supported as needed.
             connect
                 .push(http::client::layer(h1_settings, h2_settings))
-                .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
+                .push_on_service(svc::MapErr::layer(Into::<Error>::into))
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
+                // Tear down server connections when a peer proxy generates an error.
+                .push(PeerProxyErrors::layer())
+                // Handle connection-level errors eagerly so that we can report 5XX failures in tap
+                // and metrics. HTTP error metrics are not incremented here so that errors are not
+                // double-counted--i.e., endpoint metrics track these responses and error metrics
+                // track proxy errors that occur higher in the stack.
+                .push_on_service(ClientRescue::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
+                        .proxy
                         .http_endpoint
                         .to_layer::<classify::Response, _, _>(),
                 )
-                .push_on_response(http_tracing::client(
+                .push_on_service(http_tracing::client(
                     rt.span_sink.clone(),
                     crate::trace_labels(),
                 ))
@@ -55,13 +66,39 @@ impl<C> Outbound<C> {
                     "host",
                     CANONICAL_DST_HEADER,
                 ]))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(http::BoxResponse::layer())
                         .push(svc::BoxService::layer()),
                 )
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl ClientRescue ===
+
+impl ClientRescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer() -> errors::respond::Layer<Self> {
+        errors::respond::NewRespond::layer(Self)
+    }
+}
+
+impl errors::HttpRescue<Error> for ClientRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        let cause = errors::root_cause(&*error);
+        if cause.is::<http::orig_proto::DowngradedH2Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<std::io::Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<errors::ConnectTimeout>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
+
+        Err(error)
     }
 }
 
@@ -91,7 +128,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -108,6 +145,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -127,7 +165,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -144,6 +182,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -165,7 +204,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -188,6 +227,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -213,7 +253,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -236,6 +276,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();

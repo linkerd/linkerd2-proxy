@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_tls as tls;
 use std::{net, sync::Arc};
@@ -26,7 +25,7 @@ pub fn new() -> (Registry, grpc::Server) {
 }
 
 /// Endpoint labels are lexicographically ordered by key.
-pub type Labels = std::collections::BTreeMap<String, String>;
+pub type Labels = Arc<std::collections::BTreeMap<String, String>>;
 
 /// Inspects a request for a `Stack`.
 ///
@@ -38,11 +37,11 @@ pub trait Inspect {
 
     fn dst_addr<B>(&self, req: &http::Request<B>) -> Option<net::SocketAddr>;
 
-    fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<&Labels>;
+    fn dst_labels<B>(&self, req: &http::Request<B>) -> Option<Labels>;
 
     fn dst_tls<B>(&self, req: &http::Request<B>) -> tls::ConditionalClientTls;
 
-    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Arc<Labels>>;
+    fn route_labels<B>(&self, req: &http::Request<B>) -> Option<Labels>;
 
     fn is_outbound<B>(&self, req: &http::Request<B>) -> bool;
 

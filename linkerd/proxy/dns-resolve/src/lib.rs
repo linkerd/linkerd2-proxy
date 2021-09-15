@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use futures::{future, prelude::*, stream};
 use linkerd_addr::{Addr, NameAddr};

@@ -1,6 +1,7 @@
 use futures::{future, TryFutureExt};
-use linkerd_app_core::{errors::IdentityRequired, identity, svc, tls, Conditional, Error};
+use linkerd_app_core::{identity, svc, tls, Conditional, Error};
 use std::task::{Context, Poll};
+use thiserror::Error;
 use tracing::{debug, trace};
 
 const HEADER_NAME: &str = "l5d-require-id";
@@ -14,6 +15,13 @@ pub(super) struct NewRequireIdentity<N> {
 pub(super) struct RequireIdentity<N> {
     tls: tls::ConditionalClientTls,
     inner: N,
+}
+
+#[derive(Debug, Error)]
+#[error("required id {required:?}; found {found:?}")]
+pub(crate) struct IdentityRequired {
+    pub required: tls::client::ServerId,
+    pub found: Option<tls::client::ServerId>,
 }
 
 // === impl NewRequireIdentity ===
@@ -35,7 +43,7 @@ where
 {
     type Service = RequireIdentity<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let tls = target.param();
         let inner = self.inner.new_service(target);
         RequireIdentity { tls, inner }

@@ -13,7 +13,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::BoxNewService<(Option<profiles::Receiver>, T), svc::BoxService<I, (), Error>>>
+    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -26,7 +26,8 @@ impl<S> Outbound<S> {
         SSvc::Future: Send,
     {
         let no_tls_reason = self.no_tls_reason();
-        self.map_stack(|_, _, endpoint| {
+        self.map_stack(|config, _, endpoint| {
+            let inbound_ips = config.inbound_ips.clone();
             endpoint
                 .push_switch(
                     move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
@@ -39,6 +40,7 @@ impl<S> Outbound<S> {
                                     metadata,
                                     no_tls_reason,
                                     rx.is_opaque_protocol(),
+                                    &*inbound_ips,
                                 )));
                             }
 
@@ -58,8 +60,8 @@ impl<S> Outbound<S> {
                     },
                     logical,
                 )
-                .push_on_response(svc::BoxService::layer())
-                .push(svc::BoxNewService::layer())
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -92,7 +94,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -115,7 +117,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -151,7 +153,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::Fail::<_, WrongStack>::default())
             .push_switch_logical(logical)
             .into_inner();

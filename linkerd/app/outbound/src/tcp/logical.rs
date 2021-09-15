@@ -24,7 +24,7 @@ where
         self,
         resolve: R,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             Logical,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
@@ -53,7 +53,13 @@ where
                 .check_service::<ConcreteAddr>()
                 .push_request_filter(|c: Concrete| Ok::<_, Infallible>(c.resolve))
                 .push(svc::layer::mk(move |inner| {
-                    map_endpoint::Resolve::new(endpoint::FromMetadata { identity_disabled }, inner)
+                    map_endpoint::Resolve::new(
+                        endpoint::FromMetadata {
+                            identity_disabled,
+                            inbound_ips: config.inbound_ips.clone(),
+                        },
+                        inner,
+                    )
                 }))
                 .check_service::<Concrete>()
                 .into_inner();
@@ -69,7 +75,7 @@ where
                     }
                 })
                 .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(tcp::balance::layer(
                             crate::EWMA_DEFAULT_RTT,
@@ -77,6 +83,7 @@ where
                         ))
                         .push(
                             rt.metrics
+                                .proxy
                                 .stack
                                 .layer(crate::stack_labels("tcp", "balancer")),
                         )
@@ -85,13 +92,14 @@ where
                 )
                 .into_new_service()
                 .push_map_target(Concrete::from)
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<(ConcreteAddr, Logical), I>()
                 .push(profiles::split::layer())
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         .push(
                             rt.metrics
+                                .proxy
                                 .stack
                                 .layer(crate::stack_labels("tcp", "logical")),
                         )
@@ -103,7 +111,7 @@ where
                 .check_new_service::<Logical, I>()
                 .instrument(|_: &Logical| debug_span!("tcp"))
                 .check_new_service::<Logical, I>()
-                .push(svc::BoxNewService::layer())
+                .push(svc::ArcNewService::layer())
         })
     }
 }
@@ -114,9 +122,10 @@ mod tests {
     use crate::test_util::*;
     use io::AsyncWriteExt;
     use linkerd_app_core::{
+        errors::FailFastError,
         io::{self, AsyncReadExt},
         profiles::{LogicalAddr, Profile},
-        svc::{self, timeout::FailFastError, NewService, ServiceExt},
+        svc::{self, NewService, ServiceExt},
         transport::addrs::*,
     };
     use std::net::SocketAddr;
@@ -148,7 +157,7 @@ mod tests {
 
         // Build the TCP logical stack with a mocked connector.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::mk(move |ep: Endpoint| {
                 assert_eq!(*ep.addr.as_ref(), ep_addr);
                 let mut io = support::io();

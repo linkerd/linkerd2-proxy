@@ -2,7 +2,7 @@ use crate::{tcp, Outbound};
 use linkerd_app_core::{
     io, profiles,
     svc::{self, stack::Param},
-    transport::{metrics::SensorIo, OrigDstAddr},
+    transport::{self, metrics::SensorIo, OrigDstAddr},
     Error,
 };
 use std::convert::TryFrom;
@@ -16,7 +16,7 @@ impl<N> Outbound<N> {
         self,
         profiles: P,
     ) -> Outbound<
-        svc::BoxNewService<
+        svc::ArcNewService<
             T,
             impl svc::Service<I, Response = (), Error = Error, Future = impl Send> + Clone,
         >,
@@ -58,26 +58,33 @@ impl<N> Outbound<N> {
                     },
                 ))
                 .instrument(|_: &_| debug_span!("profile"))
-                .push_on_response(
+                .push_on_service(
                     svc::layers()
                         // If the traffic split is empty/unavailable, eagerly fail
                         // requests. When the split is in failfast, spawn the
                         // service in a background task so it becomes ready without
                         // new requests.
                         .push(svc::layer::mk(svc::SpawnReady::new))
-                        .push(rt.metrics.stack.layer(crate::stack_labels("tcp", "server")))
+                        .push(
+                            rt.metrics
+                                .proxy
+                                .stack
+                                .layer(crate::stack_labels("tcp", "server")),
+                        )
                         .push(svc::FailFast::layer(
                             "TCP Server",
                             config.proxy.dispatch_timeout,
                         ))
                         .push_spawn_buffer(config.proxy.buffer_capacity),
                 )
-                .push(rt.metrics.transport.layer_accept())
+                .push(transport::metrics::NewServer::layer(
+                    rt.metrics.proxy.transport.clone(),
+                ))
                 .push_cache(config.proxy.cache_max_idle_age)
                 .instrument(|a: &tcp::Accept| info_span!("server", orig_dst = %a.orig_dst))
                 .push_request_filter(|t: T| tcp::Accept::try_from(t.param()))
-                .push(rt.metrics.tcp_accept_errors.layer())
-                .push(svc::BoxNewService::layer())
+                .push(rt.metrics.tcp_errors.to_layer())
+                .push(svc::ArcNewService::layer())
                 .check_new_service::<T, I>()
         })
     }
@@ -89,7 +96,7 @@ mod tests {
     use crate::test_util::*;
     use linkerd_app_core::{
         svc::{NewService, Service, ServiceExt},
-        AddrMatch,
+        AddrMatch, IpNet,
     };
     use std::{
         net::{IpAddr, SocketAddr},
@@ -127,7 +134,7 @@ mod tests {
 
         // Create a profile stack that uses the tracked inner stack.
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(stack)
             .push_discover(profiles)
             .into_inner();
@@ -200,7 +207,7 @@ mod tests {
             cfg
         };
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(cfg, rt)
+        let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
             .into_inner();
@@ -315,14 +322,12 @@ mod tests {
         let cfg = {
             let mut cfg = default_config();
             // Permits resolutions for only 192.0.2.66/32.
-            cfg.allow_discovery = AddrMatch::new(
-                None,
-                Some(ipnet::IpNet::from(IpAddr::from([192, 0, 2, 66]))),
-            );
+            cfg.allow_discovery =
+                AddrMatch::new(None, Some(IpNet::from(IpAddr::from([192, 0, 2, 66]))));
             cfg
         };
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(cfg, rt)
+        let stack = Outbound::new(cfg, rt)
             .with_stack(stack)
             .push_discover(profiles)
             .into_inner();

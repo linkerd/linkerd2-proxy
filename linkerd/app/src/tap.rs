@@ -5,7 +5,7 @@ use linkerd_app_core::{
     proxy::identity::LocalCrtKey,
     proxy::tap,
     serve,
-    svc::{self, Param},
+    svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{listen::Bind, ClientAddr, Local, Remote, ServerAddr},
     Error,
@@ -31,6 +31,11 @@ pub enum Tap {
         registry: tap::Registry,
         serve: Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
     },
+}
+
+#[derive(Clone)]
+struct TlsParams {
+    identity: Option<LocalCrtKey>,
 }
 
 impl Config {
@@ -63,7 +68,7 @@ impl Config {
                         )
                     }))
                     .push(svc::layer::mk(|service: tap::AcceptPermittedClients| {
-                        move |meta: tls::server::Meta<B::Addrs>| {
+                        move |meta: (tls::ConditionalServerTls, B::Addrs)| {
                             let service = service.clone();
                             service_fn(move |io| {
                                 let fut = service.clone().oneshot((meta.clone(), io));
@@ -73,12 +78,8 @@ impl Config {
                             })
                         }
                     }))
-                    .check_new_service::<tls::server::Meta<B::Addrs>, _>()
-                    .push(svc::BoxNewService::layer())
-                    .push(tls::NewDetectTls::layer(
-                        identity,
-                        std::time::Duration::from_secs(1),
-                    ))
+                    .push(svc::ArcNewService::layer())
+                    .push(tls::NewDetectTls::layer(TlsParams { identity }))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 
@@ -100,5 +101,30 @@ impl Tap {
             Tap::Disabled { ref registry } => registry.clone(),
             Tap::Enabled { ref registry, .. } => registry.clone(),
         }
+    }
+}
+
+// === TlsParams ===
+
+impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> tls::server::Timeout {
+        tls::server::Timeout(std::time::Duration::from_secs(1))
+    }
+}
+
+impl<T> ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+        self.identity.clone()
+    }
+}
+
+impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
+    type Target = (tls::ConditionalServerTls, T);
+
+    #[inline]
+    fn insert_param(&self, tls: tls::ConditionalServerTls, target: T) -> Self::Target {
+        (tls, target)
     }
 }

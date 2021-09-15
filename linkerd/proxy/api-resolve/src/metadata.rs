@@ -3,7 +3,7 @@ use linkerd_tls::client::ServerId;
 use std::collections::BTreeMap;
 
 /// Endpoint labels are lexographically ordered by key.
-pub type Labels = BTreeMap<String, String>;
+pub type Labels = std::sync::Arc<BTreeMap<String, String>>;
 
 /// Metadata describing an endpoint.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,7 +26,7 @@ pub struct Metadata {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolHint {
-    /// We don't what the destination understands, so forward messages in the
+    /// We don't know what the destination understands, so forward messages in the
     /// protocol we received them in.
     Unknown,
     /// The destination can receive HTTP2 messages.
@@ -56,7 +56,7 @@ impl Metadata {
         authority_override: Option<Authority>,
     ) -> Self {
         Self {
-            labels: labels.into_iter().collect(),
+            labels: labels.into_iter().collect::<BTreeMap<_, _>>().into(),
             protocol_hint,
             opaque_transport_port,
             identity,
@@ -65,8 +65,8 @@ impl Metadata {
     }
 
     /// Returns the endpoint's labels from the destination service, if it has them.
-    pub fn labels(&self) -> &Labels {
-        &self.labels
+    pub fn labels(&self) -> Labels {
+        self.labels.clone()
     }
 
     pub fn protocol_hint(&self) -> ProtocolHint {
@@ -83,5 +83,11 @@ impl Metadata {
 
     pub fn authority_override(&self) -> Option<&Authority> {
         self.authority_override.as_ref()
+    }
+
+    pub fn clear_upgrade(&mut self) {
+        self.protocol_hint = ProtocolHint::Unknown;
+        self.opaque_transport_port = None;
+        self.authority_override = None;
     }
 }
