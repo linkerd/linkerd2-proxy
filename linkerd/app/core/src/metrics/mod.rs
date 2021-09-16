@@ -1,12 +1,10 @@
+pub use crate::transport::labels::{TargetAddr, TlsAccept};
 use crate::{
     classify::{Class, SuccessOrFailure},
     control, dst, http_metrics, http_metrics as metrics, opencensus, profiles, stack_metrics,
     svc::Param,
     telemetry, tls,
-    transport::{
-        self,
-        labels::{TargetAddr, TlsAccept, TlsConnect},
-    },
+    transport::{self, labels::TlsConnect},
 };
 use linkerd_addr::Addr;
 pub use linkerd_metrics::*;
