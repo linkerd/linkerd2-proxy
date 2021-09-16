@@ -10,5 +10,5 @@ publish = false
 [dependencies]
 futures = { version = "0.3", default-features = false }
 linkerd-error = { path = "../error" }
-tower = { version = "0.4.8", default-features = false }
+linkerd-stack = { path = "../stack" }
 pin-project = "1"
