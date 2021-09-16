@@ -31,7 +31,7 @@ pub struct RetryPolicy {
 }
 
 /// Allow buffering requests up to 64 kb
-const MAX_BUFFERED_BYTES: usize = 64 * 1024;
+const MAX_BUFFERED_BYTES: usize = 16 * 1024;
 
 // === impl NewRetryPolicy ===
 
