@@ -17,7 +17,7 @@ tracing = "0.1.27"
 tracing-log = "0.1.2"
 
 [dependencies.tracing-subscriber]
-version = "0.2.22"
+version = "0.2.23"
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]
 
