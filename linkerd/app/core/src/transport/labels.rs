@@ -25,7 +25,7 @@ pub struct ServerLabels {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
+pub struct TlsAccept<'t>(pub &'t tls::ConditionalServerTls);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);

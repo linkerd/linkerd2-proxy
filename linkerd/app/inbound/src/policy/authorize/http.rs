@@ -99,7 +99,7 @@ where
                     client = %self.client_addr,
                     "Request authorized",
                 );
-                self.metrics.allow(&permit);
+                self.metrics.allow(&permit, self.tls.clone());
                 let svc = self.inner.new_service((permit, self.target.clone()));
                 future::Either::Left(svc.oneshot(req).err_into::<Error>())
             }
@@ -110,7 +110,7 @@ where
                     client = %self.client_addr,
                     "Request denied",
                 );
-                self.metrics.deny(&self.policy);
+                self.metrics.deny(&self.policy, self.tls.clone());
                 future::Either::Right(future::err(e.into()))
             }
         }
