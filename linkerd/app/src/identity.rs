@@ -53,11 +53,9 @@ impl Config {
                 // Save to be spawned on an auxiliary runtime.
                 let task = {
                     let addr = addr.clone();
-                    Box::pin(
-                        daemon
-                            .run(svc)
-                            .instrument(tracing::debug_span!("identity", server.addr = %addr)),
-                    )
+                    Box::pin(daemon.run(svc).instrument(
+                        tracing::debug_span!("identity", server.addr = %addr).or_current(),
+                    ))
                 };
 
                 Ok(Identity::Enabled { addr, local, task })

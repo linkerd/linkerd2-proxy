@@ -75,8 +75,9 @@ impl Config {
 
                     let addr = addr.clone();
                     Box::pin(
-                        opencensus::export_spans(svc, node, spans_rx, metrics)
-                            .instrument(tracing::debug_span!("opencensus", peer.addr = %addr)),
+                        opencensus::export_spans(svc, node, spans_rx, metrics).instrument(
+                            tracing::debug_span!("opencensus", peer.addr = %addr).or_current(),
+                        ),
                     )
                 };
 

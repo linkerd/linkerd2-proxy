@@ -253,10 +253,15 @@ impl Server {
                         tracing::trace!(?result, "serve done");
                         result
                     };
-                    tokio::spawn(cancelable(drain.clone(), f).instrument(span.clone()));
+                    tokio::spawn(
+                        cancelable(drain.clone(), f).instrument(span.clone().or_current()),
+                    );
                 }
             }
-            .instrument(tracing::info_span!("test_server", ?version, %addr, test = %thread_name())),
+            .instrument(
+                tracing::info_span!("test_server", ?version, %addr, test = %thread_name())
+                    .or_current(),
+            ),
         ));
 
         listening_rx.await.expect("listening_rx");

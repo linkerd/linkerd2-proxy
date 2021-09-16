@@ -360,7 +360,7 @@ fn connect_timeout(
                 // about returning a service here.
                 unreachable!();
             }
-            .instrument(span),
+            .instrument(span.or_current()),
         )
     })
 }

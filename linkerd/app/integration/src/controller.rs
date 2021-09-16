@@ -390,10 +390,10 @@ where
                         .map_err(|error| tracing::error!(%error, "serving connection failed."))?;
                     Ok::<(), ()>(())
                 };
-                tokio::spawn(cancelable(drain.clone(), f).instrument(span));
+                tokio::spawn(cancelable(drain.clone(), f).instrument(span).or_current());
             }
         })
-        .instrument(tracing::info_span!("controller", message = %name, %addr)),
+        .instrument(tracing::info_span!("controller", message = %name, %addr).or_current()),
     );
 
     listening_rx.await.expect("listening_rx");

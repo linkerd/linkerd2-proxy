@@ -39,39 +39,38 @@ pub async fn serve<M, S, I, A>(
                     };
 
                     // The local addr should be instrumented from the listener's context.
-                    debug_span!("accept", client.addr = %addrs.param()).in_scope(|| {
-                        let accept = new_accept.new_service(addrs);
+                    let span = debug_span!("accept", client.addr = %addrs.param()).entered();
+                    let accept = new_accept.new_service(addrs);
 
-                        // Dispatch all of the work for a given connection onto a
-                        // connection-specific task.
-                        tokio::spawn(
-                            async move {
-                                match accept.ready_oneshot().err_into::<Error>().await {
-                                    Ok(mut accept) => {
-                                        match accept
-                                            .call(io::ScopedIo::server(io))
-                                            .err_into::<Error>()
-                                            .await
-                                        {
-                                            Ok(()) => debug!("Connection closed"),
-                                            Err(reason) if is_io(&*reason) => {
-                                                debug!(%reason, "Connection closed")
-                                            }
-                                            Err(error) => info!(%error, "Connection closed"),
+                    // Dispatch all of the work for a given connection onto a
+                    // connection-specific task.
+                    tokio::spawn(
+                        async move {
+                            match accept.ready_oneshot().err_into::<Error>().await {
+                                Ok(mut accept) => {
+                                    match accept
+                                        .call(io::ScopedIo::server(io))
+                                        .err_into::<Error>()
+                                        .await
+                                    {
+                                        Ok(()) => debug!("Connection closed"),
+                                        Err(reason) if is_io(&*reason) => {
+                                            debug!(%reason, "Connection closed")
                                         }
-                                        // Hold the service until the connection is complete. This
-                                        // helps tie any inner cache lifetimes to the services they
-                                        // return.
-                                        drop(accept);
+                                        Err(error) => info!(%error, "Connection closed"),
                                     }
-                                    Err(error) => {
-                                        warn!(%error, "Server failed to become ready");
-                                    }
+                                    // Hold the service until the connection is complete. This
+                                    // helps tie any inner cache lifetimes to the services they
+                                    // return.
+                                    drop(accept);
+                                }
+                                Err(error) => {
+                                    warn!(%error, "Server failed to become ready");
                                 }
                             }
-                            .in_current_span(),
-                        );
-                    });
+                        }
+                        .instrument(span.exit().or_current()),
+                    );
                 }
             }
         }
