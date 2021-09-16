@@ -213,7 +213,7 @@ impl Config {
                 tokio::spawn(
                     outbound
                         .serve(outbound_listen, profiles.clone(), resolve)
-                        .instrument(info_span!("outbound")),
+                        .instrument(info_span!("outbound").or_current()),
                 );
 
                 tokio::spawn(
@@ -225,7 +225,7 @@ impl Config {
                             profiles,
                             gateway_stack,
                         )
-                        .instrument(info_span!("inbound")),
+                        .instrument(info_span!("inbound").or_current()),
                 );
             })
         };
@@ -351,7 +351,7 @@ impl App {
 
                         // Kick off the identity so that the process can become ready.
                         if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio::spawn(task.instrument(info_span!("identity")));
+                            tokio::spawn(task.instrument(info_span!("identity").or_current()));
 
                             let latch = admin.latch;
                             tokio::spawn(
@@ -365,7 +365,7 @@ impl App {
                                         // The daemon task was lost?!
                                         panic!("Failed to certify identity!");
                                     })
-                                    .instrument(info_span!("identity")),
+                                    .instrument(info_span!("identity").or_current()),
                             );
                         } else {
                             admin.latch.release()
@@ -377,12 +377,16 @@ impl App {
                         {
                             let clean = time::interval(Duration::from_secs(60));
                             let clean = tokio_stream::wrappers::IntervalStream::new(clean);
-                            tokio::spawn(registry.clean(clean).instrument(info_span!("tap_clean")));
-                            tokio::spawn(serve.instrument(info_span!("tap")));
+                            tokio::spawn(
+                                registry
+                                    .clean(clean)
+                                    .instrument(info_span!("tap_clean").or_current()),
+                            );
+                            tokio::spawn(serve.instrument(info_span!("tap").or_current()));
                         }
 
                         if let oc_collector::OcCollector::Enabled(oc) = oc_collector {
-                            tokio::spawn(oc.task.instrument(info_span!("opencensus")));
+                            tokio::spawn(oc.task.instrument(info_span!("opencensus").or_current()));
                         }
 
                         // we don't care if the admin shutdown channel is

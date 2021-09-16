@@ -119,8 +119,7 @@ where
 
                 tokio::spawn(
                     conn.map_err(|error| debug!(%error, "failed"))
-                        .instrument(trace_span!("conn"))
-                        .in_current_span(),
+                        .instrument(trace_span!("conn").or_current()),
                 );
 
                 Ok(Connection { tx })

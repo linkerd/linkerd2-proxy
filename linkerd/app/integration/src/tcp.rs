@@ -106,7 +106,7 @@ impl TcpClient {
                     }
                 }
             }
-            .instrument(span),
+            .instrument(span.or_current()),
         );
         TcpConn {
             addr: self.addr,
