@@ -95,7 +95,7 @@ impl Resolver {
             .into_iter()
             .map(Self::srv_to_socket_addr)
             .collect::<Result<_, InvalidSrv>>()?;
-        debug!(?addrs);
+        debug!(ttl = ?valid_until - time::Instant::now(), ?addrs);
         Ok((addrs, time::sleep_until(valid_until)))
     }
 
