@@ -1,4 +1,4 @@
-use super::{peer_proxy_errors::PeerProxyErrors, require_id_header};
+use super::{NewRequireIdentity, ProxyConnectionClose};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
@@ -44,7 +44,9 @@ impl<C> Outbound<C> {
                 .into_new_service()
                 .push_new_reconnect(backoff)
                 // Tear down server connections when a peer proxy generates an error.
-                .push(PeerProxyErrors::layer())
+                // TODO(ver) this should only be honored when forwarding and not when the connection
+                // is part of a balancer.
+                .push(ProxyConnectionClose::layer())
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
@@ -61,7 +63,7 @@ impl<C> Outbound<C> {
                     rt.span_sink.clone(),
                     crate::trace_labels(),
                 ))
-                .push(require_id_header::NewRequireIdentity::layer())
+                .push(NewRequireIdentity::layer())
                 .push(http::NewOverrideAuthority::layer(vec![
                     "host",
                     CANONICAL_DST_HEADER,

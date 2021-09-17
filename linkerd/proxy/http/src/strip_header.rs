@@ -52,6 +52,7 @@ pub mod request {
         type Error = P::Error;
         type Future = P::Future;
 
+        #[inline]
         fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
             req.headers_mut().remove(self.header.clone());
             self.inner.proxy(svc, req)
@@ -67,10 +68,12 @@ pub mod request {
         type Error = S::Error;
         type Future = S::Future;
 
+        #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
+        #[inline]
         fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
             req.headers_mut().remove(self.header.clone());
             self.inner.call(req)
@@ -124,10 +127,12 @@ pub mod response {
         type Error = S::Error;
         type Future = ResponseFuture<S::Future, H>;
 
+        #[inline]
         fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             self.inner.poll_ready(cx)
         }
 
+        #[inline]
         fn call(&mut self, req: Req) -> Self::Future {
             ResponseFuture {
                 inner: self.inner.call(req),
@@ -143,6 +148,7 @@ pub mod response {
     {
         type Output = Result<F::Ok, F::Error>;
 
+        #[inline]
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let this = self.project();
             let mut res = ready!(this.inner.try_poll(cx))?;

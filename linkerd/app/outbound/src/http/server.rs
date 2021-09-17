@@ -1,4 +1,4 @@
-use super::{peer_proxy_errors::PeerProxyErrors, IdentityRequired};
+use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
 use linkerd_app_core::{config, errors, http_tracing, svc, Error, Result};
 
@@ -50,7 +50,7 @@ impl<N> Outbound<N> {
                         .push_spawn_buffer(buffer_capacity)
                         .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
-                        .push(PeerProxyErrors::layer()),
+                        .push(ProxyConnectionClose::layer()),
                 )
                 // Synthesizes responses for proxy errors.
                 .check_new_service::<T, http::Request<_>>()
