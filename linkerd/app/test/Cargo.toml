@@ -31,5 +31,5 @@ tokio-test = "0.4"
 tokio-stream = { version = "0.1.7", features = ["sync"] }
 tower = { version = "0.4.8", default-features = false}
 tracing = "0.1.27"
-tracing-subscriber = { version = "0.2.23", features = ["env-filter", "fmt"], default-features = false }
+tracing-subscriber = { version = "0.2.24", features = ["env-filter", "fmt"], default-features = false }
 thiserror = "1"
