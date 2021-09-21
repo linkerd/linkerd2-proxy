@@ -19,4 +19,4 @@ linkerd-stack = { path = "../stack" }
 parking_lot = "0.11"
 pin-project = "1"
 tower = "0.4.8"
-tracing = "0.1.27"
+tracing = "0.1.28"

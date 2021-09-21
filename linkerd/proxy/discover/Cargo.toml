@@ -18,7 +18,7 @@ linkerd-stack = { path = "../../stack" }
 tokio = { version = "1", features = ["sync", "time"] }
 tokio-util = "0.6.8"
 tower = { version = "0.4.8", features = ["discover"] }
-tracing = "0.1.27"
+tracing = "0.1.28"
 pin-project = "1"
 
 [dev-dependencies]
