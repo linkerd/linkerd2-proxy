@@ -97,13 +97,12 @@ impl<C> Inbound<C> {
                 .push_on_service(svc::MapErr::layer(Into::into))
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
-                .check_new_service::<Http, http::Request<_>>()
                 .push_map_target(Http::from)
                 // Handle connection-level errors eagerly so that we can report 5XX failures in tap
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
-                .push_on_service(ClientRescue::layer())
+                .push(ClientRescue::layer())
                 // Registers the stack to be tapped.
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 // Records metrics for each `Logical`.
@@ -117,8 +116,7 @@ impl<C> Inbound<C> {
                     rt.span_sink.clone(),
                     super::trace_labels(),
                 ))
-                .push_on_service(http::BoxResponse::layer())
-                .check_new_service::<Logical, http::Request<_>>();
+                .push_on_service(http::BoxResponse::layer());
 
             // Attempts to discover a service profile for each logical target (as
             // informed by the request's headers). The stack is cached until a
@@ -424,8 +422,9 @@ impl Param<transport::labels::Key> for Http {
 // === impl ClientRescue ===
 
 impl ClientRescue {
-    pub fn layer() -> errors::respond::Layer<Self> {
-        errors::respond::NewRespond::layer(Self)
+    pub fn layer<N>(
+    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
+        errors::respond::layer(Self)
     }
 }
 

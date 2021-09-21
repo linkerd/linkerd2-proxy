@@ -50,9 +50,14 @@ impl<N> Outbound<N> {
                         .push_spawn_buffer(buffer_capacity)
                         .push(rt.metrics.http_errors.to_layer())
                         // Tear down server connections when a peer proxy generates an error.
-                        .push(PeerProxyErrors::layer())
-                        // Synthesizes responses for proxy errors.
-                        .push(ServerRescue::layer())
+                        .push(PeerProxyErrors::layer()),
+                )
+                // Synthesizes responses for proxy errors.
+                .check_new_service::<T, http::Request<_>>()
+                .push(ServerRescue::layer())
+                .check_new_service::<T, http::Request<_>>()
+                .push_on_service(
+                    svc::layers()
                         // Initiates OpenCensus tracing.
                         .push(http_tracing::server(rt.span_sink.clone(), trace_labels()))
                         .push(http::BoxResponse::layer()),
@@ -62,7 +67,6 @@ impl<N> Outbound<N> {
                 .push(http::NewNormalizeUri::layer())
                 // Record when a HTTP/1 URI originated in absolute form
                 .push_on_service(http::normalize_uri::MarkAbsoluteForm::layer())
-                .check_new_service::<T, http::Request<http::BoxBody>>()
                 .push(svc::ArcNewService::layer())
         })
     }
@@ -71,8 +75,9 @@ impl<N> Outbound<N> {
 // === impl ServerRescue ===
 
 impl ServerRescue {
-    pub fn layer() -> errors::respond::Layer<Self> {
-        errors::respond::NewRespond::layer(Self)
+    pub fn layer<N>(
+    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
+        errors::respond::layer(Self)
     }
 }
 

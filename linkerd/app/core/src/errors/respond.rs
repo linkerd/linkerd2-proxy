@@ -1,7 +1,9 @@
+use crate::svc;
 use http::header::HeaderValue;
 use linkerd_error::{Error, Result};
 use linkerd_error_respond as respond;
 pub use linkerd_proxy_http::{ClientHandle, HasH2Reason};
+use linkerd_stack::ExtractParam;
 use pin_project::pin_project;
 use std::{
     borrow::Cow,
@@ -11,6 +13,15 @@ use std::{
 use tracing::{debug, info_span, warn};
 
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
+
+pub fn layer<R, P: Clone, N>(
+    params: P,
+) -> impl svc::layer::Layer<N, Service = NewRespondService<R, P, N>> + Clone {
+    respond::NewRespondService::layer(ExtractRespond(params))
+}
+
+pub type NewRespondService<R, P, N> =
+    respond::NewRespondService<NewRespond<R>, ExtractRespond<P>, N>;
 
 /// A strategy for responding to errors.
 pub trait HttpRescue<E> {
@@ -26,10 +37,13 @@ pub struct SyntheticHttpResponse {
     pub message: Cow<'static, str>,
 }
 
-pub type Layer<R> = respond::RespondLayer<NewRespond<R>>;
+#[derive(Clone, Debug)]
+pub struct ExtractRespond<P>(P);
 
 #[derive(Copy, Clone, Debug)]
-pub struct NewRespond<R>(R);
+pub struct NewRespond<R> {
+    rescue: R,
+}
 
 #[derive(Clone, Debug)]
 pub struct Respond<R> {
@@ -174,13 +188,21 @@ impl SyntheticHttpResponse {
     }
 }
 
-// === impl NewRespond ===
+// === impl ExtractRespond ===
 
-impl<R> NewRespond<R> {
-    pub fn layer(rescue: R) -> Layer<R> {
-        respond::RespondLayer::new(NewRespond(rescue))
+impl<T, R, P> ExtractParam<NewRespond<R>, T> for ExtractRespond<P>
+where
+    P: ExtractParam<R, T>,
+{
+    #[inline]
+    fn extract_param(&self, t: &T) -> NewRespond<R> {
+        NewRespond {
+            rescue: self.0.extract_param(t),
+        }
     }
 }
+
+// === impl NewRespond ===
 
 impl<B, R> respond::NewRespond<http::Request<B>> for NewRespond<R>
 where
@@ -192,7 +214,7 @@ where
         let client = req.extensions().get::<ClientHandle>().cloned();
         debug_assert!(client.is_some(), "Missing client handle");
 
-        let rescue = self.0.clone();
+        let rescue = self.rescue.clone();
 
         match req.version() {
             http::Version::HTTP_2 => {

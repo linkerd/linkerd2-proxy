@@ -94,17 +94,14 @@ impl Config {
             .push(metrics.proxy.http_endpoint.to_layer::<classify::Response, _, Permitted>())
             .push_map_target(|(permit, http)| Permitted { permit, http })
             .push(inbound::policy::NewAuthorizeHttp::layer(metrics.http_authz.clone()))
-            .push_on_service(
-                svc::layers()
-                    .push(errors::NewRespond::layer(|error: Error| -> Result<_> {
-                        if error.is::<inbound::policy::DeniedUnauthorized> () {
-                            return Ok(errors::SyntheticHttpResponse::permission_denied(error));
-                        }
-                        tracing::warn!(%error, "Unexpected error");
-                        Ok(errors::SyntheticHttpResponse::unexpected_error())
-                    }))
-                    .push(http::BoxResponse::layer()),
-            )
+            .push(errors::respond::layer(|error: Error| -> Result<_> {
+                if error.is::<inbound::policy::DeniedUnauthorized> () {
+                    return Ok(errors::SyntheticHttpResponse::permission_denied(error));
+                }
+                tracing::warn!(%error, "Unexpected error");
+                Ok(errors::SyntheticHttpResponse::unexpected_error())
+            }))
+            .push_on_service(http::BoxResponse::layer())
             .push(http::NewServeHttp::layer(Default::default(), drain.clone()))
             .push_request_filter(
                 |(http, tcp): (

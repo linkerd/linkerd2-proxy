@@ -66,9 +66,9 @@ impl<H> Inbound<H> {
                         .push(svc::FailFast::layer("HTTP Server", dispatch_timeout)),
                 )
                 .push(rt.metrics.http_errors.to_layer())
+                .push(ServerRescue::layer())
                 .push_on_service(
                     svc::layers()
-                        .push(ServerRescue::layer())
                         .push(http_tracing::server(
                             rt.span_sink.clone(),
                             super::trace_labels(),
@@ -90,8 +90,9 @@ impl<H> Inbound<H> {
 
 impl ServerRescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
-    pub fn layer() -> errors::respond::Layer<Self> {
-        errors::respond::NewRespond::layer(Self)
+    pub fn layer<N>(
+    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
+        errors::respond::layer(Self)
     }
 }
 

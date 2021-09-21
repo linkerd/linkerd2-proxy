@@ -49,7 +49,7 @@ impl<C> Outbound<C> {
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
-                .push_on_service(ClientRescue::layer())
+                .push(ClientRescue::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
@@ -80,8 +80,9 @@ impl<C> Outbound<C> {
 
 impl ClientRescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
-    pub fn layer() -> errors::respond::Layer<Self> {
-        errors::respond::NewRespond::layer(Self)
+    pub fn layer<N>(
+    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
+        errors::respond::layer(Self)
     }
 }
 

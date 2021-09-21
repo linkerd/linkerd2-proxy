@@ -5,6 +5,7 @@
 
 use futures::{ready, TryFuture};
 use linkerd_error::Error;
+use linkerd_stack::{layer, ExtractParam, NewService, Service};
 use pin_project::pin_project;
 use std::{
     future::Future,
@@ -27,14 +28,16 @@ pub trait Respond<Rsp, E = Error> {
 }
 
 #[derive(Clone, Debug)]
-pub struct RespondLayer<N> {
-    new_respond: N,
+pub struct NewRespondService<R, P, N> {
+    inner: N,
+    params: P,
+    _marker: std::marker::PhantomData<fn() -> R>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RespondService<N, S> {
-    new_respond: N,
     inner: S,
+    new_respond: N,
 }
 
 #[pin_project]
@@ -45,32 +48,44 @@ pub struct RespondFuture<R, F> {
     inner: F,
 }
 
-impl<N> RespondLayer<N> {
-    pub fn new(new_respond: N) -> Self {
-        Self { new_respond }
-    }
-}
+// === impl NewRespondService ===
 
-impl<N: Clone, S> tower::layer::Layer<S> for RespondLayer<N> {
-    type Service = RespondService<N, S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        RespondService {
+impl<R, P: Clone, N> NewRespondService<R, P, N> {
+    pub fn layer(params: P) -> impl layer::Layer<N, Service = Self> + Clone {
+        layer::mk(move |inner| Self {
             inner,
-            new_respond: self.new_respond.clone(),
-        }
+            params: params.clone(),
+            _marker: std::marker::PhantomData,
+        })
     }
 }
 
-impl<Req, R, N, S> tower::Service<Req> for RespondService<N, S>
+impl<T, R, P, N> NewService<T> for NewRespondService<R, P, N>
 where
-    S: tower::Service<Req>,
-    N: NewRespond<Req, Respond = R>,
-    R: Respond<S::Response, S::Error>,
+    P: ExtractParam<R, T>,
+    N: NewService<T>,
 {
-    type Response = R::Response;
+    type Service = RespondService<R, N::Service>;
+
+    #[inline]
+    fn new_service(&self, target: T) -> Self::Service {
+        let new_respond = self.params.extract_param(&target);
+        let inner = self.inner.new_service(target);
+        RespondService { inner, new_respond }
+    }
+}
+
+// === impl RespondService ===
+
+impl<Req, R, N, S> Service<Req> for RespondService<R, S>
+where
+    S: Service<Req>,
+    R: NewRespond<Req, Respond = N>,
+    N: Respond<S::Response, S::Error>,
+{
+    type Response = N::Response;
     type Error = S::Error;
-    type Future = RespondFuture<R, S::Future>;
+    type Future = RespondFuture<N, S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -84,6 +99,8 @@ where
         RespondFuture { respond, inner }
     }
 }
+
+// === impl RespondFuture ===
 
 impl<R, F> Future for RespondFuture<R, F>
 where

@@ -209,8 +209,11 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     // Otherwise, the inner service is always ready (because it's a router).
                     .push(svc::ConcurrencyLimitLayer::new(max_in_flight_requests))
                     .push(svc::FailFast::layer("Ingress server", dispatch_timeout))
-                    .push(rt.metrics.http_errors.to_layer())
-                    .push(http::ServerRescue::layer())
+                    .push(rt.metrics.http_errors.to_layer()),
+            )
+            .push(http::ServerRescue::layer())
+            .push_on_service(
+                svc::layers()
                     .push(http_tracing::server(rt.span_sink, trace_labels()))
                     .push(http::BoxResponse::layer())
                     .push(http::BoxRequest::layer()),
