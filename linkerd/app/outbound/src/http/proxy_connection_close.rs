@@ -1,5 +1,9 @@
 use futures::prelude::*;
-use linkerd_app_core::{errors::respond::L5D_PROXY_ERROR, proxy::http::ClientHandle, svc};
+use linkerd_app_core::{
+    errors::respond::{L5D_PROXY_CONNECTION, L5D_PROXY_ERROR},
+    proxy::http::ClientHandle,
+    svc,
+};
 use std::{
     future::Future,
     pin::Pin,
@@ -11,11 +15,19 @@ use std::{
 /// connection error with its application and therefore the accepted
 /// connection should be torn down.
 #[derive(Clone, Debug)]
-pub struct PeerProxyErrors<N> {
+pub struct ProxyConnectionClose<N> {
     inner: N,
 }
 
-impl<N> PeerProxyErrors<N> {
+#[pin_project::pin_project]
+#[derive(Debug)]
+pub struct ResponseFuture<F> {
+    #[pin]
+    inner: F,
+    client: ClientHandle,
+}
+
+impl<N> ProxyConnectionClose<N> {
     fn new(inner: N) -> Self {
         Self { inner }
     }
@@ -25,19 +37,20 @@ impl<N> PeerProxyErrors<N> {
     }
 }
 
-impl<T, N> svc::NewService<T> for PeerProxyErrors<N>
+impl<T, N> svc::NewService<T> for ProxyConnectionClose<N>
 where
     N: svc::NewService<T>,
 {
-    type Service = PeerProxyErrors<N::Service>;
+    type Service = ProxyConnectionClose<N::Service>;
 
+    #[inline]
     fn new_service(&self, target: T) -> Self::Service {
         let inner = self.inner.new_service(target);
-        PeerProxyErrors { inner }
+        ProxyConnectionClose { inner }
     }
 }
 
-impl<S, A, B> svc::Service<http::Request<A>> for PeerProxyErrors<S>
+impl<S, A, B> svc::Service<http::Request<A>> for ProxyConnectionClose<S>
 where
     S: svc::Service<http::Request<A>, Response = http::Response<B>>,
     S::Response: Send,
@@ -46,34 +59,51 @@ where
 {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<S::Response, S::Error>> + Send + 'static>>;
+    type Future = ResponseFuture<S::Future>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
     }
 
+    #[inline]
     fn call(&mut self, req: http::Request<A>) -> Self::Future {
-        let ClientHandle { close, .. } = req
+        let client = req
             .extensions()
             .get::<ClientHandle>()
             .cloned()
             .expect("missing client handle");
+        let inner = self.inner.call(req);
+        ResponseFuture { inner, client }
+    }
+}
 
-        Box::pin(self.inner.call(req).map_ok(move |rsp| {
-            if let Some(msg) = rsp.headers().get(L5D_PROXY_ERROR) {
-                tracing::debug!(
-                    ?msg,
-                    "Received an error response from a peer proxy; closing connection"
-                );
+impl<B, F: TryFuture<Ok = http::Response<B>>> Future for ResponseFuture<F> {
+    type Output = Result<http::Response<B>, F::Error>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let rsp = futures::ready!(this.inner.try_poll(cx))?;
+
+        if let Some(proxy_conn) = rsp.headers().get(L5D_PROXY_CONNECTION) {
+            if proxy_conn == "close" {
+                if let Some(error) = rsp
+                    .headers()
+                    .get(L5D_PROXY_ERROR)
+                    .and_then(|v| v.to_str().ok())
+                {
+                    tracing::info!(%error, "Closing application connection for remote proxy");
+                } else {
+                    tracing::info!("Closing application connection for remote proxy");
+                }
 
                 // Signal that the proxy's server-side connection should be terminated. This handles
                 // the remote error as if the local proxy encountered an error.
-                close.close();
+                this.client.close.close();
             }
+        }
 
-            rsp
-        }))
+        Poll::Ready(Ok(rsp))
     }
 }
 
@@ -101,12 +131,11 @@ mod test {
         let (handle, closed) = ClientHandle::new(([192, 0, 2, 3], 50000).into());
         req.extensions_mut().insert(handle);
 
-        const ERROR_MSG: &str = "something bad happened";
-        let svc = PeerProxyErrors::new(svc::mk(move |_: http::Request<hyper::Body>| {
+        let svc = ProxyConnectionClose::new(svc::mk(move |_: http::Request<hyper::Body>| {
             future::ok::<_, Infallible>(
                 http::Response::builder()
                     .status(http::StatusCode::BAD_GATEWAY)
-                    .header(L5D_PROXY_ERROR, ERROR_MSG)
+                    .header(L5D_PROXY_CONNECTION, "close")
                     .body(hyper::Body::default())
                     .unwrap(),
             )
@@ -116,9 +145,9 @@ mod test {
         assert_eq!(rsp.status(), http::StatusCode::BAD_GATEWAY);
         assert_eq!(
             rsp.headers()
-                .get(L5D_PROXY_ERROR)
-                .expect("response did not contain l5d-proxy-error header"),
-            ERROR_MSG
+                .get(L5D_PROXY_CONNECTION)
+                .expect("response did not contain l5d-proxy-connection header"),
+            "close"
         );
 
         // The client handle close future should fire.

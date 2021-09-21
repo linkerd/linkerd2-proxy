@@ -12,6 +12,7 @@ use std::{
 };
 use tracing::{debug, info_span, warn};
 
+pub const L5D_PROXY_CONNECTION: &str = "l5d-proxy-connection";
 pub const L5D_PROXY_ERROR: &str = "l5d-proxy-error";
 
 pub fn layer<R, P: Clone, N>(
@@ -159,14 +160,22 @@ impl SyntheticHttpResponse {
     #[inline]
     fn grpc_response<B: Default>(&self) -> http::Response<B> {
         debug!(code = %self.grpc_status, "Handling error on gRPC connection");
-        http::Response::builder()
+        let mut rsp = http::Response::builder()
             .version(http::Version::HTTP_2)
             .header(http::header::CONTENT_LENGTH, "0")
             .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
             .header(GRPC_STATUS, code_header(self.grpc_status))
-            .header(GRPC_MESSAGE, self.message())
-            .header(L5D_PROXY_ERROR, self.message())
-            .body(B::default())
+            .header(GRPC_MESSAGE, self.message());
+
+        // TODO only set when client is trusted.
+        rsp = rsp.header(L5D_PROXY_ERROR, self.message());
+
+        if self.close_connection {
+            // TODO only set when meshed.
+            rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
+        }
+
+        rsp.body(B::default())
             .expect("error response must be valid")
     }
 
@@ -176,11 +185,21 @@ impl SyntheticHttpResponse {
         let mut rsp = http::Response::builder()
             .status(self.http_status)
             .version(version)
-            .header(http::header::CONTENT_LENGTH, "0")
-            .header(L5D_PROXY_ERROR, self.message());
+            .header(http::header::CONTENT_LENGTH, "0");
 
-        if self.close_connection && version == http::Version::HTTP_11 {
-            rsp = rsp.header(http::header::CONNECTION, "close");
+        // TODO only set when client is trusted.
+        rsp = rsp.header(L5D_PROXY_ERROR, self.message());
+
+        if self.close_connection {
+            if version == http::Version::HTTP_11 {
+                // Notify the (proxy or non-proxy) client that the connection will be closed.
+                rsp = rsp.header(http::header::CONNECTION, "close");
+            }
+
+            // Tell the remote outbound proxy that it should close the connection to its
+            // application, i.e. so the application can choose another replica.
+            // TODO only set when meshed.
+            rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
         }
 
         rsp.body(B::default())
