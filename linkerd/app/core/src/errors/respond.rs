@@ -192,6 +192,7 @@ impl SyntheticHttpResponse {
 
         if self.close_connection {
             if version == http::Version::HTTP_11 {
+                // Notify the (proxy or non-proxy) client that the connection will be closed.
                 rsp = rsp.header(http::header::CONNECTION, "close");
             }
 
