@@ -1,11 +1,15 @@
-use super::NewRequireIdentity;
+use super::{NewRequireIdentity, ProxyConnectionClose};
 use crate::Outbound;
 use linkerd_app_core::{
-    classify, config, http_tracing, metrics,
+    classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
-    svc, tls, Error, CANONICAL_DST_HEADER,
+    svc::{self, ExtractParam},
+    tls, Error, Result, CANONICAL_DST_HEADER,
 };
 use tokio::io;
+
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue;
 
 impl<C> Outbound<C> {
     pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
@@ -40,6 +44,15 @@ impl<C> Outbound<C> {
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
+                // Tear down server connections when a peer proxy generates an error.
+                // TODO(ver) this should only be honored when forwarding and not when the connection
+                // is part of a balancer.
+                .push(ProxyConnectionClose::layer())
+                // Handle connection-level errors eagerly so that we can report 5XX failures in tap
+                // and metrics. HTTP error metrics are not incremented here so that errors are not
+                // double-counted--i.e., endpoint metrics track these responses and error metrics
+                // track proxy errors that occur higher in the stack.
+                .push(ClientRescue::layer())
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
@@ -63,6 +76,48 @@ impl<C> Outbound<C> {
                 )
                 .push(svc::ArcNewService::layer())
         })
+    }
+}
+
+// === impl ClientRescue ===
+
+impl ClientRescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer<N>(
+    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
+        errors::respond::layer(Self)
+    }
+}
+
+impl<T> ExtractParam<Self, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        *self
+    }
+}
+
+impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
+        // Always emit informational headers on responses to an application.
+        errors::respond::EmitHeaders(true)
+    }
+}
+
+impl errors::HttpRescue<Error> for ClientRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        let cause = errors::root_cause(&*error);
+        if cause.is::<http::orig_proto::DowngradedH2Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<std::io::Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<errors::ConnectTimeout>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
+
+        Err(error)
     }
 }
 

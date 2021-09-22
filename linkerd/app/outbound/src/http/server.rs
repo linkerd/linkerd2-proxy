@@ -102,16 +102,6 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         let cause = errors::root_cause(&*error);
-
-        if cause.is::<http::orig_proto::DowngradedH2Error>() {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
-        }
-        if cause.is::<std::io::Error>() {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
-        }
-        if cause.is::<errors::ConnectTimeout>() {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
-        }
         if cause.is::<http::ResponseTimeoutError>() {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
