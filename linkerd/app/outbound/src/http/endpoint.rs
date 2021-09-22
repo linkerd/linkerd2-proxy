@@ -43,6 +43,9 @@ impl<C> Outbound<C> {
                 .check_service::<T>()
                 .into_new_service()
                 .push_new_reconnect(backoff)
+                // Set the TLS status on responses so that the stack can detect whether the request
+                // was sent over a meshed connection.
+                .push_http_response_insert_target::<tls::ConditionalClientTls>()
                 // Tear down server connections when a peer proxy generates an error.
                 // TODO(ver) this should only be honored when forwarding and not when the connection
                 // is part of a balancer.
