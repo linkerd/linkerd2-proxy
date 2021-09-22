@@ -9,7 +9,9 @@ use linkerd_app_core::{
 use tokio::io;
 
 #[derive(Copy, Clone, Debug)]
-struct ClientRescue;
+struct ClientRescue {
+    emit_headers: bool,
+}
 
 impl<C> Outbound<C> {
     pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
@@ -55,7 +57,7 @@ impl<C> Outbound<C> {
                 // and metrics. HTTP error metrics are not incremented here so that errors are not
                 // double-counted--i.e., endpoint metrics track these responses and error metrics
                 // track proxy errors that occur higher in the stack.
-                .push(ClientRescue::layer())
+                .push(ClientRescue::layer(config.emit_headers))
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 .push(
                     rt.metrics
@@ -87,8 +89,9 @@ impl<C> Outbound<C> {
 impl ClientRescue {
     /// Synthesizes responses for HTTP requests that encounter proxy errors.
     pub fn layer<N>(
+        emit_headers: bool,
     ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
-        errors::respond::layer(Self)
+        errors::respond::layer(Self { emit_headers })
     }
 }
 
@@ -103,7 +106,7 @@ impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
     #[inline]
     fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
         // Always emit informational headers on responses to an application.
-        errors::respond::EmitHeaders(true)
+        errors::respond::EmitHeaders(self.emit_headers)
     }
 }
 

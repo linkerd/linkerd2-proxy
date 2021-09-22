@@ -58,6 +58,9 @@ pub struct Config {
     // forwarded without discovery/routing/mTLS.
     pub ingress_mode: bool,
     pub inbound_ips: Arc<HashSet<IpAddr>>,
+
+    // Whether the proxy may include informational headers on HTTP responses.
+    pub emit_headers: bool,
 }
 
 #[derive(Clone, Debug)]

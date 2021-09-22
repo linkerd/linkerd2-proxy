@@ -7,7 +7,9 @@ use linkerd_app_core::{
 };
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct ServerRescue;
+pub(crate) struct ServerRescue {
+    emit_headers: bool,
+}
 
 impl<N> Outbound<N> {
     pub fn push_http_server<T, NSvc>(
@@ -58,7 +60,7 @@ impl<N> Outbound<N> {
                 )
                 // Synthesizes responses for proxy errors.
                 .check_new_service::<T, http::Request<_>>()
-                .push(ServerRescue::layer())
+                .push(ServerRescue::layer(config.emit_headers))
                 .check_new_service::<T, http::Request<_>>()
                 .push_on_service(
                     svc::layers()
@@ -80,22 +82,23 @@ impl<N> Outbound<N> {
 
 impl ServerRescue {
     pub fn layer<N>(
+        emit_headers: bool,
     ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
-        errors::respond::layer(Self)
+        errors::respond::layer(Self { emit_headers })
     }
 }
 
 impl<T> ExtractParam<Self, T> for ServerRescue {
     #[inline]
     fn extract_param(&self, _: &T) -> Self {
-        Self
+        *self
     }
 }
 
 impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
     #[inline]
     fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
-        errors::respond::EmitHeaders(true)
+        errors::respond::EmitHeaders(self.emit_headers)
     }
 }
 
