@@ -123,6 +123,9 @@ const ENV_OUTBOUND_MAX_IDLE_CONNS_PER_ENDPOINT: &str =
 pub const ENV_INBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_INBOUND_MAX_IN_FLIGHT";
 pub const ENV_OUTBOUND_MAX_IN_FLIGHT: &str = "LINKERD2_PROXY_OUTBOUND_MAX_IN_FLIGHT";
 
+const ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS: &str =
+    "LINKERD2_PROXY_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS";
+
 pub const ENV_TRACE_ATTRIBUTES_PATH: &str = "LINKERD2_PROXY_TRACE_ATTRIBUTES_PATH";
 
 /// Constrains which destination names may be used for profile/route discovery.
@@ -414,6 +417,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let outbound = {
         let ingress_mode = parse(strings, ENV_INGRESS_MODE, parse_bool)?.unwrap_or(false);
 
+        // Instances can opt out of receiving informational headers by setting this configuration.
+        // These headers are also omitted by default if ingress-mode is enabled.
+        let disable_headers = parse(
+            strings,
+            ENV_OUTBOUND_DISABLE_INFORMATIONAL_HEADERS,
+            parse_bool,
+        )?
+        .unwrap_or(ingress_mode);
+
         let addr = ListenAddr(
             outbound_listener_addr?
                 .unwrap_or_else(|| parse_socket_addr(DEFAULT_OUTBOUND_LISTEN_ADDR).unwrap()),
@@ -451,6 +463,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
         outbound::Config {
             ingress_mode,
+            emit_headers: !disable_headers,
             allow_discovery: AddrMatch::new(dst_profile_suffixes.clone(), dst_profile_networks),
             proxy: ProxyConfig {
                 server,

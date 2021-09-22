@@ -211,7 +211,7 @@ impl Outbound<svc::ArcNewHttp<http::Endpoint>> {
                     .push(svc::FailFast::layer("Ingress server", dispatch_timeout))
                     .push(rt.metrics.http_errors.to_layer()),
             )
-            .push(http::ServerRescue::layer())
+            .push(http::ServerRescue::layer(config.emit_headers))
             .push_on_service(
                 svc::layers()
                     .push(http_tracing::server(rt.span_sink, trace_labels()))
