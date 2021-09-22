@@ -51,9 +51,7 @@ impl<H> Inbound<H> {
                 // `Client`. This must be below the `orig_proto::Downgrade` layer, since
                 // the request may have been downgraded from a HTTP/2 orig-proto request.
                 .push(http::NewNormalizeUri::layer())
-                .check_new_service::<T, http::Request<_>>()
                 .push(NewSetIdentityHeader::layer(()))
-                .check_new_service::<T, http::Request<_>>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
