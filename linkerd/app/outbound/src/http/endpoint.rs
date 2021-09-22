@@ -1,4 +1,4 @@
-use super::{NewRequireIdentity, ProxyConnectionClose};
+use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
 use crate::Outbound;
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
@@ -49,6 +49,9 @@ impl<C> Outbound<C> {
                 // Set the TLS status on responses so that the stack can detect whether the request
                 // was sent over a meshed connection.
                 .push_http_response_insert_target::<tls::ConditionalClientTls>()
+                // If the outbound proxy is not configured to emit headers, then strip the
+                // `l5d-proxy-errors` header if set by the peer.
+                .push(NewStripProxyError::layer(config.emit_headers))
                 // Tear down server connections when a peer proxy generates an error.
                 // TODO(ver) this should only be honored when forwarding and not when the connection
                 // is part of a balancer.

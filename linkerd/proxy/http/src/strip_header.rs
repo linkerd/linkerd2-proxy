@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 pub struct StripHeader<H, S, R> {
-    header: H,
+    header: Option<H>,
     inner: S,
     _marker: PhantomData<fn(R)>,
 }
@@ -34,11 +34,17 @@ pub mod request {
     where
         H: AsHeaderName + Clone,
     {
-        layer::mk(move |inner| StripHeader {
-            inner,
-            header: header.clone(),
-            _marker: PhantomData,
-        })
+        layer::mk(move |inner| StripHeader::request(Some(header.clone()), inner))
+    }
+
+    impl<H, S> StripHeader<H, S> {
+        pub fn request(header: Option<H>, inner: S) -> Self {
+            Self {
+                inner,
+                header,
+                _marker: PhantomData,
+            }
+        }
     }
 
     impl<H, P, S, B> Proxy<http::Request<B>, S> for StripHeader<H, P>
@@ -52,9 +58,10 @@ pub mod request {
         type Error = P::Error;
         type Future = P::Future;
 
-        #[inline]
         fn proxy(&self, svc: &mut S, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut().remove(self.header.clone());
+            if let Some(h) = self.header.clone() {
+                req.headers_mut().remove(h);
+            }
             self.inner.proxy(svc, req)
         }
     }
@@ -73,9 +80,10 @@ pub mod request {
             self.inner.poll_ready(cx)
         }
 
-        #[inline]
         fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
-            req.headers_mut().remove(self.header.clone());
+            if let Some(h) = self.header.clone() {
+                req.headers_mut().remove(h);
+            }
             self.inner.call(req)
         }
     }
@@ -97,24 +105,30 @@ pub mod response {
     /// stripped.
     pub enum RspHeader {}
 
-    type StripHeader<H, S> = super::StripHeader<H, S, RspHeader>;
+    pub type StripHeader<H, S> = super::StripHeader<H, S, RspHeader>;
 
     pub fn layer<H, S>(header: H) -> impl layer::Layer<S, Service = StripHeader<H, S>> + Clone
     where
         H: AsHeaderName + Clone,
     {
-        layer::mk(move |inner| StripHeader {
-            inner,
-            header: header.clone(),
-            _marker: PhantomData,
-        })
+        layer::mk(move |inner| StripHeader::response(Some(header.clone()), inner))
     }
 
     #[pin_project]
     pub struct ResponseFuture<F, H> {
         #[pin]
         inner: F,
-        header: H,
+        header: Option<H>,
+    }
+
+    impl<H, S> StripHeader<H, S> {
+        pub fn response(header: Option<H>, inner: S) -> Self {
+            Self {
+                inner,
+                header,
+                _marker: PhantomData,
+            }
+        }
     }
 
     impl<H, S, B, Req> tower::Service<Req> for StripHeader<H, S>
@@ -152,7 +166,9 @@ pub mod response {
         fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             let this = self.project();
             let mut res = ready!(this.inner.try_poll(cx))?;
-            res.headers_mut().remove(this.header.clone());
+            if let Some(h) = this.header.take() {
+                res.headers_mut().remove(h);
+            }
             Poll::Ready(Ok(res))
         }
     }
