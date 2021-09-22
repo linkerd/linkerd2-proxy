@@ -196,6 +196,12 @@ impl<S> Stack<S> {
         self.push(http::insert::NewInsert::layer())
     }
 
+    pub fn push_http_response_insert_target<P>(
+        self,
+    ) -> Stack<http::insert::NewResponseInsert<P, S>> {
+        self.push(http::insert::NewResponseInsert::layer())
+    }
+
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>
     where
         T: Clone + Eq + std::fmt::Debug + std::hash::Hash + Send + Sync + 'static,
