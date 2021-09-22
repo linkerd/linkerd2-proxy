@@ -3,7 +3,7 @@ use linkerd_app_core::{
     classify, dst, errors, http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
-    svc::{self, Param},
+    svc::{self, ExtractParam, Param},
     tls,
     transport::{self, ClientAddr, Remote, ServerAddr},
     Error, Infallible, NameAddr, Result,
@@ -425,6 +425,29 @@ impl ClientRescue {
     pub fn layer<N>(
     ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
         errors::respond::layer(Self)
+    }
+}
+
+impl<T> ExtractParam<Self, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        *self
+    }
+}
+
+impl ExtractParam<errors::respond::EmitHeaders, Logical> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, t: &Logical) -> errors::respond::EmitHeaders {
+        // Only emit informational headers to meshed peers.
+        let emit = t
+            .tls
+            .value()
+            .map(|tls| match tls {
+                tls::ServerTls::Established { client_id, .. } => client_id.is_some(),
+                _ => false,
+            })
+            .unwrap_or(false);
+        errors::respond::EmitHeaders(emit)
     }
 }
 

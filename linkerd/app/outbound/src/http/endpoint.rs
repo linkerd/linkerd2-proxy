@@ -3,7 +3,8 @@ use crate::Outbound;
 use linkerd_app_core::{
     classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
-    svc, tls, Error, Result, CANONICAL_DST_HEADER,
+    svc::{self, ExtractParam},
+    tls, Error, Result, CANONICAL_DST_HEADER,
 };
 use tokio::io;
 
@@ -85,6 +86,21 @@ impl ClientRescue {
     pub fn layer<N>(
     ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
         errors::respond::layer(Self)
+    }
+}
+
+impl<T> ExtractParam<Self, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        *self
+    }
+}
+
+impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
+        // Always emit informational headers on responses to an application.
+        errors::respond::EmitHeaders(true)
     }
 }
 

@@ -38,12 +38,16 @@ pub struct SyntheticHttpResponse {
     pub message: Cow<'static, str>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct EmitHeaders(pub bool);
+
 #[derive(Clone, Debug)]
 pub struct ExtractRespond<P>(P);
 
 #[derive(Copy, Clone, Debug)]
 pub struct NewRespond<R> {
     rescue: R,
+    emit_headers: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +56,7 @@ pub struct Respond<R> {
     version: http::Version,
     is_grpc: bool,
     client: Option<ClientHandle>,
+    emit_headers: bool,
 }
 
 #[pin_project(project = ResponseBodyProj)]
@@ -62,6 +67,7 @@ pub enum ResponseBody<R, B> {
         inner: B,
         trailers: Option<http::HeaderMap>,
         rescue: R,
+        emit_headers: bool,
     },
 }
 
@@ -158,19 +164,21 @@ impl SyntheticHttpResponse {
     }
 
     #[inline]
-    fn grpc_response<B: Default>(&self) -> http::Response<B> {
+    fn grpc_response<B: Default>(&self, emit_headers: bool) -> http::Response<B> {
         debug!(code = %self.grpc_status, "Handling error on gRPC connection");
         let mut rsp = http::Response::builder()
             .version(http::Version::HTTP_2)
             .header(http::header::CONTENT_LENGTH, "0")
             .header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)
-            .header(GRPC_STATUS, code_header(self.grpc_status))
-            .header(GRPC_MESSAGE, self.message());
+            .header(GRPC_STATUS, code_header(self.grpc_status));
 
-        // TODO only set when client is trusted.
-        rsp = rsp.header(L5D_PROXY_ERROR, self.message());
+        if emit_headers {
+            rsp = rsp
+                .header(GRPC_MESSAGE, self.message())
+                .header(L5D_PROXY_ERROR, self.message());
+        }
 
-        if self.close_connection {
+        if self.close_connection && emit_headers {
             // TODO only set when meshed.
             rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
         }
@@ -180,15 +188,20 @@ impl SyntheticHttpResponse {
     }
 
     #[inline]
-    fn http_response<B: Default>(&self, version: http::Version) -> http::Response<B> {
+    fn http_response<B: Default>(
+        &self,
+        version: http::Version,
+        emit_headers: bool,
+    ) -> http::Response<B> {
         debug!(status = %self.http_status, ?version, close = %self.close_connection, "Handling error on HTTP connection");
         let mut rsp = http::Response::builder()
             .status(self.http_status)
             .version(version)
             .header(http::header::CONTENT_LENGTH, "0");
 
-        // TODO only set when client is trusted.
-        rsp = rsp.header(L5D_PROXY_ERROR, self.message());
+        if emit_headers {
+            rsp = rsp.header(L5D_PROXY_ERROR, self.message());
+        }
 
         if self.close_connection {
             if version == http::Version::HTTP_11 {
@@ -196,10 +209,12 @@ impl SyntheticHttpResponse {
                 rsp = rsp.header(http::header::CONNECTION, "close");
             }
 
-            // Tell the remote outbound proxy that it should close the connection to its
+            // Tell the remote outbound proxy that it should close the proxied connection to its
             // application, i.e. so the application can choose another replica.
-            // TODO only set when meshed.
-            rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
+            if emit_headers {
+                // TODO only set when meshed.
+                rsp = rsp.header(L5D_PROXY_CONNECTION, "close");
+            }
         }
 
         rsp.body(B::default())
@@ -212,11 +227,14 @@ impl SyntheticHttpResponse {
 impl<T, R, P> ExtractParam<NewRespond<R>, T> for ExtractRespond<P>
 where
     P: ExtractParam<R, T>,
+    P: ExtractParam<EmitHeaders, T>,
 {
     #[inline]
     fn extract_param(&self, t: &T) -> NewRespond<R> {
+        let EmitHeaders(emit_headers) = self.0.extract_param(t);
         NewRespond {
             rescue: self.0.extract_param(t),
+            emit_headers,
         }
     }
 }
@@ -234,6 +252,7 @@ where
         debug_assert!(client.is_some(), "Missing client handle");
 
         let rescue = self.rescue.clone();
+        let emit_headers = self.emit_headers;
 
         match req.version() {
             http::Version::HTTP_2 => {
@@ -247,6 +266,7 @@ where
                     rescue,
                     is_grpc,
                     version: http::Version::HTTP_2,
+                    emit_headers,
                 }
             }
             version => Respond {
@@ -254,6 +274,7 @@ where
                 rescue,
                 version,
                 is_grpc: false,
+                emit_headers,
             },
         }
     }
@@ -287,11 +308,13 @@ where
                     Respond {
                         is_grpc: true,
                         rescue,
+                        emit_headers,
                         ..
                     } => ResponseBody::GrpcRescue {
                         inner: b,
                         trailers: None,
                         rescue: rescue.clone(),
+                        emit_headers: *emit_headers,
                     },
                     _ => ResponseBody::Passthru(b),
                 }));
@@ -313,9 +336,9 @@ where
         }
 
         let rsp = if self.is_grpc {
-            rsp.grpc_response()
+            rsp.grpc_response(self.emit_headers)
         } else {
-            rsp.http_response(self.version)
+            rsp.http_response(self.version, self.emit_headers)
         };
 
         Ok(rsp)
@@ -348,6 +371,7 @@ where
                 inner,
                 trailers,
                 rescue,
+                emit_headers,
             } => {
                 // should not be calling poll_data if we have set trailers derived from an error
                 assert!(trailers.is_none());
@@ -358,7 +382,8 @@ where
                             message,
                             ..
                         } = rescue.rescue(error)?;
-                        *trailers = Some(Self::grpc_trailers(grpc_status, &*message));
+                        let t = Self::grpc_trailers(grpc_status, &*message, *emit_headers);
+                        *trailers = Some(t);
                         Poll::Ready(None)
                     }
                     data => data,
@@ -403,17 +428,19 @@ where
 }
 
 impl<R, B> ResponseBody<R, B> {
-    fn grpc_trailers(code: tonic::Code, message: &str) -> http::HeaderMap {
+    fn grpc_trailers(code: tonic::Code, message: &str, emit_headers: bool) -> http::HeaderMap {
         debug!(grpc.status = ?code, "Synthesizing gRPC trailers");
         let mut t = http::HeaderMap::new();
         t.insert(GRPC_STATUS, code_header(code));
-        t.insert(
-            GRPC_MESSAGE,
-            HeaderValue::from_str(message).unwrap_or_else(|error| {
-                warn!(%error, "Failed to encode error header");
-                HeaderValue::from_static("Unexpected error")
-            }),
-        );
+        if emit_headers {
+            t.insert(
+                GRPC_MESSAGE,
+                HeaderValue::from_str(message).unwrap_or_else(|error| {
+                    warn!(%error, "Failed to encode error header");
+                    HeaderValue::from_static("Unexpected error")
+                }),
+            );
+        }
         t
     }
 }

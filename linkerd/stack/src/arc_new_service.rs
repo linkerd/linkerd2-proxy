@@ -8,7 +8,7 @@ pub struct ArcNewService<T, S> {
 impl<T, S> ArcNewService<T, S> {
     pub fn layer<N>() -> impl layer::Layer<N, Service = Self> + Clone + Copy
     where
-        N: NewService<T, Service = S> + Clone + Send + Sync + 'static,
+        N: NewService<T, Service = S> + Send + Sync + 'static,
         S: Send + 'static,
     {
         layer::mk(Self::new)

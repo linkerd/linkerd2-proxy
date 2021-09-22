@@ -1,6 +1,10 @@
 use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{config, errors, http_tracing, svc, Error, Result};
+use linkerd_app_core::{
+    config, errors, http_tracing,
+    svc::{self, ExtractParam},
+    Error, Result,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue;
@@ -78,6 +82,20 @@ impl ServerRescue {
     pub fn layer<N>(
     ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
         errors::respond::layer(Self)
+    }
+}
+
+impl<T> ExtractParam<Self, T> for ServerRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        Self
+    }
+}
+
+impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
+        errors::respond::EmitHeaders(true)
     }
 }
 
