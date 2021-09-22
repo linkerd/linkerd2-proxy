@@ -100,7 +100,7 @@ impl ServerRescue {
 impl<T> ExtractParam<Self, T> for ServerRescue {
     #[inline]
     fn extract_param(&self, _: &T) -> Self {
-        Self
+        *self
     }
 }
 
@@ -125,13 +125,6 @@ impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHead
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         let cause = errors::root_cause(&*error);
-
-        if cause.is::<std::io::Error>() {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
-        }
-        if cause.is::<errors::ConnectTimeout>() {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
-        }
         if cause.is::<crate::policy::DeniedUnauthorized>() {
             return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
         }
