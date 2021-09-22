@@ -260,7 +260,7 @@ impl<T> InsertParam<tls::ConditionalServerTls, T> for TlsParams {
 
 impl Rescue {
     /// Synthesizes responses for HTTP requests that encounter errors.
-    pub fn layer<N>(
+    fn layer<N>(
     ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
         errors::respond::layer(Self)
     }
