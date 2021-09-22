@@ -80,6 +80,10 @@ pub trait InsertParam<P, T> {
     fn insert_param(&self, param: P, target: T) -> Self::Target;
 }
 
+/// Implements `ExtractParam` by cloning the inner `P`-typed parameter.
+#[derive(Copy, Clone, Debug)]
+pub struct CloneParam<P>(P);
+
 /// === Param ===
 
 /// The identity `Param`.
@@ -92,10 +96,33 @@ impl<T: ToOwned> Param<T::Owned> for T {
 
 /// === ExtractParam ===
 
-impl<P: ToOwned, T> ExtractParam<P::Owned, T> for P {
+impl<F, P, T> ExtractParam<P, T> for F
+where
+    F: Fn(&T) -> P,
+{
+    fn extract_param(&self, t: &T) -> P {
+        (self)(t)
+    }
+}
+
+impl<P, T: Param<P>> ExtractParam<P, T> for () {
+    fn extract_param(&self, t: &T) -> P {
+        t.param()
+    }
+}
+
+// === impl CloneParam ===
+
+impl<P> From<P> for CloneParam<P> {
+    fn from(p: P) -> Self {
+        Self(p)
+    }
+}
+
+impl<P: ToOwned, T> ExtractParam<P::Owned, T> for CloneParam<P> {
     #[inline]
     fn extract_param(&self, _: &T) -> P::Owned {
-        self.to_owned()
+        self.0.to_owned()
     }
 }
 

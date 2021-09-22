@@ -6,10 +6,11 @@ pub use linkerd_app_core::proxy::http::{
 };
 use linkerd_app_core::{
     config::{ProxyConfig, ServerConfig},
-    errors, http_tracing, identity, io,
+    errors, http_tracing, io,
     metrics::ServerLabel,
     proxy::http,
-    svc::{self, Param},
+    svc::{self, ExtractParam, Param},
+    tls,
     transport::OrigDstAddr,
     Error, Result,
 };
@@ -23,7 +24,7 @@ impl<H> Inbound<H> {
     where
         T: Param<Version>
             + Param<http::normalize_uri::DefaultAuthority>
-            + Param<Option<identity::Name>>
+            + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
             + Param<OrigDstAddr>,
         T: Clone + Send + 'static,
@@ -50,7 +51,9 @@ impl<H> Inbound<H> {
                 // `Client`. This must be below the `orig_proto::Downgrade` layer, since
                 // the request may have been downgraded from a HTTP/2 orig-proto request.
                 .push(http::NewNormalizeUri::layer())
-                .push(NewSetIdentityHeader::layer())
+                .check_new_service::<T, http::Request<_>>()
+                .push(NewSetIdentityHeader::layer(()))
+                .check_new_service::<T, http::Request<_>>()
                 .push_on_service(
                     svc::layers()
                         .push(http::BoxRequest::layer())
@@ -96,9 +99,41 @@ impl ServerRescue {
     }
 }
 
+impl<T> ExtractParam<Self, T> for ServerRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        Self
+    }
+}
+
+impl<T: Param<tls::ConditionalServerTls>> ExtractParam<errors::respond::EmitHeaders, T>
+    for ServerRescue
+{
+    #[inline]
+    fn extract_param(&self, t: &T) -> errors::respond::EmitHeaders {
+        // Only emit informational headers to meshed peers.
+        let emit = t
+            .param()
+            .value()
+            .map(|tls| match tls {
+                tls::ServerTls::Established { client_id, .. } => client_id.is_some(),
+                _ => false,
+            })
+            .unwrap_or(false);
+        errors::respond::EmitHeaders(emit)
+    }
+}
+
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         let cause = errors::root_cause(&*error);
+
+        if cause.is::<std::io::Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<errors::ConnectTimeout>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
         if cause.is::<crate::policy::DeniedUnauthorized>() {
             return Ok(errors::SyntheticHttpResponse::permission_denied(cause));
         }
@@ -114,7 +149,6 @@ impl errors::HttpRescue<Error> for ServerRescue {
         if cause.is::<errors::FailFastError>() {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
-
         if cause.is::<errors::H2Error>() {
             return Err(error);
         }

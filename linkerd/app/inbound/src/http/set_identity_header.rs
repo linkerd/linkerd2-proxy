@@ -1,11 +1,12 @@
-use linkerd_app_core::{identity, proxy::http, svc};
+use linkerd_app_core::{proxy::http, svc, tls};
 use std::task::{Context, Poll};
 use tracing::{debug, trace};
 
 const HEADER_NAME: &str = "l5d-client-id";
 
 #[derive(Clone, Debug)]
-pub struct NewSetIdentityHeader<N> {
+pub struct NewSetIdentityHeader<P, N> {
+    params: P,
     inner: N,
 }
 
@@ -17,25 +18,42 @@ pub struct SetIdentityHeader<M> {
 
 // === impl NewSetIdentityHeader ===
 
-impl<N> NewSetIdentityHeader<N> {
-    pub fn layer() -> impl svc::Layer<N, Service = Self> + Clone {
-        svc::layer::mk(move |inner| Self { inner })
+impl<P: Clone, N> NewSetIdentityHeader<P, N> {
+    pub fn layer(params: P) -> impl svc::Layer<N, Service = Self> + Clone {
+        svc::layer::mk(move |inner| Self {
+            inner,
+            params: params.clone(),
+        })
     }
 }
 
-impl<T, N> svc::NewService<T> for NewSetIdentityHeader<N>
+impl<T, P, N> svc::NewService<T> for NewSetIdentityHeader<P, N>
 where
-    T: svc::Param<Option<identity::Name>>,
+    P: svc::ExtractParam<tls::ConditionalServerTls, T>,
     N: svc::NewService<T>,
 {
     type Service = SetIdentityHeader<N::Service>;
 
     #[inline]
     fn new_service(&self, t: T) -> Self::Service {
-        let value = t.param().map(|name| {
-            http::HeaderValue::from_str(name.as_ref())
-                .expect("identity must be a valid header value")
-        });
+        let value = self
+            .params
+            .extract_param(&t)
+            .value()
+            .and_then(|tls| match tls {
+                tls::ServerTls::Established { client_id, .. } => {
+                    client_id.as_ref().and_then(|id| {
+                        match http::HeaderValue::from_str(id.as_ref().as_ref()) {
+                            Ok(v) => Some(v),
+                            Err(error) => {
+                                tracing::warn!(%error, "identity not a valid header value");
+                                None
+                            }
+                        }
+                    })
+                }
+                _ => None,
+            });
         SetIdentityHeader {
             value,
             inner: self.inner.new_service(t),

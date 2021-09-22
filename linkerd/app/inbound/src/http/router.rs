@@ -1,6 +1,6 @@
 use crate::{policy, stack_labels, Inbound};
 use linkerd_app_core::{
-    classify, dst, errors, http_tracing, io, metrics,
+    classify, dst, http_tracing, io, metrics,
     profiles::{self, DiscoveryRejected},
     proxy::{http, tap},
     svc::{self, Param},
@@ -47,9 +47,6 @@ struct Profile {
     logical: Logical,
     profiles: profiles::Receiver,
 }
-
-#[derive(Copy, Clone, Debug)]
-struct ClientRescue;
 
 // === impl Inbound ===
 
@@ -98,11 +95,6 @@ impl<C> Inbound<C> {
                 .into_new_service()
                 .push_new_reconnect(config.proxy.connect.backoff)
                 .push_map_target(Http::from)
-                // Handle connection-level errors eagerly so that we can report 5XX failures in tap
-                // and metrics. HTTP error metrics are not incremented here so that errors are not
-                // double-counted--i.e., endpoint metrics track these responses and error metrics
-                // track proxy errors that occur higher in the stack.
-                .push(ClientRescue::layer())
                 // Registers the stack to be tapped.
                 .push(tap::NewTapHttp::layer(rt.tap.clone()))
                 // Records metrics for each `Logical`.
@@ -416,28 +408,5 @@ impl From<Logical> for Http {
 impl Param<transport::labels::Key> for Http {
     fn param(&self) -> transport::labels::Key {
         transport::labels::Key::InboundClient
-    }
-}
-
-// === impl ClientRescue ===
-
-impl ClientRescue {
-    pub fn layer<N>(
-    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
-        errors::respond::layer(Self)
-    }
-}
-
-impl errors::HttpRescue<Error> for ClientRescue {
-    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
-        let cause = errors::root_cause(&*error);
-        if cause.is::<std::io::Error>() {
-            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
-        }
-        if cause.is::<errors::ConnectTimeout>() {
-            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
-        }
-
-        Err(error)
     }
 }

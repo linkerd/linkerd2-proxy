@@ -1,6 +1,10 @@
 use super::{IdentityRequired, ProxyConnectionClose};
 use crate::{http, trace_labels, Outbound};
-use linkerd_app_core::{config, errors, http_tracing, svc, Error, Result};
+use linkerd_app_core::{
+    config, errors, http_tracing,
+    svc::{self, ExtractParam},
+    Error, Result,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct ServerRescue;
@@ -81,9 +85,33 @@ impl ServerRescue {
     }
 }
 
+impl<T> ExtractParam<Self, T> for ServerRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        Self
+    }
+}
+
+impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ServerRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
+        errors::respond::EmitHeaders(true)
+    }
+}
+
 impl errors::HttpRescue<Error> for ServerRescue {
     fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
         let cause = errors::root_cause(&*error);
+
+        if cause.is::<http::orig_proto::DowngradedH2Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<std::io::Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<errors::ConnectTimeout>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
         if cause.is::<http::ResponseTimeoutError>() {
             return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
         }
