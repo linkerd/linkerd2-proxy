@@ -45,6 +45,9 @@ impl<C> Outbound<C> {
                 .push_on_service(svc::MapErr::layer(Into::<Error>::into))
                 .check_service::<T>()
                 .into_new_service()
+                // Drive the connection to completion regardless of whether the reconnect is being
+                // actively polled.
+                .push_on_service(svc::layer::mk(svc::SpawnReady::new))
                 .push_new_reconnect(backoff)
                 // Set the TLS status on responses so that the stack can detect whether the request
                 // was sent over a meshed connection.
