@@ -97,17 +97,13 @@ pub mod response {
     /// stripped.
     pub enum RspHeader {}
 
-    type StripHeader<H, S> = super::StripHeader<H, S, RspHeader>;
+    pub type StripHeader<H, S> = super::StripHeader<H, S, RspHeader>;
 
     pub fn layer<H, S>(header: H) -> impl layer::Layer<S, Service = StripHeader<H, S>> + Clone
     where
         H: AsHeaderName + Clone,
     {
-        layer::mk(move |inner| StripHeader {
-            inner,
-            header: header.clone(),
-            _marker: PhantomData,
-        })
+        layer::mk(move |inner| StripHeader::response(header.clone(), inner))
     }
 
     #[pin_project]
@@ -115,6 +111,16 @@ pub mod response {
         #[pin]
         inner: F,
         header: H,
+    }
+
+    impl<H, S> StripHeader<H, S> {
+        pub fn response(header: H, inner: S) -> Self {
+            Self {
+                inner,
+                header,
+                _marker: PhantomData,
+            }
+        }
     }
 
     impl<H, S, B, Req> tower::Service<Req> for StripHeader<H, S>
