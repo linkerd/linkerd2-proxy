@@ -193,7 +193,7 @@ where
 impl<T, G: GetSpan<T>, S> Drop for Instrument<T, G, S> {
     fn drop(&mut self) {
         if let Some(span) = self.current_span.take() {
-            trace!(parent: span, "drop");
+            trace!(parent: &span, "drop");
         } else {
             let _span = self.get_span().entered();
             trace!("drop");
