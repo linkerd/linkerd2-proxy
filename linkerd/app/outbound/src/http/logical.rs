@@ -60,17 +60,12 @@ impl<E> Outbound<E> {
                 .clone()
                 .check_new_service::<Endpoint, http::Request<http::BoxBody>>()
                 .push_on_service(
-                    svc::layers()
-                        .push(http::BoxRequest::layer())
-                        .push(
-                            rt.metrics
-                                .proxy
-                                .stack
-                                .layer(stack_labels("http", "balance.endpoint")),
-                        )
-                        // Ensure individual endpoints are driven to readiness so that
-                        // the balancer need not drive them all directly.
-                        .push(svc::layer::mk(svc::SpawnReady::new)),
+                    svc::layers().push(http::BoxRequest::layer()).push(
+                        rt.metrics
+                            .proxy
+                            .stack
+                            .layer(stack_labels("http", "balance.endpoint")),
+                    ),
                 )
                 .check_new_service::<Endpoint, http::Request<_>>()
                 // Resolve the service to its endpoints and balance requests over them.
@@ -78,6 +73,12 @@ impl<E> Outbound<E> {
                 // If the balancer has been empty/unavailable, eagerly fail requests.
                 // When the balancer is in failfast, spawn the service in a background
                 // task so it becomes ready without new requests.
+                //
+                // We *don't* ensure that the endpoint is driven to readiness here, because this
+                // might cause us to continually attempt to reestablish connections without
+                // consulting discovery to see whether the endpoint has been removed. Instead, the
+                // endpoint layer spawns each _connection_ attempt on a background task, but the
+                // decision to attempt the connection must be driven by the balancer.
                 .push(resolve::layer(resolve, watchdog))
                 .push_on_service(
                     svc::layers()

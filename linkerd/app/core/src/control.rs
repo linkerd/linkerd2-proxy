@@ -89,10 +89,13 @@ impl Config {
             .push(self::client::layer())
             .push_on_service(svc::MapErr::layer(Into::into))
             .into_new_service()
-            .push_new_reconnect(self.connect.backoff)
-            // Ensure individual endpoints are driven to readiness so that the balancer need not
-            // drive them all directly.
+            // Ensure that connection is driven independently of the load balancer; but don't drive
+            // reconnection independently of the balancer. This ensures that new connections are
+            // only initiated when the balancer tries to move pending endpoints to ready (i.e. after
+            // checking for discovery updates); but we don't want to continually reconnect without
+            // checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
+            .push_new_reconnect(self.connect.backoff)
             .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
             .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_service(self::control::balance::layer())
