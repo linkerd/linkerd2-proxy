@@ -23,15 +23,18 @@ impl<T, N> NewService<T> for NewStripProxyError<N>
 where
     N: NewService<T>,
 {
-    type Service = http::strip_header::response::StripHeader<&'static str, N::Service>;
+    type Service = svc::Either<
+        N::Service,
+        http::strip_header::response::StripHeader<&'static str, N::Service>,
+    >;
 
     fn new_service(&self, target: T) -> Self::Service {
-        let header = if self.strip {
-            Some(L5D_PROXY_ERROR)
-        } else {
-            None
-        };
         let inner = self.inner.new_service(target);
-        http::StripHeader::response(header, inner)
+
+        if self.strip {
+            return svc::Either::B(http::StripHeader::response(L5D_PROXY_ERROR, inner));
+        };
+
+        svc::Either::A(inner)
     }
 }
