@@ -36,9 +36,7 @@ impl fmt::Display for ControlAddr {
 type BalanceBody =
     http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
 
-type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
-
-pub type Client = svc::Buffer<http::Request<tonic::body::BoxBody>, http::Response<RspBody>, Error>;
+pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
 impl Config {
     pub fn build<L>(
@@ -46,7 +44,15 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<L>,
-    ) -> svc::ArcNewService<(), Client>
+    ) -> svc::ArcNewService<
+        (),
+        impl svc::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<RspBody>,
+                Error = Error,
+                Future = impl Send,
+            > + Clone,
+    >
     where
         L: Clone + svc::Param<tls::client::Config> + Send + Sync + 'static,
     {
@@ -90,12 +96,14 @@ impl Config {
             // checking for discovery updates.
             .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
+            .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
             .push(self::resolve::layer(dns, resolve_backoff))
             .push_on_service(self::control::balance::layer())
             .into_new_service()
             .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
             .push_on_service(svc::layers().push_spawn_buffer(self.buffer_capacity))
+            .instrument(|c: &ControlAddr| tracing::info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
             .push(svc::ArcNewService::layer())
             .into_inner()
@@ -241,7 +249,7 @@ mod client {
 
     #[derive(Clone, Hash, Debug, Eq, PartialEq)]
     pub struct Target {
-        addr: SocketAddr,
+        pub(super) addr: SocketAddr,
         server_id: tls::ConditionalClientTls,
     }
 

@@ -9,6 +9,7 @@ use std::{
     task::{Context, Poll},
 };
 use tower::discover::Change;
+use tracing::trace;
 
 #[derive(Clone, Debug)]
 pub struct FromResolve<R, E> {
@@ -97,7 +98,7 @@ impl<R: TryStream, E> Discover<R, E> {
 impl<R, E> Stream for Discover<R, E>
 where
     R: TryStream<Ok = Update<E>>,
-    E: Clone,
+    E: Clone + std::fmt::Debug,
 {
     type Item = Result<Change<SocketAddr, E>, R::Error>;
 
@@ -105,21 +106,28 @@ where
         loop {
             let this = self.as_mut().project();
             if let Some(change) = this.pending.pop_front() {
+                trace!(?change, "Changed");
                 return Poll::Ready(Some(Ok(change)));
             }
 
+            trace!("poll");
             match ready!(this.resolution.try_poll_next(cx)) {
                 Some(update) => match update? {
                     Update::Reset(endpoints) => {
                         let active = endpoints.iter().map(|(a, _)| *a).collect::<HashSet<_>>();
+                        trace!(new = ?active, old = ?this.active, "Reset");
                         for addr in this.active.iter() {
                             // If the old addr is not in the new set, remove it.
                             if !active.contains(addr) {
+                                trace!(%addr, "Scheduling removal");
                                 this.pending.push_back(Change::Remove(*addr));
+                            } else {
+                                trace!(%addr, "Unchanged");
                             }
                         }
                         for (addr, endpoint) in endpoints.into_iter() {
                             if !this.active.contains(&addr) {
+                                trace!(%addr, "Scheduling addition");
                                 this.pending
                                     .push_back(Change::Insert(addr, endpoint.clone()));
                             }
@@ -128,6 +136,7 @@ where
                     }
                     Update::Add(endpoints) => {
                         for (addr, endpoint) in endpoints.into_iter() {
+                            trace!(%addr, "Scheduling addition");
                             this.active.insert(addr);
                             this.pending.push_back(Change::Insert(addr, endpoint));
                         }
@@ -135,11 +144,13 @@ where
                     Update::Remove(addrs) => {
                         for addr in addrs.into_iter() {
                             if this.active.remove(&addr) {
+                                trace!(%addr, "Scheduling removal");
                                 this.pending.push_back(Change::Remove(addr));
                             }
                         }
                     }
                     Update::DoesNotExist => {
+                        trace!("Scheduling removals");
                         this.pending.extend(this.active.drain().map(Change::Remove));
                     }
                 },

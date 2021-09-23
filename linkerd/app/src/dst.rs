@@ -3,8 +3,8 @@ use linkerd_app_core::{
     exp_backoff::{ExponentialBackoff, ExponentialBackoffStream},
     metrics,
     profiles::{self, DiscoveryRejected},
-    proxy::{api_resolve as api, identity::LocalCrtKey, resolve::recover},
-    svc::NewService,
+    proxy::{api_resolve as api, http, identity::LocalCrtKey, resolve::recover},
+    svc::{self, NewService},
     Error, Recover,
 };
 
@@ -15,15 +15,15 @@ pub struct Config {
 }
 
 /// Handles to destination service clients.
-pub struct Dst {
+pub struct Dst<S> {
     /// The address of the destination service, used for logging.
     pub addr: control::ControlAddr,
 
     /// Resolves profiles.
-    pub profiles: profiles::Client<BackoffUnlessInvalidArgument, control::Client>,
+    pub profiles: profiles::Client<BackoffUnlessInvalidArgument, S>,
 
     /// Resolves endpoints.
-    pub resolve: recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<control::Client>>,
+    pub resolve: recover::Resolve<BackoffUnlessInvalidArgument, api::Resolve<S>>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -37,7 +37,17 @@ impl Config {
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<LocalCrtKey>,
-    ) -> Result<Dst, Error> {
+    ) -> Result<
+        Dst<
+            impl svc::Service<
+                    http::Request<tonic::body::BoxBody>,
+                    Response = http::Response<control::RspBody>,
+                    Error = Error,
+                    Future = impl Send,
+                > + Clone,
+        >,
+        Error,
+    > {
         let addr = self.control.addr.clone();
         let backoff = BackoffUnlessInvalidArgument(self.control.connect.backoff);
         let svc = self.control.build(dns, metrics, identity).new_service(());

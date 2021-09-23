@@ -1336,7 +1336,6 @@ dependencies = [
  "futures",
  "linkerd-error",
  "linkerd-stack",
- "pin-project",
  "tower",
  "tracing",
 ]

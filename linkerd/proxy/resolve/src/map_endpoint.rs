@@ -107,6 +107,7 @@ where
     R: TryStream<Ok = resolve::Update<E>>,
     R::Error: Into<Error>,
     M: MapEndpoint<T, E>,
+    M::Out: std::fmt::Debug,
 {
     type Item = Result<resolve::Update<M::Out>, R::Error>;
 
@@ -135,6 +136,7 @@ where
             },
             None => return Poll::Ready(None),
         };
+        tracing::trace!(?update);
         Poll::Ready(Some(Ok(update)))
     }
 }
