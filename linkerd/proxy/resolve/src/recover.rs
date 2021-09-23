@@ -140,6 +140,7 @@ where
     R: resolve::Resolve<T>,
     R::Future: Unpin,
     R::Resolution: Unpin,
+    R::Endpoint: std::fmt::Debug,
     E: Recover,
     E::Backoff: Unpin,
 {
@@ -155,37 +156,41 @@ where
                 State::Connected {
                     ref mut resolution,
                     ref mut is_initial,
-                } => match ready!(resolution.try_poll_next_unpin(cx)) {
-                    Some(Ok(Update::Remove(_))) if *is_initial => {
-                        debug_assert!(false, "Remove must not be initial update");
-                        tracing::debug!("Ignoring Remove after connection");
-                        // Continue polling until a useful update is received.
-                    }
-                    Some(Ok(update)) => {
-                        let update = if *is_initial {
-                            *is_initial = false;
-                            match update {
-                                Update::Add(eps) => Update::Reset(eps),
-                                up => up,
+                } => {
+                    tracing::trace!("polling");
+                    match ready!(resolution.try_poll_next_unpin(cx)) {
+                        Some(Ok(Update::Remove(_))) if *is_initial => {
+                            debug_assert!(false, "Remove must not be initial update");
+                            tracing::debug!("Ignoring Remove after connection");
+                            // Continue polling until a useful update is received.
+                        }
+                        Some(Ok(update)) => {
+                            let update = if *is_initial {
+                                *is_initial = false;
+                                match update {
+                                    Update::Add(eps) => Update::Reset(eps),
+                                    up => up,
+                                }
+                            } else {
+                                update
+                            };
+                            tracing::trace!(?update);
+                            return Poll::Ready(Some(Ok(update)));
+                        }
+                        Some(Err(e)) => {
+                            this.inner.state = State::Recover {
+                                error: Some(e.into()),
+                                backoff: None,
                             }
-                        } else {
-                            update
-                        };
-                        return Poll::Ready(Some(Ok(update)));
-                    }
-                    Some(Err(e)) => {
-                        this.inner.state = State::Recover {
-                            error: Some(e.into()),
-                            backoff: None,
+                        }
+                        None => {
+                            this.inner.state = State::Recover {
+                                error: Some(Eos(()).into()),
+                                backoff: None,
+                            }
                         }
                     }
-                    None => {
-                        this.inner.state = State::Recover {
-                            error: Some(Eos(()).into()),
-                            backoff: None,
-                        }
-                    }
-                },
+                }
                 _ => {}
             }
 
