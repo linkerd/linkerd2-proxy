@@ -12,4 +12,3 @@ linkerd-error = { path = "../../error" }
 linkerd-stack = { path = ".." }
 tower = "0.4.8"
 tracing = "0.1.28"
-pin-project = "1"

@@ -27,7 +27,7 @@ impl<H> Inbound<H> {
             + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
             + Param<OrigDstAddr>,
-        T: Clone + Send + 'static,
+        T: Clone + Send + Unpin + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,
         HSvc: svc::Service<http::Request<http::BoxBody>, Response = http::Response<http::BoxBody>>
