@@ -1,11 +1,17 @@
 pub mod detect;
 mod endpoint;
 pub mod logical;
+mod proxy_connection_close;
 mod require_id_header;
 mod server;
+mod strip_proxy_error;
 
+use self::{
+    proxy_connection_close::ProxyConnectionClose, require_id_header::NewRequireIdentity,
+    strip_proxy_error::NewStripProxyError,
+};
+pub(crate) use self::{require_id_header::IdentityRequired, server::ServerRescue};
 use crate::tcp;
-use indexmap::IndexMap;
 pub use linkerd_app_core::proxy::http::*;
 use linkerd_app_core::{
     dst,
@@ -16,7 +22,7 @@ use linkerd_app_core::{
     transport_header::SessionProtocol,
     Addr, Conditional, CANONICAL_DST_HEADER,
 };
-use std::{net::SocketAddr, str::FromStr, sync::Arc};
+use std::{net::SocketAddr, str::FromStr};
 
 pub type Accept = crate::Accept<Version>;
 pub type Logical = crate::logical::Logical<Version>;
@@ -83,7 +89,7 @@ impl Logical {
         use linkerd_app_core::metrics::Direction;
         dst::Route {
             route,
-            target: logical.addr(),
+            addr: logical.logical_addr,
             direction: Direction::Out,
         }
     }
@@ -173,7 +179,7 @@ impl tap::Inspect for Endpoint {
         Some(self.addr.into())
     }
 
-    fn dst_labels<B>(&self, _: &Request<B>) -> Option<&IndexMap<String, String>> {
+    fn dst_labels<B>(&self, _: &Request<B>) -> Option<tap::Labels> {
         Some(self.metadata.labels())
     }
 
@@ -181,7 +187,7 @@ impl tap::Inspect for Endpoint {
         self.tls.clone()
     }
 
-    fn route_labels<B>(&self, req: &Request<B>) -> Option<Arc<IndexMap<String, String>>> {
+    fn route_labels<B>(&self, req: &Request<B>) -> Option<tap::Labels> {
         req.extensions()
             .get::<dst::Route>()
             .map(|r| r.route.labels().clone())

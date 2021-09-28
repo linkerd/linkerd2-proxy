@@ -40,7 +40,7 @@ impl Handle {
 
 impl<N: NewService<T>, T> NewService<T> for NewTrack<N> {
     type Service = Track<N::Service>;
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let track = self.track.upgrade();
         let inner = self.inner.new_service(target);
         tracing::trace!(is_tracked = track.is_some(), "new tracked service");

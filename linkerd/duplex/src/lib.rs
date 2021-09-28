@@ -3,7 +3,6 @@
 //! This module uses unsafe code to implement [`BufMut`].
 
 #![deny(warnings, rust_2018_idioms)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use bytes::{Buf, BufMut};
 use futures::ready;
@@ -288,7 +287,7 @@ fn write_zero() -> io::Error {
 impl CopyBuf {
     fn new() -> Self {
         CopyBuf {
-            buf: Box::new([0; 64 * 1024]),
+            buf: Box::new([0; 8 * 1024]),
             read_pos: 0,
             write_pos: 0,
         }

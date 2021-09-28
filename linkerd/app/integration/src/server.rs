@@ -2,7 +2,6 @@ use super::*;
 use futures::TryFuture;
 use http::Response;
 use linkerd_app_core::proxy::http::trace;
-use rustls::ServerConfig;
 use std::collections::HashMap;
 use std::future::Future;
 use std::io;
@@ -13,6 +12,7 @@ use std::task::{Context, Poll};
 use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 use tracing::instrument::Instrument;
 
@@ -253,10 +253,15 @@ impl Server {
                         tracing::trace!(?result, "serve done");
                         result
                     };
-                    tokio::spawn(cancelable(drain.clone(), f).instrument(span.clone()));
+                    tokio::spawn(
+                        cancelable(drain.clone(), f).instrument(span.clone().or_current()),
+                    );
                 }
             }
-            .instrument(tracing::info_span!("test_server", ?version, %addr, test = %thread_name())),
+            .instrument(
+                tracing::info_span!("test_server", ?version, %addr, test = %thread_name())
+                    .or_current(),
+            ),
         ));
 
         listening_rx.await.expect("listening_rx");

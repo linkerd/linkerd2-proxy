@@ -2,16 +2,15 @@
 
 pub use crate::proxy::http;
 use crate::{cache, Error};
-pub use linkerd_concurrency_limit::ConcurrencyLimit;
 use linkerd_error::Recover;
 use linkerd_exp_backoff::{ExponentialBackoff, ExponentialBackoffStream};
 pub use linkerd_reconnect::NewReconnect;
 pub use linkerd_stack::{
-    self as stack, layer, BoxNewService, BoxService, BoxServiceLayer, Either, Fail, Filter,
-    MapErrLayer, MapTargetLayer, NewRouter, NewService, Param, Predicate, UnwrapOr,
+    self as stack, layer, ArcNewService, BoxService, BoxServiceLayer, Either, ExtractParam, Fail,
+    FailFast, Filter, InsertParam, MapErr, MapTargetLayer, NewRouter, NewService, Param, Predicate,
+    UnwrapOr,
 };
 pub use linkerd_stack_tracing::{NewInstrument, NewInstrumentLayer};
-pub use linkerd_timeout::{self as timeout, FailFast};
 use std::{
     task::{Context, Poll},
     time::Duration,
@@ -21,7 +20,10 @@ use tower::{
     layer::util::{Identity, Stack as Pair},
     make::MakeService,
 };
-pub use tower::{layer::Layer, service_fn as mk, spawn_ready::SpawnReady, Service, ServiceExt};
+pub use tower::{
+    layer::Layer, limit::GlobalConcurrencyLimitLayer as ConcurrencyLimitLayer, service_fn as mk,
+    spawn_ready::SpawnReady, Service, ServiceExt,
+};
 
 #[derive(Copy, Clone, Debug)]
 pub struct AlwaysReconnect(ExponentialBackoff);
@@ -31,7 +33,11 @@ pub type Buffer<Req, Rsp, E> = TowerBuffer<BoxService<Req, Rsp, E>, Req>;
 pub type BoxHttp<B = http::BoxBody> =
     BoxService<http::Request<B>, http::Response<http::BoxBody>, Error>;
 
-pub type BoxNewHttp<T, B = http::BoxBody> = BoxNewService<T, BoxHttp<B>>;
+pub type ArcNewHttp<T, B = http::BoxBody> = ArcNewService<T, BoxHttp<B>>;
+
+pub type BoxTcp<I> = BoxService<I, (), Error>;
+
+pub type ArcNewTcp<T, I> = ArcNewService<T, BoxTcp<I>>;
 
 #[derive(Clone, Debug)]
 pub struct Layers<L>(L);
@@ -58,7 +64,7 @@ pub struct IdentityProxy(());
 
 impl<T> NewService<T> for IdentityProxy {
     type Service = ();
-    fn new_service(&mut self, _: T) -> Self::Service {}
+    fn new_service(&self, _: T) -> Self::Service {}
 }
 
 // === impl Layers ===
@@ -85,8 +91,8 @@ impl<L> Layers<L> {
             .push(BufferLayer::new(capacity))
     }
 
-    pub fn push_on_response<U>(self, layer: U) -> Layers<Pair<L, stack::OnResponseLayer<U>>> {
-        self.push(stack::OnResponseLayer::new(layer))
+    pub fn push_on_service<U>(self, layer: U) -> Layers<Pair<L, stack::OnServiceLayer<U>>> {
+        self.push(stack::OnServiceLayer::new(layer))
     }
 
     pub fn push_instrument<G: Clone>(self, get_span: G) -> Layers<Pair<L, NewInstrumentLayer<G>>> {
@@ -164,16 +170,36 @@ impl<S> Stack<S> {
 
     /// Assuming `S` implements `NewService` or `MakeService`, applies the given
     /// `L`-typed layer on each service produced by `S`.
-    pub fn push_on_response<L: Clone>(self, layer: L) -> Stack<stack::OnResponse<L, S>> {
-        self.push(stack::OnResponseLayer::new(layer))
+    pub fn push_on_service<L: Clone>(self, layer: L) -> Stack<stack::OnService<L, S>> {
+        self.push(stack::OnServiceLayer::new(layer))
     }
 
-    pub fn push_timeout(self, timeout: Duration) -> Stack<tower::timeout::Timeout<S>> {
-        self.push(tower::timeout::TimeoutLayer::new(timeout))
+    /// Wraps the inner service with a response timeout such that timeout errors are surfaced as a
+    /// `ConnectTimeout` error.
+    ///
+    /// Note that any timeouts errors from the inner service will be wrapped as well.
+    pub fn push_connect_timeout(
+        self,
+        timeout: Duration,
+    ) -> Stack<MapErr<stack::Timeout<S>, impl FnOnce(Error) -> Error + Clone>> {
+        self.push(stack::Timeout::layer(timeout))
+            .push(MapErr::layer(move |err: Error| {
+                if err.is::<stack::TimeoutError>() {
+                    crate::errors::ConnectTimeout(timeout).into()
+                } else {
+                    err
+                }
+            }))
     }
 
     pub fn push_http_insert_target<P>(self) -> Stack<http::insert::NewInsert<P, S>> {
         self.push(http::insert::NewInsert::layer())
+    }
+
+    pub fn push_http_response_insert_target<P>(
+        self,
+    ) -> Stack<http::insert::NewResponseInsert<P, S>> {
+        self.push(http::insert::NewResponseInsert::layer())
     }
 
     pub fn push_cache<T>(self, idle: Duration) -> Stack<cache::Cache<T, S>>
@@ -316,7 +342,7 @@ where
 {
     type Service = N::Service;
 
-    fn new_service(&mut self, t: T) -> Self::Service {
+    fn new_service(&self, t: T) -> Self::Service {
         self.0.new_service(t)
     }
 }

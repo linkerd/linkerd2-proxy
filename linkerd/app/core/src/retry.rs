@@ -7,6 +7,7 @@ use futures::future;
 use linkerd_error::Error;
 use linkerd_http_classify::{Classify, ClassifyEos, ClassifyResponse};
 use linkerd_http_retry::ReplayBody;
+use linkerd_proxy_http::ClientHandle;
 use linkerd_retry as retry;
 use linkerd_stack::{layer, Either, Param};
 use std::sync::Arc;
@@ -70,10 +71,10 @@ impl RetryPolicy {
         // only if the request contains a `content-length` header and the
         // content length is >= 64 kb.
         let has_body = !req.body().is_end_stream();
-        if has_body && content_length(&req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
+        if has_body && content_length(req).unwrap_or(usize::MAX) > MAX_BUFFERED_BYTES {
             tracing::trace!(
                 req.has_body = has_body,
-                req.content_length = ?content_length(&req),
+                req.content_length = ?content_length(req),
                 "not retryable",
             );
             return false;
@@ -81,7 +82,7 @@ impl RetryPolicy {
 
         tracing::trace!(
             req.has_body = has_body,
-            req.content_length = ?content_length(&req),
+            req.content_length = ?content_length(req),
             "retryable",
         );
         true
@@ -123,7 +124,7 @@ where
     }
 
     fn clone_request(&self, req: &http::Request<A>) -> Option<http::Request<A>> {
-        let can_retry = self.can_retry(&req);
+        let can_retry = self.can_retry(req);
         debug_assert!(
             can_retry,
             "The retry policy attempted to clone an un-retryable request. This is unexpected."
@@ -137,6 +138,12 @@ where
         *clone.uri_mut() = req.uri().clone();
         *clone.headers_mut() = req.headers().clone();
         *clone.version_mut() = req.version();
+
+        // The HTTP server sets a ClientHandle with the client's address and a means to close the
+        // server-side connection.
+        if let Some(client_handle) = req.extensions().get::<ClientHandle>().cloned() {
+            clone.extensions_mut().insert(client_handle);
+        }
 
         Some(clone)
     }

@@ -36,21 +36,24 @@ impl fmt::Display for ControlAddr {
 type BalanceBody =
     http::balance::PendingUntilFirstDataBody<tower::load::peak_ewma::Handle, hyper::Body>;
 
-type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
-
-pub type Client<B> = svc::Buffer<http::Request<B>, http::Response<RspBody>, Error>;
+pub type RspBody = linkerd_http_metrics::requests::ResponseBody<BalanceBody, classify::Eos>;
 
 impl Config {
-    pub fn build<B, L>(
+    pub fn build<L>(
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
         identity: Option<L>,
-    ) -> svc::BoxNewService<(), Client<B>>
+    ) -> svc::ArcNewService<
+        (),
+        impl svc::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<RspBody>,
+                Error = Error,
+                Future = impl Send,
+            > + Clone,
+    >
     where
-        B: http::HttpBody + Send + 'static,
-        B::Data: Send,
-        B::Error: Into<Error> + Send + Sync + 'static,
         L: Clone + svc::Param<tls::client::Config> + Send + Sync + 'static,
     {
         let addr = self.addr;
@@ -82,22 +85,27 @@ impl Config {
 
         svc::stack(ConnectTcp::new(self.connect.keepalive))
             .push(tls::Client::layer(identity))
-            .push_timeout(self.connect.timeout)
+            .push_connect_timeout(self.connect.timeout)
             .push(self::client::layer())
-            .push_on_response(svc::MapErrLayer::new(Into::into))
+            .push_on_service(svc::MapErr::layer(Into::into))
             .into_new_service()
+            // Ensure that connection is driven independently of the load balancer; but don't drive
+            // reconnection independently of the balancer. This ensures that new connections are
+            // only initiated when the balancer tries to move pending endpoints to ready (i.e. after
+            // checking for discovery updates); but we don't want to continually reconnect without
+            // checking for discovery updates.
+            .push_on_service(svc::layer::mk(svc::SpawnReady::new))
             .push_new_reconnect(self.connect.backoff)
-            // Ensure individual endpoints are driven to readiness so that the balancer need not
-            // drive them all directly.
-            .push_on_response(svc::layer::mk(svc::SpawnReady::new))
+            .instrument(|t: &self::client::Target| tracing::info_span!("endpoint", addr = %t.addr))
             .push(self::resolve::layer(dns, resolve_backoff))
-            .push_on_response(self::control::balance::layer())
+            .push_on_service(self::control::balance::layer())
             .into_new_service()
-            .push(metrics.to_layer::<classify::Response, _>())
+            .push(metrics.to_layer::<classify::Response, _, _>())
             .push(self::add_origin::layer())
-            .push_on_response(svc::layers().push_spawn_buffer(self.buffer_capacity))
+            .push_on_service(svc::layers().push_spawn_buffer(self.buffer_capacity))
+            .instrument(|c: &ControlAddr| tracing::info_span!("controller", addr = %c.addr))
             .push_map_target(move |()| addr.clone())
-            .push(svc::BoxNewService::layer())
+            .push(svc::ArcNewService::layer())
             .into_inner()
     }
 }
@@ -128,7 +136,7 @@ mod add_origin {
     impl<N: NewService<ControlAddr>> NewService<ControlAddr> for NewAddOrigin<N> {
         type Service = AddOrigin<N::Service>;
 
-        fn new_service(&mut self, target: ControlAddr) -> Self::Service {
+        fn new_service(&self, target: ControlAddr) -> Self::Service {
             AddOrigin {
                 authority: target.addr.to_http_authority(),
                 inner: self.inner.new_service(target),
@@ -241,7 +249,7 @@ mod client {
 
     #[derive(Clone, Hash, Debug, Eq, PartialEq)]
     pub struct Target {
-        addr: SocketAddr,
+        pub(super) addr: SocketAddr,
         server_id: tls::ConditionalClientTls,
     }
 

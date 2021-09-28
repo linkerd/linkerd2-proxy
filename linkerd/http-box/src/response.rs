@@ -3,7 +3,7 @@
 use crate::BoxBody;
 use futures::{future, TryFutureExt};
 use linkerd_error::Error;
-use linkerd_stack::layer;
+use linkerd_stack::{layer, Proxy, Service};
 use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
@@ -15,9 +15,9 @@ impl<S> BoxResponse<S> {
     }
 }
 
-impl<S, Req, B> tower::Service<Req> for BoxResponse<S>
+impl<S, Req, B> Service<Req> for BoxResponse<S>
 where
-    S: tower::Service<Req, Response = http::Response<B>>,
+    S: Service<Req, Response = http::Response<B>>,
     B: http_body::Body + Send + 'static,
     B::Data: Send + 'static,
     B::Error: Into<Error> + 'static,
@@ -34,5 +34,24 @@ where
     #[inline]
     fn call(&mut self, req: Req) -> Self::Future {
         self.0.call(req).map_ok(|rsp| rsp.map(BoxBody::new))
+    }
+}
+
+impl<Req, B, S, P> Proxy<Req, S> for BoxResponse<P>
+where
+    B: http_body::Body + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
+    S: Service<P::Request>,
+    P: Proxy<Req, S, Response = http::Response<B>>,
+{
+    type Request = P::Request;
+    type Response = http::Response<BoxBody>;
+    type Error = P::Error;
+    type Future = future::MapOk<P::Future, fn(P::Response) -> Self::Response>;
+
+    #[inline]
+    fn proxy(&self, inner: &mut S, req: Req) -> Self::Future {
+        self.0.proxy(inner, req).map_ok(|rsp| rsp.map(BoxBody::new))
     }
 }

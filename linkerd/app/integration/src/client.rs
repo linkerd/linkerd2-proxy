@@ -1,11 +1,11 @@
 use super::*;
 use linkerd_app_core::proxy::http::trace;
-use rustls::ClientConfig;
 use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio_rustls::rustls::ClientConfig;
 use tracing::info_span;
 use tracing::instrument::Instrument;
 use webpki::{DNSName, DNSNameRef};

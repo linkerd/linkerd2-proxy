@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use futures::{future, prelude::*, stream};
 use linkerd_addr::{Addr, NameAddr};
@@ -72,6 +71,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
     //
     // Note: this can't be an async_stream, due to pinniness.
     let (addrs, expiry) = dns.resolve_addrs(na.name(), na.port()).await?;
+    debug!(?addrs, name = %na);
     let (tx, rx) = mpsc::channel(1);
     tokio::spawn(
         async move {
@@ -85,7 +85,7 @@ async fn resolution(dns: dns::Resolver, na: NameAddr) -> Result<UpdateStream, Er
             loop {
                 match dns.resolve_addrs(na.name(), na.port()).await {
                     Ok((addrs, expiry)) => {
-                        debug!(?addrs);
+                        debug!(?addrs, name = %na);
                         let eps = addrs.into_iter().map(|a| (a, ())).collect();
                         if tx.send(Ok(Update::Reset(eps))).await.is_err() {
                             trace!("Closed");

@@ -1,6 +1,5 @@
 use crate::Config;
 pub use futures::prelude::*;
-pub use ipnet::IpNet;
 use linkerd_app_core::{
     config, drain, exp_backoff, metrics,
     proxy::{
@@ -8,14 +7,15 @@ use linkerd_app_core::{
         tap,
     },
     transport::{Keepalive, ListenAddr},
-    IpMatch, ProxyRuntime,
+    IpMatch, IpNet, ProxyRuntime,
 };
 pub use linkerd_app_test as support;
 use std::{str::FromStr, time::Duration};
 
-pub fn default_config() -> Config {
+pub(crate) fn default_config() -> Config {
     Config {
         ingress_mode: false,
+        emit_headers: true,
         allow_discovery: IpMatch::new(Some(IpNet::from_str("0.0.0.0/0").unwrap())).into(),
         proxy: config::ProxyConfig {
             server: config::ServerConfig {
@@ -44,16 +44,17 @@ pub fn default_config() -> Config {
             max_in_flight_requests: 10_000,
             detect_protocol_timeout: Duration::from_secs(3),
         },
+        inbound_ips: Default::default(),
     }
 }
 
-pub fn runtime() -> (ProxyRuntime, drain::Signal) {
-    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
+pub(crate) fn runtime() -> (ProxyRuntime, drain::Signal) {
     let (drain_tx, drain) = drain::channel();
     let (tap, _) = tap::new();
+    let (metrics, _) = metrics::Metrics::new(std::time::Duration::from_secs(10));
     let runtime = ProxyRuntime {
         identity: None,
-        metrics: metrics.outbound,
+        metrics: metrics.proxy,
         tap,
         span_sink: None,
         drain,

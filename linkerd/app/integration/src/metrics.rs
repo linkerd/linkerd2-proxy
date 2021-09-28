@@ -67,9 +67,14 @@ impl MetricMatch {
             .collect::<Vec<&str>>();
         let mut candidates = Vec::new();
 
+        let num_expected_labels = self.labels.len();
+
         for &metric in &metrics {
             let span = tracing::debug_span!("checking", ?metric);
             let _e = span.enter();
+            // Count the number of expected labels matched in this metric, so
+            // that we can ensure all expected labels were found.
+            let mut matched_labels = 0;
 
             if let Some(labels) = metric
                 .split('{')
@@ -126,19 +131,34 @@ impl MetricMatch {
                     // checked that there are quotation marks, on both sides, so
                     // we know the first and last chars are quotes.
                     let value = &value[1..value.len() - 1];
+                    let expected_value = self.labels.get(key);
+                    tracing::trace!(key, value, ?expected_value);
 
-                    if let Some(expected_value) = self.labels.get(key) {
+                    if let Some(expected_value) = expected_value {
                         if expected_value != value {
-                            tracing::trace!(key, value, ?expected_value, "label is not a match!");
+                            tracing::debug!(key, value, ?expected_value, "label is not a match!");
                             // The label isn't a match, but check all the labels
                             // in this metric so we can error on invalid metrics
                             // as well.
                             matched = false;
+                        } else {
+                            matched_labels += 1;
                         }
                     }
                 }
 
-                tracing::debug!(matched, "checked all labels");
+                tracing::debug!(
+                    matched,
+                    matched_labels,
+                    num_expected_labels,
+                    "checked all labels"
+                );
+
+                if matched_labels != num_expected_labels {
+                    tracing::debug!("did not find all expected labels");
+                    matched = false;
+                }
+
                 if matched {
                     candidates.push(metric);
                 }

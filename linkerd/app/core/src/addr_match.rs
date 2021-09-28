@@ -1,7 +1,7 @@
 use ipnet::IpNet;
 use linkerd_addr::Addr;
 use linkerd_dns::{Name, Suffix};
-use std::{fmt, net::IpAddr, sync::Arc};
+use std::{fmt, iter::FromIterator, net::IpAddr, sync::Arc};
 
 #[derive(Clone, Debug, Default)]
 pub struct AddrMatch {
@@ -23,17 +23,24 @@ impl AddrMatch {
         nets: impl IntoIterator<Item = IpNet>,
     ) -> Self {
         Self {
-            names: NameMatch::new(suffixes),
+            names: suffixes.into_iter().collect(),
             nets: IpMatch::new(nets),
         }
     }
 
+    #[inline]
     pub fn names(&self) -> &NameMatch {
         &self.names
     }
 
+    #[inline]
     pub fn nets(&self) -> &IpMatch {
         &self.nets
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.nets.is_empty()
     }
 
     #[inline]
@@ -54,7 +61,7 @@ impl From<IpMatch> for AddrMatch {
     fn from(nets: IpMatch) -> Self {
         Self {
             nets,
-            names: NameMatch::new(None),
+            names: NameMatch::default(),
         }
     }
 }
@@ -74,17 +81,24 @@ impl From<AddrMatch> for IpMatch {
     }
 }
 
+// === impl NameMatch ===
+
 impl From<AddrMatch> for NameMatch {
     fn from(addrs: AddrMatch) -> Self {
         addrs.names
     }
 }
 
-// === impl NameMatch ===
+impl FromIterator<Suffix> for NameMatch {
+    fn from_iter<T: IntoIterator<Item = Suffix>>(iter: T) -> Self {
+        Self(Arc::new(iter.into_iter().collect()))
+    }
+}
 
 impl NameMatch {
-    pub fn new(suffixes: impl IntoIterator<Item = Suffix>) -> Self {
-        Self(Arc::new(suffixes.into_iter().collect()))
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     #[inline]
@@ -104,6 +118,11 @@ impl fmt::Display for NameMatch {
 impl IpMatch {
     pub fn new(nets: impl IntoIterator<Item = IpNet>) -> Self {
         Self(Arc::new(nets.into_iter().collect()))
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     #[inline]

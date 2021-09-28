@@ -1,5 +1,5 @@
 use crate::{endpoint::Endpoint, logical::Logical, tcp, transport::OrigDstAddr, Outbound};
-use linkerd_app_core::{io, profiles, svc, Error, Never};
+use linkerd_app_core::{io, profiles, svc, Error, Infallible};
 use std::fmt;
 
 impl<S> Outbound<S> {
@@ -13,7 +13,7 @@ impl<S> Outbound<S> {
     pub fn push_switch_logical<T, I, N, NSvc, SSvc>(
         self,
         logical: N,
-    ) -> Outbound<svc::BoxNewService<(Option<profiles::Receiver>, T), svc::BoxService<I, (), Error>>>
+    ) -> Outbound<svc::ArcNewTcp<(Option<profiles::Receiver>, T), I>>
     where
         Self: Clone + 'static,
         T: svc::Param<OrigDstAddr> + Clone + Send + Sync + 'static,
@@ -26,51 +26,43 @@ impl<S> Outbound<S> {
         SSvc::Future: Send,
     {
         let no_tls_reason = self.no_tls_reason();
-        let Self {
-            config,
-            runtime,
-            stack: endpoint,
-        } = self;
+        self.map_stack(|config, _, endpoint| {
+            let inbound_ips = config.inbound_ips.clone();
+            endpoint
+                .push_switch(
+                    move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Infallible> {
+                        if let Some(rx) = profile {
+                            // If the profile provides an endpoint, then the target is single endpoint and
+                            // not a logical/load-balanced service.
+                            if let Some((addr, metadata)) = rx.endpoint() {
+                                return Ok(svc::Either::A(Endpoint::from_metadata(
+                                    addr,
+                                    metadata,
+                                    no_tls_reason,
+                                    rx.is_opaque_protocol(),
+                                    &*inbound_ips,
+                                )));
+                            }
 
-        let stack = endpoint
-            .push_switch(
-                move |(profile, target): (Option<profiles::Receiver>, T)| -> Result<_, Never> {
-                    if let Some(rx) = profile {
-                        // If the profile provides an endpoint, then the target is single endpoint and
-                        // not a logical/load-balanced service.
-                        if let Some((addr, metadata)) = rx.endpoint() {
-                            return Ok(svc::Either::A(Endpoint::from_metadata(
-                                addr,
-                                metadata,
-                                no_tls_reason,
-                                rx.is_opaque_protocol(),
-                            )));
+                            // Otherwise, if the profile provides a (named) logical address, then we build a
+                            // logical stack so we apply routes, traffic splits, and load balancing.
+                            if let Some(logical_addr) = rx.logical_addr() {
+                                return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
+                            }
                         }
 
-                        // Otherwise, if the profile provides a (named) logical address, then we build a
-                        // logical stack so we apply routes, traffic splits, and load balancing.
-                        if let Some(logical_addr) = rx.logical_addr() {
-                            return Ok(svc::Either::B(Logical::new(logical_addr, rx)));
-                        }
-                    }
-
-                    // If there was no profile or it didn't include any useful metadata, create a bare
-                    // endpoint from the original destination address.
-                    Ok(svc::Either::A(Endpoint::forward(
-                        target.param(),
-                        no_tls_reason,
-                    )))
-                },
-                logical,
-            )
-            .push_on_response(svc::BoxService::layer())
-            .push(svc::BoxNewService::layer());
-
-        Outbound {
-            config,
-            runtime,
-            stack,
-        }
+                        // If there was no profile or it didn't include any useful metadata, create a bare
+                        // endpoint from the original destination address.
+                        Ok(svc::Either::A(Endpoint::forward(
+                            target.param(),
+                            no_tls_reason,
+                        )))
+                    },
+                    logical,
+                )
+                .push_on_service(svc::BoxService::layer())
+                .push(svc::ArcNewService::layer())
+        })
     }
 }
 
@@ -102,7 +94,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -125,7 +117,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(endpoint)
             .push_switch_logical(svc::Fail::<_, WrongStack>::default())
             .into_inner();
@@ -161,7 +153,7 @@ mod tests {
         };
 
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(svc::Fail::<_, WrongStack>::default())
             .push_switch_logical(logical)
             .into_inner();

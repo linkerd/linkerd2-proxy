@@ -14,7 +14,7 @@ http = "0.2"
 linkerd-error = { path = "../error" }
 pin-project = "1"
 parking_lot = "0.11"
-tracing = "0.1.23"
+tracing = "0.1.28"
 thiserror = "1"
 
 [dev-dependencies]

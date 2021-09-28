@@ -1,13 +1,16 @@
-use super::{glue::UpgradeBody, h1, h2, upgrade};
+use super::{h1, h2, upgrade};
 use futures::{future, prelude::*};
 use http::header::{HeaderValue, TRANSFER_ENCODING};
-use linkerd_error::Error;
+use hyper::body::HttpBody;
+use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use linkerd_stack::layer;
 use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use tracing::{debug, trace, warn};
 
 pub const L5D_ORIG_PROTO: &str = "l5d-orig-proto";
@@ -19,6 +22,16 @@ pub struct Upgrade<C, T, B> {
     h2: h2::Connection<B>,
 }
 
+#[derive(Clone, Copy, Debug, Error)]
+#[error("upgraded connection failed with HTTP/2 reset: {0}")]
+pub struct DowngradedH2Error(h2::Reason);
+
+#[pin_project::pin_project]
+#[derive(Debug, Default)]
+pub struct UpgradeResponseBody {
+    inner: hyper::Body,
+}
+
 /// Downgrades HTTP2 requests that were previousl upgraded to their original
 /// protocol.
 #[derive(Clone, Debug)]
@@ -26,7 +39,7 @@ pub struct Downgrade<S> {
     inner: S,
 }
 
-// ==== impl Upgrade =====
+// === impl Upgrade ===
 
 impl<C, T, B> Upgrade<C, T, B> {
     pub(crate) fn new(http1: h1::Client<C, T, B>, h2: h2::Connection<B>) -> Self {
@@ -45,23 +58,20 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<UpgradeBody>;
-    type Error = hyper::Error;
-    type Future = Pin<
-        Box<
-            dyn Future<Output = Result<http::Response<UpgradeBody>, hyper::Error>> + Send + 'static,
-        >,
-    >;
+    type Response = http::Response<BoxBody>;
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + Send + 'static>>;
 
+    #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.h2.poll_ready(cx)
+        self.h2.poll_ready(cx).map_err(downgrade_h2_error)
     }
 
     fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         debug_assert!(req.version() != http::Version::HTTP_2);
         if req.extensions().get::<upgrade::Http11Upgrade>().is_some() {
             debug!("Skipping orig-proto upgrade due to HTTP/1.1 upgrade");
-            return self.http1.request(req);
+            return Box::pin(self.http1.request(req).map_ok(|rsp| rsp.map(BoxBody::new)));
         }
 
         let orig_version = req.version();
@@ -89,28 +99,83 @@ where
 
         *req.version_mut() = http::Version::HTTP_2;
 
-        Box::pin(self.h2.call(req).map_ok(move |mut rsp| {
-            let version = rsp
-                .headers_mut()
-                .remove(L5D_ORIG_PROTO)
-                .and_then(|orig_proto| {
-                    if orig_proto == "HTTP/1.1" {
-                        Some(http::Version::HTTP_11)
-                    } else if orig_proto == "HTTP/1.0" {
-                        Some(http::Version::HTTP_10)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(orig_version);
-            trace!(?version, "Downgrading response");
-            *rsp.version_mut() = version;
-            rsp.map(UpgradeBody::from)
-        }))
+        Box::pin(
+            self.h2
+                .call(req)
+                .map_err(downgrade_h2_error)
+                .map_ok(move |mut rsp| {
+                    let version = rsp
+                        .headers_mut()
+                        .remove(L5D_ORIG_PROTO)
+                        .and_then(|orig_proto| {
+                            if orig_proto == "HTTP/1.1" {
+                                Some(http::Version::HTTP_11)
+                            } else if orig_proto == "HTTP/1.0" {
+                                Some(http::Version::HTTP_10)
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(orig_version);
+                    trace!(?version, "Downgrading response");
+                    *rsp.version_mut() = version;
+                    rsp.map(|inner| BoxBody::new(UpgradeResponseBody { inner }))
+                }),
+        )
     }
 }
 
-// ===== impl Downgrade =====
+/// Handles HTTP/2 client errors for HTTP/1.1 requests by wrapping the error type. This
+/// simplifies error handling elsewhere so that HTTP/2 errors can only be encountered when the
+/// original request was HTTP/2.
+fn downgrade_h2_error(error: hyper::Error) -> Error {
+    use std::error::Error;
+
+    let mut cause = error.source();
+    while let Some(e) = cause {
+        if let Some(e) = e.downcast_ref::<h2::H2Error>() {
+            if let Some(reason) = e.reason() {
+                return DowngradedH2Error(reason).into();
+            }
+        }
+
+        cause = error.source();
+    }
+
+    error.into()
+}
+
+// === impl UpgradeResponseBody ===
+
+impl HttpBody for UpgradeResponseBody {
+    type Data = bytes::Bytes;
+    type Error = Error;
+
+    #[inline]
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn poll_data(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        Pin::new(self.project().inner)
+            .poll_data(cx)
+            .map_err(downgrade_h2_error)
+    }
+
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
+        Pin::new(self.project().inner)
+            .poll_trailers(cx)
+            .map_err(downgrade_h2_error)
+    }
+}
+
+// === impl Downgrade ===
 
 impl<S> Downgrade<S> {
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Copy + Clone {

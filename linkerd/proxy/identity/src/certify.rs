@@ -1,4 +1,4 @@
-use http_body::Body as HttpBody;
+use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::Error;
 use linkerd_identity as id;
@@ -9,13 +9,10 @@ use pin_project::pin_project;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 use tokio::sync::watch;
 use tokio::time::{self, Sleep};
-use tonic::{
-    self as grpc,
-    body::{Body, BoxBody},
-    client::GrpcService,
-};
+use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, error, trace};
 
 /// Configures the Identity service and local identity.
@@ -46,8 +43,9 @@ pub struct LocalCrtKey {
 #[derive(Debug)]
 pub struct AwaitCrt(Option<LocalCrtKey>);
 
-#[derive(Copy, Clone, Debug)]
-pub struct LostDaemon;
+#[derive(Copy, Clone, Debug, Error)]
+#[error("identity initialization failed")]
+pub struct LostDaemon(());
 
 pub type CrtKeySender = watch::Sender<Option<id::CrtKey>>;
 
@@ -84,13 +82,13 @@ impl Config {
 // === impl Daemon ===
 
 impl Daemon {
-    pub async fn run<N, S>(self, mut new_client: N)
+    pub async fn run<N, S>(self, new_client: N)
     where
         N: NewService<(), Service = S>,
         S: GrpcService<BoxBody>,
-        S::ResponseBody: Send + 'static,
+        S::ResponseBody: Send + Sync + 'static,
         <S::ResponseBody as Body>::Data: Send,
-        <S::ResponseBody as HttpBody>::Error: Into<Error> + Send,
+        <S::ResponseBody as Body>::Error: Into<Error> + Send,
     {
         let Self {
             crt_key_watch,
@@ -192,7 +190,7 @@ impl LocalCrtKey {
         while self.crt_key.borrow().is_none() {
             // If the sender is dropped, the daemon task has ended.
             if self.crt_key.changed().await.is_err() {
-                return Err(LostDaemon);
+                return Err(LostDaemon(()));
             }
         }
         Ok(self)

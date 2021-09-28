@@ -1,9 +1,9 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc, time::SystemTime};
 use thiserror::Error;
+use tokio_rustls::rustls;
 use tracing::debug;
 
 #[cfg(feature = "rustls-tls")]

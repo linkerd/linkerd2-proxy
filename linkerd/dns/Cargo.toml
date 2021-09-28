@@ -11,13 +11,7 @@ futures = { version = "0.3", default-features = false }
 linkerd-dns-name = { path = "./name" }
 linkerd-error = { path = "../error" }
 thiserror = "1.0"
-tracing = "0.1.23"
+tracing = "0.1.28"
+trust-dns-resolver = "0.21.0-alpha.2"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 pin-project = "1"
-
-[dependencies.trust-dns-resolver]
-# Pinned until 0.21.0 is released with
-# https://github.com/bluejekyll/trust-dns/commit/6dfc6713.
-version = "=0.20.1"
-default-features = false
-features = ["system-config", "tokio-runtime"]

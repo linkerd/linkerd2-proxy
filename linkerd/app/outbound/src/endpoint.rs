@@ -5,9 +5,14 @@ use linkerd_app_core::{
     proxy::{api_resolve::Metadata, resolve::map_endpoint::MapEndpoint},
     svc, tls,
     transport::{self, addrs::*},
-    transport_header, Conditional, Error,
+    transport_header, Conditional,
 };
-use std::{fmt, net::SocketAddr};
+use std::{
+    collections::HashSet,
+    fmt,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
 pub struct Endpoint<P> {
@@ -19,9 +24,10 @@ pub struct Endpoint<P> {
     pub opaque_protocol: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct FromMetadata {
     pub identity_disabled: bool,
+    pub inbound_ips: Arc<HashSet<IpAddr>>,
 }
 
 // === impl Endpoint ===
@@ -38,15 +44,25 @@ impl Endpoint<()> {
         }
     }
 
-    pub(crate) fn from_metadata(
+    pub fn from_metadata(
         addr: impl Into<SocketAddr>,
-        metadata: Metadata,
+        mut metadata: Metadata,
         reason: tls::NoClientTls,
         opaque_protocol: bool,
+        inbound_ips: &HashSet<IpAddr>,
     ) -> Self {
+        let addr: SocketAddr = addr.into();
+        let tls = if inbound_ips.contains(&addr.ip()) {
+            metadata.clear_upgrade();
+            tracing::debug!(%addr, ?metadata, ?addr, ?inbound_ips, "Target is local");
+            tls::ConditionalClientTls::None(tls::NoClientTls::Loopback)
+        } else {
+            FromMetadata::client_tls(&metadata, reason)
+        };
+
         Self {
-            addr: Remote(ServerAddr(addr.into())),
-            tls: FromMetadata::client_tls(&metadata, reason),
+            addr: Remote(ServerAddr(addr)),
+            tls,
             metadata,
             logical_addr: None,
             opaque_protocol,
@@ -96,13 +112,12 @@ impl<P> svc::Param<Option<http::AuthorityOverride>> for Endpoint<P> {
 
 impl<P> svc::Param<transport::labels::Key> for Endpoint<P> {
     fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::OutboundConnect(self.param())
+        transport::labels::Key::OutboundClient(self.param())
     }
 }
 
 impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
     fn param(&self) -> metrics::OutboundEndpointLabels {
-        let target_addr = self.addr.into();
         let authority = self
             .logical_addr
             .as_ref()
@@ -111,7 +126,7 @@ impl<P> svc::Param<metrics::OutboundEndpointLabels> for Endpoint<P> {
             authority,
             labels: metrics::prefix_labels("dst", self.metadata.labels().iter()),
             server_id: self.tls.clone(),
-            target_addr,
+            target_addr: self.addr.into(),
         }
     }
 }
@@ -132,7 +147,6 @@ impl<P: std::hash::Hash> std::hash::Hash for Endpoint<P> {
 }
 
 // === EndpointFromMetadata ===
-
 impl FromMetadata {
     fn client_tls(metadata: &Metadata, reason: tls::NoClientTls) -> tls::ConditionalClientTls {
         // If we're transporting an opaque protocol OR we're communicating with
@@ -167,11 +181,18 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
         &self,
         concrete: &Concrete<P>,
         addr: SocketAddr,
-        metadata: Metadata,
+        mut metadata: Metadata,
     ) -> Self::Out {
         tracing::trace!(%addr, ?metadata, ?concrete, "Resolved endpoint");
-        let tls = if self.identity_disabled {
-            tls::ConditionalClientTls::None(tls::NoClientTls::Disabled)
+        let tls = if self.identity_disabled || self.inbound_ips.contains(&addr.ip()) {
+            let reason = if self.identity_disabled {
+                tls::NoClientTls::Disabled
+            } else {
+                metadata.clear_upgrade();
+                tracing::debug!(%addr, ?metadata, ?addr, ?self.inbound_ips, "Target is local");
+                tls::NoClientTls::Loopback
+            };
+            tls::ConditionalClientTls::None(reason)
         } else {
             Self::client_tls(&metadata, tls::NoClientTls::NotProvidedByServiceDiscovery)
         };
@@ -191,9 +212,7 @@ impl<P: Copy + std::fmt::Debug> MapEndpoint<Concrete<P>, Metadata> for FromMetad
 // === Outbound ===
 
 impl<S> Outbound<S> {
-    pub fn push_endpoint<I>(
-        self,
-    ) -> Outbound<svc::BoxNewService<tcp::Endpoint, svc::BoxService<I, (), Error>>>
+    pub fn push_endpoint<I>(self) -> Outbound<svc::ArcNewTcp<tcp::Endpoint, I>>
     where
         Self: Clone + 'static,
         S: svc::Service<tcp::Connect, Error = io::Error> + Clone + Send + Sync + Unpin + 'static,
@@ -221,7 +240,10 @@ pub mod tests {
     use super::*;
     use crate::test_util::*;
     use hyper::{client::conn::Builder as ClientBuilder, Body, Request};
-    use linkerd_app_core::svc::{NewService, Service, ServiceExt};
+    use linkerd_app_core::{
+        svc::{NewService, Service, ServiceExt},
+        Error,
+    };
     use tokio::time;
 
     /// Tests that socket errors cause HTTP clients to be disconnected.

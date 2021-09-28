@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_identity::LocalId;
 use linkerd_identity::{ClientConfig, Name, ServerConfig};
@@ -14,6 +13,7 @@ mod imp;
 mod imp;
 
 mod protocol;
+// pub use tokio_rustls::rustls::Session;
 
 pub mod client;
 pub mod server;

@@ -4,7 +4,7 @@ use linkerd_app_core::{
     svc::Param,
     transport::{listen, orig_dst, Keepalive, ListenAddr},
 };
-use std::{future::Future, net::SocketAddr, pin::Pin, task::Poll, thread};
+use std::{fmt, future::Future, net::SocketAddr, pin::Pin, task::Poll, thread};
 use tokio::net::TcpStream;
 use tracing::instrument::Instrument;
 
@@ -19,8 +19,8 @@ pub struct Proxy {
 
     /// Inbound/outbound addresses helpful for mocking connections that do not
     /// implement `server::Listener`.
-    inbound: Option<SocketAddr>,
-    outbound: Option<SocketAddr>,
+    inbound: MockOrigDst,
+    outbound: MockOrigDst,
 
     /// Inbound/outbound addresses for mocking connections that implement
     /// `server::Listener`.
@@ -31,9 +31,6 @@ pub struct Proxy {
 
     shutdown_signal: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
-
-#[derive(Copy, Clone, Debug)]
-struct MockOrigDst(Option<SocketAddr>);
 
 pub struct Listening {
     pub tap: Option<SocketAddr>,
@@ -53,6 +50,13 @@ pub struct Listening {
     thread: thread::JoinHandle<()>,
 }
 
+#[derive(Copy, Clone)]
+enum MockOrigDst {
+    Addr(SocketAddr),
+    Direct,
+    None,
+}
+
 // === impl MockOrigDst ===
 
 impl<T> listen::Bind<T> for MockOrigDst
@@ -67,16 +71,41 @@ where
 
     fn bind(self, params: &T) -> io::Result<listen::Bound<Self::Incoming>> {
         let (bound, incoming) = listen::BindTcp::default().bind(params)?;
-        let addr = self.0;
         let incoming = Box::pin(incoming.map(move |res| {
             let (inner, tcp) = res?;
-            let orig_dst = addr
-                .map(OrigDstAddr)
-                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No mocked SO_ORIG_DST"))?;
+            let orig_dst = match self {
+                Self::Addr(addr) => OrigDstAddr(addr),
+                Self::Direct => OrigDstAddr(inner.server.into()),
+                Self::None => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "No mocked SO_ORIG_DST",
+                    ))
+                }
+            };
             let addrs = orig_dst::Addrs { inner, orig_dst };
             Ok((addrs, tcp))
         }));
         Ok((bound, incoming))
+    }
+}
+
+impl Default for MockOrigDst {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl fmt::Debug for MockOrigDst {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Addr(addr) => f
+                .debug_tuple("MockOrigDst::Addr")
+                .field(&format_args!("{}", addr))
+                .finish(),
+            Self::Direct => f.debug_tuple("MockOrigDst::Direct").finish(),
+            Self::None => f.debug_tuple("MockOrigDst::None").finish(),
+        }
     }
 }
 
@@ -102,37 +131,34 @@ impl Proxy {
     }
 
     pub fn inbound(mut self, s: server::Listening) -> Self {
-        self.inbound = Some(s.addr);
+        self.inbound = MockOrigDst::Addr(s.addr);
         self.inbound_server = Some(s);
         self
     }
 
     pub fn inbound_ip(mut self, s: SocketAddr) -> Self {
-        self.inbound = Some(s);
+        self.inbound = MockOrigDst::Addr(s);
         self
     }
 
-    /// Adjust the server's 'addr'. This won't actually re-bind the server,
-    /// it will just affect what the proxy think is the so_original_dst.
-    ///
-    /// This address is bogus, but the proxy should properly ignored the IP
-    /// and only use the port combined with 127.0.0.1 to still connect to
-    /// the server.
-    pub fn inbound_fuzz_addr(self, mut s: server::Listening) -> Self {
-        let old_addr = s.addr;
-        let new_addr = ([10, 1, 2, 3], old_addr.port()).into();
-        s.addr = new_addr;
-        self.inbound(s)
+    /// Configure the mocked `SO_ORIGINAL_DST` address to behave as though
+    /// inbound requests were sent directly to the proxy's inbound port (rather
+    /// than redirected by iptables).
+    pub fn inbound_direct(self) -> Self {
+        Self {
+            inbound: MockOrigDst::Direct,
+            ..self
+        }
     }
 
     pub fn outbound(mut self, s: server::Listening) -> Self {
-        self.outbound = Some(s.addr);
+        self.outbound = MockOrigDst::Addr(s.addr);
         self.outbound_server = Some(s);
         self
     }
 
     pub fn outbound_ip(mut self, s: SocketAddr) -> Self {
-        self.outbound = Some(s);
+        self.outbound = MockOrigDst::Addr(s);
         self
     }
 
@@ -330,8 +356,8 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
                     .build()
                     .expect("proxy")
                     .block_on(async move {
-                        let bind_in = MockOrigDst(inbound);
-                        let bind_out = MockOrigDst(outbound);
+                        let bind_in = inbound;
+                        let bind_out = outbound;
                         let bind_adm = listen::BindTcp::default();
                         let (shutdown_tx, mut shutdown_rx) = tokio::sync::mpsc::unbounded_channel();
                         let main = config
@@ -386,9 +412,9 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         tap.addr = ?tap_addr,
         identity.addr = ?identity_addr,
         inbound.addr = ?inbound_addr,
-        inbound.orig_dst = ?inbound.as_ref(),
+        inbound.orig_dst = ?inbound,
         outbound.addr = ?outbound_addr,
-        outbound.orig_dst = ?outbound.as_ref(),
+        outbound.orig_dst = ?outbound,
         metrics.addr = ?metrics_addr,
     );
 

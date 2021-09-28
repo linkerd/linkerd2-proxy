@@ -60,7 +60,7 @@ where
 {
     type Service = Split<T, N, S, Req>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let rx: Receiver = target.param();
         let mut targets = rx.targets();
         if targets.is_empty() {
@@ -72,7 +72,7 @@ where
         let mut addrs = IndexSet::with_capacity(targets.len());
         let mut weights = Vec::with_capacity(targets.len());
         let mut services = ReadyCache::default();
-        let mut new_service = self.inner.clone();
+        let new_service = self.inner.clone();
         for Target { weight, addr } in targets.into_iter() {
             services.push(
                 addr.clone(),

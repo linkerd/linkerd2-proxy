@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 /// Like `std::option::Option<C>` but `None` carries a reason why the value
 /// isn't available.
@@ -16,7 +15,7 @@ where
 {
     pub fn as_ref(&self) -> Conditional<&'_ C, R> {
         match self {
-            Conditional::Some(c) => Conditional::Some(&c),
+            Conditional::Some(c) => Conditional::Some(c),
             Conditional::None(r) => Conditional::None(*r),
         }
     }

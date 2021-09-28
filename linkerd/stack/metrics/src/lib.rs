@@ -1,17 +1,14 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 mod layer;
 mod service;
 
 pub use self::layer::TrackServiceLayer;
 pub use self::service::TrackService;
-use indexmap::IndexMap;
 use linkerd_metrics::{metrics, Counter, FmtLabels, FmtMetrics};
-use std::fmt;
-use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::{collections::HashMap, fmt, hash::Hash, sync::Arc};
 
 metrics! {
     stack_create_total: Counter { "Total number of services created" },
@@ -20,7 +17,7 @@ metrics! {
     stack_poll_total_ms: Counter { "Total number of milliseconds this service has spent awaiting readiness" }
 }
 
-type Shared<L> = Arc<Mutex<IndexMap<L, Arc<Metrics>>>>;
+type Shared<L> = Arc<Mutex<HashMap<L, Arc<Metrics>>>>;
 
 #[derive(Debug)]
 pub struct Registry<L: Hash + Eq>(Shared<L>);
@@ -43,7 +40,6 @@ where
         let metrics = self
             .0
             .lock()
-            .expect("stack metrics lock poisoned")
             .entry(labels)
             .or_insert_with(Default::default)
             .clone();
@@ -65,7 +61,7 @@ impl<L: Hash + Eq> Clone for Registry<L> {
 
 impl<L: FmtLabels + Hash + Eq> FmtMetrics for Registry<L> {
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let metrics = self.0.lock().expect("metrics registry poisoned");
+        let metrics = self.0.lock();
         if metrics.is_empty() {
             return Ok(());
         }

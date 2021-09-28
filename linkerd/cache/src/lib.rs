@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_stack::{layer, NewService};
 use parking_lot::RwLock;
@@ -71,7 +70,7 @@ where
             target,
             idle,
             handle.clone(),
-            Arc::downgrade(&cache),
+            Arc::downgrade(cache),
         ));
         handle
     }
@@ -132,7 +131,7 @@ where
 {
     type Service = Cached<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Cached<N::Service> {
+    fn new_service(&self, target: T) -> Cached<N::Service> {
         // We expect the item to be available in most cases, so initially obtain
         // only a read lock.
         if let Some((svc, weak)) = self.services.read().get(&target) {

@@ -1,15 +1,15 @@
 use crate::{proto, LookupAddr, Profile, Receiver};
 use futures::prelude::*;
-use http_body::Body as HttpBody;
+use http_body::Body;
 use linkerd2_proxy_api::destination::{self as api, destination_client::DestinationClient};
-use linkerd_error::{Never, Recover};
+use linkerd_error::{Infallible, Recover};
 use linkerd_stack::{Param, Service};
 use linkerd_tonic_watch::StreamWatch;
-use std::task::{Context, Poll};
-use tonic::{
-    body::{Body, BoxBody},
-    client::GrpcService,
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
 };
+use tonic::{body::BoxBody, client::GrpcService};
 use tracing::debug;
 
 /// Creates watches on service profiles.
@@ -22,7 +22,7 @@ pub struct Client<R, S> {
 #[derive(Clone, Debug)]
 struct Inner<S> {
     client: DestinationClient<S>,
-    context_token: String,
+    context_token: Arc<str>,
 }
 
 // === impl Client ===
@@ -30,17 +30,17 @@ struct Inner<S> {
 impl<R, S> Client<R, S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover<tonic::Status> + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
-    pub fn new(recover: R, inner: S, context_token: String) -> Self {
+    pub fn new(recover: R, inner: S, context_token: impl Into<Arc<str>>) -> Self {
         Self {
-            watch: StreamWatch::new(recover, Inner::new(context_token, inner)),
+            watch: StreamWatch::new(recover, Inner::new(context_token.into(), inner)),
         }
     }
 }
@@ -49,17 +49,17 @@ impl<T, R, S> Service<T> for Client<R, S>
 where
     T: Param<LookupAddr>,
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
     R: Recover<tonic::Status> + Send + Clone + 'static,
     R::Backoff: Unpin + Send,
 {
     type Response = Option<Receiver>;
-    type Error = Never;
-    type Future = futures::future::BoxFuture<'static, Result<Option<Receiver>, Never>>;
+    type Error = Infallible;
+    type Future = futures::future::BoxFuture<'static, Result<Option<Receiver>, Infallible>>;
 
     #[inline]
     fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -79,7 +79,7 @@ where
                 }
                 Err(status) => {
                     debug!(%status, "Ignoring profile");
-                    Ok::<_, Never>(None)
+                    Ok::<_, Infallible>(None)
                 }
             }
         })
@@ -96,13 +96,13 @@ type InnerFuture =
 impl<S> Inner<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
-    fn new(context_token: String, inner: S) -> Self {
+    fn new(context_token: Arc<str>, inner: S) -> Self {
         Self {
             context_token,
             client: DestinationClient::new(inner),
@@ -113,9 +113,9 @@ where
 impl<S> Service<LookupAddr> for Inner<S>
 where
     S: GrpcService<BoxBody> + Clone + Send + 'static,
-    S::ResponseBody: Send,
+    S::ResponseBody: Send + Sync,
     <S::ResponseBody as Body>::Data: Send,
-    <S::ResponseBody as HttpBody>::Error:
+    <S::ResponseBody as Body>::Error:
         Into<Box<dyn std::error::Error + Send + Sync + 'static>> + Send,
     S::Future: Send,
 {
@@ -132,7 +132,7 @@ where
     fn call(&mut self, LookupAddr(addr): LookupAddr) -> Self::Future {
         let req = api::GetDestination {
             path: addr.to_string(),
-            context_token: self.context_token.clone(),
+            context_token: self.context_token.to_string(),
             ..Default::default()
         };
 
