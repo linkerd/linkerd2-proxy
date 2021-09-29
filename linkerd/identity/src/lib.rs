@@ -220,7 +220,7 @@ impl CrtKey {
     }
 
     pub fn id(&self) -> &LocalId {
-        &self.0.id()
+        self.0.id()
     }
 
     pub fn client_config(&self) -> Arc<ClientConfig> {
