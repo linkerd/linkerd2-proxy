@@ -76,4 +76,3 @@ webpki = { git = "https://github.com/linkerd/webpki", branch = "cert-dns-names-0
 boring = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
 boring-sys = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
 tokio-boring = { git = 'https://github.com/netapp/boring', branch = "feat/fips-support"}
-
