@@ -9,7 +9,7 @@ use tracing::debug;
 #[path = "imp/rustls.rs"]
 mod imp;
 #[cfg(not(feature = "rustls-tls"))]
-#[path = "imp/openssl.rs"]
+#[path = "imp/boringssl.rs"]
 mod imp;
 
 #[cfg(any(test, feature = "test-util"))]

@@ -9,7 +9,7 @@ use linkerd_io::{AsyncRead, AsyncWrite, Result};
 #[path = "imp/rustls.rs"]
 mod imp;
 #[cfg(not(feature = "rustls-tls"))]
-#[path = "imp/openssl.rs"]
+#[path = "imp/boringssl.rs"]
 mod imp;
 
 mod protocol;

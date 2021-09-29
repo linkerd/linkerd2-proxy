@@ -11,7 +11,6 @@ use std::{
 use std::str::FromStr;
 use tracing::{debug, trace, warn};
 
-#[cfg(feature = "boring-tls")]
 use {
     boring::{
         fips, ssl,
@@ -20,16 +19,6 @@ use {
         x509::store::X509StoreBuilder,
     },
     tokio_boring::SslStream,
-};
-#[cfg(not(feature = "boring-tls"))]
-use {
-    openssl::{
-        fips, ssl,
-        ssl::{Ssl, SslAcceptor, SslConnector, SslConnectorBuilder, SslMethod, SslVerifyMode},
-        version,
-        x509::store::X509StoreBuilder,
-    },
-    tokio_openssl::SslStream,
 };
 
 #[derive(Clone)]
@@ -168,22 +157,6 @@ impl TlsAcceptor {
         Ok(builder.build().into())
     }
 
-    #[cfg(not(feature = "boring-tls"))]
-    pub async fn accept<IO>(&self, stream: IO) -> Result<server::TlsStream<IO>>
-    where
-        IO: AsyncRead + AsyncWrite + Unpin,
-    {
-        let ssl = Ssl::new(self.0.context())?;
-        let mut s = TlsStream::new(ssl, stream);
-
-        Pin::new(&mut s.0).accept().await.map_err(|err| {
-            err.into_io_error()
-                .unwrap_or_else(|e| io::Error::new(io::ErrorKind::Other, e))
-        })?;
-
-        Ok(s)
-    }
-    #[cfg(feature = "boring-tls")]
     pub async fn accept<IO>(&self, stream: IO) -> Result<server::TlsStream<IO>>
     where
         IO: AsyncRead + AsyncWrite + Unpin,
@@ -209,16 +182,6 @@ impl From<Arc<ServerConfig>> for TlsAcceptor {
 
 #[derive(Debug)]
 pub struct TlsStream<IO>(SslStream<IO>);
-
-impl<IO> TlsStream<IO>
-where
-    IO: AsyncRead + AsyncWrite,
-{
-    #[cfg(not(feature = "boring-tls"))]
-    pub fn new(ssl: Ssl, stream: IO) -> Self {
-        Self(SslStream::new(ssl, stream).expect("unable to create ssl stream"))
-    }
-}
 
 impl<IO> TlsStream<IO> {
     pub fn get_alpn_protocol(&self) -> Option<&[u8]> {

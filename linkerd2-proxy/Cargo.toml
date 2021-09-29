@@ -11,7 +11,6 @@ description = "The main proxy executable"
 default = ["multicore", "rustls-tls"]
 multicore = ["tokio/rt-multi-thread", "num_cpus"]
 rustls-tls = ["linkerd-app/rustls-tls"]
-openssl-tls = ["linkerd-app/openssl-tls"]
 boring-tls = ["linkerd-app/boring-tls"]
 
 [dependencies]

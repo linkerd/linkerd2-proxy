@@ -2,18 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-#[cfg(feature = "boring-tls")]
 use boring::{
-    error::ErrorStack,
-    pkey::{PKey, Private},
-    stack::Stack,
-    x509::{
-        store::{X509Store, X509StoreBuilder},
-        {X509StoreContext, X509VerifyResult, X509},
-    },
-};
-#[cfg(not(feature = "boring-tls"))]
-use openssl::{
     error::ErrorStack,
     pkey::{PKey, Private},
     stack::Stack,
@@ -120,7 +109,7 @@ impl TrustAnchors {
 
 impl fmt::Debug for TrustAnchors {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.pad("openssl::TrustAnchors")
+        f.pad("boringssl::TrustAnchors")
     }
 }
 
@@ -173,7 +162,7 @@ impl CrtKey {
 
 impl fmt::Debug for CrtKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        f.debug_struct("openssl::CrtKey")
+        f.debug_struct("boringssl::CrtKey")
             .field("id", &self.id)
             .field("expiry", &self.expiry)
             .finish()

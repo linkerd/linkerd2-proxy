@@ -13,7 +13,6 @@ This is used by tests and the executable.
 
 [features]
 allow-loopback = ["linkerd-app-outbound/allow-loopback"]
-openssl-tls = ["linkerd-app-core/openssl-tls"]
 boring-tls = ["linkerd-app-core/boring-tls"]
 rustls-tls = ["linkerd-app-core/rustls-tls"]
 
