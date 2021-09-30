@@ -12,6 +12,6 @@ linkerd-dns-name = { path = "./name" }
 linkerd-error = { path = "../error" }
 thiserror = "1.0"
 tracing = "0.1.28"
-trust-dns-resolver = "0.21.0-alpha.2"
+trust-dns-resolver = "0.21.0-alpha.3"
 tokio = { version = "1", features = ["rt", "sync", "time"] }
 pin-project = "1"
