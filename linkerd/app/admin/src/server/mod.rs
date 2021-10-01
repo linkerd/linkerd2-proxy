@@ -224,7 +224,7 @@ mod tests {
                     .unwrap();
                 let f = admin.clone().oneshot(r);
                 timeout(TIMEOUT, f).await.expect("timeout").expect("call")
-            };};
+            }};
         }
 
         assert_eq!(call!().status(), StatusCode::SERVICE_UNAVAILABLE);
