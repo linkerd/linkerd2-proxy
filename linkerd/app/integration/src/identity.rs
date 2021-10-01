@@ -34,7 +34,7 @@ type Certify = Box<
         > + Send,
 >;
 
-const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
+const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_3];
 
 struct Certificates {
     pub leaf: Vec<u8>,
