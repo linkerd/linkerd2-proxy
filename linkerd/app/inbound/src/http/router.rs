@@ -271,7 +271,7 @@ impl<A> svc::stack::RecognizeRoute<http::Request<A>> for LogicalPerRequest {
         use linkerd_app_core::{
             http_request_authority_addr, http_request_host_addr, CANONICAL_DST_HEADER,
         };
-        use std::{convert::TryInto, str::FromStr};
+        use std::str::FromStr;
 
         // Try to read a logical named address from the request. First check the canonical-dst
         // header as set by the client proxy; otherwise fallback to the request's `:authority` or

@@ -3,7 +3,6 @@ use bytes::Bytes;
 use http::header::HeaderValue;
 use linkerd_error::Error;
 use rand::thread_rng;
-use std::convert::TryInto;
 use thiserror::Error;
 use tracing::{trace, warn};
 
