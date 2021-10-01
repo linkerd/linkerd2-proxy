@@ -35,24 +35,10 @@ pub(crate) struct Local {
     permit: policy::Permit,
 }
 
-/// Gateway connections come in two variants: those with a transport header, and
-/// legacy connections, without a transport header.
-#[derive(Debug, Clone)]
-pub enum GatewayConnection {
-    TransportHeader(GatewayTransportHeader),
-    Legacy(Legacy),
-}
-
 #[derive(Debug, Clone)]
 pub struct GatewayTransportHeader {
     pub target: NameAddr,
     pub protocol: Option<SessionProtocol>,
-    pub client: ClientInfo,
-    pub policy: policy::AllowPolicy,
-}
-
-#[derive(Debug, Clone)]
-pub struct Legacy {
     pub client: ClientInfo,
     pub policy: policy::AllowPolicy,
 }
@@ -98,7 +84,7 @@ impl<N> Inbound<N> {
         NSvc: svc::Service<FwdIo<I>, Response = ()> + Clone + Send + Sync + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send + Unpin,
-        G: svc::NewService<GatewayConnection, Service = GSvc>
+        G: svc::NewService<GatewayTransportHeader, Service = GSvc>
             + Clone
             + Send
             + Sync
@@ -175,7 +161,6 @@ impl<N> Inbound<N> {
                     // header indicates the connection's HTTP version.
                     svc::stack(gateway.clone())
                         .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Left))
-                        .push_map_target(GatewayConnection::TransportHeader)
                         .push(transport::metrics::NewServer::layer(
                             rt.metrics.proxy.transport.clone(),
                         ))
@@ -186,34 +171,15 @@ impl<N> Inbound<N> {
                         .into_inner(),
                 )
                 // Use ALPN to determine whether a transport header should be read.
-                //
-                // When the transport header is not present, perform HTTP detection to
-                // support legacy gateway clients.
                 .push(NewTransportHeaderServer::layer(detect_timeout))
-                .push_switch(
-                    move |client: ClientInfo| -> Result<_> {
+                .push_request_filter(
+                    |client: ClientInfo| -> Result<_> {
                         if client.header_negotiated() {
-                            Ok(svc::Either::A(client))
+                            Ok(client)
                         } else {
-                            // When we receive legacy connections with no transport headers, we must
-                            // be receiving a gateway connection from an older client.  We check the
-                            // gateway address's policy to determine whether the client is
-                            // authorized to use this gateway.
-                            let policy = policies.check_policy(client.local_addr)?;
-                            Ok(svc::Either::B(Legacy { client, policy }))
+                            Err(RefusedNoTarget.into())
                         }
                     },
-                    // TODO(ver): Remove this after we have another stable release out with
-                    // transport header support.
-                    svc::stack(gateway)
-                        .push_map_target(GatewayConnection::Legacy)
-                        .push_on_service(svc::MapTargetLayer::new(io::EitherIo::Right))
-                        .push(transport::metrics::NewServer::layer(
-                            rt.metrics.proxy.transport.clone(),
-                        ))
-                        .instrument(|_: &Legacy| info_span!("gateway", legacy = true))
-                        .check_new_service::<Legacy, tls::server::Io<I>>()
-                        .into_inner(),
                 )
                 .check_new_service::<ClientInfo, tls::server::Io<I>>()
                 // Build a ClientInfo target for each accepted connection. Refuse the
@@ -322,21 +288,6 @@ impl Param<tls::ConditionalServerTls> for GatewayTransportHeader {
             client_id: Some(self.client.client_id.clone()),
             negotiated_protocol: self.client.alpn.clone(),
         })
-    }
-}
-
-// === impl Legacy ===
-
-impl Param<transport::labels::Key> for Legacy {
-    fn param(&self) -> transport::labels::Key {
-        transport::labels::Key::inbound_server(
-            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
-                client_id: Some(self.client.client_id.clone()),
-                negotiated_protocol: self.client.alpn.clone(),
-            }),
-            self.client.local_addr.into(),
-            self.policy.server_label(),
-        )
     }
 }
 
