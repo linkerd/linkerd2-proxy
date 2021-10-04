@@ -142,7 +142,6 @@ impl TcpFixture {
         let src_labels = metrics::labels()
             .label("direction", "inbound")
             .label("peer", "src")
-            .label("tls", "disabled")
             .label("target_addr", orig_dst)
             .label("srv_name", "default:all-unauthenticated");
 
@@ -207,7 +206,6 @@ async fn admin_request_count() {
     let metrics = fixture.metrics;
     let metric = metrics::metric("request_total")
         .label("direction", "inbound")
-        .label("tls", "disabled")
         .label("target_addr", metrics.target_addr())
         .value(1usize);
 
@@ -223,7 +221,6 @@ async fn admin_transport_metrics() {
     let metrics = fixture.metrics;
     let labels = metrics::labels()
         .label("direction", "inbound")
-        .label("tls", "disabled")
         .label("target_addr", metrics.target_addr())
         .label("peer", "src");
 
@@ -1223,7 +1220,6 @@ mod transport {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "inbound")
-            .label("tls", "disabled")
             .label("errno", "EXFULL")
             .value(1u64)
             .assert_in(&metrics)
@@ -1233,7 +1229,6 @@ mod transport {
         metrics::metric("tcp_close_total")
             .label("peer", "src")
             .label("direction", "inbound")
-            .label("tls", "disabled")
             .label("errno", "")
             .value(1u64)
             .assert_in(&metrics)
@@ -1264,7 +1259,6 @@ mod transport {
         metrics::metric("tcp_close_total")
             .label("peer", "dst")
             .label("direction", "outbound")
-            .label("tls", "disabled")
             .label("errno", "EXFULL")
             .value(1u64)
             .assert_in(&metrics)
@@ -1274,7 +1268,6 @@ mod transport {
         metrics::metric("tcp_close_total")
             .label("peer", "src")
             .label("direction", "outbound")
-            .label("tls", "disabled")
             .label("errno", "")
             .value(1u64)
             .assert_in(&metrics)
@@ -1327,9 +1320,7 @@ mod transport {
     async fn inbound_http_tcp_open_connections() {
         test_http_open_conns(
             Fixture::inbound(),
-            metrics::labels()
-                .label("direction", "inbound")
-                .label("tls", "disabled"),
+            metrics::labels().label("direction", "inbound"),
         )
         .await
     }

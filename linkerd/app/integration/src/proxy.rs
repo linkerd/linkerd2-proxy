@@ -42,7 +42,7 @@ pub struct Listening {
     pub inbound_server: Option<server::Listening>,
 
     controller: controller::Listening,
-    identity: Option<controller::Listening>,
+    identity: controller::Listening,
 
     shutdown: Shutdown,
     terminated: oneshot::Receiver<()>,
@@ -228,16 +228,10 @@ impl Listening {
         }
         .instrument(tracing::info_span!("inbound"));
 
-        let identity = async move {
-            if let Some(srv) = identity {
-                srv.join().await;
-            }
-        };
-
         tokio::join! {
             inbound,
             outbound,
-            identity,
+            identity.join(),
             controller.join(),
         };
     }
@@ -249,12 +243,32 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     let controller = if let Some(controller) = proxy.controller {
         controller
     } else {
-        // bummer that the whole function needs to be async just for this...
         controller::new().run().await
     };
+
+    let identity = if let Some(identity) = proxy.identity {
+        identity
+    } else {
+        let identity::Identity {
+            env: id_env,
+            mut certify_rsp,
+            ..
+        } = identity::Identity::new(
+            "default-default",
+            "default.default.serviceaccount.identity.linkerd.cluster.local".to_string(),
+        );
+        env.extend(id_env);
+        certify_rsp.valid_until =
+            Some((std::time::SystemTime::now() + Duration::from_secs(666)).into());
+
+        controller::identity()
+            .certify(move |_| certify_rsp)
+            .run()
+            .await
+    };
+
     let inbound = proxy.inbound;
     let outbound = proxy.outbound;
-    let identity = proxy.identity;
 
     env.put(
         "LINKERD2_PROXY_DESTINATION_SVC_ADDR",
@@ -284,14 +298,8 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
     static IDENTITY_SVC_NAME: &str = "LINKERD2_PROXY_IDENTITY_SVC_NAME";
     static IDENTITY_SVC_ADDR: &str = "LINKERD2_PROXY_IDENTITY_SVC_ADDR";
 
-    let identity_addr = if let Some(ref identity) = identity {
-        env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
-        env.put(IDENTITY_SVC_ADDR, format!("{}", identity.addr));
-        Some(identity.addr)
-    } else {
-        env.put(app::env::ENV_IDENTITY_DISABLED, "test".to_owned());
-        None
-    };
+    env.put(IDENTITY_SVC_NAME, "test-identity".to_owned());
+    env.put(IDENTITY_SVC_ADDR, identity.addr.to_string());
 
     if let Some(ports) = proxy.inbound_disable_ports_protocol_detection {
         let ports = ports
@@ -344,6 +352,7 @@ async fn run(proxy: Proxy, mut env: TestEnv, random_ports: bool) -> Listening {
         });
     }
 
+    let identity_addr = identity.addr;
     let thread = thread::Builder::new()
         .name(format!("{}:proxy", thread_name()))
         .spawn(move || {
