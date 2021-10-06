@@ -219,11 +219,12 @@ impl<C> Inbound<C> {
                         .push(http::BoxResponse::layer()),
                 )
                 .check_new_service::<Logical, http::Request<http::BoxBody>>()
-                .instrument(|t: &Logical| match (t.http, t.logical.as_ref()) {
-                    (http::Version::H2, None) => debug_span!("http2"),
-                    (http::Version::H2, Some(name)) => debug_span!("http2", %name),
-                    (http::Version::Http1, None) => debug_span!("http1"),
-                    (http::Version::Http1, Some(name)) => debug_span!("http1", %name),
+                .instrument(|t: &Logical| {
+                    let name = t.logical.as_ref().map(tracing::field::display);
+                    match t.http {
+                        http::Version::H2 => debug_span!("http2", name),
+                        http::Version::Http1 => debug_span!("http1", name),
+                    }
                 })
                 // Routes each request to a target, obtains a service for that target, and
                 // dispatches the request. NewRouter moves the NewService into the service type, so

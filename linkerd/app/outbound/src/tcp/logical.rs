@@ -8,7 +8,7 @@ use linkerd_app_core::{
         resolve::map_endpoint,
         tcp,
     },
-    svc, Conditional, Error, Infallible,
+    svc, Error, Infallible,
 };
 use tracing::debug_span;
 
@@ -66,13 +66,12 @@ where
 
             connect
                 .push_make_thunk()
-                .instrument(|t: &Endpoint| match t.tls.as_ref() {
-                    Conditional::Some(tls) => {
-                        debug_span!("endpoint", server.addr = %t.addr, server.id = ?tls.server_id)
-                    }
-                    Conditional::None(_) => {
-                        debug_span!("endpoint", server.addr = %t.addr)
-                    }
+                .instrument(|t: &Endpoint| {
+                    debug_span!(
+                        "endpoint",
+                        server.addr = %t.addr,
+                        server.id = t.tls.value().map(|tls| tracing::field::debug(&tls.server_id)),
+                    )
                 })
                 .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
                 .push_on_service(
