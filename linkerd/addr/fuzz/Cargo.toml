@@ -12,7 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 linkerd-addr = { path = ".." }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }
-tracing = "0.1.26"
+tracing = "0.1.29"
 
 # Prevent this from interfering with workspaces
 [workspace]

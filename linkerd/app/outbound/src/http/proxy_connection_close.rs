@@ -90,15 +90,14 @@ impl<B, F: TryFuture<Ok = http::Response<B>>> Future for ResponseFuture<F> {
             if proxy_conn == "close" {
                 match rsp.extensions().get::<tls::ConditionalClientTls>() {
                     Some(tls::ConditionalClientTls::Some(_)) => {
-                        if let Some(error) = rsp
-                            .headers()
-                            .get(L5D_PROXY_ERROR)
-                            .and_then(|v| v.to_str().ok())
-                        {
-                            tracing::info!(%error, "Closing application connection for remote proxy");
-                        } else {
-                            tracing::info!("Closing application connection for remote proxy");
-                        }
+                        tracing::info!(
+                            error = rsp
+                                .headers()
+                                .get(L5D_PROXY_ERROR)
+                                .and_then(|v| v.to_str().ok())
+                                .map(tracing::field::display),
+                            "Closing application connection for remote proxy"
+                        );
 
                         if rsp.version() == http::Version::HTTP_11 {
                             // If the response is HTTP/1.1, we need to send a Connection: close
