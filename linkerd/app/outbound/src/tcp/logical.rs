@@ -70,7 +70,7 @@ where
                     debug_span!(
                         "endpoint",
                         server.addr = %t.addr,
-                        server.id = t.tls.value().map(|tls| tracing::field::debug(&tls.server_id)),
+                        server.id = t.tls.value().map(|tls| tracing::field::display(&tls.server_id)),
                     )
                 })
                 .push(resolve::layer(resolve, config.proxy.cache_max_idle_age * 2))
