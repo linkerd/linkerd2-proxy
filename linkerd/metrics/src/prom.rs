@@ -12,7 +12,7 @@ pub trait FmtMetrics {
         DisplayMetrics(self)
     }
 
-    fn and_then_report<N>(self, next: N) -> AndThen<Self, N>
+    fn and_report<N>(self, next: N) -> AndThen<Self, N>
     where
         N: FmtMetrics,
         Self: Sized,

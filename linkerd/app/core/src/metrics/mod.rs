@@ -180,15 +180,15 @@ impl Metrics {
         };
 
         let report = endpoint_report
-            .and_then_report(route_report)
-            .and_then_report(retry_report)
-            .and_then_report(actual_report)
-            .and_then_report(control_report)
-            .and_then_report(transport_report)
-            .and_then_report(opencensus_report)
-            .and_then_report(stack)
-            .and_then_report(process)
-            .and_then_report(build_info);
+            .and_report(route_report)
+            .and_report(retry_report)
+            .and_report(actual_report)
+            .and_report(control_report)
+            .and_report(transport_report)
+            .and_report(opencensus_report)
+            .and_report(stack)
+            .and_report(process)
+            .and_report(build_info);
 
         (metrics, report)
     }
