@@ -12,7 +12,7 @@ pub trait FmtMetrics {
         DisplayMetrics(self)
     }
 
-    fn and_then<N>(self, next: N) -> AndThen<Self, N>
+    fn and_then_report<N>(self, next: N) -> AndThen<Self, N>
     where
         N: FmtMetrics,
         Self: Sized,
@@ -191,12 +191,24 @@ impl<A: FmtLabels, B: FmtLabels> FmtLabels for (Option<A>, B) {
 // ===== impl FmtMetrics =====
 
 impl<'a, A: FmtMetrics + 'a> FmtMetrics for &'a A {
+    #[inline]
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (*self).fmt_metrics(f)
     }
 }
 
+impl<M: FmtMetrics> FmtMetrics for Option<M> {
+    #[inline]
+    fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(m) = self.as_ref() {
+            m.fmt_metrics(f)?;
+        }
+        Ok(())
+    }
+}
+
 impl<A: FmtMetrics, B: FmtMetrics> FmtMetrics for AndThen<A, B> {
+    #[inline]
     fn fmt_metrics(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt_metrics(f)?;
         self.1.fmt_metrics(f)?;
