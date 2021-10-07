@@ -13,11 +13,12 @@ pub struct Name(webpki::DNSName);
 pub struct InvalidName;
 
 impl Name {
+    #[inline]
     pub fn is_localhost(&self) -> bool {
-        use std::str::FromStr;
-        *self == Name::from_str("localhost.").unwrap()
+        self.as_ref().eq_ignore_ascii_case("localhost.")
     }
 
+    #[inline]
     pub fn without_trailing_dot(&self) -> &str {
         self.as_ref().trim_end_matches('.')
     }
@@ -52,7 +53,7 @@ impl<'a> TryFrom<&'a [u8]> for Name {
     }
 }
 
-impl<'a> std::str::FromStr for Name {
+impl std::str::FromStr for Name {
     type Err = InvalidName;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::try_from(s.as_bytes())
@@ -72,6 +73,7 @@ impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
 }
 
 impl AsRef<str> for Name {
+    #[inline]
     fn as_ref(&self) -> &str {
         <webpki::DNSName as AsRef<str>>::as_ref(&self.0)
     }
