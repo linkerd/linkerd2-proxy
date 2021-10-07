@@ -58,7 +58,7 @@ where
 {
     type Service = TapHttp<N::Service, I, T>;
 
-    fn new_service(&mut self, target: I) -> Self::Service {
+    fn new_service(&self, target: I) -> Self::Service {
         TapHttp {
             inspect: target.clone(),
             inner: self.inner.new_service(target),

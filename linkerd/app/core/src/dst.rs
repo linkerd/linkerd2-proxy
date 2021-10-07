@@ -1,14 +1,12 @@
 use super::classify;
 use crate::profiles;
-use linkerd_addr::Addr;
 use linkerd_http_classify::CanClassify;
-use linkerd_proxy_http::timeout;
-use std::fmt;
-use std::time::Duration;
+use linkerd_proxy_http as http;
+use linkerd_stack::Param;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Route {
-    pub target: Addr,
+    pub addr: profiles::LogicalAddr,
     pub route: profiles::http::Route,
     pub direction: super::metrics::Direction,
 }
@@ -23,14 +21,8 @@ impl CanClassify for Route {
     }
 }
 
-impl timeout::HasTimeout for Route {
-    fn timeout(&self) -> Option<Duration> {
-        self.route.timeout()
-    }
-}
-
-impl fmt::Display for Route {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.target.fmt(f)
+impl Param<http::ResponseTimeout> for Route {
+    fn param(&self) -> http::ResponseTimeout {
+        http::ResponseTimeout(self.route.timeout())
     }
 }

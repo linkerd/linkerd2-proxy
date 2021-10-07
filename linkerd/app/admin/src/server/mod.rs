@@ -19,11 +19,10 @@ use hyper::{
 use linkerd_app_core::{
     metrics::{self as metrics, FmtMetrics},
     proxy::http::ClientHandle,
-    svc, trace, Error,
+    trace, Error,
 };
 use std::{
     future::Future,
-    net::SocketAddr,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -31,7 +30,6 @@ use tokio::sync::mpsc;
 
 mod level;
 mod readiness;
-mod tasks;
 
 pub use self::readiness::{Latch, Readiness};
 
@@ -41,18 +39,6 @@ pub struct Admin<M> {
     tracing: trace::Handle,
     ready: Readiness,
     shutdown_tx: mpsc::UnboundedSender<()>,
-}
-
-#[derive(Clone)]
-pub struct Accept<S> {
-    service: S,
-    server: hyper::server::conn::Http,
-}
-
-#[derive(Clone)]
-pub struct Serve<S> {
-    client_addr: SocketAddr,
-    inner: S,
 }
 
 pub type ResponseFuture =
@@ -150,13 +136,6 @@ impl<M> Admin<M> {
     }
 }
 
-impl<M: FmtMetrics + Clone, T> svc::NewService<T> for Admin<M> {
-    type Service = Self;
-    fn new_service(&mut self, _: T) -> Self::Service {
-        self.clone()
-    }
-}
-
 impl<M, B> tower::Service<http::Request<B>> for Admin<M>
 where
     M: FmtMetrics,
@@ -211,20 +190,6 @@ where
                     }
                 } else {
                     Box::pin(future::ok(Self::method_not_allowed()))
-                }
-            }
-            path if path.starts_with("/tasks") => {
-                if Self::client_is_localhost(&req) {
-                    let rsp = match self.tracing.tasks() {
-                        Some(tasks) => tasks::serve(tasks, req).unwrap_or_else(|error| {
-                            tracing::error!(%error, "Failed to fetch tasks");
-                            Self::internal_error_rsp(error)
-                        }),
-                        None => Self::not_found(),
-                    };
-                    Box::pin(future::ok(rsp))
-                } else {
-                    Box::pin(future::ok(Self::forbidden_not_localhost()))
                 }
             }
             _ => Box::pin(future::ok(Self::not_found())),

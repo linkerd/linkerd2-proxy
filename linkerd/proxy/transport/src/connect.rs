@@ -1,6 +1,6 @@
 use crate::{Keepalive, Remote, ServerAddr};
 use linkerd_io as io;
-use linkerd_stack::Param;
+use linkerd_stack::{Param, Service};
 use std::{
     future::Future,
     pin::Pin,
@@ -20,7 +20,7 @@ impl ConnectTcp {
     }
 }
 
-impl<T: Param<Remote<ServerAddr>>> tower::Service<T> for ConnectTcp {
+impl<T: Param<Remote<ServerAddr>>> Service<T> for ConnectTcp {
     type Response = io::ScopedIo<TcpStream>;
     type Error = io::Error;
     type Future =
@@ -37,7 +37,7 @@ impl<T: Param<Remote<ServerAddr>>> tower::Service<T> for ConnectTcp {
         Box::pin(async move {
             let io = TcpStream::connect(&addr).await?;
             super::set_nodelay_or_warn(&io);
-            super::set_keepalive_or_warn(&io, keepalive);
+            let io = super::set_keepalive_or_warn(io, keepalive)?;
             debug!(
                 local.addr = %io.local_addr().expect("cannot load local addr"),
                 ?keepalive,

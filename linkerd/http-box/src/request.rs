@@ -2,16 +2,16 @@
 
 use crate::{erase_request::EraseRequest, BoxBody};
 use linkerd_error::Error;
-use linkerd_stack::layer;
+use linkerd_stack::{layer, Proxy, Service};
 use std::{
     marker::PhantomData,
     task::{Context, Poll},
 };
 
 #[derive(Debug)]
-pub struct BoxRequest<S, B>(S, PhantomData<fn(B)>);
+pub struct BoxRequest<B, S>(S, PhantomData<fn(B)>);
 
-impl<S, B> BoxRequest<S, B> {
+impl<B, S> BoxRequest<B, S> {
     pub fn layer() -> impl layer::Layer<S, Service = Self> + Clone + Copy {
         layer::mk(|inner| BoxRequest(inner, PhantomData))
     }
@@ -24,18 +24,18 @@ impl<S> BoxRequest<S, ()> {
     }
 }
 
-impl<S: Clone, B> Clone for BoxRequest<S, B> {
+impl<B, S: Clone> Clone for BoxRequest<B, S> {
     fn clone(&self) -> Self {
         BoxRequest(self.0.clone(), self.1)
     }
 }
 
-impl<S, B> tower::Service<http::Request<B>> for BoxRequest<S, B>
+impl<B, S> Service<http::Request<B>> for BoxRequest<B, S>
 where
     B: http_body::Body + Send + 'static,
     B::Data: Send + 'static,
     B::Error: Into<Error>,
-    S: tower::Service<http::Request<BoxBody>>,
+    S: Service<http::Request<BoxBody>>,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -49,5 +49,24 @@ where
     #[inline]
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
         self.0.call(req.map(BoxBody::new))
+    }
+}
+
+impl<B, S, P> Proxy<http::Request<B>, S> for BoxRequest<B, P>
+where
+    B: http_body::Body + Send + 'static,
+    B::Data: Send + 'static,
+    B::Error: Into<Error>,
+    S: Service<P::Request>,
+    P: Proxy<http::Request<BoxBody>, S>,
+{
+    type Request = P::Request;
+    type Response = P::Response;
+    type Error = P::Error;
+    type Future = P::Future;
+
+    #[inline]
+    fn proxy(&self, inner: &mut S, req: http::Request<B>) -> Self::Future {
+        self.0.proxy(inner, req.map(BoxBody::new))
     }
 }

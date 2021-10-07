@@ -20,6 +20,10 @@ impl TestEnv {
     pub fn remove(&mut self, key: &'static str) {
         self.values.remove(key);
     }
+
+    pub fn extend(&mut self, other: TestEnv) {
+        self.values.extend(other.values);
+    }
 }
 
 impl Strings for TestEnv {

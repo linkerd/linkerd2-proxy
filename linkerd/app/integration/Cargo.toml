@@ -18,29 +18,28 @@ rustfmt = ["linkerd2-proxy-api/rustfmt"]
 
 [dependencies]
 bytes = "1"
-futures = { version = "0.3", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["executor"] }
 h2 = "0.3"
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.2", features = ["http1", "http2", "stream", "client", "server"] }
+hyper = { version = "0.14.13", features = ["http1", "http2", "stream", "client", "server"] }
 linkerd-app = { path = "..", features = ["allow-loopback"] }
 linkerd-app-core = { path = "../core" }
 linkerd-metrics = { path = "../../metrics", features = ["test_util"] }
-linkerd2-proxy-api = { git = "https://github.com/linkerd/linkerd2-proxy-api", branch = "main", features = ["destination", "arbitrary"] }
+linkerd2-proxy-api = { version = "0.2", features = ["destination", "arbitrary"] }
 linkerd-app-test = { path = "../test" }
 linkerd-tracing = { path = "../../tracing" }
 regex = "1"
 socket2 = "0.4"
-rustls = "0.19"
 tokio = { version = "1", features = ["io-util", "net", "rt", "macros"] }
-tokio-stream = { version = "0.1.6", features = ["sync"] }
+tokio-stream = { version = "0.1.7", features = ["sync"] }
 tokio-rustls = "0.22"
-tower = { version = "0.4.7", default-features = false }
-tonic = { version = "0.4", default-features = false }
-tracing = "0.1.23"
+tower = { version = "0.4.8", default-features = false }
+tonic = { version = "0.5", default-features = false }
+tracing = "0.1.28"
 webpki = "0.21"
 tracing-subscriber = { version = "0.2", default-features = false, features = ["fmt"] }
 
 [dev-dependencies]
-flate2 = { version = "1.0.1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1.0.22", default-features = false, features = ["rust_backend"] }
 linkerd-tracing = { path = "../../tracing", features = ["ansi"] }

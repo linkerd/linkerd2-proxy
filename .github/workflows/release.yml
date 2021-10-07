@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: git co
-        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
+        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
 
       - name: meta
         id: release-tag-meta
@@ -69,7 +69,7 @@ jobs:
       contents: write
     steps:
       - name: git co
-        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
+        uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
 
       - name: meta
         id: release-tag-meta
@@ -78,7 +78,7 @@ jobs:
           git-ref: ${{ github.ref }}
 
       - name: download artifacts
-        uses: actions/download-artifact@158ca71f7c614ae705e79f25522ef4658df18253 # v2.0.9
+        uses: actions/download-artifact@3be87be14a055c47b01d3bd88f8fe02320a9bb60
         with:
           path: artifacts
 
@@ -86,7 +86,7 @@ jobs:
         run: ls -R artifacts
 
       - name: release
-        uses: softprops/action-gh-release@91409e712cf565ce9eff10c87a8d1b11b81757ae
+        uses: softprops/action-gh-release@6034af24fba4e5a8e975aaa6056554efe4c794d0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

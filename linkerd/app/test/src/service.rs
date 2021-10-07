@@ -13,7 +13,7 @@ pub struct NoHttp<T>(std::marker::PhantomData<fn(T)>);
 
 impl<T: std::fmt::Debug> svc::NewService<T> for NoHttp<T> {
     type Service = Self;
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         panic!("the HTTP router should not be used in this test, but we tried to build a service for {:?}", target)
     }
 }

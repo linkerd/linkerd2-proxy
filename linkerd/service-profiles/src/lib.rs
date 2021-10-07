@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use futures::Stream;
 use linkerd_addr::{Addr, NameAddr};
@@ -63,7 +62,7 @@ pub struct Target {
 #[derive(Clone, Debug)]
 pub struct GetProfileService<P>(P);
 
-#[derive(Clone, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum DiscoveryRejected {
     #[error("discovery rejected by control plane: {0}")]
     Remote(

@@ -39,7 +39,7 @@ where
 {
     type Service = S::Service;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         self.inner.new_service(self.map_target.map_target(target))
     }
 }

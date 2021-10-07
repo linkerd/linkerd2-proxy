@@ -12,8 +12,8 @@ jobs:
     permissions:
       contents: read
     steps:
-    - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
-    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d # v1.2.6
+    - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
+    - uses: EmbarkStudios/cargo-deny-action@0ca727bbae7b7b578b9a5f98186caac35aa2a00d
       with:
         command: check advisories
 
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 40
     runs-on: ubuntu-latest
     container:
-      image: docker://rust:1.52.1-buster
+      image: docker://rust:1.55.0-buster
     permissions:
       contents: read
     strategy:
@@ -37,7 +37,7 @@ jobs:
           - tls
           - transport-header
     steps:
-      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
       - run: rustup toolchain add nightly
       - run: cargo install cargo-fuzz
       # Iterate through all fuzz crates to ensure each compiles independently.
@@ -47,12 +47,12 @@ jobs:
   # needed for release builds. This job builds the proxy in release-mode to ensure the build isn't
   # OOM-killed.
   release-binary:
-    timeout-minutes: 15
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f # v2.3.4
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
       - run: make build
         env:
           CARGO_RELEASE: true

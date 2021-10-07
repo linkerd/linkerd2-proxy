@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 use http::header::AsHeaderName;
 use http::uri::Authority;
 use linkerd_error::Error;
@@ -34,12 +33,13 @@ pub use self::{
     override_authority::{AuthorityOverride, NewOverrideAuthority},
     retain::Retain,
     server::NewServeHttp,
-    timeout::MakeTimeoutLayer,
+    strip_header::StripHeader,
+    timeout::{NewTimeout, ResponseTimeout, ResponseTimeoutError},
     version::Version,
 };
 pub use http::{
     header::{self, HeaderName, HeaderValue},
-    uri, Request, Response, StatusCode,
+    uri, Method, Request, Response, StatusCode,
 };
 pub use hyper::body::HttpBody;
 pub use linkerd_http_box::{BoxBody, BoxRequest, BoxResponse};

@@ -8,8 +8,7 @@ use linkerd_app_core::{
     metrics::ControlHttp as Metrics,
     Error,
 };
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin};
 use tracing::Instrument;
 
 // The Disabled case is extraordinarily rare.
@@ -39,6 +38,8 @@ struct Recover(ExponentialBackoff);
 
 pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
+// === impl Config ===
+
 impl Config {
     pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Result<Identity, Error> {
         match self {
@@ -52,11 +53,9 @@ impl Config {
                 // Save to be spawned on an auxiliary runtime.
                 let task = {
                     let addr = addr.clone();
-                    Box::pin(
-                        daemon
-                            .run(svc)
-                            .instrument(tracing::debug_span!("identity_daemon", peer.addr = %addr)),
-                    )
+                    Box::pin(daemon.run(svc).instrument(
+                        tracing::debug_span!("identity", server.addr = %addr).or_current(),
+                    ))
                 };
 
                 Ok(Identity::Enabled { addr, local, task })
@@ -64,6 +63,8 @@ impl Config {
         }
     }
 }
+
+// === impl Identity ===
 
 impl Identity {
     pub fn local(&self) -> Option<LocalCrtKey> {
@@ -87,6 +88,8 @@ impl Identity {
         }
     }
 }
+
+// === impl Recover ===
 
 impl<E: Into<Error>> linkerd_error::Recover<E> for Recover {
     type Backoff = ExponentialBackoffStream;

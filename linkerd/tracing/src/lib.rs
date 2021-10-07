@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub mod access_log;
 pub mod level;
@@ -9,15 +8,9 @@ mod uptime;
 
 use self::uptime::Uptime;
 use linkerd_error::Error;
-pub use tokio_trace::tasks::TaskList;
-use tokio_trace::tasks::TasksLayer;
+use std::str;
 use tracing::Dispatch;
-use tracing_subscriber::{
-    fmt::format::{self, DefaultFields},
-    layer::Layered,
-    prelude::*,
-    reload, EnvFilter,
-};
+use tracing_subscriber::{fmt::format, layer::Layered, prelude::*, reload, EnvFilter};
 
 type Registry = Layered<
     Option<access_log::Writer>,
@@ -38,16 +31,12 @@ pub struct Settings {
 }
 
 #[derive(Clone)]
-pub struct Handle(Inner);
+pub struct Handle(Option<Inner>);
 
 #[derive(Clone)]
-enum Inner {
-    Disabled,
-    Enabled {
-        level: level::Handle,
-        tasks: TaskList,
-        guard: Option<access_log::Guard>,
-    },
+struct Inner {
+    level: level::Handle,
+    guard: Option<access_log::Guard>,
 }
 
 /// Initialize tracing and logging with the value of the `ENV_LOG`
@@ -55,7 +44,7 @@ enum Inner {
 pub fn init() -> Result<Handle, Error> {
     let (dispatch, handle) = match Settings::from_env() {
         Some(s) => s.build(),
-        None => return Ok(Handle(Inner::Disabled)),
+        None => return Ok(Handle(None)),
     };
 
     // Set the default subscriber.
@@ -135,10 +124,7 @@ impl Settings {
         (reg, level::Handle::new(level), guard)
     }
 
-    fn mk_json(&self, registry: Registry) -> (Dispatch, TaskList) {
-        let (tasks, tasks_layer) = TasksLayer::<format::JsonFields>::new();
-        let registry = registry.with(tasks_layer);
-
+    fn mk_json(&self, registry: Registry) -> Dispatch {
         let fmt = tracing_subscriber::fmt::format()
             .with_timer(Uptime::starting_now())
             .with_thread_ids(!self.is_test)
@@ -157,45 +143,34 @@ impl Settings {
             // use the JSON field formatter.
             .fmt_fields(format::JsonFields::default());
 
-        let dispatch = if self.is_test {
+        if self.is_test {
             registry.with(fmt.with_test_writer()).into()
         } else {
             registry.with(fmt).into()
-        };
-
-        (dispatch, tasks)
+        }
     }
 
-    fn mk_plain(&self, registry: Registry) -> (Dispatch, TaskList) {
-        let (tasks, tasks_layer) = TasksLayer::<DefaultFields>::new();
-        let registry = registry.with(tasks_layer);
-
+    fn mk_plain(&self, registry: Registry) -> Dispatch {
         let fmt = tracing_subscriber::fmt::format()
             .with_timer(Uptime::starting_now())
             .with_thread_ids(!self.is_test);
         let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
-        let dispatch = if self.is_test {
+        if self.is_test {
             registry.with(fmt.with_test_writer()).into()
         } else {
             registry.with(fmt).into()
-        };
-
-        (dispatch, tasks)
+        }
     }
 
     pub fn build(self) -> (Dispatch, Handle) {
         let (registry, level, guard) = self.mk_registry();
 
-        let (dispatch, tasks) = match self.format().as_ref() {
+        let dispatch = match self.format().as_ref() {
             "JSON" => self.mk_json(registry),
             _ => self.mk_plain(registry),
         };
 
-        let handle = Handle(Inner::Enabled {
-            level,
-            tasks,
-            guard,
-        });
+        let handle = Handle(Some(Inner { level, guard }));
 
         (dispatch, handle)
     }
@@ -206,20 +181,10 @@ impl Settings {
 impl Handle {
     /// Returns a new `handle` with tracing disabled.
     pub fn disabled() -> Self {
-        Self(Inner::Disabled)
+        Self(None)
     }
 
     pub fn level(&self) -> Option<&level::Handle> {
-        match self.0 {
-            Inner::Enabled { ref level, .. } => Some(level),
-            Inner::Disabled => None,
-        }
-    }
-
-    pub fn tasks(&self) -> Option<&TaskList> {
-        match self.0 {
-            Inner::Enabled { ref tasks, .. } => Some(tasks),
-            Inner::Disabled => None,
-        }
+        self.0.as_ref().map(|inner| &inner.level)
     }
 }

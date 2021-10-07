@@ -37,7 +37,7 @@ where
 {
     type Service = HeaderFromTarget<N::Service>;
 
-    fn new_service(&mut self, t: T) -> Self::Service {
+    fn new_service(&self, t: T) -> Self::Service {
         let HeaderPair(name, value) = t.param().into();
         let inner = self.inner.new_service(t);
         HeaderFromTarget { name, value, inner }

@@ -1,5 +1,5 @@
 use futures::future;
-use linkerd_error::Never;
+use linkerd_error::Infallible;
 use std::task::{Context, Poll};
 
 /// Wraps a `Service<T>` as a `Service<()>`.
@@ -26,7 +26,7 @@ impl<S> MakeThunk<S> {
 impl<S: Clone, T> super::NewService<T> for MakeThunk<S> {
     type Service = Thunk<S, T>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let inner = self.inner.clone();
         Thunk { inner, target }
     }
@@ -34,10 +34,10 @@ impl<S: Clone, T> super::NewService<T> for MakeThunk<S> {
 
 impl<S: Clone, T> tower::Service<T> for MakeThunk<S> {
     type Response = Thunk<S, T>;
-    type Error = Never;
-    type Future = future::Ready<Result<Thunk<S, T>, Never>>;
+    type Error = Infallible;
+    type Future = future::Ready<Result<Thunk<S, T>, Infallible>>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Never>> {
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
         Poll::Ready(Ok(()))
     }
 

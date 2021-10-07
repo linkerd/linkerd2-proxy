@@ -1,16 +1,19 @@
 use crate::{FmtLabels, FmtMetric, Metric};
+use parking_lot::Mutex;
 use std::{
     borrow::Borrow,
     collections::hash_map::{self, HashMap},
     fmt,
     hash::Hash,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 
 pub trait LastUpdate {
     fn last_update(&self) -> Instant;
 }
+
+pub type SharedStore<K, V> = Arc<Mutex<Store<K, V>>>;
 
 #[derive(Debug)]
 pub struct Store<K, V>
@@ -64,7 +67,7 @@ where
         V: LastUpdate,
     {
         self.inner
-            .retain(|_, metric| Arc::strong_count(&metric) > 1 || metric.last_update() >= epoch)
+            .retain(|_, metric| Arc::strong_count(metric) > 1 || metric.last_update() >= epoch)
     }
 
     /// Formats a metric across all instances of `Metrics` in the registry.
@@ -104,7 +107,7 @@ where
         M: FmtMetric,
     {
         for (key, m) in self.iter() {
-            let m = m.lock().unwrap();
+            let m = m.lock();
             get_metric(&*m).fmt_metric_labeled(f, &metric.name, key)?;
         }
 
@@ -127,7 +130,7 @@ where
 
 impl<M: LastUpdate> LastUpdate for Mutex<M> {
     fn last_update(&self) -> Instant {
-        self.lock().unwrap().last_update()
+        self.lock().last_update()
     }
 }
 

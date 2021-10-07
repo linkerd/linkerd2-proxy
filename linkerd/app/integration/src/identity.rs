@@ -8,6 +8,7 @@ use std::{
 };
 
 use linkerd2_proxy_api::identity as pb;
+use tokio_rustls::rustls;
 use tonic as grpc;
 
 pub struct Identity {
@@ -33,7 +34,7 @@ type Certify = Box<
         > + Send,
 >;
 
-const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_2];
+const TLS_VERSIONS: &[rustls::ProtocolVersion] = &[rustls::ProtocolVersion::TLSv1_3];
 
 struct Certificates {
     pub leaf: Vec<u8>,

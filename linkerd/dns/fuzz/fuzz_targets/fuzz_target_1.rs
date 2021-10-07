@@ -10,7 +10,10 @@ fuzz_target!(|data: &[u8]| {
     let _trace = linkerd_tracing::test::with_default_filter("off");
     if let Ok(s) = std::str::from_utf8(data) {
         tracing::info!(data = ?s, "running with input");
-        tokio::runtime::Runtime::new()
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .enable_io()
+            .build()
             .unwrap()
             .block_on(linkerd_dns::fuzz_logic::fuzz_entry(s))
     }

@@ -1,4 +1,4 @@
-use linkerd_error::Error;
+use linkerd_error::{is_error, Error};
 use std::{
     future::Future,
     pin::Pin,
@@ -69,10 +69,6 @@ where
             }
         })
     }
-}
-
-fn is_error<E: std::error::Error + 'static>(e: &(dyn std::error::Error + 'static)) -> bool {
-    e.is::<E>() || e.source().map(is_error::<E>).unwrap_or(false)
 }
 
 impl std::fmt::Display for SharedError {

@@ -5,9 +5,10 @@
 //! HTTP/1 messages over an H2 transport; however, some requests cannot be
 //! proxied via this method, so it also maintains a fallback HTTP/1 client.
 
-use crate::{glue::UpgradeBody, h1, h2, orig_proto};
+use crate::{h1, h2, orig_proto};
 use futures::prelude::*;
-use linkerd_error::Error;
+use linkerd_error::{Error, Result};
+use linkerd_http_box::BoxBody;
 use linkerd_stack::{layer, Param};
 use std::{
     marker::PhantomData,
@@ -61,8 +62,7 @@ impl From<crate::Version> for Settings {
 
 // === impl MakeClient ===
 
-type MakeFuture<C, T, B> =
-    Pin<Box<dyn Future<Output = Result<Client<C, T, B>, Error>> + Send + 'static>>;
+type MakeFuture<C, T, B> = Pin<Box<dyn Future<Output = Result<Client<C, T, B>>> + Send + 'static>>;
 
 impl<C, T, B> tower::Service<T> for MakeClient<C, B>
 where
@@ -80,7 +80,8 @@ where
     type Error = Error;
     type Future = MakeFuture<C, T, B>;
 
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    #[inline]
+    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<Result<()>> {
         Poll::Ready(Ok(()))
     }
 
@@ -128,9 +129,7 @@ impl<C: Clone, B> Clone for MakeClient<C, B> {
 
 // === impl Client ===
 
-type RspFuture = Pin<
-    Box<dyn Future<Output = Result<http::Response<UpgradeBody>, hyper::Error>> + Send + 'static>,
->;
+type RspFuture = Pin<Box<dyn Future<Output = Result<http::Response<BoxBody>>> + Send + 'static>>;
 
 impl<C, T, B> tower::Service<http::Request<B>> for Client<C, T, B>
 where
@@ -143,18 +142,17 @@ where
     B::Data: Send,
     B::Error: Into<Error> + Send + Sync,
 {
-    type Response = http::Response<UpgradeBody>;
-    type Error = hyper::Error;
+    type Response = http::Response<BoxBody>;
+    type Error = Error;
     type Future = Instrumented<RspFuture>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let res = match self {
-            Self::H2(ref mut svc) => futures::ready!(svc.poll_ready(cx)),
-            Self::OrigProtoUpgrade(ref mut svc) => futures::ready!(svc.poll_ready(cx)),
-            Self::Http1(_) => Ok(()),
-        };
-
-        Poll::Ready(res)
+    #[inline]
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<()>> {
+        match self {
+            Self::H2(ref mut svc) => svc.poll_ready(cx).map_err(Into::into),
+            Self::OrigProtoUpgrade(ref mut svc) => svc.poll_ready(cx),
+            Self::Http1(_) => Poll::Ready(Ok(())),
+        }
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
@@ -174,9 +172,11 @@ where
             match self {
                 Self::Http1(ref mut h1) => h1.request(req),
                 Self::OrigProtoUpgrade(ref mut svc) => svc.call(req),
-                Self::H2(ref mut svc) => {
-                    Box::pin(svc.call(req).map_ok(|rsp| rsp.map(UpgradeBody::from))) as RspFuture
-                }
+                Self::H2(ref mut svc) => Box::pin(
+                    svc.call(req)
+                        .err_into::<Error>()
+                        .map_ok(|rsp| rsp.map(BoxBody::new)),
+                ) as RspFuture,
             }
         })
         .instrument(span)

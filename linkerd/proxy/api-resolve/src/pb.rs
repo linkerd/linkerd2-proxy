@@ -1,11 +1,12 @@
-use crate::api::destination::{
-    protocol_hint::{OpaqueTransport, Protocol},
-    AuthorityOverride, TlsIdentity, WeightedAddr,
+use crate::{
+    api::destination::{
+        protocol_hint::{OpaqueTransport, Protocol},
+        AuthorityOverride, TlsIdentity, WeightedAddr,
+    },
+    api::net::TcpAddress,
+    metadata::{Metadata, ProtocolHint},
 };
-use crate::api::net::TcpAddress;
-use crate::metadata::{Metadata, ProtocolHint};
 use http::uri::Authority;
-use indexmap::IndexMap;
 use linkerd_tls::client::ServerId;
 use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 
@@ -17,20 +18,10 @@ pub fn to_addr_meta(
     let authority_override = pb.authority_override.and_then(to_authority);
     let addr = pb.addr.and_then(to_sock_addr)?;
 
-    let meta = {
-        let mut t = set_labels
-            .iter()
-            .chain(pb.metric_labels.iter())
-            .collect::<Vec<(&String, &String)>>();
-        t.sort_by(|(k0, _), (k1, _)| k0.cmp(k1));
-
-        let mut m = IndexMap::with_capacity(t.len());
-        for (k, v) in t.into_iter() {
-            m.insert(k.clone(), v.clone());
-        }
-
-        m
-    };
+    let labels = set_labels
+        .iter()
+        .chain(pb.metric_labels.iter())
+        .map(|(k, v)| (k.clone(), v.clone()));
 
     let mut proto_hint = ProtocolHint::Unknown;
     let mut opaque_transport_port = None;
@@ -52,7 +43,7 @@ pub fn to_addr_meta(
 
     let tls_id = pb.tls_identity.and_then(to_id);
     let meta = Metadata::new(
-        meta,
+        labels,
         proto_hint,
         opaque_transport_port,
         tls_id,

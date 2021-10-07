@@ -13,12 +13,11 @@ ansi = ["tracing-subscriber/ansi"]
 [dependencies]
 linkerd-error = { path = "../error" }
 tokio = { version = "1", features = ["time"] }
-tokio-trace = { git = "https://github.com/hawkw/tokio-trace", rev = "7d5998e7cb3beb06ada5983675319dc4853576c5", features = ["serde"] }
-tracing = "0.1.23"
+tracing = "0.1.28"
 tracing-appender = "0.1.2"
 tracing-log = "0.1.2"
 
 [dependencies.tracing-subscriber]
-version = "0.2.16"
+version = "0.2.24"
 default-features = false
 features = ["env-filter", "fmt", "smallvec", "tracing-log", "json", "parking_lot"]

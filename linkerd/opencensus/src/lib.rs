@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub mod metrics;
 
@@ -24,7 +23,7 @@ where
     T: GrpcService<BoxBody> + Clone,
     T::Error: Into<Error>,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
-    T::ResponseBody: 'static,
+    T::ResponseBody: Send + Sync + 'static,
     S: Stream<Item = Span> + Unpin,
 {
     debug!("Span exporter running");
@@ -49,7 +48,7 @@ where
     T: GrpcService<BoxBody>,
     T::Error: Into<Error>,
     <T::ResponseBody as HttpBody>::Error: Into<Error> + Send + Sync,
-    T::ResponseBody: 'static,
+    T::ResponseBody: Send + Sync + 'static,
     S: Stream<Item = Span> + Unpin,
 {
     const MAX_BATCH_SIZE: usize = 1000;

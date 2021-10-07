@@ -1,7 +1,6 @@
 //! Unsafe code for accessing system-level counters for memory & CPU usage.
 
 #![deny(warnings, rust_2018_idioms)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 #[cfg(target_os = "linux")]
 mod linux;

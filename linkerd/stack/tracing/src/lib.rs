@@ -1,9 +1,7 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 use linkerd_stack::{layer, NewService, Proxy};
-use pin_project::pin_project;
 use std::task::{Context, Poll};
 use tracing::instrument::{Instrument as _, Instrumented};
 use tracing::{trace, Span};
@@ -26,9 +24,8 @@ pub struct NewInstrument<G, N> {
 }
 
 /// Instruments a service produced by `NewInstrument`.
-#[pin_project]
 #[derive(Debug)]
-pub struct Instrument<T, G, S> {
+pub struct Instrument<T, G: GetSpan<T>, S> {
     target: T,
     /// When this is a `Service` (and not a `Proxy`), we consider the `poll_ready`
     /// calls that drive the service to readiness and the `call` future that
@@ -41,7 +38,6 @@ pub struct Instrument<T, G, S> {
     /// in `call`.
     current_span: Option<Span>,
     get_span: G,
-    #[pin]
     inner: S,
 }
 
@@ -86,7 +82,7 @@ where
 {
     type Service = Instrument<T, G, N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let _span = self.get_span.get_span(&target).entered();
         trace!("new");
         let inner = self.inner.new_service(target.clone());
@@ -176,7 +172,7 @@ where
 impl<T, G, S> Clone for Instrument<T, G, S>
 where
     T: Clone,
-    G: Clone,
+    G: Clone + GetSpan<T>,
     S: Clone,
 {
     fn clone(&self) -> Self {
@@ -191,6 +187,13 @@ where
             // when it's first driven to readiness.
             current_span: None,
         }
+    }
+}
+
+impl<T, G: GetSpan<T>, S> Drop for Instrument<T, G, S> {
+    fn drop(&mut self) {
+        let span = self.current_span.take().unwrap_or_else(|| self.get_span());
+        trace!(parent: &span, "drop");
     }
 }
 

@@ -1,4 +1,4 @@
-pub use crate::metrics::{Direction, OutboundEndpointLabels};
+pub use crate::metrics::{Direction, OutboundEndpointLabels, ServerLabel as PolicyServerLabel};
 use linkerd_conditional::Conditional;
 use linkerd_metrics::FmtLabels;
 use linkerd_tls as tls;
@@ -11,55 +11,56 @@ use std::{fmt, net::SocketAddr};
 /// Implements `FmtLabels`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Key {
-    Accept {
-        direction: Direction,
-        tls: tls::ConditionalServerTls,
-        target_addr: SocketAddr,
-    },
-    OutboundConnect(OutboundEndpointLabels),
-    InboundConnect,
+    Server(ServerLabels),
+    OutboundClient(OutboundEndpointLabels),
+    InboundClient,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsAccept<'t>(&'t tls::ConditionalServerTls);
+pub struct ServerLabels {
+    direction: Direction,
+    tls: tls::ConditionalServerTls,
+    target_addr: SocketAddr,
+    policy: Option<PolicyServerLabel>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+pub struct TlsAccept<'t>(pub &'t tls::ConditionalServerTls);
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct TlsConnect<'t>(&'t tls::ConditionalClientTls);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TargetAddr(pub SocketAddr);
 
 // === impl Key ===
 
 impl Key {
-    pub fn accept(
-        direction: Direction,
+    pub fn inbound_server(
         tls: tls::ConditionalServerTls,
         target_addr: SocketAddr,
+        server: PolicyServerLabel,
     ) -> Self {
-        Self::Accept {
-            direction,
-            tls,
-            target_addr,
-        }
+        Self::Server(ServerLabels::inbound(tls, target_addr, server))
+    }
+
+    pub fn outbound_server(target_addr: SocketAddr) -> Self {
+        Self::Server(ServerLabels::outbound(target_addr))
     }
 }
 
 impl FmtLabels for Key {
     fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Accept {
-                direction,
-                tls,
-                target_addr,
-            } => {
-                direction.fmt_labels(f)?;
-                write!(f, ",peer=\"src\",target_addr=\"{}\",", target_addr)?;
-                TlsAccept::from(tls).fmt_labels(f)
-            }
-            Self::OutboundConnect(endpoint) => {
+            Self::Server(l) => l.fmt_labels(f),
+
+            Self::OutboundClient(endpoint) => {
                 Direction::Out.fmt_labels(f)?;
                 write!(f, ",peer=\"dst\",")?;
                 endpoint.fmt_labels(f)
             }
-            Self::InboundConnect => {
+
+            Self::InboundClient => {
                 const NO_TLS: tls::client::ConditionalClientTls =
                     Conditional::None(tls::NoClientTls::Loopback);
 
@@ -68,6 +69,44 @@ impl FmtLabels for Key {
                 TlsConnect(&NO_TLS).fmt_labels(f)
             }
         }
+    }
+}
+
+impl ServerLabels {
+    fn inbound(
+        tls: tls::ConditionalServerTls,
+        target_addr: SocketAddr,
+        policy: PolicyServerLabel,
+    ) -> Self {
+        ServerLabels {
+            direction: Direction::In,
+            tls,
+            target_addr,
+            policy: Some(policy),
+        }
+    }
+
+    fn outbound(target_addr: SocketAddr) -> Self {
+        ServerLabels {
+            direction: Direction::Out,
+            tls: tls::ConditionalServerTls::None(tls::NoServerTls::Loopback),
+            target_addr,
+            policy: None,
+        }
+    }
+}
+
+impl FmtLabels for ServerLabels {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.direction.fmt_labels(f)?;
+        f.write_str(",peer=\"src\",")?;
+        (
+            (TargetAddr(self.target_addr), TlsAccept(&self.tls)),
+            self.policy.as_ref(),
+        )
+            .fmt_labels(f)?;
+
+        Ok(())
     }
 }
 
@@ -120,5 +159,49 @@ impl<'t> FmtLabels for TlsConnect<'t> {
                 write!(f, "tls=\"true\",server_id=\"{}\"", server_id)
             }
         }
+    }
+}
+
+// === impl TargetAddr ===
+
+impl FmtLabels for TargetAddr {
+    fn fmt_labels(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "target_addr=\"{}\",target_ip=\"{}\",target_port=\"{}\"",
+            self.0,
+            self.0.ip(),
+            self.0.port()
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    pub use super::*;
+
+    impl std::fmt::Display for ServerLabels {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.fmt_labels(f)
+        }
+    }
+
+    #[test]
+    fn server_labels() {
+        let labels = ServerLabels::inbound(
+            tls::ConditionalServerTls::Some(tls::ServerTls::Established {
+                client_id: Some("foo.id.example.com".parse().unwrap()),
+                negotiated_protocol: None,
+            }),
+            ([192, 0, 2, 4], 40000).into(),
+            PolicyServerLabel("testserver".into()),
+        );
+        assert_eq!(
+            labels.to_string(),
+            "direction=\"inbound\",peer=\"src\",\
+            target_addr=\"192.0.2.4:40000\",target_ip=\"192.0.2.4\",target_port=\"40000\",\
+            tls=\"true\",client_id=\"foo.id.example.com\",\
+            srv_name=\"testserver\""
+        );
     }
 }

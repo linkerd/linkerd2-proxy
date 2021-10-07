@@ -1,14 +1,20 @@
-use super::require_id_header;
+use super::{NewRequireIdentity, NewStripProxyError, ProxyConnectionClose};
 use crate::Outbound;
 use linkerd_app_core::{
-    classify, config, http_tracing, metrics,
+    classify, config, errors, http_tracing, metrics,
     proxy::{http, tap},
-    svc, tls, Error, CANONICAL_DST_HEADER,
+    svc::{self, ExtractParam},
+    tls, Error, Result, CANONICAL_DST_HEADER,
 };
 use tokio::io;
 
+#[derive(Copy, Clone, Debug)]
+struct ClientRescue {
+    emit_headers: bool,
+}
+
 impl<C> Outbound<C> {
-    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::BoxNewHttp<T, B>>
+    pub fn push_http_endpoint<T, B>(self) -> Outbound<svc::ArcNewHttp<T, B>>
     where
         T: Clone + Send + Sync + 'static,
         T: svc::Param<http::client::Settings>
@@ -23,50 +29,107 @@ impl<C> Outbound<C> {
         C::Error: Into<Error>,
         C::Future: Send + Unpin + 'static,
     {
-        let Self {
-            config,
-            runtime: rt,
-            stack: connect,
-        } = self;
-        let config::ConnectConfig {
-            h1_settings,
-            h2_settings,
-            backoff,
-            ..
-        } = config.proxy.connect;
+        self.map_stack(|config, rt, connect| {
+            let config::ConnectConfig {
+                h1_settings,
+                h2_settings,
+                backoff,
+                ..
+            } = config.proxy.connect;
 
-        // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
-        // is typically used (i.e. when communicating with other proxies); though
-        // HTTP/1.x fallback is supported as needed.
-        let stack = connect
-            .push(http::client::layer(h1_settings, h2_settings))
-            .push_on_response(svc::MapErrLayer::new(Into::<Error>::into))
-            .check_service::<T>()
-            .into_new_service()
-            .push_new_reconnect(backoff)
-            .push(tap::NewTapHttp::layer(rt.tap.clone()))
-            .push(rt.metrics.http_endpoint.to_layer::<classify::Response, _>())
-            .push_on_response(http_tracing::client(
-                rt.span_sink.clone(),
-                crate::trace_labels(),
-            ))
-            .push(require_id_header::NewRequireIdentity::layer())
-            .push(http::NewOverrideAuthority::layer(vec![
-                "host",
-                CANONICAL_DST_HEADER,
-            ]))
-            .push_on_response(
-                svc::layers()
-                    .push(http::BoxResponse::layer())
-                    .push(svc::BoxService::layer()),
-            )
-            .push(svc::BoxNewService::layer());
+            // Initiates an HTTP client on the underlying transport. Prior-knowledge HTTP/2
+            // is typically used (i.e. when communicating with other proxies); though
+            // HTTP/1.x fallback is supported as needed.
+            connect
+                .push(http::client::layer(h1_settings, h2_settings))
+                .push_on_service(svc::MapErr::layer(Into::<Error>::into))
+                .check_service::<T>()
+                .into_new_service()
+                // Drive the connection to completion regardless of whether the reconnect is being
+                // actively polled.
+                .push_on_service(svc::layer::mk(svc::SpawnReady::new))
+                .push_new_reconnect(backoff)
+                // Set the TLS status on responses so that the stack can detect whether the request
+                // was sent over a meshed connection.
+                .push_http_response_insert_target::<tls::ConditionalClientTls>()
+                // If the outbound proxy is not configured to emit headers, then strip the
+                // `l5d-proxy-errors` header if set by the peer.
+                .push(NewStripProxyError::layer(config.emit_headers))
+                // Tear down server connections when a peer proxy generates an error.
+                // TODO(ver) this should only be honored when forwarding and not when the connection
+                // is part of a balancer.
+                .push(ProxyConnectionClose::layer())
+                // Handle connection-level errors eagerly so that we can report 5XX failures in tap
+                // and metrics. HTTP error metrics are not incremented here so that errors are not
+                // double-counted--i.e., endpoint metrics track these responses and error metrics
+                // track proxy errors that occur higher in the stack.
+                .push(ClientRescue::layer(config.emit_headers))
+                .push(tap::NewTapHttp::layer(rt.tap.clone()))
+                .push(
+                    rt.metrics
+                        .proxy
+                        .http_endpoint
+                        .to_layer::<classify::Response, _, _>(),
+                )
+                .push_on_service(http_tracing::client(
+                    rt.span_sink.clone(),
+                    crate::trace_labels(),
+                ))
+                .push(NewRequireIdentity::layer())
+                .push(http::NewOverrideAuthority::layer(vec![
+                    "host",
+                    CANONICAL_DST_HEADER,
+                ]))
+                .push_on_service(
+                    svc::layers()
+                        .push(http::BoxResponse::layer())
+                        .push(svc::BoxService::layer()),
+                )
+                .push(svc::ArcNewService::layer())
+        })
+    }
+}
 
-        Outbound {
-            config,
-            runtime: rt,
-            stack,
+// === impl ClientRescue ===
+
+impl ClientRescue {
+    /// Synthesizes responses for HTTP requests that encounter proxy errors.
+    pub fn layer<N>(
+        emit_headers: bool,
+    ) -> impl svc::layer::Layer<N, Service = errors::NewRespondService<Self, Self, N>> + Clone {
+        errors::respond::layer(Self { emit_headers })
+    }
+}
+
+impl<T> ExtractParam<Self, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> Self {
+        *self
+    }
+}
+
+impl<T> ExtractParam<errors::respond::EmitHeaders, T> for ClientRescue {
+    #[inline]
+    fn extract_param(&self, _: &T) -> errors::respond::EmitHeaders {
+        // Always emit informational headers on responses to an application.
+        errors::respond::EmitHeaders(self.emit_headers)
+    }
+}
+
+impl errors::HttpRescue<Error> for ClientRescue {
+    fn rescue(&self, error: Error) -> Result<errors::SyntheticHttpResponse> {
+        let cause = errors::root_cause(&*error);
+        if cause.is::<http::orig_proto::DowngradedH2Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
         }
+        if cause.is::<std::io::Error>() {
+            return Ok(errors::SyntheticHttpResponse::bad_gateway(cause));
+        }
+        if cause.is::<errors::ConnectTimeout>() {
+            return Ok(errors::SyntheticHttpResponse::gateway_timeout(cause));
+        }
+
+        Err(error)
     }
 }
 
@@ -78,7 +141,7 @@ mod test {
         io,
         proxy::api_resolve::Metadata,
         svc::{NewService, ServiceExt},
-        Never,
+        Infallible,
     };
     use std::net::SocketAddr;
 
@@ -96,7 +159,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -113,6 +176,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -132,7 +196,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -149,6 +213,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -170,7 +235,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -182,7 +247,7 @@ mod test {
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
             metadata: Metadata::new(
-                Default::default(),
+                None,
                 support::resolver::ProtocolHint::Http2,
                 None,
                 None,
@@ -193,6 +258,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_11)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -218,7 +284,7 @@ mod test {
 
         // Build the outbound server
         let (rt, _shutdown) = runtime();
-        let mut stack = Outbound::new(default_config(), rt)
+        let stack = Outbound::new(default_config(), rt)
             .with_stack(connect)
             .push_http_endpoint::<_, http::BoxBody>()
             .into_inner();
@@ -230,7 +296,7 @@ mod test {
             opaque_protocol: false,
             tls: tls::ConditionalClientTls::None(tls::NoClientTls::Disabled),
             metadata: Metadata::new(
-                Default::default(),
+                None,
                 support::resolver::ProtocolHint::Http2,
                 None,
                 None,
@@ -241,6 +307,7 @@ mod test {
         let req = http::Request::builder()
             .version(::http::Version::HTTP_2)
             .uri("http://foo.example.com")
+            .extension(http::ClientHandle::new(([192, 0, 2, 101], 40200).into()).0)
             .body(http::BoxBody::default())
             .unwrap();
         let rsp = svc.oneshot(req).await.unwrap();
@@ -264,7 +331,7 @@ mod test {
                 .fold(rsp, |rsp, orig_proto| {
                     rsp.header(WAS_ORIG_PROTO, orig_proto)
                 });
-            future::ok::<_, Never>(rsp.body(hyper::Body::default()).unwrap())
+            future::ok::<_, Infallible>(rsp.body(hyper::Body::default()).unwrap())
         });
 
         let mut http = hyper::server::conn::Http::new();

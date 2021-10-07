@@ -1,6 +1,5 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
-#![allow(clippy::inconsistent_struct_constructor)]
 
 pub use linkerd_dns_name::{InvalidName, Name, Suffix};
 use linkerd_error::Error;
@@ -96,7 +95,7 @@ impl Resolver {
             .into_iter()
             .map(Self::srv_to_socket_addr)
             .collect::<Result<_, InvalidSrv>>()?;
-        debug!(?addrs);
+        debug!(ttl = ?valid_until - time::Instant::now(), ?addrs);
         Ok((addrs, time::sleep_until(valid_until)))
     }
 
@@ -184,7 +183,7 @@ mod tests {
         ];
 
         for case in VALID {
-            let name = Name::from_str(&case.input);
+            let name = Name::from_str(case.input);
             assert_eq!(name.as_ref().map(|x| x.as_ref()), Ok(case.output));
         }
 

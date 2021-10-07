@@ -14,23 +14,20 @@ independently of the inbound and outbound proxy logic.
 
 [dependencies]
 bytes = "1"
-drain = { version = "0.0.1", features = ["retain"] }
+drain = { version = "0.1.0", features = ["retain"] }
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14.2", features = ["http1", "http2"] }
+hyper = { version = "0.14.13", features = ["http1", "http2"] }
 futures = { version = "0.3", default-features = false }
-indexmap = "1.6"
 ipnet = "2.3"
 linkerd-addr = { path = "../../addr" }
 linkerd-cache = { path = "../../cache" }
-linkerd-concurrency-limit = { path = "../../concurrency-limit" }
 linkerd-conditional = { path = "../../conditional" }
 linkerd-dns = { path = "../../dns" }
 linkerd-detect = { path = "../../detect" }
 linkerd-duplex = { path = "../../duplex" }
 linkerd-errno = { path = "../../errno" }
 linkerd-error = { path = "../../error" }
-linkerd-error-metrics = { path = "../../error-metrics" }
 linkerd-error-respond = { path = "../../error-respond" }
 linkerd-exp-backoff = { path = "../../exp-backoff" }
 linkerd-http-classify = { path = "../../http-classify" }
@@ -38,8 +35,7 @@ linkerd-http-metrics = { path = "../../http-metrics" }
 linkerd-http-retry = { path = "../../http-retry" }
 linkerd-identity = { path = "../../identity" }
 linkerd-io = { path = "../../io" }
-linkerd-metrics = { path = "../../metrics" }
-linkerd-transport-header = { path = "../../transport-header" }
+linkerd-metrics = { path = "../../metrics", features = ["linkerd-stack"] }
 linkerd-opencensus = { path = "../../opencensus" }
 linkerd-proxy-core = { path = "../../proxy/core" }
 linkerd-proxy-api-resolve = { path = "../../proxy/api-resolve" }
@@ -53,25 +49,28 @@ linkerd-proxy-tcp = { path = "../../proxy/tcp" }
 linkerd-proxy-transport = { path = "../../proxy/transport" }
 linkerd-reconnect = { path = "../../reconnect" }
 linkerd-retry = { path = "../../retry" }
-linkerd-timeout = { path = "../../timeout" }
-linkerd-tracing = { path = "../../tracing" }
+linkerd-server-policy = { path = "../../server-policy" }
 linkerd-service-profiles = { path = "../../service-profiles" }
 linkerd-stack = { path = "../../stack" }
 linkerd-stack-metrics = { path = "../../stack/metrics" }
 linkerd-stack-tracing = { path = "../../stack/tracing" }
+linkerd-tracing = { path = "../../tracing" }
+linkerd-transport-header = { path = "../../transport-header" }
+linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
 linkerd-trace-context = { path = "../../trace-context" }
-regex = "1.4.6"
+regex = "1.5.4"
 serde_json = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "sync", "parking_lot"]}
-tokio-stream = { version = "0.1.6", features = ["time"] }
-tonic = { version = "0.4", default-features = false, features = ["prost"] }
-tracing = "0.1.23"
+tokio-stream = { version = "0.1.7", features = ["time"] }
+tonic = { version = "0.5", default-features = false, features = ["prost"] }
+tracing = "0.1.28"
+parking_lot = "0.11"
 pin-project = "1"
 
 [dependencies.tower]
-version = "0.4.7"
+version = "0.4.8"
 default-features = false
 features = [
     "buffer",
@@ -79,7 +78,11 @@ features = [
     "spawn-ready",
     "timeout",
     "util",
+    "limit",
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 linkerd-system = { path = "../../system" }
+
+[dev-dependencies]
+quickcheck = { version = "1", default-features = false }

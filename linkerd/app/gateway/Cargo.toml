@@ -9,18 +9,17 @@ publish = false
 [dependencies]
 http = "0.2"
 futures = { version = "0.3", default-features = false }
-indexmap = "1.6"
 linkerd-app-core = { path = "../core" }
 linkerd-app-inbound = { path = "../inbound" }
 linkerd-app-outbound = { path = "../outbound" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
-tower = { version = "0.4.7", default-features = false }
-tracing = "0.1.23"
+tower = { version = "0.4.8", default-features = false }
+tracing = "0.1.28"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
 tokio-test = "0.4"
-tower = { version = "0.4.7", default-features = false, features = ["util"] }
+tower = { version = "0.4.8", default-features = false, features = ["util"] }
 tower-test = "0.4"
 linkerd-app-test = { path = "../test" }
