@@ -1,12 +1,9 @@
-use std::{io::Write, marker::PhantomData, path::PathBuf, sync::Arc};
-use tracing::{Id, Level, Metadata, Subscriber};
+use std::{io::Write, path::PathBuf, sync::Arc};
+use tracing::{span, Id, Level, Metadata, Subscriber};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{
     filter::{Directive, FilterFn, Filtered},
-    fmt::{
-        format::{DefaultFields, JsonFields},
-        FormatFields, FormattedFields, MakeWriter,
-    },
+    fmt::{format::DefaultFields, FormatFields, FormattedFields, MakeWriter},
     layer::{Context, Layer},
     registry::LookupSpan,
 };
@@ -22,7 +19,7 @@ pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
 
 pub(super) struct Writer<F = DefaultFields> {
     make_writer: NonBlocking,
-    _f: PhantomData<fn(F)>,
+    formatter: F,
 }
 
 pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Guard, Directive)>
@@ -74,22 +71,7 @@ impl Writer<DefaultFields> {
     pub fn new(make_writer: NonBlocking) -> Self {
         Self {
             make_writer,
-            _f: PhantomData::default(),
-        }
-    }
-}
-
-impl<F> Writer<F> {
-    #[inline(always)]
-    fn cares_about(&self, meta: &Metadata<'_>) -> bool {
-        meta.target() == TRACE_TARGET
-    }
-
-    #[allow(dead_code)]
-    pub fn into_json(self) -> Writer<JsonFields> {
-        Writer {
-            make_writer: self.make_writer,
-            _f: PhantomData,
+            formatter: Default::default(),
         }
     }
 }
@@ -99,13 +81,41 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
     F: for<'writer> FormatFields<'writer> + 'static,
 {
+    fn new_span(&self, attrs: &span::Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
+        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let mut extensions = span.extensions_mut();
+
+        if extensions.get_mut::<FormattedFields<F>>().is_none() {
+            let mut buf = String::new();
+            if self.formatter.format_fields(&mut buf, attrs).is_ok() {
+                let fmt_fields = FormattedFields::<F>::new(buf);
+                extensions.insert(fmt_fields);
+            }
+        }
+    }
+
+    fn on_record(&self, id: &Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
+        let span = ctx.span(id).expect("Span not found, this is a bug");
+        let mut extensions = span.extensions_mut();
+        if let Some(FormattedFields { ref mut fields, .. }) =
+            extensions.get_mut::<FormattedFields<F>>()
+        {
+            let _ = self.formatter.add_fields(fields, values);
+            return;
+        }
+
+        let mut buf = String::new();
+        if self.formatter.format_fields(&mut buf, values).is_ok() {
+            let fmt_fields = FormattedFields::<F>::new(buf);
+            extensions.insert(fmt_fields);
+        }
+    }
+
     fn on_close(&self, id: Id, ctx: Context<'_, S>) {
         if let Some(span) = ctx.span(&id) {
-            if self.cares_about(span.metadata()) {
-                if let Some(fields) = span.extensions().get::<FormattedFields<F>>() {
-                    let mut writer = self.make_writer.make_writer();
-                    let _ = writeln!(&mut writer, "{}", fields.fields);
-                }
+            if let Some(fields) = span.extensions().get::<FormattedFields<F>>() {
+                let mut writer = self.make_writer.make_writer();
+                let _ = writeln!(&mut writer, "{}", fields.fields);
             }
         }
     }
