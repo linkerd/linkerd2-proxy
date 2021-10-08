@@ -58,7 +58,7 @@ pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<tls::server::Io<I>>>;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: Option<WithTransportHeaderAlpn>,
+    identity: WithTransportHeaderAlpn,
 }
 
 impl<N> Inbound<N> {
@@ -186,9 +186,9 @@ impl<N> Inbound<N> {
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
-                .push(tls::NewDetectTls::layer(TlsParams {
+                .push(tls::NewDetectTls::<WithTransportHeaderAlpn, _, _>::layer(TlsParams {
                     timeout: tls::server::Timeout(detect_timeout),
-                    identity: rt.identity.clone().map(WithTransportHeaderAlpn),
+                    identity: WithTransportHeaderAlpn(rt.identity.clone()),
                 }))
                 .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
@@ -334,9 +334,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<Option<WithTransportHeaderAlpn>, T> for TlsParams {
+impl<T> ExtractParam<WithTransportHeaderAlpn, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> Option<WithTransportHeaderAlpn> {
+    fn extract_param(&self, _: &T) -> WithTransportHeaderAlpn {
         self.identity.clone()
     }
 }

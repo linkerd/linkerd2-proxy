@@ -123,17 +123,18 @@ impl Config {
 
         let tap = {
             let bind = bind_admin.clone();
-            info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
+            info_span!("tap")
+                .in_scope(|| tap.build(bind, identity.local().clone(), drain_rx.clone()))?
         };
 
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local().clone()))
         }?;
 
         let oc_collector = {
-            let identity = identity.local();
+            let identity = identity.local().clone();
             let dns = dns.resolver.clone();
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
@@ -142,7 +143,7 @@ impl Config {
         }?;
 
         let runtime = ProxyRuntime {
-            identity: identity.local(),
+            identity: identity.local().clone(),
             metrics: metrics.proxy.clone(),
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
@@ -158,7 +159,7 @@ impl Config {
         };
 
         let admin = {
-            let identity = identity.local();
+            let identity = identity.local().clone();
             let metrics = inbound.metrics();
             let policy = inbound_policies.clone();
             let report = inbound
@@ -200,7 +201,7 @@ impl Config {
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
-            let identity = identity.local();
+            let identity = identity.local().clone();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
@@ -246,12 +247,7 @@ impl Config {
     /// Waits for the proxy's identity to be certified.
     ///
     /// If this does not complete in a timely fashion, warnings are logged every 15s
-    async fn await_identity(id: Option<identity::LocalCrtKey>) -> Result<(), Error> {
-        let id = match id {
-            Some(id) => id,
-            None => return Ok(()),
-        };
-
+    async fn await_identity(id: identity::LocalCrtKey) -> Result<(), Error> {
         tokio::pin! {
             let fut = id.await_crt();
         }
@@ -292,18 +288,12 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> Option<&identity::LocalCrtKey> {
-        match self.identity {
-            identity::Identity::Disabled => None,
-            identity::Identity::Enabled { ref local, .. } => Some(local),
-        }
+    pub fn local_identity(&self) -> &identity::LocalCrtKey {
+        self.identity.local()
     }
 
-    pub fn identity_addr(&self) -> Option<&ControlAddr> {
-        match self.identity {
-            identity::Identity::Disabled => None,
-            identity::Identity::Enabled { ref addr, .. } => Some(addr),
-        }
+    pub fn identity_addr(&self) -> &ControlAddr {
+        self.identity.addr()
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
@@ -350,26 +340,27 @@ impl App {
                         );
 
                         // Kick off the identity so that the process can become ready.
-                        if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio::spawn(task.instrument(info_span!("identity").or_current()));
+                        let local = identity.local().clone();
+                        tokio::spawn(
+                            identity
+                                .task()
+                                .instrument(info_span!("identity").or_current()),
+                        );
 
-                            let latch = admin.latch;
-                            tokio::spawn(
-                                local
-                                    .await_crt()
-                                    .map_ok(move |id| {
-                                        latch.release();
-                                        info!("Certified identity: {}", id.name().as_ref());
-                                    })
-                                    .map_err(|_| {
-                                        // The daemon task was lost?!
-                                        panic!("Failed to certify identity!");
-                                    })
-                                    .instrument(info_span!("identity").or_current()),
-                            );
-                        } else {
-                            admin.latch.release()
-                        }
+                        let latch = admin.latch;
+                        tokio::spawn(
+                            local
+                                .await_crt()
+                                .map_ok(move |id| {
+                                    latch.release();
+                                    info!("Certified identity: {}", id.name().as_ref());
+                                })
+                                .map_err(|_| {
+                                    // The daemon task was lost?!
+                                    panic!("Failed to certify identity!");
+                                })
+                                .instrument(info_span!("identity").or_current()),
+                        );
 
                         if let tap::Tap::Enabled {
                             registry, serve, ..

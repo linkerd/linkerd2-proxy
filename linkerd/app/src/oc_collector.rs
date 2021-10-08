@@ -40,7 +40,7 @@ impl Config {
 
     pub fn build(
         self,
-        identity: Option<LocalCrtKey>,
+        identity: LocalCrtKey,
         dns: dns::Resolver,
         metrics: metrics::Registry,
         client_metrics: HttpMetrics,
