@@ -359,6 +359,17 @@ impl fmt::Display for NoServerTls {
     }
 }
 
+// === impl ServerTls ===
+
+impl ServerTls {
+    pub fn client_id(&self) -> Option<&ClientId> {
+        match self {
+            ServerTls::Established { ref client_id, .. } => client_id.as_ref(),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use io::AsyncWriteExt;

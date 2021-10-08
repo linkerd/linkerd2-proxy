@@ -13,6 +13,7 @@ http = "0.2"
 pin-project = "1"
 linkerd-stack = { path = "../stack" }
 linkerd-identity = { path = "../identity" }
+linkerd-tls = { path = "../tls" }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing" }
 tracing = "0.1.19"

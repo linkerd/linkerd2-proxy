@@ -11,7 +11,7 @@ use linkerd_app_core::{
     proxy::http,
     svc::{self, ExtractParam, Param},
     tls,
-    transport::OrigDstAddr,
+    transport::{ClientAddr, OrigDstAddr, Remote},
     Error, Result,
 };
 use linkerd_http_access_log::NewAccessLog;
@@ -27,7 +27,8 @@ impl<H> Inbound<H> {
             + Param<http::normalize_uri::DefaultAuthority>
             + Param<tls::ConditionalServerTls>
             + Param<ServerLabel>
-            + Param<OrigDstAddr>,
+            + Param<OrigDstAddr>
+            + Param<Remote<ClientAddr>>,
         T: Clone + Send + Unpin + 'static,
         I: io::AsyncRead + io::AsyncWrite + io::PeerAddr + Send + Unpin + 'static,
         H: svc::NewService<T, Service = HSvc> + Clone + Send + Sync + Unpin + 'static,

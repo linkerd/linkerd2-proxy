@@ -1,15 +1,14 @@
 use std::{io::Write, marker::PhantomData, path::PathBuf, sync::Arc};
-use tracing::{Id, Metadata, Subscriber};
+use tracing::{Id, Level, Metadata, Subscriber};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
-use tracing_subscriber::filter::Directive;
 use tracing_subscriber::{
+    filter::{Directive, FilterFn, Filtered},
     fmt::{
         format::{DefaultFields, JsonFields},
         FormatFields, FormattedFields, MakeWriter,
     },
-    layer::Context,
+    layer::{Context, Layer},
     registry::LookupSpan,
-    Layer,
 };
 
 const ENV_ACCESS_LOG: &str = "LINKERD2_PROXY_ACCESS_LOG";
@@ -19,12 +18,17 @@ pub const TRACE_TARGET: &str = "_access_log";
 #[derive(Clone, Debug)]
 pub struct Guard(Arc<WorkerGuard>);
 
+pub type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
+
 pub(super) struct Writer<F = DefaultFields> {
     make_writer: NonBlocking,
     _f: PhantomData<fn(F)>,
 }
 
-pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
+pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Guard, Directive)>
+where
+    S: Subscriber + for<'span> LookupSpan<'span>,
+{
     // Create the access log file, or open it in append-only mode if
     // it already exists.
     let file = {
@@ -47,7 +51,13 @@ pub(super) fn build() -> Option<(Writer, Guard, Directive)> {
     // build the access log layer.
     eprintln!("Writing access log to {:?}", file);
     let (non_blocking, guard) = tracing_appender::non_blocking(file);
-    let writer = Writer::new(non_blocking);
+    let writer = Writer::new(non_blocking).with_filter(
+        FilterFn::new(
+            (|meta| meta.level() == &Level::INFO && meta.target().starts_with(TRACE_TARGET))
+                as fn(&Metadata<'_>) -> bool,
+        )
+        .with_max_level_hint(Level::INFO),
+    );
 
     // Also, ensure that the `tracing` filter configuration will
     // always enable the access log spans.

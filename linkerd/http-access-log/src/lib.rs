@@ -5,6 +5,7 @@ use futures::TryFuture;
 use linkerd_identity as identity;
 use linkerd_proxy_transport::{ClientAddr, Remote};
 use linkerd_stack as svc;
+use linkerd_tls as tls;
 use linkerd_tracing::access_log::TRACE_TARGET;
 use pin_project::pin_project;
 use std::{
@@ -52,14 +53,17 @@ impl<N> NewAccessLog<N> {
 
 impl<N, T> NewService<T> for NewAccessLog<N>
 where
-    T: Param<Option<identity::Name>> + Param<Remote<ClientAddr>>,
+    T: Param<tls::ConditionalServerTls> + Param<Remote<ClientAddr>>,
     N: NewService<T>,
 {
     type Service = AccessLogContext<N::Service>;
 
-    fn new_service(&mut self, target: T) -> Self::Service {
+    fn new_service(&self, target: T) -> Self::Service {
         let Remote(ClientAddr(client_addr)) = target.param();
-        let client_id = target.param();
+        let tls: tls::ConditionalServerTls = target.param();
+        let client_id = tls
+            .value()
+            .and_then(|tls| tls.client_id().map(|tls::ClientId(name)| name.clone()));
         let inner = self.inner.new_service(target);
         AccessLogContext {
             inner,
