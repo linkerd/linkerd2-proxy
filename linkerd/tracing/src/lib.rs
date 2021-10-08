@@ -152,7 +152,16 @@ impl Settings {
 
     pub fn build(self) -> (Dispatch, Handle) {
         let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
-        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
+
+        let mut filter = EnvFilter::new(log_level);
+        let (access_log, guard) = match access_log::build() {
+            Some((access_log, guard, directive)) => {
+                filter = filter.add_directive(directive);
+                (Some(access_log), Some(guard))
+            }
+            None => (None, None),
+        };
+        let (filter, level) = reload::Layer::new(filter);
         let level = level::Handle::new(level);
 
         let logger = match self.format().as_ref() {
@@ -160,12 +169,21 @@ impl Settings {
             _ => self.mk_plain(),
         };
 
-        let dispatch = tracing_subscriber::registry()
-            .with(filter)
-            .with(logger)
-            .into();
+        let handle = Handle(Some(Inner { level, guard }));
 
-        (dispatch, Handle(Some(level)))
+        let has_access_log = access_log.is_some();
+        let registry = tracing_subscriber::registry().with(filter).with(access_log);
+        let dispatch = if has_access_log {
+            registry
+                .with(logger.with_filter(FilterFn::new(|meta| {
+                    !meta.target().starts_with(access_log::TRACE_TARGET)
+                })))
+                .into()
+        } else {
+            registry.with(logger).into()
+        };
+
+        (dispatch, handle)
     }
 }
 // === impl Handle ===

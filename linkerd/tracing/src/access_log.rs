@@ -18,7 +18,7 @@ pub const TRACE_TARGET: &str = "_access_log";
 #[derive(Clone, Debug)]
 pub struct Guard(Arc<WorkerGuard>);
 
-pub type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
+pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
 
 pub(super) struct Writer<F = DefaultFields> {
     make_writer: NonBlocking,
