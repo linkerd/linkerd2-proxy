@@ -8,11 +8,8 @@ mod uptime;
 use self::uptime::Uptime;
 use linkerd_error::Error;
 use std::{env, str};
-use tracing::Dispatch;
-use tracing_subscriber::{fmt::format, layer::Layered, prelude::*, reload, EnvFilter};
-
-type Registry =
-    Layered<reload::Layer<EnvFilter, tracing_subscriber::Registry>, tracing_subscriber::Registry>;
+use tracing::{Dispatch, Subscriber};
+use tracing_subscriber::{fmt::format, prelude::*, registry::LookupSpan, reload, EnvFilter, Layer};
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
 const ENV_LOG_FORMAT: &str = "LINKERD2_PROXY_LOG_FORMAT";
@@ -94,14 +91,11 @@ impl Settings {
             .to_uppercase()
     }
 
-    fn mk_registry(&self) -> (Registry, level::Handle) {
-        let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
-        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
-        let reg = tracing_subscriber::registry().with(filter);
-        (reg, level::Handle::new(level))
-    }
-
-    fn mk_json(&self, registry: Registry) -> Dispatch {
+    fn mk_json<S>(&self) -> Box<dyn Layer<S> + Send + Sync + 'static>
+    where
+        S: Subscriber + for<'span> LookupSpan<'span>,
+        S: Send + Sync,
+    {
         let fmt = tracing_subscriber::fmt::format()
             .with_timer(Uptime::starting_now())
             .with_thread_ids(!self.is_test)
@@ -121,31 +115,42 @@ impl Settings {
             .fmt_fields(format::JsonFields::default());
 
         if self.is_test {
-            registry.with(fmt.with_test_writer()).into()
+            Box::new(fmt.with_test_writer())
         } else {
-            registry.with(fmt).into()
+            Box::new(fmt)
         }
     }
 
-    fn mk_plain(&self, registry: Registry) -> Dispatch {
+    fn mk_plain<S>(&self) -> Box<dyn Layer<S> + Send + Sync + 'static>
+    where
+        S: Subscriber + for<'span> LookupSpan<'span>,
+        S: Send + Sync,
+    {
         let fmt = tracing_subscriber::fmt::format()
             .with_timer(Uptime::starting_now())
             .with_thread_ids(!self.is_test);
         let fmt = tracing_subscriber::fmt::layer().event_format(fmt);
         if self.is_test {
-            registry.with(fmt.with_test_writer()).into()
+            Box::new(fmt.with_test_writer())
         } else {
-            registry.with(fmt).into()
+            Box::new(fmt)
         }
     }
 
     pub fn build(self) -> (Dispatch, Handle) {
-        let (registry, level) = self.mk_registry();
+        let log_level = self.filter.as_deref().unwrap_or(DEFAULT_LOG_LEVEL);
+        let (filter, level) = reload::Layer::new(EnvFilter::new(log_level));
+        let level = level::Handle::new(level);
 
-        let dispatch = match self.format().as_ref() {
-            "JSON" => self.mk_json(registry),
-            _ => self.mk_plain(registry),
+        let logger = match self.format().as_ref() {
+            "JSON" => self.mk_json(),
+            _ => self.mk_plain(),
         };
+
+        let dispatch = tracing_subscriber::registry()
+            .with(filter)
+            .with(logger)
+            .into();
 
         (dispatch, Handle(Some(level)))
     }

@@ -73,7 +73,7 @@ pub struct Outbound<S> {
 #[derive(Clone, Debug)]
 struct Runtime {
     metrics: Metrics,
-    identity: Option<LocalCrtKey>,
+    identity: LocalCrtKey,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
     drain: drain::Watch,
@@ -126,11 +126,7 @@ impl<S> Outbound<S> {
     }
 
     fn no_tls_reason(&self) -> tls::NoClientTls {
-        if self.runtime.identity.is_none() {
-            tls::NoClientTls::Disabled
-        } else {
-            tls::NoClientTls::NotProvidedByServiceDiscovery
-        }
+        tls::NoClientTls::NotProvidedByServiceDiscovery
     }
 
     pub fn push<L: svc::Layer<S>>(self, layer: L) -> Outbound<L::Service> {
