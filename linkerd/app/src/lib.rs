@@ -123,18 +123,17 @@ impl Config {
 
         let tap = {
             let bind = bind_admin.clone();
-            info_span!("tap")
-                .in_scope(|| tap.build(bind, identity.local().clone(), drain_rx.clone()))?
+            info_span!("tap").in_scope(|| tap.build(bind, identity.local(), drain_rx.clone()))?
         };
 
         let dst = {
             let metrics = metrics.control.clone();
             let dns = dns.resolver.clone();
-            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local().clone()))
+            info_span!("dst").in_scope(|| dst.build(dns, metrics, identity.local()))
         }?;
 
         let oc_collector = {
-            let identity = identity.local().clone();
+            let identity = identity.local();
             let dns = dns.resolver.clone();
             let client_metrics = metrics.control.clone();
             let metrics = metrics.opencensus;
@@ -143,7 +142,7 @@ impl Config {
         }?;
 
         let runtime = ProxyRuntime {
-            identity: identity.local().clone(),
+            identity: identity.local(),
             metrics: metrics.proxy.clone(),
             tap: tap.registry(),
             span_sink: oc_collector.span_sink(),
@@ -159,7 +158,7 @@ impl Config {
         };
 
         let admin = {
-            let identity = identity.local().clone();
+            let identity = identity.local();
             let metrics = inbound.metrics();
             let policy = inbound_policies.clone();
             let report = inbound
@@ -201,7 +200,7 @@ impl Config {
 
         // Build a task that initializes and runs the proxy stacks.
         let start_proxy = {
-            let identity = identity.local().clone();
+            let identity = identity.local();
             let inbound_addr = inbound_addr;
             let profiles = dst.profiles;
             let resolve = dst.resolve;
@@ -288,11 +287,11 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> &identity::LocalCrtKey {
+    pub fn local_identity(&self) -> identity::LocalCrtKey {
         self.identity.local()
     }
 
-    pub fn identity_addr(&self) -> &ControlAddr {
+    pub fn identity_addr(&self) -> ControlAddr {
         self.identity.addr()
     }
 
@@ -340,7 +339,7 @@ impl App {
                         );
 
                         // Kick off the identity so that the process can become ready.
-                        let local = identity.local().clone();
+                        let local = identity.local();
                         tokio::spawn(
                             identity
                                 .task()

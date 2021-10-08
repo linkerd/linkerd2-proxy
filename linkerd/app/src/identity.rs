@@ -58,12 +58,12 @@ impl Config {
 // === impl Identity ===
 
 impl Identity {
-    pub fn addr(&self) -> &control::ControlAddr {
-        &self.addr
+    pub fn addr(&self) -> control::ControlAddr {
+        self.addr.clone()
     }
 
-    pub fn local(&self) -> &LocalCrtKey {
-        &self.local
+    pub fn local(&self) -> LocalCrtKey {
+        self.local.clone()
     }
 
     pub fn metrics(&self) -> metrics::Report {
