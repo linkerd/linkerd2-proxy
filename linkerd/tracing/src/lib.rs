@@ -11,11 +11,7 @@ use linkerd_error::Error;
 use std::str;
 use tracing::{Dispatch, Subscriber};
 use tracing_subscriber::{
-    filter::{EnvFilter, FilterFn},
-    fmt::format,
-    prelude::*,
-    registry::LookupSpan,
-    reload, Layer,
+    filter::EnvFilter, fmt::format, prelude::*, registry::LookupSpan, reload, Layer,
 };
 
 const ENV_LOG_LEVEL: &str = "LINKERD2_PROXY_LOG";
@@ -168,9 +164,6 @@ impl Settings {
             "JSON" => self.mk_json(),
             _ => self.mk_plain(),
         };
-        let logger = logger.with_filter(FilterFn::new(|meta| {
-            !meta.target().starts_with(access_log::TRACE_TARGET)
-        }));
 
         let handle = Handle(Some(Inner { level, guard }));
 
