@@ -168,20 +168,17 @@ impl Settings {
             "JSON" => self.mk_json(),
             _ => self.mk_plain(),
         };
+        let logger = logger.with_filter(FilterFn::new(|meta| {
+            !meta.target().starts_with(access_log::TRACE_TARGET)
+        }));
 
         let handle = Handle(Some(Inner { level, guard }));
 
-        let has_access_log = access_log.is_some();
-        let registry = tracing_subscriber::registry().with(filter).with(access_log);
-        let dispatch = if has_access_log {
-            registry
-                .with(logger.with_filter(FilterFn::new(|meta| {
-                    !meta.target().starts_with(access_log::TRACE_TARGET)
-                })))
-                .into()
-        } else {
-            registry.with(logger).into()
-        };
+        let dispatch = tracing_subscriber::registry()
+            .with(filter)
+            .with(access_log)
+            .with(logger)
+            .into();
 
         (dispatch, handle)
     }
