@@ -189,6 +189,7 @@ impl LocalCrtKey {
     pub fn for_test(id: &id::test_util::Identity) -> Self {
         let crt_key = id.validate().expect("Identity must be valid");
         let (tx, rx) = watch::channel(Some(crt_key));
+        // Prevent the receiver stream from ending.
         tokio::spawn(async move {
             tx.closed().await;
         });

@@ -115,7 +115,7 @@ impl Config {
 
         // Ensure that we've obtained a valid identity before binding any servers.
         let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()));
 
         let report = identity.metrics().and_report(report);
 

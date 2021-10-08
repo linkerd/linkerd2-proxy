@@ -11,16 +11,12 @@ use linkerd_app_core::{
 use std::{future::Future, pin::Pin};
 use tracing::Instrument;
 
-// The Disabled case is extraordinarily rare.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub struct Config {
     pub control: control::Config,
     pub certify: certify::Config,
 }
 
-// The Disabled case is extraordinarily rare.
-#[allow(clippy::large_enum_variant)]
 pub struct Identity {
     addr: control::ControlAddr,
     local: LocalCrtKey,
@@ -35,7 +31,7 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 // === impl Config ===
 
 impl Config {
-    pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Result<Identity, Error> {
+    pub fn build(self, dns: dns::Resolver, metrics: Metrics) -> Identity {
         let (local, daemon) = LocalCrtKey::new(&self.certify);
 
         let addr = self.control.addr.clone();
@@ -51,7 +47,7 @@ impl Config {
             )
         };
 
-        Ok(Identity { addr, local, task })
+        Identity { addr, local, task }
     }
 }
 
