@@ -16,7 +16,7 @@ use std::{
 };
 pub use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::{self, Session};
-use tracing::{debug, trace};
+use tracing::debug;
 
 /// A newtype for target server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -58,7 +58,7 @@ pub type Config = Arc<rustls::ClientConfig>;
 
 #[derive(Clone, Debug)]
 pub struct Client<L, C> {
-    local: Option<L>,
+    local: L,
     inner: C,
 }
 
@@ -82,7 +82,7 @@ impl From<ServerId> for ClientTls {
 // === impl Client ===
 
 impl<L: Clone, C> Client<L, C> {
-    pub fn layer(local: Option<L>) -> impl layer::Layer<C, Service = Self> + Clone {
+    pub fn layer(local: L) -> impl layer::Layer<C, Service = Self> + Clone {
         layer::mk(move |inner| Self {
             inner,
             local: local.clone(),
@@ -116,29 +116,21 @@ where
             }
         };
 
-        let handshake = match self.local.as_ref() {
-            Some(local) => {
-                // Build a rustls ClientConfig for this connection.
-                //
-                // If ALPN protocols are configured by the endpoint, we have to clone the
-                // entire configuration and set the protocols. If there are no
-                // ALPN options, clone the Arc'd base configuration without
-                // extra allocation.
-                //
-                // TODO it would be better to avoid cloning the whole TLS config
-                // per-connection.
-                match alpn {
-                    None => tokio_rustls::TlsConnector::from(local.param()),
-                    Some(AlpnProtocols(protocols)) => {
-                        let mut config: rustls::ClientConfig = local.param().as_ref().clone();
-                        config.alpn_protocols = protocols;
-                        tokio_rustls::TlsConnector::from(Arc::new(config))
-                    }
-                }
-            }
-            None => {
-                trace!("Local identity disabled");
-                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
+        // Build a rustls ClientConfig for this connection.
+        //
+        // If ALPN protocols are configured by the endpoint, we have to clone the
+        // entire configuration and set the protocols. If there are no
+        // ALPN options, clone the Arc'd base configuration without
+        // extra allocation.
+        //
+        // TODO it would be better to avoid cloning the whole TLS config
+        // per-connection.
+        let handshake = match alpn {
+            None => tokio_rustls::TlsConnector::from(self.local.param()),
+            Some(AlpnProtocols(protocols)) => {
+                let mut config: rustls::ClientConfig = self.local.param().as_ref().clone();
+                config.alpn_protocols = protocols;
+                tokio_rustls::TlsConnector::from(Arc::new(config))
             }
         };
 

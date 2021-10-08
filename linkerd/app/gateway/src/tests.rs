@@ -1,6 +1,6 @@
 use super::*;
 use linkerd_app_core::{
-    dns, identity as id, profiles, proxy::http, svc::NewService, tls, Error, NameAddr, NameMatch,
+    dns, profiles, proxy::http, svc::NewService, tls, Error, NameAddr, NameMatch,
 };
 use linkerd_app_inbound::{GatewayDomainInvalid, GatewayIdentityRequired, GatewayLoop};
 use linkerd_app_test as support;
@@ -109,7 +109,7 @@ impl Test {
             move |_: svc::Either<outbound::http::Logical, outbound::http::Endpoint>| {
                 outbound.clone()
             },
-            Some(tls::LocalId(id::Name::from_str("gateway.id.test").unwrap())),
+            tls::LocalId("gateway.id.test".parse().unwrap()),
         );
 
         let t = HttpTarget {

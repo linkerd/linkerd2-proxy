@@ -18,12 +18,11 @@ use tracing::{debug, warn};
 #[derive(Clone, Debug)]
 pub(crate) struct NewGateway<O> {
     outbound: O,
-    local_id: Option<tls::LocalId>,
+    local_id: tls::LocalId,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum Gateway<O> {
-    NoIdentity,
     BadDomain(dns::Name),
     Outbound {
         outbound: O,
@@ -37,11 +36,11 @@ pub(crate) type Target = (Option<profiles::Receiver>, HttpTarget);
 // === impl NewGateway ===
 
 impl<O> NewGateway<O> {
-    pub fn new(outbound: O, local_id: Option<tls::LocalId>) -> Self {
+    pub fn new(outbound: O, local_id: tls::LocalId) -> Self {
         Self { outbound, local_id }
     }
 
-    pub fn layer(local_id: Option<tls::LocalId>) -> impl layer::Layer<O, Service = Self> + Clone {
+    pub fn layer(local_id: tls::LocalId) -> impl layer::Layer<O, Service = Self> + Clone {
         layer::mk(move |outbound| Self::new(outbound, local_id.clone()))
     }
 }
@@ -56,10 +55,7 @@ where
     type Service = Gateway<O::Service>;
 
     fn new_service(&self, (profile, http): Target) -> Self::Service {
-        let local_id = match self.local_id.clone() {
-            Some(id) => id,
-            None => return Gateway::NoIdentity,
-        };
+        let local_id = self.local_id.clone();
         let profile = match profile {
             Some(profile) => profile,
             None => return Gateway::BadDomain(http.target.name().clone()),
@@ -198,7 +194,6 @@ where
                 tracing::debug!("Passing request to outbound");
                 Box::pin(outbound.call(request).map_err(Into::into))
             }
-            Self::NoIdentity => Box::pin(future::err(GatewayIdentityRequired.into())),
             Self::BadDomain(..) => Box::pin(future::err(GatewayDomainInvalid.into())),
         }
     }

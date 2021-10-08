@@ -58,7 +58,7 @@ struct Permitted {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: Option<LocalCrtKey>,
+    identity: LocalCrtKey,
 }
 
 const DETECT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -74,7 +74,7 @@ impl Config {
         self,
         bind: B,
         policy: impl inbound::policy::CheckPolicy,
-        identity: Option<LocalCrtKey>,
+        identity: LocalCrtKey,
         report: R,
         metrics: inbound::Metrics,
         trace: trace::Handle,
@@ -153,7 +153,7 @@ impl Config {
                 }
             })
             .push(svc::ArcNewService::layer())
-            .push(tls::NewDetectTls::layer(TlsParams {
+            .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
                 identity,
             }))
             .into_inner();
@@ -240,9 +240,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+impl<T> ExtractParam<LocalCrtKey, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+    fn extract_param(&self, _: &T) -> LocalCrtKey {
         self.identity.clone()
     }
 }

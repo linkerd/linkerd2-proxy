@@ -30,10 +30,13 @@ type ServerConn<T, I> = ((tls::ConditionalServerTls, T), tls::server::Io<I>);
 
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
+    let server_tls = id::test_util::FOO_NS1.validate().unwrap();
+    let client_tls = id::test_util::BAR_NS1.validate().unwrap();
     let (client_result, server_result) = run_test(
+        client_tls,
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
         |conn| write_then_read(conn, PING),
-        None,
+        server_tls,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     )
     .await;
@@ -46,7 +49,7 @@ async fn plaintext() {
     assert_eq!(&client_result.result.expect("pong")[..], PONG);
     assert_eq!(
         server_result.tls,
-        Some(Conditional::None(tls::NoServerTls::Disabled))
+        Some(Conditional::None(tls::NoServerTls::NoClientHello))
     );
     assert_eq!(&server_result.result.expect("ping")[..], PING);
 }
@@ -57,9 +60,10 @@ async fn proxy_to_proxy_tls_works() {
     let client_tls = id::test_util::BAR_NS1.validate().unwrap();
     let server_id = tls::ServerId(server_tls.name().clone());
     let (client_result, server_result) = run_test(
-        Conditional::Some((client_tls.clone(), server_id.clone())),
+        client_tls.clone(),
+        Conditional::Some(server_id.clone()),
         |conn| write_then_read(conn, PING),
-        Some(server_tls),
+        server_tls,
         |(_, conn)| read_then_write(conn, PING.len(), PONG),
     )
     .await;
@@ -93,9 +97,10 @@ async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
     let sni = id::test_util::BAR_NS1.crt().name().clone();
 
     let (client_result, server_result) = run_test(
-        Conditional::Some((client_tls, tls::ServerId(sni.clone()))),
+        client_tls,
+        Conditional::Some(tls::ServerId(sni.clone())),
         |conn| write_then_read(conn, PING),
-        Some(server_tls),
+        server_tls,
         |(_, conn)| read_then_write(conn, START_OF_TLS.len(), PONG),
     )
     .await;
@@ -122,16 +127,17 @@ struct Transported<I, R> {
 
 #[derive(Clone)]
 struct ServerParams {
-    identity: Option<id::CrtKey>,
+    identity: id::CrtKey,
 }
 
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
 async fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: Conditional<(id::CrtKey, tls::ServerId), tls::NoClientTls>,
+    client_tls: id::CrtKey,
+    client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
     client: C,
-    server_tls: Option<id::CrtKey>,
+    server_id: id::CrtKey,
     server: S,
 ) -> (
     Transported<tls::ConditionalClientTls, CR>,
@@ -147,11 +153,6 @@ where
     SF: Future<Output = Result<SR, io::Error>> + Send + 'static,
     SR: Send + 'static,
 {
-    let (client_tls, client_server_id) = match client_tls {
-        Conditional::Some((crtkey, name)) => (Some(Tls(crtkey)), Conditional::Some(name)),
-        Conditional::None(reason) => (None, Conditional::None(reason)),
-    };
-
     let _trace = linkerd_tracing::test::trace_init();
 
     // A future that will receive a single connection.
@@ -159,9 +160,9 @@ where
         // Saves the result of every connection.
         let (sender, receiver) = mpsc::channel::<Transported<tls::ConditionalServerTls, SR>>();
 
-        let detect = tls::NewDetectTls::new(
+        let detect = tls::NewDetectTls::<Tls, _, _>::new(
             ServerParams {
-                identity: server_tls,
+                identity: server_id,
             },
             move |meta: (tls::ConditionalServerTls, Addrs)| {
                 let server = server.clone();
@@ -214,7 +215,7 @@ where
 
         let tls = Some(client_server_id.clone().map(Into::into));
         let client = async move {
-            let conn = tls::Client::layer(client_tls)
+            let conn = tls::Client::layer(Tls(client_tls))
                 .layer(ConnectTcp::new(Keepalive(None)))
                 .oneshot(Target(server_addr.into(), client_server_id.map(Into::into)))
                 .await;
@@ -370,9 +371,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for ServerParams {
     }
 }
 
-impl<T> ExtractParam<Option<Tls>, T> for ServerParams {
-    fn extract_param(&self, _: &T) -> Option<Tls> {
-        self.identity.clone().map(Tls)
+impl<T> ExtractParam<Tls, T> for ServerParams {
+    fn extract_param(&self, _: &T) -> Tls {
+        Tls(self.identity.clone())
     }
 }
 

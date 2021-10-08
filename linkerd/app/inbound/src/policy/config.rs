@@ -27,7 +27,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: Option<LocalCrtKey>,
+        identity: LocalCrtKey,
     ) -> Store {
         match self {
             Self::Fixed { default, ports } => {
