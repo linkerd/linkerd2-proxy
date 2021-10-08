@@ -1155,6 +1155,7 @@ dependencies = [
  "pin-project",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tonic",
  "tracing",
 ]

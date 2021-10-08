@@ -19,6 +19,7 @@ linkerd-stack = { path = "../../stack" }
 linkerd-tls = { path = "../../tls" }
 thiserror = "1"
 tokio = { version = "1", features = ["time", "sync"] }
+tokio-rustls = "0.22"
 tonic = { version = "0.5", default-features = false }
 tracing = "0.1.29"
 http-body = "0.4"

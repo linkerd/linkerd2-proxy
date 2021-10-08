@@ -43,7 +43,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: Option<L>,
+        identity: L,
     ) -> svc::ArcNewService<
         (),
         impl svc::Service<
@@ -54,7 +54,7 @@ impl Config {
             > + Clone,
     >
     where
-        L: Clone + svc::Param<tls::client::Config> + Send + Sync + 'static,
+        L: Clone + svc::NewService<tls::server::ClientId> + Send + Sync + 'static,
     {
         let addr = self.addr;
 

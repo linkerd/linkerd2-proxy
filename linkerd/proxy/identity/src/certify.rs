@@ -6,9 +6,11 @@ use linkerd_metrics::Counter;
 use linkerd_stack::{NewService, Param};
 use linkerd_tls as tls;
 use pin_project::pin_project;
-use std::convert::TryFrom;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    convert::TryFrom,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 use tokio::sync::watch;
 use tokio::time::{self, Sleep};
@@ -207,7 +209,7 @@ impl LocalCrtKey {
         self.id.as_ref()
     }
 
-    pub fn client_config(&self) -> tls::client::Config {
+    pub fn client_config(&self) -> Arc<tokio_rustls::rustls::ClientConfig> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.client_config();
         }
@@ -215,7 +217,7 @@ impl LocalCrtKey {
         self.trust_anchors.client_config()
     }
 
-    pub fn server_config(&self) -> tls::server::Config {
+    pub fn server_config(&self) -> Arc<tokio_rustls::rustls::ServerConfig> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.server_config();
         }
@@ -224,14 +226,8 @@ impl LocalCrtKey {
     }
 }
 
-impl Param<tls::client::Config> for LocalCrtKey {
-    fn param(&self) -> tls::client::Config {
-        self.client_config()
-    }
-}
-
-impl Param<tls::server::Config> for LocalCrtKey {
-    fn param(&self) -> tls::server::Config {
+impl Param<Arc<tokio_rustls::rustls::ServerConfig>> for LocalCrtKey {
+    fn param(&self) -> Arc<tokio_rustls::rustls::ServerConfig> {
         self.server_config()
     }
 }
