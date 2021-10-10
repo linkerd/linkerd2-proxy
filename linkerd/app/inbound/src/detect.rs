@@ -53,6 +53,8 @@ struct TlsParams {
     identity: LocalCrtKey,
 }
 
+type TlsIo<I> = tls::server::Io<I, tls::rustls::ServerIo<tls::server::DetectIo<I>>>;
+
 // === impl Inbound ===
 
 impl<N> Inbound<N> {
@@ -92,7 +94,7 @@ impl<N> Inbound<N> {
         I: Debug + Send + Sync + Unpin + 'static,
         N: svc::NewService<Tls, Service = NSvc>,
         N: Clone + Send + Sync + Unpin + 'static,
-        NSvc: svc::Service<tls::server::Io<I>, Response = ()>,
+        NSvc: svc::Service<TlsIo<I>, Response = ()>,
         NSvc: Send + Unpin + 'static,
         NSvc::Error: Into<Error>,
         NSvc::Future: Send,
@@ -107,6 +109,7 @@ impl<N> Inbound<N> {
 
             let detect_timeout = cfg.proxy.detect_protocol_timeout;
             detect
+                .check_new_service::<Tls, TlsIo<I>>()
                 .push_switch(
                     // Ensure that the connection is authorized before proceeding with protocol
                     // detection.
@@ -133,12 +136,15 @@ impl<N> Inbound<N> {
                     forward
                         .clone()
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
+                        .check_new_service::<Tls, TlsIo<I>>()
                         .into_inner(),
                 )
+                .check_new_service::<(_, T), TlsIo<I>>()
                 .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
                     timeout: tls::server::Timeout(detect_timeout),
                     identity: rt.identity.clone(),
                 }))
+                .check_new_service::<T, I>()
                 .push_switch(
                     // If this port's policy indicates that authentication is not required and
                     // detection should be skipped, use the TCP stack directly.
@@ -160,6 +166,7 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
+                .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })

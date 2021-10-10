@@ -7,7 +7,7 @@ use linkerd_conditional::Conditional;
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
-use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Service, ServiceExt};
+use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param, Service, ServiceExt};
 use std::{
     fmt,
     pin::Pin,
@@ -126,18 +126,18 @@ where
     }
 }
 
-impl<I, T, L, LSvc, LIo, P, N, NSvc> Service<I> for DetectTls<T, L, P, N>
+impl<I, T, L, LIo, P, N, NSvc> Service<I> for DetectTls<T, L, P, N>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
     T: Clone + Send + 'static,
     P: InsertParam<ConditionalServerTls, T> + Clone + Send + Sync + 'static,
     P::Target: Send + 'static,
-    L: NewService<ServerId, Service = LSvc> + Clone + Send + 'static,
-    LSvc: Service<DetectIo<I>, Response = (ServerTls, LIo), Error = io::Error> + Send + 'static,
-    LSvc::Future: Send,
+    L: Param<id::LocalId> + Clone + Send + 'static,
+    L: Service<DetectIo<I>, Response = (ServerTls, LIo), Error = io::Error>,
+    L::Future: Send,
     LIo: io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
     N: NewService<P::Target, Service = NSvc> + Clone + Send + 'static,
-    NSvc: Service<EitherIo<LIo, DetectIo<I>>, Response = ()> + Send + 'static,
+    NSvc: Service<Io<I, LIo>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
 {
@@ -162,12 +162,16 @@ where
         Box::pin(async move {
             let (sni, io) = detect.await.map_err(|_| ServerTlsTimeoutError(()))??;
 
+            let id::LocalId(id) = tls.param();
             let (peer, io) = match sni {
                 // If we detected an SNI matching this proxy, terminate TLS.
-                Some(sni) => {
-                    let tls = tls.new_service(sni);
+                Some(ServerId(sni)) if sni == id => {
                     let (peer, io) = tls.oneshot(io).await?;
                     (Conditional::Some(peer), EitherIo::Left(io))
+                }
+                Some(sni) => {
+                    let peer = ServerTls::Passthru { sni };
+                    (Conditional::Some(peer), EitherIo::Right(io))
                 }
                 None => (
                     Conditional::None(NoServerTls::NoClientHello),

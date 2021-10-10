@@ -3,17 +3,21 @@ use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient}
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_metrics::Counter;
-use linkerd_stack::{NewService, Param};
+use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls as tls;
 use pin_project::pin_project;
 use std::{
     convert::TryFrom,
     sync::Arc,
+    task,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
-use tokio::sync::watch;
-use tokio::time::{self, Sleep};
+use tokio::{
+    io,
+    sync::watch,
+    time::{self, Sleep},
+};
 use tonic::{self as grpc, body::BoxBody, client::GrpcService};
 use tracing::{debug, error, trace};
 
@@ -257,9 +261,22 @@ impl NewService<tls::ClientTls> for LocalCrtKey {
     }
 }
 
-impl Param<Arc<tls::rustls::ServerConfig>> for LocalCrtKey {
-    fn param(&self) -> Arc<tls::rustls::ServerConfig> {
-        self.server_config()
+impl<I> Service<I> for LocalCrtKey
+where
+    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
+{
+    type Response = (tls::ServerTls, tls::rustls::ServerIo<I>);
+    type Error = io::Error;
+    type Future = tls::rustls::TerminateFuture<I>;
+
+    #[inline]
+    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
+        task::Poll::Ready(Ok(()))
+    }
+
+    #[inline]
+    fn call(&mut self, io: I) -> Self::Future {
+        tls::rustls::terminate(self.server_config(), io)
     }
 }
 

@@ -23,7 +23,7 @@ pub struct AcceptPermittedClients {
 
 type Connection<T, I> = (
     (tls::ConditionalServerTls, T),
-    io::EitherIo<tls::rustls::ServerStream<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+    io::EitherIo<tls::rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
 pub type ServeFuture = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
