@@ -2,6 +2,7 @@ use crate::{policy, Inbound};
 use linkerd_app_core::{
     io,
     proxy::identity::LocalCrtKey,
+    rustls,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},
@@ -52,7 +53,7 @@ pub struct ClientInfo {
     pub local_addr: OrigDstAddr,
 }
 
-type TlsIo<I> = tls::server::Io<I, tls::rustls::ServerIo<tls::server::DetectIo<I>>>;
+type TlsIo<I> = tls::server::Io<I, rustls::ServerIo<tls::server::DetectIo<I>>>;
 type FwdIo<I> = SensorIo<io::PrefixedIo<TlsIo<I>>>;
 pub type GatewayIo<I> = io::EitherIo<FwdIo<I>, SensorIo<TlsIo<I>>>;
 
@@ -304,9 +305,9 @@ impl<I> svc::Service<I> for WithTransportHeaderAlpn
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {
-    type Response = (tls::ServerTls, tls::rustls::ServerIo<I>);
+    type Response = (tls::ServerTls, rustls::ServerIo<I>);
     type Error = io::Error;
-    type Future = tls::rustls::TerminateFuture<I>;
+    type Future = rustls::TerminateFuture<I>;
 
     #[inline]
     fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
@@ -324,7 +325,7 @@ where
         config
             .alpn_protocols
             .push(transport_header::PROTOCOL.into());
-        tls::rustls::terminate(config.into(), io)
+        rustls::terminate(config.into(), io)
     }
 }
 

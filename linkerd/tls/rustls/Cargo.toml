@@ -1,0 +1,19 @@
+[package]
+name = "linkerd-tls-rustls"
+version = "0.1.0"
+authors = ["Linkerd Developers <cncf-linkerd-dev@lists.cncf.io>"]
+license = "Apache-2.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+futures = { version = "0.3", default-features = false }
+linkerd-dns-name = { path = "../../dns/name" }
+linkerd-identity = { path = "../../identity" }
+linkerd-io = { path = "../../io" }
+linkerd-stack = { path = "../../stack" }
+linkerd-tls = { path = ".." }
+pin-project = "1"
+tokio-rustls = "0.22"
+tracing = "0.1"
+webpki = "0.21"

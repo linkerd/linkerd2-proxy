@@ -689,6 +689,7 @@ dependencies = [
  "linkerd-stack-tracing",
  "linkerd-system",
  "linkerd-tls",
+ "linkerd-tls-rustls",
  "linkerd-trace-context",
  "linkerd-tracing",
  "linkerd-transport-header",
@@ -992,6 +993,7 @@ name = "linkerd-identity"
 version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
+ "pin-project",
  "ring",
  "thiserror",
  "tokio-rustls",
@@ -1153,11 +1155,11 @@ dependencies = [
  "linkerd-metrics",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-rustls",
  "linkerd2-proxy-api",
  "pin-project",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "tonic",
  "tracing",
 ]
@@ -1191,6 +1193,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tls",
+ "linkerd-tls-rustls",
  "linkerd2-proxy-api",
  "parking_lot",
  "pin-project",
@@ -1366,14 +1369,30 @@ dependencies = [
  "linkerd-io",
  "linkerd-proxy-transport",
  "linkerd-stack",
+ "linkerd-tls-rustls",
  "linkerd-tracing",
  "pin-project",
  "thiserror",
  "tokio",
- "tokio-rustls",
  "tower",
  "tracing",
  "untrusted",
+ "webpki",
+]
+
+[[package]]
+name = "linkerd-tls-rustls"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "linkerd-dns-name",
+ "linkerd-identity",
+ "linkerd-io",
+ "linkerd-stack",
+ "linkerd-tls",
+ "pin-project",
+ "tokio-rustls",
+ "tracing",
  "webpki",
 ]
 

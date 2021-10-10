@@ -17,6 +17,7 @@ use linkerd_proxy_transport::{
 };
 use linkerd_stack::{ExtractParam, InsertParam, NewService, Param, Service};
 use linkerd_tls as tls;
+use linkerd_tls_rustls as rustls;
 use std::{future::Future, net::SocketAddr, sync::mpsc, task, time::Duration};
 use tokio::net::TcpStream;
 use tower::{
@@ -27,7 +28,7 @@ use tracing::instrument::Instrument;
 
 type ServerConn<T, I> = (
     (tls::ConditionalServerTls, T),
-    io::EitherIo<tls::rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+    io::EitherIo<rustls::ServerIo<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
 );
 
 #[tokio::test(flavor = "current_thread")]
@@ -132,8 +133,7 @@ struct ServerParams {
     identity: id::CrtKey,
 }
 
-type ClientIo =
-    io::EitherIo<io::ScopedIo<TcpStream>, tls::rustls::ClientIo<io::ScopedIo<TcpStream>>>;
+type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, rustls::ClientIo<io::ScopedIo<TcpStream>>>;
 
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
@@ -334,10 +334,10 @@ impl Param<tls::ConditionalClientTls> for Target {
 // === impl Tls ===
 
 impl NewService<tls::ClientTls> for Tls {
-    type Service = tls::rustls::Connect;
+    type Service = rustls::Connect;
 
     fn new_service(&self, target: tls::ClientTls) -> Self::Service {
-        tls::rustls::Connect::new(target, self.0.client_config())
+        rustls::Connect::new(target, self.0.client_config())
     }
 }
 
@@ -345,9 +345,9 @@ impl<I> Service<I> for Tls
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {
-    type Response = (tls::ServerTls, tls::rustls::ServerIo<I>);
+    type Response = (tls::ServerTls, rustls::ServerIo<I>);
     type Error = io::Error;
-    type Future = tls::rustls::TerminateFuture<I>;
+    type Future = rustls::TerminateFuture<I>;
 
     #[inline]
     fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
@@ -356,7 +356,7 @@ where
 
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
-        tls::rustls::terminate(self.0.server_config(), io)
+        rustls::terminate(self.0.server_config(), io)
     }
 }
 

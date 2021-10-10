@@ -5,7 +5,7 @@ use crate::{
 use linkerd_app_core::{
     detect, identity, io,
     proxy::{http, identity::LocalCrtKey},
-    svc, tls,
+    rustls, svc, tls,
     transport::{
         self,
         addrs::{ClientAddr, OrigDstAddr, Remote},
@@ -53,7 +53,7 @@ struct TlsParams {
     identity: LocalCrtKey,
 }
 
-type TlsIo<I> = tls::server::Io<I, tls::rustls::ServerIo<tls::server::DetectIo<I>>>;
+type TlsIo<I> = tls::server::Io<I, rustls::ServerIo<tls::server::DetectIo<I>>>;
 
 // === impl Inbound ===
 

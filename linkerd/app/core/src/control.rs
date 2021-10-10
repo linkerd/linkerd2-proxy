@@ -54,7 +54,7 @@ impl Config {
             > + Clone,
     >
     where
-        L: svc::NewService<tls::ClientTls, Service = tls::rustls::Connect>,
+        L: svc::NewService<tls::ClientTls, Service = linkerd_tls_rustls::Connect>,
         L: Clone + Send + Sync + 'static,
     {
         let addr = self.addr;

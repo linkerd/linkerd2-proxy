@@ -5,7 +5,7 @@ use linkerd_identity as id;
 use linkerd_metrics::Counter;
 use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls as tls;
-use pin_project::pin_project;
+use linkerd_tls_rustls as rustls;
 use std::{
     convert::TryFrom,
     sync::Arc,
@@ -36,7 +36,6 @@ pub struct Config {
 /// Holds the process's local TLS identity state.
 ///
 /// Updates dynamically as certificates are provisioned from the Identity service.
-#[pin_project]
 #[derive(Clone, Debug)]
 pub struct LocalCrtKey {
     trust_anchors: id::TrustAnchors,
@@ -234,7 +233,7 @@ impl LocalCrtKey {
         &self.id.0
     }
 
-    pub fn client_config(&self) -> Arc<tls::rustls::ClientConfig> {
+    fn client_config(&self) -> Arc<rustls::ClientConfig> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.client_config();
         }
@@ -242,22 +241,22 @@ impl LocalCrtKey {
         self.trust_anchors.client_config()
     }
 
-    pub fn server_config(&self) -> Arc<tls::rustls::ServerConfig> {
+    pub fn server_config(&self) -> Arc<rustls::ServerConfig> {
         if let Some(ref c) = *self.crt_key.borrow() {
             return c.server_config();
         }
 
-        let verifier = tls::rustls::NoClientAuth::new();
-        Arc::new(tls::rustls::ServerConfig::new(verifier))
+        let verifier = rustls::NoClientAuth::new();
+        Arc::new(rustls::ServerConfig::new(verifier))
     }
 }
 
 impl NewService<tls::ClientTls> for LocalCrtKey {
-    type Service = tls::rustls::Connect;
+    type Service = rustls::Connect;
 
     fn new_service(&self, target: tls::ClientTls) -> Self::Service {
         // TODO: ALPN
-        tls::rustls::Connect::new(target, self.client_config())
+        rustls::Connect::new(target, self.client_config())
     }
 }
 
@@ -265,9 +264,9 @@ impl<I> Service<I> for LocalCrtKey
 where
     I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
 {
-    type Response = (tls::ServerTls, tls::rustls::ServerIo<I>);
+    type Response = (tls::ServerTls, rustls::ServerIo<I>);
     type Error = io::Error;
-    type Future = tls::rustls::TerminateFuture<I>;
+    type Future = rustls::TerminateFuture<I>;
 
     #[inline]
     fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), io::Error>> {
@@ -276,7 +275,7 @@ where
 
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
-        tls::rustls::terminate(self.server_config(), io)
+        rustls::terminate(self.server_config(), io)
     }
 }
 

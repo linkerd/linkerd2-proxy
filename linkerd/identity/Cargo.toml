@@ -13,6 +13,7 @@ test-util = []
 linkerd-dns-name = { path = "../dns/name" }
 ring = "0.16.19"
 thiserror = "1.0"
+pin-project = "1"
 tokio-rustls = "0.22"
 tracing = "0.1.29"
 untrusted = "0.7"

@@ -58,6 +58,7 @@ linkerd-tracing = { path = "../../tracing" }
 linkerd-transport-header = { path = "../../transport-header" }
 linkerd-transport-metrics = { path = "../../transport-metrics" }
 linkerd-tls = { path = "../../tls" }
+linkerd-tls-rustls = { path = "../../tls/rustls" }
 linkerd-trace-context = { path = "../../trace-context" }
 regex = "1.5.4"
 serde_json = "1"

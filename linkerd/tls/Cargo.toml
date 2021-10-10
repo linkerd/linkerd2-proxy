@@ -19,13 +19,13 @@ linkerd-stack = { path = "../stack" }
 pin-project = "1"
 thiserror = "1.0"
 tokio = { version = "1", features = ["macros", "time"] }
-tokio-rustls = "0.22"
 tower = "0.4.8"
 tracing = "0.1.29"
 webpki = "0.21"
 untrusted = "0.7"
 
 [dev-dependencies]
+linkerd-tls-rustls = { path = "rustls" }
 linkerd-identity = { path = "../identity", features = ["test-util"] }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }

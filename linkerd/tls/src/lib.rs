@@ -2,10 +2,8 @@
 #![forbid(unsafe_code)]
 
 pub mod client;
-pub mod rustls;
 pub mod server;
 
-pub use self::rustls::Session;
 pub use linkerd_identity::LocalId;
 use linkerd_io as io;
 
