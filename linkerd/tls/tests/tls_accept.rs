@@ -23,7 +23,6 @@ use std::{
     sync::{mpsc, Arc},
     time::Duration,
 };
-use tls::client::TlsStream;
 use tokio::net::TcpStream;
 use tower::{
     layer::Layer,
@@ -31,7 +30,10 @@ use tower::{
 };
 use tracing::instrument::Instrument;
 
-type ServerConn<T, I> = ((tls::ConditionalServerTls, T), tls::server::Io<I>);
+type ServerConn<T, I> = (
+    (tls::ConditionalServerTls, T),
+    io::EitherIo<tls::rustls::ServerStream<tls::server::DetectIo<I>>, tls::server::DetectIo<I>>,
+);
 
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
@@ -135,7 +137,8 @@ struct ServerParams {
     identity: id::CrtKey,
 }
 
-type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, TlsStream<io::ScopedIo<TcpStream>>>;
+type ClientIo =
+    io::EitherIo<io::ScopedIo<TcpStream>, tls::rustls::ClientStream<io::ScopedIo<TcpStream>>>;
 
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server

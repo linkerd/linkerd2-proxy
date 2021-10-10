@@ -11,7 +11,6 @@ use std::{
     str::FromStr,
     task::{Context, Poll},
 };
-pub use tokio_rustls::client::TlsStream;
 use tracing::debug;
 
 /// A newtype for target server identities.

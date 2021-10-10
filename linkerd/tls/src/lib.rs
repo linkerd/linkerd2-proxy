@@ -59,26 +59,6 @@ impl std::fmt::Debug for NegotiatedProtocolRef<'_> {
     }
 }
 
-impl<I> HasNegotiatedProtocol for self::client::TlsStream<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
-    }
-}
-
-impl<I> HasNegotiatedProtocol for self::server::TlsStream<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
-    }
-}
-
 impl HasNegotiatedProtocol for tokio::net::TcpStream {
     #[inline]
     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
