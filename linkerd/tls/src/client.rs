@@ -1,12 +1,9 @@
 use crate::{HasNegotiatedProtocol, NegotiatedProtocolRef};
-use futures::{
-    future::{Either, MapOk},
-    prelude::*,
-};
+use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_identity as id;
 use linkerd_io as io;
-use linkerd_stack::{layer, NewService, Param, Service, ServiceExt};
+use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     fmt,
     future::Future,
@@ -59,6 +56,13 @@ pub struct Client<L, C> {
     inner: C,
 }
 
+#[pin_project::pin_project(project = ConnectProj)]
+#[derive(Debug)]
+pub enum Connect<F, I, H: Service<I>> {
+    Connect(#[pin] F, Option<H>),
+    Handshake(#[pin] Oneshot<H, I>),
+}
+
 // === impl ClientTls ===
 
 impl From<ServerId> for ClientTls {
@@ -94,16 +98,7 @@ where
 {
     type Response = io::EitherIo<C::Response, H::Response>;
     type Error = io::Error;
-    type Future = Either<
-        MapOk<C::Future, fn(C::Response) -> io::EitherIo<C::Response, H::Response>>,
-        Pin<
-            Box<
-                dyn Future<Output = io::Result<io::EitherIo<C::Response, H::Response>>>
-                    + Send
-                    + 'static,
-            >,
-        >,
-    >;
+    type Future = Connect<C::Future, C::Response, H>;
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -112,25 +107,48 @@ where
 
     fn call(&mut self, target: T) -> Self::Future {
         let handshake = match target.param() {
-            Conditional::Some(tls) => self.identity.new_service(tls),
+            Conditional::Some(tls) => Some(self.identity.new_service(tls)),
             Conditional::None(reason) => {
                 debug!(%reason, "Peer does not support TLS");
-                return Either::Left(self.inner.call(target).map_ok(io::EitherIo::Left));
+                None
             }
         };
 
         let connect = self.inner.call(target);
-        Either::Right(Box::pin(async move {
-            let io = connect.await?;
-            let io = handshake.oneshot(io).await?;
-            debug!(
-                alpn = io
-                    .negotiated_protocol()
-                    .and_then(|NegotiatedProtocolRef(p)| std::str::from_utf8(p).ok())
-                    .map(tracing::field::display)
-            );
-            Ok(io::EitherIo::Right(io))
-        }))
+        Connect::Connect(connect, handshake)
+    }
+}
+
+impl<F, I, H> Future for Connect<F, I, H>
+where
+    F: TryFuture<Ok = I, Error = io::Error>,
+    H: Service<I, Error = io::Error>,
+    H::Response: HasNegotiatedProtocol,
+{
+    type Output = io::Result<io::EitherIo<I, H::Response>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        loop {
+            match self.as_mut().project() {
+                ConnectProj::Connect(fut, tls) => {
+                    let io = futures::ready!(fut.try_poll(cx))?;
+                    match tls.take() {
+                        None => return Poll::Ready(Ok(io::EitherIo::Left(io))),
+                        Some(tls) => self.set(Connect::Handshake(tls.oneshot(io))),
+                    }
+                }
+                ConnectProj::Handshake(fut) => {
+                    let io = futures::ready!(fut.try_poll(cx))?;
+                    debug!(
+                        alpn = io
+                            .negotiated_protocol()
+                            .and_then(|NegotiatedProtocolRef(p)| std::str::from_utf8(p).ok())
+                            .map(tracing::field::display)
+                    );
+                    return Poll::Ready(Ok(io::EitherIo::Right(io)));
+                }
+            }
+        }
     }
 }
 
@@ -148,9 +166,9 @@ impl From<ServerId> for id::Name {
     }
 }
 
-impl AsRef<id::Name> for ServerId {
-    fn as_ref(&self) -> &id::Name {
-        &self.0
+impl ServerId {
+    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
+        self.0.as_webpki()
     }
 }
 

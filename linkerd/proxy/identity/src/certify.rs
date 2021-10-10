@@ -227,7 +227,7 @@ impl LocalCrtKey {
     }
 
     pub fn name(&self) -> &id::Name {
-        self.id.as_ref()
+        &self.id.0
     }
 
     pub fn client_config(&self) -> Arc<tokio_rustls::rustls::ClientConfig> {
@@ -244,6 +244,15 @@ impl LocalCrtKey {
         }
 
         tls::server::empty_config()
+    }
+}
+
+impl NewService<tls::ClientTls> for LocalCrtKey {
+    type Service = tls::rustls::Connect;
+
+    fn new_service(&self, target: tls::ClientTls) -> Self::Service {
+        // TODO: ALPN
+        tls::rustls::Connect::new(target, self.client_config())
     }
 }
 

@@ -134,9 +134,10 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
-impl<'t> From<&'t LocalId> for webpki::DNSNameRef<'t> {
-    fn from(LocalId(ref name): &'t LocalId) -> webpki::DNSNameRef<'t> {
-        name.into()
+impl Name {
+    #[inline]
+    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
+        self.0.as_webpki()
     }
 }
 
@@ -261,7 +262,7 @@ impl TrustAnchors {
         static NO_OCSP: &[u8] = &[];
         client
             .get_verifier()
-            .verify_server_cert(&client.root_store, &crt.chain, (&crt.id).into(), NO_OCSP)
+            .verify_server_cert(&client.root_store, &crt.chain, crt.id.as_webpki(), NO_OCSP)
             .map_err(InvalidCrt)?;
         debug!("certified {}", crt.id);
 
@@ -323,7 +324,7 @@ impl Crt {
     }
 
     pub fn name(&self) -> &Name {
-        self.id.as_ref()
+        &self.id.0
     }
 }
 
@@ -337,7 +338,7 @@ impl From<&'_ Crt> for LocalId {
 
 impl CrtKey {
     pub fn name(&self) -> &Name {
-        self.id.as_ref()
+        &self.id.0
     }
 
     pub fn expiry(&self) -> SystemTime {
@@ -439,9 +440,9 @@ impl From<LocalId> for Name {
     }
 }
 
-impl AsRef<Name> for LocalId {
-    fn as_ref(&self) -> &Name {
-        &self.0
+impl LocalId {
+    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
+        self.0.as_webpki()
     }
 }
 

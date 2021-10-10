@@ -1,19 +1,20 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
+pub mod client;
+pub mod rustls;
+pub mod server;
+
+pub use self::rustls::Session;
 pub use linkerd_identity::LocalId;
 use linkerd_io as io;
-pub use tokio_rustls::rustls::Session;
-
-pub mod client;
-pub mod server;
 
 pub use self::{
     client::{Client, ClientTls, ConditionalClientTls, NoClientTls, ServerId},
     server::{ClientId, ConditionalServerTls, NewDetectTls, NoServerTls, ServerTls},
 };
 
-/// A trait implented by transport streams to indicate its negotiated protocol.
+/// A trait implemented by transport streams to indicate its negotiated protocol.
 pub trait HasNegotiatedProtocol {
     fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>>;
 }

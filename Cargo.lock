@@ -1367,6 +1367,7 @@ dependencies = [
  "linkerd-proxy-transport",
  "linkerd-stack",
  "linkerd-tracing",
+ "pin-project",
  "thiserror",
  "tokio",
  "tokio-rustls",

@@ -22,6 +22,11 @@ impl Name {
     pub fn without_trailing_dot(&self) -> &str {
         self.as_ref().trim_end_matches('.')
     }
+
+    #[inline]
+    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
+        self.0.as_ref()
+    }
 }
 
 impl fmt::Debug for Name {

@@ -8,7 +8,7 @@ use linkerd_dns_name as dns;
 use linkerd_error::Error;
 use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
-use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param};
+use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param, Service, ServiceExt};
 use std::{
     fmt,
     pin::Pin,
@@ -20,7 +20,6 @@ use thiserror::Error;
 use tokio::time::{self, Duration};
 use tokio_rustls::rustls::{self, Session};
 pub use tokio_rustls::server::TlsStream;
-use tower::util::ServiceExt;
 use tracing::{debug, trace, warn};
 
 pub type Config = Arc<rustls::ServerConfig>;
@@ -139,7 +138,7 @@ where
     }
 }
 
-impl<I, T, L, P, N, NSvc> tower::Service<I> for DetectTls<T, L, P, N>
+impl<I, T, L, P, N, NSvc> Service<I> for DetectTls<T, L, P, N>
 where
     I: io::Peek + io::AsyncRead + io::AsyncWrite + Send + Sync + Unpin + 'static,
     T: Clone + Send + 'static,
@@ -147,7 +146,7 @@ where
     P::Target: Send + 'static,
     L: Param<LocalId> + Param<Config>,
     N: NewService<P::Target, Service = NSvc> + Clone + Send + 'static,
-    NSvc: tower::Service<Io<I>, Response = ()> + Send + 'static,
+    NSvc: Service<Io<I>, Response = ()> + Send + 'static,
     NSvc::Error: Into<Error>,
     NSvc::Future: Send,
 {

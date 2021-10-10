@@ -85,16 +85,19 @@ where
         // In either case, we clear the header so it is not passed on outbound requests.
         if let Some(require_id) = Self::extract_id(&mut request) {
             match self.tls.as_ref() {
-                Conditional::Some(tls::ClientTls { server_id, .. }) => {
-                    if require_id != *server_id.as_ref() {
+                Conditional::Some(tls::ClientTls {
+                    server_id: tls::ServerId(sni),
+                    ..
+                }) => {
+                    if require_id != *sni {
                         debug!(
                             required = %require_id,
-                            found = %server_id,
+                            found = %sni,
                             "Identity required by header not satisfied"
                         );
                         let e = IdentityRequired {
                             required: require_id.into(),
-                            found: Some(server_id.clone()),
+                            found: Some(tls::ServerId(sni.clone())),
                         };
                         return future::Either::Left(future::err(e.into()));
                     } else {

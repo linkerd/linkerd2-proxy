@@ -17,8 +17,13 @@ use linkerd_proxy_transport::{
 };
 use linkerd_stack::{ExtractParam, InsertParam, NewService, Param};
 use linkerd_tls as tls;
-use std::{future::Future, time::Duration};
-use std::{net::SocketAddr, sync::mpsc};
+use std::{
+    future::Future,
+    net::SocketAddr,
+    sync::{mpsc, Arc},
+    time::Duration,
+};
+use tls::client::TlsStream;
 use tokio::net::TcpStream;
 use tower::{
     layer::Layer,
@@ -130,6 +135,8 @@ struct ServerParams {
     identity: id::CrtKey,
 }
 
+type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, TlsStream<io::ScopedIo<TcpStream>>>;
+
 /// Runs a test for a single TCP connection. `client` processes the connection
 /// on the client side and `server` processes the connection on the server
 /// side.
@@ -145,7 +152,7 @@ async fn run_test<C, CF, CR, S, SF, SR>(
 )
 where
     // Client
-    C: FnOnce(tls::client::Io<io::ScopedIo<TcpStream>>) -> CF + Clone + Send + 'static,
+    C: FnOnce(ClientIo) -> CF + Clone + Send + 'static,
     CF: Future<Output = Result<CR, io::Error>> + Send + 'static,
     CR: Send + 'static,
     // Server
@@ -328,14 +335,16 @@ impl Param<tls::ConditionalClientTls> for Target {
 
 // === impl Tls ===
 
-impl Param<tls::client::Config> for Tls {
-    fn param(&self) -> tls::client::Config {
-        self.0.client_config()
+impl NewService<tls::ClientTls> for Tls {
+    type Service = tls::rustls::Connect;
+
+    fn new_service(&self, target: tls::ClientTls) -> Self::Service {
+        tls::rustls::Connect::new(target, self.0.client_config())
     }
 }
 
-impl Param<tls::server::Config> for Tls {
-    fn param(&self) -> tls::server::Config {
+impl Param<Arc<tls::rustls::ServerConfig>> for Tls {
+    fn param(&self) -> Arc<tls::rustls::ServerConfig> {
         self.0.server_config()
     }
 }
