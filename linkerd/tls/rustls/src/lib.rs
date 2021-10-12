@@ -5,8 +5,8 @@ use futures::prelude::*;
 use linkerd_io as io;
 use linkerd_stack::Service;
 use linkerd_tls::{
-    ClientId, ClientTls, HasNegotiatedProtocol, NegotiatedProtocol, NegotiatedProtocolRef,
-    ServerTls,
+    client::AlpnProtocols, ClientId, ClientTls, HasNegotiatedProtocol, NegotiatedProtocol,
+    NegotiatedProtocolRef, ServerId, ServerTls,
 };
 use std::{pin::Pin, sync::Arc};
 pub use tokio_rustls::rustls::*;
@@ -14,7 +14,7 @@ use tracing::debug;
 
 #[derive(Clone)]
 pub struct Connect {
-    client_tls: ClientTls,
+    server_id: ServerId,
     config: Arc<ClientConfig>,
 }
 
@@ -43,7 +43,26 @@ pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
 
 impl Connect {
     pub fn new(client_tls: ClientTls, config: Arc<ClientConfig>) -> Self {
-        Self { client_tls, config }
+        // If ALPN protocols are configured by the endpoint, we have to clone the
+        // entire configuration and set the protocols. If there are no
+        // ALPN options, clone the Arc'd base configuration without
+        // extra allocation.
+        //
+        // TODO it would be better to avoid cloning the whole TLS config
+        // per-connection.
+        let config = match client_tls.alpn {
+            None => config,
+            Some(AlpnProtocols(protocols)) => {
+                let mut c: ClientConfig = config.as_ref().clone();
+                c.alpn_protocols = protocols;
+                Arc::new(c)
+            }
+        };
+
+        Self {
+            server_id: client_tls.server_id,
+            config,
+        }
     }
 }
 
@@ -64,7 +83,7 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         tokio_rustls::TlsConnector::from(self.config.clone())
-            .connect(self.client_tls.server_id.as_webpki(), io)
+            .connect(self.server_id.as_webpki(), io)
             .map_ok(ClientIo)
     }
 }

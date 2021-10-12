@@ -254,8 +254,8 @@ impl LocalCrtKey {
 impl NewService<tls::ClientTls> for LocalCrtKey {
     type Service = rustls::Connect;
 
+    /// Creates a new TLS client service.
     fn new_service(&self, target: tls::ClientTls) -> Self::Service {
-        // TODO: ALPN
         rustls::Connect::new(target, self.client_config())
     }
 }
@@ -273,6 +273,7 @@ where
         task::Poll::Ready(Ok(()))
     }
 
+    /// Terminates a server-side TLS connection.
     #[inline]
     fn call(&mut self, io: I) -> Self::Future {
         rustls::terminate(self.server_config(), io)
