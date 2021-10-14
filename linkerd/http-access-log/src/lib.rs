@@ -112,20 +112,20 @@ where
         };
 
         let span = span!(target: TRACE_TARGET, Level::INFO, "http",
-            timestamp = %now(),
             client.addr = %self.client_addr,
-            client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or_default(),
-            processing_ns = field::Empty,
-            total_ns = field::Empty,
+            client.id = self.client_id.as_ref().map(identity::Name::as_ref).unwrap_or("-"),
+            timestamp = %now(),
             method = request.method().as_str(),
             uri =  %request.uri(),
             version = ?request.version(),
+            trace_id = trace_id(),
+            request_bytes = get_header(http::header::CONTENT_LENGTH),
+            status = field::Empty,
+            response_bytes = field::Empty,
+            total_ns = field::Empty,
+            processing_ns = field::Empty,
             user_agent = get_header(http::header::USER_AGENT),
             host = get_header(http::header::HOST),
-            trace_id = trace_id(),
-            status = field::Empty,
-            request_bytes = get_header(http::header::CONTENT_LENGTH),
-            response_bytes = field::Empty
         );
 
         if span.is_disabled() {

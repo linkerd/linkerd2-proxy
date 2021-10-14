@@ -1,9 +1,10 @@
-use std::{io::Write, path::PathBuf, sync::Arc};
-use tracing::{span, Id, Level, Metadata, Subscriber};
+use std::{fmt, io::Write, path::PathBuf, sync::Arc};
+use tracing::{field, span, Id, Level, Metadata, Subscriber};
 use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::{
+    field::RecordFields,
     filter::{Directive, FilterFn, Filtered},
-    fmt::{format::DefaultFields, FormatFields, FormattedFields, MakeWriter},
+    fmt::{FormatFields, FormattedFields, MakeWriter},
     layer::{Context, Layer},
     registry::LookupSpan,
 };
@@ -17,9 +18,19 @@ pub struct Guard(Arc<WorkerGuard>);
 
 pub(super) type AccessLogLayer<S> = Filtered<Writer, FilterFn, S>;
 
-pub(super) struct Writer<F = DefaultFields> {
+pub(super) struct Writer<F = ApacheCommon> {
     make_writer: NonBlocking,
     formatter: F,
+}
+
+#[derive(Default)]
+pub(super) struct ApacheCommon {
+    _p: (),
+}
+
+struct ApacheCommonVisitor<'writer> {
+    res: fmt::Result,
+    writer: &'writer mut dyn fmt::Write,
 }
 
 pub(super) fn build<S>() -> Option<(AccessLogLayer<S>, Guard, Directive)>
@@ -67,7 +78,7 @@ where
 
 // === impl Writer ===
 
-impl Writer<DefaultFields> {
+impl Writer {
     pub fn new(make_writer: NonBlocking) -> Self {
         Self {
             make_writer,
@@ -117,6 +128,56 @@ where
                 let mut writer = self.make_writer.make_writer();
                 let _ = writeln!(&mut writer, "{}", fields.fields);
             }
+        }
+    }
+}
+
+impl ApacheCommon {
+    const SKIPPED_FIELDS: &'static [&'static str] = &[
+        "trace_id",
+        "request_bytes",
+        "total_ns",
+        "processing_ns",
+        "response_bytes",
+        "user_agent",
+        "host",
+    ];
+}
+
+impl<'writer> FormatFields<'writer> for ApacheCommon {
+    fn format_fields<R: RecordFields>(
+        &self,
+        writer: &'writer mut dyn fmt::Write,
+        fields: R,
+    ) -> fmt::Result {
+        let mut visitor = ApacheCommonVisitor {
+            writer,
+            res: Ok(()),
+        };
+        fields.record(&mut visitor);
+        visitor.res
+    }
+
+    fn add_fields(&self, current: &'writer mut String, fields: &span::Record<'_>) -> fmt::Result {
+        self.format_fields(current, fields)
+    }
+}
+
+impl field::Visit for ApacheCommonVisitor<'_> {
+    fn record_str(&mut self, field: &field::Field, val: &str) {
+        self.record_debug(field, &format_args!("{}", val))
+    }
+
+    fn record_debug(&mut self, field: &field::Field, val: &dyn fmt::Debug) {
+        use fmt::Write;
+        self.res = match field.name() {
+            n if ApacheCommon::SKIPPED_FIELDS.contains(&n) => return,
+            "timestamp" => write!(&mut self.writer, " [{:?}]", val),
+            "client.addr" => write!(&mut self.writer, "{:?}", val),
+            "client.id" => write!(&mut self.writer, " {:?} -", val),
+            "method" => write!(&mut self.writer, " \"{:?}", val),
+            "version" => write!(&mut self.writer, " {:?}\"", val),
+            _ => write!(&mut self.writer, " {:?}", val),
         }
     }
 }
