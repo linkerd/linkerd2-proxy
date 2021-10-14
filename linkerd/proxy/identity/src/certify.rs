@@ -185,6 +185,27 @@ impl LocalCrtKey {
         (l, daemon)
     }
 
+    #[cfg(feature = "test-util")]
+    pub fn for_test(id: &id::test_util::Identity) -> Self {
+        let crt_key = id.validate().expect("Identity must be valid");
+        let (tx, rx) = watch::channel(Some(crt_key));
+        // Prevent the receiver stream from ending.
+        tokio::spawn(async move {
+            tx.closed().await;
+        });
+        Self {
+            id: id.id(),
+            trust_anchors: id.trust_anchors(),
+            crt_key: rx,
+            refreshes: Arc::new(Counter::new()),
+        }
+    }
+
+    #[cfg(feature = "test-util")]
+    pub fn default_for_test() -> Self {
+        Self::for_test(&id::test_util::DEFAULT_DEFAULT)
+    }
+
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {
         while self.crt_key.borrow().is_none() {
             // If the sender is dropped, the daemon task has ended.

@@ -351,21 +351,15 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
 
     let identity_config = parse_identity_config(strings);
 
-    let id_disabled = identity_config
-        .as_ref()
-        .map(|c| c.is_none())
-        .unwrap_or(false);
-
     let hostname = strings.get(ENV_HOSTNAME);
 
     let oc_attributes_file_path = strings.get(ENV_TRACE_ATTRIBUTES_PATH);
 
-    let trace_collector_addr =
-        parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE, id_disabled);
+    let trace_collector_addr = parse_control_addr(strings, ENV_TRACE_COLLECTOR_SVC_BASE);
 
     let gateway_suffixes = parse(strings, ENV_INBOUND_GATEWAY_SUFFIXES, parse_dns_suffixes);
 
-    let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE, id_disabled);
+    let dst_addr = parse_control_addr(strings, ENV_DESTINATION_SVC_BASE);
     let dst_token = strings.get(ENV_DESTINATION_CONTEXT);
     let dst_profile_idle_timeout = parse(
         strings,
@@ -383,7 +377,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
     let initial_connection_window_size =
         parse(strings, ENV_INITIAL_CONNECTION_WINDOW_SIZE, parse_number);
 
-    let tap = parse_tap_config(strings, id_disabled);
+    let tap = parse_tap_config(strings);
 
     let h2_settings = h2::Settings {
         initial_stream_window_size: Some(
@@ -549,7 +543,7 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                 policy::defaults::all_unauthenticated(detect_protocol_timeout).into()
             });
 
-            match parse_control_addr(strings, ENV_POLICY_SVC_BASE, id_disabled)? {
+            match parse_control_addr(strings, ENV_POLICY_SVC_BASE)? {
                 Some(addr) => {
                     // If the inbound is proxy is configured to discover policies, then load the set
                     // of all known inbound ports to be discovered during initialization.
@@ -616,27 +610,16 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                     // - ports that require some form of proxy-terminated TLS, though not
                     //   necessarily with a client identity.
                     // - opaque ports
-                    let require_identity_ports = {
-                        let ports =
-                            parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
-                                .unwrap_or_default()
-                                .into_iter()
-                                .map(|p| {
-                                    let allow = policy::defaults::all_authenticated(
-                                        detect_protocol_timeout,
-                                    );
-                                    (p, allow)
-                                })
-                                .collect::<HashMap<_, _>>();
-                        if id_disabled && !ports.is_empty() {
-                            error!(
-                                "if {} is true, {} must be empty",
-                                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_IDENTITY
-                            );
-                            return Err(EnvError::InvalidEnvVar);
-                        }
-                        ports
-                    };
+                    let require_identity_ports =
+                        parse(strings, ENV_INBOUND_PORTS_REQUIRE_IDENTITY, parse_port_set)?
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|p| {
+                                let allow =
+                                    policy::defaults::all_authenticated(detect_protocol_timeout);
+                                (p, allow)
+                            })
+                            .collect::<HashMap<_, _>>();
 
                     let require_tls_ports = {
                         let mut ports =
@@ -654,13 +637,6 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
                         // there are duplicates.
                         for p in require_identity_ports.keys() {
                             ports.remove(p);
-                        }
-                        if id_disabled && !ports.is_empty() {
-                            error!(
-                                "if {} is true, {} must be empty",
-                                ENV_IDENTITY_DISABLED, ENV_INBOUND_PORTS_REQUIRE_TLS
-                            );
-                            return Err(EnvError::InvalidEnvVar);
                         }
                         ports
                     };
@@ -796,24 +772,23 @@ pub fn parse_config<S: Strings>(strings: &S) -> Result<super::Config, EnvError> 
         })
         .unwrap_or(super::tap::Config::Disabled);
 
-    let identity = identity_config?
-        .map(|(addr, certify)| {
-            // If the address doesn't have a server identity, then we're on localhost.
-            let connect = if addr.addr.is_loopback() {
-                inbound.proxy.connect.clone()
-            } else {
-                outbound.proxy.connect.clone()
-            };
-            identity::Config::Enabled {
-                certify,
-                control: ControlConfig {
-                    addr,
-                    connect,
-                    buffer_capacity: 1,
-                },
-            }
-        })
-        .unwrap_or(identity::Config::Disabled);
+    let identity = {
+        let (addr, certify) = identity_config?;
+        // If the address doesn't have a server identity, then we're on localhost.
+        let connect = if addr.addr.is_loopback() {
+            inbound.proxy.connect.clone()
+        } else {
+            outbound.proxy.connect.clone()
+        };
+        identity::Config {
+            certify,
+            control: ControlConfig {
+                addr,
+                connect,
+                buffer_capacity: 1,
+            },
+        }
+    };
 
     Ok(super::Config {
         admin,
@@ -890,26 +865,16 @@ impl Env {
 ///   ENV_TAP_SVC_NAME.
 fn parse_tap_config(
     strings: &dyn Strings,
-    id_disabled: bool,
 ) -> Result<Option<(SocketAddr, HashSet<tls::server::ClientId>)>, EnvError> {
     let tap_identity = parse(strings, ENV_TAP_SVC_NAME, parse_identity)?;
-    if id_disabled {
-        if tap_identity.is_some() {
-            warn!(
-                "{} should not be set if identity is disabled; continuing with tap disabled",
-                ENV_TAP_SVC_NAME
-            );
-        }
-    } else {
-        let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
-            .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
-        if let Some(id) = tap_identity {
-            return Ok(Some((
-                addr,
-                vec![id].into_iter().map(tls::ClientId).collect(),
-            )));
-        }
-    };
+    let addr = parse(strings, ENV_CONTROL_LISTEN_ADDR, parse_socket_addr)?
+        .unwrap_or_else(|| parse_socket_addr(DEFAULT_CONTROL_LISTEN_ADDR).unwrap());
+    if let Some(id) = tap_identity {
+        return Ok(Some((
+            addr,
+            vec![id].into_iter().map(tls::ClientId).collect(),
+        )));
+    }
     Ok(None)
 }
 
@@ -1113,7 +1078,6 @@ pub fn parse_backoff<S: Strings>(
 pub fn parse_control_addr<S: Strings>(
     strings: &S,
     base: &str,
-    id_disabled: bool,
 ) -> Result<Option<ControlAddr>, EnvError> {
     let a = parse(strings, &format!("{}_ADDR", base), parse_addr)?;
     let n = parse(strings, &format!("{}_NAME", base), parse_identity)?;
@@ -1121,10 +1085,6 @@ pub fn parse_control_addr<S: Strings>(
         (None, None) => Ok(None),
         (Some(ref addr), _) if addr.is_loopback() => Ok(Some(ControlAddr {
             addr: addr.clone(),
-            identity: Conditional::None(tls::NoClientTls::Loopback),
-        })),
-        (Some(addr), None) if id_disabled => Ok(Some(ControlAddr {
-            addr,
             identity: Conditional::None(tls::NoClientTls::Loopback),
         })),
         (Some(addr), Some(name)) => Ok(Some(ControlAddr {
@@ -1140,8 +1100,8 @@ pub fn parse_control_addr<S: Strings>(
 
 pub fn parse_identity_config<S: Strings>(
     strings: &S,
-) -> Result<Option<(ControlAddr, identity::certify::Config)>, EnvError> {
-    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE, false);
+) -> Result<(ControlAddr, identity::certify::Config), EnvError> {
+    let control = parse_control_addr(strings, ENV_IDENTITY_SVC_BASE);
     let ta = parse(strings, ENV_IDENTITY_TRUST_ANCHORS, |s| {
         identity::TrustAnchors::from_pem(s).ok_or(ParseError::InvalidTrustAnchors)
     });
@@ -1156,34 +1116,20 @@ pub fn parse_identity_config<S: Strings>(
     let min_refresh = parse(strings, ENV_IDENTITY_MIN_REFRESH, parse_duration);
     let max_refresh = parse(strings, ENV_IDENTITY_MAX_REFRESH, parse_duration);
 
-    let disabled = strings
+    if strings
         .get(ENV_IDENTITY_DISABLED)?
         .map(|d| !d.is_empty())
-        .unwrap_or(false);
+        .unwrap_or(false)
+    {
+        error!(
+            "{} is no longer supported. Identity is must be enabled.",
+            ENV_IDENTITY_DISABLED
+        );
+        return Err(EnvError::InvalidEnvVar);
+    }
 
-    match (
-        disabled,
-        control?,
-        ta?,
-        dir?,
-        li?,
-        tok?,
-        min_refresh?,
-        max_refresh?,
-    ) {
-        (disabled, None, None, None, None, None, None, None) => {
-            if !disabled {
-                error!(
-                    "{} must be set or identity configuration must be specified.",
-                    ENV_IDENTITY_DISABLED
-                );
-                Err(EnvError::InvalidEnvVar)
-            } else {
-                Ok(None)
-            }
-        }
+    match (control?, ta?, dir?, li?, tok?, min_refresh?, max_refresh?) {
         (
-            false,
             Some(control),
             Some(trust_anchors),
             Some(dir),
@@ -1228,26 +1174,18 @@ pub fn parse_identity_config<S: Strings>(
                     })
             };
 
-            Ok(Some((
-                control,
-                identity::certify::Config {
-                    local_id: tls::LocalId(local_name),
-                    token,
-                    trust_anchors,
-                    csr: csr?,
-                    key: key?,
-                    min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
-                    max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
-                },
-            )))
+            let config = identity::certify::Config {
+                local_id: tls::LocalId(local_name),
+                token,
+                trust_anchors,
+                csr: csr?,
+                key: key?,
+                min_refresh: min_refresh.unwrap_or(DEFAULT_IDENTITY_MIN_REFRESH),
+                max_refresh: max_refresh.unwrap_or(DEFAULT_IDENTITY_MAX_REFRESH),
+            };
+            Ok((control, config))
         }
-        (disabled, addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
-            if disabled {
-                error!(
-                    "{} must be unset when other identity variables are set.",
-                    ENV_IDENTITY_DISABLED,
-                );
-            }
+        (addr, trust_anchors, end_entity_dir, local_id, token, _minr, _maxr) => {
             let s = format!("{0}_ADDR and {0}_NAME", ENV_IDENTITY_SVC_BASE);
             let svc_env: &str = s.as_str();
             for (unset, name) in &[
@@ -1258,10 +1196,7 @@ pub fn parse_identity_config<S: Strings>(
                 (token.is_none(), ENV_IDENTITY_TOKEN_FILE),
             ] {
                 if *unset {
-                    error!(
-                        "{} must be set when other identity variables are set.",
-                        name,
-                    );
+                    error!("{} must be set.", name);
                 }
             }
             Err(EnvError::InvalidEnvVar)

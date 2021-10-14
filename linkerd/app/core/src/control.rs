@@ -43,7 +43,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: Option<L>,
+        identity: L,
     ) -> svc::ArcNewService<
         (),
         impl svc::Service<

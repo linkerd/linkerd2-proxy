@@ -15,4 +15,4 @@ linkerd-metrics = { path = "../metrics" }
 linkerd-stack = { path = "../stack" }
 parking_lot = "0.11"
 pin-project = "1"
-tracing = "0.1.28"
+tracing = "0.1.29"

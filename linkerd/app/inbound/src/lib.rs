@@ -54,7 +54,7 @@ pub struct Inbound<S> {
 #[derive(Clone)]
 struct Runtime {
     metrics: Metrics,
-    identity: Option<LocalCrtKey>,
+    identity: LocalCrtKey,
     tap: tap::Registry,
     span_sink: OpenCensusSink,
     drain: drain::Watch,
@@ -82,8 +82,8 @@ impl<S> Inbound<S> {
         &self.config
     }
 
-    pub fn identity(&self) -> Option<&LocalCrtKey> {
-        self.runtime.identity.as_ref()
+    pub fn identity(&self) -> &LocalCrtKey {
+        &self.runtime.identity
     }
 
     pub fn proxy_metrics(&self) -> &metrics::Proxy {

@@ -115,9 +115,9 @@ impl Config {
 
         // Ensure that we've obtained a valid identity before binding any servers.
         let identity = info_span!("identity")
-            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()))?;
+            .in_scope(|| identity.build(dns.resolver.clone(), metrics.control.clone()));
 
-        let report = identity.metrics().and_then(report);
+        let report = identity.metrics().and_report(report);
 
         let (drain_tx, drain_rx) = drain::channel();
 
@@ -163,8 +163,8 @@ impl Config {
             let policy = inbound_policies.clone();
             let report = inbound
                 .metrics()
-                .and_then(outbound.metrics())
-                .and_then(report);
+                .and_report(outbound.metrics())
+                .and_report(report);
             info_span!("admin").in_scope(move || {
                 admin.build(
                     bind_admin,
@@ -246,12 +246,7 @@ impl Config {
     /// Waits for the proxy's identity to be certified.
     ///
     /// If this does not complete in a timely fashion, warnings are logged every 15s
-    async fn await_identity(id: Option<identity::LocalCrtKey>) -> Result<(), Error> {
-        let id = match id {
-            Some(id) => id,
-            None => return Ok(()),
-        };
-
+    async fn await_identity(id: identity::LocalCrtKey) -> Result<(), Error> {
         tokio::pin! {
             let fut = id.await_crt();
         }
@@ -292,18 +287,12 @@ impl App {
         &self.dst
     }
 
-    pub fn local_identity(&self) -> Option<&identity::LocalCrtKey> {
-        match self.identity {
-            identity::Identity::Disabled => None,
-            identity::Identity::Enabled { ref local, .. } => Some(local),
-        }
+    pub fn local_identity(&self) -> identity::LocalCrtKey {
+        self.identity.local()
     }
 
-    pub fn identity_addr(&self) -> Option<&ControlAddr> {
-        match self.identity {
-            identity::Identity::Disabled => None,
-            identity::Identity::Enabled { ref addr, .. } => Some(addr),
-        }
+    pub fn identity_addr(&self) -> ControlAddr {
+        self.identity.addr()
     }
 
     pub fn opencensus_addr(&self) -> Option<&ControlAddr> {
@@ -350,26 +339,27 @@ impl App {
                         );
 
                         // Kick off the identity so that the process can become ready.
-                        if let identity::Identity::Enabled { local, task, .. } = identity {
-                            tokio::spawn(task.instrument(info_span!("identity").or_current()));
+                        let local = identity.local();
+                        tokio::spawn(
+                            identity
+                                .task()
+                                .instrument(info_span!("identity").or_current()),
+                        );
 
-                            let latch = admin.latch;
-                            tokio::spawn(
-                                local
-                                    .await_crt()
-                                    .map_ok(move |id| {
-                                        latch.release();
-                                        info!("Certified identity: {}", id.name().as_ref());
-                                    })
-                                    .map_err(|_| {
-                                        // The daemon task was lost?!
-                                        panic!("Failed to certify identity!");
-                                    })
-                                    .instrument(info_span!("identity").or_current()),
-                            );
-                        } else {
-                            admin.latch.release()
-                        }
+                        let latch = admin.latch;
+                        tokio::spawn(
+                            local
+                                .await_crt()
+                                .map_ok(move |id| {
+                                    latch.release();
+                                    info!("Certified identity: {}", id.name().as_ref());
+                                })
+                                .map_err(|_| {
+                                    // The daemon task was lost?!
+                                    panic!("Failed to certify identity!");
+                                })
+                                .instrument(info_span!("identity").or_current()),
+                        );
 
                         if let tap::Tap::Enabled {
                             registry, serve, ..

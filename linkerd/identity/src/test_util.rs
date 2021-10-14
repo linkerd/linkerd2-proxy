@@ -8,6 +8,13 @@ pub struct Identity {
     pub key: &'static [u8],
 }
 
+pub static DEFAULT_DEFAULT: Identity = Identity {
+    name: "default.default.serviceaccount.identity.linkerd.cluster.local",
+    trust_anchors: include_bytes!("testdata/ca1.pem"),
+    crt: include_bytes!("testdata/default-default-ca1/crt.der"),
+    key: include_bytes!("testdata/default-default-ca1/key.p8"),
+};
+
 pub static FOO_NS1: Identity = Identity {
     name: "foo.ns1.serviceaccount.identity.linkerd.cluster.local",
     trust_anchors: include_bytes!("testdata/ca1.pem"),
@@ -23,6 +30,10 @@ pub static BAR_NS1: Identity = Identity {
 };
 
 impl Identity {
+    pub fn id(&self) -> LocalId {
+        LocalId(self.name.parse().expect("Invalid identity string"))
+    }
+
     pub fn trust_anchors(&self) -> TrustAnchors {
         let pem = ::std::str::from_utf8(self.trust_anchors).expect("utf-8");
         TrustAnchors::from_pem(pem).unwrap_or_else(TrustAnchors::empty)

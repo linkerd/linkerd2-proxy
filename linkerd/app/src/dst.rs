@@ -36,7 +36,7 @@ impl Config {
         self,
         dns: dns::Resolver,
         metrics: metrics::ControlHttp,
-        identity: Option<LocalCrtKey>,
+        identity: LocalCrtKey,
     ) -> Result<
         Dst<
             impl svc::Service<

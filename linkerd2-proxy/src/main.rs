@@ -61,17 +61,12 @@ fn main() {
             Some(addr) => info!("Tap interface on {}", addr),
         }
 
-        match app.local_identity() {
-            None => warn!("Identity is DISABLED"),
-            Some(identity) => {
-                info!("Local identity is {}", identity.name());
-                let addr = app.identity_addr().expect("must have identity addr");
-                match addr.identity.value() {
-                    None => info!("Identity verified via {}", addr.addr),
-                    Some(tls) => {
-                        info!("Identity verified via {} ({})", addr.addr, tls.server_id);
-                    }
-                }
+        info!("Local identity is {}", app.local_identity().name());
+        let addr = app.identity_addr();
+        match addr.identity.value() {
+            None => info!("Identity verified via {}", addr.addr),
+            Some(tls) => {
+                info!("Identity verified via {} ({})", addr.addr, tls.server_id);
             }
         }
 

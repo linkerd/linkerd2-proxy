@@ -35,16 +35,11 @@ pub enum Tap {
 
 #[derive(Clone)]
 struct TlsParams {
-    identity: Option<LocalCrtKey>,
+    identity: LocalCrtKey,
 }
 
 impl Config {
-    pub fn build<B>(
-        self,
-        bind: B,
-        identity: Option<LocalCrtKey>,
-        drain: drain::Watch,
-    ) -> Result<Tap, Error>
+    pub fn build<B>(self, bind: B, identity: LocalCrtKey, drain: drain::Watch) -> Result<Tap, Error>
     where
         B: Bind<ServerConfig>,
         B::Addrs: Param<Remote<ClientAddr>>,
@@ -79,7 +74,9 @@ impl Config {
                         }
                     }))
                     .push(svc::ArcNewService::layer())
-                    .push(tls::NewDetectTls::layer(TlsParams { identity }))
+                    .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
+                        identity,
+                    }))
                     .check_new_service::<B::Addrs, _>()
                     .into_inner();
 
@@ -113,9 +110,9 @@ impl<T> ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> ExtractParam<Option<LocalCrtKey>, T> for TlsParams {
+impl<T> ExtractParam<LocalCrtKey, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> Option<LocalCrtKey> {
+    fn extract_param(&self, _: &T) -> LocalCrtKey {
         self.identity.clone()
     }
 }
