@@ -880,7 +880,6 @@ version = "0.1.0"
 dependencies = [
  "thiserror",
  "untrusted",
- "webpki",
 ]
 
 [[package]]
@@ -997,7 +996,6 @@ dependencies = [
  "thiserror",
  "tracing",
  "untrusted",
- "webpki",
 ]
 
 [[package]]

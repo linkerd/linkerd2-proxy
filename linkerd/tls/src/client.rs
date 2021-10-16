@@ -173,12 +173,6 @@ impl Deref for ServerId {
     }
 }
 
-impl ServerId {
-    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
-        self.0.as_webpki()
-    }
-}
-
 impl FromStr for ServerId {
     type Err = id::InvalidName;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

@@ -10,6 +10,7 @@ use linkerd_io::{self as io, AsyncReadExt, EitherIo, PrefixedIo};
 use linkerd_stack::{layer, ExtractParam, InsertParam, NewService, Param, Service, ServiceExt};
 use std::{
     fmt,
+    ops::Deref,
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},
@@ -254,8 +255,10 @@ impl From<ClientId> for id::Name {
     }
 }
 
-impl AsRef<id::Name> for ClientId {
-    fn as_ref(&self) -> &id::Name {
+impl Deref for ClientId {
+    type Target = id::Name;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }

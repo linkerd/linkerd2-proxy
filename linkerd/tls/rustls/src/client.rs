@@ -1,15 +1,13 @@
 use futures::prelude::*;
 use linkerd_io as io;
 use linkerd_stack::Service;
-use linkerd_tls::{
-    client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef, ServerId,
-};
+use linkerd_tls::{client::AlpnProtocols, ClientTls, HasNegotiatedProtocol, NegotiatedProtocolRef};
 use std::{pin::Pin, sync::Arc};
 use tokio_rustls::rustls::{ClientConfig, Session};
 
 #[derive(Clone)]
 pub struct Connect {
-    server_id: ServerId,
+    server_id: webpki::DNSName,
     config: Arc<ClientConfig>,
 }
 
@@ -41,10 +39,11 @@ impl Connect {
             }
         };
 
-        Self {
-            server_id: client_tls.server_id,
-            config,
-        }
+        let server_id = webpki::DNSNameRef::try_from_ascii(client_tls.server_id.as_bytes())
+            .expect("identity must be a valid DNS name")
+            .to_owned();
+
+        Self { server_id, config }
     }
 }
 
@@ -65,7 +64,7 @@ where
 
     fn call(&mut self, io: I) -> Self::Future {
         tokio_rustls::TlsConnector::from(self.config.clone())
-            .connect(self.server_id.as_webpki(), io)
+            .connect(self.server_id.as_ref(), io)
             .map_ok(ClientIo)
     }
 }

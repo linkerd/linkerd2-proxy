@@ -165,9 +165,11 @@ impl TrustAnchors {
         //
         // TODO: Restrict accepted signature algorithms.
         static NO_OCSP: &[u8] = &[];
+        let crt_id = webpki::DNSNameRef::try_from_ascii((***crt.id).as_bytes())
+            .map_err(|e| InvalidCrt(TLSError::General(e.to_string())))?;
         client
             .get_verifier()
-            .verify_server_cert(&client.root_store, &crt.chain, crt.id.as_webpki(), NO_OCSP)
+            .verify_server_cert(&client.root_store, &crt.chain, crt_id, NO_OCSP)
             .map_err(InvalidCrt)?;
         debug!("certified {}", crt.id);
 

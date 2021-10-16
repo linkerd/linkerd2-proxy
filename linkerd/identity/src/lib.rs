@@ -28,13 +28,6 @@ impl std::ops::Deref for Name {
     }
 }
 
-impl Name {
-    #[inline]
-    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
-        self.0.as_webpki()
-    }
-}
-
 impl FromStr for Name {
     type Err = InvalidName;
 
@@ -59,12 +52,6 @@ impl TryFrom<&[u8]> for Name {
     }
 }
 
-impl AsRef<str> for Name {
-    fn as_ref(&self) -> &str {
-        (*self.0).as_ref()
-    }
-}
-
 impl fmt::Debug for Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt::Debug::fmt(&self.0, f)
@@ -77,6 +64,12 @@ impl fmt::Display for Name {
     }
 }
 
+impl From<LocalId> for Name {
+    fn from(LocalId(name): LocalId) -> Name {
+        name
+    }
+}
+
 // === impl LocalId ===
 
 impl From<Name> for LocalId {
@@ -85,15 +78,11 @@ impl From<Name> for LocalId {
     }
 }
 
-impl From<LocalId> for Name {
-    fn from(LocalId(name): LocalId) -> Name {
-        name
-    }
-}
+impl std::ops::Deref for LocalId {
+    type Target = Name;
 
-impl LocalId {
-    pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
-        self.0.as_webpki()
+    fn deref(&self) -> &Name {
+        &self.0
     }
 }
 

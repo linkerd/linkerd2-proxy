@@ -55,9 +55,10 @@ fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<Client
     let dns_names = end_cert.dns_names().ok()?;
 
     match dns_names.first()? {
-        webpki::GeneralDNSNameRef::DNSName(n) => Some(ClientId(linkerd_identity::Name::from(
-            linkerd_dns_name::Name::from(n.to_owned()),
-        ))),
+        webpki::GeneralDNSNameRef::DNSName(n) => {
+            let n = linkerd_dns_name::NameRef::try_from_ascii_str((*n).into()).ok()?;
+            Some(ClientId(n.to_owned().into()))
+        }
         webpki::GeneralDNSNameRef::Wildcard(_) => {
             // Wildcards can perhaps be handled in a future path...
             None
