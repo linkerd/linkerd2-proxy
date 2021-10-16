@@ -14,7 +14,7 @@ Vendored from https://github.com/census-instrumentation/opencensus-proto/.
 [dependencies]
 bytes = "1"
 tonic = { version = "0.5", default-features = false, features = ["prost", "codegen"] }
-prost = "0.8"
+prost = "0.9"
 prost-types = "0.8"
 
 [build-dependencies]
