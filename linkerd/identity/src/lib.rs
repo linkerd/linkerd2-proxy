@@ -134,6 +134,14 @@ impl From<linkerd_dns_name::Name> for Name {
     }
 }
 
+impl std::ops::Deref for Name {
+    type Target = linkerd_dns_name::Name;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl Name {
     #[inline]
     pub fn as_webpki(&self) -> webpki::DNSNameRef<'_> {
@@ -162,12 +170,6 @@ impl TryFrom<&[u8]> for Name {
         }
 
         linkerd_dns_name::Name::try_from(s).map(|n| Name(Arc::new(n)))
-    }
-}
-
-impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
-    fn from(Name(ref name): &'t Name) -> webpki::DNSNameRef<'t> {
-        name.as_ref().into()
     }
 }
 

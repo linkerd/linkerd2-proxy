@@ -7,6 +7,7 @@ use linkerd_stack::{layer, NewService, Oneshot, Param, Service, ServiceExt};
 use std::{
     fmt,
     future::Future,
+    ops::Deref,
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},
@@ -162,6 +163,13 @@ impl From<id::Name> for ServerId {
 impl From<ServerId> for id::Name {
     fn from(ServerId(name): ServerId) -> id::Name {
         name
+    }
+}
+
+impl Deref for ServerId {
+    type Target = id::Name;
+    fn deref(&self) -> &id::Name {
+        &self.0
     }
 }
 

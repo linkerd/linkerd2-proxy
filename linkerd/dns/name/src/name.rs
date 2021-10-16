@@ -71,12 +71,6 @@ impl From<Name> for webpki::DNSName {
     }
 }
 
-impl<'t> From<&'t Name> for webpki::DNSNameRef<'t> {
-    fn from(Name(ref name): &'t Name) -> webpki::DNSNameRef<'t> {
-        name.as_ref()
-    }
-}
-
 impl AsRef<str> for Name {
     #[inline]
     fn as_ref(&self) -> &str {
