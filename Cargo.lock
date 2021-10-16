@@ -1372,7 +1372,6 @@ dependencies = [
  "tower",
  "tracing",
  "untrusted",
- "webpki",
 ]
 
 [[package]]
