@@ -85,9 +85,7 @@ impl Config {
         };
 
         svc::stack(ConnectTcp::new(self.connect.keepalive))
-            .check_service::<self::client::Target>()
             .push(tls::Client::layer(identity))
-            .check_service::<self::client::Target>()
             .push_connect_timeout(self.connect.timeout)
             .push(self::client::layer())
             .push_on_service(svc::MapErr::layer(Into::into))

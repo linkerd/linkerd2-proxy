@@ -104,7 +104,6 @@ impl<N> Inbound<N> {
                     rt.metrics.proxy.transport.clone(),
                 ))
                 .instrument(|_: &_| debug_span!("opaque"))
-                .check_new_service::<Local, _>()
                 // When the transport header is present, it may be used for either local TCP
                 // forwarding, or we may be processing an HTTP gateway connection. HTTP gateway
                 // connections that have a transport header must provide a target name as a part of
@@ -174,7 +173,6 @@ impl<N> Inbound<N> {
                         .instrument(
                             |g: &GatewayTransportHeader| info_span!("gateway", dst = %g.target),
                         )
-                        .check_new_service::<GatewayTransportHeader, io::PrefixedIo<TlsIo<I>>>()
                         .into_inner(),
                 )
                 // Use ALPN to determine whether a transport header should be read.
@@ -186,19 +184,16 @@ impl<N> Inbound<N> {
                         Err(RefusedNoTarget.into())
                     }
                 })
-                .check_new_service::<ClientInfo, TlsIo<I>>()
                 // Build a ClientInfo target for each accepted connection. Refuse the
                 // connection if it doesn't include an mTLS identity.
                 .push_request_filter(ClientInfo::try_from)
                 .push(svc::ArcNewService::layer())
-                .check_new_service::<(_, T), TlsIo<I>>()
                 .push(tls::NewDetectTls::<WithTransportHeaderAlpn, _, _>::layer(
                     TlsParams {
                         timeout: tls::server::Timeout(detect_timeout),
                         identity: WithTransportHeaderAlpn(rt.identity.clone()),
                     },
                 ))
-                .check_new_service::<T, I>()
                 .push_on_service(svc::BoxService::layer())
                 .push(svc::ArcNewService::layer())
         })
