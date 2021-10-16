@@ -195,7 +195,7 @@ impl<I> HasNegotiatedProtocol for ClientIo<I> {
 impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        self.0.peer_addr()
+        self.0.get_ref().0.peer_addr()
     }
 }
 
@@ -261,6 +261,6 @@ impl<I> HasNegotiatedProtocol for ServerIo<I> {
 impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
     #[inline]
     fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        self.0.peer_addr()
+        self.0.get_ref().0.peer_addr()
     }
 }

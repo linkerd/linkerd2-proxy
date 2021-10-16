@@ -1012,7 +1012,6 @@ dependencies = [
  "linkerd-errno",
  "pin-project",
  "tokio",
- "tokio-rustls",
  "tokio-test",
  "tokio-util",
 ]
