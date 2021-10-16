@@ -1,3 +1,4 @@
+use crate::TokenSource;
 use http_body::Body;
 use linkerd2_proxy_api::identity::{self as api, identity_client::IdentityClient};
 use linkerd_error::Error;
@@ -27,7 +28,7 @@ pub struct Config {
     pub trust_anchors: TrustAnchors,
     pub key: Key,
     pub csr: Csr,
-    pub token: id::TokenSource,
+    pub token: TokenSource,
     pub local_id: id::LocalId,
     pub min_refresh: Duration,
     pub max_refresh: Duration,

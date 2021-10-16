@@ -2,14 +2,11 @@
 #![forbid(unsafe_code)]
 
 pub use linkerd_dns_name::InvalidName;
-use std::{convert::TryFrom, fmt, fs, io, str::FromStr, sync::Arc};
+use std::{convert::TryFrom, fmt, str::FromStr, sync::Arc};
 
 /// An endpoint's identity.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Name(Arc<linkerd_dns_name::Name>);
-
-#[derive(Clone, Debug)]
-pub struct TokenSource(Arc<String>);
 
 /// A newtype for local server identities.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -77,25 +74,6 @@ impl fmt::Debug for Name {
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         fmt::Display::fmt(&self.0, f)
-    }
-}
-
-// === impl TokenSource ===
-
-impl TokenSource {
-    pub fn if_nonempty_file(p: String) -> io::Result<Self> {
-        let ts = TokenSource(Arc::new(p));
-        ts.load().map(|_| ts)
-    }
-
-    pub fn load(&self) -> io::Result<Vec<u8>> {
-        let t = fs::read(self.0.as_str())?;
-
-        if t.is_empty() {
-            return Err(io::Error::new(io::ErrorKind::Other, "token is empty"));
-        }
-
-        Ok(t)
     }
 }
 

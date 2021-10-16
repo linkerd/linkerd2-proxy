@@ -3,7 +3,11 @@
 
 pub mod certify;
 pub mod metrics;
+mod token;
 
-pub use self::certify::{AwaitCrt, CrtKeySender, LocalCrtKey};
+pub use self::{
+    certify::{AwaitCrt, CrtKeySender, LocalCrtKey},
+    token::TokenSource,
+};
 pub use linkerd_identity::*;
 pub use linkerd_tls_rustls::*;
