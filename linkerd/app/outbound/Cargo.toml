@@ -24,7 +24,7 @@ linkerd-identity = { path = "../../identity" }
 parking_lot = "0.11"
 thiserror = "1.0"
 tokio = { version = "1", features = ["sync"] }
-tower = { version = "0.4.8", features = ["util"] }
+tower = { version = "0.4.9", features = ["util"] }
 tracing = "0.1.29"
 pin-project = "1"
 
