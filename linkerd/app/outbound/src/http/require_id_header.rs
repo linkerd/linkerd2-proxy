@@ -88,7 +88,7 @@ where
                 Conditional::Some(tls::ClientTls { server_id, .. })
                     if require_id == **server_id =>
                 {
-                    trace!(required = %require_id, "Identity required by header")
+                    trace!(required = %require_id, "Identity required by header");
                 }
                 Conditional::Some(tls::ClientTls { server_id, .. }) => {
                     debug!(
