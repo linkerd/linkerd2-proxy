@@ -1,5 +1,5 @@
 use super::{discover::Discover, DefaultPolicy, ServerPolicy, Store};
-use linkerd_app_core::{control, dns, metrics, proxy::identity::LocalCrtKey, svc::NewService};
+use linkerd_app_core::{control, dns, identity::LocalCrtKey, metrics, svc::NewService};
 use std::collections::{HashMap, HashSet};
 
 /// Configures inbound policies.

@@ -8,7 +8,6 @@
 use futures::prelude::*;
 use linkerd_conditional::Conditional;
 use linkerd_error::Infallible;
-use linkerd_identity as id;
 use linkerd_io::{self as io, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use linkerd_proxy_transport::{
     addrs::*,
@@ -33,8 +32,8 @@ type ServerConn<T, I> = (
 
 #[tokio::test(flavor = "current_thread")]
 async fn plaintext() {
-    let server_tls = id::test_util::FOO_NS1.validate().unwrap();
-    let client_tls = id::test_util::BAR_NS1.validate().unwrap();
+    let server_tls = rustls::test_util::FOO_NS1.validate().unwrap();
+    let client_tls = rustls::test_util::BAR_NS1.validate().unwrap();
     let (client_result, server_result) = run_test(
         client_tls,
         Conditional::None(tls::NoClientTls::NotProvidedByServiceDiscovery),
@@ -59,8 +58,8 @@ async fn plaintext() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_works() {
-    let server_tls = id::test_util::FOO_NS1.validate().unwrap();
-    let client_tls = id::test_util::BAR_NS1.validate().unwrap();
+    let server_tls = rustls::test_util::FOO_NS1.validate().unwrap();
+    let client_tls = rustls::test_util::BAR_NS1.validate().unwrap();
     let server_id = tls::ServerId(server_tls.name().clone());
     let (client_result, server_result) = run_test(
         client_tls.clone(),
@@ -90,14 +89,14 @@ async fn proxy_to_proxy_tls_works() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn proxy_to_proxy_tls_pass_through_when_identity_does_not_match() {
-    let server_tls = id::test_util::FOO_NS1.validate().unwrap();
+    let server_tls = rustls::test_util::FOO_NS1.validate().unwrap();
 
     // Misuse the client's identity instead of the server's identity. Any
     // identity other than `server_tls.server_identity` would work.
-    let client_tls = id::test_util::BAR_NS1
+    let client_tls = rustls::test_util::BAR_NS1
         .validate()
         .expect("valid client cert");
-    let sni = id::test_util::BAR_NS1.crt().name().clone();
+    let sni = rustls::test_util::BAR_NS1.crt().name().clone();
 
     let (client_result, server_result) = run_test(
         client_tls,
@@ -130,7 +129,7 @@ struct Transported<I, R> {
 
 #[derive(Clone)]
 struct ServerParams {
-    identity: id::CrtKey,
+    identity: rustls::CrtKey,
 }
 
 type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, rustls::ClientIo<io::ScopedIo<TcpStream>>>;
@@ -139,10 +138,10 @@ type ClientIo = io::EitherIo<io::ScopedIo<TcpStream>, rustls::ClientIo<io::Scope
 /// on the client side and `server` processes the connection on the server
 /// side.
 async fn run_test<C, CF, CR, S, SF, SR>(
-    client_tls: id::CrtKey,
+    client_tls: rustls::CrtKey,
     client_server_id: Conditional<tls::ServerId, tls::NoClientTls>,
     client: C,
-    server_id: id::CrtKey,
+    server_id: rustls::CrtKey,
     server: S,
 ) -> (
     Transported<tls::ConditionalClientTls, CR>,
@@ -315,7 +314,7 @@ struct Server;
 struct Target(SocketAddr, tls::ConditionalClientTls);
 
 #[derive(Clone)]
-struct Tls(id::CrtKey);
+struct Tls(rustls::CrtKey);
 
 // === impl Target ===
 

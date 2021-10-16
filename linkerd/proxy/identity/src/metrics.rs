@@ -1,5 +1,5 @@
-use linkerd_identity::CrtKey;
 use linkerd_metrics::{metrics, Counter, FmtMetrics, Gauge};
+use linkerd_tls_rustls::CrtKey;
 use std::{fmt, sync::Arc, time::UNIX_EPOCH};
 use tokio::sync::watch;
 

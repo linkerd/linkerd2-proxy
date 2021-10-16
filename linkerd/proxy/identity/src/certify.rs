@@ -5,7 +5,7 @@ use linkerd_identity as id;
 use linkerd_metrics::Counter;
 use linkerd_stack::{NewService, Param, Service};
 use linkerd_tls as tls;
-use linkerd_tls_rustls as rustls;
+use linkerd_tls_rustls::{self as rustls, Crt, CrtKey, Csr, Key, TrustAnchors};
 use std::{
     convert::TryFrom,
     sync::Arc,
@@ -24,9 +24,9 @@ use tracing::{debug, error, trace};
 /// Configures the Identity service and local identity.
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub trust_anchors: id::TrustAnchors,
-    pub key: id::Key,
-    pub csr: id::Csr,
+    pub trust_anchors: TrustAnchors,
+    pub key: Key,
+    pub csr: Csr,
     pub token: id::TokenSource,
     pub local_id: id::LocalId,
     pub min_refresh: Duration,
@@ -38,9 +38,9 @@ pub struct Config {
 /// Updates dynamically as certificates are provisioned from the Identity service.
 #[derive(Clone, Debug)]
 pub struct LocalCrtKey {
-    trust_anchors: id::TrustAnchors,
+    trust_anchors: TrustAnchors,
     id: id::LocalId,
-    crt_key: watch::Receiver<Option<id::CrtKey>>,
+    crt_key: watch::Receiver<Option<CrtKey>>,
     refreshes: Arc<Counter>,
 }
 
@@ -52,7 +52,7 @@ pub struct AwaitCrt(Option<LocalCrtKey>);
 #[error("identity initialization failed")]
 pub struct LostDaemon(());
 
-pub type CrtKeySender = watch::Sender<Option<id::CrtKey>>;
+pub type CrtKeySender = watch::Sender<Option<CrtKey>>;
 
 #[derive(Debug)]
 pub struct Daemon {
@@ -135,7 +135,7 @@ impl Daemon {
                                 ),
                                 Some(expiry) => {
                                     let key = config.key.clone();
-                                    let crt = id::Crt::new(
+                                    let crt = Crt::new(
                                         config.local_id.clone(),
                                         leaf_certificate,
                                         intermediate_certificates,
@@ -191,7 +191,7 @@ impl LocalCrtKey {
     }
 
     #[cfg(feature = "test-util")]
-    pub fn for_test(id: &id::test_util::Identity) -> Self {
+    pub fn for_test(id: &rustls::test_util::Identity) -> Self {
         let crt_key = id.validate().expect("Identity must be valid");
         let (tx, rx) = watch::channel(Some(crt_key));
         // Prevent the receiver stream from ending.
@@ -208,7 +208,7 @@ impl LocalCrtKey {
 
     #[cfg(feature = "test-util")]
     pub fn default_for_test() -> Self {
-        Self::for_test(&id::test_util::DEFAULT_DEFAULT)
+        Self::for_test(&rustls::test_util::DEFAULT_DEFAULT)
     }
 
     pub async fn await_crt(mut self) -> Result<Self, LostDaemon> {

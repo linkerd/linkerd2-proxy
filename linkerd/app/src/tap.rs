@@ -2,7 +2,7 @@ use futures::prelude::*;
 use linkerd_app_core::{
     config::ServerConfig,
     drain,
-    proxy::identity::LocalCrtKey,
+    identity::LocalCrtKey,
     proxy::tap,
     serve,
     svc::{self, ExtractParam, InsertParam, Param},

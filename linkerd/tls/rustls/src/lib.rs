@@ -1,266 +1,329 @@
 #![deny(warnings, rust_2018_idioms)]
 #![forbid(unsafe_code)]
 
-use futures::prelude::*;
-use linkerd_io as io;
-use linkerd_stack::Service;
-use linkerd_tls::{
-    client::AlpnProtocols, ClientId, ClientTls, HasNegotiatedProtocol, NegotiatedProtocol,
-    NegotiatedProtocolRef, ServerId, ServerTls,
+mod client;
+mod server;
+#[cfg(feature = "test-util")]
+pub mod test_util;
+
+pub use self::{
+    client::{ClientIo, Connect, ConnectFuture},
+    server::{terminate, ServerIo, TerminateFuture},
 };
-use std::{pin::Pin, sync::Arc};
+use linkerd_identity as id;
+pub use ring::error::KeyRejected;
+use ring::{rand, signature::EcdsaKeyPair};
+use std::{sync::Arc, time::SystemTime};
+use thiserror::Error;
 pub use tokio_rustls::rustls::*;
-use tracing::debug;
+use tracing::{debug, warn};
+
+#[derive(Clone, Debug)]
+pub struct Key(Arc<EcdsaKeyPair>);
+
+struct SigningKey(Arc<EcdsaKeyPair>);
+struct Signer(Arc<EcdsaKeyPair>);
+
+/// A DER-encoded X.509 certificate signing request.
+#[derive(Clone, Debug)]
+pub struct Csr(Arc<Vec<u8>>);
 
 #[derive(Clone)]
-pub struct Connect {
-    server_id: ServerId,
-    config: Arc<ClientConfig>,
+pub struct TrustAnchors(Arc<ClientConfig>);
+
+#[derive(Clone, Debug)]
+pub struct Crt {
+    id: id::LocalId,
+    expiry: SystemTime,
+    chain: Vec<Certificate>,
 }
 
 #[derive(Clone)]
-pub struct Terminate {
-    config: Arc<ServerConfig>,
+pub struct CrtKey {
+    id: id::LocalId,
+    expiry: SystemTime,
+    client_config: Arc<ClientConfig>,
+    server_config: Arc<ServerConfig>,
 }
 
-pub type ConnectFuture<I> = futures::future::MapOk<
-    tokio_rustls::Connect<I>,
-    fn(tokio_rustls::client::TlsStream<I>) -> ClientIo<I>,
->;
+struct CertResolver(sign::CertifiedKey);
 
-pub type TerminateFuture<I> = futures::future::MapOk<
-    tokio_rustls::Accept<I>,
-    fn(tokio_rustls::server::TlsStream<I>) -> (ServerTls, ServerIo<I>),
->;
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct InvalidCrt(TLSError);
 
-#[derive(Debug)]
-pub struct ClientIo<I>(tokio_rustls::client::TlsStream<I>);
+// These must be kept in sync:
+static SIGNATURE_ALG_RING_SIGNING: &ring::signature::EcdsaSigningAlgorithm =
+    &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING;
+const SIGNATURE_ALG_RUSTLS_SCHEME: SignatureScheme = SignatureScheme::ECDSA_NISTP256_SHA256;
+const SIGNATURE_ALG_RUSTLS_ALGORITHM: internal::msgs::enums::SignatureAlgorithm =
+    internal::msgs::enums::SignatureAlgorithm::ECDSA;
+const TLS_VERSIONS: &[ProtocolVersion] = &[ProtocolVersion::TLSv1_3];
 
-#[derive(Debug)]
-pub struct ServerIo<I>(tokio_rustls::server::TlsStream<I>);
+// === impl Csr ===
 
-// === impl Connect ===
-
-impl Connect {
-    pub fn new(client_tls: ClientTls, config: Arc<ClientConfig>) -> Self {
-        // If ALPN protocols are configured by the endpoint, we have to clone the
-        // entire configuration and set the protocols. If there are no
-        // ALPN options, clone the Arc'd base configuration without
-        // extra allocation.
-        //
-        // TODO it would be better to avoid cloning the whole TLS config
-        // per-connection.
-        let config = match client_tls.alpn {
-            None => config,
-            Some(AlpnProtocols(protocols)) => {
-                let mut c: ClientConfig = config.as_ref().clone();
-                c.alpn_protocols = protocols;
-                Arc::new(c)
-            }
-        };
-
-        Self {
-            server_id: client_tls.server_id,
-            config,
+impl Csr {
+    pub fn from_der(der: Vec<u8>) -> Option<Self> {
+        if der.is_empty() {
+            return None;
         }
+
+        Some(Csr(Arc::new(der)))
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
     }
 }
 
-impl<I> Service<I> for Connect
-where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-{
-    type Response = ClientIo<I>;
-    type Error = io::Error;
-    type Future = ConnectFuture<I>;
+// === impl Key ===
 
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, io: I) -> Self::Future {
-        tokio_rustls::TlsConnector::from(self.config.clone())
-            .connect(self.server_id.as_webpki(), io)
-            .map_ok(ClientIo)
+impl Key {
+    pub fn from_pkcs8(b: &[u8]) -> Result<Self, KeyRejected> {
+        let k = EcdsaKeyPair::from_pkcs8(SIGNATURE_ALG_RING_SIGNING, b)?;
+        Ok(Key(Arc::new(k)))
     }
 }
 
-// === impl Terminate ===
-
-pub fn terminate<I>(config: Arc<ServerConfig>, io: I) -> TerminateFuture<I>
-where
-    I: io::AsyncRead + io::AsyncWrite + Send + Unpin,
-{
-    tokio_rustls::TlsAcceptor::from(config)
-        .accept(io)
-        .map_ok(|io| {
-            // Determine the peer's identity, if it exist.
-            let client_id = client_identity(&io);
-
-            let negotiated_protocol = io
-                .get_ref()
-                .1
-                .get_alpn_protocol()
-                .map(|b| NegotiatedProtocol(b.into()));
-
-            debug!(client.id = ?client_id, alpn = ?negotiated_protocol, "Accepted TLS connection");
-            let tls = ServerTls::Established {
-                client_id,
-                negotiated_protocol,
-            };
-            (tls, ServerIo(io))
-        })
-}
-
-fn client_identity<I>(tls: &tokio_rustls::server::TlsStream<I>) -> Option<ClientId> {
-    let (_io, session) = tls.get_ref();
-    let certs = session.get_peer_certificates()?;
-    let c = certs.first().map(Certificate::as_ref)?;
-    let end_cert = webpki::EndEntityCert::from(c).ok()?;
-    let dns_names = end_cert.dns_names().ok()?;
-
-    match dns_names.first()? {
-        webpki::GeneralDNSNameRef::DNSName(n) => Some(ClientId(linkerd_identity::Name::from(
-            linkerd_dns_name::Name::from(n.to_owned()),
-        ))),
-        webpki::GeneralDNSNameRef::Wildcard(_) => {
-            // Wildcards can perhaps be handled in a future path...
+impl sign::SigningKey for SigningKey {
+    fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn sign::Signer>> {
+        if offered.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
+            Some(Box::new(Signer(self.0.clone())))
+        } else {
             None
         }
     }
-}
 
-// === impl ClientIo ===
-
-impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ClientIo<I> {
-    #[inline]
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut io::ReadBuf<'_>,
-    ) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_read(cx, buf)
+    fn algorithm(&self) -> internal::msgs::enums::SignatureAlgorithm {
+        SIGNATURE_ALG_RUSTLS_ALGORITHM
     }
 }
 
-impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ClientIo<I> {
-    #[inline]
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_flush(cx)
-    }
-
-    #[inline]
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_shutdown(cx)
-    }
-
-    #[inline]
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> io::Poll<usize> {
-        Pin::new(&mut self.0).poll_write(cx, buf)
-    }
-
-    #[inline]
-    fn poll_write_vectored(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        bufs: &[io::IoSlice<'_>],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
-    }
-
-    #[inline]
-    fn is_write_vectored(&self) -> bool {
-        self.0.is_write_vectored()
-    }
-}
-
-impl<I> HasNegotiatedProtocol for ClientIo<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
+impl sign::Signer for Signer {
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, TLSError> {
+        let rng = rand::SystemRandom::new();
         self.0
-            .get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
+            .sign(&rng, message)
+            .map(|signature| signature.as_ref().to_owned())
+            .map_err(|ring::error::Unspecified| TLSError::General("Signing Failed".to_owned()))
+    }
+
+    fn get_scheme(&self) -> SignatureScheme {
+        SIGNATURE_ALG_RUSTLS_SCHEME
     }
 }
 
-impl<I: io::PeerAddr> io::PeerAddr for ClientIo<I> {
-    #[inline]
-    fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        self.0.get_ref().0.peer_addr()
+// === impl TrustAnchors ===
+
+impl TrustAnchors {
+    #[cfg(any(test, feature = "test-util"))]
+    fn empty() -> Self {
+        TrustAnchors(Arc::new(ClientConfig::new()))
+    }
+
+    pub fn from_pem(s: &str) -> Option<Self> {
+        use std::io::Cursor;
+
+        let mut roots = RootCertStore::empty();
+        let (added, skipped) = roots.add_pem_file(&mut Cursor::new(s)).ok()?;
+        if skipped != 0 {
+            warn!("skipped {} trust anchors in trust anchors file", skipped);
+        }
+        if added == 0 {
+            return None;
+        }
+
+        let mut c = ClientConfig::new();
+
+        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
+        // as we'd like (e.g. controlling the set of trusted signature
+        // algorithms), but they provide good enough defaults for now.
+        // TODO: lock down the verification further.
+        // TODO: Change Rustls's API to Avoid needing to clone `root_cert_store`.
+        c.root_store = roots;
+
+        // Disable session resumption for the time-being until resumption is
+        // more tested.
+        c.enable_tickets = false;
+
+        Some(TrustAnchors(Arc::new(c)))
+    }
+
+    pub fn certify(&self, key: Key, crt: Crt) -> Result<CrtKey, InvalidCrt> {
+        let mut client = self.0.as_ref().clone();
+
+        // Ensure the certificate is valid for the services we terminate for
+        // TLS. This assumes that server cert validation does the same or
+        // more validation than client cert validation.
+        //
+        // XXX: Rustls currently only provides access to a
+        // `ServerCertVerifier` through
+        // `ClientConfig::get_verifier()`.
+        //
+        // XXX: Once `ServerCertVerified` is exposed in Rustls's
+        // safe API, use it to pass proof to CertCertResolver::new....
+        //
+        // TODO: Restrict accepted signature algorithms.
+        static NO_OCSP: &[u8] = &[];
+        client
+            .get_verifier()
+            .verify_server_cert(&client.root_store, &crt.chain, crt.id.as_webpki(), NO_OCSP)
+            .map_err(InvalidCrt)?;
+        debug!("certified {}", crt.id);
+
+        let k = SigningKey(key.0);
+        let key = sign::CertifiedKey::new(crt.chain, Arc::new(Box::new(k)));
+        let resolver = Arc::new(CertResolver(key));
+
+        // Enable client authentication.
+        client.client_auth_cert_resolver = resolver.clone();
+
+        // Ask TLS clients for a certificate and accept any certificate issued
+        // by our trusted CA(s).
+        //
+        // XXX: Rustls's built-in verifiers don't let us tweak things as fully
+        // as we'd like (e.g. controlling the set of trusted signature
+        // algorithms), but they provide good enough defaults for now.
+        // TODO: lock down the verification further.
+        //
+        // TODO: Change Rustls's API to Avoid needing to clone `root_cert_store`.
+        let mut server = ServerConfig::new(AllowAnyAnonymousOrAuthenticatedClient::new(
+            self.0.root_store.clone(),
+        ));
+        server.versions = TLS_VERSIONS.to_vec();
+        server.cert_resolver = resolver;
+
+        Ok(CrtKey {
+            id: crt.id,
+            expiry: crt.expiry,
+            client_config: Arc::new(client),
+            server_config: Arc::new(server),
+        })
+    }
+
+    pub fn client_config(&self) -> Arc<ClientConfig> {
+        self.0.clone()
     }
 }
 
-// === impl ServerIo ===
-
-impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncRead for ServerIo<I> {
-    #[inline]
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut io::ReadBuf<'_>,
-    ) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_read(cx, buf)
+impl std::fmt::Debug for TrustAnchors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TrustAnchors").finish()
     }
 }
 
-impl<I: io::AsyncRead + io::AsyncWrite + Unpin> io::AsyncWrite for ServerIo<I> {
-    #[inline]
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_flush(cx)
+// === Crt ===
+
+impl Crt {
+    pub fn new(
+        id: id::LocalId,
+        leaf: Vec<u8>,
+        intermediates: Vec<Vec<u8>>,
+        expiry: SystemTime,
+    ) -> Self {
+        let mut chain = Vec::with_capacity(intermediates.len() + 1);
+        chain.push(Certificate(leaf));
+        chain.extend(intermediates.into_iter().map(Certificate));
+
+        Self { id, chain, expiry }
     }
 
-    #[inline]
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> io::Poll<()> {
-        Pin::new(&mut self.0).poll_shutdown(cx)
-    }
-
-    #[inline]
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> io::Poll<usize> {
-        Pin::new(&mut self.0).poll_write(cx, buf)
-    }
-
-    #[inline]
-    fn poll_write_vectored(
-        mut self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        bufs: &[io::IoSlice<'_>],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        Pin::new(&mut self.0).poll_write_vectored(cx, bufs)
-    }
-
-    #[inline]
-    fn is_write_vectored(&self) -> bool {
-        self.0.is_write_vectored()
+    pub fn name(&self) -> &id::Name {
+        &self.id.0
     }
 }
 
-impl<I> HasNegotiatedProtocol for ServerIo<I> {
-    #[inline]
-    fn negotiated_protocol(&self) -> Option<NegotiatedProtocolRef<'_>> {
-        self.0
-            .get_ref()
-            .1
-            .get_alpn_protocol()
-            .map(NegotiatedProtocolRef)
+impl From<&'_ Crt> for id::LocalId {
+    fn from(crt: &Crt) -> id::LocalId {
+        crt.id.clone()
     }
 }
 
-impl<I: io::PeerAddr> io::PeerAddr for ServerIo<I> {
-    #[inline]
-    fn peer_addr(&self) -> io::Result<std::net::SocketAddr> {
-        self.0.get_ref().0.peer_addr()
+// === CrtKey ===
+
+impl CrtKey {
+    pub fn name(&self) -> &id::Name {
+        &self.id.0
+    }
+
+    pub fn expiry(&self) -> SystemTime {
+        self.expiry
+    }
+
+    pub fn id(&self) -> &id::LocalId {
+        &self.id
+    }
+
+    pub fn client_config(&self) -> Arc<ClientConfig> {
+        self.client_config.clone()
+    }
+
+    pub fn server_config(&self) -> Arc<ServerConfig> {
+        self.server_config.clone()
+    }
+}
+
+impl std::fmt::Debug for CrtKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.debug_struct("CrtKey")
+            .field("id", &self.id)
+            .field("expiry", &self.expiry)
+            .finish()
+    }
+}
+
+// === impl CertResolver ===
+
+impl ResolvesClientCert for CertResolver {
+    fn resolve(
+        &self,
+        _acceptable_issuers: &[&[u8]],
+        sigschemes: &[SignatureScheme],
+    ) -> Option<sign::CertifiedKey> {
+        // The proxy's server-side doesn't send the list of acceptable issuers so
+        // don't bother looking at `_acceptable_issuers`.
+        self.resolve_(sigschemes)
+    }
+
+    fn has_certs(&self) -> bool {
+        true
+    }
+}
+
+impl CertResolver {
+    fn resolve_(&self, sigschemes: &[SignatureScheme]) -> Option<sign::CertifiedKey> {
+        if !sigschemes.contains(&SIGNATURE_ALG_RUSTLS_SCHEME) {
+            debug!("signature scheme not supported -> no certificate");
+            return None;
+        }
+        Some(self.0.clone())
+    }
+}
+
+impl ResolvesServerCert for CertResolver {
+    fn resolve(&self, hello: ClientHello<'_>) -> Option<sign::CertifiedKey> {
+        let server_name = if let Some(server_name) = hello.server_name() {
+            server_name
+        } else {
+            debug!("no SNI -> no certificate");
+            return None;
+        };
+
+        // Verify that our certificate is valid for the given SNI name.
+        let c = (&self.0.cert)
+            .first()
+            .map(Certificate::as_ref)
+            .unwrap_or(&[]); // An empty input will fail to parse.
+        if let Err(err) =
+            webpki::EndEntityCert::from(c).and_then(|c| c.verify_is_valid_for_dns_name(server_name))
+        {
+            debug!(
+                "our certificate is not valid for the SNI name -> no certificate: {:?}",
+                err
+            );
+            return None;
+        }
+
+        self.resolve_(hello.sigschemes())
     }
 }

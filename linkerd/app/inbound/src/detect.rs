@@ -4,7 +4,7 @@ use crate::{
 };
 use linkerd_app_core::{
     detect, identity, io,
-    proxy::{http, identity::LocalCrtKey},
+    proxy::http,
     rustls, svc, tls,
     transport::{
         self,
@@ -50,7 +50,7 @@ struct ConfigureHttpDetect;
 #[derive(Clone)]
 struct TlsParams {
     timeout: tls::server::Timeout,
-    identity: LocalCrtKey,
+    identity: identity::LocalCrtKey,
 }
 
 type TlsIo<I> = tls::server::Io<I, rustls::ServerIo<tls::server::DetectIo<I>>>;
@@ -137,10 +137,12 @@ impl<N> Inbound<N> {
                         .push_on_service(svc::MapTargetLayer::new(io::BoxedIo::new))
                         .into_inner(),
                 )
-                .push(tls::NewDetectTls::<LocalCrtKey, _, _>::layer(TlsParams {
-                    timeout: tls::server::Timeout(detect_timeout),
-                    identity: rt.identity.clone(),
-                }))
+                .push(tls::NewDetectTls::<identity::LocalCrtKey, _, _>::layer(
+                    TlsParams {
+                        timeout: tls::server::Timeout(detect_timeout),
+                        identity: rt.identity.clone(),
+                    },
+                ))
                 .push_switch(
                     // If this port's policy indicates that authentication is not required and
                     // detection should be skipped, use the TCP stack directly.
@@ -427,9 +429,9 @@ impl<T> svc::ExtractParam<tls::server::Timeout, T> for TlsParams {
     }
 }
 
-impl<T> svc::ExtractParam<LocalCrtKey, T> for TlsParams {
+impl<T> svc::ExtractParam<identity::LocalCrtKey, T> for TlsParams {
     #[inline]
-    fn extract_param(&self, _: &T) -> LocalCrtKey {
+    fn extract_param(&self, _: &T) -> identity::LocalCrtKey {
         self.identity.clone()
     }
 }

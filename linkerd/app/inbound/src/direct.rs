@@ -1,8 +1,7 @@
 use crate::{policy, Inbound};
 use linkerd_app_core::{
-    io,
-    proxy::identity::LocalCrtKey,
-    rustls,
+    identity::LocalCrtKey,
+    io, rustls,
     svc::{self, ExtractParam, InsertParam, Param},
     tls,
     transport::{self, metrics::SensorIo, ClientAddr, OrigDstAddr, Remote, ServerAddr},

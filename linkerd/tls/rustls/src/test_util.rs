@@ -1,4 +1,5 @@
 use super::*;
+use linkerd_identity::{LocalId, Name};
 use std::time::{Duration, SystemTime};
 
 pub struct Identity {
@@ -46,7 +47,7 @@ impl Identity {
     pub fn crt(&self) -> Crt {
         const HOUR: Duration = Duration::from_secs(60 * 60);
 
-        let n = Name::from_str(self.name).expect("name must be valid");
+        let n = self.name.parse::<Name>().expect("name must be valid");
         let der = self.crt.iter().copied().collect();
         Crt::new(LocalId(n), der, vec![], SystemTime::now() + HOUR)
     }

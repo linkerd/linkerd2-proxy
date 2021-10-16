@@ -25,8 +25,7 @@ webpki = "0.21"
 untrusted = "0.7"
 
 [dev-dependencies]
-linkerd-tls-rustls = { path = "rustls" }
-linkerd-identity = { path = "../identity", features = ["test-util"] }
+linkerd-tls-rustls = { path = "rustls", features = ["test-util"] }
 linkerd-proxy-transport = { path = "../proxy/transport" }
 linkerd-tracing = { path = "../tracing", features = ["ansi"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }

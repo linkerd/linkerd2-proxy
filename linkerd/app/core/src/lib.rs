@@ -20,9 +20,9 @@ pub use linkerd_dns;
 pub use linkerd_error::{is_error, Error, Infallible, Recover, Result};
 pub use linkerd_exp_backoff as exp_backoff;
 pub use linkerd_http_metrics as http_metrics;
-pub use linkerd_identity as identity;
 pub use linkerd_io as io;
 pub use linkerd_opencensus as opencensus;
+pub use linkerd_proxy_identity as identity;
 pub use linkerd_service_profiles as profiles;
 pub use linkerd_stack_metrics as stack_metrics;
 pub use linkerd_stack_tracing as stack_tracing;
@@ -57,7 +57,7 @@ const DEFAULT_PORT: u16 = 80;
 
 #[derive(Clone, Debug)]
 pub struct ProxyRuntime {
-    pub identity: proxy::identity::LocalCrtKey,
+    pub identity: identity::LocalCrtKey,
     pub metrics: metrics::Proxy,
     pub tap: proxy::tap::Registry,
     pub span_sink: http_tracing::OpenCensusSink,

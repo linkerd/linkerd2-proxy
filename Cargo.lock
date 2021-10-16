@@ -994,9 +994,7 @@ version = "0.1.0"
 dependencies = [
  "linkerd-dns-name",
  "pin-project",
- "ring",
  "thiserror",
- "tokio-rustls",
  "tracing",
  "untrusted",
  "webpki",
@@ -1390,6 +1388,8 @@ dependencies = [
  "linkerd-stack",
  "linkerd-tls",
  "pin-project",
+ "ring",
+ "thiserror",
  "tokio-rustls",
  "tracing",
  "webpki",
